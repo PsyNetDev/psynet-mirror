@@ -14,11 +14,13 @@ def _write_archive(path: Path):
         archive.writestr("data/experiment.csv", "id,vars\n1,{}\n")
 
 
-def _export_archive(path: Path, *, participant_count=0, max_response_id=0):
+def _export_archive(
+    path: Path, *, participant_count=0, max_response_id=0, content_token="token"
+):
     from psynet.local_deployment import DatabaseExport
 
     _write_archive(path)
-    return DatabaseExport(participant_count, max_response_id)
+    return DatabaseExport(participant_count, max_response_id, content_token)
 
 
 def local_deployment_module():
@@ -106,15 +108,19 @@ def test_create_snapshot_records_exporter_watermark_not_a_later_read(
 
     def exporter(path):
         _write_archive(path)
-        return DatabaseExport(participant_count=1, max_response_id=4)
+        return DatabaseExport(
+            participant_count=1, max_response_id=4, content_token="db-token"
+        )
 
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 99)
     snapshot = create_snapshot(
         tmp_path, "gibbs", "shutdown", "launch-1", exporter=exporter
     )
     assert snapshot.max_response_id == 4
+    assert snapshot.content_token == "db-token"
     metadata = json.loads(snapshot.metadata_path.read_text(encoding="utf-8"))
     assert metadata["max_response_id"] == 4
+    assert metadata["content_token"] == "db-token"
 
 
 def test_create_snapshot_records_failure_without_partial_archive(tmp_path):
@@ -196,6 +202,23 @@ def test_snapshot_without_metadata_is_not_published(tmp_path):
     _write_archive(archive)
 
     assert list_snapshots(tmp_path, "gibbs") == []
+
+
+def test_choose_snapshot_refuses_a_torn_later_archive(tmp_path):
+    from psynet.local_deployment import choose_snapshot, create_snapshot
+
+    create_snapshot(
+        tmp_path,
+        "gibbs",
+        "shutdown",
+        "launch-1",
+        exporter=lambda path: _write_archive(path),
+    )
+    torn = tmp_path / "data/snapshots/gibbs/000002.zip"
+    _write_archive(torn)
+
+    with pytest.raises(ValueError, match="incomplete snapshots"):
+        choose_snapshot(tmp_path, "gibbs", "latest")
 
 
 def test_choose_snapshot_displays_rich_table(tmp_path, monkeypatch):
@@ -765,6 +788,7 @@ def test_read_database_owner_survives_a_locked_experiment_table(monkeypatch):
         ("gibbs-demo__mode=sandbox__launch=2026-08-29--16-37-05", False),
         ("legacy-experiment-without-mode", False),
         ("gibbs-demo__mode=__launch=2026-08-29--16-37-05", False),
+        ("gibbs-demo__mode=bot__launch=2026-08-29--16-37-05", False),
     ],
 )
 def test_protect_existing_database_discards_disposable_databases(
@@ -985,6 +1009,9 @@ def test_protect_existing_database_skips_clean_participant_finish(
     )
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 0)
     monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "token"
+    )
+    monkeypatch.setattr(
         "psynet.local_deployment.read_database_owner",
         lambda: DatabaseOwner(
             "first",
@@ -1071,6 +1098,9 @@ def test_protect_existing_database_skips_clean_shutdown(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 0)
     monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "token"
+    )
+    monkeypatch.setattr(
         "psynet.local_deployment.read_database_owner",
         lambda: DatabaseOwner("first", owner_path, "launch-1", "Example"),
     )
@@ -1082,6 +1112,50 @@ def test_protect_existing_database_skips_clean_shutdown(tmp_path, monkeypatch):
 
     assert protect_existing_database(tmp_path / "new", "second") is None
     create_snapshot.assert_not_called()
+
+
+def test_protect_existing_database_recovers_when_a_later_snapshot_is_torn(
+    tmp_path, monkeypatch
+):
+    from psynet.local_deployment import (
+        DatabaseOwner,
+        Snapshot,
+        protect_existing_database,
+    )
+    from psynet.local_deployment import (
+        create_snapshot as save_snapshot,
+    )
+
+    owner_path = tmp_path / "owner"
+    owner_path.mkdir()
+    save_snapshot(
+        owner_path,
+        "first",
+        reason="shutdown",
+        deployment_id="launch-1",
+        exporter=_export_archive,
+    )
+    torn = owner_path / "data/snapshots/first/000002.zip"
+    _write_archive(torn)
+    recovered = Mock(spec=Snapshot)
+    create_snapshot = Mock(return_value=recovered)
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 0)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "token"
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_owner",
+        lambda: DatabaseOwner("first", owner_path, "launch-1", "Example"),
+    )
+    monkeypatch.setattr("psynet.local_deployment.create_snapshot", create_snapshot)
+
+    assert protect_existing_database(tmp_path / "new", "second") is recovered
+    create_snapshot.assert_called_once_with(
+        owner_path,
+        "first",
+        reason="recovery-before-reset",
+        deployment_id="launch-1",
+    )
 
 
 def test_latest_snapshot_does_not_cover_owner_when_responses_arrived(
@@ -1106,16 +1180,28 @@ def test_latest_snapshot_does_not_cover_owner_when_responses_arrived(
         deployment_id="launch-1",
         exporter=lambda path: _write_archive(path),
     )
-    snapshot = replace(snapshot, max_response_id=4)
+    snapshot = replace(snapshot, max_response_id=4, content_token="db")
     owner = DatabaseOwner("first", owner_path, "launch-1", "Example")
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "db"
+    )
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 9)
     assert not latest_snapshot_covers_owner(owner, snapshot)
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 4)
     assert latest_snapshot_covers_owner(owner, snapshot)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "changed"
+    )
+    assert not latest_snapshot_covers_owner(owner, snapshot)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "db"
+    )
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: None)
     assert not latest_snapshot_covers_owner(owner, snapshot)
     snapshot = replace(snapshot, max_response_id=None)
     monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 4)
+    assert not latest_snapshot_covers_owner(owner, snapshot)
+    snapshot = replace(snapshot, max_response_id=4, content_token=None)
     assert not latest_snapshot_covers_owner(owner, snapshot)
 
 
@@ -1295,8 +1381,10 @@ def test_deploy_local_writes_shutdown_snapshot_if_workers_survive(
     monkeypatch.setattr(
         "psynet.command_line._run_local", lambda *_args, **_kwargs: None
     )
+    kill_results = iter((True, False))
     monkeypatch.setattr(
-        "psynet.command_line.kill_psynet_worker_processes", lambda: False
+        "psynet.command_line.kill_psynet_worker_processes",
+        lambda: next(kill_results),
     )
     monkeypatch.setattr(
         "psynet.command_line.latest_snapshot_covers_owner",
@@ -1333,6 +1421,34 @@ def test_deploy_local_writes_shutdown_snapshot_if_workers_survive(
     assert result.exit_code == 0, result.output
     assert snapshot_calls
     assert snapshot_calls[0][1]["reason"] == "shutdown"
+
+
+def test_deploy_local_refuses_to_snapshot_while_workers_survive(tmp_path, monkeypatch):
+    from psynet.command_line import psynet
+    from psynet.utils import working_directory
+
+    (tmp_path / "experiment.py").write_text("")
+    protect = Mock()
+
+    @contextmanager
+    def unlocked(*_args):
+        yield
+
+    monkeypatch.setattr("psynet.command_line.local_database_lock", unlocked)
+    monkeypatch.setattr(
+        "psynet.services.ensure_local_services", Mock(return_value=True)
+    )
+    monkeypatch.setattr("psynet.command_line.protect_existing_database", protect)
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", lambda: False
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["deploy", "local", "--id", "gibbs"])
+
+    assert result.exit_code != 0
+    assert "worker" in result.output.lower()
+    protect.assert_not_called()
 
 
 def test_deploy_local_saves_shutdown_under_owner_id_on_mismatch(tmp_path, monkeypatch):
@@ -1421,6 +1537,9 @@ def test_maybe_snapshot_after_participant_finish_clears_shutdown_need(monkeypatc
     class Dummy:
         var = SimpleNamespace()
 
+        def _managed_local_live_deployment_info(self):
+            return {"local_id": "gibbs"}
+
         def create_local_deployment_snapshot(self, reason):
             assert reason == "participant_finished"
             return snapshot
@@ -1475,6 +1594,7 @@ def test_maybe_snapshot_keeps_shutdown_need_when_another_participant_is_working(
         var = SimpleNamespace(local_snapshot_needed_on_shutdown=True)
         create_local_deployment_snapshot = Mock(return_value=Mock())
         _has_unfinished_participants = Mock(return_value=True)
+        _managed_local_live_deployment_info = Mock(return_value={"local_id": "gibbs"})
         maybe_snapshot_after_participant_finish = (
             Experiment.maybe_snapshot_after_participant_finish
         )
@@ -1500,6 +1620,7 @@ def test_maybe_snapshot_skips_when_out_of_request_commit_fails(monkeypatch):
 
     class Dummy:
         create_local_deployment_snapshot = Mock()
+        _managed_local_live_deployment_info = Mock(return_value={"local_id": "gibbs"})
         maybe_snapshot_after_participant_finish = (
             Experiment.maybe_snapshot_after_participant_finish
         )
@@ -1507,6 +1628,28 @@ def test_maybe_snapshot_skips_when_out_of_request_commit_fails(monkeypatch):
     dummy = Dummy()
     assert dummy.maybe_snapshot_after_participant_finish(Mock(id=1)) is None
     dummy.create_local_deployment_snapshot.assert_not_called()
+
+
+def test_maybe_snapshot_skips_when_not_a_managed_local_live_run(monkeypatch):
+    from psynet.experiment import Experiment
+
+    config = Mock()
+    config.get.return_value = True
+    monkeypatch.setattr("psynet.experiment.get_config", lambda: config)
+    session = Mock()
+    monkeypatch.setattr("psynet.experiment.db.session", session)
+
+    class Dummy:
+        create_local_deployment_snapshot = Mock()
+        _managed_local_live_deployment_info = Mock(return_value=None)
+        maybe_snapshot_after_participant_finish = (
+            Experiment.maybe_snapshot_after_participant_finish
+        )
+
+    dummy = Dummy()
+    assert dummy.maybe_snapshot_after_participant_finish(Mock(id=1)) is None
+    dummy.create_local_deployment_snapshot.assert_not_called()
+    session.commit.assert_not_called()
 
 
 def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
@@ -1525,6 +1668,7 @@ def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
         var = SimpleNamespace(local_snapshot_needed_on_shutdown=True)
         create_local_deployment_snapshot = Mock(return_value=snapshot)
         _has_unfinished_participants = Mock(return_value=False)
+        _managed_local_live_deployment_info = Mock(return_value={"local_id": "gibbs"})
         maybe_snapshot_after_participant_finish = (
             Experiment.maybe_snapshot_after_participant_finish
         )
@@ -1561,6 +1705,70 @@ def test_maybe_snapshot_defers_until_after_request_commit(monkeypatch):
     )
     assert dummy.var.local_snapshot_needed_on_shutdown is False
     assert session.commit.call_count >= 1
+
+
+def test_after_request_skips_finish_snapshot_on_error(monkeypatch):
+    from flask import Flask, g
+
+    from psynet.experiment import Experiment
+
+    session = Mock()
+    monkeypatch.setattr("psynet.experiment.db.session", session)
+    started = []
+    monkeypatch.setattr(
+        "psynet.experiment.threading.Thread",
+        lambda *args, **kwargs: started.append(kwargs) or Mock(),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context("/timeline"):
+        g.psynet_finish_snapshot_needed = True
+        response = Experiment._after_request_with_finish_snapshot(
+            app.response_class(status=500)
+        )
+        assert g.psynet_finish_snapshot_needed is True
+
+    assert response.status_code == 500
+    session.commit.assert_not_called()
+    assert started == []
+
+
+def test_after_request_snapshots_off_the_request_thread(monkeypatch):
+    from flask import Flask, g
+
+    from psynet.experiment import Experiment
+
+    session = Mock()
+    monkeypatch.setattr("psynet.experiment.db.session", session)
+    created = []
+
+    class FakeThread:
+        def __init__(self, target, args=(), **kwargs):
+            created.append((target, args))
+
+        def start(self):
+            created.append("started")
+
+    monkeypatch.setattr("psynet.experiment.threading.Thread", FakeThread)
+    monkeypatch.setattr(
+        "psynet.experiment.get_experiment",
+        lambda: Mock(_create_participant_finish_snapshot=Mock()),
+    )
+
+    app = Flask(__name__)
+    with app.test_request_context("/timeline"):
+        g.psynet_finish_snapshot_needed = True
+        g.psynet_finish_snapshot_participant_id = 7
+        response = Experiment._after_request_with_finish_snapshot(
+            app.response_class(status=200)
+        )
+        assert g.psynet_finish_snapshot_needed is False
+
+    assert response.status_code == 200
+    session.commit.assert_called_once()
+    assert created[0][0] == Experiment._participant_finish_snapshot_off_request
+    assert created[0][1][1] == 7
+    assert created[1] == "started"
 
 
 def test_create_local_deployment_snapshot_ignores_non_live_runs(monkeypatch):

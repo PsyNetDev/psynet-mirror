@@ -53,6 +53,10 @@ DATABASE_LOCK_WAIT_SECONDS = 30.0
 # Reading deployment identity must not block a launch behind a leftover backend.
 DATABASE_READ_TIMEOUT_SECONDS = 10
 
+# A full COPY can be large. Bound the lock wait like other reads, but let the
+# copy itself run longer than a metadata query.
+SNAPSHOT_STATEMENT_TIMEOUT_SECONDS = 120
+
 logger = logging.getLogger("psynet")
 
 _database_lock_guard = threading.RLock()
@@ -75,6 +79,15 @@ class Snapshot:
     participant_count: Optional[int]
     sha256: Optional[str]
     max_response_id: Optional[int] = None
+    content_token: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SnapshotProblem:
+    """Describe one snapshot pair that cannot be resumed from."""
+
+    sequence: int
+    message: str
 
 
 class DatabaseExport(NamedTuple):
@@ -82,6 +95,7 @@ class DatabaseExport(NamedTuple):
 
     participant_count: int
     max_response_id: int
+    content_token: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -118,19 +132,16 @@ class DatabaseOwner:
     def disposable(self) -> bool:
         """Return whether this database may be discarded without asking.
 
-        ``psynet debug local`` databases are disposable by definition, and a
-        database that was only ever prepared has no collected data to lose. A
-        live or sandbox run, a database whose identity could not be read, or a
-        database whose deployment ID does not identify its mode, is never
-        treated as disposable.
+        Only ``psynet debug local`` databases, and a database that was prepared
+        but never launched, may be discarded. Live and sandbox runs are kept,
+        and so is any other recorded mode (for example ``bot``) or a database
+        whose identity or mode could not be read.
         """
         if not self.readable:
             return False
-        if self.mode in ("live", "sandbox"):
-            return False
-        if self.deployment_id and self.mode is None:
-            return False
-        return True
+        if self.mode == "debug":
+            return True
+        return self.deployment_id is None and self.mode is None
 
 
 # Returned when the database holds an experiment whose identity cannot be read.
@@ -189,6 +200,7 @@ def _snapshot_from_files(path: Path) -> Snapshot:
         participant_count=metadata.get("participant_count"),
         sha256=metadata.get("sha256"),
         max_response_id=metadata.get("max_response_id"),
+        content_token=metadata.get("content_token"),
     )
 
 
@@ -208,6 +220,66 @@ def list_snapshots(experiment_path: Path | str, local_id: str) -> list[Snapshot]
         if snapshot.sha256 is not None:
             snapshots.append(snapshot)
     return sorted(snapshots, key=lambda snapshot: snapshot.sequence)
+
+
+def snapshot_problems(
+    experiment_path: Path | str, local_id: str
+) -> list[SnapshotProblem]:
+    """Return incomplete snapshot pairs, including ones ``list_snapshots`` hides.
+
+    A zip without metadata, metadata without a zip, unreadable metadata, or a
+    missing checksum is not a snapshot that can be resumed. Callers that would
+    otherwise fall back to an older archive must fail closed instead.
+    """
+    directory = snapshots_directory(experiment_path, local_id)
+    if not directory.exists():
+        return []
+    stems = {
+        path.stem
+        for path in directory.iterdir()
+        if path.suffix in {".zip", ".json"} and path.stem.isdigit()
+    }
+    problems = []
+    for stem in sorted(stems, key=int):
+        sequence = int(stem)
+        label = f"{sequence:06d}"
+        archive = directory / f"{stem}.zip"
+        metadata_path = directory / f"{stem}.json"
+        if not archive.is_file():
+            problems.append(
+                SnapshotProblem(sequence, f"{label} has metadata but no archive")
+            )
+            continue
+        if not metadata_path.is_file():
+            problems.append(
+                SnapshotProblem(sequence, f"{label} has an archive but no metadata")
+            )
+            continue
+        try:
+            snapshot = _snapshot_from_files(archive)
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            problems.append(
+                SnapshotProblem(sequence, f"{label} has unreadable metadata")
+            )
+            continue
+        if snapshot.sha256 is None:
+            problems.append(
+                SnapshotProblem(sequence, f"{label} is missing its checksum")
+            )
+    return problems
+
+
+def _newer_incomplete_snapshot(
+    experiment_path: Path | str,
+    local_id: str,
+    latest: Optional[Snapshot],
+) -> bool:
+    """Return whether a broken snapshot is newer than the latest valid one."""
+    latest_sequence = 0 if latest is None else latest.sequence
+    return any(
+        problem.sequence > latest_sequence
+        for problem in snapshot_problems(experiment_path, local_id)
+    )
 
 
 def _archive_is_valid(path: Path) -> bool:
@@ -306,7 +378,7 @@ def create_snapshot(
         started_at = datetime.now(timezone.utc)
         try:
             exported = exporter(temporary)
-            participant_count, max_response_id = _export_counts(exported)
+            participant_count, max_response_id, content_token = _export_counts(exported)
             if not _archive_is_valid(temporary):
                 raise RuntimeError("Snapshot exporter produced an invalid archive.")
             checksum = _sha256(temporary)
@@ -322,6 +394,7 @@ def create_snapshot(
                 "parent_sequence": parent_sequence,
                 "participant_count": participant_count,
                 "max_response_id": max_response_id,
+                "content_token": content_token,
                 "sha256": checksum,
             }
             _write_json_atomically(metadata_path, metadata)
@@ -351,6 +424,7 @@ def create_snapshot(
         participant_count=participant_count,
         sha256=checksum,
         max_response_id=max_response_id,
+        content_token=content_token,
         duration_seconds=round(duration, 3),
     )
     return _snapshot_from_files(path)
@@ -364,6 +438,14 @@ def choose_snapshot(
     console: Optional[Console] = None,
 ) -> Optional[Snapshot]:
     """Select a snapshot explicitly or interactively, defaulting to the latest."""
+    problems = snapshot_problems(experiment_path, local_id)
+    if problems:
+        details = "; ".join(problem.message for problem in problems)
+        raise ValueError(
+            f"Local deployment '{local_id}' has incomplete snapshots ({details}). "
+            "Repair or remove them before resuming; refusing to start from an "
+            "older archive."
+        )
     snapshots = list_snapshots(experiment_path, local_id)
     if not snapshots:
         if requested is not None:
@@ -426,18 +508,64 @@ def choose_snapshot(
     return selected
 
 
-def _export_counts(exported) -> tuple[Optional[int], Optional[int]]:
-    """Return participant and response counts from an exporter result."""
+def _export_counts(
+    exported,
+) -> tuple[Optional[int], Optional[int], Optional[str]]:
+    """Return participant count, response watermark, and content token."""
     if isinstance(exported, DatabaseExport):
-        return exported.participant_count, exported.max_response_id
-    return exported, None
+        return (
+            exported.participant_count,
+            exported.max_response_id,
+            exported.content_token,
+        )
+    return exported, None, None
+
+
+def _public_table_names(cursor) -> list[str]:
+    cursor.execute(
+        "SELECT tablename FROM pg_catalog.pg_tables "
+        "WHERE schemaname = 'public' ORDER BY tablename"
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def _content_token(cursor, tables: list[str]) -> str:
+    """Fingerprint every public table inside the caller's transaction.
+
+    ``count(*)`` plus ``sum(hashtext(xmin))`` changes when a row is inserted,
+    updated, or deleted, including tables other than ``response``.
+    """
+    from psycopg2 import sql
+
+    lines = []
+    for table in tables:
+        cursor.execute(
+            sql.SQL(
+                "SELECT count(*)::bigint, "
+                "COALESCE(sum(hashtext(xmin::text)::bigint), 0) FROM {}"
+            ).format(sql.Identifier(table))
+        )
+        count, checksum = cursor.fetchone()
+        lines.append(f"{table}:{int(count)}:{int(checksum)}")
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _connect(db_url: str, *, statement_timeout_seconds: int):
+    import psycopg2
+
+    timeout_ms = int(statement_timeout_seconds * 1000)
+    lock_timeout_ms = int(DATABASE_READ_TIMEOUT_SECONDS * 1000)
+    return psycopg2.connect(
+        dsn=db_url,
+        connect_timeout=DATABASE_READ_TIMEOUT_SECONDS,
+        options=f"-c statement_timeout={timeout_ms} -c lock_timeout={lock_timeout_ms}",
+    )
 
 
 def export_database_snapshot(
     destination: Path, db_url: Optional[str] = None
 ) -> DatabaseExport:
     """Write a consistent Dallinger-compatible CSV database archive."""
-    import psycopg2
     from psycopg2 import sql
 
     if db_url is None:
@@ -445,7 +573,9 @@ def export_database_snapshot(
 
         db_url = db.db_url
 
-    connection = psycopg2.connect(dsn=db_url)
+    connection = _connect(
+        db_url, statement_timeout_seconds=SNAPSHOT_STATEMENT_TIMEOUT_SECONDS
+    )
     try:
         connection.set_session(
             isolation_level="REPEATABLE READ",
@@ -453,11 +583,7 @@ def export_database_snapshot(
             autocommit=False,
         )
         cursor = connection.cursor()
-        cursor.execute(
-            "SELECT tablename FROM pg_catalog.pg_tables "
-            "WHERE schemaname = 'public' ORDER BY tablename"
-        )
-        tables = [row[0] for row in cursor.fetchall()]
+        tables = _public_table_names(cursor)
         if "experiment" not in tables:
             raise RuntimeError(
                 "The local database does not contain a PsyNet experiment."
@@ -484,6 +610,7 @@ def export_database_snapshot(
                 cursor.execute("SELECT COALESCE(MAX(id), 0) FROM response")
                 row = cursor.fetchone()
                 max_response_id = int(row[0]) if row and row[0] is not None else 0
+            content_token = _content_token(cursor, tables)
             (root / "experiment_id.md").write_text("local", encoding="utf-8")
             with zipfile.ZipFile(
                 destination, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
@@ -492,7 +619,7 @@ def export_database_snapshot(
                     if path.is_file():
                         archive.write(path, path.relative_to(root))
         connection.rollback()
-        return DatabaseExport(participant_count, max_response_id)
+        return DatabaseExport(participant_count, max_response_id, content_token)
     finally:
         connection.close()
 
@@ -536,6 +663,42 @@ def read_response_watermark(db_url: Optional[str] = None) -> Optional[int]:
         return int(row[0]) if row and row[0] is not None else 0
     except Exception:
         logger.warning("Could not read response watermark from the local database.")
+        return None
+    finally:
+        connection.close()
+
+
+def read_database_content_token(db_url: Optional[str] = None) -> Optional[str]:
+    """Return a fingerprint of the public tables, or ``None`` if it cannot be read.
+
+    ``None`` means callers must not treat the database as unchanged.
+    """
+    import psycopg2
+
+    if db_url is None:
+        from dallinger import db
+
+        db_url = db.db_url
+    try:
+        connection = _connect(
+            db_url, statement_timeout_seconds=DATABASE_READ_TIMEOUT_SECONDS
+        )
+    except Exception:
+        logger.warning("Could not read the local database content token.")
+        return None
+    try:
+        cursor = connection.cursor()
+        try:
+            tables = _public_table_names(cursor)
+            if "experiment" not in tables:
+                return None
+            return _content_token(cursor, tables)
+        except (psycopg2.errors.QueryCanceled, psycopg2.errors.LockNotAvailable):
+            connection.rollback()
+            logger.warning("Timed out reading the local database content token.")
+            return None
+    except Exception:
+        logger.warning("Could not read the local database content token.")
         return None
     finally:
         connection.close()
@@ -771,6 +934,30 @@ def _describe_owner(owner: DatabaseOwner) -> str:
     return f" ({', '.join(details)})" if details else ""
 
 
+def snapshot_content_matches(
+    latest: Optional[Snapshot], *, current_watermark: Optional[int]
+) -> bool:
+    """Return whether ``latest`` already contains the live database.
+
+    An empty ``response`` table with no snapshot is unchanged, so the periodic
+    timer can skip without a second database read. Any other uncertainty
+    (unreadable watermark, missing token, or a token mismatch) returns
+    ``False``.
+    """
+    if current_watermark == 0 and latest is None:
+        return True
+    if (
+        current_watermark is None
+        or latest is None
+        or latest.max_response_id is None
+        or current_watermark > latest.max_response_id
+        or not latest.content_token
+    ):
+        return False
+    token = read_database_content_token()
+    return token is not None and token == latest.content_token
+
+
 def latest_snapshot_covers_owner(
     owner: DatabaseOwner, latest: Optional[Snapshot]
 ) -> bool:
@@ -781,10 +968,9 @@ def latest_snapshot_covers_owner(
         or latest.deployment_id != owner.deployment_id
     ):
         return False
-    if latest.max_response_id is None:
-        return False
-    current = read_response_watermark()
-    if current is None or current > latest.max_response_id:
+    if not snapshot_content_matches(
+        latest, current_watermark=read_response_watermark()
+    ):
         return False
     if latest.reason in {"shutdown", "recovery-before-reset", "adopt-existing"}:
         return True
@@ -874,7 +1060,10 @@ def _protect_existing_database(
 
     snapshots = list_snapshots(owner.experiment_path, owner.local_id)
     latest = snapshots[-1] if snapshots else None
-    if latest_snapshot_covers_owner(owner, latest):
+    # A newer torn archive must not be ignored in favour of an older valid one.
+    if not _newer_incomplete_snapshot(
+        owner.experiment_path, owner.local_id, latest
+    ) and latest_snapshot_covers_owner(owner, latest):
         return None
 
     return create_snapshot(

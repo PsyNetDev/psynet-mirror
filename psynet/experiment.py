@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -1519,6 +1520,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         if get_config().get("snapshot_on_participant_finish", True) is False:
             return None
+        if self._managed_local_live_deployment_info() is None:
+            return None
         from flask import g, has_request_context
 
         if has_request_context():
@@ -1558,26 +1561,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Snapshot a managed local live run if new responses exist.
 
         The ten-minute timer would otherwise write identical archives during
-        long quiet stretches. Skip when the response table is empty or has
-        not grown since the last snapshot. If the watermark cannot be read,
-        snapshot anyway rather than skip a backup.
+        long quiet stretches. Skip when the response table is empty and there
+        is no prior snapshot, or when the response watermark has not grown and
+        the full-database content token still matches. If either check cannot
+        be read, snapshot rather than skip a backup.
         """
         info = cls._managed_local_live_deployment_info()
         if info is None:
             return None
-        from .local_deployment import list_snapshots, read_response_watermark
+        from .local_deployment import (
+            list_snapshots,
+            read_response_watermark,
+            snapshot_content_matches,
+        )
 
         current = read_response_watermark()
-        if current == 0:
-            return None
         snapshots = list_snapshots(info["local_experiment_path"], info["local_id"])
         latest = snapshots[-1] if snapshots else None
-        if (
-            current is not None
-            and latest is not None
-            and latest.max_response_id is not None
-            and current <= latest.max_response_id
-        ):
+        if snapshot_content_matches(latest, current_watermark=current):
             return None
         return cls.create_local_deployment_snapshot("periodic")
 
@@ -1592,9 +1593,58 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def _after_request_with_finish_snapshot(response):
-        """Commit pending ORM state, then take a deferred finish snapshot."""
-        Experiment._run_deferred_participant_finish_snapshot()
+        """Commit pending ORM state, then archive off the request thread.
+
+        Error responses skip the extra commit. The copy itself runs after the
+        request transaction commits, on a thread that does not share the
+        request's SQLAlchemy session.
+        """
+        if getattr(response, "status_code", 200) >= 400:
+            return response
+        from flask import g, has_request_context
+
+        if not has_request_context() or not getattr(
+            g, "psynet_finish_snapshot_needed", False
+        ):
+            return response
+        try:
+            db.session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to commit before participant-finish local deployment snapshot."
+            )
+            return response
+        g.psynet_finish_snapshot_needed = False
+        participant_id = getattr(g, "psynet_finish_snapshot_participant_id", None)
+        app = flask.current_app._get_current_object()
+        threading.Thread(
+            target=Experiment._participant_finish_snapshot_off_request,
+            args=(app, participant_id),
+            name="psynet-finish-snapshot",
+            daemon=True,
+        ).start()
         return response
+
+    @staticmethod
+    def _participant_finish_snapshot_off_request(app, participant_id):
+        """Write a finish snapshot without using the request's database session."""
+        with app.app_context():
+            db.session.remove()
+            try:
+                participant = None
+                if participant_id is not None:
+                    from .participant import Participant
+
+                    participant = Participant.query.get(participant_id)
+                get_experiment()._create_participant_finish_snapshot(
+                    participant, commit_flag=True
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to create participant-finish local deployment snapshot."
+                )
+            finally:
+                db.session.remove()
 
     @staticmethod
     def _run_deferred_participant_finish_snapshot():

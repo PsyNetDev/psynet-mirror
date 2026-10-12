@@ -1789,6 +1789,15 @@ def deploy__local(
             from .services import ensure_local_services
 
             ensure_local_services(assume_yes=False, strict=True)
+            # Stop writers before the recovery archive. Killing them afterwards
+            # lets a worker commit into a database the snapshot did not contain,
+            # and the second protect call under this lock is a no-op.
+            if not kill_psynet_worker_processes():
+                raise RuntimeError(
+                    "Leftover PsyNet worker processes are still running and may "
+                    "write to the local database. Stop them before deploying so "
+                    "the recovery snapshot is not taken while they can still commit."
+                )
             protect_existing_database(
                 experiment_path,
                 local_id,

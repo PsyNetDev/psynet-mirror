@@ -26,16 +26,25 @@ Snapshots
 ---------
 
 PsyNet creates a database snapshot when a participant finishes, every ten
-minutes if the response table has grown since the last snapshot, after a
+minutes when the database has changed since the last snapshot, after a
 normal shutdown (when needed), and before resetting the local database to
 start another experiment. Snapshots are private, non-anonymized recovery
 files for resuming on the same machine. They do not include assets or
 replace a full :ref:`data export <data>`.
 
-The ten-minute timer does not write an archive when the ``response`` table
-is empty or has not grown. If the watermark cannot be read, the timer still
-writes a snapshot rather than skipping a backup. Long-running experiments
-therefore do not accumulate identical backups during quiet periods.
+Before that recovery snapshot, ``psynet deploy local`` stops leftover
+PsyNet worker processes. If any of them are still running, the command
+refuses to reset the database, so a worker cannot commit into a database
+the archive does not contain.
+
+The ten-minute timer skips a backup when the ``response`` table is empty
+and there is no prior snapshot, or when the response watermark has not
+grown and a fingerprint of every public table still matches the last
+archive. That fingerprint changes when any row is inserted, updated, or
+deleted, not only when a new response id appears. If the watermark or the
+fingerprint cannot be read, the timer still writes a snapshot. Long-running
+experiments therefore do not accumulate identical backups during quiet
+periods.
 
 Finish-time snapshots are on by default for managed local live deployments.
 Disable them in ``config.txt`` or ``Experiment.config`` if they are too costly
@@ -44,10 +53,17 @@ on the machine you are using::
     snapshot_on_participant_finish = false
 
 If the last snapshot was taken because a participant finished, and no later
-participant started, PsyNet skips the shutdown snapshot. There is no new
-collected data to save. Shutdown still snapshots when a participant is in
-progress, when finish-time snapshots are disabled, or when nobody has finished
-yet.
+participant started, PsyNet skips the shutdown snapshot when that archive's
+database fingerprint still matches the live database. Shutdown still
+snapshots when a participant is in progress, when finish-time snapshots are
+disabled, when nobody has finished yet, or when any table has changed since
+the last archive.
+
+An archive without its metadata, metadata without its archive, or metadata
+that cannot be read is not offered as a resume point. ``psynet deploy local``
+stops and tells you to repair or remove that pair, rather than starting from
+an older snapshot and leaving the newer one behind. A newer broken pair also
+forces a recovery snapshot before the database is reset.
 
 Running the same command again displays the ten most recent snapshots and asks
 which one to resume. The latest is selected by default. Scripts can bypass the
@@ -65,7 +81,8 @@ new deployment from starting.
 
 A database left behind by ``psynet debug local`` is discarded without
 prompting, because debugging runs are disposable. The same applies to a
-database that was only prepared and never launched.
+database that was only prepared and never launched. Any other mode, including
+``bot``, is kept.
 
 A local database from a live or sandbox run that PsyNet cannot account for,
 such as one created before this snapshot system, is never discarded silently.

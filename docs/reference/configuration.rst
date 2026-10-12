@@ -236,7 +236,7 @@ General
     If ``True`` (default), a managed local live deployment
     (``psynet deploy local --id``) writes a database recovery snapshot when a
     participant finishes. A ten-minute timer also writes a snapshot when the
-    ``response`` table has grown since the last archive. Set
+    database fingerprint has changed since the last archive. Set
     ``snapshot_on_participant_finish`` to ``False`` to skip finish-time
     snapshots and rely on the timer, shutdown, and next-launch recovery. If
     the last snapshot was a finish-time snapshot and no later participant

@@ -616,9 +616,13 @@ def test_periodic_local_snapshot_skips_when_no_new_responses(monkeypatch):
         participant_count=1,
         sha256="abc",
         max_response_id=4,
+        content_token="db",
     )
     monkeypatch.setattr(
         "psynet.local_deployment.list_snapshots", lambda *_args, **_kwargs: [latest]
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "db"
     )
     create = Mock()
     monkeypatch.setattr(
@@ -716,6 +720,49 @@ def test_periodic_local_snapshot_writes_when_watermark_unreadable(monkeypatch):
         participant_count=1,
         sha256="abc",
         max_response_id=4,
+    )
+    monkeypatch.setattr(
+        "psynet.local_deployment.list_snapshots", lambda *_args, **_kwargs: [latest]
+    )
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment.create_local_deployment_snapshot",
+        Mock(return_value=snapshot),
+    )
+    assert Experiment.maybe_create_periodic_local_snapshot() is snapshot
+    Experiment.create_local_deployment_snapshot.assert_called_once_with("periodic")
+
+
+def test_periodic_local_snapshot_writes_when_content_token_changes(monkeypatch):
+    from psynet.experiment import Experiment
+    from psynet.local_deployment import Snapshot
+
+    snapshot = Mock()
+    monkeypatch.setattr(
+        "psynet.experiment.Experiment._managed_local_live_deployment_info",
+        staticmethod(
+            lambda: {
+                "local_experiment_path": "/tmp/exp",
+                "local_id": "gibbs",
+                "deployment_id": "launch-1",
+            }
+        ),
+    )
+    monkeypatch.setattr("psynet.local_deployment.read_response_watermark", lambda: 4)
+    monkeypatch.setattr(
+        "psynet.local_deployment.read_database_content_token", lambda: "changed"
+    )
+    latest = Snapshot(
+        sequence=2,
+        path=None,
+        metadata_path=None,
+        created_at="2026-09-15T12:00:00Z",
+        reason="periodic",
+        deployment_id="launch-1",
+        parent_sequence=1,
+        participant_count=1,
+        sha256="abc",
+        max_response_id=4,
+        content_token="db",
     )
     monkeypatch.setattr(
         "psynet.local_deployment.list_snapshots", lambda *_args, **_kwargs: [latest]
