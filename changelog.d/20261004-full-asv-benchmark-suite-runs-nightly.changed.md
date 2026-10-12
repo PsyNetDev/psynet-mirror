@@ -1,0 +1,1 @@
+The full ASV benchmark suite (`asv_benchmarks`) now runs from a nightly pipeline schedule, comparing `master` with its state 24 hours earlier, instead of on every merge to `master`. It is still available as a manual job on `master` pipelines.

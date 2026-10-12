@@ -1,0 +1,1 @@
+The SSH deployment guide now warns not to use idle hibernation for experiments that recruit throughout their lifetime, and explains that the app stays awake while `auto_recruit` is on or participants are still working.

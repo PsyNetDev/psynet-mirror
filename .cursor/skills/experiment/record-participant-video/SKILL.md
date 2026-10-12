@@ -6,6 +6,12 @@ compatibility: Requires Playwright, ffmpeg, ffprobe, and on Linux/PulseAudio set
 
 # Record participant visual evidence
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/frontend` — participant walks, screenshots, and video
+
 ## Goal
 
 Create an MP4 recording of the participant-facing PsyNet flow that includes:
@@ -56,7 +62,11 @@ screenshot, so a passing image cannot hide overflow or footer occlusion.
 
 When screenshots need review-facing captions, add
 `audit/artifacts/screenshots/manifest.json` with a `captions` object that maps
-screenshot paths to concise descriptions of what each image demonstrates.
+each screenshot's path relative to `audit/artifacts/` to a concise description
+of what the image demonstrates, for example
+`{"captions": {"screenshots/01-instructions.png": "Task instructions."}}`.
+Keys relative to the manifest (`"01-instructions.png"`) are ignored; see the
+screenshots panel in `test/audit_reference`.
 
 Use video for behavior that screenshots cannot prove well: audio playback,
 timing-sensitive displays, animation, masking, continuous interaction, live
@@ -108,9 +118,12 @@ For Playwright evidence scripts:
 9. Play the MP4 back, or otherwise inspect it, before treating it as valid
    evidence.
 
-If recording fails or audio is missing, do not imply the participant video is
-complete. Record the failure and the missing evidence as an audit blocker (and
-in `audit/REPORT.md` or `audit/TIMELINE.md` as appropriate).
+If recording fails, do not imply the participant video is complete. Record the
+failure as an audit blocker with `"severity": "error"` (and in
+`audit/REPORT.md` or `audit/TIMELINE.md` as appropriate). If only the audio is
+missing, for example in a headless run, keep the video and record the missing
+audio as a `"warning"` blocker on the video artifact (see "Checks and
+blockers" in `test/audit_reference`).
 
 For audio-sensitive evidence, do not rely on a shared desktop/audio session
 without calibration. Use the calibrated Linux workflow below, or record and
@@ -135,8 +148,5 @@ player to hear the audio.
   automated validation or exported data to prove completeness.
 - Keep participant videos at or below 3 minutes and 1280x720. Re-encode or trim
   before committing if the recording exceeds either limit.
-- If system audio capture cannot be configured, include the visual recording if
-  possible and explicitly document the missing audio as an audit blocker (and in
-  `audit/REPORT.md` when relevant).
 - For audio-focused experiments, add supporting evidence such as generated
   stimulus files, event logs, exported data, or command logs.

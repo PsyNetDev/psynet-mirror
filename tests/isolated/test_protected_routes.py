@@ -1,5 +1,6 @@
 import pytest
 import requests
+from dallinger.utils import get_base_url
 
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -10,7 +11,7 @@ from psynet.pytest_psynet import path_to_test_experiment
 @pytest.mark.usefixtures("launched_experiment")
 class TestExp:
     def test_protected_routes(self):
-        host = "http://localhost:5000"
+        host = get_base_url()
         test_routes = [
             "/network/1",
             "/node/1/neighbors",

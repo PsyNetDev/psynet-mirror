@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import traceback
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -14,6 +15,7 @@ from typing import Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import Session as SASession
 
 _AUTO_PROFILER = None
@@ -513,6 +515,31 @@ def assert_query_count(
             f"Expected between {min_queries} and {max_queries} queries, "
             f"but saw {profiler.total_count}."
         )
+
+
+@contextmanager
+def count_orm_loads() -> Iterable[Counter]:
+    """
+    Count ORM objects loaded from the database within a block, by class name.
+
+    Query counts miss work that grows with the number of rows a query
+    returns; the number of loaded objects captures it, independent of timing.
+
+    Yields
+    ------
+    collections.Counter
+        Mapping from class name to the number of objects loaded.
+    """
+    loads = Counter()
+
+    def on_load(target, context):
+        loads[type(target).__name__] += 1
+
+    event.listen(Mapper, "load", on_load)
+    try:
+        yield loads
+    finally:
+        event.remove(Mapper, "load", on_load)
 
 
 @contextmanager

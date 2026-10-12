@@ -1,0 +1,1 @@
+The `uv pip install psynet` commands in the docs now install the PsyNet version the docs were built from: the release itself for release docs, or the exact commit otherwise. The quickstart no longer needs its note about PsyNet 13 and earlier.

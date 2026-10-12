@@ -19,7 +19,6 @@
             "participantId": participant.id,
             "uniqueId": participant.unique_id,
             "routes": {
-                "setLocaleParticipant": "/set_locale_participant/" ~ participant.id,
                 "participantOpenedDevtools": "/participant_opened_devtools/" ~ unique_id
             },
             "flags": {
@@ -31,7 +30,8 @@
             },
             "strings": {
                 "commentStored": pgettext("timeline_problem", "Comment stored."),
-                "pageLoadNotReady": pgettext("timeline_problem", "Please wait for the page to load.") ~ " " ~ pgettext("timeline_problem", "Try again in a couple of seconds.")
+                "pageLoadNotReady": pgettext("timeline_problem", "Please wait for the page to load.") ~ " " ~ pgettext("timeline_problem", "Try again in a couple of seconds."),
+                "wakingUp": pgettext("timeline_problem", "Getting ready, please wait...")
             },
             "lucid": {
                 "noFocusTimeoutMs": ((experiment.recruiter.aggressive_no_focus_timeout_in_s if aggressive_termination_on_no_focus else experiment.recruiter.no_focus_timeout_in_s) * 1000) if experiment.with_lucid_recruitment() else 0,

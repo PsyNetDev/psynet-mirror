@@ -28,21 +28,15 @@ class DenseTrialMaker(StaticTrialMaker):
     :class:`~psynet.trial.dense.SameDifferentTrial` for same-different paradigms and
     :class:`~psynet.trial.dense.AXBTrial` for AXB paradigms.
 
-    The user must also specify a
-    :class:`~psynet.trial.dense.ConditionList`, which contains a list of
-    :class:`~psynet.trial.dense.DenseNode` objects.
-    These different :class:`~psynet.trial.dense.DenseNode` objects are used for specifying the different
-    classes of stimuli seen by the participant.
-    A given participant will typically receive trials from a variety of Conditions over the course of the trial maker.
-    By default, the different Conditions will be randomly interspersed with one another;
-    however, it is also possible to assign different Conditions to different blocks,
+    The user must also pass a list of
+    :class:`~psynet.trial.dense.DenseNode` objects as ``conditions``.
+    Each of these nodes defines one condition, that is, one class of stimuli seen by the participant.
+    A given participant will typically receive trials from a variety of conditions over the course of the trial maker.
+    By default, the different conditions will be randomly interspersed with one another;
+    however, it is also possible to assign different conditions to different blocks,
     so as to constrain the order of their presentation to the participant.
 
     The user may also override the following methods, if desired:
-
-    * :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`;
-      chooses the order of blocks in the experiment.
-      By default the blocks are ordered randomly.
 
     * :meth:`~psynet.trial.dense.DenseTrialMaker.choose_participant_group`;
         only relevant if the trial maker uses nodes with non-default participant groups.
@@ -50,11 +44,11 @@ class DenseTrialMaker(StaticTrialMaker):
         and returns the chosen participant group for that trial maker.
         For example, to randomly assign participants to one of two groups called g1 and g2, one could write::
 
-            choose_participant_group=lambda(participant): random.choice(["g1", "g2"])
+            choose_participant_group=lambda participant: random.choice(["g1", "g2"])
 
         Similarly, to alternate participants between two groups, one could write::
 
-            choose_participant_group=lambda(participant): ["g1", "g2"][participant.id % 2]
+            choose_participant_group=lambda participant: ["g1", "g2"][participant.id % 2]
 
     * :meth:`~psynet.trial.main.TrialMaker.on_complete`,
       run once the sequence of trials is complete.
@@ -85,13 +79,27 @@ class DenseTrialMaker(StaticTrialMaker):
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``.
+        and ``"n_trials"``. ``"n_participants"`` needs
+        ``target_n_participants``, and ``"n_trials"`` needs
+        ``target_trials_per_condition``; giving a target without its mode raises
+        an error. Defaults to ``None``, which leaves recruitment to the rest of
+        the experiment, for example for a practice trial maker.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     max_trials_per_block
         Determines the maximum number of trials that a participant will be allowed to experience in each block,
@@ -101,17 +109,23 @@ class DenseTrialMaker(StaticTrialMaker):
         Expected number of trials that each participant will complete.
         This is used for timeline/progress estimation purposes.
         This can either be an integer, or the string ``"n_nodes"``,
-        which will be read as referring to the number of nodes in ``start_nodes``.
+        which will be read as referring to the number of ``conditions``.
 
     max_trials_per_participant
         Maximum number of trials that each participant may complete (optional);
         once this number is reached, the participant will move on
         to the next stage in the timeline.
 
-    balance_across_nodes
-        If ``True`` (default), active balancing across participants is enabled, meaning that
-        node selection favours nodes that have been presented fewest times to any participant
-        in the experiment, excluding failed trials.
+    block_order
+        Order in which each participant works through the blocks:
+        ``"random"`` (default), ``"listed"``, a list of block names, or a
+        function. See :ref:`trial_order`.
+
+    node_order
+        Order in which each participant receives conditions within a block.
+        ``"balanced"`` (default) favours conditions that have been presented
+        fewest times across participants; see :ref:`trial_order` for the
+        other options.
 
     check_performance_at_end
         If ``True``, the participant's performance
@@ -173,15 +187,18 @@ class DenseTrialMaker(StaticTrialMaker):
         Returns the networks owned by the trial maker.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``,
+        defaults to -1.0. The participant passes when the score (the summed trial scores,
+        the proportion of non-failed trials, or the consistency) is at least this value.
         Override this to change the behavior.
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending asynchronous processes, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
     """
+
+    _target_trials_argument = "target_trials_per_condition"
 
     def __init__(
         self,
@@ -194,8 +211,11 @@ class DenseTrialMaker(StaticTrialMaker):
         max_trials_per_block: Optional[int] = None,
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         target_trials_per_condition: Optional[int] = None,
-        balance_across_nodes: bool = True,
+        block_order="random",
+        node_order="balanced",
+        balance_across_nodes=None,
         check_performance_at_end: bool = False,
         check_performance_every_trial: bool = False,
         fail_trials_on_premature_exit: bool = False,
@@ -216,6 +236,7 @@ class DenseTrialMaker(StaticTrialMaker):
             expected_trials_per_participant=expected_trials_per_participant,
             max_trials_per_participant=max_trials_per_participant,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             target_trials_per_node=target_trials_per_condition,
             max_trials_per_block=max_trials_per_block,
             allow_repeated_nodes=True,
@@ -224,6 +245,8 @@ class DenseTrialMaker(StaticTrialMaker):
             fail_trials_on_premature_exit=fail_trials_on_premature_exit,
             fail_trials_on_participant_performance_check=fail_trials_on_participant_performance_check,
             n_repeat_trials=n_repeat_trials,
+            block_order=block_order,
+            node_order=node_order,
             balance_across_nodes=balance_across_nodes,
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
@@ -255,8 +278,8 @@ class DenseNode(StaticNode):
     block
         The associated block.
         Defaults to a single block for all trials.
-        Use this in combination with :meth:`~psynet.trial.dense.DenseTrialMaker.choose_block_order`
-        to manipulate the order in which Conditions are presented to participants.
+        Use this in combination with the trial maker's ``block_order``
+        to manipulate the order in which conditions are presented to participants.
     """
 
     def __init__(

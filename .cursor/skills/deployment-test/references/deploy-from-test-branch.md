@@ -21,13 +21,24 @@ A full deployment test covers two experiments in `tests/deployment`:
   Experiment class genuinely differ; the paid variants are deployed from
   temporary worktrees.
 
-Both experiments default to `recruiter = devprolific`, which simulates the
-Prolific API locally (requests are logged, not sent), so running a directory
+A third experiment, `tests/deployment/auto_recruit_prolific`, is **not part of
+a full deployment test**. Deploy it on demand when you specifically need to
+check sequential automatic recruitment: it opens a Prolific study with one
+place and tops up one place per completion until ten participants finish.
+It follows the same config-file recruiter pattern as the other two
+(`config.txt` defaults to `recruiter = devprolific`; `config.txt.prolific`
+sets `recruiter = prolific`) and needs no worktree, so the preparation steps
+below apply to it unchanged — just add it to the `for exp in ...` loops and
+give it its own app name.
+
+Every experiment above defaults to `recruiter = devprolific`, which simulates
+the Prolific API locally (requests are logged, not sent), so running a directory
 directly cannot accidentally start paid recruitment; every paid deployment
-swaps in an explicit recruiter variant first. All paid variants show the approved
-cultural-foundation consent (vendored `consents_cococo` package in each
-experiment directory): the Prolific variants use the `MAIN` consent and the
-Lucid variant uses the `CINT` consent.
+swaps in an explicit recruiter variant first. Each `experiment.py` also aborts
+in `on_launch` unless the configured recruiter matches that file. All paid
+variants show the approved cultural-foundation consent (vendored
+`consents_cococo` package in each experiment directory): the Prolific variants
+use the `MAIN` consent and the Lucid variant uses the `CINT` consent.
 
 By default a full deployment test produces **three apps**: the two Prolific
 experiments plus the Lucid variant of `audio_gibbs`. Overlap the long
@@ -149,6 +160,9 @@ git switch -c deployment-tests/$BASE_NAME "$BASE_COMMIT"
 git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prolific tests/deployment/audio_gibbs
 ```
 
+   GitLab runs no pipeline for `deployment-tests/*` branches, so do not wait
+   for CI after pushing one; the base tag or branch carries the test results.
+
    For an explicitly requested master-based deployment, update local `master`
    (`git switch master && git pull --ff-only origin master`) and branch from
    `master` instead.
@@ -245,8 +259,11 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
 
      ```text
      dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
      ```
+
+     Keep the `[experiment]` extra on the PsyNet line. Without it the image
+     has no Dallinger, and PsyNet's deploy pre-check refuses the pin.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

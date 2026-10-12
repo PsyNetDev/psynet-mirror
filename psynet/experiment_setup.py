@@ -191,18 +191,22 @@ def _ensure_constraints_up_to_date(ctx):
 
     Reuses an existing lockfile when it embeds the current
     ``requirements.txt`` MD5 (same freshness rule as ``psynet
-    check-constraints``). Regenerates when the file is absent, empty, or
-    out of date with ``requirements.txt``.
+    check-constraints``) or was written by hand. Regenerates when the file is
+    absent, empty, or out of date with ``requirements.txt``.
     """
     constraints_path = Path("constraints.txt")
     if constraints_path.exists() and not constraints_path.is_file():
         raise click.UsageError("constraints.txt exists but is not a regular file.")
 
     from .constraints_compile import (
+        constraints_are_hand_written,
         constraints_are_up_to_date,
         generate_constraints_file,
     )
 
+    if constraints_are_hand_written():
+        click.echo("constraints.txt was written by hand, so it is left unchanged.")
+        return
     if constraints_are_up_to_date():
         click.echo("constraints.txt is up to date with requirements.txt.")
         return

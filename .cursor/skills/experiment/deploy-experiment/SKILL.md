@@ -5,6 +5,15 @@ description: Audit PsyNet experiment folders for deployment readiness, deploymen
 
 # PsyNet Deployment Ops
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `deploy/how_deployment_works` — what gets deployed and how `deploy.toml` selects files
+- `deploy/setting_up_a_server` — provisioning and registering servers
+- `deploy/running_a_study` — launching, monitoring, and closing a study
+- `data/exporting_data` — exporting data before teardown
+
 ## Safety rules
 
 - Do not run paid recruitment, app destruction, EC2 teardown, or other
@@ -25,10 +34,9 @@ Check that the experiment folder has:
 - `requirements.txt`
 - `constraints.txt`
 - `Dockerfile` and/or `Dockertag` when the template expects them
-- `deploy.toml` with reviewed `[exclude]` rules; if PsyNet just created it,
-  the first debug/test/deploy command stops once so you can review. Then run
+- `deploy.toml` with reviewed `[exclude]` rules. Run
   `dallinger deployment-files list` to inspect every file that PsyNet will copy.
-  Git-ignored files may still be deployed after that review. Confirm `audit/`
+  Git-ignored files are deployed unless `deploy.toml` excludes them. Confirm `audit/`
   is excluded. Stock templates include it; existing `deploy.toml` files are
   not overwritten, so add `audit` to `[exclude].paths` if it is missing.
 - `.gitignore` excluding `.venv/`, `.deploy/`, `.pytest_cache/`, `exports/`,
@@ -38,7 +46,8 @@ Check that the experiment folder has:
 - qualification files and recruiter settings that match any in-experiment
   prescreeners; use `filter-participants/SKILL.md` when the
   mapping is unclear
-- local assets or manifests present and deployable
+- local `static/` stimulus files present and deployable when the experiment
+  plays pregenerated media
 - no broken symlinks to local user paths
 - no stale app/server/study names copied from another template
 - a `DEPLOYMENT_LOG.md` or clear deployment metadata

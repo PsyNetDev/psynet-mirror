@@ -1,0 +1,1 @@
+Shortened the experiment `AGENTS.md` so it keeps only what agents need in every task: the entry-point skill, setup, the one-experiment-at-a-time rule and the documentation map. Database inspection moved to the "Running and debugging locally" page, and PsyNet contributor notes moved to the repository `AGENTS.md`.

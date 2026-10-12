@@ -1,0 +1,1 @@
+Fixed `psynet setup` silently pinning PsyNet to a local `file://` path in `requirements.txt` when PsyNet was installed from a local wheel or directory. Setup now warns that such an experiment cannot be deployed remotely, and the pre-deploy PsyNet requirement check explains how to replace the pin.

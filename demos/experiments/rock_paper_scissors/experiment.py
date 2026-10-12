@@ -43,7 +43,7 @@ class RockPaperScissorsTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         return join(
-            self.choose_action(color=self.definition["color"]),
+            self.choose_action(),
             GroupBarrier(
                 id_="finished_trial",
                 group_type="rock_paper_scissors",
@@ -53,11 +53,10 @@ class RockPaperScissorsTrial(StaticTrial):
             ),
         )
 
-    def choose_action(self, color):
-        prompt = tags.p("Choose your action:", style=f"color: {color};")
+    def choose_action(self):
         return ModularPage(
             "choose_action",
-            prompt,
+            "Choose your action:",
             PushButtonControl(
                 choices=["rock", "paper", "scissors"],
             ),
@@ -144,10 +143,10 @@ class Exp(psynet.experiment.Experiment):
         RockPaperScissorsTrialMaker(
             id_="rock_paper_scissors",
             trial_class=RockPaperScissorsTrial,
-            nodes=[
-                StaticNode(definition={"color": color})
-                for color in ["red", "green", "blue"]
-            ],
+            # A single node: every round is the same game, so each pair
+            # revisits it for three rounds.
+            nodes=[StaticNode(definition={"game": "rock_paper_scissors"})],
+            allow_repeated_nodes=True,
             expected_trials_per_participant=3,
             max_trials_per_participant=3,
             sync_group_type="rock_paper_scissors",

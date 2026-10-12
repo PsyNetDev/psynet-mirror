@@ -46,6 +46,7 @@ from sqlalchemy.schema import (
 )
 
 from . import field
+from .db import blocking_psycopg
 from .field import PythonDict, is_basic_type
 from .utils import get_logger, organize_by_key
 
@@ -174,7 +175,8 @@ def _get_preferred_superclass_version(cls):
 
 def copy_db_table_to_csv(tablename, path):
     with tempfile.TemporaryDirectory() as tempdir:
-        dallinger.data.copy_db_to_csv(db.db_url, tempdir)
+        with blocking_psycopg():
+            dallinger.data.copy_db_to_csv(db.db_url, tempdir)
         temp_filename = f"{tablename}.csv"
         shutil.copyfile(os.path.join(tempdir, temp_filename), path)
 
@@ -203,8 +205,9 @@ def _class_identity(cls) -> tuple[str, str]:
 def _reuse_inherited_columns(cls):
     """Reuse an inherited table's column when a subclass redeclares its name.
 
-    Dallinger models such as ``Info`` use single-table inheritance, so every
-    ``Trial`` subclass contributes its columns to the shared ``info`` table.
+    PsyNet and Dallinger models use single-table inheritance, so, for
+    example, every ``Trial`` subclass contributes its columns to the shared
+    ``trial`` table.
     A plain ``Column`` in a subclass body therefore fails as soon as that name
     is already on the table. This happens for sibling classes, and also when
     PsyNet executes the same ``experiment.py`` more than once in one process,
@@ -838,12 +841,6 @@ def _drop_foreign_key_constraints(*, max_attempts=5, wait_sec=0.05):
     )
 
 
-@contextlib.contextmanager
-def disable_foreign_key_constraints():
-    _drop_foreign_key_constraints()
-    yield
-
-
 def _sql_dallinger_base_classes():
     """
     These base classes define the basic object relational mappers for the
@@ -951,6 +948,7 @@ def ingest_to_model(
     engine=None,
     clear_columns: Optional[List] = None,
     replace_columns: Optional[dict] = None,
+    drop_foreign_keys: bool = True,
 ):
     """
     Imports a CSV file to the database.
@@ -972,6 +970,11 @@ def ingest_to_model(
 
     replace_columns :
         Optional dictionary of values to set for particular columns.
+
+    drop_foreign_keys :
+        Whether to drop every foreign-key constraint before importing.
+        Callers importing many tables should drop them once and pass ``False``,
+        because finding the constraints reflects every table in the database.
     """
     if engine is None:
         engine = db.engine
@@ -982,14 +985,21 @@ def ingest_to_model(
             patch_csv(file, patched_csv, clear_columns, replace_columns)
             with open(patched_csv, "r") as patched_csv_file:
                 ingest_to_model(
-                    patched_csv_file, model, clear_columns=None, replace_columns=None
+                    patched_csv_file,
+                    model,
+                    engine,
+                    clear_columns=None,
+                    replace_columns=None,
+                    drop_foreign_keys=drop_foreign_keys,
                 )
     else:
         inspector = sqlalchemy.inspect(db.engine)
         reader = csv.reader(file)
         columns = tuple('"{}"'.format(n) for n in next(reader))
 
-        with disable_foreign_key_constraints():
+        if drop_foreign_keys:
+            _drop_foreign_key_constraints()
+        with blocking_psycopg():
             postgres_copy_from(
                 file, model, engine, columns=columns, format="csv", HEADER=False
             )
@@ -1069,6 +1079,7 @@ def ingest_zip(path, engine=None):
     if is_zip_path(path):
         with ZipFile(path, "r") as archive:
             members = table_csv_members_by_table(archive)
+            _drop_foreign_key_constraints()
             for tablename in import_order:
                 member = members.get(tablename)
                 if member is None:
@@ -1076,17 +1087,18 @@ def ingest_zip(path, engine=None):
                 model = sql_base_classes()[tablename]
                 file = archive.open(member)
                 file = io.TextIOWrapper(file, encoding="utf8", newline="")
-                ingest_to_model(file, model, engine)
+                ingest_to_model(file, model, engine, drop_foreign_keys=False)
         return
 
     database_dir = resolve_database_dir(path)
+    _drop_foreign_key_constraints()
     for tablename in import_order:
         csv_path = table_csv_path(database_dir, tablename)
         if not os.path.exists(csv_path):
             continue
         model = sql_base_classes()[tablename]
         with open(csv_path, encoding="utf8", newline="") as file:
-            ingest_to_model(file, model, engine)
+            ingest_to_model(file, model, engine, drop_foreign_keys=False)
 
 
 dallinger.data.ingest_zip = ingest_zip
@@ -1139,18 +1151,20 @@ def export_assets(
     incremental SSH transport uses this so the server can describe the asset
     selection cheaply while the client fetches the bytes over rsync.
     """
-    from .asset import ExperimentAsset, OnDemandAsset
+    from .asset import ManagedAsset, OnDemandAsset
     from .export.path_safety import UnsafePathError, assert_semantic_asset_path
 
-    # ExperimentAsset covers deposits for this deployment. CachedAsset and
-    # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
-    # but is generated live and is not written into the archive.
+    # Assets stored while the experiment was running are exported. Assets prepared
+    # before launch come from the experiment directory and code, and on-demand
+    # assets are never stored.
     assets_root = path
     os.makedirs(assets_root, exist_ok=True)
 
     assets = [
         asset
-        for asset in db.session.query(ExperimentAsset).order_by(ExperimentAsset.id)
+        for asset in db.session.query(ManagedAsset)
+        .filter(ManagedAsset.created_during_experiment.is_(True))
+        .order_by(ManagedAsset.id)
         if not isinstance(asset, OnDemandAsset)
     ]
 

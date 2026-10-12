@@ -6,6 +6,32 @@ Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
 
+## Source checkout setup
+
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+
+Demo directories contain only the authored experiment files; their unpinned
+`requirements.txt` files and missing constraints are intentional. Running
+`psynet debug local` or `psynet test local` in a bundled demo generates the
+ignored boilerplate. Pytest scaffolds demos temporarily via the
+`in_experiment_directory` fixture, which on teardown removes only paths that
+were absent when it started.
+
+If a user asks for the X demo, list the child directories of
+`demos/experiments`, `demos/features` and `demos/pipelines` to see which they mean.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md`.
+Experiment skills live under `.cursor/skills/experiment/`; repo meta skills
+live under `.cursor/skills/`. After editing skills, run
+`python scripts/validate_agent_skills.py` and refresh experiment copies with
+`psynet scripts update`. Then reread the result using the "After writing"
+section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
 ## Sandbox reminder
 
 When running PsyNet commands from Cursor, disable sandboxing by setting
@@ -168,27 +194,14 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - After each action, wait for the exact intended effect (expected text, expected control state, expected URL/page transition).
     - Prefer short bounded waits on deterministic invariants over long generic polls.
 
-12. **Assert playback/recording via the actual implementation path**:
+12. **Do not assert performance budgets**:
+ - CI load routinely doubles request and page times, so per-request or per-page duration limits flake.
+ - Log timings in failure messages, assert behaviour structurally, and keep at most a generous hang cap (e.g. 30 s) that fails a deadlock before the step timeout.
+
+13. **Assert playback/recording via the actual implementation path**:
     - For `AudioPrompt`, verify PsyNet sound-state/event transitions instead of DOM `<audio>` elements.
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
-
-13. **Retry evaluate after a hold-resume reload**:
-    - A legacy hold can navigate while the test is attaching the resume probe.
-    - Retry `page.evaluate` after load; if the hold chip is already gone, treat it as a cleared hold.
-    - Playwright `toHaveCount` can fail with `Received: undefined` when the document reloads mid-wait. Treat that as a destroyed execution context, not a missing hold chip.
-
-14. **Do not treat a slow approved hold-resume POST as a missed wake**:
-    - Overlay linger is last-wake→last-end wallclock, including gunicorn listen-queue.
-    - Log linger in summaries. Fail only if linger or after-release exceeds 30000ms (hung overlay vs the 120s step timeout). Do not subtract `queue~` from linger. Print `queue~` in summaries so a long wait can be split into handler time versus pool occupancy.
-    - Keep asserting the resume is a server wake, not a safety poll.
-    - If a legacy reload drops in-page wake clocks, a published wake token plus an approved hold-resume POST still counts.
-    - Use ``Server-Timing`` ``app`` versus browser wall time to split handler time from worker-pool queueing.
-    - Last-arrival ``GET /timeline`` can 302 after ``page_uuid`` advances; first-paint waits for the 200 HTML body.
-    - Clock waiter resume against the last arriver's grouping request finish, not against a slow legacy client paint.
-    - Do not apply the GET `/timeline` 3000ms handler budget to `POST /participant`. Dallinger `@db.serialized` serializes concurrent signups and retries with expovariate sleep; that wall time is not last-arrival GET work. Overlapping `consent→timeline` uses the 15000ms serialized-signup budget; sequential starts still have 6000ms.
-    - Playwright CI uses ``psynet debug --legacy`` (gunicorn). Hold tests set workers to the session count plus two spares so concurrent last-arrival GET can overlap every waiter hold-resume POST without starving a waiter Redis subscribe. Both jobs use gunicorn; the default vs legacy job is in-place vs full reload. CI does not exercise ordinary ``psynet debug local`` (one Flask process; there is no worker-count flag on that path).
-    - A short HTTP 503 on hold-resume is the ``NOWAIT`` busy retry when those requests hit the same participant row; fail only if that busy retry lasts 500ms or more. After the in-request retry, a delayed ``queued hold wake`` must run rather than waiting for the silenced safety poll or the hold timeout.
 
 ## Automatic code review
 

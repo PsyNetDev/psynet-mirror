@@ -1,0 +1,1 @@
+Removed the `/debugger/<password>` experiment route. Its password was hard-coded in PsyNet's public source, so anyone could pause a web worker in a remote debugger. To debug a running local server, add `import rpdb; rpdb.set_trace()` where you need it, as described in the development workflow docs.
