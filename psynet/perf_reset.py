@@ -251,10 +251,9 @@ class DatabaseReset:
     def __call__(self):
         """Take or restore the snapshot, with the server stopped meanwhile.
 
-        The server starts again afterwards. If a restore fails, other than
-        by an interrupt, the server only starts again if the experiment
-        database exists; after a failed snapshot it stays stopped. The error
-        propagates.
+        The server starts again afterwards. If taking or restoring the
+        snapshot fails, the server stays stopped and the error propagates;
+        the caller then shuts the server down.
         """
         from psynet.db import release_local_database_connections
 
@@ -271,43 +270,17 @@ class DatabaseReset:
             else f"Resetting the database to {self.snapshot}..."
         )
         self._stop_server()
-        try:
-            release_local_database_connections()
-            if taking:
-                self._take_snapshot()
-            else:
-                self._restore()
-            self._clear_job_queues()
-        except BaseException as error:
-            if not taking and not isinstance(error, KeyboardInterrupt):
-                self._restart_after_failure()
-            raise
+        release_local_database_connections()
+        if taking:
+            self._take_snapshot()
+        else:
+            self._restore()
+        self._clear_job_queues()
         self._start_server()
         if self.snapshot_rows is None:
             self.snapshot_rows = self._count_rows()
             rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
-
-    def _restart_after_failure(self):
-        """Start the server after a failed reset if its database exists.
-
-        A failure to start is only logged, so that the reset's own error is
-        the one that propagates.
-        """
-        try:
-            with self._connect() as cursor:
-                present = _database_exists(cursor, self.database)
-            if present:
-                self._start_server()
-            else:
-                logger.warning(
-                    warning(
-                        f"The experiment server stays stopped, because the reset "
-                        f"failed after dropping {self.database}."
-                    )
-                )
-        except Exception:
-            logger.exception("Could not restart the experiment server.")
 
     def close(self):
         """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
