@@ -300,12 +300,13 @@ capacity found early in a study may not hold later.
 
 Each test reports the rows in the tables that grow, before and after it,
 under *Database rows*, and the summary shows how they changed from the
-first test to the last. The tests don't reset the database, so every test
-adds the data its bots create, and a capacity search, whose bot counts
-don't run in increasing order, compares counts at different sizes. The
-capacity summary warns when the database grew by more than half during
+first test to the last. By default the tests don't reset the database, so
+every test adds the data its bots create, and a capacity search, whose bot
+counts don't run in increasing order, compares counts at different sizes.
+The capacity summary warns when the database grew by more than half during
 the tests (and by at least 10,000 rows), or when the largest passing and
-smallest failing bot counts started with very different amounts of data.
+smallest failing bot counts started with very different amounts of data,
+and then suggests ``--reset-database``.
 
 To read the numbers:
 
@@ -313,15 +314,73 @@ To read the numbers:
   with. Compare the trial and participant rows with what the study will
   collect: the number of participants you plan to recruit, times the
   trials each one makes.
-- If the study will collect much more, run a confirmation test that ends
-  near the planned total, for example a long test at the suggested cap, or
-  one after earlier tests have filled the database. If response times rise
-  steadily during that test, a query is getting slower as data
-  accumulates; profile it with ``psynet test local --sql-profile`` (see
-  :doc:`/test/sqlalchemy_profiling`).
+- If the study will collect much more, test with that much data (see
+  :ref:`performance_testing_reset`), or run a confirmation test that ends
+  near the planned total, for example a long test at the suggested cap. If
+  response times rise steadily during that test, a query is getting slower
+  as data accumulates; profile it with ``psynet test local --sql-profile``
+  (see :doc:`/test/sqlalchemy_profiling`).
 - If the database already holds data from earlier runs, its size can make
   a small study look worse than it will be. Relaunch the experiment to
   start again from an empty database.
+
+.. _performance_testing_reset:
+
+Starting every test from the same data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``psynet performance-test local --reset-database`` starts every test from
+the same database, so that the tests of a capacity search differ only in
+load:
+
+.. code-block:: bash
+
+    psynet performance-test local --reset-database --n-bots auto
+
+Before the first test, PsyNet copies the experiment's database into a
+snapshot database. Before each later test, it stops the experiment server,
+recreates the database from the snapshot, empties the async job queues and
+starts the server again. That takes a few seconds, plus a few seconds per
+gigabyte of data, because PostgreSQL copies the database's files. At the end it drops
+the snapshot. It only ever drops the experiment's own database and the
+snapshot it made. Files that the bots uploaded or generated stay in the
+asset storage after a reset, because only the database rows that refer to
+them are reset; they cost disk space but nothing else.
+
+If the PostgreSQL role may not create databases, PsyNet says so and keeps
+the snapshot as a ``pg_dump`` archive instead, which it restores before
+each test with ``pg_restore``. That needs the PostgreSQL client programs
+and takes longer.
+
+To test with the amount of data the study will reach, pre-fill the
+database before the first test:
+
+.. code-block:: bash
+
+    psynet performance-test local --prefill-participants 1500 --prefill-bots 50 \
+        --keep-snapshot --n-bots auto
+
+This runs 1,500 bots through the experiment, 50 at a time and without
+pauses, waits for their async processes to finish, and then takes the
+snapshot, so every test starts with 1,500 participants' data. The bots use
+the same routes as participants, so the data is what the experiment itself
+stores, but it takes time: at about 250 requests per participant, a few
+hundred requests per second fill 1,500 participants in about an hour.
+``--keep-snapshot`` keeps the snapshot at the end and prints its name;
+start later runs from it with ``--from-snapshot <name>`` instead of
+pre-filling again. A kept snapshot only suits the experiment version that
+made it, and it stays on the database server until you drop it with
+``dropdb <name>``.
+
+To start from real data instead, for example from a pilot, export the
+pilot with ``psynet export``, launch the experiment from the export with
+``psynet debug ssh --app my-experiment --archive export.zip`` (see
+:ref:`deploy_from_archive`), and run ``psynet performance-test ssh``
+against it. Every test then starts with at least the pilot's data.
+
+These options need the server that ``performance-test local`` starts, so
+they can't be combined with ``--existing``; ``performance-test ssh`` does
+not support them yet.
 
 .. _performance_testing_server:
 
@@ -346,7 +405,8 @@ machine, so on a shared server check with the other users first:
     psynet performance-test ssh --app my-experiment --n-bots 50 --duration-minutes 10
 
 The test does not reset the database, so repeated runs accumulate data (see
-:ref:`performance_testing_database_size`). Make
+:ref:`performance_testing_database_size`; ``--reset-database`` is only
+available locally so far). Make
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test. When the run ends, PsyNet copies the
 bot log out of the container and prints where it saved it.

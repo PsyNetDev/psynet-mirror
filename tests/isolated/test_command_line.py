@@ -4730,9 +4730,9 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         test_parallel_stagger_interval_s=0.5,
         test_time_factor=2.5,
     )
-    tester = Mock()
-    tester.run.return_value = []
-    tester.find_capacity.return_value = []
+    suite = Mock()
+    suite.run.return_value = []
+    suite.find_capacity.return_value = []
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
@@ -4740,9 +4740,8 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
         patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch(
-            "psynet.perf_test.PerformanceTester", return_value=tester
-        ) as performance_tester,
+        patch("psynet.perf_test.PerformanceTester") as performance_tester,
+        patch("psynet.perf_test.PerformanceSuite", return_value=suite) as suite_class,
         patch("psynet.command_line.tempfile.NamedTemporaryFile"),
     ):
         _run_performance_test_with_existing_server(**options)
@@ -4752,15 +4751,43 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     performance_tester.assert_called_once_with(
         authenticated_session=experiment.authenticated_session,
         base_url=experiment.base_url,
-        n_bots=experiment.test_n_bots,
-        limits=CapacityLimits(),
         **expected,
     )
+    suite_class.assert_called_once_with(
+        performance_tester.return_value, limits=CapacityLimits(), before_test=None
+    )
     searching = options.get("n_bots") == "auto"
-    assert (tester.find_capacity.called, tester.run.called) == (
+    assert (suite.find_capacity.called, suite.run.called) == (
         searching,
         not searching,
     )
+
+
+def test_database_reset_options_imply_a_reset_and_reject_conflicts():
+    from psynet.command_line import _check_database_reset_options
+
+    none = dict(
+        existing=False,
+        reset_database=False,
+        prefill_participants=None,
+        prefill_bots=None,
+        keep_snapshot=False,
+        from_snapshot=None,
+    )
+    assert _check_database_reset_options(**none) is None
+    assert _check_database_reset_options(**{**none, "prefill_participants": 100}) == {
+        "prefill_participants": 100,
+        "prefill_bots": 50,
+        "keep_snapshot": False,
+        "from_snapshot": None,
+    }
+    for conflict in [
+        dict(existing=True, reset_database=True),
+        dict(prefill_bots=5),
+        dict(prefill_participants=5, from_snapshot="snapshot"),
+    ]:
+        with pytest.raises(click.UsageError):
+            _check_database_reset_options(**{**none, **conflict})
 
 
 def test_ssh_performance_test_command_forwards_zero_valued_options():

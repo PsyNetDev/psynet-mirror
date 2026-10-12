@@ -4,6 +4,7 @@ import pytest
 
 from psynet.perf_test import (
     CapacityLimits,
+    PerformanceSuite,
     PerformanceTester,
     PerformanceTestResult,
     _BotState,
@@ -206,7 +207,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     )
     tester = PerformanceTester(Mock(), "http://x", bot_processes=2)
 
-    with tester._bot_runner(max_bots=4, bot_log_file=None):
+    with tester.bot_runner(max_bots=4, bot_log_file=None):
         bot_state = _BotState()
         tester._bots.begin_test(bot_state, time.time() + 60, 4)
         for _ in range(4):
@@ -331,7 +332,26 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
         patch.object(tester, "_test_performance", return_value=result),
         patch("psynet.perf_test.raise_open_file_limit"),
     ):
-        assert tester.run([10, 20]) == [result]
+        assert PerformanceSuite(tester).run([10, 20]) == [result]
+
+
+def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    before_test = Mock()
+
+    with (
+        patch.object(
+            tester,
+            "_test_performance",
+            side_effect=lambda n_bots, bot_log_file: _base_result(n_bots=n_bots),
+        ),
+        patch.object(tester, "pause_between_tests") as pause,
+        patch("psynet.perf_test.raise_open_file_limit"),
+    ):
+        PerformanceSuite(tester, before_test=before_test).run([10, 20])
+
+    assert before_test.call_count == 2
+    pause.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -350,11 +370,11 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
 
     with (
         patch.object(tester, "_test_performance", side_effect=fake_test),
-        patch.object(tester, "_pause_between_tests"),
+        patch.object(tester, "pause_between_tests"),
         patch("psynet.perf_test.raise_open_file_limit"),
         patch("psynet.perf_test._fit_redis_pool_to_bots"),
     ):
-        results = tester.find_capacity()
+        results = PerformanceSuite(tester).find_capacity()
 
     assert [r.n_bots for r in results] == expected_probes
 
@@ -397,6 +417,64 @@ def test_failed_participants_and_database_rows_are_recorded(db_session):
     assert _failure_reason(participant) == (
         "timeline_hold:barrier:round_N, fail_on_timeout"
     )
+
+
+def _add_participant():
+    import uuid
+
+    from dallinger import db
+
+    from psynet.experiment import get_experiment
+    from psynet.participant import Participant
+
+    ids = {key: str(uuid.uuid4()) for key in ("worker_id", "hit_id", "assignment_id")}
+    db.session.add(
+        Participant(
+            experiment=get_experiment(), recruiter_id="hotair", mode="debug", **ids
+        )
+    )
+    db.session.commit()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory",
+    [path_to_test_experiment("timeline")],
+    indirect=True,
+)
+def test_database_reset_restores_the_snapshot(db_session, tmp_path):
+    import shutil
+    import subprocess
+
+    from psynet.perf_reset import DatabaseReset
+    from psynet.perf_test import _database_rows
+
+    _add_participant()
+    server = Mock()
+    reset = DatabaseReset(server.stop, server.start)
+    reset()
+    snapshot_rows = reset.snapshot_rows
+    assert snapshot_rows["participant"] >= 1
+    _add_participant()
+    reset()
+    assert _database_rows() == snapshot_rows
+    assert server.stop.call_count == server.start.call_count == 2
+    reset.close()
+    with pytest.raises(ValueError, match="No snapshot"):
+        DatabaseReset(server.stop, server.start, from_snapshot=reset.snapshot)
+
+    if shutil.which("pg_dump") is None:
+        return
+    archive = tmp_path / "snapshot.dump"
+    subprocess.run(
+        ["pg_dump", "--format=custom", f"--file={archive}", reset.database_url],
+        check=True,
+    )
+    _add_participant()
+    reset = DatabaseReset(server.stop, server.start, from_snapshot=str(archive))
+    reset()
+    reset.close()
+    assert _database_rows() == snapshot_rows
+    assert archive.exists()
 
 
 @pytest.mark.parametrize(
@@ -474,6 +552,7 @@ def test_summaries_report_database_growth():
     text = _join(format_capacity_summary(results))
     assert "The database grew a lot during these tests" in text
     assert "trial 65,000 and 103,000" in text
+    assert "Rerun with --reset-database" in text
 
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
     assert "database grew" not in _join(format_capacity_summary(results))
@@ -628,7 +707,7 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         _clear_realtime_status=Mock(),
         _calculate_and_report_results=Mock(),
     ):
-        tester._run_one_test("1/1", 5, bot_log_file=None)
+        tester.run_test("1/1", 5, bot_log_file=None)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:

@@ -1,15 +1,18 @@
 """Load tests that run simulated participants against a PsyNet server.
 
-:class:`PerformanceTester` backs ``psynet performance-test``. It runs bots as
-threads (each a :class:`~psynet.bot.BotDriver` making real HTTP requests),
-keeps a fixed number of them taking the experiment at once, and
+:class:`PerformanceSuite` and :class:`PerformanceTester` back ``psynet
+performance-test``. For each test, the tester runs bots as threads (each a
+:class:`~psynet.bot.BotDriver` making real HTTP requests), keeps a fixed
+number of them taking the experiment at once, and
 then reads the server's ``Request`` and ``AsyncProcess`` tables to measure
 response times and async queue waits. Measurements cover only the test window:
 requests logged before the bots were told to stop and processes that started
 by then, plus the wait of the oldest process still queued at the end.
 
-:meth:`PerformanceTester.find_capacity` searches for the
-largest bot count that stays within :class:`CapacityLimits`.
+The suite runs a test per bot count, or with
+:meth:`PerformanceSuite.find_capacity` searches for the largest bot count
+that stays within :class:`CapacityLimits`. Its ``before_test`` hook can reset
+the database before each test (see :mod:`psynet.perf_reset`).
 
 A bot only succeeds if the experiment did not fail its participant: failed
 participants keep the status ``approved``. Failures from waiting too long,
@@ -373,6 +376,65 @@ def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
         check_bots(Bot.query.all())
 
 
+def prefill_database(n_participants, n_bots, bot_log_file=None):
+    """Add ``n_participants`` participants' data by running bots through the experiment.
+
+    ``n_bots`` bots run at once, as threads, without pauses (time factor 0),
+    until ``n_participants`` bots have taken the experiment. The bots go
+    through the same routes as participants, so the data is what the
+    experiment itself stores.
+    """
+    import itertools
+
+    from dallinger import db
+
+    from psynet.bot import BotDriver
+    from psynet.experiment import get_experiment
+
+    logger.info("")
+    logger.info(
+        bold(f"PRE-FILL: {n_participants:,} participants, {n_bots:,} bots at once")
+    )
+    experiment = get_experiment()
+    n_bots = min(n_bots, n_participants)
+    _fit_redis_pool_to_bots(n_bots)
+    raise_open_file_limit()
+    taken = itertools.count()
+    done = Counter()
+    lock = threading.Lock()
+
+    def run_bots():
+        while next(taken) < n_participants:
+            outcome = "finished"
+            try:
+                experiment.run_bot(BotDriver(), time_factor=0)
+            except BaseException as err:
+                logger.exception("Bot failed.")
+                outcome = _describe_bot_error(err)
+            finally:
+                db.session.remove()
+            with lock:
+                done[outcome] += 1
+
+    threads = [
+        threading.Thread(
+            target=run_bots, name=f"{_BOT_THREAD_PREFIX}prefill-{i + 1}", daemon=True
+        )
+        for i in range(n_bots)
+    ]
+    with _bot_logs_to(bot_log_file):
+        for thread in threads:
+            thread.start()
+        while _join_threads(threads, timeout_s=30):
+            logger.info(f"Pre-fill: {done.total():,} of {n_participants:,} bots done")
+    errors = done.total() - done["finished"]
+    logger.info(f"Pre-fill: {done.total():,} bots done.")
+    if errors:
+        del done["finished"]
+        kinds = ", ".join(f"{n:,} {kind}" for kind, n in done.most_common())
+        logger.warning(warning(f"{_plural(errors, 'pre-fill bot')} failed ({kinds})."))
+
+
 def raise_open_file_limit():
     """Raise this process's soft open-file limit to 65536, or its hard limit if lower.
 
@@ -507,45 +569,75 @@ def _ended_early(result):
     )
 
 
-class PerformanceTester:
-    def __init__(
-        self,
-        authenticated_session,
-        base_url,
-        n_bots=1,
-        duration_minutes=1,
-        stagger_interval_s=0.1,
-        time_factor=0.0,
-        limits=None,
-        bot_processes=1,
-    ):
-        """Set up a performance tester.
+def wait_for_async_processes(since=None, *, timeout_s, finished=False):
+    """Wait up to ``timeout_s`` until no async process is waiting for a worker.
 
-        Parameters
-        ----------
-        bot_processes : int or "auto"
-            Number of processes to run the bots in. With 1 they run as threads
-            in this process; ``"auto"`` chooses from the most bots a suite
-            runs and the CPU count (see :func:`_choose_bot_processes`).
-        """
-        self.authenticated_session = authenticated_session
-        self.base_url = base_url
-        self.n_bots = n_bots
-        self.duration_minutes = duration_minutes
-        self.stagger_interval_s = stagger_interval_s
-        self.time_factor = time_factor
+    Parameters
+    ----------
+    since : datetime.datetime, optional
+        Only count processes enqueued from then on.
+    finished : bool
+        Also wait for processes that have started to finish.
+
+    Returns
+    -------
+    int
+        How many processes were still waiting when the wait ended.
+    """
+    from dallinger import db
+    from sqlalchemy import func
+
+    from psynet.process import AsyncProcess
+
+    waiting_for = "finish" if finished else "start"
+    filters = [
+        AsyncProcess.failed.is_(False),
+        AsyncProcess.finished.is_(False)
+        if finished
+        else AsyncProcess.time_started.is_(None),
+    ]
+    if since is not None:
+        filters.append(AsyncProcess.time_enqueued >= since)
+    deadline = time.monotonic() + timeout_s
+    announced = False
+    while True:
+        waiting = (
+            db.session.query(func.count(AsyncProcess.id)).filter(*filters).scalar()
+        )
+        db.session.rollback()
+        if not waiting or time.monotonic() >= deadline:
+            return waiting
+        if not announced:
+            logger.info(f"Waiting for {waiting:,} async processes to {waiting_for}...")
+            announced = True
+        time.sleep(2)
+
+
+class PerformanceSuite:
+    """Run performance tests one after another, then summarize them.
+
+    The suite chooses each test's bot count, from a list (:meth:`run`) or by
+    searching for capacity (:meth:`find_capacity`), and stops early when a
+    test ends early. ``tester`` runs each test.
+
+    Parameters
+    ----------
+    tester : PerformanceTester
+        Runs the tests.
+    limits : CapacityLimits, optional
+        The limits that the capacity search and summary judge tests by.
+    before_test : callable, optional
+        Called before each test, including the first, instead of the pause
+        between tests; for example a :class:`psynet.perf_reset.DatabaseReset`.
+    """
+
+    def __init__(self, tester, limits=None, before_test=None):
+        self.tester = tester
         self.limits = limits or CapacityLimits()
-        self.bot_processes = bot_processes
-        self._n_bot_processes = 1
-        # Runs the bots: _ThreadBots, or _BotProcesses during a suite that
-        # needs several processes.
-        self._bots = _ThreadBots(self)
-        # Experiment code shares this process and may call random.seed().
-        self._random = random.Random()
+        self.before_test = before_test
 
-    def run(self, bot_counts=None, bot_log_file=None):
-        """Run performance tests for one or more bot count values."""
-        bot_counts = bot_counts or [self.n_bots]
+    def run(self, bot_counts, bot_log_file=None):
+        """Run a test for each of ``bot_counts``, in order."""
         self._print_suite_header(", ".join(str(n) for n in bot_counts))
 
         def next_bot_count(results):
@@ -576,7 +668,8 @@ class PerformanceTester:
         max_tests = _max_capacity_probes()
         logger.info(
             f"Expected run time:    up to {max_tests} tests, about "
-            f"{max_tests * self.duration_minutes:g} min plus pauses between tests"
+            f"{max_tests * self.tester.duration_minutes:g} min plus pauses "
+            "between tests"
         )
         highest_pass = lowest_fail = None
 
@@ -611,28 +704,78 @@ class PerformanceTester:
         list[PerformanceTestResult]
             One result per test, in the order they ran.
         """
-        raise_open_file_limit()
         all_results = []
-        with self._bot_runner(max_bots, bot_log_file):
-            self._suite_started_at = datetime.datetime.now()
+        with self.tester.bot_runner(max_bots, bot_log_file):
             while (n_bots := next_bot_count(all_results)) is not None:
-                if all_results:
-                    self._pause_between_tests()
+                if self.before_test is not None:
+                    self.before_test()
+                elif all_results:
+                    self.tester.pause_between_tests()
                 label = f"{len(all_results) + 1}" + (f"/{n_tests}" if n_tests else "")
-                result = self._run_one_test(label, n_bots, bot_log_file)
+                result = self.tester.run_test(label, n_bots, bot_log_file)
                 all_results.append(result)
                 if _ended_early(result):
                     break
-        self._print_performance_summary(all_results)
+        for line in format_performance_summary(all_results):
+            logger.info(line)
+        for line in format_capacity_summary(
+            all_results, self.limits, self.tester.time_factor
+        ):
+            logger.info(line)
         return all_results
 
+    def _print_suite_header(self, bots_description):
+        logger.info(bold("=" * 80))
+        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
+        logger.info(f"Bots per test:        {bots_description}")
+        logger.info(f"Test duration:        {self.tester.duration_minutes:g} min")
+        logger.info(f"Bot start stagger:    ~{self.tester.stagger_interval_s:g}s")
+        logger.info(f"Bot time factor:      {self.tester.time_factor:g}")
+
+
+class PerformanceTester:
+    """Run single performance tests against a server; see :class:`PerformanceSuite`."""
+
+    def __init__(
+        self,
+        authenticated_session,
+        base_url,
+        duration_minutes=1,
+        stagger_interval_s=0.1,
+        time_factor=0.0,
+        bot_processes=1,
+    ):
+        """Set up a performance tester.
+
+        Parameters
+        ----------
+        bot_processes : int or "auto"
+            Number of processes to run the bots in. With 1 they run as threads
+            in this process; ``"auto"`` chooses from the most bots a suite
+            runs and the CPU count (see :func:`_choose_bot_processes`).
+        """
+        self.authenticated_session = authenticated_session
+        self.base_url = base_url
+        self.duration_minutes = duration_minutes
+        self.stagger_interval_s = stagger_interval_s
+        self.time_factor = time_factor
+        self.bot_processes = bot_processes
+        self._n_bot_processes = 1
+        # Runs the bots: _ThreadBots, or _BotProcesses during a suite that
+        # needs several processes.
+        self._bots = _ThreadBots(self)
+        # Experiment code shares this process and may call random.seed().
+        self._random = random.Random()
+
     @contextmanager
-    def _bot_runner(self, max_bots, bot_log_file):
+    def bot_runner(self, max_bots, bot_log_file):
         """Start the bot processes a suite of up to ``max_bots`` bots needs, if any.
 
         They last for the whole suite, because each one imports the
         experiment, which can take seconds and much memory.
         """
+        raise_open_file_limit()
+        self._suite_started_at = datetime.datetime.now()
         n_processes = _choose_bot_processes(self.bot_processes, max_bots)
         self._n_bot_processes = n_processes
         chosen = " (auto)" if self.bot_processes == "auto" else ""
@@ -654,68 +797,30 @@ class PerformanceTester:
             bot_processes, self._bots = self._bots, _ThreadBots(self)
             bot_processes.close()
 
-    def _pause_between_tests(self):
+    def pause_between_tests(self):
         """Pause, then let async processes queued by earlier tests start.
 
         Otherwise they would hold up the next test's processes and count
         against its queue wait.
         """
-        from dallinger import db
-        from sqlalchemy import func
-
-        from psynet.process import AsyncProcess
-
         time.sleep(5)
-        deadline = time.monotonic() + _BACKLOG_DRAIN_TIMEOUT_S
-        announced = False
-        while True:
-            queued = (
-                db.session.query(func.count(AsyncProcess.id))
-                .filter(
-                    AsyncProcess.time_enqueued >= self._suite_started_at,
-                    AsyncProcess.time_started.is_(None),
-                    AsyncProcess.failed.is_(False),
+        queued = wait_for_async_processes(
+            since=self._suite_started_at, timeout_s=_BACKLOG_DRAIN_TIMEOUT_S
+        )
+        if queued:
+            logger.warning(
+                warning(
+                    f"{queued:,} async processes from earlier tests are still "
+                    "queued, so they may slow the next test's processes."
                 )
-                .scalar()
             )
-            db.session.rollback()
-            if not queued:
-                return
-            if time.monotonic() >= deadline:
-                logger.warning(
-                    warning(
-                        f"{queued:,} async processes from earlier tests are still "
-                        "queued, so they may slow the next test's processes."
-                    )
-                )
-                return
-            if not announced:
-                logger.info(
-                    f"Waiting for {queued:,} queued async processes to start..."
-                )
-                announced = True
-            time.sleep(2)
 
-    def _print_suite_header(self, bots_description):
-        logger.info(bold("=" * 80))
-        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
-        logger.info(f"Bots per test:        {bots_description}")
-        logger.info(f"Test duration:        {self.duration_minutes:g} min")
-        logger.info(f"Bot start stagger:    ~{self.stagger_interval_s:g}s")
-        logger.info(f"Bot time factor:      {self.time_factor:g}")
-
-    def _run_one_test(self, label, n_bots, bot_log_file):
+    def run_test(self, label, n_bots, bot_log_file):
+        """Run one test of ``n_bots`` bots, print its results and return them."""
         logger.info("")
         logger.info(bold("=" * 80))
         logger.info(bold(f"TEST {label}: Running with {n_bots:,} concurrent bots"))
         return self._test_performance(n_bots, bot_log_file=bot_log_file)
-
-    def _print_performance_summary(self, results):
-        """Print cross-test comparison table and the capacity it implies."""
-        for line in format_performance_summary(results):
-            logger.info(line)
-        for line in format_capacity_summary(results, self.limits, self.time_factor):
-            logger.info(line)
 
     def _test_performance(self, n, bot_log_file):
         """Run a load test with n concurrent bots for configured duration."""
@@ -1398,10 +1503,14 @@ def _serve_bot_commands(bots, index, commands, events):
 
     See :class:`_BotProcesses` for the commands and events.
     """
+    from psynet.db import release_local_database_connections
+
     test_id = 0
     while True:
         command, *args = commands.get()
         if command == "test":
+            # A database reset before the test terminates pooled connections.
+            release_local_database_connections()
             test_id, end_time, n_slots = args
             record = partial(_put_bot_event, events, test_id)
             bots.begin_test(None, end_time, n_slots, record=record)
@@ -2693,6 +2802,10 @@ def _database_growth_warnings(results, capacity_result, first_fail):
                 "rows), so the difference between them may come from the data "
                 "rather than the load."
             )
+    if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
+        lines.append(
+            "  Rerun with --reset-database to start every test from the same data."
+        )
     return lines
 
 
