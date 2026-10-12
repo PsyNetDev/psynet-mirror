@@ -4721,6 +4721,16 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
             ),
         ),
         (
+            dict(n_bots="auto", arrival_minutes=10),
+            dict(
+                duration_minutes=4,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+                arrival_minutes=10,
+            ),
+        ),
+        (
             dict(arrival_minutes=1.5),
             dict(
                 duration_minutes=7.5,
@@ -4736,6 +4746,7 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
         "defaults",
         "capacity-search-without-pauses",
         "capacity-search-tests-last-a-session",
+        "capacity-search-arrivals-only-for-confirmation",
         "arrivals-lengthen-the-default",
     ],
 )
@@ -4807,6 +4818,21 @@ def test_arrival_minutes_rejects_conflicting_options(options, message):
         _run_performance_test_local(
             existing=True, json_output=None, debug=False, **options
         )
+
+
+def test_capacity_search_accepts_an_arrival_window_longer_than_its_tests():
+    from psynet.command_line import _check_arrival_options
+
+    _check_arrival_options(n_bots="auto", arrival_minutes=10, duration_minutes=1)
+
+
+def test_ssh_performance_test_forwards_confirmation_options():
+    from psynet.command_line import _build_ssh_performance_test_cmd
+
+    cmd = _build_ssh_performance_test_cmd(
+        n_bots="auto", arrival_minutes=10, no_confirm=True
+    )
+    assert cmd.endswith("--n-bots auto --arrival-minutes 10 --no-confirm")
 
 
 def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):

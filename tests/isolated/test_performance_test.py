@@ -358,7 +358,7 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
         patch.object(
             tester,
             "_test_performance",
-            side_effect=lambda n_bots, bot_log_file: _base_result(n_bots=n_bots),
+            side_effect=lambda n_bots, **_: _base_result(n_bots=n_bots),
         ),
         patch.object(tester, "pause_between_tests") as pause,
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
@@ -408,12 +408,14 @@ def test_confirmation_test_spreads_arrivals_over_a_session_and_lasts_two(
 
 
 def _search(tester, fake_test, **kwargs):
-    """Run a capacity search whose tests ``fake_test(tester)`` measures."""
+    """Run a capacity search whose tests ``fake_test(n_bots, duration, arrival)`` measures."""
     with (
         patch.object(
             tester,
             "_test_performance",
-            side_effect=lambda n_bots, bot_log_file: fake_test(n_bots),
+            side_effect=lambda n_bots, bot_log_file, duration_minutes, arrival_minutes: (
+                fake_test(n_bots, duration_minutes, arrival_minutes)
+            ),
         ),
         patch.object(tester, "pause_between_tests"),
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
@@ -422,29 +424,47 @@ def _search(tester, fake_test, **kwargs):
         return suite, suite.find_capacity(**kwargs)
 
 
-def _session_tester(time_factor=1):
+def _session_tester(time_factor=1, estimated_duration_minutes=12, **kwargs):
     """Return a tester of a 12-minute study whose search tests last 5 minutes."""
     return PerformanceTester(
         authenticated_session=Mock(),
         base_url="http://x",
         duration_minutes=5,
         time_factor=time_factor,
-        estimated_duration_minutes=12,
+        estimated_duration_minutes=estimated_duration_minutes,
+        **kwargs,
     )
+
+
+_PHASE = dict(key_requests=100, request_errors=0, p95_response_time=0.1)
+# A confirmation test that reached the steady state.
+_STEADY = dict(
+    first_completion_s=600.0, startup_phase=_PHASE, steady_state_phase=_PHASE
+)
+
+
+def _confirmation_search(caplog, confirmation_overrides, **tester_kwargs):
+    """Search a server that handles 150 bots in short tests, then confirm 120."""
+    tester = _session_tester(**tester_kwargs)
+    arrivals = []
+
+    def fake_test(n_bots, duration_minutes, arrival_minutes):
+        arrivals.append(arrival_minutes)
+        if duration_minutes > 5:
+            return _base_result(n_bots=n_bots, **confirmation_overrides)
+        return _base_result(
+            n_bots=n_bots, p95_response_time=0.9 if n_bots > 150 else 0.1
+        )
+
+    with caplog.at_level("INFO"):
+        suite, results = _search(tester, fake_test)
+    return suite, results, arrivals
 
 
 @pytest.mark.parametrize("confirmed", [True, False])
 def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
-    tester = _session_tester()
-
-    def fake_test(n_bots):
-        # Short tests pass up to 150 bots; the long one fails unless confirmed.
-        long_test = tester.duration_minutes > 5
-        fails = n_bots > 150 or (long_test and not confirmed)
-        return _base_result(n_bots=n_bots, p95_response_time=0.9 if fails else 0.1)
-
-    with caplog.at_level("INFO"):
-        suite, results = _search(tester, fake_test)
+    p95 = 0.1 if confirmed else 0.9
+    _, results, _ = _confirmation_search(caplog, dict(p95_response_time=p95, **_STEADY))
 
     confirmation = results[-1]
     assert [r.confirmation for r in results] == [False] * 8 + [True]
@@ -461,16 +481,69 @@ def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
     assert "Cap concurrent participants at about 120 (80%" not in caplog.text
 
 
+def test_arrival_minutes_only_spread_the_confirmation_test(caplog):
+    _, results, arrivals = _confirmation_search(
+        caplog, dict(_STEADY), arrival_minutes=3
+    )
+
+    assert arrivals == [None] * 8 + [3]
+    assert results[-1].duration_minutes == 15
+
+
 @pytest.mark.parametrize(
-    "time_factor, confirm, reason",
-    [(1, False, "--no-confirm"), (0, True, "--time-factor 0")],
+    "overrides, expected",
+    [
+        ({}, "never reached the steady state"),
+        (dict(server_stopped=True, **_STEADY), "could not be tested (server stopped)"),
+    ],
+)
+def test_a_confirmation_that_measures_nothing_leaves_the_cap_unconfirmed(
+    caplog, overrides, expected
+):
+    _confirmation_search(caplog, overrides)
+
+    assert expected in caplog.text
+    assert "cap of about 120 concurrent participants is unconfirmed" in caplog.text
+    assert "Confirmed:" not in caplog.text and "Try capping" not in caplog.text
+
+
+def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
+    _confirmation_search(
+        caplog,
+        dict(p95_response_time=0.9, db_rows_before={"trial": 50_000}, **_STEADY),
+    )
+
+    assert "Rerun with --reset-database before capping lower" in caplog.text
+
+
+def test_a_run_test_interrupted_by_ctrl_c_raises_keyboard_interrupt():
+    tester = _session_tester()
+    with patch.object(tester, "_test_performance", side_effect=KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            tester.run_test(
+                "1",
+                10,
+                None,
+                duration_minutes=24,
+                arrival_minutes=12,
+                confirmation=True,
+            )
+
+
+@pytest.mark.parametrize(
+    "time_factor, estimated, confirm, reason",
+    [
+        (1, 12, False, "--no-confirm"),
+        (0, 12, True, "--time-factor 0"),
+        (1, None, True, "the experiment's estimated session length is unknown"),
+    ],
 )
 def test_capacity_search_can_skip_the_confirmation_test(
-    caplog, time_factor, confirm, reason
+    caplog, time_factor, estimated, confirm, reason
 ):
-    tester = _session_tester(time_factor)
+    tester = _session_tester(time_factor, estimated_duration_minutes=estimated)
 
-    def fake_test(n_bots):
+    def fake_test(n_bots, duration_minutes, arrival_minutes):
         return _base_result(
             n_bots=n_bots, p95_response_time=0.9 if n_bots > 15 else 0.1
         )
@@ -513,7 +586,6 @@ def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
         authenticated_session=Mock(),
         base_url="http://x",
         stagger_interval_s=100,
-        arrival_minutes=0.01,
     )
     bot_state = _BotState()
     started = []
@@ -523,7 +595,7 @@ def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
         bot_state.first_bot_initialized = True
 
     start = time.time()
-    tester._run_monitoring_loop(4, bot_state, start_slot, start, start + 1)
+    tester._run_monitoring_loop(4, bot_state, start_slot, start, start + 1, 0.01)
 
     # The loop can only start a slot late, never early: 0.6 s over 3 gaps.
     assert len(started) == 4
@@ -533,16 +605,14 @@ def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
 def test_arrival_minutes_starts_a_single_bot_slot():
     import time
 
-    tester = PerformanceTester(
-        authenticated_session=Mock(), base_url="http://x", arrival_minutes=1
-    )
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     bot_state = _BotState()
     start_slot = Mock(
         side_effect=lambda: setattr(bot_state, "first_bot_initialized", True)
     )
 
     start = time.time()
-    tester._run_monitoring_loop(1, bot_state, start_slot, start, start + 0.5)
+    tester._run_monitoring_loop(1, bot_state, start_slot, start, start + 0.5, 1)
 
     start_slot.assert_called_once()
 
@@ -644,7 +714,7 @@ def test_capacity_search_brackets_then_bisects(
 ):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
 
-    def fake_test(n_bots, bot_log_file):
+    def fake_test(n_bots, **_):
         overrides = over_capacity if n_bots > capacity else {}
         return _base_result(n_bots=n_bots, server_stopped=False, **overrides)
 

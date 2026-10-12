@@ -4336,11 +4336,14 @@ _test_options["performance_arrival_minutes"] = click.option(
     help="""
     Spread the arrival of each test's bots evenly over this many minutes after
     the first bot starts, as participants arrive while a study is open,
-    instead of starting them --stagger seconds apart. With --n-bots auto,
-    every test uses the same window. Can't be combined with --stagger; bots
-    that replace finished ones still start after the experiment's
-    test_parallel_stagger_interval_s. Must be shorter than --duration-minutes;
-    without --duration-minutes it is added to the default test length.""",
+    instead of starting them --stagger seconds apart. With --n-bots auto, only
+    the confirmation test uses this window (instead of one session) and lasts
+    a session longer than it; the search's tests stay short, with the bots
+    starting together. Can't be combined with --stagger; bots that replace
+    finished ones still start after the experiment's
+    test_parallel_stagger_interval_s. Otherwise it must be shorter than
+    --duration-minutes, and without --duration-minutes it is added to the
+    default test length.""",
 )
 
 _test_options["duration_minutes"] = click.option(
@@ -4353,8 +4356,8 @@ _test_options["duration_minutes"] = click.option(
     sessions (the timeline's estimated duration times --time-factor), rounded
     up to whole minutes, at most 30 minutes and at least
     Experiment.test_duration_minutes (1 minute). A test shorter than one
-    session only sees the start of the study, when every bot arrives at once,
-    and the suite warns about it. With --n-bots auto this sets the length of
+    session only sees the start of the study, before any bot finishes, and
+    the suite warns about it. With --n-bots auto this sets the length of
     the search's tests, which default to one session, at most 5 minutes, so
     that a search of up to 12 tests takes at most an hour; the confirmation
     test sets its own length.""",
@@ -4813,7 +4816,11 @@ def _run_performance_test_with_existing_server(
             estimated_duration_minutes * time_factor,
             exp.test_duration_minutes,
             search=find_capacity,
-        ) + (arrival_minutes or 0)
+        )
+        # A capacity search applies --arrival-minutes to its confirmation
+        # test only.
+        if not find_capacity:
+            duration_minutes += arrival_minutes or 0
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
         base_url=exp.base_url,
@@ -4878,7 +4885,9 @@ def _run_performance_test_with_existing_server(
             "snapshot_rows": database_reset.snapshot_rows if database_reset else None,
         }
         options = {
-            "n_bots_sweep": [result.n_bots for result in all_results],
+            "n_bots_sweep": [
+                result.n_bots for result in all_results if not result.confirmation
+            ],
             "capacity_search": find_capacity,
             "max_p95_s": limits.max_p95_s,
             "max_queue_p95_s": limits.max_queue_p95_s,
@@ -4907,7 +4916,12 @@ def _run_performance_test_with_existing_server(
 
 
 def _check_arrival_options(
-    *, arrival_minutes=None, stagger=None, duration_minutes=None, **_options
+    *,
+    arrival_minutes=None,
+    stagger=None,
+    duration_minutes=None,
+    n_bots=None,
+    **_options,
 ):
     """Raise ``click.UsageError`` if ``--arrival-minutes`` conflicts with the other options."""
     if arrival_minutes is None:
@@ -4916,7 +4930,13 @@ def _check_arrival_options(
         raise click.UsageError(
             "--arrival-minutes and --stagger both set when bots start; use one."
         )
-    if duration_minutes is not None and arrival_minutes >= duration_minutes:
+    # A capacity search's tests don't use the window; its confirmation test
+    # lasts longer than it.
+    if (
+        n_bots != "auto"
+        and duration_minutes is not None
+        and arrival_minutes >= duration_minutes
+    ):
         raise click.UsageError(
             "--arrival-minutes must be shorter than --duration-minutes, so that "
             "every bot starts during the test."
