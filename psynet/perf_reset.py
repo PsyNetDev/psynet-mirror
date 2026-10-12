@@ -271,13 +271,16 @@ class DatabaseReset:
         self._snapshot_directory = Path(snapshot_directory)
         self._owns_snapshot = False
         self._disk_space_unknown = False
+        # Whether the pre-fill for ``keep_as`` and its async processes finished.
+        self._prefilled = False
 
     def __call__(self):
         """Take or restore the snapshot, with the server stopped meanwhile.
 
-        The server starts again afterwards. If the reset fails, it only
-        starts again if the experiment database exists, and the reset's error
-        propagates; :meth:`close` then repairs the database if it can.
+        The server starts again afterwards. If a restore fails, other than
+        by an interrupt, the server only starts again if the experiment
+        database exists; after a failed snapshot it stays stopped. The error
+        propagates, and :meth:`close` then repairs the database if it can.
         """
         from psynet.db import release_local_database_connections
 
@@ -286,6 +289,7 @@ class DatabaseReset:
             if self._prefill is not None:
                 self._prefill()
             self._wait_for_async_processes()
+            self._prefilled = self._keep_as is not None
         logger.info("")
         logger.info(
             "Taking a snapshot of the database..."
@@ -300,8 +304,9 @@ class DatabaseReset:
             else:
                 self._restore()
             self._clear_job_queues()
-        except BaseException:
-            self._restart_after_failure()
+        except BaseException as error:
+            if not taking and not isinstance(error, KeyboardInterrupt):
+                self._restart_after_failure()
             raise
         self._start_server()
         if self.snapshot_rows is None:
@@ -334,14 +339,21 @@ class DatabaseReset:
         """Repair the database after a failed reset, then drop a snapshot taken here.
 
         A copy left by a reset that failed after dropping the experiment
-        database becomes the experiment database again. The snapshot is kept
-        if the experiment database doesn't exist.
+        database becomes the experiment database again. A pre-fill whose
+        snapshot was interrupted is kept now. The snapshot is kept if the
+        experiment database doesn't exist.
         """
         import psycopg2
 
         try:
             with self._connect() as cursor:
-                if not _recover_database(cursor, self.database):
+                present = _recover_database(cursor, self.database)
+                if present and self._prefilled and self.snapshot is None:
+                    if _recover_database(cursor, self._keep_as):
+                        self.snapshot = self._keep_as
+                    else:
+                        self._take_snapshot()
+                if not present:
                     logger.warning(
                         warning(
                             f"Kept the snapshot {self.snapshot}, because "
@@ -540,7 +552,8 @@ def _swap_in_copy(cursor, target, template):
     fails after that, :func:`_recover_database` can finish the swap.
     """
     copy = replacement_name(target)
-    _run_when_unused(cursor, copy, _statement("DROP DATABASE IF EXISTS {}", copy))
+    # A copy left without its target is the only copy, so it becomes the target.
+    _recover_database(cursor, target)
     _run_when_unused(
         cursor, template, _statement("CREATE DATABASE {} TEMPLATE {}", copy, template)
     )

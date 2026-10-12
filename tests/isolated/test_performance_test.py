@@ -576,6 +576,84 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
 
 
 @pytest.mark.parametrize(
+    "experiment_directory",
+    [path_to_test_experiment("timeline")],
+    indirect=True,
+)
+def test_an_interrupted_prefill_snapshot_is_never_lost(db_session):
+    from contextlib import contextmanager
+
+    import psycopg2
+    from dallinger import db
+
+    from psynet import perf_reset
+    from psynet.isolated_environment import create_database, drop_database
+
+    scratch_url = create_database(
+        db.engine.url.render_as_string(hide_password=False), suffix="_keep_scratch"
+    )
+    scratch = scratch_url.rsplit("/", 1)[1]
+    keep = perf_reset.prefill_snapshot_name("fedcba987654", 2, 1)
+
+    def rows(database, n_new=0):
+        connection = psycopg2.connect(scratch_url.rsplit("/", 1)[0] + "/" + database)
+        try:
+            with connection, connection.cursor() as cursor:
+                cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
+                for _ in range(n_new):
+                    cursor.execute("INSERT INTO participant DEFAULT VALUES")
+                cursor.execute("SELECT count(*) FROM participant")
+                return cursor.fetchone()[0]
+        finally:
+            connection.close()
+
+    failures = []
+
+    class FailingReset(perf_reset.DatabaseReset):
+        @contextmanager
+        def _connect(self):
+            with super()._connect() as cursor:
+                yield _RecordingCursor(cursor, [], failures)
+
+    server = Mock()
+    try:
+        # A copy left without its target is kept, even if the swap then fails.
+        rows(scratch, 2)
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            cursor.execute(f'CREATE DATABASE "{keep}__new" TEMPLATE "{scratch}"')
+            rows(scratch, 1)
+            failures.append("CREATE DATABASE")
+            with pytest.raises(psycopg2.OperationalError):
+                perf_reset._swap_in_copy(
+                    _RecordingCursor(cursor, [], failures), keep, scratch
+                )
+        assert rows(keep) == 2
+
+        # A pre-fill whose snapshot failed is kept at close(), before teardown.
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            drop_database(cursor, keep)
+        reset = FailingReset(
+            server.stop,
+            server.start,
+            prefill=Mock(),
+            keep_as=keep,
+            database_url=scratch_url,
+        )
+        failures.append("CREATE DATABASE")
+        with pytest.raises(psycopg2.OperationalError):
+            reset()
+        server.start.assert_not_called()
+        reset.close()
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            drop_database(cursor, scratch)
+        assert rows(keep) == 3
+    finally:
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            for name in [scratch, f"{scratch}__new", keep, f"{keep}__new"]:
+                drop_database(cursor, name)
+
+
+@pytest.mark.parametrize(
     "url, allowed",
     [
         ("postgresql://u:p@localhost/dallinger_test_5000", True),
