@@ -746,12 +746,7 @@ def _confirmation_lines(result, limits):
         )
     retry = retry_bot_count(result, limits)
     ratio = overshoot(result, limits)
-    if ratio:
-        why = f", as the worst measure reached {ratio:.1f} times its limit"
-    elif busy_early_finish_cause(result, limits):
-        why = ", so that fewer participants find every chain busy"
-    else:
-        why = ""
+    why = f", as the worst measure reached {ratio:.1f} times its limit" if ratio else ""
     rerun = f"--n-bots {retry} --duration-minutes {result.duration_minutes or 0:g}"
     if result.arrival_minutes:
         rerun += f" --arrival-minutes {result.arrival_minutes:g}"
@@ -817,14 +812,11 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         tolerated.append(
             f"{plural(wait_timeouts, 'participant')} failed for waiting too long"
         )
-    if busy_finishes := sum(
-        stats["participants"]
-        for stats in (capacity_result.busy_early_finishes or {}).values()
-    ):
-        tolerated.append(
-            f"{plural(busy_finishes, 'participant')} who got fewer trials "
-            "because every chain was busy"
-        )
+    tolerated += [
+        f"{plural(stats['participants'], 'bot')} that got fewer trials in "
+        f"{trial_maker_id} because every {stats.get('candidate') or 'chain'} was busy"
+        for trial_maker_id, stats in (capacity_result.busy_early_finishes or {}).items()
+    ]
     if tolerated:
         found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))
         lines.append(

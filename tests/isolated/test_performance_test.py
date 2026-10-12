@@ -16,6 +16,7 @@ from psynet.perf_test import (
     format_test_results,
 )
 from psynet.perf_test.measure import _split_failed_requests, phase_stats
+from psynet.perf_test.results import retry_bot_count
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -630,7 +631,11 @@ _HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
 
 @pytest.mark.parametrize(
     "over_capacity",
-    [{"p95_response_time": 0.9}, {"failed_reasons": {_HOLD_TIMEOUT: 100}}],
+    [
+        {"p95_response_time": 0.9},
+        {"failed_reasons": {_HOLD_TIMEOUT: 100}},
+        {"busy_early_finishes": {"main_chain": {"participants": 100}}},
+    ],
 )
 @pytest.mark.parametrize(
     "capacity, expected_probes",
@@ -1038,17 +1043,18 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
 
     share = f"{participants / 150:.0%}"
     assert (
-        f"{participants} of 150 participants ({share}) got fewer trials in "
+        f"{participants} of 150 bots started ({share}) got fewer trials in "
         "main_chain because every chain was busy; median 41 of 60 trials."
     ) in report
     if participants == 1:
         assert capacity_failures(result) == []
-        assert "1 participant who got fewer trials" in summary
+        assert "1 bot that got fewer trials in main_chain" in summary
     else:
         assert capacity_failures(result) == [
-            "23 participants got fewer trials in main_chain because every "
-            "chain was busy"
+            "23 bots got fewer trials in main_chain because every chain was busy"
         ]
+        # 23 is 15 times the 1.5 allowed, so a retry goes down to half.
+        assert retry_bot_count(result, CapacityLimits()) == 75
         search = _join(
             format_capacity_summary(
                 [_base_result(n_bots=100, total_bots_started=100), result]
