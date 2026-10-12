@@ -1452,3 +1452,170 @@ def test_live_recruitment_counts_as_real_participants(mode, recruiter, live):
         bool(recruits_real_participants(Mock(get=lambda k, d=None: config.get(k, d))))
         is live
     )
+
+
+_APP_SNAPSHOT = "psynet_prefill_my-app_0123456789ab_n5"
+
+
+def _fake_server(respond):
+    """Return an SSH executor whose ``run`` answers with ``respond(cmd)``, an output or (status, output).
+
+    Commands that report their exit status get it appended, as the server would.
+    """
+    executor = Mock()
+    executor.commands = []
+
+    def run(cmd, raise_=True):
+        executor.commands.append(cmd)
+        response = respond(cmd)
+        status, output = response if isinstance(response, tuple) else (0, response)
+        if "__psynet_exit_status" not in cmd:
+            return output
+        return f"{output}__psynet_exit_status={status}\n"
+
+    executor.run.side_effect = run
+    return executor
+
+
+def _app_database(respond, isolated=True):
+    from psynet.perf_ssh import RemoteApp, RemoteAppDatabase
+
+    def answer(cmd):
+        if cmd.startswith("docker inspect"):
+            own = "my-app_postgresql" in cmd
+            return "172.18.0.2" if own == isolated else ""
+        return respond(cmd)
+
+    return RemoteAppDatabase(RemoteApp(_fake_server(answer), "my-app", "server"))
+
+
+def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
+    from psynet.perf_reset import DatabaseReset
+
+    attempts = []
+
+    def respond(cmd):
+        if "DROP DATABASE" in cmd and not attempts:
+            attempts.append(cmd)
+            return 1, 'ERROR:  55006: database "my-app" is being accessed\n'
+        if "DATABASE_URL" in cmd:
+            return "my-app\n"
+        if "pg_database_size" in cmd:
+            return "1000\n"
+        if "data_directory" in cmd:
+            return "/var/lib/postgresql/data\n"
+        if " df " in cmd:
+            return "Filesystem 1024-blocks Used Available Capacity Mounted\nx 9 0 9999 1% /\n"
+        if "pg_tables" in cmd:
+            return "participant\n"
+        if "count(*)" in cmd:
+            return "3\n"
+        return ""
+
+    database = _app_database(respond)
+    server = Mock()
+    reset = DatabaseReset(
+        server.stop, server.start, from_snapshot=_APP_SNAPSHOT, database=database
+    )
+    reset()
+    reset.close()
+
+    commands = database.remote.executor.commands
+    sql = [c for c in commands if " psql " in c]
+    assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
+    assert [c for c in sql if "DROP DATABASE" in c] == attempts * 2
+    assert any(f'CREATE DATABASE "my-app" TEMPLATE "{_APP_SNAPSHOT}"' in c for c in sql)
+    assert any("redis-cli --scan --pattern" in c for c in commands)
+    assert reset.snapshot_rows == {"participant": 3}
+    assert server.stop.call_count == server.start.call_count == 1
+
+
+@pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
+def test_a_remote_reset_refuses_a_database_not_named_after_the_app(web_database):
+    database = _app_database(lambda cmd: f"{web_database}\n")
+    with pytest.raises(ValueError, match="Refusing to reset"):
+        database.check_resettable()
+
+
+def test_remote_snapshots_are_the_apps_own_and_need_free_disk_space():
+
+    database = _app_database(lambda cmd: "")
+    assert database.prefill_snapshot_name("0123456789ab", 5) == _APP_SNAPSHOT
+    assert not database.owns_snapshot("psynet_prefill_my-app-2_0123456789ab_n5")
+    assert not database.owns_snapshot("psynet_prefill_0123456789ab_n5")
+    with pytest.raises(ValueError, match="not a pre-fill snapshot of my-app"):
+        database.check_snapshot("psynet_prefill_other_0123456789ab_n5")
+
+
+def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
+    from psynet.perf_reset import DatabaseReset
+
+    database = _app_database(
+        lambda cmd: "my-app\n" if "DATABASE_URL" in cmd else (1, "df: denied\n")
+    )
+    reset = DatabaseReset(Mock(), Mock(), database=database)
+    cursor = Mock(fetchone=Mock(side_effect=[(1e9,), ("/var/lib/postgresql/data",)]))
+    with pytest.raises(RuntimeError, match="free disk space"):
+        reset._check_disk_space(cursor, "my-app")
+
+
+@pytest.mark.parametrize("isolated", [True, False])
+def test_destroy_drops_only_the_apps_snapshots_on_a_shared_postgres(isolated):
+    from psynet.command_line import _drop_ssh_app_snapshots
+
+    listing = "\n".join(
+        f"{name},1000,"
+        for name in (_APP_SNAPSHOT, "psynet_prefill_other_0123456789ab_n5")
+    )
+    database = _app_database(
+        lambda cmd: listing + "\n" if "FROM pg_database" in cmd else "",
+        isolated=isolated,
+    )
+    with patch(
+        "psynet.command_line._ssh_executor", return_value=database.remote.executor
+    ):
+        _drop_ssh_app_snapshots("server", "my-app")
+
+    drops = [c for c in database.remote.executor.commands if "DROP DATABASE" in c]
+    assert len(drops) == (0 if isolated else 1)
+    assert all(f'"{_APP_SNAPSHOT}"' in drop for drop in drops)
+
+
+def test_a_suite_drives_remote_tests_through_their_json_results():
+    import re
+    from dataclasses import asdict
+
+    from psynet.perf_ssh import RemotePerformanceTester
+
+    remote = Mock(force=False)
+    remote.run_psynet.side_effect = lambda args, bot_log: {
+        "psynet_version": "remote",
+        "results": [
+            asdict(_base_result(n_bots=int(re.search(r"--n-bots (\d+)", args)[1])))
+        ],
+    }
+    tester = RemotePerformanceTester(
+        remote,
+        duration_minutes=1,
+        stagger_interval_s=0.1,
+        time_factor=1.0,
+        bot_processes="auto",
+    )
+    before_test = Mock()
+
+    results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
+
+    assert [r.n_bots for r in results] == [2, 4]
+    assert before_test.call_count == 2
+    assert "--test-label 2/2" in remote.run_psynet.call_args.args[0]
+    assert tester.remote_metadata == {"psynet_version": "remote"}
+
+
+def test_resetting_refuses_live_mode_even_with_force(monkeypatch):
+    import click
+
+    from psynet.command_line import _check_no_real_participants
+
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: {"mode": "live"})
+    with pytest.raises(click.ClickException, match="live mode, even with --force"):
+        _check_no_real_participants(force=True, resetting=True)

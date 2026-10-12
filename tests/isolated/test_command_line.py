@@ -1137,22 +1137,26 @@ def _executor_for(channel):
     return executor
 
 
-def test_remote_bot_log_is_moved_into_the_local_log_folder(tmp_path, monkeypatch):
-    from psynet import command_line
+def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_path):
+    from psynet.perf_ssh import RemoteApp
 
-    monkeypatch.setattr(command_line, "_performance_log_directory", lambda: tmp_path)
-    executor = Mock()
-    executor.run.return_value = "bot 1 failed\n"
+    channel = _FakeChannel(0, b"TEST 1: Running with 2 concurrent bots\n")
+    executor = _executor_for(channel)
+    reads = iter(["bot 1 failed\n", '{"results": []}'])
+    executor.run.side_effect = lambda cmd, raise_: (
+        next(reads) + "__psynet_exit_status=0"
+    )
+    bot_log = tmp_path / "bots.log"
 
-    command_line._move_remote_bot_log(executor, "my-app", "/tmp/psynet_bots_x.log")
+    with open(bot_log, "a") as bot_log_file:
+        remote = RemoteApp(executor, "my-app", "server", bot_log_file=bot_log_file)
+        assert remote.run_psynet("performance-test local --existing", bot_log=True) == {
+            "results": []
+        }
 
-    [copy] = tmp_path.glob("psynet_bots_my-app_*.log")
-    assert copy.read_text() == "bot 1 failed\n"
-
-    executor.run.return_value = ""
-    copy.unlink()
-    command_line._move_remote_bot_log(executor, "my-app", "/tmp/psynet_bots_x.log")
-    assert not list(tmp_path.glob("*.log"))
+    assert "--json-output /tmp/psynet_perf_" in channel.command
+    assert "--bot-log /tmp/psynet_bots_" in channel.command
+    assert bot_log.read_text() == "bot 1 failed\n"
 
 
 def test_remote_experiment_commands_disable_tty_allocation():
@@ -4790,45 +4794,23 @@ def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
         _check_database_reset_options(**{**none, "reset_database": True})
 
 
-def test_ssh_performance_test_command_forwards_zero_valued_options():
-    from psynet.command_line import _build_ssh_performance_test_cmd
+def test_performance_test_flags_keep_zeros_and_omit_unset_options():
+    from psynet.command_line import performance_test_flags
 
-    assert _build_ssh_performance_test_cmd(
+    assert performance_test_flags(
         n_bots=[5, 10],
         stagger=0,
         time_factor=0,
         duration_minutes=1.5,
-        max_p95_ms=800,
-        max_queue_p95_s=0,
-        bot_processes=2,
+        max_p95_ms=None,
+        test_label="1/2",
         force=True,
+        debug=False,
     ) == (
-        "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
-        "psynet performance-test local --existing "
-        "--n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
-        "--max-p95-ms 800 --max-queue-p95-s 0 --bot-processes 2 --force"
+        " --n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
+        "--test-label 1/2 --force"
     )
-    assert _build_ssh_performance_test_cmd(
-        n_bots="auto", bot_log="/tmp/b.log", force=False
-    ) == (
-        "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
-        "psynet performance-test local --existing --n-bots auto --bot-log /tmp/b.log"
-    )
-
-
-def test_ssh_performance_test_command_omits_unspecified_options():
-    from psynet.command_line import _build_ssh_performance_test_cmd
-
-    assert (
-        _build_ssh_performance_test_cmd(
-            n_bots=None,
-            stagger=None,
-            time_factor=None,
-            duration_minutes=None,
-        )
-        == "env PSYNET_EXPERIMENT_URL=http://localhost:5000 "
-        "psynet performance-test local --existing"
-    )
+    assert performance_test_flags(n_bots=None, stagger=None) == ""
 
 
 def test_experiment_url_can_be_overridden_for_one_process(monkeypatch):
