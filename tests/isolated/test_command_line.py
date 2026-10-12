@@ -4065,6 +4065,33 @@ def test_kill_psynet_worker_processes_warns_instead_of_raising(caplog):
     assert "did not stop" in caplog.text
 
 
+def test_kill_psynet_worker_processes_scans_again_for_a_late_snapshot():
+    import psutil
+
+    from psynet.command_line import kill_psynet_worker_processes
+
+    late = Mock()
+    late.pid = 5151
+    late.status.return_value = psutil.STATUS_RUNNING
+    scans = iter([[], [late]])
+
+    with (
+        patch(
+            "psynet.command_line.list_psynet_worker_processes",
+            side_effect=lambda: next(scans),
+        ),
+        patch(
+            "psynet.command_line.safely_kill_process", return_value=True
+        ) as kill,
+        patch(
+            "psynet.command_line.psutil.wait_procs",
+            return_value=([late], []),
+        ),
+    ):
+        assert kill_psynet_worker_processes() is True
+    kill.assert_called_once_with(late)
+
+
 def test_kill_psynet_worker_processes_ignores_zombies(caplog):
     import psutil
 
