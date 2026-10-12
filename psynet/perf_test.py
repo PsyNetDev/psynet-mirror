@@ -632,7 +632,8 @@ class PerformanceSuite:
         The limits that the capacity search and summary judge tests by.
     before_test : callable, optional
         Called before each test, including the first, instead of the pause
-        between tests; for example a :class:`psynet.perf_reset.DatabaseReset`.
+        between tests, once the bots have closed their database connections;
+        for example a :class:`psynet.perf_reset.DatabaseReset`.
     """
 
     def __init__(self, tester, limits=None, before_test=None):
@@ -670,10 +671,14 @@ class PerformanceSuite:
             "could not be tested)"
         )
         max_tests = _max_capacity_probes()
+        between = (
+            "a database reset before each test"
+            if self.before_test is not None
+            else "pauses between tests"
+        )
         logger.info(
             f"Expected run time:    up to {max_tests} tests, about "
-            f"{max_tests * self.tester.duration_minutes:g} min plus pauses "
-            "between tests"
+            f"{max_tests * self.tester.duration_minutes:g} min plus {between}"
         )
         highest_pass = lowest_fail = None
 
@@ -712,6 +717,7 @@ class PerformanceSuite:
         with self.tester.bot_runner(max_bots, bot_log_file):
             while (n_bots := next_bot_count(all_results)) is not None:
                 if self.before_test is not None:
+                    self.tester.release_database_connections()
                     self.before_test()
                 elif all_results:
                     self.tester.pause_between_tests()
@@ -818,6 +824,10 @@ class PerformanceTester:
                     "queued, so they may slow the next test's processes."
                 )
             )
+
+    def release_database_connections(self):
+        """Close the bots' pooled database connections, for example before a reset."""
+        self._bots.release_database_connections()
 
     def run_test(self, label, n_bots, bot_log_file):
         """Run one test of ``n_bots`` bots, print its results and return them."""
@@ -1521,6 +1531,13 @@ class _ThreadBots:
         """Return ``None``: threads can't stop the way a process can."""
         return None
 
+    @staticmethod
+    def release_database_connections():
+        """Close this process's pooled database connections."""
+        from psynet.db import release_local_database_connections
+
+        release_local_database_connections()
+
     def close(self, timeout_s=_BOT_PROCESS_EXIT_JOIN_S):
         """Stop any bots still running, waiting up to ``timeout_s`` for them."""
         self._stop_event.set()
@@ -1532,14 +1549,13 @@ def _serve_bot_commands(bots, index, commands, events):
 
     See :class:`_BotProcesses` for the commands and events.
     """
-    from psynet.db import release_local_database_connections
-
     test_id = 0
     while True:
         command, *args = commands.get()
-        if command == "test":
-            # A database reset before the test terminates pooled connections.
-            release_local_database_connections()
+        if command == "release":
+            bots.release_database_connections()
+            events.put((test_id, "released", index))
+        elif command == "test":
             test_id, end_time, n_slots = args
             record = partial(_put_bot_event, events, test_id)
             bots.begin_test(None, end_time, n_slots, record=record)
@@ -1558,7 +1574,7 @@ def _put_bot_event(events, test_id, kind, *args):
     events.put((test_id, kind, *args))
 
 
-_REPLY_KINDS = frozenset({"ready", "failed", "finished"})
+_REPLY_KINDS = frozenset({"ready", "failed", "finished", "released"})
 
 
 class _BotProcesses:
@@ -1567,15 +1583,16 @@ class _BotProcesses:
     The parent keeps all the bookkeeping. It sends each child commands on the
     child's own queue: ``("test", test_id, end_time, n_slots)`` before a test,
     ``("slot",)`` to start one bot slot, ``("stop", timeout_s)`` to stop the
-    test's bots and ``("exit",)`` to stop them and exit. Children send
+    test's bots, ``("release",)`` to close its database connections before a
+    database reset, and ``("exit",)`` to stop them and exit. Children send
     messages on one shared queue, each tagged with the test it belongs to
     (0 before the first test): ``(test_id, kind, *args)`` for each bot's
     progress, which a thread here applies to the test's ``bot_state`` with
     :meth:`PerformanceTester._record_bot_event` just as a bot thread in the
     parent would, and ``(test_id, kind, index, *payload)`` replies:
-    ``"ready"``, ``"failed"`` with a traceback, and ``"finished"`` with the
-    child's load (see :class:`_LoadMonitor`) and how many of its bots were
-    still running. Messages from an earlier test are dropped, so bots that
+    ``"ready"``, ``"released"``, ``"failed"`` with a traceback, and
+    ``"finished"`` with the child's load (see :class:`_LoadMonitor`) and how
+    many of its bots were still running. Messages from an earlier test are dropped, so bots that
     outlive their test can't affect the next one.
 
     Children are spawned, not forked: database engines, Redis pools and
@@ -1727,6 +1744,12 @@ class _BotProcesses:
                     f"(exit code {process.exitcode})"
                 )
         return None
+
+    def release_database_connections(self, timeout_s=30):
+        """Have the children close their pooled database connections, and wait for them."""
+        for commands in self._commands:
+            commands.put(("release",))
+        self._collect_replies("released", timeout_s)
 
     def close(self, timeout_s=10):
         """Ask the children to exit, terminating any that don't within ``timeout_s``."""
@@ -1944,26 +1967,29 @@ _GROWING_TABLES = (
 )
 
 
-def _database_rows():
+def _database_rows(connection=None):
     """Return the number of rows in each of ``_GROWING_TABLES``.
 
     Exact counts take well under a second even at hundreds of thousands of
     trials, and run twice per test. PostgreSQL's ``reltuples`` estimates would
     be cheaper, but only autovacuum and ``ANALYZE`` update them, so they lag
     behind a test that adds rows quickly. Tables that don't exist are left
-    out. The caller should end the transaction afterwards.
+    out. Counts on ``connection``, a SQLAlchemy connection, or by default on
+    Dallinger's session; the caller should end the transaction afterwards.
     """
     from dallinger import db
     from sqlalchemy import inspect, text
 
-    existing = set(inspect(db.session.get_bind()).get_table_names())
+    bind = db.session.get_bind() if connection is None else connection
+    connection = db.session if connection is None else connection
+    existing = set(inspect(bind).get_table_names())
     tables = [table for table in _GROWING_TABLES if table in existing]
     if not tables:
         return {}
     columns = ", ".join(
         f'(SELECT count(*) FROM "{table}") AS "{table}"' for table in tables
     )
-    row = db.session.execute(text(f"SELECT {columns}")).one()
+    row = connection.execute(text(f"SELECT {columns}")).one()
     return dict(row._mapping)
 
 

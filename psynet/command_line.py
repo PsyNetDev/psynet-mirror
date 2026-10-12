@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import uuid
 import zipfile
 from contextlib import contextmanager, nullcontext
@@ -4352,12 +4351,12 @@ _test_options["performance_json_output"] = click.option(
     If provided, write performance test results to this path as JSON.
     The file will contain a top-level object with: schema_version, psynet_version,
     dallinger_version, python_version, platform, experiment_label,
-    started_at / finished_at (ISO timestamps), snapshot_rows (the rows of
-    the database snapshot that each test started from, with
+    started_at / finished_at (ISO timestamps), snapshot and snapshot_rows
+    (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, stagger_interval_s, time_factor,
     bot_processes, reset_database, prefill_participants, prefill_bots,
-    from_snapshot), and results (one entry per bot count tested, with all
+    fresh_prefill, from_snapshot), and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4388,7 +4387,9 @@ _test_options["performance_prefill_participants"] = click.option(
     type=click.IntRange(min=1),
     help="""
     Before the first test, run this many bots through the experiment
-    without pauses, so that the tests start with that much data. Implies
+    without pauses, so that the tests start with that much data. The
+    resulting snapshot is kept and reused by later runs with the same
+    experiment code, PsyNet version and pre-fill settings. Implies
     --reset-database.""",
 )
 
@@ -4399,21 +4400,21 @@ _test_options["performance_prefill_bots"] = click.option(
     How many pre-fill bots run at once (default {_DEFAULT_PREFILL_BOTS}).""",
 )
 
-_test_options["performance_keep_snapshot"] = click.option(
-    "--keep-snapshot",
+_test_options["performance_fresh_prefill"] = click.option(
+    "--fresh-prefill",
     is_flag=True,
     help="""
-    Keep the database snapshot after the run, for --from-snapshot.
-    Implies --reset-database.""",
+    Pre-fill again even if a snapshot for the same code and settings
+    exists, and replace it.""",
 )
 
 _test_options["performance_from_snapshot"] = click.option(
     "--from-snapshot",
     metavar="SNAPSHOT",
     help="""
-    Start every test from a snapshot that an earlier run kept with
-    --keep-snapshot, rather than taking a new one. Implies
-    --reset-database.""",
+    Start every test from this pre-fill snapshot (see 'psynet
+    performance-test snapshots') or pg_dump archive, even if the
+    experiment code has changed since. Implies --reset-database.""",
 )
 
 
@@ -4423,7 +4424,7 @@ def _check_database_reset_options(
     reset_database,
     prefill_participants,
     prefill_bots,
-    keep_snapshot,
+    fresh_prefill,
     from_snapshot,
 ):
     """Return the database-reset options, or ``None`` without a reset.
@@ -4433,13 +4434,15 @@ def _check_database_reset_options(
     click.UsageError
         If the options conflict.
     """
-    if prefill_bots and not prefill_participants:
-        raise click.UsageError("--prefill-bots needs --prefill-participants.")
+    if (prefill_bots or fresh_prefill) and not prefill_participants:
+        raise click.UsageError(
+            "--prefill-bots and --fresh-prefill need --prefill-participants."
+        )
     if prefill_participants and from_snapshot:
         raise click.UsageError(
             "Use either --prefill-participants or --from-snapshot, not both."
         )
-    if not (reset_database or prefill_participants or keep_snapshot or from_snapshot):
+    if not (reset_database or prefill_participants or from_snapshot):
         return None
     if existing:
         raise click.UsageError(
@@ -4451,7 +4454,7 @@ def _check_database_reset_options(
         "prefill_bots": (
             (prefill_bots or _DEFAULT_PREFILL_BOTS) if prefill_participants else None
         ),
-        "keep_snapshot": keep_snapshot,
+        "fresh_prefill": fresh_prefill,
         "from_snapshot": from_snapshot,
     }
 
@@ -4604,7 +4607,7 @@ def performance_test(ctx):
 @_test_options["performance_reset_database"]
 @_test_options["performance_prefill_participants"]
 @_test_options["performance_prefill_bots"]
-@_test_options["performance_keep_snapshot"]
+@_test_options["performance_fresh_prefill"]
 @_test_options["performance_from_snapshot"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
@@ -4615,7 +4618,7 @@ def performance_test__local(
     reset_database=False,
     prefill_participants=None,
     prefill_bots=None,
-    keep_snapshot=False,
+    fresh_prefill=False,
     from_snapshot=None,
     **options,
 ):
@@ -4641,7 +4644,7 @@ def performance_test__local(
         reset_database=reset_database,
         prefill_participants=prefill_participants,
         prefill_bots=prefill_bots,
-        keep_snapshot=keep_snapshot,
+        fresh_prefill=fresh_prefill,
         from_snapshot=from_snapshot,
     )
     return _run_performance_test_local(
@@ -4782,12 +4785,7 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import (
-        CapacityLimits,
-        PerformanceSuite,
-        PerformanceTester,
-        prefill_database,
-    )
+    from psynet.perf_test import CapacityLimits, PerformanceSuite, PerformanceTester
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
@@ -4829,25 +4827,8 @@ def _run_performance_test_with_existing_server(
     reset = reset or {}
     database_reset = None
     if reset:
-        from psynet.perf_reset import DatabaseReset
-
-        prefill = None
-        if reset["prefill_participants"]:
-            prefill = functools.partial(
-                prefill_database,
-                reset["prefill_participants"],
-                reset["prefill_bots"],
-                bot_log_file,
-            )
         try:
-            database_reset = DatabaseReset(
-                server.stop,
-                server.start,
-                prefill=prefill,
-                from_snapshot=reset["from_snapshot"],
-                keep_snapshot=reset["keep_snapshot"],
-                dump_directory=_performance_log_directory(),
-            )
+            database_reset = _database_reset(reset, server, exp.label, bot_log_file)
         except ValueError as e:
             bot_log_file.close()
             raise click.ClickException(str(e)) from e
@@ -4869,7 +4850,9 @@ def _run_performance_test_with_existing_server(
             **_collect_run_metadata(exp.label),
             "started_at": started_at,
             "finished_at": finished_at,
-            # Rows in each growing table of the database every test started from.
+            # The snapshot every test started from, and the rows in each of its
+            # growing tables.
+            "snapshot": database_reset.snapshot if database_reset else None,
             "snapshot_rows": database_reset.snapshot_rows if database_reset else None,
         }
         options = {
@@ -4884,6 +4867,7 @@ def _run_performance_test_with_existing_server(
             "reset_database": database_reset is not None,
             "prefill_participants": reset.get("prefill_participants"),
             "prefill_bots": reset.get("prefill_bots"),
+            "fresh_prefill": reset.get("fresh_prefill"),
             "from_snapshot": reset.get("from_snapshot"),
         }
         _write_json_results(
@@ -4894,6 +4878,62 @@ def _run_performance_test_with_existing_server(
         )
         print(f"Performance results (JSON): {json_output}")
     return all_results
+
+
+def _database_reset(reset, server, experiment_label, bot_log_file):
+    """Return the :class:`~psynet.perf_reset.DatabaseReset` for the ``reset`` options.
+
+    With ``--prefill-participants`` it starts from the cached pre-fill
+    snapshot for the current code and settings if there is one, and
+    otherwise pre-fills and keeps the snapshot.
+
+    Raises
+    ------
+    ValueError
+        If the database may not be reset, or the snapshot doesn't exist.
+    """
+    from dallinger import db
+
+    from psynet import perf_reset
+    from psynet.perf_test import prefill_database
+
+    database_url = db.engine.url.render_as_string(hide_password=False)
+    print(f"Database to reset: {perf_reset.check_resettable_database(database_url)}")
+    from_snapshot, prefill, keep_as = reset["from_snapshot"], None, None
+    if from_snapshot:
+        perf_reset.check_snapshot(from_snapshot, database_url)
+        key = perf_reset.snapshot_code_key(from_snapshot)
+        if key is not None and key != perf_reset.experiment_code_key():
+            print(
+                f"Warning: {from_snapshot} was pre-filled with different "
+                "experiment code or PsyNet version."
+            )
+    elif reset["prefill_participants"]:
+        n_participants, n_bots = reset["prefill_participants"], reset["prefill_bots"]
+        name = perf_reset.prefill_snapshot_name(
+            perf_reset.experiment_code_key(), n_participants, n_bots
+        )
+        if not reset["fresh_prefill"]:
+            from_snapshot = perf_reset.find_snapshot(name, database_url)
+        if from_snapshot:
+            print(
+                f"Using the cached pre-fill snapshot {from_snapshot} "
+                "(--fresh-prefill pre-fills again)."
+            )
+        else:
+            keep_as = name
+            prefill = functools.partial(
+                prefill_database, n_participants, n_bots, bot_log_file
+            )
+    return perf_reset.DatabaseReset(
+        server.stop,
+        server.start,
+        prefill=prefill,
+        from_snapshot=from_snapshot,
+        keep_as=keep_as,
+        description=f"{experiment_label}, PsyNet {__version__}",
+        database_url=database_url,
+    )
 
 
 class _OutputTee:
@@ -4932,10 +4972,6 @@ def _start_local_server_and_wait_for_ready(
     max_wait=60,
     ready_phrase="Experiment launch complete!",
     extra_env=None,
-    executable="psynet",
-    cwd=None,
-    env=None,
-    log_path=None,
 ):
     """Spawn ``psynet <command_args>`` and wait for launch completion.
 
@@ -4947,42 +4983,31 @@ def _start_local_server_and_wait_for_ready(
         ``["debug", "local"]``.
     extra_env : dict[str, str], optional
         Environment variables to set for the server process.
-    executable : str
-        The program to run instead of ``psynet``.
-    cwd : str, optional
-        The server's working directory.
-    env : dict[str, str], optional
-        The server's environment, instead of this process's.
-    log_path : str, optional
-        Append the server's output to this log instead of a new one.
     """
     print("▶ Starting experiment server...")
 
-    if log_path is None:
-        tmp_log = tempfile.NamedTemporaryFile(
-            delete=False,
-            prefix="psynet_server_",
-            suffix=".log",
-            dir=_performance_log_directory(),
-        )
-        log_path = tmp_log.name
-        tmp_log.close()
-    tmp_log_path = log_path
+    tmp_log = tempfile.NamedTemporaryFile(
+        delete=False,
+        prefix="psynet_server_",
+        suffix=".log",
+        dir=_performance_log_directory(),
+    )
+    tmp_log_path = tmp_log.name
+    tmp_log.close()
     print(f"Server log: {tmp_log_path}")
 
     log_file = open(tmp_log_path, "a", encoding="utf-8")
     logfile = _OutputTee(sys.stdout, log_file) if debug else log_file
-    env = dict(os.environ if env is None else env)
+    env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
     env.update(extra_env or {})
 
     try:
         process = pexpect.spawn(
-            executable,
+            "psynet",
             command_args,
             env=env,
-            cwd=cwd,
             encoding="utf-8",
             timeout=max_wait,
         )
@@ -5118,111 +5143,6 @@ def _stop_server(server_info):
     print(f"✓ Server stopped (log: {tmp_log_path})")
 
 
-class _RestartableLocalServer:
-    """The experiment server that ``performance-test local`` starts and can restart.
-
-    It starts with ``psynet debug local --legacy``, which prepares a fresh
-    database and launches the experiment; gunicorn with several workers is
-    closer to a deployed server than the auto-reload server of plain
-    ``psynet debug local``. Running that command again would reset the
-    database, so :meth:`start` instead reruns the ``heroku local`` command
-    that it ran, which starts the web, worker and clock processes, with the
-    same working directory and environment. The environment includes the
-    Flask secret key, so dashboard logins stay valid.
-    """
-
-    def __init__(self, debug=False):
-        self._debug = debug
-        self._info = _start_local_server_and_wait_for_ready(
-            ["debug", "local", "--legacy", "--no-browsers"],
-            debug=debug,
-            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
-        )
-        self._log_path = self._info["tmp_log_path"]
-        self._heroku_local = None
-        self._n_workers = 0
-
-    def stop(self):
-        """Stop the server's processes."""
-        from dallinger.db import redis_conn
-        from rq import Worker
-
-        if self._heroku_local is None:
-            self._heroku_local = _find_heroku_local(self._info["process"].pid)
-        self._n_workers = Worker.count(connection=redis_conn)
-        info, self._info = self._info, None
-        _stop_server(info)
-
-    def start(self):
-        """Start the server's processes again and wait until they serve requests."""
-        cmdline, cwd, env = self._heroku_local
-        self._info = _start_local_server_and_wait_for_ready(
-            cmdline[1:],
-            executable=cmdline[0],
-            cwd=cwd,
-            env=env,
-            debug=self._debug,
-            ready_phrase="Listening at:",
-            log_path=self._log_path,
-        )
-        _wait_until_server_ready(self._n_workers)
-
-    def close(self):
-        """Stop the server if it is running."""
-        if self._info is not None:
-            _stop_server(self._info)
-            self._info = None
-
-
-def _find_heroku_local(pid):
-    """Return the command line, working directory and environment of ``heroku local``.
-
-    ``pid`` is the ``psynet debug local --legacy`` process that started it.
-    The ``heroku`` shell script runs a Node program whose environment can be
-    read, unlike that of the protected ``bash`` on macOS.
-    """
-    for process in psutil.Process(pid).children(recursive=True):
-        try:
-            cmdline = process.cmdline()
-            if "local" not in cmdline or "-p" not in cmdline:
-                continue
-            env = process.environ()
-            if "FLASK_SECRET_KEY" in env:
-                return cmdline, process.cwd(), env
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    raise click.ClickException(
-        "Could not find the heroku local process of the experiment server, so "
-        "it can't be restarted to reset the database."
-    )
-
-
-_SERVER_READY_TIMEOUT_S = 120
-
-
-def _wait_until_server_ready(n_workers):
-    """Wait until the server answers /health and ``n_workers`` RQ workers have started."""
-    import requests
-    from dallinger.db import redis_conn
-    from rq import Worker
-
-    url = get_experiment_url() + "/health"
-    deadline = time.monotonic() + _SERVER_READY_TIMEOUT_S
-    while True:
-        try:
-            healthy = requests.get(url, timeout=10).ok
-        except requests.RequestException:
-            healthy = False
-        if healthy and Worker.count(connection=redis_conn) >= n_workers:
-            return
-        if time.monotonic() >= deadline:
-            raise click.ClickException(
-                f"The restarted experiment server was not ready within "
-                f"{_SERVER_READY_TIMEOUT_S} s."
-            )
-        time.sleep(0.5)
-
-
 def _run_performance_test_with_new_server(
     *, debug=False, json_output=None, reset=None, **options
 ):
@@ -5230,8 +5150,10 @@ def _run_performance_test_with_new_server(
 
     ``reset`` holds the database-reset options (see :func:`_check_database_reset_options`).
     """
+    from psynet.perf_local_server import RestartableLocalServer
+
     _check_no_debug_server_here()
-    server = _RestartableLocalServer(debug=debug)
+    server = RestartableLocalServer(debug=debug, restartable=bool(reset))
     try:
         all_results = _run_performance_test_with_existing_server(
             debug=debug,
@@ -5245,6 +5167,44 @@ def _run_performance_test_with_new_server(
 
     finally:
         server.close()
+
+
+@performance_test.command("snapshots")
+@click.option(
+    "--drop",
+    multiple=True,
+    metavar="SNAPSHOT",
+    help="Drop this pre-fill snapshot; repeat to drop several.",
+)
+@click.option("--drop-all", is_flag=True, help="Drop every pre-fill snapshot listed.")
+def performance_test__snapshots(drop, drop_all):
+    """
+    List the pre-fill snapshots of ``performance-test local``, or drop them.
+
+    Lists the snapshot databases on the local PostgreSQL server, which all
+    experiments share, and this experiment's pg_dump archives.
+    """
+    from dallinger.db import db_url
+
+    from psynet.perf_reset import drop_snapshot, list_snapshots
+
+    snapshots = list_snapshots(db_url)
+    names = [name for name, _, _ in snapshots] if drop_all else drop
+    for name in names:
+        try:
+            drop_snapshot(name, db_url)
+        except (ValueError, OSError) as e:
+            raise click.ClickException(str(e)) from e
+        print(f"Dropped {name}")
+    if names:
+        return
+    if not snapshots:
+        print("No pre-fill snapshots.")
+    for name, size, description in snapshots:
+        print(
+            f"{name}  {size / 1e6:,.0f} MB"
+            + (f"  {description}" if description else "")
+        )
 
 
 @performance_test.command("ssh")

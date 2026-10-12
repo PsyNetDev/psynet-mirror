@@ -346,25 +346,35 @@ def create_database(database_url, *, suffix):
     connection.autocommit = True
     try:
         with connection.cursor() as cursor:
-            _drop_database(cursor, name)
+            drop_database(cursor, name)
             cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     finally:
         connection.close()
     return urlunsplit(parts._replace(path=f"/{name}"))
 
 
-def _drop_database(cursor, name):
+def drop_database(cursor, name):
     """Drop database ``name`` if it exists, after terminating its connections."""
     from psycopg2 import sql
 
-    # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-    # `psynet services ensure` starts PostgreSQL 12.
+    terminate_connections(cursor, name)
+    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+
+
+def terminate_connections(cursor, name):
+    """Terminate the other client connections to database ``name``.
+
+    ``DROP DATABASE ... WITH (FORCE)`` would do this, but needs PostgreSQL 13,
+    and ``psynet services ensure`` starts PostgreSQL 12. Autovacuum workers
+    are left alone: only a superuser may terminate them, and ``CREATE
+    DATABASE`` and ``DROP DATABASE`` stop them anyway.
+    """
     cursor.execute(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-        "WHERE datname = %s AND pid <> pg_backend_pid()",
+        "WHERE datname = %s AND pid <> pg_backend_pid() "
+        "AND backend_type = 'client backend'",
         (name,),
     )
-    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
 def _drop_session_database(session_database_url):
@@ -379,7 +389,7 @@ def _drop_session_database(session_database_url):
         try:
             connection.autocommit = True
             with connection.cursor() as cursor:
-                _drop_database(cursor, name)
+                drop_database(cursor, name)
         finally:
             connection.close()
     except psycopg2.Error as e:
@@ -412,7 +422,7 @@ def start_redis_server(port):
         If the server exits (for example because the port is taken) or doesn't
         answer within 10 seconds.
     """
-    if not _port_is_free(port):
+    if not port_is_free(port):
         raise RuntimeError(f"Port {port} for a test Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
@@ -447,7 +457,7 @@ def stop_process(process):
         process.wait()
 
 
-def _port_is_free(port):
+def port_is_free(port):
     with socket.socket() as sock:
         # Servers bind with SO_REUSEADDR, so ports in TIME_WAIT are usable.
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -493,9 +503,7 @@ def _claim_port(start, also_free=None):
         except OSError:
             lock.close()
             continue
-        if _port_is_free(port) and (
-            also_free is None or _port_is_free(also_free(port))
-        ):
+        if port_is_free(port) and (also_free is None or port_is_free(also_free(port))):
             return port, lock
         lock.close()
     raise RuntimeError(f"No free port found from {start}.")

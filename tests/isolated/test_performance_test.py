@@ -441,21 +441,21 @@ def test_failed_participants_are_classified_by_failed_not_status():
     assert _failure_reason(failed) == "timeline_hold:barrier:round_N, fail_on_timeout"
 
 
-def _add_participant():
-    import uuid
+class _RecordingCursor:
+    """Record the statements run on a cursor."""
 
-    from dallinger import db
+    def __init__(self, cursor, statements):
+        self._cursor, self._statements = cursor, statements
 
-    from psynet.experiment import get_experiment
-    from psynet.participant import Participant
+    def execute(self, statement, params=None):
+        from psycopg2 import sql
 
-    ids = {key: str(uuid.uuid4()) for key in ("worker_id", "hit_id", "assignment_id")}
-    db.session.add(
-        Participant(
-            experiment=get_experiment(), recruiter_id="hotair", mode="debug", **ids
-        )
-    )
-    db.session.commit()
+        if isinstance(statement, sql.Composable):
+            self._statements.append(statement.as_string(self._cursor))
+        return self._cursor.execute(statement, params)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
 
 
 @pytest.mark.parametrize(
@@ -463,40 +463,117 @@ def _add_participant():
     [path_to_test_experiment("timeline")],
     indirect=True,
 )
-def test_database_reset_restores_the_snapshot(db_session, tmp_path):
+def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
+    db_session, tmp_path
+):
+    import re
     import shutil
     import subprocess
+    from contextlib import contextmanager
 
-    from psynet.perf_reset import DatabaseReset
-    from psynet.perf_test import _database_rows
+    import psycopg2
+    from dallinger import db
 
-    _add_participant()
-    server = Mock()
-    reset = DatabaseReset(server.stop, server.start)
-    reset()
-    snapshot_rows = reset.snapshot_rows
-    assert snapshot_rows["participant"] >= 1
-    _add_participant()
-    reset()
-    assert _database_rows() == snapshot_rows
-    assert server.stop.call_count == server.start.call_count == 2
-    reset.close()
-    with pytest.raises(ValueError, match="No snapshot"):
-        DatabaseReset(server.stop, server.start, from_snapshot=reset.snapshot)
+    from psynet import perf_reset
+    from psynet.isolated_environment import create_database, drop_database
+    from psynet.redis import redis_vars
 
-    if shutil.which("pg_dump") is None:
-        return
-    archive = tmp_path / "snapshot.dump"
-    subprocess.run(
-        ["pg_dump", "--format=custom", f"--file={archive}", reset.database_url],
-        check=True,
+    scratch_url = create_database(
+        db.engine.url.render_as_string(hide_password=False), suffix="_reset_scratch"
     )
-    _add_participant()
-    reset = DatabaseReset(server.stop, server.start, from_snapshot=str(archive))
-    reset()
-    reset.close()
-    assert _database_rows() == snapshot_rows
-    assert archive.exists()
+    scratch = scratch_url.rsplit("/", 1)[1]
+    cache = perf_reset.prefill_snapshot_name("0123456789ab", 3, 2)
+    statements = []
+
+    class RecordingReset(perf_reset.DatabaseReset):
+        @contextmanager
+        def _connect(self):
+            with super()._connect() as cursor:
+                yield _RecordingCursor(cursor, statements)
+
+    def participants(n_new=0):
+        connection = psycopg2.connect(scratch_url)
+        try:
+            with connection, connection.cursor() as cursor:
+                cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
+                for _ in range(n_new):
+                    cursor.execute("INSERT INTO participant DEFAULT VALUES")
+                cursor.execute("SELECT count(*) FROM participant")
+                return cursor.fetchone()[0]
+        finally:
+            connection.close()
+
+    participants(1)
+    redis_vars.set("launch_finished", True)
+    server = Mock()
+    snapshots = []
+    try:
+        reset = RecordingReset(server.stop, server.start, database_url=scratch_url)
+        reset()
+        snapshots.append(reset.snapshot)
+        assert reset.snapshot_rows == {"participant": 1}
+        participants(1)
+        reset()
+        assert participants() == 1
+        assert server.stop.call_count == server.start.call_count == 2
+        assert redis_vars.get("launch_finished") is True
+        reset.close()
+        assert perf_reset.find_snapshot(reset.snapshot, scratch_url) is None
+
+        kept = RecordingReset(
+            server.stop, server.start, keep_as=cache, database_url=scratch_url
+        )
+        kept()
+        kept.close()
+        assert perf_reset.find_snapshot(cache, scratch_url) == cache
+        assert cache in [name for name, _, _ in perf_reset.list_snapshots(scratch_url)]
+        perf_reset.drop_snapshot(cache, scratch_url)
+
+        dropped = set(
+            re.findall(r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements))
+        )
+        assert dropped == {scratch, f"{scratch}__new", reset.snapshot, cache}
+
+        if shutil.which("pg_dump"):
+            archive = tmp_path / "snapshot.dump"
+            subprocess.run(
+                ["pg_dump", "--format=custom", f"--file={archive}", scratch_url],
+                check=True,
+            )
+            participants(2)
+            restored = perf_reset.DatabaseReset(
+                server.stop,
+                server.start,
+                from_snapshot=str(archive),
+                database_url=scratch_url,
+            )
+            restored()
+            restored.close()
+            assert participants() == 1
+            assert archive.exists()
+    finally:
+        with perf_reset._maintenance_cursor(scratch_url) as cursor:
+            for name in [scratch, f"{scratch}__new", cache, *snapshots]:
+                drop_database(cursor, name)
+
+
+@pytest.mark.parametrize(
+    "url, allowed",
+    [
+        ("postgresql://u:p@localhost/dallinger_test_5000", True),
+        ("postgresql:///dallinger?host=/tmp", True),
+        ("postgresql://u:p@localhost/postgres", False),
+        ("postgresql://u:p@db.example.org/dallinger", False),
+    ],
+)
+def test_reset_refuses_system_and_remote_databases(url, allowed):
+    from psynet.perf_reset import check_resettable_database
+
+    if allowed:
+        check_resettable_database(url)
+    else:
+        with pytest.raises(ValueError, match="Refusing"):
+            check_resettable_database(url)
 
 
 @pytest.mark.parametrize(

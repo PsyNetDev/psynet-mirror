@@ -350,18 +350,21 @@ load:
 
 Before the first test, PsyNet copies the experiment's database into a
 snapshot database. Before each later test, it stops the experiment server,
-recreates the database from the snapshot, empties the async job queues and
-starts the server again. That takes a few seconds, plus a few seconds per
-gigabyte of data, because PostgreSQL copies the database's files. At the end it drops
-the snapshot. It only ever drops the experiment's own database and the
-snapshot it made. Files that the bots uploaded or generated stay in the
-asset storage after a reset, because only the database rows that refer to
-them are reset; they cost disk space but nothing else.
+copies the snapshot into a new database that replaces the experiment's,
+empties the async job queues and starts the server again. That takes a few
+seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
+the database's files. At the end it drops the snapshot. It only resets a
+database on your own computer, and only ever drops the experiment's own
+database, its replacement and the snapshots it names. Files that the bots
+uploaded or generated stay in the asset storage after a reset, because only
+the database rows that refer to them are reset; they cost disk space but
+nothing else.
 
 If the PostgreSQL role may not create databases, PsyNet says so and keeps
-the snapshot as a ``pg_dump`` archive instead, which it restores before
-each test with ``pg_restore``. That needs the PostgreSQL client programs
-and takes longer.
+the snapshot as a ``pg_dump`` archive in the experiment's
+``.deploy/performance_snapshots`` directory instead, which it restores
+before each test with ``pg_restore``. That needs the PostgreSQL client
+programs and takes longer.
 
 To test with the amount of data the study will reach, pre-fill the
 database before the first test:
@@ -369,7 +372,7 @@ database before the first test:
 .. code-block:: bash
 
     psynet performance-test local --prefill-participants 1500 --prefill-bots 50 \
-        --keep-snapshot --n-bots auto
+        --n-bots auto
 
 This runs 1,500 bots through the experiment, 50 at a time and without
 pauses, waits for their async processes to finish, and then takes the
@@ -377,11 +380,25 @@ snapshot, so every test starts with 1,500 participants' data. The bots use
 the same routes as participants, so the data is what the experiment itself
 stores, but it takes time: at about 250 requests per participant, a few
 hundred requests per second fill 1,500 participants in about an hour.
-``--keep-snapshot`` keeps the snapshot at the end and prints its name;
-start later runs from it with ``--from-snapshot <name>`` instead of
-pre-filling again. A kept snapshot only suits the experiment version that
-made it, and it stays on the database server until you drop it with
-``dropdb <name>``.
+
+PsyNet keeps the pre-filled snapshot and prints its name, which comes from
+the experiment's files (those a deployment copies, without the ones Git
+ignores), the PsyNet version and the pre-fill settings. A later run with the
+same files, version and settings starts from that snapshot instead of
+pre-filling again; ``--fresh-prefill`` pre-fills again and replaces it. Any
+change to the experiment's files means a new pre-fill. If a change can't
+affect the data, such as a fixed typo, start from the old snapshot with
+``--from-snapshot <name>``, which only warns that the code differs.
+
+Pre-fill snapshots stay on the database server, or in
+``.deploy/performance_snapshots``, until you drop them. List them, with
+their sizes and the experiment that made them, and drop them with:
+
+.. code-block:: bash
+
+    psynet performance-test snapshots
+    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500_k50
+    psynet performance-test snapshots --drop-all
 
 To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, launch the experiment from the export with
