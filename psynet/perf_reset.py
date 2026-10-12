@@ -7,8 +7,8 @@ suite's ``before_test`` hook (see :class:`psynet.perf_test.PerformanceSuite`).
 
 Before the first test it takes a snapshot of the database with ``CREATE
 DATABASE ... TEMPLATE``, a file-level copy that keeps sequences, indexes and
-table bloat; before each later test it copies the snapshot to a new database
-and swaps that in for the experiment database. PostgreSQL only copies a
+table bloat; before each later test it drops the experiment database and
+creates it again from the snapshot. PostgreSQL only copies or drops a
 database that nobody is connected to, so the hook stops the experiment
 server, terminates the connections that remain, and starts the server again
 afterwards. Restarting also empties the server's in-memory caches, some of
@@ -24,14 +24,13 @@ of pre-filling again.
 
 Design constraints:
 
-- Only the experiment database, the copy that replaces it, and snapshots
-  that this module names are ever dropped, and only on this computer's
-  PostgreSQL server (see :func:`check_resettable_database`).
-- A reset and the replacement of a kept snapshot are both a swap (see
-  :func:`_swap_in_copy`): the copy is complete before the old database is
-  dropped. If renaming the copy fails after that, :meth:`DatabaseReset.close`
-  renames it, and a snapshot is only dropped while the experiment database
-  exists.
+- Only the experiment database and snapshots that this module names are
+  ever dropped, and only on this computer's PostgreSQL server (see
+  :func:`check_resettable_database`). The experiment database is disposable:
+  it belongs to the isolated test session, or to CI.
+- The replacement of a kept snapshot is a swap (see :func:`_swap_in_copy`):
+  the copy is complete before the old snapshot is dropped, and
+  :meth:`DatabaseReset.close` finishes a swap that was interrupted.
 - The PostgreSQL role must be allowed to create databases, as the isolated
   test environment already requires.
 - Files that tests add to the asset storage remain after a reset; only the
@@ -52,6 +51,8 @@ import shutil
 import time
 from contextlib import contextmanager
 from urllib.parse import urlsplit, urlunsplit
+
+from sqlalchemy.engine import make_url
 
 from psynet.isolated_environment import (
     drop_database,
@@ -82,11 +83,10 @@ def check_resettable_database(database_url):
     ------
     ValueError
         If the database is a PostgreSQL system database or isn't on this
-        computer. A local database outside the isolated test environment,
-        as with ``PSYNET_TEST_ENVIRONMENT=shared``, is allowed.
+        computer. The command line also refuses to reset with
+        ``PSYNET_TEST_ENVIRONMENT=shared``, so the database is the isolated
+        test session's, or CI's, both of which are disposable.
     """
-    from sqlalchemy.engine import make_url
-
     url = make_url(database_url)
     host = url.query.get("host") or url.host or "local socket"
     if not url.database or url.database in _SYSTEM_DATABASES:
@@ -234,7 +234,7 @@ class DatabaseReset:
 
             database_url = db.engine.url.render_as_string(hide_password=False)
         self.database_url = database_url
-        self.database = urlsplit(database_url).path.lstrip("/")
+        self.database = make_url(database_url).database
         self.snapshot = from_snapshot
         # Rows in each growing table of the snapshot, once restored or taken.
         self.snapshot_rows = None
@@ -243,7 +243,7 @@ class DatabaseReset:
         self._prefill = prefill
         self._keep_as = keep_as
         self._description = description
-        self._owns_snapshot = False
+        self._drop_snapshot_on_close = False
         self._disk_space_unknown = False
         # Whether the pre-fill for ``keep_as`` and its async processes finished.
         self._prefilled = False
@@ -254,7 +254,7 @@ class DatabaseReset:
         The server starts again afterwards. If a restore fails, other than
         by an interrupt, the server only starts again if the experiment
         database exists; after a failed snapshot it stays stopped. The error
-        propagates, and :meth:`close` then repairs the database if it can.
+        propagates.
         """
         from psynet.db import release_local_database_connections
 
@@ -310,37 +310,27 @@ class DatabaseReset:
             logger.exception("Could not restart the experiment server.")
 
     def close(self):
-        """Repair the database after a failed reset, then drop a snapshot taken here.
+        """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
 
-        A copy left by a reset that failed after dropping the experiment
-        database becomes the experiment database again. A pre-fill whose
-        snapshot was interrupted is kept now. The snapshot is kept if the
-        experiment database doesn't exist.
+        Errors are only logged, so that a test's own error is the one that
+        propagates.
         """
         import psycopg2
 
         try:
-            with self._connect() as cursor:
-                present = _recover_database(cursor, self.database)
-                if present and self._prefilled and self.snapshot is None:
-                    self._take_snapshot()
-                if not present:
-                    logger.warning(
-                        warning(
-                            f"Kept the snapshot {self.snapshot}, because "
-                            f"{self.database} no longer exists."
-                        )
-                    )
-                    return
-                if self._owns_snapshot:
+            if self._prefilled and self.snapshot is None:
+                self._take_snapshot()
+            if self._drop_snapshot_on_close:
+                with self._connect() as cursor:
                     drop_database(cursor, self.snapshot)
-        except psycopg2.Error as e:
+        except (psycopg2.Error, RuntimeError) as e:
+            advice = (
+                "The pre-filled data was not kept."
+                if self.snapshot is None
+                else f"Drop the snapshot with 'dropdb {self.snapshot}'."
+            )
             logger.warning(
-                warning(
-                    f"Could not finish resetting the database ({e}). Check that "
-                    f"{self.database} exists, and drop the snapshot with "
-                    f"'dropdb {self.snapshot}'."
-                )
+                warning(f"Could not finish resetting the database ({e}). {advice}")
             )
 
     @contextmanager
@@ -380,7 +370,7 @@ class DatabaseReset:
                     ),
                     (self._description,),
                 )
-        self.snapshot, self._owns_snapshot = name, self._keep_as is None
+        self.snapshot, self._drop_snapshot_on_close = name, self._keep_as is None
         if self._keep_as is not None:
             logger.info(
                 f"Kept the pre-fill snapshot {name}; later runs with the same "
@@ -444,7 +434,12 @@ class DatabaseReset:
     def _restore(self):
         with self._connect() as cursor:
             self._check_disk_space(cursor, self.snapshot)
-            _swap_in_copy(cursor, self.database, self.snapshot)
+            _run_when_unused(
+                cursor,
+                self.database,
+                _statement("DROP DATABASE IF EXISTS {}", self.database),
+            )
+            _create_from_template(cursor, self.database, self.snapshot)
 
     def _count_rows(self):
         from sqlalchemy import create_engine

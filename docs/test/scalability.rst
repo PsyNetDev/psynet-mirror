@@ -350,23 +350,25 @@ load:
 
 Before the first test, PsyNet copies the experiment's database into a
 snapshot database. Before each later test, it stops the experiment server,
-copies the snapshot into a new database that replaces the experiment's,
+drops the experiment's database and creates it again from the snapshot,
 empties the async job queues and starts the server again. That takes a few
 seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
 the database's files. At the end it drops the snapshot. It only resets a
 database on your own computer, and only ever drops the experiment's own
-database, its replacement and the snapshots it names. Files that the bots
-uploaded or generated stay in the asset storage after a reset, because only
-the database rows that refer to them are reset; they cost disk space but
+database and the snapshots it names. Files that the bots uploaded or
+generated stay in the asset storage after a reset, because only the
+database rows that refer to them are reset; they cost disk space but
 nothing else.
 
-The PostgreSQL role must be allowed to create databases, as it already
-must be for the isolated test environment (see :doc:`/developer/running_tests`).
+The experiment's database must be disposable, so these options need the
+isolated test environment that ``performance-test local`` sets up by
+default, and refuse to run with ``PSYNET_TEST_ENVIRONMENT=shared``. The
+PostgreSQL role must be allowed to create databases, as it already must be
+for the isolated test environment (see :doc:`/developer/running_tests`).
 
-Each copy or restore needs disk space, so before one PsyNet checks that
-the disk holding PostgreSQL's data has at least twice the database's size
-free. That margin is PsyNet's policy rather than an exact need. If the
-space isn't free, PsyNet stops and says how much space the pre-fill
+Each copy needs disk space, so before one PsyNet checks that the disk
+holding PostgreSQL's data has at least twice the database's size free. If
+the space isn't free, PsyNet stops and says how much space the pre-fill
 snapshots use. It can only check if the PostgreSQL role may read the
 server's settings and the server's data directory is on this computer,
 not in a container; otherwise it warns once and carries on.

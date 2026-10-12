@@ -4764,9 +4764,10 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     )
 
 
-def test_database_reset_options_imply_a_reset_and_reject_conflicts():
+def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
     from psynet.command_line import _check_database_reset_options
 
+    monkeypatch.delenv("PSYNET_TEST_ENVIRONMENT", raising=False)
     none = dict(
         existing=False,
         reset_database=False,
@@ -4790,6 +4791,9 @@ def test_database_reset_options_imply_a_reset_and_reject_conflicts():
     ]:
         with pytest.raises(click.UsageError):
             _check_database_reset_options(**{**none, **conflict})
+    monkeypatch.setenv("PSYNET_TEST_ENVIRONMENT", "shared")
+    with pytest.raises(click.UsageError, match="unset PSYNET_TEST_ENVIRONMENT"):
+        _check_database_reset_options(**{**none, "reset_database": True})
 
 
 def test_ssh_performance_test_command_forwards_zero_valued_options():

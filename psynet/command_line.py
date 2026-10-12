@@ -4388,7 +4388,8 @@ _test_options["performance_reset_database"] = click.option(
     Start every test from the same database: take a snapshot before the
     first test, and before each later test stop the server, recreate the
     database from the snapshot, empty the async job queues and restart
-    the server. Adds a few seconds per test, more for a large database.""",
+    the server. Adds a few seconds per test, more for a large database.
+    Not available with PSYNET_TEST_ENVIRONMENT=shared.""",
 )
 
 _test_options["performance_prefill_participants"] = click.option(
@@ -4457,6 +4458,14 @@ def _check_database_reset_options(
         raise click.UsageError(
             "--existing can't reset the database, because the server must be "
             "restarted for each reset; leave out --existing."
+        )
+    from .isolated_environment import ENV_VAR, SHARED
+
+    if os.environ.get(ENV_VAR) == SHARED:
+        raise click.UsageError(
+            f"Resetting the database drops and recreates it, so it needs the "
+            f"isolated test environment's disposable database; unset "
+            f"{ENV_VAR}={SHARED}."
         )
     return {
         "prefill_participants": prefill_participants,
