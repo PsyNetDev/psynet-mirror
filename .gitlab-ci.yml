@@ -87,6 +87,18 @@ check_already_tested:
       when: always
     - when: never
 
+# Merge requests stacked on another feature branch get pushed often and are
+# fully tested again once retargeted to the default branch, so they run only
+# the fast checks and offer the expensive jobs as manual actions. Put this
+# rule before any rule that would run an expensive job (first match wins),
+# with the job's `changes` list if it has one, so stacked MRs offer only the
+# jobs that would otherwise run. allow_failure keeps unplayed manual jobs from
+# blocking the pipeline and the merge. Merge trains keep their usual jobs.
+.stacked_mr_manual_rule: &stacked_mr_manual
+  if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME != $CI_DEFAULT_BRANCH && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME !~ /^release-/
+  when: manual
+  allow_failure: true
+
 # The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
 # run `asv_benchmarks` (and `pages`, which republishes the results), so every
 # other job opts out of them. The weekly linkcheck schedule sets
@@ -114,10 +126,8 @@ check_already_tested:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
-      when: never
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
+    - <<: *stacked_mr_manual
+      changes: &docker_test_changes
         - .gitlab-ci.yml
         - .cursor/skills/experiment/**/*
         - Dockerfile
@@ -141,6 +151,10 @@ check_already_tested:
         - run-ci-tests.sh
         - scripts/**/*
         - tests/**/*
+    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: *docker_test_changes
       when: always
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: never
@@ -507,14 +521,16 @@ asv_regression:
       when: never
     # Fast ASV only measures PsyNet hot paths. Skip the job when the MR
     # cannot change those results.
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
+    - <<: *stacked_mr_manual
+      changes: &asv_regression_changes
         - psynet/**/*
         - benchmarks/**/*
         - asv.conf.json
         - pyproject.toml
         - Dockerfile
         - .gitlab-ci.yml
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: *asv_regression_changes
       when: always
     - when: never
 
@@ -568,6 +584,9 @@ benchmark_load_sweep:
 # branch and release tags.
 docs:
   extends: .docs_ci
+  rules:
+    - *stacked_mr_manual
+    - !reference [.default_rules, rules]
   script:
     - psynet dev docs make --strict
     - psynet dev docs linkcheck --no-clean
