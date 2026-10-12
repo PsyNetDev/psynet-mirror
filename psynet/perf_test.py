@@ -1208,241 +1208,13 @@ class PerformanceTester:
         backlog that never drains still counts against capacity.
         """
         from dallinger import db
-        from sqlalchemy import case, func, or_
 
-        from psynet.bot import Bot
-        from psynet.experiment import Request
-        from psynet.process import AsyncProcess
-
-        request_window = (
-            Request.id > initial_state["max_request_id"],
-            Request.id <= last_request_id,
+        request_stats = _request_stats(initial_state["max_request_id"], last_request_id)
+        process_stats = _async_process_stats(initial_state["max_process_id"], ended_at)
+        outcomes, bot_stats = _bot_outcome_stats(
+            initial_state["max_participant_id"], bot_state.errored_bot_ids
         )
-        requests_during_test = (
-            db.session.query(func.count(Request.id)).filter(*request_window).scalar()
-        )
-
-        key_endpoints = ["/timeline", "/response"]
-
-        stats = (
-            db.session.query(
-                func.count(Request.id).label("count"),
-                func.avg(Request.duration).label("avg"),
-                func.percentile_cont(0.5)
-                .within_group(Request.duration)
-                .label("median"),
-                func.percentile_cont(0.95).within_group(Request.duration).label("p95"),
-                func.percentile_cont(0.99).within_group(Request.duration).label("p99"),
-                func.stddev_samp(Request.duration).label("stddev"),
-                func.max(Request.duration).label("max"),
-            )
-            .filter(
-                *request_window,
-                Request.endpoint.in_(key_endpoints),
-            )
-            .one()
-        )
-
-        endpoint_p95 = dict(
-            db.session.query(
-                Request.endpoint,
-                func.percentile_cont(0.95).within_group(Request.duration),
-            )
-            .filter(*request_window, Request.endpoint.in_(key_endpoints))
-            .group_by(Request.endpoint)
-            .all()
-        )
-
-        request_errors, busy_responses = _split_failed_requests(
-            db.session.query(Request.status_code, func.count(Request.id))
-            .filter(
-                *request_window,
-                Request.endpoint.in_(key_endpoints),
-                Request.status_code >= 400,
-            )
-            .group_by(Request.status_code)
-            .all()
-        )
-
-        # Like requests, only count processes that started before the test
-        # ended: jobs left queued while the bots stop would otherwise report
-        # the stop time as queue delay. Those are covered by oldest_queued_s.
-        # Queue delay is known once a process starts, so it also covers
-        # processes that were still running.
-        queue_window = (
-            AsyncProcess.id > initial_state["max_process_id"],
-            AsyncProcess.time_started <= ended_at,
-            AsyncProcess.queue_delay.isnot(None),
-        )
-        process_window = (
-            *queue_window,
-            AsyncProcess.finished == True,  # noqa: E712
-        )
-
-        # Async process duration stats, grouped by (trial_maker_id, label).
-        process_stats_rows = (
-            db.session.query(
-                AsyncProcess.trial_maker_id,
-                AsyncProcess.label,
-                func.count(AsyncProcess.id).label("count"),
-                func.avg(AsyncProcess.time_taken).label("avg"),
-                func.percentile_cont(0.5)
-                .within_group(AsyncProcess.time_taken)
-                .label("median"),
-                func.percentile_cont(0.95)
-                .within_group(AsyncProcess.time_taken)
-                .label("p95"),
-                func.max(AsyncProcess.time_taken).label("max"),
-                func.avg(AsyncProcess.queue_delay).label("q_avg"),
-                func.percentile_cont(0.5)
-                .within_group(AsyncProcess.queue_delay)
-                .label("q_median"),
-                func.percentile_cont(0.95)
-                .within_group(AsyncProcess.queue_delay)
-                .label("q_p95"),
-                func.avg(
-                    case(
-                        (
-                            (AsyncProcess.queue_delay + AsyncProcess.time_taken) > 0,
-                            AsyncProcess.queue_delay
-                            / (AsyncProcess.queue_delay + AsyncProcess.time_taken),
-                        ),
-                        else_=None,
-                    )
-                ).label("q_share"),
-            )
-            .filter(*process_window)
-            .group_by(AsyncProcess.trial_maker_id, AsyncProcess.label)
-            .all()
-        )
-        process_stats = [
-            {
-                "trial_maker_id": row.trial_maker_id or "",
-                "label": row.label or "",
-                "count": row.count,
-                "avg": row.avg,
-                "median": row.median,
-                "p95": row.p95,
-                "max": row.max,
-                "q_avg": row.q_avg,
-                "q_median": row.q_median,
-                "q_p95": row.q_p95,
-                "q_share": row.q_share,
-            }
-            for row in process_stats_rows
-        ]
-
-        q_delay_median, q_delay_p95 = (
-            db.session.query(
-                func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay),
-                func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay),
-            )
-            .filter(*queue_window)
-            .one()
-        )
-
-        oldest_enqueued = (
-            db.session.query(func.min(AsyncProcess.time_enqueued))
-            .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.time_enqueued <= ended_at,
-                AsyncProcess.failed.is_(False),
-                or_(
-                    AsyncProcess.time_started.is_(None),
-                    AsyncProcess.time_started > ended_at,
-                ),
-            )
-            .scalar()
-        )
-        oldest_queued_s = (
-            (ended_at - oldest_enqueued).total_seconds() if oldest_enqueued else None
-        )
-
-        bots = Bot.query.filter(Bot.id > initial_state["max_participant_id"]).all()
-        outcomes = {
-            b.id: _bot_outcome(b, errored=b.id in bot_state.errored_bot_ids)
-            for b in bots
-        }
-        outcome_counts = Counter(outcomes.values())
-        failed_reasons = Counter(
-            _failure_reason(b) for b in bots if outcomes[b.id] == _FAILED_BY_EXPERIMENT
-        )
-
-        succeeded_bots = [b for b in bots if outcomes[b.id] == _SUCCEEDED]
-        # Bots failed for waiting too long waited longest, so leaving them out
-        # would make an overloaded server look healthier.
-        wait_page_times = sorted(
-            b.total_wait_page_time
-            for b in bots
-            if outcomes[b.id] in (_SUCCEEDED, _FAILED_BY_EXPERIMENT)
-            and b.total_wait_page_time is not None
-        )
-        median_wait_page_time = _quantile(wait_page_times, 0.5)
-        p95_wait_page_time = _quantile(wait_page_times, 0.95)
-        max_wait_page_time = _quantile(wait_page_times, 1)
-
-        def _trial_count_stats(bot_ids):
-            from psynet.trial.main import Trial  # noqa: lazy to avoid circular
-
-            if not bot_ids:
-                return None, None, None
-            rows = (
-                db.session.query(
-                    Trial.participant_id, func.count(Trial.id).label("n_trials")
-                )
-                .filter(
-                    Trial.participant_id.in_(bot_ids),
-                    Trial.failed == False,  # noqa: E712
-                )
-                .group_by(Trial.participant_id)
-                .all()
-            )
-            counts = sorted(
-                [0] * (len(bot_ids) - len(rows)) + [r.n_trials for r in rows]
-            )
-            return counts[0], _quantile(counts, 0.5), counts[-1]
-
-        succeeded_bot_ids = [b.id for b in succeeded_bots]
-        (
-            min_trial_count,
-            median_trial_count,
-            max_trial_count,
-        ) = _trial_count_stats(succeeded_bot_ids)
-        succeeded_durations = [
-            d
-            for bot_id, d, terminated in bot_state.bot_durations
-            if not terminated and outcomes.get(bot_id) == _SUCCEEDED
-        ]
-        failed_durations = [
-            d
-            for bot_id, d, terminated in bot_state.bot_durations
-            if not terminated and outcomes.get(bot_id, _OTHER_END) == _OTHER_END
-        ]
-        experiment_failed_durations = [
-            d
-            for bot_id, d, _ in bot_state.bot_durations
-            if outcomes.get(bot_id) == _FAILED_BY_EXPERIMENT
-        ]
-        incomplete_durations = [
-            d
-            for bot_id, d, terminated in bot_state.bot_durations
-            if (terminated and outcomes.get(bot_id) != _FAILED_BY_EXPERIMENT)
-            or outcomes.get(bot_id) == _STILL_RUNNING
-        ]
-        all_durations = [d for _, d, _ in bot_state.bot_durations]
-
-        avg_bot_duration = _mean(all_durations)
-        avg_succeeded_duration = _mean(succeeded_durations)
-        avg_experiment_failed_duration = _mean(experiment_failed_durations)
-        avg_failed_duration = _mean(failed_durations)
-        avg_incomplete_duration = _mean(incomplete_durations)
-        avg_init_time = _mean(bot_state.initialization_times)
-
-        requests_per_sec = (
-            requests_during_test / actual_duration if actual_duration > 0 else None
-        )
-        n_wait_page_samples = len(wait_page_times) if wait_page_times else None
-
+        total_requests = request_stats["total_requests"]
         result = PerformanceTestResult(
             n_bots=n,
             duration_minutes=duration_minutes,
@@ -1458,61 +1230,21 @@ class PerformanceTester:
             tester_lag_p95_s=_worst(bot_state.process_loads, 1),
             total_bots_started=bot_state.total_bots_started,
             completed_during_test=bot_state.bots_completed_during_test,
-            bots_succeeded=outcome_counts[_SUCCEEDED],
-            bots_failed=outcome_counts[_OTHER_END],
-            bots_incomplete=outcome_counts[_STILL_RUNNING],
-            participants_failed=outcome_counts[_FAILED_BY_EXPERIMENT],
-            failed_reasons=dict(failed_reasons.most_common()),
             db_rows_before=initial_state["db_rows"],
             db_rows_after=_database_rows(),
-            total_requests=requests_during_test,
-            key_requests=stats.count,
-            requests_per_sec=requests_per_sec,
+            requests_per_sec=(
+                total_requests / actual_duration if actual_duration > 0 else None
+            ),
             bot_errors=bot_state.total_bot_errors,
             bot_error_kinds=dict(bot_state.bot_error_kinds.most_common()),
-            avg_response_time=stats.avg,
-            median_response_time=stats.median,
-            p95_response_time=stats.p95,
-            endpoint_p95=endpoint_p95,
-            p99_response_time=stats.p99,
-            stddev_response_time=stats.stddev,
-            max_response_time=stats.max,
-            avg_bot_duration=avg_bot_duration,
-            avg_init_time=avg_init_time,
+            avg_init_time=_mean(bot_state.initialization_times),
             initialization_times=list(bot_state.initialization_times),
-            request_errors=request_errors,
-            busy_responses=busy_responses,
-            median_wait_page_time=median_wait_page_time,
-            p95_wait_page_time=p95_wait_page_time,
-            max_wait_page_time=max_wait_page_time,
-            n_wait_page_samples=n_wait_page_samples,
-            avg_succeeded_duration=avg_succeeded_duration,
-            avg_experiment_failed_duration=avg_experiment_failed_duration,
-            avg_failed_duration=avg_failed_duration,
-            avg_incomplete_duration=avg_incomplete_duration,
-            q_delay_median=q_delay_median,
-            q_delay_p95=q_delay_p95,
-            oldest_queued_s=oldest_queued_s,
-            process_stats=process_stats,
-            min_trial_count=min_trial_count,
-            median_trial_count=median_trial_count,
-            max_trial_count=max_trial_count,
-            n_succeeded_bots=len(succeeded_bot_ids),
+            **request_stats,
+            **process_stats,
+            **bot_stats,
+            **_bot_duration_stats(bot_state.bot_durations, outcomes),
         )
-
-        try:
-            from dallinger.db import redis_conn
-            from rq import Worker
-
-            workers = Worker.all(connection=redis_conn)
-            result.n_rq_workers = len(workers)
-            # Dallinger's gevent workers record how many jobs each can run at once.
-            result.n_rq_job_slots = sum(
-                int(redis_conn.hget(w.key, "pool_size") or 1) for w in workers
-            )
-        except Exception as e:
-            logger.warning(f"Could not count async workers: {e}")
-
+        result.n_rq_workers, result.n_rq_job_slots = _count_rq_workers()
         # Release the locks the counts took before the next test starts.
         db.session.rollback()
         self._report_test_results(result)
@@ -1522,6 +1254,270 @@ class PerformanceTester:
         """Print detailed results after a single test completes."""
         for line in format_test_results(result):
             logger.info(line)
+
+
+_KEY_ENDPOINTS = ("/timeline", "/response")
+
+
+def _request_stats(after_request_id, last_request_id):
+    """Return the result fields measured from requests in ``(after_request_id, last_request_id]``.
+
+    Response times and failed requests cover only :data:`_KEY_ENDPOINTS`.
+    """
+    from dallinger import db
+    from sqlalchemy import func
+
+    from psynet.experiment import Request
+
+    window = (Request.id > after_request_id, Request.id <= last_request_id)
+    key_window = (*window, Request.endpoint.in_(_KEY_ENDPOINTS))
+    stats = (
+        db.session.query(
+            func.count(Request.id).label("count"),
+            func.avg(Request.duration).label("avg"),
+            func.percentile_cont(0.5).within_group(Request.duration).label("median"),
+            func.percentile_cont(0.95).within_group(Request.duration).label("p95"),
+            func.percentile_cont(0.99).within_group(Request.duration).label("p99"),
+            func.stddev_samp(Request.duration).label("stddev"),
+            func.max(Request.duration).label("max"),
+        )
+        .filter(*key_window)
+        .one()
+    )
+    endpoint_p95 = dict(
+        db.session.query(
+            Request.endpoint,
+            func.percentile_cont(0.95).within_group(Request.duration),
+        )
+        .filter(*key_window)
+        .group_by(Request.endpoint)
+        .all()
+    )
+    request_errors, busy_responses = _split_failed_requests(
+        db.session.query(Request.status_code, func.count(Request.id))
+        .filter(*key_window, Request.status_code >= 400)
+        .group_by(Request.status_code)
+        .all()
+    )
+    return dict(
+        total_requests=db.session.query(func.count(Request.id))
+        .filter(*window)
+        .scalar(),
+        key_requests=stats.count,
+        avg_response_time=stats.avg,
+        median_response_time=stats.median,
+        p95_response_time=stats.p95,
+        endpoint_p95=endpoint_p95,
+        p99_response_time=stats.p99,
+        stddev_response_time=stats.stddev,
+        max_response_time=stats.max,
+        request_errors=request_errors,
+        busy_responses=busy_responses,
+    )
+
+
+def _async_process_stats(after_process_id, ended_at):
+    """Return the result fields measured from async processes after ``after_process_id``.
+
+    Like requests, only processes that started by ``ended_at`` count: jobs
+    left queued while the bots stop would otherwise report the stop time as
+    queue delay. Those are covered by ``oldest_queued_s``. Queue delay is
+    known once a process starts, so it also covers processes still running.
+    """
+    from dallinger import db
+    from sqlalchemy import case, func, or_
+
+    from psynet.process import AsyncProcess
+
+    queue_window = (
+        AsyncProcess.id > after_process_id,
+        AsyncProcess.time_started <= ended_at,
+        AsyncProcess.queue_delay.isnot(None),
+    )
+    time_taken, queue_delay = AsyncProcess.time_taken, AsyncProcess.queue_delay
+    rows = (
+        db.session.query(
+            AsyncProcess.trial_maker_id,
+            AsyncProcess.label,
+            func.count(AsyncProcess.id).label("count"),
+            func.avg(time_taken).label("avg"),
+            func.percentile_cont(0.5).within_group(time_taken).label("median"),
+            func.percentile_cont(0.95).within_group(time_taken).label("p95"),
+            func.max(time_taken).label("max"),
+            func.avg(queue_delay).label("q_avg"),
+            func.percentile_cont(0.5).within_group(queue_delay).label("q_median"),
+            func.percentile_cont(0.95).within_group(queue_delay).label("q_p95"),
+            func.avg(
+                case(
+                    (
+                        (queue_delay + time_taken) > 0,
+                        queue_delay / (queue_delay + time_taken),
+                    ),
+                    else_=None,
+                )
+            ).label("q_share"),
+        )
+        .filter(*queue_window, AsyncProcess.finished == True)  # noqa: E712
+        .group_by(AsyncProcess.trial_maker_id, AsyncProcess.label)
+        .all()
+    )
+    process_stats = [
+        {
+            **row._asdict(),
+            "trial_maker_id": row.trial_maker_id or "",
+            "label": row.label or "",
+        }
+        for row in rows
+    ]
+    q_delay_median, q_delay_p95 = (
+        db.session.query(
+            func.percentile_cont(0.5).within_group(queue_delay),
+            func.percentile_cont(0.95).within_group(queue_delay),
+        )
+        .filter(*queue_window)
+        .one()
+    )
+    oldest_enqueued = (
+        db.session.query(func.min(AsyncProcess.time_enqueued))
+        .filter(
+            AsyncProcess.id > after_process_id,
+            AsyncProcess.time_enqueued <= ended_at,
+            AsyncProcess.failed.is_(False),
+            or_(
+                AsyncProcess.time_started.is_(None),
+                AsyncProcess.time_started > ended_at,
+            ),
+        )
+        .scalar()
+    )
+    return dict(
+        process_stats=process_stats,
+        q_delay_median=q_delay_median,
+        q_delay_p95=q_delay_p95,
+        oldest_queued_s=(
+            (ended_at - oldest_enqueued).total_seconds() if oldest_enqueued else None
+        ),
+    )
+
+
+def _bot_outcome_stats(after_participant_id, errored_bot_ids):
+    """Return how the test's bots ended, and the result fields that depend on it.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        Each bot's outcome (see :func:`_bot_outcome`) by participant ID, and
+        the outcome counts, failure reasons, wait-page times and trial counts.
+    """
+    from psynet.bot import Bot
+
+    bots = Bot.query.filter(Bot.id > after_participant_id).all()
+    outcomes = {b.id: _bot_outcome(b, errored=b.id in errored_bot_ids) for b in bots}
+    outcome_counts = Counter(outcomes.values())
+    failed_reasons = Counter(
+        _failure_reason(b) for b in bots if outcomes[b.id] == _FAILED_BY_EXPERIMENT
+    )
+    # Bots failed for waiting too long waited longest, so leaving them out
+    # would make an overloaded server look healthier.
+    wait_page_times = sorted(
+        b.total_wait_page_time
+        for b in bots
+        if outcomes[b.id] in (_SUCCEEDED, _FAILED_BY_EXPERIMENT)
+        and b.total_wait_page_time is not None
+    )
+    succeeded_bot_ids = [b.id for b in bots if outcomes[b.id] == _SUCCEEDED]
+    min_trials, median_trials, max_trials = _trial_count_stats(succeeded_bot_ids)
+    return outcomes, dict(
+        bots_succeeded=outcome_counts[_SUCCEEDED],
+        bots_failed=outcome_counts[_OTHER_END],
+        bots_incomplete=outcome_counts[_STILL_RUNNING],
+        participants_failed=outcome_counts[_FAILED_BY_EXPERIMENT],
+        failed_reasons=dict(failed_reasons.most_common()),
+        median_wait_page_time=_quantile(wait_page_times, 0.5),
+        p95_wait_page_time=_quantile(wait_page_times, 0.95),
+        max_wait_page_time=_quantile(wait_page_times, 1),
+        n_wait_page_samples=len(wait_page_times) if wait_page_times else None,
+        min_trial_count=min_trials,
+        median_trial_count=median_trials,
+        max_trial_count=max_trials,
+        n_succeeded_bots=len(succeeded_bot_ids),
+    )
+
+
+def _trial_count_stats(bot_ids):
+    """Return the min, median and max number of non-failed trials of the bots ``bot_ids``."""
+    from dallinger import db
+    from sqlalchemy import func
+
+    from psynet.trial.main import Trial
+
+    if not bot_ids:
+        return None, None, None
+    rows = (
+        db.session.query(Trial.participant_id, func.count(Trial.id).label("n_trials"))
+        .filter(
+            Trial.participant_id.in_(bot_ids),
+            Trial.failed == False,  # noqa: E712
+        )
+        .group_by(Trial.participant_id)
+        .all()
+    )
+    counts = sorted([0] * (len(bot_ids) - len(rows)) + [r.n_trials for r in rows])
+    return counts[0], _quantile(counts, 0.5), counts[-1]
+
+
+def _bot_duration_stats(bot_durations, outcomes):
+    """Return the average bot runtimes by outcome, from ``_BotState.bot_durations``."""
+    return dict(
+        avg_bot_duration=_mean([d for _, d, _ in bot_durations]),
+        avg_succeeded_duration=_mean(
+            [
+                d
+                for bot_id, d, stopped in bot_durations
+                if not stopped and outcomes.get(bot_id) == _SUCCEEDED
+            ]
+        ),
+        avg_experiment_failed_duration=_mean(
+            [
+                d
+                for bot_id, d, _ in bot_durations
+                if outcomes.get(bot_id) == _FAILED_BY_EXPERIMENT
+            ]
+        ),
+        avg_failed_duration=_mean(
+            [
+                d
+                for bot_id, d, stopped in bot_durations
+                if not stopped and outcomes.get(bot_id, _OTHER_END) == _OTHER_END
+            ]
+        ),
+        avg_incomplete_duration=_mean(
+            [
+                d
+                for bot_id, d, stopped in bot_durations
+                if (stopped and outcomes.get(bot_id) != _FAILED_BY_EXPERIMENT)
+                or outcomes.get(bot_id) == _STILL_RUNNING
+            ]
+        ),
+    )
+
+
+def _count_rq_workers():
+    """Return how many async worker processes there are and how many jobs they can run at once.
+
+    Returns ``(None, None)`` if they can't be counted.
+    """
+    try:
+        from dallinger.db import redis_conn
+        from rq import Worker
+
+        workers = Worker.all(connection=redis_conn)
+        # Dallinger's gevent workers record how many jobs each can run at once.
+        n_slots = sum(int(redis_conn.hget(w.key, "pool_size") or 1) for w in workers)
+        return len(workers), n_slots
+    except Exception as e:
+        logger.warning(f"Could not count async workers: {e}")
+        return None, None
 
 
 class _ThreadBots:
@@ -2131,38 +2127,54 @@ def _quantile(sorted_values, q):
 
 def format_test_results(result):
     """Format detailed results after a single test completes. Returns list[str]."""
-    lines = []
+    return [
+        "",
+        success("\u2713 Test completed"),
+        bold(f"TEST RESULTS (n={result.n_bots:,} bots)"),
+        "",
+        *_bot_outcome_lines(result),
+        *_runtime_lines(result),
+        *_init_time_lines(result),
+        *_request_lines(result),
+        *_async_process_lines(result),
+        *_database_row_lines(result),
+    ]
 
-    def _table_lines(rows, headers, indent="  ", min_label_width=28, **kwargs):
-        kwargs.setdefault("tablefmt", "plain")
-        if min_label_width and rows and not headers:
-            rows = [[r[0].ljust(min_label_width)] + r[1:] for r in rows]
-        table = tabulate(rows, headers=headers, **kwargs)
-        for line in table.splitlines():
-            lines.append(f"{indent}{line}")
 
-    def _section(title):
-        lines.append(bold(f"  {title}"))
-        lines.append(f"  {'-' * 36}")
+def _section(title):
+    """Return the heading lines of a report section."""
+    return [bold(f"  {title}"), f"  {'-' * 36}"]
 
+
+def _table_lines(rows, headers=(), indent="  ", min_label_width=28, **kwargs):
+    """Return ``rows`` as indented table lines.
+
+    Without ``headers``, the first column is padded to ``min_label_width``
+    so that consecutive tables line up.
+    """
+    kwargs.setdefault("tablefmt", "plain")
+    if min_label_width and rows and not headers:
+        rows = [[r[0].ljust(min_label_width)] + r[1:] for r in rows]
+    table = tabulate(rows, headers=headers, **kwargs)
+    return [f"{indent}{line}" for line in table.splitlines()]
+
+
+def _label_table(rows):
+    """Return ``[label, value]`` rows as table lines with right-aligned values."""
+    return _table_lines(rows, colalign=("left", "right"))
+
+
+def _bot_outcome_lines(result):
+    """Return the BOT OUTCOMES section and, if any, why participants failed and bot errors."""
     bots_finished = max(
         result.completed_during_test,
         result.bots_succeeded + result.bots_failed + result.participants_failed,
     )
-
     total_started = result.total_bots_started
     if total_started > 0:
         completion_rate = f"{(bots_finished / total_started) * 100:.0f}%"
     else:
         completion_rate = "N/A"
-
-    lines.append("")
-    lines.append(success("\u2713 Test completed"))
-    lines.append(bold(f"TEST RESULTS (n={result.n_bots:,} bots)"))
-    lines.append("")
-
-    # BOT OUTCOMES
-    _section("BOT OUTCOMES")
     bots_in_db = (
         result.bots_succeeded
         + result.bots_failed
@@ -2180,11 +2192,9 @@ def format_test_results(result):
     if bots_not_in_db > 0:
         outcome_rows.append(["Never reached DB", bots_not_in_db])
     outcome_rows.append(["Completion rate", colorize_success_rate(completion_rate)])
-    _table_lines(outcome_rows, headers=[], colalign=("left", "right"))
-    lines.append("")
+    lines = [*_section("BOT OUTCOMES"), *_label_table(outcome_rows), ""]
 
     if result.failed_reasons:
-        _section("WHY THE EXPERIMENT FAILED PARTICIPANTS")
         waits = _wait_timeout_reasons(result)
         # Wait timeouts count against capacity, so they are never folded away.
         shown = [
@@ -2199,94 +2209,72 @@ def format_test_results(result):
         others = sum(result.failed_reasons.values()) - sum(n for _, n in shown)
         if others:
             reason_rows.append(["Other reasons", others])
-        _table_lines(reason_rows, headers=[], colalign=("left", "right"))
-        lines.append("")
+        lines += [
+            *_section("WHY THE EXPERIMENT FAILED PARTICIPANTS"),
+            *_label_table(reason_rows),
+            "",
+        ]
 
-    error_kinds = result.bot_error_kinds
-    if error_kinds:
-        _section("BOT ERRORS")
-        _table_lines(
-            [[kind, count] for kind, count in error_kinds.items()],
-            headers=[],
-            colalign=("left", "right"),
-        )
-        lines.append("")
+    if result.bot_error_kinds:
+        lines += [
+            *_section("BOT ERRORS"),
+            *_label_table([[kind, n] for kind, n in result.bot_error_kinds.items()]),
+            "",
+        ]
+    return lines
 
-    # BOT RUNTIMES
-    _section("BOT RUNTIMES")
-    runtime_rows = []
+
+def _runtime_lines(result):
+    """Return the BOT RUNTIMES section: test length, bot runtimes and bot process load."""
+    rows = []
     if result.actual_duration is not None:
-        runtime_rows.append(["Test duration", f"{result.actual_duration:.1f}s"])
-    if result.avg_bot_duration is not None:
-        runtime_rows.append(["Avg runtime", f"{result.avg_bot_duration:.1f}s"])
-    if result.avg_succeeded_duration is not None:
-        runtime_rows.append(
-            [
-                "Avg runtime (succeeded)",
-                f"{result.avg_succeeded_duration:.1f}s",
-            ]
-        )
-    if result.avg_experiment_failed_duration is not None:
-        runtime_rows.append(
-            [
-                "Avg runtime (failed by the experiment)",
-                f"{result.avg_experiment_failed_duration:.1f}s",
-            ]
-        )
-    if result.avg_failed_duration is not None:
-        runtime_rows.append(
-            [
-                "Avg runtime (bot error or other status)",
-                f"{result.avg_failed_duration:.1f}s",
-            ]
-        )
-    if result.avg_incomplete_duration is not None:
-        runtime_rows.append(
-            [
-                "Avg runtime (stopped at the end)",
-                f"{result.avg_incomplete_duration:.1f}s",
-            ]
-        )
+        rows.append(["Test duration", f"{result.actual_duration:.1f}s"])
+    for label, value in [
+        ("Avg runtime", result.avg_bot_duration),
+        ("Avg runtime (succeeded)", result.avg_succeeded_duration),
+        (
+            "Avg runtime (failed by the experiment)",
+            result.avg_experiment_failed_duration,
+        ),
+        ("Avg runtime (bot error or other status)", result.avg_failed_duration),
+        ("Avg runtime (stopped at the end)", result.avg_incomplete_duration),
+    ]:
+        if value is not None:
+            rows.append([label, f"{value:.1f}s"])
     if result.tester_lag_p95_s is not None:
         lag = f"{result.tester_lag_p95_s * 1000:.0f} ms"
-        runtime_rows.append(
+        rows.append(
             [
                 "Bot lag (p95, worst process)",
                 warning(lag) if _tester_lagged(result) else lag,
             ]
         )
     if result.tester_cpu_share is not None:
-        runtime_rows.append(
+        rows.append(
             ["Bot process CPU (busiest)", f"{result.tester_cpu_share:.0%} of a core"]
         )
-    if runtime_rows:
-        _table_lines(runtime_rows, headers=[], colalign=("left", "right"))
-    lines.append("")
+    return [*_section("BOT RUNTIMES"), *(_label_table(rows) if rows else []), ""]
 
-    # Bot initialization time distribution (sub-section)
-    init_times = result.initialization_times
-    if init_times:
-        init_sorted = sorted(init_times)
-        init_median = _quantile(init_sorted, 0.5)
-        init_p95 = _quantile(init_sorted, 0.95)
-        init_max = init_sorted[-1]
-        n_init = len(init_sorted)
-        lines.append(bold(f"  BOT INIT TIMES (n={n_init}):"))
-        lines.append(f"  {'-' * 36}")
-        init_rows = [
-            ["Median", _fmt(init_median, "s")],
-            ["95th percentile", _fmt(init_p95, "s")],
-            ["Max", _fmt(init_max, "s")],
-        ]
-        _table_lines(
-            init_rows,
-            headers=[],
-            colalign=("left", "right"),
-        )
-        lines.append("")
 
-    # REQUEST METRICS
-    _section("REQUEST METRICS")
+def _init_time_lines(result):
+    """Return the BOT INIT TIMES section, or nothing if no bot started."""
+    init_times = sorted(result.initialization_times)
+    if not init_times:
+        return []
+    rows = [
+        ["Median", _fmt(_quantile(init_times, 0.5), "s")],
+        ["95th percentile", _fmt(_quantile(init_times, 0.95), "s")],
+        ["Max", _fmt(init_times[-1], "s")],
+    ]
+    return [
+        *_section(f"BOT INIT TIMES (n={len(init_times)}):"),
+        *_label_table(rows),
+        "",
+    ]
+
+
+def _request_lines(result):
+    """Return the request, response time, wait page and trials-per-bot sections."""
     request_rows = [
         ["Total requests", result.total_requests],
         # Requests that fail before the server can log them appear only
@@ -2297,163 +2285,167 @@ def format_test_results(result):
         request_rows.append(["Busy/stale responses (409/503)", result.busy_responses])
     if result.requests_per_sec is not None:
         request_rows.append(["Throughput", f"{result.requests_per_sec:.2f} req/s"])
-    _table_lines(request_rows, headers=[], colalign=("left", "right"))
+    lines = [*_section("REQUEST METRICS"), *_label_table(request_rows), ""]
+
+    lines += _section(
+        f"RESPONSE TIMES (n={result.key_requests} /timeline and /response requests)"
+    )
+    lines += _label_table(
+        [
+            ["Median", _fmt(result.median_response_time, "s")],
+            ["95th percentile", _fmt(result.p95_response_time, "s")],
+            ["99th percentile", _fmt(result.p99_response_time, "s")],
+            ["Max", _fmt(result.max_response_time, "s")],
+            ["Mean", _fmt(result.avg_response_time, "s")],
+            ["Std dev", _fmt(result.stddev_response_time, "s")],
+        ]
+    )
     lines.append("")
 
-    # RESPONSE TIMES
-    n_req = result.key_requests
-    _section(f"RESPONSE TIMES (n={n_req} /timeline and /response requests)")
-    resp_rows = [
-        ["Median", _fmt(result.median_response_time, "s")],
-        ["95th percentile", _fmt(result.p95_response_time, "s")],
-        ["99th percentile", _fmt(result.p99_response_time, "s")],
-        ["Max", _fmt(result.max_response_time, "s")],
-        ["Mean", _fmt(result.avg_response_time, "s")],
-        ["Std dev", _fmt(result.stddev_response_time, "s")],
-    ]
-    _table_lines(resp_rows, headers=[], colalign=("left", "right"))
-    lines.append("")
-
-    # WAIT PAGE TIMES
     if result.median_wait_page_time is not None:
         n_wait = result.n_wait_page_samples
         bot_word = "bot" if n_wait == 1 else "bots"
-        _section(
+        lines += _section(
             f"TIME ON WAIT PAGES PER BOT (n={n_wait} {bot_word} that completed "
             "or were failed by the experiment)"
         )
-        wait_rows = [
-            ["Median", f"{result.median_wait_page_time:.1f}s"],
-            ["95th percentile", f"{result.p95_wait_page_time:.1f}s"],
-            ["Max", f"{result.max_wait_page_time:.1f}s"],
-        ]
-        _table_lines(wait_rows, headers=[], colalign=("left", "right"))
+        lines += _label_table(
+            [
+                ["Median", f"{result.median_wait_page_time:.1f}s"],
+                ["95th percentile", f"{result.p95_wait_page_time:.1f}s"],
+                ["Max", f"{result.max_wait_page_time:.1f}s"],
+            ]
+        )
         lines.append("")
 
-    # TRIALS PER BOT
     n_succeeded = result.n_succeeded_bots
     bot_word = "bot" if n_succeeded == 1 else "bots"
-    _section(f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)")
-    trial_rows = [
-        ["Min", result.min_trial_count or 0],
-        ["Median", result.median_trial_count or 0],
-        ["Max", result.max_trial_count or 0],
-    ]
-    _table_lines(trial_rows, headers=[], colalign=("left", "right"))
+    lines += _section(
+        f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)"
+    )
+    lines += _label_table(
+        [
+            ["Min", result.min_trial_count or 0],
+            ["Median", result.median_trial_count or 0],
+            ["Max", result.max_trial_count or 0],
+        ]
+    )
     lines.append("")
+    return lines
 
-    # ASYNC PROCESS TIMES
+
+_ASYNC_TABLE_LEGEND = [
+    "  Avg/Med/P95/Max — statistics on actual execution time",
+    "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)",
+    "  Q Share — avg of per-process queue_delay / (queue_delay + exec_time),",
+    "    i.e. avg percentage of total time spent queuing rather than executing",
+    "  Colors: yellow = Q Share > 20% and Q P95 > 0.2s (moderate contention)",
+    "          red = Q Share > 20% and Q P95 > 0.5s (significant contention)",
+    "\n",
+]
+
+
+def _async_process_lines(result):
+    """Return the ASYNC PROCESS TIMES section and any backlog left at the end."""
+    worker_info = _describe_workers(result)
     if result.process_stats:
         n_procs = sum(ps["count"] for ps in result.process_stats)
-        worker_info = _describe_workers(result)
         worker_info = f", {worker_info}" if worker_info else ""
-        _section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})")
-        lines.append("  Avg/Med/P95/Max — statistics on actual execution time")
-        lines.append(
-            "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)"
-        )
-        lines.append(
-            "  Q Share — avg of per-process queue_delay / (queue_delay + exec_time),"
-        )
-        lines.append(
-            "    i.e. avg percentage of total time spent queuing rather than executing"
-        )
-        lines.append(
-            "  Colors: yellow = Q Share > 20% and Q P95 > 0.2s (moderate contention)"
-        )
-        lines.append(
-            "          red = Q Share > 20% and Q P95 > 0.5s (significant contention)"
-        )
-        lines.append("\n")
-
-        def _color_q_share(q_share, q_p95):
-            if q_share is None or q_p95 is None:
-                return "N/A"
-            text = f"{q_share:.0%}"
-            if q_share > 0.2 and q_p95 > 0.5:
-                return error(text)
-            if q_share > 0.2 and q_p95 > 0.2:
-                return warning(text)
-            return text
-
         proc_rows = [
             [
                 ps["trial_maker_id"],
                 ps["label"],
                 ps["count"],
-                _fmt(ps["avg"]),
-                _fmt(ps["median"]),
-                _fmt(ps["p95"]),
-                _fmt(ps["max"]),
-                _fmt(ps["q_avg"]),
-                _fmt(ps["q_median"]),
-                _fmt(ps["q_p95"]),
-                _color_q_share(ps["q_share"], ps["q_p95"]),
+                *(
+                    _fmt(ps[key])
+                    for key in (
+                        "avg",
+                        "median",
+                        "p95",
+                        "max",
+                        "q_avg",
+                        "q_median",
+                        "q_p95",
+                    )
+                ),
+                _q_share_text(ps["q_share"], ps["q_p95"]),
             ]
             for ps in result.process_stats
         ]
-        _table_lines(
-            proc_rows,
-            headers=[
-                "Trial Maker",
-                "Label",
-                "Count",
-                "Avg (s)",
-                "Med (s)",
-                "P95 (s)",
-                "Max (s)",
-                "Q Avg (s)",
-                "Q Med (s)",
-                "Q P95 (s)",
-                "Q Share",
-            ],
-            indent="    ",
-            tablefmt="simple",
-            colalign=(
-                "left",
-                "left",
-                "right",
-                "right",
-                "right",
-                "right",
-                "right",
-                "right",
-                "right",
-                "right",
+        lines = [
+            *_section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})"),
+            *_ASYNC_TABLE_LEGEND,
+            *_table_lines(
+                proc_rows,
+                headers=[
+                    "Trial Maker",
+                    "Label",
+                    "Count",
+                    "Avg (s)",
+                    "Med (s)",
+                    "P95 (s)",
+                    "Max (s)",
+                    "Q Avg (s)",
+                    "Q Med (s)",
+                    "Q P95 (s)",
+                    "Q Share",
+                ],
+                indent="    ",
+                tablefmt="simple",
+                colalign=("left", "left") + ("right",) * 8,
             ),
-        )
-        lines.append("")
+            "",
+        ]
     else:
-        worker_info = _describe_workers(result)
         worker_info = f" ({worker_info})" if worker_info else ""
-        _section(f"ASYNC PROCESS TIMES{worker_info}")
-        lines.append("  No completed async processes.")
-        lines.append("")
+        lines = [
+            *_section(f"ASYNC PROCESS TIMES{worker_info}"),
+            "  No completed async processes.",
+            "",
+        ]
 
     if result.oldest_queued_s is not None:
-        lines.append(
+        lines += [
             warning(
                 "  Still queued when the test ended: oldest process had waited "
                 f"{result.oldest_queued_s:.1f}s for a worker."
-            )
-        )
-        lines.append("")
+            ),
+            "",
+        ]
+    return lines
 
+
+def _q_share_text(q_share, q_p95):
+    """Format an async process's queue share, colored by how much it queued."""
+    if q_share is None or q_p95 is None:
+        return "N/A"
+    text = f"{q_share:.0%}"
+    if q_share > 0.2 and q_p95 > 0.5:
+        return error(text)
+    if q_share > 0.2 and q_p95 > 0.2:
+        return warning(text)
+    return text
+
+
+def _database_row_lines(result):
+    """Return the DATABASE ROWS section, or nothing if the result has no row counts."""
     before, after = result.db_rows_before or {}, result.db_rows_after or {}
-    if before or after:
-        _section("DATABASE ROWS")
-        _table_lines(
-            [
-                [table, f"{before.get(table, 0):,}", f"{after.get(table, 0):,}"]
-                for table in {**before, **after}
-            ],
+    if not (before or after):
+        return []
+    rows = [
+        [table, f"{before.get(table, 0):,}", f"{after.get(table, 0):,}"]
+        for table in {**before, **after}
+    ]
+    return [
+        *_section("DATABASE ROWS"),
+        *_table_lines(
+            rows,
             headers=["Table", "Before", "After"],
             min_label_width=0,
             colalign=("left", "right", "right"),
-        )
-        lines.append("")
-
-    return lines
+        ),
+        "",
+    ]
 
 
 def _ratio(value, baseline, is_baseline):
