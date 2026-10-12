@@ -66,12 +66,20 @@ def test_random_stagger_is_bounded_relative_to_configured_interval():
         assert tester._bounded_random_stagger() == 0.4
 
 
-def test_bot_pace_factor_is_clipped_below_and_redrawn_above():
+def test_bot_pace_factor_is_redrawn_outside_its_bounds():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
 
     with patch.object(tester._random, "lognormvariate", side_effect=[0.2, 5, 1.4]):
-        assert tester._bounded_random_multiplier() == 0.7
         assert tester._bounded_random_multiplier() == 1.4
+
+
+def test_bot_pace_factor_averages_one():
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    tester._random.seed(0)
+
+    factors = [tester._bounded_random_multiplier() for _ in range(20000)]
+
+    assert sum(factors) / len(factors) == pytest.approx(1, abs=0.01)
 
 
 def test_monitoring_loop_ends_early_when_server_stops():

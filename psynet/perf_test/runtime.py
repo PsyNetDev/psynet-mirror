@@ -568,18 +568,19 @@ class PerformanceTester:
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
-        """Return a bot's pace factor: lognormal with mean 1, at most 3 and at least 0.7.
+        """Return a bot's pace factor: lognormal truncated to [0.7, 3], with mean about 1.
 
-        Values above 3 are drawn again; values below 0.7 become 0.7, because
+        Values outside the range are drawn again. The floor is there because
         people rarely work much faster than the time estimates, and bots that
         did would front-load the server's work into the start of a test.
+        ``mu`` is chosen so that the truncated distribution's mean is 1.00.
         """
-        sigma = 0.6
-        mu = -0.5 * sigma * sigma
+        sigma = 0.3
+        mu = -0.151
         while True:
             x = self._random.lognormvariate(mu, sigma)
-            if x <= max_multiplier:
-                return max(x, _MIN_PACE_FACTOR)
+            if _MIN_PACE_FACTOR <= x <= max_multiplier:
+                return x
 
     def _bounded_random_stagger(self, max_multiplier=5.0):
         """Return a gamma-distributed stagger bounded relative to its mean."""
