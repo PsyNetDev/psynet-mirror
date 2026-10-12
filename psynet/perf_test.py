@@ -588,9 +588,7 @@ class PerformanceTester:
             nonlocal highest_pass, lowest_fail
             if results:
                 n_bots = results[-1].n_bots
-                causes = _capacity_failure_causes(
-                    results[-1], self.limits, _baseline(results)
-                )
+                causes = _capacity_failure_causes(results[-1], self.limits)
                 if causes:
                     outcome = (
                         "exceeded limits"
@@ -1818,15 +1816,6 @@ def _wait_timeouts(result):
     return sum(_wait_timeout_reasons(result).values())
 
 
-def _wait_timeout_rate(result):
-    """Return the share of bots started in ``result`` that failed for waiting too long."""
-    return (
-        _wait_timeouts(result) / result.total_bots_started
-        if result.total_bots_started
-        else 0.0
-    )
-
-
 def _describe_failed_reasons(failed_reasons, limit=3):
     """Name the most common reasons in ``failed_reasons``, e.g. ``12 performance_check``."""
     items = list(failed_reasons.items())
@@ -2431,11 +2420,10 @@ class CapacityLimits:
     max_bot_error_rate : float
         Largest acceptable share of bots that fail.
     max_wait_timeout_rate : float
-        Largest acceptable rise, over the test with the fewest bots, in the
-        share of bots whose participants the experiment failed for waiting
-        too long, for example at a timeline hold that timed out (see
-        :func:`_is_wait_timeout`). Such a participant is lost to the study
-        just like one whose bot failed, so the default matches
+        Largest acceptable share of bots whose participants the experiment
+        failed for waiting too long, for example at a timeline hold that
+        timed out (see :func:`_is_wait_timeout`). Such a participant is lost
+        to the study just like one whose bot failed, so the default matches
         ``max_bot_error_rate``.
     """
 
@@ -2472,9 +2460,9 @@ class CapacityLimits:
             f"({self.allowed_request_errors} always allowed), "
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
-            f"{self.max_bot_error_rate:.0%} of bots failing and at most an "
-            f"extra {self.max_wait_timeout_rate:.0%} of bots, over the smallest "
-            "test, failed by the experiment for waiting too long"
+            f"{self.max_bot_error_rate:.0%} of bots failing and "
+            f"{self.max_wait_timeout_rate:.0%} failed by the experiment for "
+            "waiting too long"
         )
         if not include_queue:
             return f"{response} and {errors}"
@@ -2574,20 +2562,19 @@ def _describe_waits(result):
     return ", ".join(sorted(tags)) or "a wait"
 
 
-def _baseline(results):
-    """Return the test with the fewest bots, which wait timeouts are compared with."""
-    return min(results, key=lambda r: r.n_bots) if results else None
+def _wait_timeout_cause(result, limits):
+    """Return why ``result`` had too many participants fail for waiting too long, or ``None``."""
+    wait_timeouts = _wait_timeouts(result)
+    if wait_timeouts <= limits.max_wait_timeout_rate * (result.total_bots_started or 0):
+        return None
+    return (
+        f"{_plural(wait_timeouts, 'participant')} failed for waiting too long "
+        f"at {_describe_waits(result)}"
+    )
 
 
-def _capacity_failure_causes(result, limits, baseline=None):
+def _capacity_failure_causes(result, limits):
     """Return ``(reason, server_limit)`` for each limit that ``result`` exceeded.
-
-    Some waits time out by design, for example when there are too few
-    participants to fill a group or chain, so wait timeouts only count once
-    their share of bots exceeds that in ``baseline``, the suite's test with
-    the fewest bots (see :func:`_baseline`), by more than
-    ``limits.max_wait_timeout_rate``. Without a baseline they are compared
-    with none.
 
     ``server_limit`` is False when the reason only shows that the test could
     not measure the server at this bot count: bots didn't all start or take
@@ -2624,18 +2611,8 @@ def _capacity_failure_causes(result, limits, baseline=None):
                 bot_errors - postgres_errors > max_bot_errors,
             )
         )
-    baseline_rate = _wait_timeout_rate(baseline) if baseline is not None else 0.0
-    if _wait_timeout_rate(result) - baseline_rate > limits.max_wait_timeout_rate:
-        text = (
-            f"{_plural(_wait_timeouts(result), 'participant')} failed for waiting "
-            f"too long at {_describe_waits(result)}"
-        )
-        if baseline_rate:
-            text += (
-                f", {_wait_timeout_rate(result):.0%} of bots against "
-                f"{baseline_rate:.0%} with {baseline.n_bots:,} bots"
-            )
-        causes.append((text, True))
+    if wait_cause := _wait_timeout_cause(result, limits):
+        causes.append((wait_cause, True))
     p95 = result.p95_response_time
     if p95 is None:
         causes.append(("no responses recorded", not tester_limits))
@@ -2657,13 +2634,9 @@ def _capacity_failure_causes(result, limits, baseline=None):
     return causes
 
 
-def capacity_failures(result, limits=CapacityLimits(), baseline=None):
-    """Return the reasons a test result exceeded ``limits`` (empty if it did not).
-
-    Pass the suite's test with the fewest bots as ``baseline``; see
-    :func:`_capacity_failure_causes`.
-    """
-    return [reason for reason, _ in _capacity_failure_causes(result, limits, baseline)]
+def capacity_failures(result, limits=CapacityLimits()):
+    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
+    return [reason for reason, _ in _capacity_failure_causes(result, limits)]
 
 
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
@@ -2725,6 +2698,12 @@ _POSTGRES_ADVICE = (
 _QUEUE_ADVICE = (
     "  Async processes waited too long for a worker: add worker processes "
     "with num_dynos_worker, or make the processes faster."
+)
+_WAIT_ADVICE = (
+    "  Participants waited too long and the experiment failed them. Design "
+    "experiments to avoid this, for example with a longer max_wait_time or "
+    "enough participants to fill groups and chains; at high bot counts it can "
+    "also mean the server is too slow."
 )
 _START_RATE_ADVICE = (
     "  Bots that cannot start fast enough limit the test rather than the "
@@ -2801,8 +2780,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             for r in results
         )
     )
-    baseline = _baseline(results)
-    causes = [(r, _capacity_failure_causes(r, limits, baseline)) for r in results]
+    causes = [(r, _capacity_failure_causes(r, limits)) for r in results]
     passed = [r.n_bots for r, result_causes in causes if not result_causes]
     failed = [(r, result_causes) for r, result_causes in causes if result_causes]
     first_fail, first_causes = (
@@ -2810,6 +2788,12 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     )
     first_reasons = "; ".join(reason for reason, _ in first_causes)
     unmeasured = not any(server_limit for _, server_limit in first_causes)
+    wait_cause = first_fail and _wait_timeout_cause(first_fail, limits)
+    # Wait timeouts can come from the design, so alone they don't show the
+    # server's capacity.
+    waits_only = wait_cause and not any(
+        server_limit and reason != wait_cause for reason, server_limit in first_causes
+    )
     below_fail = [n for n in passed if first_fail is None or n < first_fail.n_bots]
     capacity = max(below_fail, default=None)
     if capacity is None:
@@ -2817,6 +2801,11 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             lines = [
                 f"  Capacity unknown: {first_fail.n_bots:,} bots could not "
                 f"be tested ({first_reasons})."
+            ]
+        elif waits_only:
+            lines = [
+                f"  Even {first_fail.n_bots:,} bots did not keep {limit} "
+                f"({first_reasons})."
             ]
         else:
             lines = [
@@ -2832,6 +2821,11 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines = [
             f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
             "Test more bots to find the limit."
+        ]
+    elif waits_only:
+        lines = [
+            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}; "
+            f"{first_fail.n_bots:,} did not ({first_reasons}).",
         ]
     elif unmeasured:
         lines = [
@@ -2851,6 +2845,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
                 f"  {max(passed):,} bots also passed, so the results are "
                 "inconsistent; rerun to confirm."
             )
+    if wait_cause:
+        lines.append(_WAIT_ADVICE)
     if "async queue" in first_reasons:
         lines.append(_QUEUE_ADVICE)
     if first_fail is not None and _start_rate_limits(first_fail):
@@ -2861,18 +2857,6 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_POSTGRES_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
     lines += _database_growth_warnings(results, capacity_result, first_fail)
-    baseline_rate = _wait_timeout_rate(baseline)
-    if baseline_rate > limits.max_wait_timeout_rate:
-        lines.append(
-            f"  Even with {baseline.n_bots:,} bots, the experiment failed "
-            f"{baseline_rate:.0%} of them for waiting too long (at "
-            f"{_describe_waits(baseline)}). That points to the experiment's "
-            "design rather than the server, for example a max_wait_time that is "
-            "too short or too few participants to fill groups or chains, so "
-            "wait timeouts only count against capacity where their share rises "
-            f"above that. If {baseline.n_bots:,} bots may already overload the "
-            "server, test fewer."
-        )
     if capacity is None:
         return lines + [""]
     tolerated = []

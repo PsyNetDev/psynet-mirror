@@ -193,23 +193,22 @@ A test counts as within capacity if these stay within their limits:
   time. Processes still waiting when the test ends count with the time they
   have waited so far, so a queue that never drains fails the test;
 - the share of bots whose participants the experiment failed for waiting
-  too long, at most 1 percentage point above the share in the test with
-  the fewest bots. These are participants failed when a
+  too long, at most 1%. These are participants failed when a
   :func:`~psynet.page.wait_while` (including async code blocks that wait),
   a barrier, or a ``while_loop`` with ``max_loop_time`` (such as waiting
   for a trial) timed out, or when a group barrier timed out between
   barriers. In a test that has such failures, members of a sync group
   failed because the group fell below its minimum size count too, because
-  they usually follow from them. Waits that time out under load usually
-  waited for the server, and in a real study those participants would be
-  lost. Some waits also time out by design, for example when there are too
-  few participants to fill a group or grow a chain, which is why the
-  smallest test sets the baseline. If more than 1% already time out there,
-  the summary says that this points to the experiment's design, for
-  example a ``max_wait_time`` that is too short; it may also mean that even
-  the smallest count overloads the server, so try fewer bots. Other
-  failures, such as prescreens, are part of the design: the summary
-  reports them but they don't count against capacity.
+  they usually follow from them. In a real study those participants would
+  be lost, so wait timeouts count as failures at any bot count, and
+  experiments should be designed to avoid them, for example with a longer
+  ``max_wait_time`` or enough participants to fill groups and chains. At
+  high bot counts they can also mean the server is too slow. Because they
+  may come from the design, when wait timeouts are all that the smallest
+  failing count exceeded the summary reports the capacity as a lower bound,
+  without a participant cap. Other failures, such as prescreens, are part
+  of the design: the summary reports them but they don't count against
+  capacity.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
@@ -244,7 +243,7 @@ The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing and at most an extra 1% of bots, over the smallest test, failed by the experiment for waiting too long; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing and 1% failed by the experiment for waiting too long; 170 did not (p95 response time 622 ms).
     Cap concurrent participants at about 128 (80% of 160).
 
 For rough capacities of common server sizes, based on one test on a real

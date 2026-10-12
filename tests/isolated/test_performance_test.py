@@ -438,7 +438,6 @@ def test_failed_participants_are_classified_by_failed_not_status():
 def test_only_participants_failed_for_waiting_too_long_limit_capacity(
     failed_reasons, expected
 ):
-    baseline = _base_result(n_bots=10)
     result = _base_result(
         n_bots=150,
         total_bots_started=294,
@@ -447,37 +446,34 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
         failed_reasons=failed_reasons,
     )
 
-    failures = capacity_failures(result, baseline=baseline)
-    text = _join(format_capacity_summary([baseline, result]))
+    failures = capacity_failures(result)
+    text = _join(format_capacity_summary([result]))
 
     if expected:
         assert failures == [expected]
-        assert "about 10 concurrent bots" in text
+        assert "Even 150 bots did not keep" in text
+        assert f"({expected})." in text
+        assert "Design experiments to avoid this" in text
     else:
         assert failures == []
         assert "at least 150" in text
 
 
-def test_wait_timeouts_in_the_smallest_test_point_to_the_design():
+def test_wait_timeouts_alone_do_not_set_a_participant_cap():
     results = [
-        _base_result(
-            n_bots=10,
-            total_bots_started=20,
-            participants_failed=3,
-            failed_reasons={_HOLD_TIMEOUT: 3},
-        ),
+        _base_result(n_bots=10, total_bots_started=20),
         _base_result(
             n_bots=20,
             total_bots_started=40,
-            participants_failed=6,
-            failed_reasons={_HOLD_TIMEOUT: 6},
+            participants_failed=1,
+            failed_reasons={_HOLD_TIMEOUT: 1},
         ),
     ]
 
     text = _join(format_capacity_summary(results))
 
-    assert "at least 20" in text
-    assert "points to the experiment's design" in text
+    assert "Capacity: at least 10 concurrent bots" in text
+    assert "Cap concurrent participants" not in text
 
 
 def test_test_results_show_participants_the_experiment_failed():
