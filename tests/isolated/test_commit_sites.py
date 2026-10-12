@@ -23,7 +23,7 @@ COMMIT_SITES = {
     "asset.py::AssetRegistry.prepare_assets_for_deployment": _OWNS_DEPLOY,
     "bot.py::Bot.__init__": "Bot() is an entry point in tests and scripts",
     "chatroom.py::EnableChatrooms.handle_message": "websocket handler",
-    "command_line.py::_prepare": _OWNS_CLI,
+    "command_line.py::_prepare_unlocked": _OWNS_CLI,
     "command_line.py::_debug_legacy": _OWNS_CLI,
     "command_line.py::_debug_docker": _OWNS_CLI,
     "command_line.py::_debug_auto_reload": _OWNS_CLI,
@@ -34,6 +34,21 @@ COMMIT_SITES = {
     "db.py::transaction": "the transaction() context manager",
     "db.py::_commit_external_call_state": "the one helper for external-call state",
     "experiment.py::Experiment.on_launch": _OWNS_REQUEST,
+    "experiment.py::Experiment.on_every_launch": (
+        "commits restored deployment identity before the archive is marked ingested"
+    ),
+    "experiment.py::Experiment.maybe_snapshot_after_participant_finish": (
+        "commits the participant before a finish snapshot taken outside a request"
+    ),
+    "experiment.py::Experiment._create_participant_finish_snapshot": (
+        "commits the shutdown-needed flag before the finish snapshot is copied"
+    ),
+    "experiment.py::Experiment._after_request_with_finish_snapshot": (
+        "commits the request before the finish snapshot is copied"
+    ),
+    "experiment.py::Experiment._run_deferred_participant_finish_snapshot": (
+        "commits the request before a deferred finish snapshot is copied"
+    ),
     "experiment.py::Experiment.after_request": _OWNS_REQUEST,
     "experiment.py::Experiment._nodes_on_deploy": _OWNS_DEPLOY,
     "experiment.py::Experiment.setup_experiment_config": _OWNS_DEPLOY,

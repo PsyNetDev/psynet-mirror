@@ -4080,9 +4080,7 @@ def test_kill_psynet_worker_processes_scans_again_for_a_late_snapshot():
             "psynet.command_line.list_psynet_worker_processes",
             side_effect=lambda: next(scans),
         ),
-        patch(
-            "psynet.command_line.safely_kill_process", return_value=True
-        ) as kill,
+        patch("psynet.command_line.safely_kill_process", return_value=True) as kill,
         patch(
             "psynet.command_line.psutil.wait_procs",
             return_value=([late], []),
@@ -5001,6 +4999,7 @@ def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
             app=app,
             apps=apps,
             server="test-server",
+            comment=None,
         )
 
     return CliRunner().invoke(parent)

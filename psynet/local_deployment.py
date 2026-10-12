@@ -883,12 +883,21 @@ def read_database_owner(db_url: Optional[str] = None) -> Optional[DatabaseOwner]
         connection.close()
 
 
+def _lock_database_url() -> str:
+    """Return the normalized URL of the database this process will reset."""
+    from dallinger.db import corrected_db_url, db_url_default
+
+    return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
+
+
 def local_database_lock_path() -> Path:
     """Return the lock file that serializes local PostgreSQL access.
 
-    Local deployments share one PostgreSQL database per machine, including
-    across OS users, so the lock lives in ``/tmp`` rather than a home
-    directory. Tests and unusual hosts may override the path with
+    One machine can host several databases. CI runs two tests at once, each
+    with its own database, and they must not block each other. The same
+    database is still shared across OS users, so the lock lives in ``/tmp``
+    and its name is a hash of the database URL rather than a home directory.
+    Tests and unusual hosts may override the path with
     ``PSYNET_LOCAL_DATABASE_LOCK``.
 
     ``flock`` stays on the inode. Age-based ``/tmp`` cleaning deletes the
@@ -899,7 +908,8 @@ def local_database_lock_path() -> Path:
     override = os.environ.get("PSYNET_LOCAL_DATABASE_LOCK")
     if override:
         return Path(override)
-    return Path("/tmp/psynet-local-deployment.lock")
+    digest = hashlib.sha256(_lock_database_url().encode()).hexdigest()[:16]
+    return Path(f"/tmp/psynet-local-deployment-{digest}.lock")
 
 
 def _read_lock_holder(path: Path) -> Optional[dict]:

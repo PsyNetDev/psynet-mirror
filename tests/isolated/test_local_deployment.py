@@ -662,8 +662,23 @@ def test_local_database_lock_path_is_shared_across_users(monkeypatch):
     from psynet.local_deployment import local_database_lock_path
 
     monkeypatch.delenv("PSYNET_LOCAL_DATABASE_LOCK", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/dallinger")
     monkeypatch.setenv("HOME", "/home/someone")
-    assert local_database_lock_path() == Path("/tmp/psynet-local-deployment.lock")
+    first = local_database_lock_path()
+    monkeypatch.setenv("HOME", "/home/someone-else")
+    assert local_database_lock_path() == first
+    assert first.parent == Path("/tmp")
+    assert first.name.startswith("psynet-local-deployment-")
+    assert first.suffix == ".lock"
+
+    monkeypatch.setenv("DATABASE_URL", "postgres://dallinger@localhost/dallinger")
+    assert local_database_lock_path() == first
+
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://dallinger@localhost/dallinger_slot1"
+    )
+    assert local_database_lock_path() != first
+
     monkeypatch.setenv("PSYNET_LOCAL_DATABASE_LOCK", "/var/lock/psynet.lock")
     assert local_database_lock_path() == Path("/var/lock/psynet.lock")
 

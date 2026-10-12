@@ -1505,9 +1505,7 @@ def list_psynet_worker_processes():
     for process in psutil.process_iter():
         if not is_local_database_writer_process(process):
             continue
-        if not (
-            uses_current_database(process) or _environment_unreadable(process)
-        ):
+        if not (uses_current_database(process) or _environment_unreadable(process)):
             continue
         _append_database_client(writers, seen, process)
         for child in _live_child_processes(process):
