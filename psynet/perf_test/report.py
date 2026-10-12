@@ -19,6 +19,7 @@ from psynet.perf_test.results import (
     POSTGRES_FULL,
     PROCESS_STAT_KEYS,
     CapacityLimits,
+    busy_early_finish_cause,
     capacity_failure_causes,
     capacity_outcome,
     count_wait_timeouts,
@@ -555,9 +556,11 @@ _WAIT_ADVICE = (
 )
 _BUSY_CHAINS_ADVICE = (
     "  Participants got fewer trials because every chain they could join was "
-    "busy, so the experiment finished their block early. Let them wait with "
-    "wait_for_networks=True, add chains, or cap concurrent participants lower. "
-    "Bots that all arrive at once overstate this; confirm with --arrival-minutes."
+    "busy, so the experiment finished their block early. Besides capping "
+    "concurrent participants, you can let them wait with "
+    "wait_for_networks=True or add chains, which may allow a higher cap. "
+    "Bots that all arrive at once overstate this, so judge it by a test with "
+    "--arrival-minutes."
 )
 _START_RATE_ADVICE = (
     "  Bots that cannot start fast enough limit the test rather than the "
@@ -656,8 +659,9 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
     """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
 
     Only a server limit sets the capacity, so a first failure that could not
-    be tested (``outcome.unmeasured``) or that only had wait timeouts or busy
-    chains (``outcome.waits_only``) leaves it a lower bound, without a cap.
+    be tested (``outcome.unmeasured``) or that only had wait timeouts
+    (``outcome.waits_only``) leaves it a lower bound, without a cap. Busy
+    chains do set it, because fewer participants at once keep chains free.
     Pass ``show_cap=False`` when a confirmation test reports the cap instead.
     """
     capacity, passed, first_fail = outcome.capacity, outcome.passed, outcome.first_fail
@@ -742,7 +746,12 @@ def _confirmation_lines(result, limits):
         )
     retry = retry_bot_count(result, limits)
     ratio = overshoot(result, limits)
-    why = f", as the worst measure reached {ratio:.1f} times its limit" if ratio else ""
+    if ratio:
+        why = f", as the worst measure reached {ratio:.1f} times its limit"
+    elif busy_early_finish_cause(result, limits):
+        why = ", so that fewer participants find every chain busy"
+    else:
+        why = ""
     rerun = f"--n-bots {retry} --duration-minutes {result.duration_minutes or 0:g}"
     if result.arrival_minutes:
         rerun += f" --arrival-minutes {result.arrival_minutes:g}"
@@ -781,7 +790,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines += _startup_only_lines(first_fail, limits)
     if wait_cause:
         lines.append(_WAIT_ADVICE)
-    if busy_cause:
+    if busy_cause or (
+        confirmation is not None and busy_early_finish_cause(confirmation, limits)
+    ):
         lines.append(_BUSY_CHAINS_ADVICE)
     if "async queue" in first_reasons:
         lines.append(_QUEUE_ADVICE)

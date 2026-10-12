@@ -1049,8 +1049,14 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
             "23 participants got fewer trials in main_chain because every "
             "chain was busy"
         ]
-        assert "wait_for_networks=True" in summary
-        assert "Cap concurrent participants" not in summary
+        search = _join(
+            format_capacity_summary(
+                [_base_result(n_bots=100, total_bots_started=100), result]
+            )
+        )
+        assert "Capacity: about 100 concurrent bots" in search
+        assert "Cap concurrent participants at about 80" in search
+        assert "wait_for_networks=True" in search
 
 
 def test_test_results_show_participants_the_experiment_failed():

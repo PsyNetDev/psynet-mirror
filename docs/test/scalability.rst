@@ -261,11 +261,11 @@ A test counts as within capacity if these stay within their limits:
   early instead of waiting. The participant is not failed, so the test
   results show these bots under *trials per bot* instead, with their median
   number of trials and the trial maker's ``expected_trials_per_participant``.
-  Like wait timeouts, this usually comes from the design, so when it is all
-  that the smallest failing count exceeded the capacity is a lower bound.
-  To avoid it, set ``wait_for_networks=True``, add chains, or admit fewer
-  participants at once. Bots that all arrive together overstate it, so
-  check it with ``--arrival-minutes`` too.
+  Unlike wait timeouts, this sets the capacity and the suggested cap:
+  chains are busy more often the more participants take part at once, so
+  capping them reduces it. Setting ``wait_for_networks=True`` or adding
+  chains reduces it too, and may allow a higher cap. Bots that all arrive
+  together overstate it, so check it with ``--arrival-minutes`` too.
 
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when

@@ -11,8 +11,8 @@ participant session takes.
 Failures from waiting too long, such as timed-out holds, count against
 capacity (see :func:`_is_wait_timeout`); others, such as prescreens, are
 reported only. Participants who got fewer trials because every chain was
-busy count against capacity in the same way (see
-:func:`busy_early_finish_cause`), although they are not failed.
+busy count against capacity too (see :func:`busy_early_finish_cause`),
+although they are not failed.
 
 The terminal report (:mod:`psynet.perf_test.report`) and the suite
 (:mod:`psynet.perf_test.suite`) word failure causes with the helpers here, so
@@ -423,8 +423,9 @@ class CapacityLimits:
         Largest acceptable share of bots that got fewer trials in a trial
         maker because every chain was busy and ``wait_for_networks=False``
         (see :func:`busy_early_finish_cause`). Like a wait timeout, this
-        usually comes from the design and loses data, so the default matches
-        ``max_wait_timeout_rate``.
+        loses data, so the default matches ``max_wait_timeout_rate``. It
+        grows with the number of participants taking part at once, so unlike
+        wait timeouts it sets the capacity and the suggested cap.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -744,11 +745,12 @@ class CapacityOutcome:
     # The first failure's wait-timeout reason, if it had too many.
     wait_cause: str | None
     # The first failure's busy-chain reason, if too many participants got
-    # fewer trials because every chain was busy.
+    # fewer trials because every chain was busy. Unlike wait timeouts, this
+    # sets the capacity: how often chains are busy depends on how many
+    # participants take part at once, so a cap reduces it.
     busy_cause: str | None
-    # Whether wait timeouts and busy chains were the first failure's only
-    # server limits; they can come from the design, so alone they don't show
-    # the capacity.
+    # Whether wait timeouts were the first failure's only server limit; they
+    # can come from the design, so alone they don't show the capacity.
     waits_only: bool
 
     @property
@@ -776,7 +778,6 @@ def capacity_outcome(results, limits=CapacityLimits()):
     )
     wait_cause = first_fail and wait_timeout_cause(first_fail, limits) or None
     busy_cause = first_fail and busy_early_finish_cause(first_fail, limits) or None
-    design_causes = {wait_cause, busy_cause} - {None}
     return CapacityOutcome(
         capacity=max(
             (n for n in passed if first_fail is None or n < first_fail.n_bots),
@@ -788,9 +789,9 @@ def capacity_outcome(results, limits=CapacityLimits()):
         unmeasured=not any(server_limit for _, server_limit in first_causes),
         wait_cause=wait_cause,
         busy_cause=busy_cause,
-        waits_only=bool(design_causes)
+        waits_only=bool(wait_cause)
         and not any(
-            server_limit and reason not in design_causes
+            server_limit and reason != wait_cause
             for reason, server_limit in first_causes
         ),
     )
