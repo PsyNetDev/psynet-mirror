@@ -1284,8 +1284,11 @@ class ChainTrialMakerState(NetworkTrialMakerState):
     planned_network_ids = Column(PythonList)
     plan_position = Column(Integer)
     # Blocks the participant finished early because every eligible chain or
-    # node was busy and wait_for_networks=False; performance tests report it.
+    # node was busy, one still needed trials, and wait_for_networks=False;
+    # performance tests report it.
     blocks_ended_busy = Column(Integer, default=0)
+    # Set during one selection when discovery found every candidate busy.
+    _candidates_were_busy = False
 
     @property
     def block(self):
@@ -2386,9 +2389,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         Candidates are busy when they await an asynchronous process or, in
         chains, have no trial capacity left for now. A participant committed
         to one chain or planned node waits for it; otherwise
-        ``wait_for_networks`` decides. Finishing the block counts towards the
-        participant's ``blocks_ended_busy``, because the participant may get
-        fewer trials than a less busy experiment would give.
+        ``wait_for_networks`` decides. Finishing the block is noted with
+        :meth:`_note_candidates_busy` if a busy candidate still needs trials.
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
@@ -2403,8 +2405,40 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._candidate_label,
             state.block,
         )
-        state.blocks_ended_busy = (state.blocks_ended_busy or 0) + 1
+        if self._busy_candidates_need_trials(participant, experiment):
+            self._note_candidates_busy(participant)
         return []
+
+    def _note_candidates_busy(self, participant):
+        """Note that discovery found every candidate busy, for :meth:`_select_in_block`.
+
+        The note lives on the module state for this request only. The block
+        counts towards ``blocks_ended_busy`` only if it then finishes, so an
+        overridden ``find_chains`` or ``find_nodes`` that returns ``"wait"``
+        instead does not.
+        """
+        participant.module_state._candidates_were_busy = True
+
+    def _busy_candidates_need_trials(self, participant, experiment):
+        """Return whether a busy candidate will still need trials once it is free.
+
+        A candidate awaiting an asynchronous process does. One that is only
+        out of trial capacity does unless its head is the chain's last node
+        to take trials, since once those trials finish the chain is full:
+        near the end of data collection the participant would get nothing
+        from it anyway.
+        """
+        network, node = self.network_class, self.node_class
+        still_growing = and_(
+            node.can_spawn.is_(True),
+            or_(network.max_size.is_(None), node.degree + 1 < network.max_size),
+        )
+        busy_with_demand = and_(
+            not_(self._candidate_is_available()),
+            or_(not_(self._candidate_is_not_pending()), still_growing),
+        )
+        query = self._candidate_query(participant, experiment).filter(busy_with_demand)
+        return db.session.query(query.exists()).scalar()
 
     def _focus_network_id(self, state):
         """Return the network the participant is committed to in this block, if any."""
@@ -2737,6 +2771,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             and self._focus_network_id(state) is None
         ):
             return None
+        state._candidates_were_busy = False
         if self._uses_list_selection_hooks():
             discovered = getattr(self, self._find_hook_name)(participant, experiment)
         else:
@@ -2756,6 +2791,12 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "'wait', or 'exit'; it must not return None"
             )
         if not discovered:
+            if state._candidates_were_busy:
+                # Sync-group followers copy the leader's decision.
+                for member_state in self._group_states(participant):
+                    member_state.blocks_ended_busy = (
+                        member_state.blocks_ended_busy or 0
+                    ) + 1
             return None
         selection = self._coerce_selection(
             getattr(self, self._select_hook_name)(discovered, participant, experiment),

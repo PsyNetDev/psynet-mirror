@@ -678,6 +678,8 @@ class CreateAndRateTrialMakerMixin(object):
         has_pending = any(phase == self.WAITING_FOR_CREATORS for _, phase in classified)
         if has_pending and self.wait_for_networks:
             return "wait"
+        if has_pending:
+            self._note_candidates_busy(participant)
         return []
 
     def get_finished_creations(self, node):
