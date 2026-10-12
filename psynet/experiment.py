@@ -7162,12 +7162,29 @@ Experiment.UnsuccessfulEndLogic = UnsuccessfulEndLogic
 Experiment.RejectedConsentLogic = RejectedConsentLogic
 
 
-def handle_shutdown_signal(*args, **kwargs):
+def handle_shutdown_signal(signum, frame):
+    """Shut down on SIGINT or SIGTERM.
+
+    Dallinger's server processes (``dallinger_heroku_web``, ``_worker`` and
+    ``_clock``) exit with status 0, and the clock first records that the
+    experiment went offline. Other processes, such as ``psynet`` commands,
+    bots and tests, raise :class:`KeyboardInterrupt` on SIGINT and
+    ``SystemExit(128 + signum)`` on SIGTERM, so that their cleanup runs and
+    they exit with a failure status.
+
+    This is installed when the module is imported, so it replaces handlers
+    installed before then, such as those of gunicorn's workers, and is
+    replaced by those installed later, such as those of RQ's ``work()``.
+    """
     process_name = os.path.basename(sys.argv[0])
     if process_name.endswith("clock"):
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
-    sys.exit(0)
+    if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):
+        sys.exit(0)
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
 
 
 signal.signal(signal.SIGTERM, handle_shutdown_signal)

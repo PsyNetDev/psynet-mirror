@@ -1043,6 +1043,23 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
+@contextmanager
+def _exit_on_sigterm():
+    """Raise ``SystemExit(128 + SIGTERM)`` on SIGTERM, so that ``finally`` blocks clean up.
+
+    Must be entered from the main thread.
+    """
+
+    def handler(signum, frame):
+        raise SystemExit(128 + signum)
+
+    previous = signal.signal(signal.SIGTERM, handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.command_line.develop import debug as dallinger_debug
     from dallinger.deployment import DevelopmentDeployment
@@ -4058,7 +4075,10 @@ def _rerun_in_isolated_test_environment():
     so the switch needs a new process; see :mod:`psynet.isolated_environment`.
     The child re-runs the whole original command line (for example
     ``psynet test local --n-bots 4``) with this interpreter, and this process
-    then exits with its code. A second Ctrl+C kills the child.
+    then exits with its code; if it was interrupted and the child exited with
+    0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM is passed on to the
+    child, which gets Ctrl+C from the terminal anyway. A second signal kills
+    the child.
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
@@ -4073,7 +4093,8 @@ def _rerun_in_isolated_test_environment():
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     exit_code = 130
-    with environment:
+    interrupted = None
+    with environment, _exit_on_sigterm():
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
@@ -4081,19 +4102,21 @@ def _rerun_in_isolated_test_environment():
             [sys.executable, *sys.orig_argv[1:]],
             env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
         )
-        interrupted = False
         while True:
             try:
                 exit_code = process.wait()
                 break
-            except KeyboardInterrupt:
-                # The child got the same Ctrl+C; let it stop its servers,
-                # unless the user presses Ctrl+C again.
-                if interrupted and process.poll() is None:
+            except (KeyboardInterrupt, SystemExit) as e:
+                # Let the child stop its servers, unless signalled again.
+                if interrupted is not None and process.poll() is None:
                     process.kill()
-                interrupted = True
+                elif isinstance(e, SystemExit):
+                    process.terminate()
+                interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
     # A child killed by signal N reports -N; shells report 128 + N.
-    sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
+    if exit_code < 0:
+        exit_code = 128 - exit_code
+    sys.exit(exit_code or interrupted or 0)
 
 
 def _check_no_debug_server_here():
@@ -4643,9 +4666,14 @@ def performance_test__local(
         prefill_participants=prefill_participants,
         from_snapshot=from_snapshot,
     )
-    return _run_performance_test_local(
-        existing=existing, json_output=json_output, debug=debug, reset=reset, **options
-    )
+    with _exit_on_sigterm():
+        return _run_performance_test_local(
+            existing=existing,
+            json_output=json_output,
+            debug=debug,
+            reset=reset,
+            **options,
+        )
 
 
 def _run_performance_test_local(*, existing, json_output, debug, reset=None, **options):
@@ -5512,7 +5540,7 @@ def performance_test__docker_ssh(
         force=options["force"],
         bot_log_file=bot_log_file,
     )
-    with bot_log_file:
+    with bot_log_file, _exit_on_sigterm():
         if reset:
             return _run_ssh_suite_with_reset(remote, reset, json_output, **options)
         payload = remote.run_psynet(

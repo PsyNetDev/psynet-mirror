@@ -5022,6 +5022,33 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX signals")
+@pytest.mark.parametrize("signum, status", [("SIGINT", 1), ("SIGTERM", 143)])
+def test_a_signalled_command_that_imports_the_experiment_fails(signum, status):
+    import signal
+
+    script = (
+        "import time, click\n"
+        "@click.command()\n"
+        "def main():\n"
+        "    import psynet.experiment\n"
+        "    print('ready', flush=True)\n"
+        "    time.sleep(60)\n"
+        "main()\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdout.readline() == "ready\n"
+    process.send_signal(getattr(signal, signum))
+    output = process.communicate(timeout=30)[0]
+    assert process.returncode == status
+    assert ("Aborted!" in output) == (signum == "SIGINT")
+
+
 def test_prolific_listing_warnings():
     from psynet.command_line import prolific_listing_warnings
 

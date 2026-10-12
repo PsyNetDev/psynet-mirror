@@ -1154,6 +1154,8 @@ def _run_bot_process(index, commands, events, settings):
         from psynet.experiment import get_experiment
         from psynet.utils import load_runtime_server_config
 
+        # Importing the experiment installs its own SIGINT handler.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         load_runtime_server_config()
         get_experiment()
         raise_open_file_limit()
