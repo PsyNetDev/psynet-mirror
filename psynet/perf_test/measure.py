@@ -171,6 +171,87 @@ def request_stats(after_request_id, last_request_id):
     )
 
 
+def phase_stats(
+    after_request_id, last_request_id, after_process_id, ended_at, boundary
+):
+    """Return the start-up and steady-state metrics of a test, split at ``boundary``.
+
+    Reads the same requests and async processes as :func:`request_stats` and
+    :func:`async_process_stats`, and splits them with :func:`split_phases`.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        The start-up and steady-state metrics.
+    """
+    from dallinger import db
+
+    from psynet.experiment import Request
+    from psynet.process import AsyncProcess
+
+    requests = (
+        db.session.query(Request.creation_time, Request.duration, Request.status_code)
+        .filter(
+            Request.id > after_request_id,
+            Request.id <= last_request_id,
+            Request.endpoint.in_(_KEY_ENDPOINTS),
+        )
+        .all()
+    )
+    queue_delays = (
+        db.session.query(AsyncProcess.time_enqueued, AsyncProcess.queue_delay)
+        .filter(
+            AsyncProcess.id > after_process_id,
+            AsyncProcess.time_started <= ended_at,
+            AsyncProcess.queue_delay.isnot(None),
+        )
+        .all()
+    )
+    return split_phases(requests, queue_delays, boundary)
+
+
+def split_phases(requests, queue_delays, boundary):
+    """Split request and queue measurements into the start-up and steady-state phases.
+
+    Parameters
+    ----------
+    requests : iterable of (datetime.datetime, float, int)
+        When each ``/timeline`` or ``/response`` request was logged, its
+        duration and its status code.
+    queue_delays : iterable of (datetime.datetime, float)
+        When each async process was enqueued, and how long it waited for a
+        worker.
+    boundary : datetime.datetime
+        When the steady state began; earlier measurements are start-up.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        For the start-up and the steady state: ``key_requests``,
+        ``request_errors`` (not counting busy or stale responses),
+        ``p95_response_time`` and ``q_delay_p95``, the last two ``None``
+        without measurements.
+    """
+    # Indexed by whether a measurement is in the steady state.
+    phases = [{"durations": [], "errors": 0, "delays": []} for _ in range(2)]
+    for logged_at, duration, status_code in requests:
+        phase = phases[logged_at >= boundary]
+        phase["durations"].append(duration)
+        if (status_code or 0) >= 400 and status_code not in _BUSY_STATUS_CODES:
+            phase["errors"] += 1
+    for enqueued_at, delay in queue_delays:
+        phases[enqueued_at >= boundary]["delays"].append(delay)
+    return tuple(
+        dict(
+            key_requests=len(phase["durations"]),
+            request_errors=phase["errors"],
+            p95_response_time=quantile(sorted(phase["durations"]), 0.95),
+            q_delay_p95=quantile(sorted(phase["delays"]), 0.95),
+        )
+        for phase in phases
+    )
+
+
 def async_process_stats(after_process_id, ended_at):
     """Return the result fields measured from async processes after ``after_process_id``.
 

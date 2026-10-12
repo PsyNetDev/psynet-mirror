@@ -47,6 +47,7 @@ from psynet.perf_test.measure import (
     bot_outcome_stats,
     count_rq_workers,
     database_rows,
+    phase_stats,
     request_stats,
     wait_for_async_processes,
 )
@@ -54,6 +55,7 @@ from psynet.perf_test.report import (
     format_test_results,
 )
 from psynet.perf_test.results import (
+    MIN_STEADY_STATE_S,
     PerformanceTestResult,
     describe_bot_error,
     plural,
@@ -160,6 +162,8 @@ class _BotState:
     peak_running: int = 0
     # Seconds from the test start until the last bot slot started.
     ramp_up_s: float | None = None
+    # time.time() when a bot first completed the experiment during the test.
+    first_completed_at: float | None = None
     # (CPU share, p95 lag in s) of each process running bots.
     process_loads: list = field(default_factory=list)
     # Why a bot process stopped during the test, if one did.
@@ -509,6 +513,7 @@ class PerformanceTester:
         return self._calculate_and_report_results(
             n,
             duration_minutes,
+            start_time,
             actual_duration,
             initial_state,
             bot_state,
@@ -662,6 +667,8 @@ class PerformanceTester:
                     bot_state.errored_bot_ids.add(bot_id)
             elif outcome == "completed" and now < end_time:
                 bot_state.bots_completed_during_test += 1
+                if bot_state.first_completed_at is None:
+                    bot_state.first_completed_at = now
             elif outcome == "failed" and now < end_time:
                 bot_state.bots_failed_during_test += 1
             if start is not None:
@@ -786,6 +793,7 @@ class PerformanceTester:
         self,
         n,
         duration_minutes,
+        start_time,
         actual_duration,
         initial_state,
         bot_state,
@@ -800,6 +808,12 @@ class PerformanceTester:
         ``oldest_queued_s`` is how long the oldest async process enqueued
         during the test had been waiting for a worker at ``ended_at``, so a
         backlog that never drains still counts against capacity.
+
+        The steady state begins when the first bot completes the experiment:
+        until then every bot is still in its first session, so the test sees
+        the start of the study, when participants arrive together. Its
+        metrics are reported separately if it lasts at least
+        ``MIN_STEADY_STATE_S``.
         """
         from dallinger import db
 
@@ -842,6 +856,17 @@ class PerformanceTester:
             **bot_stats,
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
+        completed_at = bot_state.first_completed_at
+        if completed_at is not None:
+            result.first_completion_s = completed_at - start_time
+            if actual_duration - result.first_completion_s >= MIN_STEADY_STATE_S:
+                result.startup_phase, result.steady_state_phase = phase_stats(
+                    initial_state["max_request_id"],
+                    last_request_id,
+                    initial_state["max_process_id"],
+                    ended_at,
+                    datetime.datetime.fromtimestamp(completed_at),
+                )
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         # Release the locks the counts took before the next test starts.
         db.session.rollback()

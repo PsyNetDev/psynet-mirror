@@ -14,12 +14,14 @@ from tabulate import tabulate
 
 from psynet.log import bold, error, success, warning
 from psynet.perf_test.results import (
+    MIN_STEADY_STATE_S,
     POSTGRES_FULL,
     PROCESS_STAT_KEYS,
     CapacityLimits,
     capacity_failure_causes,
     count_wait_timeouts,
     describe_bot_errors,
+    phase_limit_reasons,
     plural,
     queue_wait_p95,
     start_rate_limits,
@@ -58,7 +60,65 @@ def format_test_results(result):
         *_init_time_lines(result),
         *_request_lines(result),
         *_async_process_lines(result),
+        *_phase_lines(result),
         *_database_row_lines(result),
+    ]
+
+
+def _phase_lines(result):
+    """Return the START-UP VS STEADY STATE section."""
+    lines = _section("START-UP VS STEADY STATE")
+    first = result.first_completion_s
+    length = result.actual_duration or 0
+    if first is None:
+        return lines + [
+            "  No bot completed the experiment during the test, so it only saw "
+            "the start-up, when every bot was in its first session.",
+            "",
+        ]
+    startup, steady = result.startup_phase, result.steady_state_phase
+    if not (startup and steady):
+        return lines + [
+            f"  The first bot completed the experiment {first:.0f} s into the "
+            f"{length:.0f} s test, leaving less than {MIN_STEADY_STATE_S} s of "
+            "steady state to report separately.",
+            "",
+        ]
+    rows = [
+        ["Requests", f"{startup['key_requests']:,}", f"{steady['key_requests']:,}"],
+        [
+            "p95 response time",
+            _fmt(startup["p95_response_time"], "s"),
+            _fmt(steady["p95_response_time"], "s"),
+        ],
+        [
+            "Request errors",
+            f"{startup['request_errors']:,}",
+            f"{steady['request_errors']:,}",
+        ],
+    ]
+    steady_queue = [
+        w for w in (steady["q_delay_p95"], result.oldest_queued_s) if w is not None
+    ]
+    if startup["q_delay_p95"] is not None or steady_queue:
+        rows.append(
+            [
+                "p95 async queue wait",
+                _fmt(startup["q_delay_p95"], "s"),
+                _fmt(max(steady_queue, default=None), "s"),
+            ]
+        )
+    return [
+        *lines,
+        f"  Start-up: the first {first:.0f} s, until the first bot completed the "
+        f"experiment. Steady state: the other {length - first:.0f} s.",
+        *_table_lines(
+            rows,
+            headers=["", "Start-up", "Steady state"],
+            min_label_width=0,
+            colalign=("left", "right", "right"),
+        ),
+        "",
     ]
 
 
@@ -538,6 +598,28 @@ def _database_growth_warnings(results, capacity_result, first_fail):
     return lines
 
 
+def _startup_only_lines(result, limits):
+    """Note when ``result`` exceeded the phase limits in its start-up but not its steady state.
+
+    The capacity still counts the start-up, because participants often
+    arrive together when a study opens.
+    """
+    if not (result.startup_phase and result.steady_state_phase):
+        return []
+    startup = phase_limit_reasons(result.startup_phase, limits)
+    steady = phase_limit_reasons(
+        result.steady_state_phase, limits, result.oldest_queued_s
+    )
+    if not startup or steady:
+        return []
+    return [
+        f"  In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
+        f"({'; '.join(startup)}) but the steady state kept its response times, "
+        "request errors and queue waits within them. The capacity counts the "
+        "start-up, because participants often arrive together when a study opens."
+    ]
+
+
 _CAPACITY_HEADROOM = 0.8
 _RAMP_UP_WARNING_SHARE = 0.25
 
@@ -629,6 +711,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         unmeasured=unmeasured,
         waits_only=waits_only,
     )
+    if first_fail is not None:
+        lines += _startup_only_lines(first_fail, limits)
     if wait_cause:
         lines.append(_WAIT_ADVICE)
     if "async queue" in first_reasons:

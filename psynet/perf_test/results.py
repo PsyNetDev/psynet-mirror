@@ -165,6 +165,13 @@ class PerformanceTestResult:
     n_rq_workers: int | None = None
     # Jobs the async workers can run at once.
     n_rq_job_slots: int | None = None
+    # Seconds from the test start until the first bot completed the
+    # experiment, where the steady state begins.
+    first_completion_s: float | None = None
+    # Metrics before and after first_completion_s (see measure.split_phases),
+    # empty unless the steady state lasted at least MIN_STEADY_STATE_S.
+    startup_phase: dict = field(default_factory=dict)
+    steady_state_phase: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data):
@@ -484,6 +491,35 @@ def wait_timeout_cause(result, limits):
         f"{plural(wait_timeouts, 'participant')} failed for waiting too long "
         f"at {_describe_waits(result)}"
     )
+
+
+# The shortest steady state that the report shows separately from the start-up.
+MIN_STEADY_STATE_S = 60
+
+
+def phase_limit_reasons(phase, limits, oldest_queued_s=None):
+    """Return the response-time, request-error and queue limits that one phase exceeded.
+
+    ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
+    :attr:`~PerformanceTestResult.steady_state_phase`. Pass the result's
+    ``oldest_queued_s`` for the steady state, which a backlog left at the end
+    belongs to, as in :func:`queue_wait_p95`.
+    """
+    reasons = []
+    p95 = phase.get("p95_response_time")
+    if p95 is not None and p95 > limits.max_p95_s:
+        reasons.append(f"p95 response time {p95 * 1000:.0f} ms")
+    errors = phase.get("request_errors") or 0
+    allowed = max(
+        limits.allowed_request_errors,
+        limits.max_request_error_rate * (phase.get("key_requests") or 0),
+    )
+    if errors > allowed:
+        reasons.append(plural(errors, "request error"))
+    waits = [w for w in (phase.get("q_delay_p95"), oldest_queued_s) if w is not None]
+    if waits and max(waits) > limits.max_queue_p95_s:
+        reasons.append(f"p95 async queue wait {max(waits):.2f} s")
+    return reasons
 
 
 def capacity_failure_causes(result, limits):

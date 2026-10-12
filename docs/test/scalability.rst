@@ -141,6 +141,16 @@ that the slowest participants experience. The report also shows:
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.
+- **Start-up vs steady state**: the request count, 95th-percentile response
+  time, request errors and 95th-percentile async queue wait, separately for
+  the start-up and the steady state. The start-up lasts until the first bot
+  completes the experiment: until then every bot is in its first session,
+  as when a study opens and its first participants arrive together, so
+  queues fill up and slow pages are hit by everyone at once. The steady
+  state is the rest of the test, when bots finish and are replaced at
+  different points of the experiment. The table appears when the steady
+  state lasts at least a minute; otherwise the report says how far the
+  test got.
 - **Database rows**: the rows in the tables that grow as a study collects
   data (participants, trials, responses, nodes, networks, async processes
   and assets), before the test and after it. See
@@ -215,6 +225,11 @@ A test counts as within capacity if these stay within their limits:
   without a participant cap. Other failures, such as prescreens, are part
   of the design: the summary reports them but they don't count against
   capacity.
+
+The limits apply to the whole test, start-up included, because a real study
+also has a start-up burst: recruiters often release many places at once when
+a study opens. When the smallest failing count exceeded the response-time,
+request-error or queue limits only in its start-up, the summary says so.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``

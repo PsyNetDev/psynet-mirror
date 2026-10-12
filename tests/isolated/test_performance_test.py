@@ -15,7 +15,7 @@ from psynet.perf_test import (
     format_performance_summary,
     format_test_results,
 )
-from psynet.perf_test.measure import _split_failed_requests
+from psynet.perf_test.measure import _split_failed_requests, split_phases
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -383,6 +383,51 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
 
     assert "Estimated session:    13.0 min" in caplog.text
     assert ("only sees the start of the study" in caplog.text) == warns
+
+
+def test_split_phases_splits_requests_and_queue_waits_at_the_boundary():
+    from datetime import datetime, timedelta
+
+    start = datetime(2026, 10, 12, 12)
+
+    def at(seconds):
+        return start + timedelta(seconds=seconds)
+
+    requests = [(at(1), 2.0, 200), (at(2), 1.0, 500), (at(3), 0.5, 503)]
+    requests += [(at(60 + i), 0.1, 200) for i in range(20)]
+    queue_delays = [(at(5), 30.0), (at(70), 1.0)]
+
+    startup, steady = split_phases(requests, queue_delays, boundary=at(60))
+
+    assert startup == dict(
+        key_requests=3, request_errors=1, p95_response_time=2.0, q_delay_p95=30.0
+    )
+    assert steady == dict(
+        key_requests=20, request_errors=0, p95_response_time=0.1, q_delay_p95=1.0
+    )
+
+
+def test_report_compares_start_up_and_steady_state():
+    phases = dict(
+        first_completion_s=200.0,
+        actual_duration=600.0,
+        startup_phase=dict(
+            key_requests=500, request_errors=0, p95_response_time=0.9, q_delay_p95=12.0
+        ),
+        steady_state_phase=dict(
+            key_requests=900, request_errors=0, p95_response_time=0.1, q_delay_p95=1.0
+        ),
+    )
+    report = _join(format_test_results(_base_result(**phases)))
+    assert "Start-up: the first 200 s" in report
+    assert "p95 async queue wait" in report
+
+    over = _base_result(n_bots=40, p95_response_time=0.7, **phases)
+    summary = _join(format_capacity_summary([over]))
+    assert "the start-up exceeded the limits (p95 response time 900 ms" in summary
+
+    no_completion = _join(format_test_results(_base_result()))
+    assert "No bot completed the experiment during the test" in no_completion
 
 
 _HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
