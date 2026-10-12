@@ -20,11 +20,6 @@ What ``/branch-review`` does
 ``origin/<target>...HEAD`` and updates the GitLab title and description.
 To merge without reviewing, run ``/update-onto-target`` on its own.
 
-Just before the merge request is merged into its target, run
-``/reorganize-onto-target``. When that rewrite is allowed, and why it
-must not fetch a newer target, is in
-``.cursor/skills/reorganize-onto-target/SKILL.md`` (When to run).
-
 Reference workflow
 ++++++++++++++++++
 
@@ -32,6 +27,5 @@ The detailed steps live in these skills:
 
 * ``.cursor/skills/update-onto-target/SKILL.md`` (``/update-onto-target``)
 * ``.cursor/skills/branch-review/SKILL.md`` (``/branch-review``)
-* ``.cursor/skills/reorganize-onto-target/SKILL.md`` (``/reorganize-onto-target``)
 
 The matching command files are under ``.cursor/commands/``.

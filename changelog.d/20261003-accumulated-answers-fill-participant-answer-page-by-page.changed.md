@@ -1,0 +1,1 @@
+With `accumulate_answers=True`, `participant.answer` now becomes a dict when the page maker or trial starts and each page adds its answer as soon as it is submitted, so later pages can read earlier answers. Code that read `participant.answer` during such a trial to get the previous trial's answer now sees the current trial's answers instead.

@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import subprocess
 import sys
 import time
 import warnings
@@ -39,6 +38,7 @@ from .command_line import (
     clean_sys_modules,
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
+    kill_psynet_worker_processes,
     stop_local_debug_process,
 )
 from .experiment import get_experiment, import_local_experiment
@@ -52,6 +52,7 @@ from .test_helpers.mock_s3 import (
     get_mock_s3_resource,
 )
 from .testing.chrome_driver import create_psynet_chrome_driver
+from .testing.locks import experiment_directory_lock
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from .utils import (
@@ -436,7 +437,10 @@ def in_experiment_directory(experiment_directory):
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
     cleanup_error = None
-    with working_directory(experiment_directory):
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+    ):
         try:
             with scaffold_missing_files():
                 # In-repo demos/tests use PsyNet's shared development .venv, so
@@ -479,14 +483,12 @@ def skip_constraints_check():
 
 @pytest.fixture(scope="class")
 def clear_workers():
+    """Stop leftover local servers that use this test run's database."""
+
     def _zap():
-        kills = [["pkill", "-f", "heroku"]]
-        for kill in kills:
-            try:
-                subprocess.check_call(kill)
-            except Exception as e:
-                if e.returncode != 1:
-                    raise
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
+        kill_psynet_worker_processes()
 
     _zap()
     yield
@@ -533,8 +535,6 @@ def debug_experiment(
     # db_session already reset the database for this test class. Brief pause so
     # any lingering teardown from the previous class can finish before launch.
     time.sleep(0.5)
-    kill_psynet_chrome_processes()
-    kill_chromedriver_processes()
 
     timeout = 60
 
@@ -543,6 +543,10 @@ def debug_experiment(
     config = get_config()
     if not config.ready:
         config.load()
+
+    # Browser cleanup matches this run's base_port, so config must be loaded.
+    kill_psynet_chrome_processes()
+    kill_chromedriver_processes()
 
     p = pexpect.spawn(
         "psynet",
@@ -887,7 +891,6 @@ trial_maker_1 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,
@@ -904,7 +907,6 @@ trial_maker_2 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,

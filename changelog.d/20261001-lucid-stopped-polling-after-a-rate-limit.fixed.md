@@ -1,0 +1,1 @@
+Fixed the Lucid recruiter reusing stale cached submissions for the rest of the experiment after the Lucid API had rate-limited it once. It now uses the cache only for five minutes after a rate limit and then polls the API again.

@@ -368,3 +368,18 @@ class TestParticipantFailure:
         assert "sync group below minimum size" in partner.failure_tags
         assert group.n_active_participants == 0
         assert partner not in group.active_participants
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+def test_initialize_bot_sees_bot_id(launched_experiment, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        type(launched_experiment),
+        "initialize_bot",
+        lambda self, bot: seen.append(bot.id),
+    )
+    bot = Bot()
+    assert bot.id is not None
+    assert seen == [bot.id]

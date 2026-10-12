@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.modular_page import AudioPrompt, ModularPage, PushButtonControl

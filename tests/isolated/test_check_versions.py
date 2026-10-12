@@ -104,6 +104,72 @@ def test_check_core_dependency_versions_psynet_pip_install_requirement(
                     check_core_dependency_versions_match_requirements()
 
 
+@patch("psynet.__version__", "13.4.0a0")
+def test_check_core_dependency_versions_release_pin_rejects_development_install():
+    with tempfile.TemporaryDirectory() as dir:
+        with working_directory(dir):
+            with open("requirements.txt", "w") as file:
+                file.write(
+                    "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@v14.0.0rc2"
+                )
+
+            with pytest.raises(
+                ValueError,
+                match="Version installed locally: 13.4.0a0[\\n\\r\\s]+"
+                "Version specified in requirements.txt: 14.0.0rc2",
+            ):
+                check_core_dependency_versions_match_requirements()
+
+
+@pytest.mark.parametrize(
+    "pinned_commit, matches",
+    [
+        ("2da1cc662d0db5969a14f20f18a2e1834187ff8b", True),
+        ("2da1cc66", True),
+        ("2DA1CC66", True),
+        ("45f31768", False),
+    ],
+)
+@patch("psynet.version.get_requirement_line_from_pip_freeze")
+def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
+    mock_get_requirement, pinned_commit, matches
+):
+    mock_get_requirement.return_value = (
+        "-e git+https://gitlab.com/PsyNetDev/PsyNet.git"
+        "@2da1cc662d0db5969a14f20f18a2e1834187ff8b#egg=psynet"
+    )
+
+    with tempfile.TemporaryDirectory() as dir:
+        with working_directory(dir):
+            with open("requirements.txt", "w") as file:
+                file.write(
+                    "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git"
+                    f"@{pinned_commit}"
+                )
+
+            if matches:
+                check_core_dependency_versions_match_requirements()
+            else:
+                with pytest.raises(ValueError, match="do not match"):
+                    check_core_dependency_versions_match_requirements()
+
+
+@patch("psynet.version.get_requirement_line_from_pip_freeze")
+def test_check_core_dependency_versions_branch_pin_skips_development_install(
+    mock_get_requirement, capsys
+):
+    mock_get_requirement.return_value = "psynet==13.4.0a0"
+
+    with tempfile.TemporaryDirectory() as dir:
+        with working_directory(dir):
+            with open("requirements.txt", "w") as file:
+                file.write("psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master")
+
+            check_core_dependency_versions_match_requirements()
+
+    assert "Skipped version check for PsyNet" in capsys.readouterr().out
+
+
 @patch("psynet.__version__", "10.0.0rc1")
 @patch("psynet.version.get_requirement_line_from_pip_freeze")
 def test_check_core_dependency_versions_psynet_pip_install_requirement_rc(

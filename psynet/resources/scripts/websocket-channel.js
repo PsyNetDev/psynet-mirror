@@ -2,6 +2,8 @@
   "use strict";
 
   const channels = new Map();
+  const LISTENING_PROBE_TYPE = "psynet_listening_probe";
+  const LISTENING_PROBE_RETRY_MS = 1000;
 
   function buildUrl(channel) {
     const scheme = location.protocol === "https:" ? "wss://" : "ws://";
@@ -17,13 +19,59 @@
     );
   }
 
-  function createChannel(channel) {
+  function stopListeningProbe(entry) {
+    clearInterval(entry.probeTimer);
+    entry.probeTimer = null;
+  }
+
+  function markListening(entry, event) {
+    stopListeningProbe(entry);
+    entry.listening = true;
+    entry.subscribers.forEach((subscriber) => subscriber.onOpen?.(event));
+  }
+
+  // Dallinger subscribes the server to Redis after the socket opens, so
+  // messages published in between are dropped. Our own probe echoing back
+  // proves the subscription is live. A probe published before the
+  // subscription is dropped too, so it is repeated until one echoes.
+  function sendListeningProbe(entry, event) {
+    stopListeningProbe(entry);
+    entry.probeId = Math.random().toString(36).slice(2);
+    entry.probeEvent = event;
+    const payload =
+      entry.channel +
+      ":" +
+      JSON.stringify({ type: LISTENING_PROBE_TYPE, probe_id: entry.probeId });
+    entry.socket.send(payload);
+    entry.probeTimer = setInterval(() => {
+      if (entry.socket.readyState === WebSocket.OPEN) {
+        entry.socket.send(payload);
+      }
+    }, LISTENING_PROBE_RETRY_MS);
+  }
+
+  function createChannel(channel, confirmListening) {
     const subscribers = new Set();
     const socket = new ReconnectingWebSocket(buildUrl(channel));
-    const entry = { channel, keepAlive: false, socket, subscribers };
+    const entry = {
+      channel,
+      confirmListening,
+      keepAlive: false,
+      listening: false,
+      probeEvent: null,
+      probeId: null,
+      probeTimer: null,
+      socket,
+      subscribers,
+    };
 
     socket.onopen = function (event) {
-      subscribers.forEach((subscriber) => subscriber.onOpen?.(event));
+      entry.listening = false;
+      if (entry.confirmListening) {
+        sendListeningProbe(entry, event);
+      } else {
+        markListening(entry, event);
+      }
     };
     socket.onmessage = function (event) {
       if (event.data.indexOf(channel + ":") !== 0) {
@@ -36,9 +84,17 @@
         console.warn(`Ignored malformed JSON on WebSocket channel "${channel}".`);
         return;
       }
+      if (message?.type === LISTENING_PROBE_TYPE) {
+        if (!entry.listening && message.probe_id === entry.probeId) {
+          markListening(entry, entry.probeEvent);
+        }
+        return;
+      }
       subscribers.forEach((subscriber) => subscriber.onMessage?.(message));
     };
     socket.onclose = function (event) {
+      stopListeningProbe(entry);
+      entry.listening = false;
       subscribers.forEach((subscriber) => subscriber.onClose?.(event));
     };
 
@@ -48,6 +104,7 @@
 
   function closeChannel(entry) {
     channels.delete(entry.channel);
+    stopListeningProbe(entry);
     entry.socket.onopen = function () {
       entry.socket.close();
     };
@@ -56,12 +113,36 @@
     entry.socket.close();
   }
 
-  function connect({ channel, keepAlive = false, onOpen, onMessage, onClose }) {
+  /**
+   * Subscribe to a WebSocket channel, sharing one socket per channel name.
+   *
+   * With ``confirmListening``, ``onOpen`` and ``isOpen()`` wait until the
+   * server is relaying the channel, so a state check in ``onOpen`` cannot miss
+   * a message published during connection. The first ``connect`` for a
+   * channel decides this. Probes are published on the channel itself, so only
+   * use it on channels without server-side message handlers.
+   */
+  function connect({
+    channel,
+    keepAlive = false,
+    confirmListening = false,
+    onOpen,
+    onMessage,
+    onClose,
+  }) {
     if (!channel) {
       throw new Error("A WebSocket channel name is required.");
     }
+    if (confirmListening && channel.includes(":")) {
+      // Dallinger takes everything before the first colon of a browser
+      // message as the channel, so the probe would never echo back.
+      throw new Error(
+        `confirmListening needs a channel name without ":" (got "${channel}").`,
+      );
+    }
 
-    const entry = channels.get(channel) || createChannel(channel);
+    const entry =
+      channels.get(channel) || createChannel(channel, confirmListening);
     entry.keepAlive ||= keepAlive;
     let closed = false;
     let subscriber;
@@ -75,7 +156,11 @@
         }
       },
       isOpen() {
-        return !closed && entry.socket.readyState === WebSocket.OPEN;
+        return (
+          !closed &&
+          entry.listening &&
+          entry.socket.readyState === WebSocket.OPEN
+        );
       },
       send(message) {
         if (closed) {
@@ -99,7 +184,7 @@
       },
     };
     entry.subscribers.add(subscriber);
-    if (entry.socket.readyState === WebSocket.OPEN) {
+    if (entry.listening && entry.socket.readyState === WebSocket.OPEN) {
       setTimeout(() => subscriber.onOpen({ isReconnect: false }), 0);
     }
 

@@ -58,6 +58,23 @@ def test_random_stagger_is_bounded_relative_to_configured_interval():
         assert tester._bounded_random_stagger() == 0.4
 
 
+def test_monitoring_loop_ends_early_when_server_stops():
+    import time
+
+    import requests
+
+    session = Mock()
+    session.head.side_effect = requests.ConnectionError()
+    tester = PerformanceTester(authenticated_session=session, base_url="http://x")
+    bot_state = tester._initialize_bot_tracking()
+    start = time.time()
+
+    tester._run_monitoring_loop(1, bot_state, Mock(), start, start + 600)
+
+    assert bot_state["server_stopped"]
+    assert time.time() - start < 5
+
+
 # --- colorize_success_rate ---
 
 

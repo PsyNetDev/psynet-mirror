@@ -20,6 +20,7 @@ from psynet.utils import (
     check_todos_before_deployment,
     corr,
     ensure_experiment_directory_name_does_not_conflict,
+    find_git_repo,
     format_timedelta,
     generate_text_file,
     get_authenticated_session,
@@ -42,6 +43,7 @@ from psynet.utils import (
     pretty_format_seconds,
     psynet_source_prefixes,
     safe,
+    strip_url_credentials,
     working_directory,
 )
 
@@ -630,6 +632,35 @@ def test_git_repository_available_true(tmp_path):
         assert git_repository_available() is True
 
 
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (
+            "https://user:token@gitlab.com/org/repo.git",
+            "https://gitlab.com/org/repo.git",
+        ),
+        ("https://oauth2@github.com:443/org/repo", "https://github.com:443/org/repo"),
+        ("ssh://git@example.org/org/repo.git", "ssh://example.org/org/repo.git"),
+        ("https://gitlab.com/org/repo.git", "https://gitlab.com/org/repo.git"),
+        ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
+        ("/srv/git/repo.git", "/srv/git/repo.git"),
+        ("https://u:t@[bad/repo", "https://[bad/repo"),
+    ],
+)
+def test_strip_url_credentials(url, expected):
+    assert strip_url_credentials(url) == expected
+
+
+def test_find_git_repo_strips_credentials(tmp_path):
+    with working_directory(tmp_path):
+        subprocess.run(["git", "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://u:secret@host/r.git"],
+            check=True,
+        )
+        assert find_git_repo() == "https://host/r.git"
+
+
 def test_git_repository_available_false(tmp_path):
     # Use a fresh temporary directory with no git repo
     with working_directory(tmp_path):
@@ -788,3 +819,29 @@ def test_md5_directory_consistency():
 
             assert hash1 == hash2
             assert len(hash1) == 32  # MD5 hex digest is 32 characters
+
+
+def test_templates_read_config_lazily_and_hide_sensitive_keys():
+    from dallinger.config import Configuration
+    from flask import Flask
+
+    from psynet.utils import render_string_with_translations
+
+    config = Configuration()
+    config.register("color_mode", str)
+    config.register("dashboard_password", str, sensitive=True)
+    config.extend({"color_mode": "dark", "dashboard_password": "s3cr3t"})
+    config.ready = True
+    template = (
+        "{{ config.color_mode }}|{{ config.get('dashboard_password', 'hidden') }}|"
+        "{{ config.get('title', 'unset') }}"
+    )
+    with (
+        Flask(__name__).app_context(),
+        patch("psynet.utils.get_config", return_value=config),
+        patch("psynet.utils.get_translator", return_value=lambda *args: args[-1]),
+        patch.object(Configuration, "as_dict", side_effect=AssertionError),
+    ):
+        html = render_string_with_translations(template, locale="en")
+
+    assert html == "dark|hidden|unset"

@@ -160,6 +160,9 @@ git switch -c deployment-tests/$BASE_NAME "$BASE_COMMIT"
 git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prolific tests/deployment/audio_gibbs
 ```
 
+   GitLab runs no pipeline for `deployment-tests/*` branches, so do not wait
+   for CI after pushing one; the base tag or branch carries the test results.
+
    For an explicitly requested master-based deployment, update local `master`
    (`git switch master && git pull --ff-only origin master`) and branch from
    `master` instead.
@@ -256,8 +259,11 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
 
      ```text
      dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
      ```
+
+     Keep the `[experiment]` extra on the PsyNet line. Without it the image
+     has no Dallinger, and PsyNet's deploy pre-check refuses the pin.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

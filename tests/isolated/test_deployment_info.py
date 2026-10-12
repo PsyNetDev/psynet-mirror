@@ -1,7 +1,9 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
+import jsonpickle
 import pytest
 
 from psynet import deployment_info
@@ -23,6 +25,37 @@ def test_deployment_info():
 
             with pytest.raises(KeyError):
                 deployment_info.read("x")
+
+
+def test_deployment_info_reads_see_external_writes_and_return_copies(tmp_path):
+    with working_directory(tmp_path):
+        deployment_info.reset()
+        deployment_info.write(x=[1])
+
+        deployment_info.read("x").append(2)
+        deployment_info.read_all()["x"].append(2)
+        assert deployment_info.read("x") == [1]
+
+        external_write = Path(deployment_info.path).with_suffix(".external")
+        external_write.write_text(jsonpickle.encode({"x": [2]}, keys=True))
+        os.replace(external_write, deployment_info.path)
+        assert deployment_info.read("x") == [2]
+
+
+def test_failed_deployment_info_write_leaves_no_temporary_file(tmp_path, monkeypatch):
+    with working_directory(tmp_path):
+        deployment_info.reset()
+        deployment_info.write(x=1)
+
+        def fail(*args):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "replace", fail)
+        with pytest.raises(OSError, match="disk full"):
+            deployment_info.write(x=2)
+
+        assert os.listdir(".deploy") == ["deployment_info.json"]
+        assert deployment_info.read("x") == 1
 
 
 def _git(*args):

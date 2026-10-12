@@ -7,16 +7,18 @@ from psynet.bot import Bot
 from psynet.timeline import AsyncCodeBlock, CodeBlock, Timeline
 
 
+def set_participant_var1(participant):
+    time.sleep(1)
+    participant.var.set("async1", "ASYNC 1")
+
+
+def set_participant_var2(participant):
+    time.sleep(1)
+    participant.var.set("async2", "ASYNC 2")
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Demo demonstrating asynchronous CodeBlock execution"
-
-    def set_participant_var1(participant):
-        time.sleep(1)
-        participant.var.set("async1", "ASYNC 1")
-
-    def set_participant_var2(participant):
-        time.sleep(1)
-        participant.var.set("async2", "ASYNC 2")
 
     timeline = Timeline(
         CodeBlock(lambda participant: participant.var.set("t1", time.time())),

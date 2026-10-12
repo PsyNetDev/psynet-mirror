@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ from psynet.audit.cli import (
     starter_audit_manifest,
     validate_audit,
 )
+from psynet.audit.site import experiment_git_commit
 from psynet.command_line import psynet
+from psynet.version import psynet_version
 
 LFS_VIDEO_POINTER = (
     b"version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n"
@@ -509,7 +512,8 @@ def test_render_audit_site_polishes_core_section_layout(tmp_path: Path) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
-    manifest["sections"][2]["kind"] = "markdown"  # Legacy packets used this kind.
+    timeline = next(s for s in manifest["sections"] if s["id"] == "timeline")
+    timeline["kind"] = "markdown"  # Legacy packets used this kind.
     write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
     write(audit_dir / "PLAN.md", "# Plan\n\nBuild a small experiment.\n")
     write(audit_dir / "REPORT.md", "# Report\n\nThe experiment works.\n")
@@ -680,15 +684,20 @@ def test_render_audit_site_inlines_experiment_entry_point(
     assert index.index('<details id="source"') < index.index('<details id="blockers"')
 
 
-def test_render_backfills_design_simulation_section(tmp_path: Path) -> None:
+@pytest.mark.parametrize("anchor", ["plan", "prompt"])
+def test_render_backfills_design_simulation_section(
+    tmp_path: Path, anchor: str
+) -> None:
     audit_dir = tmp_path / "audit"
     init_audit(audit_dir)
     manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    removed = (
+        {"design_simulation"} if anchor == "plan" else {"design_simulation", "plan"}
+    )
     manifest["sections"] = [
         section
         for section in manifest["sections"]
-        if section.get("id") != "design_simulation"
-        and section.get("kind") != "simulation"
+        if section.get("id") not in removed and section.get("kind") != "simulation"
     ]
     for artifact in manifest["artifacts"]:
         if artifact.get("id") == "simulation_notebook":
@@ -714,7 +723,9 @@ def test_render_backfills_design_simulation_section(tmp_path: Path) -> None:
 
     index = (render_audit_site(audit_dir) / "index.html").read_text(encoding="utf-8")
 
-    assert 'id="design_simulation"' in index
+    assert index.index(f'<details id="{anchor}"') < index.index(
+        '<details id="design_simulation"'
+    )
     assert "Design simulation notebook" in index
 
 
@@ -1056,6 +1067,28 @@ def test_collect_audit_warnings_when_plan_section_missing(tmp_path: Path) -> Non
     warnings = collect_audit_warnings(audit_dir)
 
     assert any("no plan section" in warning for warning in warnings)
+
+
+def test_collect_audit_warnings_for_unexecuted_notebook(tmp_path: Path) -> None:
+    from psynet.audit.cli import collect_audit_warnings
+
+    audit_dir = tmp_path / "audit"
+    init_audit(audit_dir)
+    manifest = json.loads((audit_dir / "audit.json").read_text(encoding="utf-8"))
+    for artifact in manifest["artifacts"]:
+        if artifact["id"] == "analysis_notebook":
+            artifact["status"] = "present"
+    write(audit_dir / "audit.json", json.dumps(manifest) + "\n")
+    cell = {"cell_type": "code", "metadata": {}, "source": ["print(1)"], "outputs": []}
+    notebook = audit_dir / "simulate/analysis/analysis.ipynb"
+
+    def warnings_for(cell):
+        write(notebook, json.dumps({"nbformat": 4, "metadata": {}, "cells": [cell]}))
+        return [w for w in collect_audit_warnings(audit_dir) if "saved outputs" in w]
+
+    assert warnings_for(cell)
+    executed = dict(cell, outputs=[{"output_type": "stream", "text": "1\n"}])
+    assert not warnings_for(executed)
 
 
 def test_unparsed_timeline_entry_lines_skips_headings_and_examples() -> None:
@@ -1577,11 +1610,13 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
     assert "title" not in manifest["experiment"]
     assert "source_base" not in manifest["experiment"]
     assert "source_path" not in manifest["experiment"]
+    assert manifest["experiment"]["psynet_version"] == psynet_version
     assert manifest["profile"] == "psynet.core"
     assert manifest["extensions"] == []
     assert [section["id"] for section in manifest["sections"]] == [
         "prompt",
         "plan",
+        "design_simulation",
         "timeline",
         "report",
         "source",
@@ -1590,7 +1625,6 @@ def test_init_audit_creates_starter_structure_and_manifest(tmp_path: Path) -> No
         "monitor",
         "performance",
         "data_exports",
-        "design_simulation",
         "analysis",
         "files",
         "blockers",
@@ -1949,3 +1983,88 @@ def test_audit_serve_cli_render_then_serve(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Rendered experiment audit site" in result.output
     assert calls == [(audit_dir / "site", "127.0.0.1", 9123)]
+
+
+def test_rendered_header_shows_experiment_git_commit(tmp_path, monkeypatch):
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    (tmp_path / "experiment.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "experiment.py")
+    git("commit", "-qm", "init")
+    sha = git("rev-parse", "--short", "HEAD")
+    init_audit(tmp_path / "audit")
+    monkeypatch.chdir(tmp_path)
+
+    site_dir = render_audit_site(tmp_path / "audit", allow_invalid=True)
+    index = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert f"<code>{sha}</code>" in index
+
+    (tmp_path / "experiment.py").write_text("x = 2\n", encoding="utf-8")
+    assert experiment_git_commit() == f"{sha}-dirty"
+
+
+@pytest.mark.parametrize("has_deploy_toml", [True, False])
+def test_source_section_shows_deployed_experiment_modules(
+    tmp_path: Path, has_deploy_toml: bool
+) -> None:
+    from psynet.audit.site import render_source_section
+
+    if has_deploy_toml:
+        (tmp_path / "deploy.toml").write_text(
+            'version = 1\n[exclude]\npaths = ["local_only"]\nnames = ["env"]\n'
+        )
+    for relative in [
+        "experiment.py",
+        "personality.py",
+        "response_model/core.py",
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/scratch.py",
+        ".venv/lib/site.py",
+        "env/lib/python3.12/site-packages/pkg.py",
+        "custom_environment/pyvenv.cfg",
+        "custom_environment/bin/activate_this.py",
+        "audit/simulate/design/core.py",
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative}\n")
+    (tmp_path / "response_model" / "__init__.py").write_text("")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    for shown in ["experiment.py", "personality.py", "response_model/core.py"]:
+        assert f"# {shown}" in rendered
+    for hidden in [
+        "test.py",
+        "tests/test_flow.py",
+        "local_only/",
+        ".venv/lib/site.py",
+        "env/lib/",
+        "custom_environment/",
+        "audit/",
+    ]:
+        assert f"# {hidden}" not in rendered
+    assert rendered.index("# experiment.py") < rendered.index("# personality.py")
+
+
+def test_source_section_notes_omitted_modules(tmp_path: Path) -> None:
+    from psynet.audit.site import render_source_section
+
+    for index in range(33):
+        (tmp_path / f"module_{index:02}.py").write_text(f"# module {index}\n")
+    (tmp_path / "experiment.py").write_text("# experiment\n")
+
+    rendered = render_source_section(tmp_path / "audit", {"experiment": {}})
+
+    assert "# module 29" in rendered
+    assert "# module 30" not in rendered
+    assert "3 more Python modules omitted" in rendered

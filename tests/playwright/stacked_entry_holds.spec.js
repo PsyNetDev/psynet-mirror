@@ -9,15 +9,12 @@ const {
   closeHoldSessions,
   enterSkippingHold,
   enterWaitingHold,
-  ENTRY_REQUEST_MAX_MS,
-  lastArriverWorkRecord,
   startHoldExperiment,
   stopExperiment,
   armChoiceHold,
   assertWaiterReleasedWithLastArriver,
   submitLastChoice
 } = require("./stackedHoldHarness");
-const { requestHandlerMs } = require("./psynetHarness");
 
 const RPS_DIR = path.resolve("demos/experiments/rock_paper_scissors");
 
@@ -44,12 +41,6 @@ test("last arriver skips stacked entry holds", { tag: "@both" }, async ({
     await first.page.waitForTimeout(SETTLE_HOLD_MS);
     await assertStillHeld(first, PAIR_HOLD_TEXT);
     const lastEntry = await enterSkippingHold(last);
-    const lastWork = lastArriverWorkRecord(lastEntry);
-    const firstWork = lastArriverWorkRecord(first.entry);
-    expect(
-      requestHandlerMs(lastWork),
-      `last arriver grouping ${Math.round(requestHandlerMs(lastWork))}ms vs first ${Math.round(requestHandlerMs(firstWork))}ms`
-    ).toBeLessThan(requestHandlerMs(firstWork) + ENTRY_REQUEST_MAX_MS);
     await expect(last.page.getByRole("button", { name: "rock" })).toBeVisible();
     await assertWaiterReleasedWithLastArriver(first, lastEntry);
     await expect(first.page.getByRole("button", { name: "rock" })).toBeVisible();

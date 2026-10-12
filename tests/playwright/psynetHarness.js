@@ -9,7 +9,9 @@ const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
 const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
-const DEBUG_PORT = Number(process.env.PSYNET_DEBUG_PORT || 5000);
+const DEBUG_PORT = Number(
+  process.env.PSYNET_DEBUG_PORT || process.env.base_port || 5000
+);
 
 function parseBoolEnv(name, defaultValue = false) {
   if (process.env[name] === undefined) {

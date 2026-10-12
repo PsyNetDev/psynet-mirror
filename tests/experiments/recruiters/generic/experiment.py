@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 from dominate import tags
 
 import psynet.experiment

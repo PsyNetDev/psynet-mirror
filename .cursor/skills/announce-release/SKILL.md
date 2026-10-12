@@ -3,7 +3,7 @@ name: announce-release
 description: Use psynet dev release announce to preview and post PsyNet release announcements to Slack.
 ---
 
-# `psynet dev release announce`
+# Announce a release
 
 Post a PsyNet release announcement to the `#psynet-support` Slack
 channel. RC vs final flavour is auto-detected from the version string
