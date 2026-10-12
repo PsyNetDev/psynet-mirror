@@ -488,12 +488,12 @@ class DatabaseReset:
         from sqlalchemy import create_engine
         from sqlalchemy.pool import NullPool
 
-        from psynet.perf_test import _database_rows
+        from psynet.perf_test.measure import database_rows
 
         engine = create_engine(self.database_url, poolclass=NullPool)
         try:
             with engine.connect() as connection:
-                return _database_rows(connection)
+                return database_rows(connection)
         finally:
             engine.dispose()
 

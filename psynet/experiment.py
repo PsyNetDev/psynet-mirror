@@ -75,7 +75,6 @@ from sqlalchemy.orm import lazyload, load_only
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
-from psynet.perf_test import run_parallel_test
 from psynet.utils import (
     format_bytes,
     get_config,
@@ -1644,7 +1643,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if self.test_mode == "serial" or self.test_n_bots == 1:
             self._test_experiment_serial()
         elif self.test_mode == "parallel":
-            run_parallel_test(
+            _run_parallel_test(
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
@@ -7249,6 +7248,44 @@ def get_experiment() -> Experiment:
     Returns an initialized instance of the experiment class.
     """
     return import_local_experiment()["class"]()
+
+
+def _run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
+    """Run ``n_bots`` bots at once, each in its own thread, then check them.
+
+    This backs ``psynet test`` with ``test_mode = "parallel"``. The first bot
+    error is re-raised once every bot has finished.
+    """
+    logger.info(f"Testing experiment with {n_bots} parallel bots...")
+    experiment = get_experiment()
+    errors = []
+
+    def run_bot():
+        try:
+            experiment.run_bot(BotDriver(), time_factor=time_factor)
+        # pytest.fail() and pytest.skip() raise BaseException subclasses.
+        except BaseException as err:
+            logger.exception("Bot failed.")
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    threads = []
+    for i in range(n_bots):
+        if i > 0:
+            time.sleep(stagger_interval_s)
+        thread = threading.Thread(
+            target=run_bot, name=f"psynet-bot-{i + 1}", daemon=True
+        )
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
+
+    with transaction():
+        check_bots(Bot.query.all())
 
 
 @cache

@@ -9,13 +9,13 @@ from psynet.perf_test import (
     PerformanceSuite,
     PerformanceTester,
     PerformanceTestResult,
-    _BotState,
-    _split_failed_requests,
     capacity_failures,
     format_capacity_summary,
     format_performance_summary,
     format_test_results,
 )
+from psynet.perf_test.measure import _split_failed_requests
+from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
 
@@ -171,7 +171,7 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     from dallinger import db
 
     from psynet.participant import ParticipantDriver
-    from psynet.perf_test import _serve_bot_commands, _ThreadBots
+    from psynet.perf_test.runtime import _serve_bot_commands, _ThreadBots
 
     ids = itertools.count(1)
 
@@ -196,10 +196,10 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     monkeypatch.setattr("psynet.bot.BotDriver", FakeDriver)
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr(db, "session", Mock())
-    monkeypatch.setattr("psynet.perf_test._fit_redis_pool_to_bots", Mock())
-    monkeypatch.setattr("psynet.perf_test._run_bot_process", run_bot_process)
+    monkeypatch.setattr("psynet.perf_test.runtime._fit_redis_pool_to_bots", Mock())
+    monkeypatch.setattr("psynet.perf_test.runtime._run_bot_process", run_bot_process)
     monkeypatch.setattr(
-        "psynet.perf_test.multiprocessing.get_context",
+        "psynet.perf_test.runtime.multiprocessing.get_context",
         lambda method: SimpleNamespace(Queue=queue.Queue, Process=ThreadProcess),
     )
     tester = PerformanceTester(Mock(), "http://x", bot_processes=2)
@@ -225,9 +225,9 @@ def test_bot_processes_report_their_bots_to_the_parent(monkeypatch):
     [("auto", 100, 16, 1), ("auto", 2000, 16, 4), ("auto", 2000, 2, 1), (8, 3, 2, 3)],
 )
 def test_bot_process_count(monkeypatch, requested, max_bots, cpu_count, expected):
-    from psynet.perf_test import _choose_bot_processes
+    from psynet.perf_test.runtime import _choose_bot_processes
 
-    monkeypatch.setattr("psynet.perf_test.os.cpu_count", lambda: cpu_count)
+    monkeypatch.setattr("psynet.perf_test.runtime.os.cpu_count", lambda: cpu_count)
     assert _choose_bot_processes(requested, max_bots) == expected
 
 
@@ -235,18 +235,18 @@ def test_bot_process_count(monkeypatch, requested, max_bots, cpu_count, expected
 def test_bot_errors_without_a_route_are_still_described(url):
     import requests
 
-    from psynet.perf_test import _describe_bot_error
+    from psynet.perf_test.results import describe_bot_error
 
     response = requests.Response()
     response.status_code = 502
     response.url = url
-    assert _describe_bot_error(requests.HTTPError(response=response)) == (
+    assert describe_bot_error(requests.HTTPError(response=response)) == (
         "HTTP 502 on /"
     )
 
 
 def test_postgres_running_out_of_connections_is_named_with_advice():
-    from psynet.perf_test import _describe_bot_error
+    from psynet.perf_test.results import describe_bot_error
 
     try:
         try:
@@ -254,7 +254,7 @@ def test_postgres_running_out_of_connections_is_named_with_advice():
         except Exception as cause:
             raise RuntimeError("could not create participant") from cause
     except RuntimeError as err:
-        kind = _describe_bot_error(err)
+        kind = describe_bot_error(err)
 
     assert kind == "PostgreSQL out of connections"
     results = [
@@ -299,7 +299,7 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
     import pytest
     from dallinger import db
 
-    from psynet.perf_test import run_parallel_test
+    from psynet.experiment import _run_parallel_test
 
     finished = []
 
@@ -309,13 +309,13 @@ def test_parallel_test_reraises_a_bot_error_after_all_bots_finish(monkeypatch):
             pytest.fail("bot failed")
 
     experiment = Mock(run_bot=run_bot)
-    monkeypatch.setattr("psynet.bot.BotDriver", Mock)
+    monkeypatch.setattr("psynet.experiment.BotDriver", Mock)
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr(db, "session", Mock())
     check_bots = Mock()
 
     with pytest.raises(pytest.fail.Exception, match="bot failed"):
-        run_parallel_test(
+        _run_parallel_test(
             n_bots=3, time_factor=0, stagger_interval_s=0, check_bots=check_bots
         )
 
@@ -328,7 +328,7 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
     result = _base_result(n_bots=10, server_stopped=False, unreported_bot_processes=[2])
     with (
         patch.object(tester, "_test_performance", return_value=result),
-        patch("psynet.perf_test.raise_open_file_limit"),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
     ):
         assert PerformanceSuite(tester).run([10, 20]) == [result]
 
@@ -344,7 +344,7 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
             side_effect=lambda n_bots, bot_log_file: _base_result(n_bots=n_bots),
         ),
         patch.object(tester, "pause_between_tests") as pause,
-        patch("psynet.perf_test.raise_open_file_limit"),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
     ):
         PerformanceSuite(tester, before_test=before_test).run([10, 20])
 
@@ -378,8 +378,8 @@ def test_capacity_search_brackets_then_bisects(
     with (
         patch.object(tester, "_test_performance", side_effect=fake_test),
         patch.object(tester, "pause_between_tests"),
-        patch("psynet.perf_test.raise_open_file_limit"),
-        patch("psynet.perf_test._fit_redis_pool_to_bots"),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
+        patch("psynet.perf_test.runtime._fit_redis_pool_to_bots"),
     ):
         results = PerformanceSuite(tester).find_capacity()
 
@@ -398,9 +398,9 @@ def test_database_rows_count_new_participants(db_session):
 
     from psynet.experiment import get_experiment
     from psynet.participant import Participant
-    from psynet.perf_test import _database_rows
+    from psynet.perf_test.measure import database_rows
 
-    before = _database_rows()
+    before = database_rows()
     db.session.add(
         Participant(
             experiment=get_experiment(),
@@ -413,13 +413,13 @@ def test_database_rows_count_new_participants(db_session):
     )
     db.session.flush()
 
-    assert _database_rows()["participant"] == before["participant"] + 1
+    assert database_rows()["participant"] == before["participant"] + 1
 
 
 def test_failed_participants_are_classified_by_failed_not_status():
     from types import SimpleNamespace
 
-    from psynet.perf_test import _bot_outcome, _failure_reason
+    from psynet.perf_test.measure import _bot_outcome, _failure_reason
 
     failed = SimpleNamespace(
         status="approved",
@@ -1030,7 +1030,7 @@ def test_load_monitor_measures_how_late_threads_run_while_the_lock_is_held():
     import sys
     import time
 
-    from psynet.perf_test import _LoadMonitor
+    from psynet.perf_test.runtime import _LoadMonitor
 
     monitor = _LoadMonitor()
     time.sleep(0.2)
@@ -1052,7 +1052,7 @@ def test_bot_processes_ignore_messages_from_an_earlier_test():
     import queue
     import time
 
-    from psynet.perf_test import _BotProcesses
+    from psynet.perf_test.runtime import _BotProcesses
 
     bot_processes = object.__new__(_BotProcesses)
     bot_state = _BotState()
