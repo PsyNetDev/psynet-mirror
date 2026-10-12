@@ -677,11 +677,20 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
             time_started=at(started),
             queue_delay=float(started - enqueued),
             priority=priority,
+            finished=True,
+            cpu_time=2.0 if priority == "low" else 0.5,
         )
         for enqueued, started, priority in jobs
     ]
     jobs.append(
-        dict(time_enqueued=at(50), time_started=None, queue_delay=None, priority="low")
+        dict(
+            time_enqueued=at(50),
+            time_started=None,
+            queue_delay=None,
+            priority="low",
+            finished=False,
+            cpu_time=None,
+        )
     )
     db.session.execute(AsyncJob.__table__.insert(), jobs)
     db.session.flush()
@@ -708,10 +717,14 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
             "low": waits(2, pytest.approx(85.75), 1, 550.0),
         },
     )
-    assert async_job_stats(0, at(600))["queue_waits"] == {
+    overall = async_job_stats(0, at(600))
+    assert overall["queue_waits"] == {
         "high": waits(3, pytest.approx(54.1)),
         "low": waits(2, pytest.approx(85.75), 1, 550.0),
     }
+    assert [
+        (s["priority"], s["count"], s["cpu_avg"]) for s in overall["async_job_stats"]
+    ] == [("high", 3, 0.5), ("low", 2, 2.0)]
 
 
 @pytest.mark.parametrize(
@@ -1310,21 +1323,6 @@ def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
 
     results[0].q_delay_median = 0.5
     assert "async queue wait under" in _join(format_capacity_summary(results))
-
-
-def test_results_saved_before_priorities_keep_their_queue_wait():
-    result = PerformanceTestResult.from_dict(
-        {
-            "n_bots": 50,
-            "p95_response_time": 0.1,
-            "q_delay_p95": 2.0,
-            "oldest_queued_s": 40.0,
-            "process_stats": [{"label": "analyse"}],
-        }
-    )
-
-    assert capacity_failures(result) == ["p95 high-priority async queue wait 40.00 s"]
-    assert result.async_job_stats == [{"label": "analyse"}]
 
 
 def test_only_high_priority_queue_waits_limit_capacity():

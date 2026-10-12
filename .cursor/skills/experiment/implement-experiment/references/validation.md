@@ -85,7 +85,9 @@ fails after the database grew a lot, rerun with `--reset-database` before
 capping lower. Only high-priority async jobs, which participants wait for,
 count against `--max-queue-p95-s`; a low-priority backlog (`queue_waits.low`
 in the JSON) is only reported, but if the summary says it wasn't cleared during
-the confirmation run's steady state, the workers can't keep up long-term. For CPU-heavy jobs,
+a steady state, the workers can't keep up long-term. That check uses the
+confirmation run if there is one, otherwise the capacity run or the first
+failing run. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
 `cpu_avg` from `async_job_stats`. If the queue limits capacity, set
