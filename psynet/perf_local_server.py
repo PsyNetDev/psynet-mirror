@@ -89,18 +89,22 @@ class RestartableLocalServer:
         _wait_until_server_ready(self._process, self._n_workers, self._log_path)
 
     def close(self):
-        """Stop the server if it is running."""
+        """Stop the server if it is running.
+
+        A stop that is interrupted, for example by Ctrl+C, is tried again at
+        the next call.
+        """
         from psynet.command_line import _stop_server, kill_psynet_worker_processes
 
         if self._info is not None:
-            info, self._info = self._info, None
-            _stop_server(info)
+            _stop_server(self._info)
+            self._info = None
         if self._process is not None:
-            process, self._process = self._process, None
             try:
-                _stop_process_group(process)
+                _stop_process_group(self._process)
             finally:
                 kill_psynet_worker_processes()
+            self._process = None
             print(f"✓ Server stopped (log: {self._log_path})")
 
 

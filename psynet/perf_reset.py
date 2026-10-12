@@ -337,13 +337,15 @@ class DatabaseReset:
     def close(self):
         """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
 
-        Errors are only logged, so that a test's own error is the one that
-        propagates.
+        To keep the pre-fill it stops the server first, because the copy
+        needs the database unused. Errors are only logged, so that a test's
+        own error is the one that propagates.
         """
         import psycopg2
 
         try:
             if self._prefilled and self.snapshot is None:
+                self._stop_server_to_keep_prefill()
                 self._take_snapshot()
             if self._drop_snapshot_on_close:
                 with self._connect() as cursor:
@@ -357,6 +359,21 @@ class DatabaseReset:
             logger.warning(
                 warning(f"Could not finish resetting the database ({e}). {advice}")
             )
+
+    def _stop_server_to_keep_prefill(self):
+        """Stop the server, if it still runs, warning instead of raising if that fails."""
+        from psynet.db import release_local_database_connections
+
+        try:
+            self._stop_server()
+        except Exception as e:
+            logger.warning(
+                warning(
+                    f"Could not stop the experiment server ({e}); trying to keep "
+                    "the pre-filled data anyway."
+                )
+            )
+        release_local_database_connections()
 
     @contextmanager
     def _connect(self):

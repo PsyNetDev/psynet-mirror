@@ -565,8 +565,9 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+@pytest.mark.parametrize("second_stop", [None, RuntimeError("still stopping")])
 def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
-    scratch_database,
+    scratch_database, second_stop
 ):
     from psynet import perf_reset
 
@@ -574,13 +575,14 @@ def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     keep = perf_reset.prefill_snapshot_name("fedcba987654", 2)
     created.append(keep)
     server = Mock()
-    server.stop.side_effect = KeyboardInterrupt
+    server.stop.side_effect = [KeyboardInterrupt, second_stop]
     reset = perf_reset.DatabaseReset(
         server.stop, server.start, prefill=Mock(), keep_as=keep, database_url=url
     )
     with pytest.raises(KeyboardInterrupt):
         reset()
     reset.close()
+    assert server.stop.call_count == 2
     assert perf_reset.find_snapshot(keep, url) == keep
 
 
