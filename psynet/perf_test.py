@@ -21,6 +21,7 @@ and reads all the results, exactly as with bot threads of its own. Bots share
 their process, so experiment code they run must not rely on per-process state.
 """
 
+import copy
 import datetime
 import logging
 import math
@@ -35,7 +36,7 @@ import time
 import traceback
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from dataclasses import asdict, dataclass, field, fields
 from decimal import Decimal
 from functools import partial
 from urllib.parse import urlparse
@@ -132,12 +133,12 @@ def _to_json_safe(value):
     Recursively convert a value to a JSON-safe form.
 
     Handles Decimal, datetime, NaN/Inf, sets/frozensets, tuples, dicts, lists
-    and dataclass instances, which become dicts of their fields.
+    and :class:`PerformanceTestResult`, which becomes a dict of its fields.
     Sets are emitted in sorted order so output is deterministic across runs.
     """
     if value is None:
         return None
-    if is_dataclass(value) and not isinstance(value, type):
+    if isinstance(value, PerformanceTestResult):
         return _to_json_safe(asdict(value))
     if isinstance(value, bool):
         # Check bool before int since bool is a subclass of int
@@ -290,9 +291,19 @@ class PerformanceTestResult:
 
     @classmethod
     def from_dict(cls, data):
-        """Return a result from a saved JSON result, ignoring unknown keys."""
+        """Return a result from a saved JSON result.
+
+        Unknown keys are ignored, and missing or ``null`` values take the
+        field's default.
+        """
         names = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in names})
+        return cls(
+            **{
+                k: copy.deepcopy(v)
+                for k, v in data.items()
+                if k in names and v is not None
+            }
+        )
 
 
 def run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):

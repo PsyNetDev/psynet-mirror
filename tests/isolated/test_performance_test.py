@@ -734,6 +734,7 @@ def test_a_saved_result_reads_back_ignoring_unknown_and_missing_keys():
     assert capacity_failures(PerformanceTestResult.from_dict({"n_bots": 4})) == [
         "no responses recorded"
     ]
+    assert PerformanceTestResult.from_dict({"bots_succeeded": None}).bots_succeeded == 0
 
 
 def test_busy_responses_are_not_request_errors():
