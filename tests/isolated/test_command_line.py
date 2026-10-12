@@ -1159,6 +1159,19 @@ def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_pat
     assert bot_log.read_text() == "bot 1 failed\n"
 
 
+@pytest.mark.parametrize("command", ["ssh", "snapshots"])
+def test_performance_test_ssh_commands_refuse_app_names_with_shell_syntax(command):
+    from psynet.command_line import performance_test
+
+    with patch("psynet.command_line._ssh_executor") as executor:
+        result = CliRunner().invoke(
+            performance_test.commands[command], ["--app", "x;touch /tmp/pwned"]
+        )
+    assert result.exit_code == 2
+    assert "invalid characters" in result.output
+    executor.assert_not_called()
+
+
 def test_remote_experiment_commands_disable_tty_allocation():
     from psynet.command_line import build_remote_experiment_command
 

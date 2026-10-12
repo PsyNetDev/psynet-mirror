@@ -1390,7 +1390,7 @@ def _read_running_deployment_info(server, app):
     A stopped ``web``, as in a hibernated app, is read from a one-off container.
     """
     executor = _ssh_executor(server, app=app)
-    compose = f"docker compose -f ~/dallinger/{app}/docker-compose.yml"
+    compose = f"docker compose -f ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
     path = f"/experiment/{deployment_info.path}"
     output = executor.run(
         f"{compose} exec -T web cat {path} 2>/dev/null "
@@ -4112,7 +4112,7 @@ def build_remote_experiment_command(app, cmd):
     ``docker compose exec -T`` disables TTY allocation, which is what makes the
     command safe to run when the local process has no interactive terminal.
     """
-    return f"cd ~/dallinger/{app} && docker compose exec -T web {cmd}"
+    return f"cd ~/dallinger/{shlex.quote(app)} && docker compose exec -T web {cmd}"
 
 
 def _stop_when_disconnected(cmd):
@@ -5289,6 +5289,7 @@ def _run_performance_test_with_new_server(
 @click.option(
     "--app",
     default=None,
+    callback=verify_id,
     help="""
     List or drop the snapshots that 'performance-test ssh' made for this
     app on --server, instead of the local ones.""",
@@ -5450,7 +5451,9 @@ def performance_test__prepare_reset(
 
 
 @performance_test.command("ssh")
-@click.option("--app", required=True, help="Name of the experiment app.")
+@click.option(
+    "--app", required=True, callback=verify_id, help="Name of the experiment app."
+)
 @option_server
 @_test_options["performance_n_bots"]
 @_test_options["performance_stagger"]
