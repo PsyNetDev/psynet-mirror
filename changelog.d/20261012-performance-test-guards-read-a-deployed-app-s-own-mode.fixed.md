@@ -1,0 +1,1 @@
+Commands that run in a deployed SSH app's web container, such as those that `psynet test ssh` and `psynet performance-test ssh` start there, now read the app's own configuration, such as its mode, from its environment. Before, they read the `config.txt` that the deployment copied from your computer, which says `mode = debug` even in a live deployment.
