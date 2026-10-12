@@ -328,7 +328,9 @@ def recruits_real_participants(config=None):
     if config.get("mode", None) == "live":
         return "the experiment runs in live mode"
     recruiter_class = configured_recruiter_class(config)
-    if recruiter_class is None or issubclass(
+    if recruiter_class is None:
+        return "the experiment's recruiter could not be identified"
+    if issubclass(
         recruiter_class,
         (
             DevRecruiter,

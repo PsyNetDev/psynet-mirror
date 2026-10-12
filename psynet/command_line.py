@@ -4293,7 +4293,8 @@ _test_options["performance_force"] = click.option(
     is_flag=True,
     help="""
     Run even if the database has participants that PsyNet bots didn't
-    create, which may be real participants.""",
+    create, or the experiment runs in live mode or with a recruiter that
+    may bring real participants (e.g. Prolific or Cint).""",
 )
 
 _test_options["performance_max_p95_ms"] = click.option(

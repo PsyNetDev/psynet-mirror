@@ -1515,7 +1515,9 @@ def test_database_copies_need_twice_the_database_size_free(caplog, tmp_path):
     [
         ("debug", "prolific", False),
         ("sandbox", "hotair", False),
+        ("sandbox", "generic", False),
         ("sandbox", "prolific", True),
+        ("sandbox", "lucid-recruiter", True),
         ("live", "hotair", True),
     ],
 )
