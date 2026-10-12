@@ -66,6 +66,23 @@ on the order of the estimated duration if you want completions). Skip
 an expensive re-run when a suitable `audit/artifacts/performance.json` already
 exists for the current implementation.
 
+### Sizing the participant cap
+
+```bash
+psynet performance-test local --n-bots auto --json-output performance.json
+```
+
+The capacity search uses short tests in which all bots arrive together. For
+experiments with async jobs (audio analysis, REPP tapping, LLM calls) or
+long holds, every bot hits each job and hold at once, so the search
+underestimates capacity. In the JSON, compare each result's `startup_phase`
+and `steady_state_phase`, and read the result with `"confirmation": true`,
+a long run at the suggested cap with spread-out arrivals. When they
+disagree, trust the long run with spread-out arrivals. For CPU-heavy jobs,
+also work out worker throughput: one worker process keeps up with about
+(session length) ÷ (job time × jobs per participant) participants, with job
+times from `process_stats`. Report how you reached the cap.
+
 ## Interactive evidence
 
 ```bash
