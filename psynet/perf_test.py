@@ -200,6 +200,8 @@ class _BotState:
     running: dict = field(default_factory=dict)
     total_bots_started: int = 0
     bots_completed_during_test: int = 0
+    # Bots that finished during the test after the experiment failed them.
+    bots_failed_during_test: int = 0
     total_bot_errors: int = 0
     errored_bot_ids: set = field(default_factory=set)
     # Short description of each failure, e.g. "HTTP 500 on /response".
@@ -288,13 +290,15 @@ class PerformanceTestResult:
     request_errors: int = 0
     # HTTP 409 and 503 responses; see _split_failed_requests.
     busy_responses: int = 0
-    # Total time each bot that succeeded spent on wait pages, over
-    # n_wait_page_samples bots.
+    # Total time each bot that succeeded or was failed by the experiment
+    # spent on wait pages, over n_wait_page_samples bots.
     median_wait_page_time: float | None = None
     p95_wait_page_time: float | None = None
     max_wait_page_time: float | None = None
     n_wait_page_samples: int | None = None
     avg_succeeded_duration: float | None = None
+    avg_experiment_failed_duration: float | None = None
+    # Of bots that raised or whose participant ended with another status.
     avg_failed_duration: float | None = None
     avg_incomplete_duration: float | None = None
     q_delay_median: float | None = None
@@ -584,7 +588,9 @@ class PerformanceTester:
             nonlocal highest_pass, lowest_fail
             if results:
                 n_bots = results[-1].n_bots
-                causes = _capacity_failure_causes(results[-1], self.limits)
+                causes = _capacity_failure_causes(
+                    results[-1], self.limits, _baseline(results)
+                )
                 if causes:
                     outcome = (
                         "exceeded limits"
@@ -779,11 +785,15 @@ class PerformanceTester:
         max_process_id = db.session.query(func.max(AsyncProcess.id)).scalar() or 0
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
+        db_rows = _database_rows()
+        # Don't hold locks on the growing tables, which would block
+        # autovacuum, for the whole test.
+        db.session.rollback()
         return {
             "max_request_id": max_request_id,
             "max_process_id": max_process_id,
             "max_participant_id": max_participant_id,
-            "db_rows": _database_rows(),
+            "db_rows": db_rows,
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
@@ -822,7 +832,7 @@ class PerformanceTester:
 
         from psynet.bot import BotDriver
         from psynet.experiment import get_experiment
-        from psynet.participant import DriverStopped
+        from psynet.participant import DriverStopped, Participant
 
         experiment = get_experiment()
         while not stop_event.is_set() and time.time() < end_time:
@@ -841,7 +851,10 @@ class PerformanceTester:
                     bot,
                     time_factor=self.time_factor * self._bounded_random_multiplier(),
                 )
-                outcome = "completed"
+                failed = (
+                    db.session.query(Participant.failed).filter_by(id=bot_id).scalar()
+                )
+                outcome = "failed" if failed is True else "completed"
             except DriverStopped:
                 outcome = "stopped"
             except BaseException as err:
@@ -861,6 +874,8 @@ class PerformanceTester:
         bot processes. ``kind`` is ``"attempt"`` before a bot is created,
         ``"start"`` with ``(bot_id, init_time_s)`` once it exists, and
         ``"end"`` with ``(bot_id, outcome, error_kind)`` when it finishes.
+        ``outcome`` is ``"completed"``, ``"failed"`` (finished, but the
+        experiment failed the participant), ``"stopped"`` or ``"error"``.
         """
         if kind == "attempt":
             with bot_state.lock:
@@ -894,6 +909,8 @@ class PerformanceTester:
                     bot_state.errored_bot_ids.add(bot_id)
             elif outcome == "completed" and now < end_time:
                 bot_state.bots_completed_during_test += 1
+            elif outcome == "failed" and now < end_time:
+                bot_state.bots_failed_during_test += 1
             if start is not None:
                 bot_state.bot_durations.append(
                     (bot_id, now - start, outcome == "stopped")
@@ -948,7 +965,8 @@ class PerformanceTester:
         secs_left = int(time_left % 60)
 
         # Build status line
-        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration:.1f}s | \u23f3 {mins_left}:{secs_left:02d} left"
+        failed = bot_state.bots_failed_during_test
+        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Failed by experiment: {failed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration:.1f}s | \u23f3 {mins_left}:{secs_left:02d} left"
 
         if not interactive:
             print(status, flush=True)
@@ -1195,10 +1213,13 @@ class PerformanceTester:
         )
 
         succeeded_bots = [b for b in bots if outcomes[b.id] == _SUCCEEDED]
+        # Bots failed for waiting too long waited longest, so leaving them out
+        # would make an overloaded server look healthier.
         wait_page_times = sorted(
             b.total_wait_page_time
-            for b in succeeded_bots
-            if b.total_wait_page_time is not None
+            for b in bots
+            if outcomes[b.id] in (_SUCCEEDED, _FAILED_BY_EXPERIMENT)
+            and b.total_wait_page_time is not None
         )
         median_wait_page_time = _quantile(wait_page_times, 0.5)
         p95_wait_page_time = _quantile(wait_page_times, 0.95)
@@ -1241,15 +1262,22 @@ class PerformanceTester:
             for bot_id, d, terminated in bot_state.bot_durations
             if not terminated and outcomes.get(bot_id, _OTHER_END) == _OTHER_END
         ]
+        experiment_failed_durations = [
+            d
+            for bot_id, d, _ in bot_state.bot_durations
+            if outcomes.get(bot_id) == _FAILED_BY_EXPERIMENT
+        ]
         incomplete_durations = [
             d
             for bot_id, d, terminated in bot_state.bot_durations
-            if terminated or outcomes.get(bot_id) == _STILL_RUNNING
+            if (terminated and outcomes.get(bot_id) != _FAILED_BY_EXPERIMENT)
+            or outcomes.get(bot_id) == _STILL_RUNNING
         ]
         all_durations = [d for _, d, _ in bot_state.bot_durations]
 
         avg_bot_duration = _mean(all_durations)
         avg_succeeded_duration = _mean(succeeded_durations)
+        avg_experiment_failed_duration = _mean(experiment_failed_durations)
         avg_failed_duration = _mean(failed_durations)
         avg_incomplete_duration = _mean(incomplete_durations)
         avg_init_time = _mean(bot_state.initialization_times)
@@ -1303,6 +1331,7 @@ class PerformanceTester:
             max_wait_page_time=max_wait_page_time,
             n_wait_page_samples=n_wait_page_samples,
             avg_succeeded_duration=avg_succeeded_duration,
+            avg_experiment_failed_duration=avg_experiment_failed_duration,
             avg_failed_duration=avg_failed_duration,
             avg_incomplete_duration=avg_incomplete_duration,
             q_delay_median=q_delay_median,
@@ -1328,6 +1357,8 @@ class PerformanceTester:
         except Exception as e:
             logger.warning(f"Could not count async workers: {e}")
 
+        # Release the locks the counts took before the next test starts.
+        db.session.rollback()
         self._report_test_results(result)
         return result
 
@@ -1688,8 +1719,10 @@ def _bot_outcome(participant, errored):
     """Return how a bot ended: ``_SUCCEEDED``, ``_FAILED_BY_EXPERIMENT``, ``_STILL_RUNNING`` or ``_OTHER_END``.
 
     A participant that the experiment failed, for example at a prescreen or
-    when a timeline hold timed out, keeps the status ``approved``, so
-    ``failed`` is checked before the status.
+    when a timeline hold timed out, often still ends ``approved``, so
+    ``failed`` is checked first. It is checked before ``errored`` too, so
+    that a bot that raised after its participant was failed still counts
+    towards the failure's reason; its error still counts as a bot error.
 
     Parameters
     ----------
@@ -1698,10 +1731,10 @@ def _bot_outcome(participant, errored):
     errored : bool
         Whether the bot raised an exception, whatever its participant's status.
     """
-    if errored:
-        return _OTHER_END
     if participant.failed:
         return _FAILED_BY_EXPERIMENT
+    if errored:
+        return _OTHER_END
     if participant.status in ("approved", "submitted"):
         return _SUCCEEDED
     if participant.status == "working":
@@ -1762,12 +1795,35 @@ def _is_wait_timeout(reason):
     )
 
 
+# Simple sync groups fail the members left behind when one is failed, so in a
+# test with wait timeouts these failures count as wait timeouts too.
+_GROUP_TOO_SMALL_TAG = "sync group below minimum size"
+
+
+def _wait_timeout_reasons(result):
+    """Return the reasons in ``result`` that count as waiting too long, with their counts."""
+    failed_reasons = result.failed_reasons or {}
+    waits = {r: n for r, n in failed_reasons.items() if _is_wait_timeout(r)}
+    if waits:
+        waits.update(
+            (r, n)
+            for r, n in failed_reasons.items()
+            if _GROUP_TOO_SMALL_TAG in r.split(", ")
+        )
+    return waits
+
+
 def _wait_timeouts(result):
     """Return how many participants in ``result`` failed for waiting too long."""
-    return sum(
-        count
-        for reason, count in (result.failed_reasons or {}).items()
-        if _is_wait_timeout(reason)
+    return sum(_wait_timeout_reasons(result).values())
+
+
+def _wait_timeout_rate(result):
+    """Return the share of bots started in ``result`` that failed for waiting too long."""
+    return (
+        _wait_timeouts(result) / result.total_bots_started
+        if result.total_bots_started
+        else 0.0
     )
 
 
@@ -1796,13 +1852,18 @@ def _database_rows():
     Exact counts take well under a second even at hundreds of thousands of
     trials, and run twice per test. PostgreSQL's ``reltuples`` estimates would
     be cheaper, but only autovacuum and ``ANALYZE`` update them, so they lag
-    behind a test that adds rows quickly.
+    behind a test that adds rows quickly. Tables that don't exist are left
+    out. The caller should end the transaction afterwards.
     """
     from dallinger import db
-    from sqlalchemy import text
+    from sqlalchemy import inspect, text
 
+    existing = set(inspect(db.session.get_bind()).get_table_names())
+    tables = [table for table in _GROWING_TABLES if table in existing]
+    if not tables:
+        return {}
     columns = ", ".join(
-        f'(SELECT count(*) FROM "{table}") AS "{table}"' for table in _GROWING_TABLES
+        f'(SELECT count(*) FROM "{table}") AS "{table}"' for table in tables
     )
     row = db.session.execute(text(f"SELECT {columns}")).one()
     return dict(row._mapping)
@@ -1948,8 +2009,9 @@ def format_test_results(result):
 
     if result.failed_reasons:
         _section("WHY THE EXPERIMENT FAILED PARTICIPANTS")
+        waits = _wait_timeout_reasons(result)
         reason_rows = [
-            [reason + (" (waited too long)" if _is_wait_timeout(reason) else ""), n]
+            [reason + (" (waited too long)" if reason in waits else ""), n]
             for reason, n in list(result.failed_reasons.items())[:5]
         ]
         if len(result.failed_reasons) > 5:
@@ -1980,6 +2042,13 @@ def format_test_results(result):
             [
                 "Avg runtime (succeeded)",
                 f"{result.avg_succeeded_duration:.1f}s",
+            ]
+        )
+    if result.avg_experiment_failed_duration is not None:
+        runtime_rows.append(
+            [
+                "Avg runtime (failed by the experiment)",
+                f"{result.avg_experiment_failed_duration:.1f}s",
             ]
         )
     if result.avg_failed_duration is not None:
@@ -2068,8 +2137,8 @@ def format_test_results(result):
         n_wait = result.n_wait_page_samples
         bot_word = "bot" if n_wait == 1 else "bots"
         _section(
-            f"TIME ON WAIT PAGES PER BOT (n={n_wait} {bot_word} that "
-            "completed successfully)"
+            f"TIME ON WAIT PAGES PER BOT (n={n_wait} {bot_word} that completed "
+            "or were failed by the experiment)"
         )
         wait_rows = [
             ["Median", f"{result.median_wait_page_time:.1f}s"],
@@ -2362,12 +2431,12 @@ class CapacityLimits:
     max_bot_error_rate : float
         Largest acceptable share of bots that fail.
     max_wait_timeout_rate : float
-        Largest acceptable share of bots whose participants the experiment
-        failed for waiting too long, for example at a timeline hold that
-        timed out (see :func:`_is_wait_timeout`). Such a participant is lost
-        to the study just like one whose bot failed, so the default matches
-        ``max_bot_error_rate``; it is separate so that it can be relaxed for
-        designs whose partner waits sometimes time out by chance.
+        Largest acceptable rise, over the test with the fewest bots, in the
+        share of bots whose participants the experiment failed for waiting
+        too long, for example at a timeline hold that timed out (see
+        :func:`_is_wait_timeout`). Such a participant is lost to the study
+        just like one whose bot failed, so the default matches
+        ``max_bot_error_rate``.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -2403,9 +2472,9 @@ class CapacityLimits:
             f"({self.allowed_request_errors} always allowed), "
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
-            f"{self.max_bot_error_rate:.0%} of bots failing and "
-            f"{self.max_wait_timeout_rate:.0%} failed by the experiment for "
-            "waiting too long"
+            f"{self.max_bot_error_rate:.0%} of bots failing and at most an "
+            f"extra {self.max_wait_timeout_rate:.0%} of bots, over the smallest "
+            "test, failed by the experiment for waiting too long"
         )
         if not include_queue:
             return f"{response} and {errors}"
@@ -2493,8 +2562,32 @@ def _tester_limits(result):
     return reasons
 
 
-def _capacity_failure_causes(result, limits):
+def _describe_waits(result):
+    """Name the waits at which participants in ``result`` timed out."""
+    tags = {
+        tag
+        for reason in _wait_timeout_reasons(result)
+        for tag in reason.split(", ")
+        if tag != "fail_on_timeout"
+        and (_is_wait_timeout(tag) or tag == _GROUP_TOO_SMALL_TAG)
+    }
+    return ", ".join(sorted(tags)) or "a wait"
+
+
+def _baseline(results):
+    """Return the test with the fewest bots, which wait timeouts are compared with."""
+    return min(results, key=lambda r: r.n_bots) if results else None
+
+
+def _capacity_failure_causes(result, limits, baseline=None):
     """Return ``(reason, server_limit)`` for each limit that ``result`` exceeded.
+
+    Some waits time out by design, for example when there are too few
+    participants to fill a group or chain, so wait timeouts only count once
+    their share of bots exceeds that in ``baseline``, the suite's test with
+    the fewest bots (see :func:`_baseline`), by more than
+    ``limits.max_wait_timeout_rate``. Without a baseline they are compared
+    with none.
 
     ``server_limit`` is False when the reason only shows that the test could
     not measure the server at this bot count: bots didn't all start or take
@@ -2531,23 +2624,18 @@ def _capacity_failure_causes(result, limits):
                 bot_errors - postgres_errors > max_bot_errors,
             )
         )
-    wait_timeouts = _wait_timeouts(result)
-    if wait_timeouts > limits.max_wait_timeout_rate * (result.total_bots_started or 0):
-        waits = sorted(
-            {
-                tag
-                for reason in result.failed_reasons
-                for tag in reason.split(", ")
-                if _is_wait_timeout(tag) and tag != "fail_on_timeout"
-            }
+    baseline_rate = _wait_timeout_rate(baseline) if baseline is not None else 0.0
+    if _wait_timeout_rate(result) - baseline_rate > limits.max_wait_timeout_rate:
+        text = (
+            f"{_plural(_wait_timeouts(result), 'participant')} failed for waiting "
+            f"too long at {_describe_waits(result)}"
         )
-        causes.append(
-            (
-                f"{_plural(wait_timeouts, 'participant')} failed for waiting too "
-                f"long at {', '.join(waits) or 'a wait'}",
-                True,
+        if baseline_rate:
+            text += (
+                f", {_wait_timeout_rate(result):.0%} of bots against "
+                f"{baseline_rate:.0%} with {baseline.n_bots:,} bots"
             )
-        )
+        causes.append((text, True))
     p95 = result.p95_response_time
     if p95 is None:
         causes.append(("no responses recorded", not tester_limits))
@@ -2569,9 +2657,13 @@ def _capacity_failure_causes(result, limits):
     return causes
 
 
-def capacity_failures(result, limits=CapacityLimits()):
-    """Return the reasons a test result exceeded ``limits`` (empty if it did not)."""
-    return [reason for reason, _ in _capacity_failure_causes(result, limits)]
+def capacity_failures(result, limits=CapacityLimits(), baseline=None):
+    """Return the reasons a test result exceeded ``limits`` (empty if it did not).
+
+    Pass the suite's test with the fewest bots as ``baseline``; see
+    :func:`_capacity_failure_causes`.
+    """
+    return [reason for reason, _ in _capacity_failure_causes(result, limits, baseline)]
 
 
 def next_capacity_probe(highest_pass, lowest_fail, max_bots=_CAPACITY_SEARCH_MAX):
@@ -2709,7 +2801,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
             for r in results
         )
     )
-    causes = [(r, _capacity_failure_causes(r, limits)) for r in results]
+    baseline = _baseline(results)
+    causes = [(r, _capacity_failure_causes(r, limits, baseline)) for r in results]
     passed = [r.n_bots for r, result_causes in causes if not result_causes]
     failed = [(r, result_causes) for r, result_causes in causes if result_causes]
     first_fail, first_causes = (
@@ -2768,6 +2861,18 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_POSTGRES_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
     lines += _database_growth_warnings(results, capacity_result, first_fail)
+    baseline_rate = _wait_timeout_rate(baseline)
+    if baseline_rate > limits.max_wait_timeout_rate:
+        lines.append(
+            f"  Even with {baseline.n_bots:,} bots, the experiment failed "
+            f"{baseline_rate:.0%} of them for waiting too long (at "
+            f"{_describe_waits(baseline)}). That points to the experiment's "
+            "design rather than the server, for example a max_wait_time that is "
+            "too short or too few participants to fill groups or chains, so "
+            "wait timeouts only count against capacity where their share rises "
+            f"above that. If {baseline.n_bots:,} bots may already overload the "
+            "server, test fewer."
+        )
     if capacity is None:
         return lines + [""]
     tolerated = []
@@ -2790,7 +2895,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     other_failures = {
         reason: n
         for reason, n in (capacity_result.failed_reasons or {}).items()
-        if not _is_wait_timeout(reason)
+        if reason not in _wait_timeout_reasons(capacity_result)
     }
     if other_failures:
         lines.append(

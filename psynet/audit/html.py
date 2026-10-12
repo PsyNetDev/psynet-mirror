@@ -863,10 +863,16 @@ def render_performance_result(
         options_data.get("max_p95_s"), options_data.get("max_queue_p95_s")
     )
     body: list[str] = []
+    results = [
+        PerformanceTestResult.from_dict(row)
+        for row in evidence.performance_results
+        if isinstance(row.get("n_bots"), int)
+    ]
+    baseline = min(results, key=lambda r: r.n_bots) if results else None
     for row in evidence.performance_results:
         result = PerformanceTestResult.from_dict(row)
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
-        failures = capacity_failures(result, limits)
+        failures = capacity_failures(result, limits, baseline)
         verdict = f"No: {', '.join(failures)}" if failures else "Yes"
         body.append(
             "<tr>"
@@ -885,11 +891,7 @@ def render_performance_result(
     summary = [
         line.strip()
         for line in format_capacity_summary(
-            [
-                PerformanceTestResult.from_dict(row)
-                for row in evidence.performance_results
-                if isinstance(row.get("n_bots"), int)
-            ],
+            results,
             limits,
             options_data.get("time_factor", 1.0),
         )
