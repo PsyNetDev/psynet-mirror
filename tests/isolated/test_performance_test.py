@@ -470,11 +470,9 @@ class _RecordingCursor:
     indirect=True,
 )
 def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
-    db_session, tmp_path
+    db_session,
 ):
     import re
-    import shutil
-    import subprocess
     from contextlib import contextmanager
 
     import psycopg2
@@ -551,24 +549,6 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
         targets = {scratch, reset.snapshot, cache}
         assert {reset.snapshot, cache} <= dropped
         assert dropped <= targets | {replacement_name(name) for name in targets}
-
-        if shutil.which("pg_dump"):
-            archive = tmp_path / "snapshot.dump"
-            subprocess.run(
-                ["pg_dump", "--format=custom", f"--file={archive}", scratch_url],
-                check=True,
-            )
-            participants(2)
-            restored = perf_reset.DatabaseReset(
-                server.stop,
-                server.start,
-                from_snapshot=str(archive),
-                database_url=scratch_url,
-            )
-            restored()
-            restored.close()
-            assert participants() == 1
-            assert archive.exists()
     finally:
         with perf_reset._maintenance_cursor(scratch_url) as cursor:
             for name in [scratch, f"{scratch}__new", cache, *snapshots]:

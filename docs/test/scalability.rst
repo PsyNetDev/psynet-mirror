@@ -360,11 +360,8 @@ uploaded or generated stay in the asset storage after a reset, because only
 the database rows that refer to them are reset; they cost disk space but
 nothing else.
 
-If the PostgreSQL role may not create databases, PsyNet says so and keeps
-the snapshot as a ``pg_dump`` archive in the experiment's
-``.deploy/performance_snapshots`` directory instead, which it restores
-before each test with ``pg_restore``. That needs the PostgreSQL client
-programs and takes longer.
+The PostgreSQL role must be allowed to create databases, as it already
+must be for the isolated test environment (see :doc:`/developer/running_tests`).
 
 Each copy or restore needs disk space, so before one PsyNet checks that
 the disk holding PostgreSQL's data has at least twice the database's size
@@ -405,8 +402,7 @@ those files, even a comment, means a new pre-fill. If a change can't affect
 the data, such as a fixed typo, start from the old snapshot with
 ``--from-snapshot <name>``, which only warns that the code differs.
 
-Pre-fill snapshots stay on the database server, or in
-``.deploy/performance_snapshots``, until you drop them; after keeping a new
+Pre-fill snapshots stay on the database server until you drop them; after keeping a new
 one, PsyNet lists the others and their sizes. List them, with their sizes
 and the experiment that made them, and drop them with:
 
@@ -417,7 +413,7 @@ and the experiment that made them, and drop them with:
     psynet performance-test snapshots --drop-all
 
 ``--drop-all`` drops this experiment's snapshots: those made from its
-current files, and its archives. Add ``--all-experiments`` to drop every
+current files. Add ``--all-experiments`` to drop every
 pre-fill snapshot database on the server.
 
 To start from real data instead, for example from a pilot, export the

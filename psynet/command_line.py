@@ -4422,8 +4422,8 @@ _test_options["performance_from_snapshot"] = click.option(
     metavar="SNAPSHOT",
     help="""
     Start every test from this pre-fill snapshot (see 'psynet
-    performance-test snapshots') or pg_dump archive, even if the
-    experiment code has changed since. Implies --reset-database.""",
+    performance-test snapshots'), even if the experiment code has changed
+    since. Implies --reset-database.""",
 )
 
 
@@ -5226,7 +5226,7 @@ def _run_performance_test_with_new_server(
     is_flag=True,
     help="""
     Drop this experiment's pre-fill snapshots: the databases made from its
-    current code, and its pg_dump archives.""",
+    current code.""",
 )
 @click.option(
     "--all-experiments",
@@ -5238,7 +5238,7 @@ def performance_test__snapshots(drop, drop_all, all_experiments):
     List the pre-fill snapshots of ``performance-test local``, or drop them.
 
     Lists the snapshot databases on the local PostgreSQL server, which all
-    experiments share, and this experiment's pg_dump archives.
+    experiments share.
     """
     from dallinger.db import db_url
 
@@ -5263,9 +5263,7 @@ def performance_test__snapshots(drop, drop_all, all_experiments):
         names += [
             name
             for name, _, _ in snapshots
-            if all_experiments
-            or name.endswith(".dump")
-            or snapshot_code_key(name) == key
+            if all_experiments or snapshot_code_key(name) == key
         ]
     if names:
         try:
@@ -5275,7 +5273,7 @@ def performance_test__snapshots(drop, drop_all, all_experiments):
     for name in names:
         try:
             drop_snapshot(name, db_url)
-        except (ValueError, OSError) as e:
+        except ValueError as e:
             raise click.ClickException(str(e)) from e
         print(f"Dropped {name}")
     if drop or drop_all:

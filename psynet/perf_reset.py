@@ -32,10 +32,8 @@ Design constraints:
   dropped. If renaming the copy fails after that, :meth:`DatabaseReset.close`
   renames it, and a snapshot is only dropped while the experiment database
   exists.
-- If the PostgreSQL role may not create databases, the snapshot is a
-  ``pg_dump`` archive in ``.deploy/performance_snapshots`` of the experiment,
-  which each reset restores in a single transaction. That is slower, and
-  leaves the tables freshly packed.
+- The PostgreSQL role must be allowed to create databases, as the isolated
+  test environment already requires.
 - Files that tests add to the asset storage remain after a reset; only the
   rows that refer to them go.
 
@@ -51,10 +49,8 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from psynet.isolated_environment import (
@@ -66,7 +62,6 @@ from psynet.log import warning
 
 logger = logging.getLogger(__name__)
 
-SNAPSHOT_DIRECTORY = Path(".deploy") / "performance_snapshots"
 # Async processes left from pre-filling would never run after a reset,
 # because the reset deletes their RQ jobs.
 _ASYNC_DRAIN_TIMEOUT_S = 3600
@@ -149,25 +144,18 @@ def prefill_snapshot_name(code_key, n_participants, n_bots):
 
 def snapshot_code_key(snapshot):
     """Return the code key in a pre-fill snapshot's name, or ``None``."""
-    match = _PREFILL_NAME.fullmatch(_snapshot_stem(snapshot))
+    match = _PREFILL_NAME.fullmatch(snapshot)
     return match["code"] if match else None
 
 
-def find_snapshot(name, database_url, directory=SNAPSHOT_DIRECTORY):
-    """Return snapshot database ``name``, or its ``pg_dump`` archive, or ``None``."""
+def find_snapshot(name, database_url):
+    """Return snapshot database ``name`` if it exists, otherwise ``None``."""
     with _maintenance_cursor(database_url) as cursor:
-        if _database_exists(cursor, name):
-            return name
-    archive = Path(directory) / f"{name}.dump"
-    return str(archive) if archive.is_file() else None
+        return name if _database_exists(cursor, name) else None
 
 
 def check_snapshot(snapshot, database_url):
-    """Raise ``ValueError`` unless ``snapshot`` is a pre-fill snapshot or archive that exists."""
-    if snapshot.endswith(".dump"):
-        if not os.path.isfile(snapshot):
-            raise ValueError(f"No pg_dump archive {snapshot}.")
-        return
+    """Raise ``ValueError`` unless ``snapshot`` is a pre-fill snapshot that exists."""
     if snapshot_code_key(snapshot) is None:
         raise ValueError(
             f"{snapshot} is not a pre-fill snapshot; list them with "
@@ -178,11 +166,10 @@ def check_snapshot(snapshot, database_url):
             raise ValueError(f"No snapshot database {snapshot}.")
 
 
-def list_snapshots(database_url, directory=SNAPSHOT_DIRECTORY):
+def list_snapshots(database_url):
     """Return ``(name, size_bytes, description)`` for each pre-fill snapshot.
 
-    The snapshots are the databases on the server, which all experiments
-    share, and the ``pg_dump`` archives in ``directory``.
+    The snapshots are databases on the server, which all experiments share.
     """
     with _maintenance_cursor(database_url) as cursor:
         cursor.execute(
@@ -190,20 +177,13 @@ def list_snapshots(database_url, directory=SNAPSHOT_DIRECTORY):
             "shobj_description(oid, 'pg_database') FROM pg_database "
             "WHERE datname LIKE 'psynet\\_prefill\\_%' ORDER BY datname"
         )
-        snapshots = [row for row in cursor.fetchall() if snapshot_code_key(row[0])]
-    for archive in sorted(Path(directory).glob("psynet_prefill_*.dump")):
-        if snapshot_code_key(archive.name):
-            snapshots.append((str(archive), archive.stat().st_size, None))
-    return snapshots
+        return [row for row in cursor.fetchall() if snapshot_code_key(row[0])]
 
 
 def drop_snapshot(snapshot, database_url):
-    """Drop a pre-fill snapshot database, or delete its ``pg_dump`` archive."""
+    """Drop a pre-fill snapshot database."""
     if snapshot_code_key(snapshot) is None:
         raise ValueError(f"{snapshot} is not a pre-fill snapshot.")
-    if snapshot.endswith(".dump"):
-        os.remove(snapshot)
-        return
     with _maintenance_cursor(database_url) as cursor:
         drop_database(cursor, snapshot)
 
@@ -225,17 +205,13 @@ class DatabaseReset:
         Called with the server running before the snapshot is taken, to add
         data (see :func:`psynet.perf_test.prefill_database`).
     from_snapshot : str, optional
-        A snapshot to start from: a database name, or the path of a
-        ``pg_dump`` archive. It is only read.
+        The name of a snapshot database to start from. It is only read.
     keep_as : str, optional
         Take the snapshot under this pre-fill snapshot name (see
         :func:`prefill_snapshot_name`), replacing any snapshot of that name,
         and keep it. Otherwise the snapshot is dropped at :meth:`close`.
     description : str, optional
         Stored as the comment of a kept snapshot database.
-    snapshot_directory : str, optional
-        Where to write a ``pg_dump`` archive if the role may not create
-        databases.
     database_url : str, optional
         The experiment database. Defaults to Dallinger's.
     """
@@ -249,7 +225,6 @@ class DatabaseReset:
         from_snapshot=None,
         keep_as=None,
         description=None,
-        snapshot_directory=SNAPSHOT_DIRECTORY,
         database_url=None,
     ):
         if keep_as is not None and snapshot_code_key(keep_as) is None:
@@ -268,7 +243,6 @@ class DatabaseReset:
         self._prefill = prefill
         self._keep_as = keep_as
         self._description = description
-        self._snapshot_directory = Path(snapshot_directory)
         self._owns_snapshot = False
         self._disk_space_unknown = False
         # Whether the pre-fill for ``keep_as`` and its async processes finished.
@@ -358,7 +332,7 @@ class DatabaseReset:
                         )
                     )
                     return
-                if self._owns_snapshot and not self.snapshot.endswith(".dump"):
+                if self._owns_snapshot:
                     drop_database(cursor, self.snapshot)
         except psycopg2.Error as e:
             logger.warning(
@@ -368,9 +342,6 @@ class DatabaseReset:
                     f"'dropdb {self.snapshot}'."
                 )
             )
-            return
-        if self._owns_snapshot and self.snapshot.endswith(".dump"):
-            os.remove(self.snapshot)
 
     @contextmanager
     def _connect(self):
@@ -393,36 +364,22 @@ class DatabaseReset:
             )
 
     def _take_snapshot(self):
-        import psycopg2
         from psycopg2 import sql
 
         name = self._keep_as
         if name is None:
             stamp = f"_snapshot_{datetime.datetime.now():%Y%m%d%H%M%S}"
             name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
-        try:
-            with self._connect() as cursor:
-                self._check_disk_space(cursor, self.database)
-                _swap_in_copy(cursor, name, self.database)
-                if self._description and self._keep_as is not None:
-                    cursor.execute(
-                        sql.SQL("COMMENT ON DATABASE {} IS %s").format(
-                            sql.Identifier(name)
-                        ),
-                        (self._description,),
-                    )
-        except psycopg2.Error as e:
-            if e.pgcode != _INSUFFICIENT_PRIVILEGE:
-                raise
-            logger.warning(
-                warning(
-                    f"The PostgreSQL role may not create databases ({e.pgerror}), "
-                    "so the snapshot is a pg_dump archive instead. Resets take "
-                    "longer: each one rewrites every table and rebuilds its "
-                    "indexes."
+        with self._connect() as cursor:
+            self._check_disk_space(cursor, self.database)
+            _swap_in_copy(cursor, name, self.database)
+            if self._description and self._keep_as is not None:
+                cursor.execute(
+                    sql.SQL("COMMENT ON DATABASE {} IS %s").format(
+                        sql.Identifier(name)
+                    ),
+                    (self._description,),
                 )
-            )
-            name = self._dump(name)
         self.snapshot, self._owns_snapshot = name, self._keep_as is None
         if self._keep_as is not None:
             logger.info(
@@ -435,10 +392,8 @@ class DatabaseReset:
         """List the other kept pre-fill snapshots, which take disk space until dropped."""
         others = [
             f"{other} ({size / 1e6:,.0f} MB)"
-            for other, size, _ in list_snapshots(
-                self.database_url, self._snapshot_directory
-            )
-            if _snapshot_stem(other) != self._keep_as
+            for other, size, _ in list_snapshots(self.database_url)
+            if other != self._keep_as
         ]
         if others:
             logger.info(
@@ -446,39 +401,24 @@ class DatabaseReset:
                 "no longer need with 'psynet performance-test snapshots --drop NAME'."
             )
 
-    def _dump(self, name):
-        """Write a ``pg_dump`` archive of the database; return its path."""
-        self._snapshot_directory.mkdir(parents=True, exist_ok=True)
-        with self._connect() as cursor:
-            self._check_disk_space(cursor, self.database, self._snapshot_directory)
-        archive = self._snapshot_directory / f"{name}.dump"
-        partial = archive.with_suffix(".partial")
-        _run_postgres_tool(
-            "pg_dump", self.database_url, "--format=custom", f"--file={partial}"
-        )
-        os.replace(partial, archive)
-        return str(archive)
+    def _check_disk_space(self, cursor, source):
+        """Raise unless PostgreSQL's data directory has twice the size of database ``source`` free.
 
-    def _check_disk_space(self, cursor, source, directory=None):
-        """Raise unless twice the size of database ``source`` is free where its copy goes.
-
-        The copy goes in PostgreSQL's data directory, or in ``directory`` for
-        a ``pg_dump`` archive. If the data directory's free space can't be
-        read, for example without permission to read the server's settings
-        or for a PostgreSQL in a container, it only warns, once.
+        If the data directory's free space can't be read, for example without
+        permission to read the server's settings or for a PostgreSQL in a
+        container, it only warns, once.
         """
         import psycopg2
 
         cursor.execute("SELECT pg_database_size(%s)", (source,))
         needed = 2 * cursor.fetchone()[0]
         try:
-            if directory is None:
-                cursor.execute("SHOW data_directory")
-                directory = cursor.fetchone()[0]
-                if not os.path.isfile(os.path.join(directory, "PG_VERSION")):
-                    raise FileNotFoundError(
-                        f"its data directory {directory} isn't on this computer"
-                    )
+            cursor.execute("SHOW data_directory")
+            directory = cursor.fetchone()[0]
+            if not os.path.isfile(os.path.join(directory, "PG_VERSION")):
+                raise FileNotFoundError(
+                    f"its data directory {directory} isn't on this computer"
+                )
             free = shutil.disk_usage(directory).free
         except (psycopg2.Error, OSError) as e:
             if not self._disk_space_unknown:
@@ -492,12 +432,7 @@ class DatabaseReset:
             return
         if free >= needed:
             return
-        cached = sum(
-            size
-            for _, size, _ in list_snapshots(
-                self.database_url, self._snapshot_directory
-            )
-        )
+        cached = sum(size for _, size, _ in list_snapshots(self.database_url))
         raise RuntimeError(
             f"Copying {source} needs about {_size(needed)} of free disk space "
             f"(PsyNet asks for twice the database's size), but {directory} has "
@@ -507,23 +442,9 @@ class DatabaseReset:
         )
 
     def _restore(self):
-        if not self.snapshot.endswith(".dump"):
-            with self._connect() as cursor:
-                self._check_disk_space(cursor, self.snapshot)
-                _swap_in_copy(cursor, self.database, self.snapshot)
-            return
         with self._connect() as cursor:
-            self._check_disk_space(cursor, self.database)
-            terminate_connections(cursor, self.database)
-        _run_postgres_tool(
-            "pg_restore",
-            self.database_url,
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--single-transaction",
-            self.snapshot,
-        )
+            self._check_disk_space(cursor, self.snapshot)
+            _swap_in_copy(cursor, self.database, self.snapshot)
 
     def _count_rows(self):
         from sqlalchemy import create_engine
@@ -557,9 +478,7 @@ def _swap_in_copy(cursor, target, template):
     copy = replacement_name(target)
     # A copy left without its target is the only copy, so it becomes the target.
     _recover_database(cursor, target)
-    _run_when_unused(
-        cursor, template, _statement("CREATE DATABASE {} TEMPLATE {}", copy, template)
-    )
+    _create_from_template(cursor, copy, template)
     _run_when_unused(cursor, target, _statement("DROP DATABASE IF EXISTS {}", target))
     _run_when_unused(
         cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, target)
@@ -583,6 +502,33 @@ def _recover_database(cursor, database):
     )
     logger.warning(warning(f"Finished replacing {database} with {copy}."))
     return True
+
+
+def _create_from_template(cursor, name, template):
+    """Create database ``name`` as a copy of database ``template``.
+
+    Raises
+    ------
+    RuntimeError
+        If the PostgreSQL role may not create databases.
+    """
+    import psycopg2
+
+    try:
+        _run_when_unused(
+            cursor,
+            template,
+            _statement("CREATE DATABASE {} TEMPLATE {}", name, template),
+        )
+    except psycopg2.Error as e:
+        if e.pgcode != _INSUFFICIENT_PRIVILEGE:
+            raise
+        raise RuntimeError(
+            "Resetting the database copies it with CREATE DATABASE, which the "
+            f"PostgreSQL role may not do ({str(e).strip()}). Use a role that "
+            "may create databases, as the isolated test environment does, for "
+            "example by running 'ALTER ROLE <role> CREATEDB' as a superuser."
+        ) from e
 
 
 def _statement(template, *names):
@@ -639,35 +585,3 @@ def _size(n_bytes):
 def _database_exists(cursor, name):
     cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
     return cursor.fetchone() is not None
-
-
-def _snapshot_stem(snapshot):
-    return Path(snapshot).stem if snapshot.endswith(".dump") else snapshot
-
-
-def _run_postgres_tool(tool, database_url, *args):
-    """Run a PostgreSQL client program such as ``pg_dump`` on ``database_url``.
-
-    The password goes in the environment rather than on the command line,
-    where other users could read it.
-    """
-    from sqlalchemy.engine import make_url
-
-    if shutil.which(tool) is None:
-        raise RuntimeError(
-            f"{tool} is needed to reset the database without permission to "
-            "create databases, but it is not installed."
-        )
-    url = make_url(database_url)
-    env = dict(os.environ)
-    if url.password:
-        env["PGPASSWORD"] = url.password
-    dbname = url.set(drivername="postgresql", password=None)
-    result = subprocess.run(
-        [tool, f"--dbname={dbname.render_as_string()}", *args],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"{tool} failed: {result.stderr.strip()}")
