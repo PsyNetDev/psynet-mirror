@@ -4226,17 +4226,22 @@ def run_remote_experiment_command(executor, app, cmd):
     """
     remote_cmd = build_remote_experiment_command(app, _stop_when_disconnected(cmd))
     channel = executor.client.get_transport().open_session()
-    # Interleaving two streams without threads risks reordering the output, and
-    # the caller only wants to read it, so merge stderr into stdout.
-    channel.set_combine_stderr(True)
-    channel.exec_command(remote_cmd)
+    # Closing the channel, also after Ctrl-C, ends the remote command's stdin,
+    # which stops it (see _stop_when_disconnected).
+    try:
+        # Interleaving two streams without threads risks reordering the output,
+        # and the caller only wants to read it, so merge stderr into stdout.
+        channel.set_combine_stderr(True)
+        channel.exec_command(remote_cmd)
 
-    stream = channel.makefile("rb", 0)
-    for line in iter(stream.readline, b""):
-        sys.stdout.write(line.decode("utf-8", "replace"))
-        sys.stdout.flush()
+        with channel.makefile("rb", 0) as stream:
+            for line in iter(stream.readline, b""):
+                sys.stdout.write(line.decode("utf-8", "replace"))
+                sys.stdout.flush()
 
-    status = channel.recv_exit_status()
+        status = channel.recv_exit_status()
+    finally:
+        channel.close()
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
         raise click.Abort
@@ -4431,7 +4436,8 @@ _test_options["performance_json_output"] = click.option(
 )
 
 # ``performance-test ssh`` chooses where the remote run writes its bot log, so
-# that it can copy the log back afterwards.
+# that it can copy the log back afterwards. It also prints where it saved the
+# log and results, so the remote run doesn't print the container's paths.
 _test_options["performance_bot_log"] = click.option(
     "--bot-log",
     type=click.Path(dir_okay=False, writable=True),
@@ -4909,7 +4915,8 @@ def _run_performance_test_with_existing_server(
         # Bot processes append to the log, so clear an earlier run's output first.
         open(bot_log, "w").close()
         bot_log_file = open(bot_log, "a")
-    if test_label is None:
+    remote = test_label is not None or bot_log is not None
+    if not remote:
         print(f"Bot output log: {bot_log_file.name}")
     reset = reset or {}
     database_reset = None
@@ -4937,7 +4944,7 @@ def _run_performance_test_with_existing_server(
     if json_output:
         _write_suite_json(
             json_output,
-            quiet=test_label is not None,
+            quiet=remote,
             metadata=_collect_run_metadata(exp.label),
             started_at=started_at,
             all_results=all_results,

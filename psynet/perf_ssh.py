@@ -231,10 +231,22 @@ class RemoteApp:
 
         Those are all except PostgreSQL, Redis and the front door's
         services; :meth:`start` starts them again.
+
+        Raises
+        ------
+        RuntimeError
+            If none of them runs: without services, ``docker compose stop``
+            would stop every service, PostgreSQL and Redis included.
         """
         self.prepare()
         self._n_workers = int(self._redis("SCARD", "rq:workers") or 0)
         services = self._server_services()
+        if not services:
+            raise RuntimeError(
+                f"None of {self.app}'s server processes, such as web, is running "
+                f"on {self.server}, so its database can't be reset; see its logs "
+                "in Dozzle."
+            )
         print(f"▶ Stopping {self.app}'s server processes...")
         self._stopped = list(dict.fromkeys(self._stopped + services))
         self.compose("stop", *services)

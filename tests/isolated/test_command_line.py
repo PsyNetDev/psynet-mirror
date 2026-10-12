@@ -1130,6 +1130,9 @@ class _FakeChannel:
     def recv_exit_status(self):
         return self.exit_status
 
+    def close(self):
+        pass
+
 
 def _executor_for(channel):
     executor = Mock()
@@ -1283,6 +1286,40 @@ def test_performance_test_deploys_mark_the_app_and_record_its_code_key():
         "performance_test_code_key": "abc",
     }
     assert pre_launch.call_args.kwargs["confirm_update"] is False
+
+
+def test_live_deployments_refuse_performance_test_apps():
+    from psynet.command_line import _pre_launch
+
+    with (
+        patch.dict(os.environ),
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.services.ensure_local_services"),
+        patch("psynet.command_line.redis_vars"),
+        patch("psynet.command_line.deployment_info") as info,
+        patch("psynet.command_line.run_pre_checks"),
+        patch("psynet.experiment.get_experiment"),
+        patch(
+            "psynet.command_line.get_config",
+            return_value={"performance_test_app": True},
+        ),
+        pytest.raises(click.UsageError, match="performance_test_app"),
+    ):
+        _pre_launch(Mock(), mode="live", archive=None, local_=True)
+    info.write.assert_not_called()
+
+
+def test_remote_experiment_command_closes_the_channel_when_interrupted():
+    from psynet.command_line import run_remote_experiment_command
+
+    channel = MagicMock()
+    stream = channel.makefile.return_value
+    stream.__enter__.return_value = stream
+    stream.readline.side_effect = KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        run_remote_experiment_command(_executor_for(channel), "my-app", "psynet")
+    stream.__exit__.assert_called_once()
+    channel.close.assert_called_once()
 
 
 def test_remote_experiment_commands_disable_tty_allocation():

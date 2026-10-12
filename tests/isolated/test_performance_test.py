@@ -1600,6 +1600,17 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     assert start > max(i for i, c in enumerate(commands) if " psql " in c)
 
 
+def test_a_remote_reset_never_stops_every_service_of_an_app():
+    def respond(cmd):
+        return "postgresql\nredis\nfrontdoor\n" if "ps --services" in cmd else "0\n"
+
+    remote = _app_database(respond).remote
+    remote.prepare = Mock()
+    with pytest.raises(RuntimeError, match="None of my-app's server processes"):
+        remote.stop()
+    assert not any(".yml stop" in c for c in remote.executor.commands)
+
+
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
 def test_a_remote_reset_refuses_a_database_not_named_after_the_app(web_database):
     database = _app_database(lambda cmd: f"{web_database}\n")
