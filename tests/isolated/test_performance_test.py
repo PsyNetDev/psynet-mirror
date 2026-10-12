@@ -625,10 +625,17 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
 
 
 @pytest.mark.parametrize(
-    "other_limits, capped",
-    [({}, False), ({"p95_response_time": 0.9}, True), ({"bot_errors": 5}, True)],
+    "other_limits, capped, larger_passed",
+    [
+        ({}, False, False),
+        ({}, False, True),
+        ({"p95_response_time": 0.9}, True, False),
+        ({"bot_errors": 5}, True, False),
+    ],
 )
-def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(other_limits, capped):
+def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(
+    other_limits, capped, larger_passed
+):
     results = [
         _base_result(n_bots=10, total_bots_started=20),
         _base_result(
@@ -639,12 +646,38 @@ def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(other_limits, cap
             **other_limits,
         ),
     ]
+    if larger_passed:
+        results.append(_base_result(n_bots=40, total_bots_started=80))
 
     text = _join(format_capacity_summary(results))
 
     assert ("Cap concurrent participants" in text) == capped
     assert ("about 10" if capped else "at least 10") in text
     assert "Design experiments to avoid this" in text
+    assert ("40 bots also passed, so the results are inconsistent" in text) == (
+        larger_passed
+    )
+
+
+@pytest.mark.parametrize(
+    "failed_reasons, wording",
+    [
+        ({"performance_check": 3}, "the experiment failed 3 participants (3"),
+        (
+            {_HOLD_TIMEOUT: 1, "performance_check": 3},
+            "the experiment also failed 3 participants for other reasons (3",
+        ),
+    ],
+)
+def test_a_passing_test_reports_participants_failed_by_design(failed_reasons, wording):
+    result = _base_result(
+        n_bots=10, total_bots_started=200, failed_reasons=failed_reasons
+    )
+
+    text = _join(format_capacity_summary([result]))
+
+    assert wording in text
+    assert "These don't count against capacity" in text
 
 
 def test_test_results_show_participants_the_experiment_failed():
@@ -653,14 +686,19 @@ def test_test_results_show_participants_the_experiment_failed():
             _base_result(
                 bots_succeeded=1,
                 participants_failed=3,
-                failed_reasons={_HOLD_TIMEOUT: 2, "performance_check": 1},
+                failed_reasons={
+                    **{f"prescreen_{i}": 2 for i in range(5)},
+                    "performance_check": 1,
+                    _HOLD_TIMEOUT: 1,
+                },
             )
         )
     )
 
     assert "Failed by the experiment" in text
     assert f"{_HOLD_TIMEOUT} (waited too long)" in text
-    assert "performance_check " in text
+    assert "Other reasons" in text
+    assert "performance_check " not in text
 
 
 def test_summaries_report_database_growth():
