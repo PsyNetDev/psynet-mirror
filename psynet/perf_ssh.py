@@ -66,8 +66,18 @@ _HEALTH_PROBE = (
 
 
 def run_with_status(executor, cmd):
-    """Run shell command ``cmd`` on the server; return its exit status and combined output."""
-    output = executor.run(f"{{ {cmd} ; }} 2>&1; echo {_STATUS_MARKER}$?", raise_=False)
+    """Run shell command ``cmd`` on the server; return its exit status and output.
+
+    The output is the command's stdout, followed by its stderr only if it
+    fails, so that warnings on stderr, such as Docker Compose's, can't
+    corrupt output that is parsed, and errors still say what went wrong.
+    """
+    script = (
+        f'err=$(mktemp) && {{ {cmd} ; }} 2>"$err"; status=$?; '
+        '[ "$status" -eq 0 ] || cat "$err"; rm -f "$err"; '
+        f"echo {_STATUS_MARKER}$status"
+    )
+    output = executor.run(script, raise_=False)
     output, _, status = (output or "").rpartition(_STATUS_MARKER)
     return int(status.strip() or 1), output
 
@@ -133,6 +143,8 @@ class RemoteApp:
         ------
         click.Abort
             If the command fails.
+        RuntimeError
+            If its JSON can't be read back.
         """
         from psynet.command_line import (
             _CONTAINER_WEB_PORT,
@@ -154,9 +166,17 @@ class RemoteApp:
         finally:
             if bot_log:
                 self._append_bot_log(log_path)
-        read = shlex.quote(f"cat {json_path}; rm -f {json_path}")
-        output = self.run(build_remote_experiment_command(self.app, f"sh -c {read}"))
-        return json.loads(output)
+        read = shlex.quote(f"cat {json_path} && rm -f {json_path}")
+        try:
+            output = self.run(
+                build_remote_experiment_command(self.app, f"sh -c {read}")
+            )
+            return json.loads(output)
+        except (RuntimeError, ValueError) as e:
+            raise RuntimeError(
+                f"Could not read the results of 'psynet {args}' from {json_path} "
+                f"in {self.app}'s web container: {e}"
+            ) from e
 
     def prepare(self, *, prefill_participants=None, async_timeout_s=None):
         """Check that the app's database may be reset, optionally pre-fill it, and return facts about it.

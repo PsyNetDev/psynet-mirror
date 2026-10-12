@@ -1594,6 +1594,20 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
     assert server.stop.call_count == server.start.call_count == 1
 
 
+def test_remote_output_leaves_out_stderr_unless_the_command_fails():
+    import subprocess
+
+    from psynet.perf_ssh import run_with_status
+
+    executor = Mock()
+    executor.run.side_effect = lambda cmd, raise_: (
+        subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout
+    )
+    assert run_with_status(executor, "echo '{}'; echo WARN >&2") == (0, "{}\n")
+    status, output = run_with_status(executor, "cat /no/such/file && echo copied")
+    assert status != 0 and "No such file" in output
+
+
 def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     tmp_path, monkeypatch
 ):
