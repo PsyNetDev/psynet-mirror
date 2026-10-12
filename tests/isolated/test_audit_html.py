@@ -102,6 +102,7 @@ def test_render_evidence_section_uses_shared_dashboard_markup() -> None:
                         "options": {
                             "n_bots_sweep": [2, 4],
                             "duration_minutes": 1.5,
+                            "estimated_duration_minutes": 3,
                             "stagger_interval_s": 0.2,
                             "time_factor": 2,
                         },
@@ -160,6 +161,7 @@ def test_render_evidence_section_uses_shared_dashboard_markup() -> None:
     assert "<h1>Analysis</h1>" in html
     assert "<td>0.123</td>" in html
     assert "<td>3</td>" in html
+    assert "<dt>Estimated session</dt><dd>3.00 min</dd>" in html
     assert "PLAN.md <span>present</span>" in html
 
 
