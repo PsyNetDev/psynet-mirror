@@ -14,7 +14,8 @@ capacity search and summaries are those of a local run.
 How an app is laid out on the server (see Dallinger's ``docker_ssh``): its
 files and ``docker-compose.yml`` are in ``~/dallinger/<app>/``; the stack has
 ``web``, ``worker_N``, optionally ``clock``, its own ``redis`` and a
-``pgbouncer``; the database is named after the app and lives either in the
+``pgbouncer``, the front door's ``frontdoor``, ``controller`` and, with
+Cloudflare ingress, ``cloudflared``; the database is named after the app and lives either in the
 app's own ``<app>_postgresql`` container (Cloudflare ingress) or in the
 server's shared ``dallinger-postgresql-1`` (classic ingress), which other
 apps use too.
@@ -33,9 +34,13 @@ Design constraints:
 - Before each reset the web container checks that the database has only bot
   participants and that the app doesn't recruit real ones (see
   ``psynet performance-test prepare-reset``); live mode always refuses.
-- pgbouncer stops with the server processes: it keeps server connections to
-  the database for 60 s after its clients go, and could open new ones while
-  the database is copied. Starting it again also gives it a fresh pool.
+- A reset stops every running service of the app's compose file except
+  PostgreSQL, Redis and the front door's services (``_KEPT_SERVICES``),
+  so that services added to the compose file that use the database can't
+  hold it, and starts again only those it stopped. That includes
+  pgbouncer: it keeps server connections to the database for 60 s after
+  its clients go, and could open new ones while the database is copied.
+  Starting it again also gives it a fresh pool.
 - Secrets in the containers' environments never leave the server: commands
   print only what they need, such as the database name.
 """
@@ -57,6 +62,9 @@ from psynet.perf_reset import SYSTEM_DATABASES, SnapshotDatabase
 logger = logging.getLogger(__name__)
 
 _STATUS_MARKER = "__psynet_exit_status="
+_KEPT_SERVICES = frozenset(
+    {"postgresql", "redis", "frontdoor", "controller", "cloudflared"}
+)
 _SERVER_READY_TIMEOUT_S = 180
 _SQLSTATE = re.compile(r"ERROR:\s+([0-9A-Z]{5}):")
 _HEALTH_PROBE = (
@@ -213,9 +221,10 @@ class RemoteApp:
         return self.compose("exec", "-T", "web", "python", "-c", probe).strip()
 
     def stop(self):
-        """Check that the database may be reset, then stop the server processes and pgbouncer.
+        """Check that the database may be reset, then stop the app's running services that may use the database.
 
-        PostgreSQL, Redis and the app's front door keep running.
+        Those are all except PostgreSQL, Redis and the front door's
+        services; :meth:`start` starts them again.
         """
         self.prepare()
         self._n_workers = int(self._redis("SCARD", "rq:workers") or 0)
@@ -225,7 +234,7 @@ class RemoteApp:
         self.compose("stop", *services)
 
     def start(self):
-        """Start the server processes and pgbouncer again and wait until the server answers.
+        """Start the services that :meth:`stop` stopped and wait until the server answers.
 
         It waits for ``/health`` in the web container and for as many RQ
         workers as there were before :meth:`stop`.
@@ -293,13 +302,9 @@ class RemoteApp:
         return self.compose("exec", "-T", "redis", "redis-cli", *command).strip()
 
     def _server_services(self):
-        """Return the services that connect to the database: web, workers, clock and pgbouncer."""
-        services = self.compose("config", "--services").split()
-        return [
-            s
-            for s in services
-            if s in ("web", "clock", "pgbouncer") or re.fullmatch(r"worker_\d+", s)
-        ]
+        """Return the running services that may use the database, such as web, workers, clock and pgbouncer."""
+        running = self.compose("ps", "--services", "--status", "running").split()
+        return [s for s in running if s not in _KEPT_SERVICES]
 
     def _append_bot_log(self, remote_path):
         from psynet.command_line import build_remote_experiment_command

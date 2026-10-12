@@ -511,16 +511,18 @@ Resetting the database on a server
 
 With these options your computer runs the series of tests, or the capacity
 search, and the server runs one test at a time and sends its results back.
-Before each later test, PsyNet stops the app's web, worker, clock and
-PgBouncer containers, so that no connection holds on to the old database,
-replaces the database with a copy of the snapshot, as above, with ``psql``
-inside the app's PostgreSQL container, empties the app's async job queues,
-and starts the containers again, waiting until the web server answers and
-the workers are back. Pre-fill bots run inside the web container. If a
-reset fails or you interrupt the run, PsyNet puts the database back and
-starts the containers it stopped; if it can't start them, it says that the
-app is stopped and prints the ``docker compose start`` command to run on
-the server.
+Before each later test, PsyNet stops the app's running containers except
+PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
+``cloudflared``): the web, worker, clock and PgBouncer containers, and any
+services you added to the app's compose file, so that no connection holds
+on to the old database. It then replaces the database with a copy of the
+snapshot, as above, with ``psql`` inside the app's PostgreSQL container,
+empties the app's async job queues, and starts again only the containers
+it stopped, waiting until the web server answers and the workers are back.
+Pre-fill bots run inside the web container. If a reset fails or you
+interrupt the run, PsyNet puts the database back and starts the containers
+it stopped; if it can't start them, it says that the app is stopped and
+prints the ``docker compose start`` command to run on the server.
 
 The guards against real data run before the first reset and again before
 every later one, with the same ``--force`` as above. Neither command

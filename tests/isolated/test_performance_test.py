@@ -1622,7 +1622,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
             ("datname = '", "" if "__restore" in cmd else "1"),
             ("DATABASE_URL", "my-app"),
             ("SCARD", "1"),
-            ("config --services", "postgresql\nredis\nweb\nworker_1\npgbouncer"),
+            ("ps --services", "postgresql\nredis\nweb\nworker_1\npgbouncer\nsidecar"),
             ("pg_database_size", "1000"),
             ("data_directory", "/var/lib/postgresql/data"),
             (" df ", "Filesystem 1024-blocks Used Available\nx 9 0 9999 1% /"),
@@ -1651,8 +1651,8 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
         next(i for i, c in enumerate(commands) if f".yml {action} " in c)
         for action in ("stop", "start")
     )
-    assert "stop web worker_1 pgbouncer ;" in commands[stop]
-    assert "start web worker_1 pgbouncer ;" in commands[start]
+    assert "stop web worker_1 pgbouncer sidecar ;" in commands[stop]
+    assert "start web worker_1 pgbouncer sidecar ;" in commands[start]
     assert start > max(i for i, c in enumerate(commands) if " psql " in c)
 
 
