@@ -9,7 +9,8 @@ from bugs. This test suite includes running all the demos and checking that
 they complete in the correct state.
 
 Whenever you push a contribution to a branch of the PsyNet repository,
-these automated tests will be automatically queued. They normally take 10-15 minutes
+these automated tests will be automatically queued (merge requests stacked on
+another feature branch run only the fast checks; see below). They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
 Resolve any errors before merging into ``master``.
 
@@ -23,6 +24,14 @@ That list is an allowlist: a path missing from it skips the tests on merge
 requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
+
+Merge requests stacked on another feature branch, whose target branch is
+neither ``master`` nor a ``release-`` branch, run only the fast checks (``pre_commit``,
+``validate_agent_skills`` and ``changelog_check``). The pytest, Playwright,
+``docs`` and ``asv_regression`` jobs that the diff would otherwise trigger
+appear as optional manual jobs instead: start them from the pipeline page when
+you want a full run. Pipelines created after the merge request is retargeted
+to ``master`` run everything as usual.
 
 Merge-train pipelines skip jobs that already passed on the same files.
 Merging goes through a GitLab merge train, whose pipeline tests the commit that
