@@ -676,7 +676,8 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
         key_requests=3,
         request_errors=1,
         p95_response_time=pytest.approx(1.9),
-        queue_waits={"high": waits(1, 0.0), "low": waits(1, 90.0, 2, 50.0)},
+        # The low job enqueued at 10 s started after the boundary.
+        queue_waits={"high": waits(1, 0.0), "low": waits(0, None, 2, 50.0)},
     )
     assert steady == dict(
         key_requests=20,
@@ -776,6 +777,7 @@ def test_database_rows_count_new_participants(db_session):
     from psynet.perf_test.measure import database_rows
 
     before = database_rows()
+    assert "async_job" in before
     db.session.add(
         Participant(
             experiment=get_experiment(),
@@ -1247,6 +1249,21 @@ def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
 
     results[0].q_delay_median = 0.5
     assert "async queue wait under" in _join(format_capacity_summary(results))
+
+
+def test_results_saved_before_priorities_keep_their_queue_wait():
+    result = PerformanceTestResult.from_dict(
+        {
+            "n_bots": 50,
+            "p95_response_time": 0.1,
+            "q_delay_p95": 2.0,
+            "oldest_queued_s": 40.0,
+            "process_stats": [{"label": "analyse"}],
+        }
+    )
+
+    assert capacity_failures(result) == ["p95 high-priority async queue wait 40.00 s"]
+    assert result.async_job_stats == [{"label": "analyse"}]
 
 
 def test_only_high_priority_queue_waits_limit_capacity():

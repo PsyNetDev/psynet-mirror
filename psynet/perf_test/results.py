@@ -258,8 +258,20 @@ class PerformanceTestResult:
         """Return a result from a saved JSON result.
 
         Unknown keys are ignored, and missing or ``null`` values take the
-        field's default.
+        field's default. Results saved before queue waits were split by
+        priority judged all async jobs together, so their ``q_delay_p95`` and
+        ``oldest_queued_s`` are read as the high-priority waits, and their
+        ``process_stats`` as ``async_job_stats``.
         """
+        data = dict(data)
+        if "queue_waits" not in data:
+            old = {
+                k: data[k]
+                for k in ("q_delay_p95", "oldest_queued_s")
+                if data.get(k) is not None
+            }
+            data["queue_waits"] = {"high": old} if old else None
+        data.setdefault("async_job_stats", data.get("process_stats"))
         names = {f.name for f in fields(cls)}
         return cls(
             **{

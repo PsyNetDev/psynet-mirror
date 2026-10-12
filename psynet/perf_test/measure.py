@@ -182,9 +182,10 @@ def phase_stats(
     tuple of (dict, dict)
         For the start-up and the steady state: ``key_requests``,
         ``request_errors`` (not counting busy or stale responses),
-        ``p95_response_time`` and ``queue_waits`` (see :func:`_queue_waits`;
-        the backlog is the one left at the end of the phase); the response
-        and queue times are ``None`` without measurements.
+        ``p95_response_time`` and ``queue_waits`` (see :func:`_queue_waits`)
+        of the jobs enqueued in the phase that started by its end, with the
+        backlog left at its end; the response and queue times are ``None``
+        without measurements.
     """
     from dallinger import db
     from sqlalchemy import func
@@ -223,7 +224,6 @@ def phase_stats(
                 p95_response_time=_as_float(row.p95) if row else None,
                 queue_waits=_queue_waits(
                     after_async_job_id,
-                    ended_at,
                     phase_ended_at,
                     (AsyncJob.time_enqueued >= boundary)
                     if steady
@@ -234,7 +234,7 @@ def phase_stats(
     return tuple(phases)
 
 
-def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
+def _queue_waits(after_async_job_id, ended_at, *filters):
     """Return how long async jobs after ``after_async_job_id`` waited for a worker, by priority.
 
     Grouping by priority matters because participants only wait for
@@ -246,9 +246,7 @@ def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
         Only count jobs with a larger ID.
     ended_at : datetime.datetime
         Only jobs that started by then count towards ``jobs`` and
-        ``q_delay_p95``.
-    backlog_at : datetime.datetime
-        When to count the jobs still waiting for a worker.
+        ``q_delay_p95``; jobs still waiting then make up the backlog.
     *filters
         Further SQL filters on the jobs that started, e.g. when they were
         enqueued.
@@ -258,7 +256,7 @@ def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
     dict
         For each priority with jobs, ``"high"`` or ``"low"``: ``jobs`` that
         started, their ``q_delay_p95``, the ``backlog`` of jobs still
-        waiting at ``backlog_at`` and how long the oldest of them had
+        waiting at ``ended_at`` and how long the oldest of them had
         waited (``oldest_queued_s``, or ``None``).
     """
     from dallinger import db
@@ -286,11 +284,11 @@ def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
         )
         .filter(
             AsyncJob.id > after_async_job_id,
-            AsyncJob.time_enqueued <= backlog_at,
+            AsyncJob.time_enqueued <= ended_at,
             AsyncJob.failed.is_(False),
             or_(
                 AsyncJob.time_started.is_(None),
-                AsyncJob.time_started > backlog_at,
+                AsyncJob.time_started > ended_at,
             ),
         )
         .group_by(priority)
@@ -302,7 +300,7 @@ def _queue_waits(after_async_job_id, ended_at, backlog_at, *filters):
             jobs=s.jobs if s else 0,
             q_delay_p95=_as_float(s.p95) if s else None,
             backlog=q.jobs if q else 0,
-            oldest_queued_s=(backlog_at - q.oldest).total_seconds() if q else None,
+            oldest_queued_s=(ended_at - q.oldest).total_seconds() if q else None,
         )
     return waits
 
@@ -396,7 +394,7 @@ def async_job_stats(after_async_job_id, ended_at):
     return dict(
         async_job_stats=async_job_stats,
         q_delay_median=_as_float(q_delay_median),
-        queue_waits=_queue_waits(after_async_job_id, ended_at, ended_at),
+        queue_waits=_queue_waits(after_async_job_id, ended_at),
     )
 
 
@@ -663,7 +661,7 @@ _GROWING_TABLES = (
     "response",
     "node",
     "network",
-    "process",
+    "async_job",
     "asset",
 )
 
