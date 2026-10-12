@@ -14,6 +14,7 @@ from psynet.perf_test import (
     format_performance_summary,
     format_test_results,
 )
+from psynet.pytest_psynet import path_to_test_experiment
 
 
 def _base_result(**overrides):
@@ -356,6 +357,126 @@ def test_capacity_search_brackets_then_bisects(capacity, expected_probes):
         results = tester.find_capacity()
 
     assert [r.n_bots for r in results] == expected_probes
+
+
+_HOLD_TIMEOUT = "timeline_hold:wait_while, fail_on_timeout"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory",
+    [path_to_test_experiment("timeline")],
+    indirect=True,
+)
+def test_failed_participants_and_database_rows_are_recorded(db_session):
+    import uuid
+
+    from dallinger import db
+
+    from psynet.experiment import get_experiment
+    from psynet.participant import Participant
+    from psynet.perf_test import _bot_outcome, _database_rows, _failure_reason
+
+    before = _database_rows()
+    participant = Participant(
+        experiment=get_experiment(),
+        recruiter_id="hotair",
+        worker_id=str(uuid.uuid4()),
+        hit_id=str(uuid.uuid4()),
+        assignment_id=str(uuid.uuid4()),
+        mode="debug",
+    )
+    db.session.add(participant)
+    db.session.flush()
+    participant.append_failure_tags(
+        "timeline_hold:barrier:round_3", "fail_on_timeout", "UnsuccessfulEndPage"
+    )
+    participant.fail(redirect_to_end=False)
+
+    assert _database_rows()["participant"] == before["participant"] + 1
+    assert _bot_outcome(participant, errored=False) == "failed by the experiment"
+    assert _failure_reason(participant) == (
+        "timeline_hold:barrier:round_N, fail_on_timeout"
+    )
+
+
+@pytest.mark.parametrize(
+    "reason, waited_at",
+    [
+        (_HOLD_TIMEOUT, "timeline_hold:wait_while"),
+        (
+            "while_loop:Waiting for trial, fail_on_timeout",
+            "while_loop:Waiting for trial",
+        ),
+        ("timeout between barriers", "timeout between barriers"),
+        ("attention_test_1, performance_check", None),
+    ],
+)
+def test_only_participants_failed_for_waiting_too_long_limit_capacity(
+    reason, waited_at
+):
+    result = _base_result(
+        n_bots=150,
+        total_bots_started=294,
+        bots_succeeded=5,
+        participants_failed=139,
+        failed_reasons={reason: 139},
+    )
+
+    failures = capacity_failures(result)
+    text = _join(format_capacity_summary([result]))
+
+    if waited_at:
+        assert failures == [
+            f"139 participants failed for waiting too long at {waited_at}"
+        ]
+        assert "Even 150 bots did not keep" in text
+    else:
+        assert failures == []
+        assert "at least 150" in text
+        assert f"failed 139 participants for other reasons (139 {reason})" in text
+
+
+def test_test_results_show_participants_the_experiment_failed():
+    text = _join(
+        format_test_results(
+            _base_result(
+                bots_succeeded=1,
+                participants_failed=3,
+                failed_reasons={_HOLD_TIMEOUT: 2, "performance_check": 1},
+            )
+        )
+    )
+
+    assert "Failed by the experiment" in text
+    assert f"{_HOLD_TIMEOUT} (waited too long)" in text
+    assert "performance_check " in text
+
+
+def test_summaries_report_database_growth():
+    results = [
+        _base_result(
+            n_bots=260,
+            db_rows_before={"participant": 2_000, "trial": 65_000},
+            db_rows_after={"participant": 2_400, "trial": 75_000},
+        ),
+        _base_result(
+            n_bots=320,
+            request_errors=5,
+            db_rows_before={"participant": 2_400, "trial": 75_000},
+            db_rows_after={"participant": 3_000, "trial": 103_000},
+        ),
+    ]
+
+    assert (
+        "Database rows from the first test to the last: participant 2,000 to "
+        "3,000, trial 65,000 to 103,000." in _join(format_performance_summary(results))
+    )
+    text = _join(format_capacity_summary(results))
+    assert "The database grew a lot during these tests" in text
+    assert "trial 65,000 and 103,000" in text
+
+    results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
+    assert "database grew" not in _join(format_capacity_summary(results))
 
 
 def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
@@ -845,7 +966,7 @@ def test_format_test_results_wait_page_times():
         )
     )
     text = _join(lines)
-    assert "WAIT PAGE TIMES" in text
+    assert "TIME ON WAIT PAGES PER BOT (n=10 bots" in text
 
 
 def test_format_test_results_process_stats():

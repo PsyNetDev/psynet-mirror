@@ -105,20 +105,36 @@ The main numbers are the response times for ``/timeline`` and ``/response``:
 the median shows the typical delay, and the 95th percentile shows the delay
 that the slowest participants experience. The report also shows:
 
-- **Bot outcomes**: how many bots started, finished, failed or were still
-  running.
-- **Bot runtimes** and **trials per bot**.
+- **Bot outcomes**: how many bots started and how each ended. *Completed
+  successfully* counts bots that finished the experiment without the
+  experiment failing their participant. *Failed by the experiment* counts
+  participants that the experiment failed, for example at a prescreen or
+  when a wait timed out (see :meth:`~psynet.participant.Participant.fail`);
+  they still get the status ``approved``, so check this line as well as the
+  first. A breakdown lists the most common failure reasons, built from the
+  participants' failure tags, and marks those that mean the participant
+  waited too long. *Bot error or other status* counts bots that raised an
+  error, or whose participant ended with another status such as
+  ``returned``. *Stopped at the end of the test* counts bots still taking
+  the experiment when the test ended.
+- **Bot runtimes** and **trials per bot** (for bots that completed
+  successfully).
 - **Request metrics**: total requests, errors and throughput. A
   *Busy/stale responses (409/503)* line appears when ``/timeline`` or
   ``/response`` answered with HTTP 503, which PsyNet sends when the
   experiment is busy, or HTTP 409, which it sends when a page went stale.
   Bots retry those that PsyNet marks as busy or stale. These responses are
   not counted as request errors.
-- **Wait page times**, for synchronized experiments.
+- **Time on wait pages per bot**, for experiments with wait pages: the
+  total time each bot that completed successfully spent waiting.
 - **Async process times**: for experiments with asynchronous processes, such
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.
+- **Database rows**: the rows in the tables that grow as a study collects
+  data (participants, trials, responses, nodes, networks, async processes
+  and assets), before the test and after it. See
+  :ref:`performance_testing_database_size`.
 
 Response times are measured inside the server, from when a web worker starts
 handling a request until it finishes. They do not include time that a request
@@ -171,7 +187,17 @@ A test counts as within capacity if these stay within their limits:
   worker, limited by ``--max-queue-p95-s`` (default 5). Participants often
   sit on a wait page during this time, so it matters as much as response
   time. Processes still waiting when the test ends count with the time they
-  have waited so far, so a queue that never drains fails the test.
+  have waited so far, so a queue that never drains fails the test;
+- the share of bots whose participants the experiment failed for waiting
+  too long, at most 1%. These are participants failed when a
+  :func:`~psynet.page.wait_while` (including async code blocks that wait),
+  a barrier, or a ``while_loop`` with ``max_loop_time`` timed out, or when a
+  group barrier timed out between barriers. Under load they usually
+  waited for the server, and in a real study they would be lost. Other
+  failures, such as prescreens, are part of the design: the summary reports
+  them but they don't count against capacity. If waits time out even with
+  few bots, the experiment's ``max_wait_time`` may be too short for how
+  long partners take.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, add worker processes with the ``num_dynos_worker``
@@ -206,7 +232,7 @@ The summary at the end of every run reports the capacity it found and, once a
 larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed) and 1% of bots failing; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing and 1% failed by the experiment for waiting too long; 170 did not (p95 response time 622 ms).
     Cap concurrent participants at about 128 (80% of 160).
 
 For rough capacities of common server sizes, based on one test on a real
@@ -245,7 +271,8 @@ Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are
 created and replaced rather than a realistic load, so avoid testing
 shortened versions of an experiment. The test doesn't reset the database, so later tests in a
-sweep run against more participants than earlier ones.
+sweep run against more data than earlier ones (see
+:ref:`performance_testing_database_size`).
 
 Bots don't open websockets, so the search doesn't measure how many
 participants can wait at once. A participant on a waiting page, such as a
@@ -257,6 +284,44 @@ files per waiting participant, also caps it at about 500 per worker. This
 needs a Dallinger release newer than 12.4; with 12.4 and earlier, a web
 worker runs out of Redis connections once about 100 participants have waited
 on it.
+
+.. _performance_testing_database_size:
+
+Database size
+-------------
+
+Capacity depends on how much data the experiment has already collected,
+not only on how many participants take part at once. Some queries read
+more rows as the tables grow: in one static rating study, the same 208
+bots got a 95th-percentile response time of 0.2 s while the database held
+100,000 to 150,000 trials and 7 s once it held 190,000 to 214,000. A test
+on a fresh database therefore measures the start of a study, and a
+capacity found early in a study may not hold later.
+
+Each test reports the rows in the tables that grow, before and after it,
+under *Database rows*, and the summary shows how they changed from the
+first test to the last. The tests don't reset the database, so every test
+adds the data its bots create, and a capacity search, whose bot counts
+don't run in increasing order, compares counts at different sizes. The
+capacity summary warns when the database grew by more than half during
+the tests (and by at least 10,000 rows), or when the largest passing and
+smallest failing bot counts started with very different amounts of data.
+
+To read the numbers:
+
+- Treat a capacity as holding for about the amount of data the tests ran
+  with. Compare the trial and participant rows with what the study will
+  collect: the number of participants you plan to recruit, times the
+  trials each one makes.
+- If the study will collect much more, run a confirmation test that ends
+  near the planned total, for example a long test at the suggested cap, or
+  one after earlier tests have filled the database. If response times rise
+  steadily during that test, a query is getting slower as data
+  accumulates; profile it with ``psynet test local --sql-profile`` (see
+  :doc:`/test/sqlalchemy_profiling`).
+- If the database already holds data from earlier runs, its size can make
+  a small study look worse than it will be. Relaunch the experiment to
+  start again from an empty database.
 
 .. _performance_testing_server:
 
@@ -280,7 +345,8 @@ machine, so on a shared server check with the other users first:
     psynet debug ssh --app my-experiment
     psynet performance-test ssh --app my-experiment --n-bots 50 --duration-minutes 10
 
-The test does not reset the database, so repeated runs accumulate data. Make
+The test does not reset the database, so repeated runs accumulate data (see
+:ref:`performance_testing_database_size`). Make
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test. When the run ends, PsyNet copies the
 bot log out of the container and prints where it saved it.
