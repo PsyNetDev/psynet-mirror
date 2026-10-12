@@ -340,9 +340,10 @@ To read the numbers:
 Starting every test from the same data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``psynet performance-test local --reset-database`` starts every test from
-the same database, so that the tests of a capacity search differ only in
-load:
+``--reset-database`` starts every test from the same database, so that the
+tests of a capacity search differ only in load. This section describes
+``performance-test local``; :ref:`performance_testing_server_reset` explains
+what differs on a server.
 
 .. code-block:: bash
 
@@ -353,9 +354,8 @@ snapshot database. Before each later test, it stops the experiment server,
 drops the experiment's database and creates it again from the snapshot,
 empties the async job queues and starts the server again. That takes a few
 seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
-the database's files. At the end it drops the snapshot. It only resets a
-database on your own computer, and a test run only ever drops the
-experiment's own database and its temporary snapshot. Kept pre-fill
+the database's files. At the end it drops the snapshot. A test run only
+ever drops the experiment's own database and its temporary snapshot. Kept pre-fill
 snapshots (see below) are only dropped by ``psynet performance-test
 snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
 computer. Files that the bots uploaded or
@@ -392,6 +392,9 @@ snapshot, so every test starts with 1,500 participants' data. The bots use
 the same routes as participants, so the data is what the experiment itself
 stores, but it takes time: at about 250 requests per participant, a few
 hundred requests per second fill 1,500 participants in about an hour.
+The pre-fill adds to whatever the database already holds, such as bots
+from earlier tests, and the snapshot keeps it all; PsyNet warns when the
+database isn't empty.
 
 If any pre-fill bot raises an error, the run stops without keeping a
 snapshot, because the data would differ from what participants leave.
@@ -434,9 +437,8 @@ pilot with ``psynet export``, launch the experiment from the export with
 :ref:`deploy_from_archive`), and run ``psynet performance-test ssh``
 against it. Every test then starts with at least the pilot's data.
 
-These options need the server that ``performance-test local`` starts, so
-they can't be combined with ``--existing``; ``performance-test ssh`` does
-not support them yet.
+Locally, these options need the server that ``performance-test local``
+starts, so they can't be combined with ``--existing``.
 
 .. _performance_testing_server:
 
@@ -460,9 +462,9 @@ machine, so on a shared server check with the other users first:
     psynet debug ssh --app my-experiment
     psynet performance-test ssh --app my-experiment --n-bots 50 --duration-minutes 10
 
-The test does not reset the database, so repeated runs accumulate data (see
-:ref:`performance_testing_database_size`; ``--reset-database`` is only
-available locally so far). Make
+By default the test does not reset the database, so repeated runs
+accumulate data (see :ref:`performance_testing_database_size` and
+:ref:`performance_testing_server_reset`). Make
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test.
 
@@ -483,6 +485,60 @@ bot log out of the container and prints where it saved it.
 If the server is on a private network, such as a lab computer, deploy with
 ``--ingress cloudflare``: Let's Encrypt cannot issue certificates for a
 private address, so classic ingress fails there.
+
+.. _performance_testing_server_reset:
+
+Resetting the database on a server
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``performance-test ssh`` takes the same ``--reset-database``,
+``--prefill-participants`` and ``--from-snapshot`` options as
+``performance-test local`` (see :ref:`performance_testing_reset`):
+
+.. code-block:: bash
+
+    psynet performance-test ssh --app my-experiment --reset-database --n-bots auto
+    psynet performance-test ssh --app my-experiment --prefill-participants 1500 --n-bots auto
+
+With these options your computer runs the series of tests, or the capacity
+search, and the server runs one test at a time and sends its results back.
+Before each later test, PsyNet stops the app's web, worker, clock and
+PgBouncer containers, so that no connection holds on to the old database,
+recreates the database from the snapshot with ``psql`` inside the app's
+PostgreSQL container, empties the app's async job queues, and starts the
+containers again, waiting until the web server answers and the workers are
+back. Pre-fill bots run inside the web container.
+
+The guards against real data run before the first reset and again before
+every later one, with the same ``--force`` as above. Neither command
+resets an experiment running in live mode, even with ``--force``. A
+reset only touches the app's own database, whose name is the app name; it
+refuses if the web container uses a database with another name. The free
+disk space check runs inside the PostgreSQL container, and if it can't
+check, it refuses to reset rather than warning.
+
+Snapshots live in the PostgreSQL server that the app uses, and their names
+include the app name, such as
+``psynet_prefill_my-experiment_0123456789ab_n1500``, so that apps sharing
+one PostgreSQL server don't share snapshots. PostgreSQL limits database
+names to 63 characters, so very long app names can't keep pre-fill
+snapshots. List and drop an app's snapshots with:
+
+.. code-block:: bash
+
+    psynet performance-test snapshots --app my-experiment
+    psynet performance-test snapshots --app my-experiment --drop-all
+
+Here ``--drop-all`` drops only that app's snapshots. ``psynet destroy ssh``
+drops them too: with Cloudflare ingress the app has its own PostgreSQL
+container, whose volume goes with the app, and with classic ingress PsyNet
+drops the app's pre-fill snapshots from the shared PostgreSQL server before
+destroying the app. A run drops its temporary snapshot, named
+``<app>_snapshot_<time>``, when it ends, and prints a ``dropdb`` command if
+that fails. If a run is killed first, the temporary snapshot stays: with
+classic ingress, drop it from the shared PostgreSQL container with
+``docker exec dallinger-postgresql-1 dropdb -U dallinger <name>``, because
+destroying the app doesn't.
 
 .. _performance_testing_bot_processes:
 
@@ -534,7 +590,7 @@ Saving results
 --------------
 
 ``--json-output results.json`` writes the full results and details of the run
-to a file (local tests only). To record the results in the experiment's
+to a file. To record the results in the experiment's
 audit, use ``psynet audit performance-test`` instead. It runs locally, takes
 the same load options and ``--existing``, and writes
 ``audit/artifacts/performance.json`` for the audit's *Performance test*
