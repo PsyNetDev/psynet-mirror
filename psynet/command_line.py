@@ -4387,7 +4387,8 @@ _test_options["performance_reset_database"] = click.option(
     first test, and before each later test stop the server, recreate the
     database from the snapshot, empty the async job queues and restart
     the server. Adds a few seconds per test, more for a large database.
-    Not available with PSYNET_TEST_ENVIRONMENT=shared.""",
+    Only works in the isolated test environment, so not with CI or
+    PSYNET_TEST_ENVIRONMENT=shared set.""",
 )
 
 _test_options["performance_prefill_participants"] = click.option(
@@ -4423,7 +4424,8 @@ def _check_database_reset_options(
     Raises
     ------
     click.UsageError
-        If the options conflict.
+        If the options conflict, or the database isn't the isolated test
+        environment's (see :func:`psynet.perf_reset.check_resettable_database`).
     """
     if prefill_participants and from_snapshot:
         raise click.UsageError(
@@ -4436,14 +4438,14 @@ def _check_database_reset_options(
             "--existing can't reset the database, because the server must be "
             "restarted for each reset; leave out --existing."
         )
-    from .isolated_environment import ENV_VAR, SHARED
+    from dallinger.db import db_url
 
-    if os.environ.get(ENV_VAR) == SHARED:
-        raise click.UsageError(
-            f"Resetting the database drops and recreates it, so it needs the "
-            f"isolated test environment's disposable database; unset "
-            f"{ENV_VAR}={SHARED}."
-        )
+    from .perf_reset import check_resettable_database
+
+    try:
+        check_resettable_database(db_url)
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
     return {
         "prefill_participants": prefill_participants,
         "from_snapshot": from_snapshot,
@@ -5209,17 +5211,13 @@ def performance_test__snapshots(drop, drop_all):
     """
     from dallinger.db import db_url
 
-    from psynet.perf_reset import (
-        check_resettable_database,
-        drop_snapshot,
-        list_snapshots,
-    )
+    from psynet.perf_reset import check_local_database, drop_snapshot, list_snapshots
 
     snapshots = list_snapshots(db_url)
     names = list(drop) + [name for name, _, _ in snapshots if drop_all]
     if names:
         try:
-            check_resettable_database(db_url)
+            check_local_database(db_url)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
     for name in dict.fromkeys(names):

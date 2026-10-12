@@ -360,9 +360,12 @@ generated stay in the asset storage after a reset, because only the
 database rows that refer to them are reset; they cost disk space but
 nothing else.
 
-The experiment's database must be disposable, so these options need the
-isolated test environment that ``performance-test local`` sets up by
-default, and refuse to run with ``PSYNET_TEST_ENVIRONMENT=shared``. The
+Resetting drops the experiment's database, so these options only work in
+the database that the isolated test environment creates for each
+``performance-test local`` run by default, and drops when the run ends.
+They refuse any other database, such as the ``dallinger`` database you
+debug with. The isolated environment is skipped when ``CI`` or
+``PSYNET_TEST_ENVIRONMENT=shared`` is set, so unset those to reset. The
 PostgreSQL role must be allowed to create databases, as it already must be
 for the isolated test environment (see :doc:`/developer/running_tests`).
 

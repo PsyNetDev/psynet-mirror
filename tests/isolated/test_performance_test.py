@@ -1,7 +1,9 @@
+import os
 from unittest.mock import Mock, patch
 
 import pytest
 
+from psynet.isolated_environment import ENV_VAR, READY_ENV_VAR, SHARED
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceSuite,
@@ -459,17 +461,25 @@ class _RecordingCursor:
 
 
 @pytest.fixture
-def scratch_database(db_session):
-    """Yield a scratch database's URL and a list of databases to drop afterwards."""
+def scratch_database(db_session, monkeypatch):
+    """Yield a scratch database's URL and a list of databases to drop afterwards.
+
+    The scratch database stands in for the isolated test session's own.
+    """
     from dallinger import db
 
-    from psynet.isolated_environment import create_database, drop_database
+    from psynet.isolated_environment import (
+        DATABASE_ENV_VAR,
+        create_database,
+        drop_database,
+    )
     from psynet.perf_reset import _maintenance_cursor
 
     url = create_database(
-        db.engine.url.render_as_string(hide_password=False), suffix="_reset_scratch"
+        db.engine.url.render_as_string(hide_password=False), suffix="_scratch_test_0"
     )
     created = [url.rsplit("/", 1)[1]]
+    monkeypatch.setenv(DATABASE_ENV_VAR, created[0])
     yield url, created
     with _maintenance_cursor(url) as cursor:
         for name in created:
@@ -579,21 +589,47 @@ def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
     [
         ("postgresql://u:p@localhost/dallinger_test_5000", True),
         ("postgresql:///dallinger_test_5000?host=/tmp", True),
-        # CI uses a disposable database without isolating the session.
-        ("postgresql://dallinger:dallinger@localhost/dallinger", True),
         ("postgresql://u:p@localhost/postgres", False),
         ("postgresql://u:p@localhost/template1", False),
-        ("postgresql://u:p@db.example.org/dallinger", False),
+        ("postgresql://u:p@db.example.org/dallinger_test_5000", False),
     ],
 )
 def test_reset_refuses_system_and_remote_databases(url, allowed):
+    from psynet.isolated_environment import DATABASE_ENV_VAR
     from psynet.perf_reset import check_resettable_database
 
+    environ = {DATABASE_ENV_VAR: "dallinger_test_5000"}
     if allowed:
-        check_resettable_database(url)
+        check_resettable_database(url, environ)
     else:
         with pytest.raises(ValueError, match="Refusing"):
-            check_resettable_database(url)
+            check_resettable_database(url, environ)
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [{"CI": "1"}, {READY_ENV_VAR: "1"}, {ENV_VAR: SHARED}, None],
+    ids=["ci", "ready-without-isolation", "shared", "isolated"],
+)
+def test_reset_only_drops_the_isolated_session_database(environ):
+    from psynet.isolated_environment import (
+        DEFAULT_DATABASE_URL,
+        IsolatedEnvironment,
+        should_isolate,
+    )
+    from psynet.perf_reset import check_resettable_database
+
+    shared = {"DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)}
+    if environ is None:
+        with IsolatedEnvironment.start(shared) as environment:
+            check_resettable_database(environment.env["DATABASE_URL"], environment.env)
+        return
+    environ = {**shared, **environ}
+    assert not should_isolate(environ)
+    with pytest.raises(ValueError, match="only works in .* isolated test environment"):
+        check_resettable_database(
+            "postgresql://dallinger:dallinger@localhost/dallinger", environ
+        )
 
 
 @pytest.mark.parametrize(
@@ -1408,12 +1444,18 @@ def test_performance_tests_refuse_participants_that_bots_did_not_create(db_sessi
     _check_no_real_participants(force=True)
 
 
-def test_database_copies_need_twice_the_database_size_free(caplog, tmp_path):
+def test_database_copies_need_twice_the_database_size_free(
+    caplog, tmp_path, monkeypatch
+):
     import psycopg2
 
+    from psynet.isolated_environment import DATABASE_ENV_VAR
     from psynet.perf_reset import DatabaseReset
 
-    reset = DatabaseReset(Mock(), Mock(), database_url="postgresql:///experiment")
+    monkeypatch.setenv(DATABASE_ENV_VAR, "experiment_test_0")
+    reset = DatabaseReset(
+        Mock(), Mock(), database_url="postgresql:///experiment_test_0"
+    )
     cursor = Mock()
     (tmp_path / "PG_VERSION").write_text("16")
     cursor.fetchone.side_effect = [(1e9,), (str(tmp_path),)]

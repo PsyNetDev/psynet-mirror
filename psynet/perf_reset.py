@@ -29,9 +29,11 @@ Design constraints:
   changed; only the experiment database is replaced. A kept snapshot is
   only dropped on request.
 - Only the experiment database and snapshots that this module names are
-  ever dropped, and only on this computer's PostgreSQL server (see
-  :func:`check_resettable_database`). The experiment database is disposable:
-  it belongs to the isolated test session, or to CI.
+  ever dropped, and only on this computer's PostgreSQL server. The
+  experiment database must be the disposable one that the isolated test
+  environment created for this session (see
+  :func:`check_resettable_database`), never one that a researcher debugs
+  with.
 - A pre-fill can take hours, so if it finishes but its snapshot isn't
   taken, for example after an interrupt, :meth:`DatabaseReset.close` takes
   it.
@@ -58,7 +60,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.engine import make_url
 
-from psynet.isolated_environment import drop_database, terminate_connections
+from psynet.isolated_environment import (
+    DATABASE_ENV_VAR,
+    SHARED,
+    drop_database,
+    terminate_connections,
+)
 from psynet.log import warning
 
 logger = logging.getLogger(__name__)
@@ -71,21 +78,20 @@ _INSUFFICIENT_PRIVILEGE = "42501"
 _OBJECT_IN_USE = "55006"
 _MAX_NAME_LENGTH = 63
 _PREFILL_NAME = re.compile(r"psynet_prefill_(?P<code>[0-9a-f]{12})_n\d+")
+_SESSION_DATABASE = re.compile(r".+_test_\d+")
 _SYSTEM_DATABASES = {"postgres", "template0", "template1"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
 
 
-def check_resettable_database(database_url):
-    """Return ``"<database> on <host>"``, or raise if ``--reset-database`` must not drop it.
+def check_local_database(database_url):
+    """Return ``"<database> on <host>"``, or raise unless it is on this computer.
 
     Raises
     ------
     ValueError
         If the database is a PostgreSQL system database or isn't on this
-        computer. The command line also refuses to reset with
-        ``PSYNET_TEST_ENVIRONMENT=shared``, so the database is the isolated
-        test session's, or CI's, both of which are disposable.
+        computer's PostgreSQL server.
     """
     url = make_url(database_url)
     host = url.query.get("host") or url.host or "local socket"
@@ -97,6 +103,46 @@ def check_resettable_database(database_url):
             "--reset-database only resets a database on this computer."
         )
     return f"{url.database} on {host}"
+
+
+def check_resettable_database(database_url, environ=None):
+    """Return ``"<database> on <host>"``, or raise if ``--reset-database`` must not drop it.
+
+    Resetting drops the database, so it is only allowed for the database that
+    the isolated test environment created for this session, which it names
+    in :data:`psynet.isolated_environment.DATABASE_ENV_VAR` and drops when the
+    session ends. Without isolation, for example with ``CI`` or
+    ``PSYNET_TEST_ENVIRONMENT=shared`` set, the database may be the one you
+    debug with, such as ``dallinger``.
+
+    Parameters
+    ----------
+    database_url : str
+        The experiment database.
+    environ : dict, optional
+        The environment variables. Defaults to ``os.environ``.
+
+    Raises
+    ------
+    ValueError
+        If the database isn't the isolated test session's own, is a
+        PostgreSQL system database, or isn't on this computer.
+    """
+    environ = os.environ if environ is None else environ
+    description = check_local_database(database_url)
+    database = make_url(database_url).database
+    if database != environ.get(DATABASE_ENV_VAR) or not _SESSION_DATABASE.fullmatch(
+        database
+    ):
+        raise ValueError(
+            f"Refusing to reset the database {database}: resetting drops and "
+            "recreates the database, so it only works in the database that the "
+            "isolated test environment creates for 'psynet performance-test "
+            "local'. That environment is skipped when CI or "
+            f"PSYNET_TEST_ENVIRONMENT={SHARED} is set; unset them and run the "
+            "command again."
+        )
+    return description
 
 
 def experiment_code_key():
@@ -214,6 +260,11 @@ class DatabaseReset:
         Stored as the comment of a kept snapshot database.
     database_url : str, optional
         The experiment database. Defaults to Dallinger's.
+
+    Raises
+    ------
+    ValueError
+        If the database may not be reset (see :func:`check_resettable_database`).
     """
 
     def __init__(
@@ -233,6 +284,7 @@ class DatabaseReset:
             from dallinger import db
 
             database_url = db.engine.url.render_as_string(hide_password=False)
+        check_resettable_database(database_url)
         self.database_url = database_url
         self.database = make_url(database_url).database
         self.snapshot = from_snapshot

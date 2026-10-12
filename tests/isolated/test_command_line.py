@@ -4766,8 +4766,10 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
 
 def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
     from psynet.command_line import _check_database_reset_options
+    from psynet.isolated_environment import DATABASE_ENV_VAR
 
-    monkeypatch.delenv("PSYNET_TEST_ENVIRONMENT", raising=False)
+    monkeypatch.setattr("dallinger.db.db_url", "postgresql:///dallinger_test_5000")
+    monkeypatch.setenv(DATABASE_ENV_VAR, "dallinger_test_5000")
     none = dict(
         existing=False,
         reset_database=False,
@@ -4785,8 +4787,8 @@ def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
     ]:
         with pytest.raises(click.UsageError):
             _check_database_reset_options(**{**none, **conflict})
-    monkeypatch.setenv("PSYNET_TEST_ENVIRONMENT", "shared")
-    with pytest.raises(click.UsageError, match="unset PSYNET_TEST_ENVIRONMENT"):
+    monkeypatch.delenv(DATABASE_ENV_VAR)
+    with pytest.raises(click.UsageError, match="isolated test environment"):
         _check_database_reset_options(**{**none, "reset_database": True})
 
 
