@@ -1544,8 +1544,9 @@ def test_remote_output_leaves_out_stderr_unless_the_command_fails():
     assert status != 0 and "No such file" in output
 
 
+@pytest.mark.parametrize("restart_fails", [False, True])
 def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
-    tmp_path, monkeypatch
+    restart_fails, tmp_path, monkeypatch, capsys
 ):
     import psycopg2
 
@@ -1554,6 +1555,8 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     def respond(cmd):
         if "CREATE DATABASE" in cmd:
             return 1, "ERROR:  53100: could not extend file: No space left\n"
+        if restart_fails and ".yml start " in cmd:
+            return 1, "Error: no such container\n"
         for pattern, output in [
             ("datname = '", "1"),
             ("DATABASE_URL", "my-app"),
@@ -1568,6 +1571,8 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
         return ""
 
     monkeypatch.chdir(tmp_path)
+    # Its handler would keep writing to capsys's stdout after this test.
+    monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
     remote = _app_database(respond).remote
     remote.prepare = Mock(
         return_value={
@@ -1579,9 +1584,12 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
         }
     )
     reset = {"prefill_participants": None, "from_snapshot": _APP_SNAPSHOT}
-    with pytest.raises(psycopg2.Error, match="No space left"):
+    # A failed restart fails the command, replacing the reset's error.
+    with pytest.raises(RuntimeError if restart_fails else psycopg2.Error):
         _run_ssh_suite_with_reset(remote, reset, None, n_bots=[2])
 
+    manual = "docker compose start web worker_1 pgbouncer sidecar"
+    assert (manual in capsys.readouterr().out) == restart_fails
     commands = remote.executor.commands
     stop, start = (
         next(i for i, c in enumerate(commands) if f".yml {action} " in c)

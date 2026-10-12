@@ -269,9 +269,8 @@ class RemoteApp:
     def start_stopped_services(self):
         """Start the services that :meth:`stop` stopped, if they haven't started again, as after a failed reset.
 
-        If they can't be started, it prints that the app is stopped and the
-        command that starts it by hand. Other errors are only printed, so
-        that the reset's own error is the one that propagates.
+        If that fails or is interrupted, it prints the command that starts
+        them by hand, then re-raises, so that the command fails.
         """
         if not self._stopped:
             return
@@ -281,17 +280,15 @@ class RemoteApp:
         )
         try:
             self.start()
-        except (Exception, KeyboardInterrupt) as e:
-            if self._stopped:
-                print(
-                    f"✗ {self.app} is stopped: its server processes could not be "
-                    f"started again ({e}). Start them on {self.server} with:\n"
-                    f"    {command}"
-                )
-            else:
-                print(f"Warning: {e}")
-            if isinstance(e, KeyboardInterrupt):
-                raise
+        except BaseException as e:
+            print(
+                f"✗ {self.app} may be stopped: its server processes could not be "
+                f"started again ({str(e) or type(e).__name__}). Start them on "
+                f"{self.server} with:\n    {command}\nIf the app still doesn't "
+                "work, for example because the reset had dropped its database, "
+                "redeploy it."
+            )
+            raise
 
     def clear_job_queues(self):
         """Delete the RQ queues, jobs and worker registrations from the app's Redis."""

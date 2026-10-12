@@ -490,9 +490,12 @@ class DatabaseReset:
         """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.
 
         To keep the pre-fill it stops the server first, because the copy
-        needs the database unused. Errors are only logged, so that a test's
-        own error is the one that propagates.
+        needs the database unused. Database errors and other
+        :class:`RuntimeError` are only logged, so that a test's own error is
+        the one that propagates; ``click.Abort`` and ``click.exceptions.Exit``,
+        which are also :class:`RuntimeError`, propagate.
         """
+        import click
         import psycopg2
 
         try:
@@ -502,6 +505,8 @@ class DatabaseReset:
             if self._drop_snapshot_on_close:
                 with self._connect() as cursor:
                     drop_database(cursor, self.snapshot)
+        except (click.Abort, click.exceptions.Exit):
+            raise
         except (psycopg2.Error, RuntimeError) as e:
             if self.snapshot is None:
                 advice = "The pre-filled data was not kept."
