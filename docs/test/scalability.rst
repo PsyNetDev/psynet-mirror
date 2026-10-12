@@ -148,9 +148,11 @@ that the slowest participants experience. The report also shows:
 - **Bot runtimes**, separately for each of these outcomes, and **trials per
   bot** (for bots that completed successfully). Below the trials, a line for
   each chain trial maker says how many bots got fewer trials because every
-  chain was busy, for example ``23 of 150 participants (15%) got fewer
+  chain was busy, for example ``23 of 150 bots started (15%) got fewer
   trials in main_chain because every chain was busy; median 41 of 60
-  trials.``
+  trials.`` Bots started include those that replaced bots that finished.
+  Chains that are busy only with their last trials don't count, because
+  they would have nothing left to give.
 - **Request metrics**: total requests, errors and throughput. A
   *Busy/stale responses (409/503)* line appears when ``/timeline`` or
   ``/response`` answered with HTTP 503, which PsyNet sends when the
