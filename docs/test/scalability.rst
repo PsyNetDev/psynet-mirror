@@ -496,7 +496,10 @@ Each run reads both inside the app's web container. If the hash differs
 from that of the experiment directory, the run first updates the app as
 ``psynet debug ssh --update`` does: it rebuilds and restarts the app's
 containers but keeps its database, with the data of earlier tests, and its
-pre-fill snapshots. The database keeps the tables of the earlier code, and
+pre-fill snapshots. The old snapshots no longer match the new hash, so a
+run with ``--prefill-participants`` pre-fills again, adding to the data
+already in the database, and keeps the old snapshots until you drop them.
+The database keeps the tables of the earlier code, and
 launch steps, such as creating networks, don't run again; if the change
 needs them, destroy the app and let the next run deploy it again. Update
 the app only through ``performance-test ssh``: ``psynet debug ssh

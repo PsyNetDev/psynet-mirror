@@ -5527,7 +5527,7 @@ def _require_performance_test_app(server, app):
         ) from e
     if not info.get("performance_test_app"):
         raise click.ClickException(
-            f"Refusing to test {app} on {server}: 'performance-test ssh' didn't "
+            f"Refusing to use {app} on {server}: 'performance-test ssh' didn't "
             f"deploy it, so it may hold data that matters. {advice}"
         )
     return info
