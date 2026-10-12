@@ -257,7 +257,6 @@ class PerformanceTestResult:
     tester_cpu_share: float | None = None
     tester_lag_p95_s: float | None = None
     total_bots_started: int = 0
-    completed_during_test: int = 0
     # Bots whose participant ended approved or submitted and was not failed.
     bots_succeeded: int = 0
     # Bots that raised, or whose participant ended with another status.
@@ -288,8 +287,11 @@ class PerformanceTestResult:
     stddev_response_time: float | None = None
     max_response_time: float | None = None
     avg_bot_duration: float | None = None
-    avg_init_time: float | None = None
-    initialization_times: list[float] = field(default_factory=list)
+    # How long creating each bot took, over n_init_samples bots.
+    median_init_time: float | None = None
+    p95_init_time: float | None = None
+    max_init_time: float | None = None
+    n_init_samples: int = 0
     request_errors: int = 0
     # HTTP 409 and 503 responses; see _split_failed_requests.
     busy_responses: int = 0
@@ -314,7 +316,6 @@ class PerformanceTestResult:
     min_trial_count: int | None = None
     median_trial_count: int | None = None
     max_trial_count: int | None = None
-    n_succeeded_bots: int = 0
     n_rq_workers: int | None = None
     # Jobs the async workers can run at once.
     n_rq_job_slots: int | None = None
@@ -1215,6 +1216,7 @@ class PerformanceTester:
             initial_state["max_participant_id"], bot_state.errored_bot_ids
         )
         total_requests = request_stats["total_requests"]
+        init_times = sorted(bot_state.initialization_times)
         result = PerformanceTestResult(
             n_bots=n,
             duration_minutes=duration_minutes,
@@ -1229,7 +1231,6 @@ class PerformanceTester:
             tester_cpu_share=_worst(bot_state.process_loads, 0),
             tester_lag_p95_s=_worst(bot_state.process_loads, 1),
             total_bots_started=bot_state.total_bots_started,
-            completed_during_test=bot_state.bots_completed_during_test,
             db_rows_before=initial_state["db_rows"],
             db_rows_after=_database_rows(),
             requests_per_sec=(
@@ -1237,8 +1238,10 @@ class PerformanceTester:
             ),
             bot_errors=bot_state.total_bot_errors,
             bot_error_kinds=dict(bot_state.bot_error_kinds.most_common()),
-            avg_init_time=_mean(bot_state.initialization_times),
-            initialization_times=list(bot_state.initialization_times),
+            median_init_time=_quantile(init_times, 0.5),
+            p95_init_time=_quantile(init_times, 0.95),
+            max_init_time=_quantile(init_times, 1),
+            n_init_samples=len(init_times),
             **request_stats,
             **process_stats,
             **bot_stats,
@@ -1440,7 +1443,6 @@ def _bot_outcome_stats(after_participant_id, errored_bot_ids):
         min_trial_count=min_trials,
         median_trial_count=median_trials,
         max_trial_count=max_trials,
-        n_succeeded_bots=len(succeeded_bot_ids),
     )
 
 
@@ -1857,18 +1859,6 @@ def _run_bot_process(index, commands, events, settings):
             bot_log.close()
 
 
-def colorize_success_rate(rate_str):
-    if rate_str == "N/A":
-        return rate_str
-    pct = float(rate_str.rstrip("%"))
-    if pct >= 100:
-        return success(rate_str)
-    elif pct > 0:
-        return warning(rate_str)
-    else:
-        return error(rate_str)
-
-
 def _fmt(value, suffix=""):
     return f"{value:.3f}{suffix}" if value is not None else "N/A"
 
@@ -2166,15 +2156,6 @@ def _label_table(rows):
 
 def _bot_outcome_lines(result):
     """Return the BOT OUTCOMES section and, if any, why participants failed and bot errors."""
-    bots_finished = max(
-        result.completed_during_test,
-        result.bots_succeeded + result.bots_failed + result.participants_failed,
-    )
-    total_started = result.total_bots_started
-    if total_started > 0:
-        completion_rate = f"{(bots_finished / total_started) * 100:.0f}%"
-    else:
-        completion_rate = "N/A"
     bots_in_db = (
         result.bots_succeeded
         + result.bots_failed
@@ -2191,7 +2172,6 @@ def _bot_outcome_lines(result):
     ]
     if bots_not_in_db > 0:
         outcome_rows.append(["Never reached DB", bots_not_in_db])
-    outcome_rows.append(["Completion rate", colorize_success_rate(completion_rate)])
     lines = [*_section("BOT OUTCOMES"), *_label_table(outcome_rows), ""]
 
     if result.failed_reasons:
@@ -2258,16 +2238,15 @@ def _runtime_lines(result):
 
 def _init_time_lines(result):
     """Return the BOT INIT TIMES section, or nothing if no bot started."""
-    init_times = sorted(result.initialization_times)
-    if not init_times:
+    if not result.n_init_samples:
         return []
     rows = [
-        ["Median", _fmt(_quantile(init_times, 0.5), "s")],
-        ["95th percentile", _fmt(_quantile(init_times, 0.95), "s")],
-        ["Max", _fmt(init_times[-1], "s")],
+        ["Median", _fmt(result.median_init_time, "s")],
+        ["95th percentile", _fmt(result.p95_init_time, "s")],
+        ["Max", _fmt(result.max_init_time, "s")],
     ]
     return [
-        *_section(f"BOT INIT TIMES (n={len(init_times)}):"),
+        *_section(f"BOT INIT TIMES (n={result.n_init_samples}):"),
         *_label_table(rows),
         "",
     ]
@@ -2318,7 +2297,7 @@ def _request_lines(result):
         )
         lines.append("")
 
-    n_succeeded = result.n_succeeded_bots
+    n_succeeded = result.bots_succeeded
     bot_word = "bot" if n_succeeded == 1 else "bots"
     lines += _section(
         f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)"

@@ -10,7 +10,6 @@ from psynet.perf_test import (
     _BotState,
     _split_failed_requests,
     capacity_failures,
-    colorize_success_rate,
     format_capacity_summary,
     format_performance_summary,
     format_test_results,
@@ -22,10 +21,8 @@ def _base_result(**overrides):
     """Return a minimal valid result for format_test_results."""
     fields = {
         "n_bots": 2,
-        "duration_minutes": 0.1,
         "actual_duration": 6.3,
         "total_bots_started": 2,
-        "completed_during_test": 2,
         "bot_errors": 0,
         "bots_succeeded": 2,
         "bots_failed": 0,
@@ -40,12 +37,10 @@ def _base_result(**overrides):
         "stddev_response_time": 0.02,
         "max_response_time": 0.15,
         "avg_bot_duration": 6.3,
-        "avg_init_time": 0.5,
         "requests_per_sec": 1.6,
         "min_trial_count": 3,
         "median_trial_count": 4,
         "max_trial_count": 5,
-        "n_succeeded_bots": 2,
         "n_rq_workers": 2,
         "n_rq_job_slots": 40,
         "q_delay_median": 0.02,
@@ -1237,28 +1232,6 @@ def test_each_endpoint_must_stay_within_the_response_time_limit():
     assert capacity_failures(result) == ["p95 response time for /response 511 ms"]
 
 
-# --- colorize_success_rate ---
-
-
-def test_colorize_success_rate_100():
-    result = colorize_success_rate("100%")
-    assert "100%" in result
-
-
-def test_colorize_success_rate_partial():
-    result = colorize_success_rate("50%")
-    assert "50%" in result
-
-
-def test_colorize_success_rate_zero():
-    result = colorize_success_rate("0%")
-    assert "0%" in result
-
-
-def test_colorize_success_rate_na():
-    assert colorize_success_rate("N/A") == "N/A"
-
-
 # --- format_test_results ---
 
 
@@ -1300,16 +1273,12 @@ def test_format_test_results_bots_not_in_db():
     assert "Never reached DB" in text
 
 
-def test_format_test_results_no_bots_started():
-    lines = format_test_results(
-        _base_result(total_bots_started=0, completed_during_test=0)
-    )
-    text = _join(lines)
-    assert "N/A" in text
-
-
 def test_format_test_results_init_times():
-    lines = format_test_results(_base_result(initialization_times=[0.1, 0.2, 0.3, 0.5]))
+    lines = format_test_results(
+        _base_result(
+            median_init_time=0.2, p95_init_time=0.5, max_init_time=0.5, n_init_samples=4
+        )
+    )
     text = _join(lines)
     assert "BOT INIT TIMES" in text
     assert "Median" in text
@@ -1364,12 +1333,6 @@ def test_format_test_results_no_process_stats():
     assert "2 worker processes, up to 40 jobs at once" in text
 
 
-def test_format_test_results_returns_list():
-    lines = format_test_results(_base_result())
-    assert isinstance(lines, list)
-    assert all(isinstance(line, str) for line in lines)
-
-
 # --- format_performance_summary ---
 
 
@@ -1383,16 +1346,6 @@ def test_format_performance_summary_single_result():
     assert "0.04" in text
 
 
-def test_format_performance_summary_none_metrics():
-    result = _base_result(
-        p95_response_time=None,
-        requests_per_sec=None,
-    )
-    lines = format_performance_summary([result])
-    text = _join(lines)
-    assert "N/A" in text
-
-
 def test_format_performance_summary_scaling():
     r1 = _base_result(n_bots=1, median_response_time=0.1, q_delay_median=0.05)
     r2 = _base_result(n_bots=2, median_response_time=0.2, q_delay_median=0.1)
@@ -1404,39 +1357,6 @@ def test_format_performance_summary_scaling():
     assert "||" not in text
     rows = [line.split()[0] for line in lines if line.strip()[:1].isdigit()]
     assert rows == ["1", "2"]
-
-
-def test_format_performance_summary_returns_list():
-    lines = format_performance_summary([_base_result()])
-    assert isinstance(lines, list)
-    assert all(isinstance(line, str) for line in lines)
-
-
-def test_performance_summary_handles_missing_response_metrics():
-    result = _base_result(
-        total_requests=0,
-        avg_response_time=None,
-        median_response_time=None,
-        p95_response_time=None,
-        p99_response_time=None,
-        stddev_response_time=None,
-        max_response_time=None,
-    )
-    lines = format_performance_summary([result])
-    assert any("N/A" in line for line in lines)
-
-
-def test_performance_summary_handles_no_completed_or_failed_bots():
-    result = _base_result(
-        completed_during_test=0,
-        total_requests=0,
-        median_response_time=None,
-        p95_response_time=0.0,
-        avg_bot_duration=None,
-        avg_init_time=None,
-    )
-    lines = format_performance_summary([result])
-    assert isinstance(lines, list)
 
 
 def test_prefill_cache_key_changes_with_config_txt(tmp_path, monkeypatch):

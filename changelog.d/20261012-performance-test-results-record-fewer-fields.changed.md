@@ -1,0 +1,1 @@
+`psynet performance-test` JSON results no longer include `avg_init_time`, `n_succeeded_bots` (the same as `bots_succeeded`) or `completed_during_test`, and record bot start-up times as `median_init_time`, `p95_init_time`, `max_init_time` and `n_init_samples` instead of the full `initialization_times` list; the report no longer shows a completion rate.
