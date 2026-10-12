@@ -4362,7 +4362,8 @@ _test_options["performance_bot_processes"] = click.option(
     hundred requests per second, and a test in which the bots in a process
     run more than 50 ms late (p95) counts as could not be tested. 'auto' (the default)
     uses a process per 250 bots, up to one per four CPU cores; with --n-bots
-    auto it plans for the largest count the search may test.""",
+    auto it plans for the largest count the search may test, except over
+    SSH, where each test plans for its own bot count.""",
 )
 
 _test_options["performance_force"] = click.option(
@@ -4426,9 +4427,11 @@ _test_options["performance_arrival_minutes"] = click.option(
     Spread the arrival of each test's bots evenly over this many minutes after
     the first bot starts, as participants arrive while a study is open,
     instead of starting them --stagger seconds apart. With --n-bots auto, only
-    the confirmation test uses this window (instead of one session), so it
-    must be shorter than an hour, and lasts a session longer than it, up to
-    an hour; the search's tests stay short, with the bots starting together. Can't be combined with --stagger; bots that replace
+    the confirmation test uses this window (instead of one session); that
+    test lasts a session longer than the window, but at most an hour, or
+    --duration-minutes if that is longer, and the window must be shorter
+    than this longest test. The search's tests stay short, with the bots
+    starting together. Can't be combined with --stagger; bots that replace
     finished ones still start after the experiment's
     test_parallel_stagger_interval_s. Otherwise it must be shorter than
     --duration-minutes, and without --duration-minutes it is added to the
@@ -4484,7 +4487,7 @@ _test_options["performance_bot_log"] = click.option(
     hidden=True,
 )
 
-# ``performance-test ssh --reset-database`` runs each test on its own in the
+# ``performance-test ssh`` runs each test of its suite on its own in the
 # web container: with a label, ``performance-test local`` runs one test of
 # one bot count, without the suite's header and summary.
 _test_options["performance_test_label"] = click.option(

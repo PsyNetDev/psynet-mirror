@@ -2066,9 +2066,8 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
-def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkeypatch):
-    """Over SSH, tests are timed like a local search of a 12-minute study, and later ones pause first."""
-    import json
+def _remote_search(monkeypatch, reset=None, **options):
+    """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
     import re
     from dataclasses import asdict
 
@@ -2081,21 +2080,33 @@ def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkey
         return {"psynet_version": "remote", "results": [asdict(result)]}
 
     monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
-    json_output = tmp_path / "results.json"
     with (
         patch("psynet.command_line._ssh_executor"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", side_effect=run_psynet) as run,
+        patch(
+            "psynet.command_line._ssh_database_reset",
+            return_value=reset and Mock(snapshot=None, snapshot_rows=None),
+        ),
+        patch("psynet.perf_ssh.RemoteApp.start_stopped_services"),
     ):
         results = _run_ssh_performance_test(
             "my-app",
             "server",
             {**_EXPERIMENT, "estimated_duration_minutes": 12},
-            None,
-            json_output=str(json_output),
+            reset,
             n_bots="auto",
+            **options,
         )
+    return [c.args[0] for c in run.call_args_list], results
 
-    commands = [c.args[0] for c in run.call_args_list]
+
+def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkeypatch):
+    """Over SSH, tests are timed like a local search of a 12-minute study, and later ones pause first."""
+    import json
+
+    json_output = tmp_path / "results.json"
+    commands, results = _remote_search(monkeypatch, json_output=str(json_output))
+
     assert all(c.startswith("performance-test local --existing") for c in commands)
     assert "--suite-started-s-ago" not in commands[0]
     assert all("--suite-started-s-ago" in c for c in commands[1:])
@@ -2110,6 +2121,27 @@ def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkey
     assert options["confirm"] is True and options["confirmation_skipped"] is None
     assert options["session_minutes"] == 12
     assert options["reset_database"] is False
+
+
+@pytest.mark.parametrize(
+    "options, n_tests, last_command",
+    [
+        (dict(no_confirm=True), 8, "--duration-minutes 5 "),
+        (dict(arrival_minutes=3), 9, "--duration-minutes 15 --arrival-minutes 3 "),
+        (dict(reset={"from_snapshot": None}), 9, "--arrival-minutes 12.0 "),
+    ],
+    ids=["no-confirm", "arrival-minutes", "reset-database"],
+)
+def test_remote_search_options_reach_the_right_tests(
+    monkeypatch, options, n_tests, last_command
+):
+    commands, _ = _remote_search(monkeypatch, **options)
+
+    assert len(commands) == n_tests
+    assert last_command in commands[-1]
+    assert not any("--arrival-minutes" in c for c in commands[:8])
+    if "reset" in options:
+        assert not any("--suite-started-s-ago" in c for c in commands)
 
 
 def test_resetting_refuses_live_mode_even_with_force(monkeypatch):

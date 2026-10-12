@@ -270,8 +270,9 @@ most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
 state, so for long studies also run a long test of the cap by hand. With your own
 ``--arrival-minutes``, the confirmation uses that window instead of one
-session and lasts a session longer, again at most an hour, so with
-``--n-bots auto`` the window must be shorter than an hour. The summary reports the cap as
+session and lasts a session longer, again at most an hour, or
+``--duration-minutes`` if that is longer; the window must be shorter than
+this longest confirmation test. The summary reports the cap as
 confirmed only if the confirmation test stayed within the limits and
 reached its steady state; one that never got there leaves the cap
 unconfirmed. If the test exceeded the limits, the summary shows which
