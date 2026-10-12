@@ -4902,11 +4902,12 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
     from_snapshot, prefill, keep_as = reset["from_snapshot"], None, None
     if from_snapshot:
         perf_reset.check_snapshot(from_snapshot, database_url)
-        key = perf_reset.snapshot_code_key(from_snapshot)
-        if key is not None and key != _current_code_key():
+        snapshot_key = perf_reset.snapshot_code_key(from_snapshot)
+        current_key = snapshot_key and _current_code_key()
+        if current_key and snapshot_key != current_key:
             print(
                 f"Warning: {from_snapshot} was pre-filled with different "
-                "experiment code or PsyNet version."
+                "experiment files or PsyNet or Dallinger versions."
             )
     elif reset["prefill_participants"]:
         n_participants, n_bots = reset["prefill_participants"], reset["prefill_bots"]
@@ -5210,6 +5211,11 @@ def performance_test__snapshots(drop, drop_all, all_experiments):
     names = list(drop)
     if drop_all:
         key = None if all_experiments else _current_code_key()
+        if key is None and not all_experiments:
+            raise click.UsageError(
+                "Without a deploy.toml, PsyNet can't tell which snapshots are this "
+                "experiment's; use --drop NAME, or --drop-all --all-experiments."
+            )
         names += [
             name
             for name, _, _ in snapshots

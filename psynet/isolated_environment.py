@@ -361,6 +361,11 @@ def drop_database(cursor, name):
     cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
+def replacement_name(name):
+    """Return the name of the copy that replaces database ``name`` during a reset."""
+    return name[:58] + "__new"
+
+
 def terminate_connections(cursor, name):
     """Terminate the other client connections to database ``name``.
 
@@ -390,6 +395,8 @@ def _drop_session_database(session_database_url):
             connection.autocommit = True
             with connection.cursor() as cursor:
                 drop_database(cursor, name)
+                # Left by a database reset that failed (see psynet.perf_reset).
+                drop_database(cursor, replacement_name(name))
         finally:
             connection.close()
     except psycopg2.Error as e:

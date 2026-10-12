@@ -27,9 +27,11 @@ Design constraints:
 - Only the experiment database, the copy that replaces it, and snapshots
   that this module names are ever dropped, and only on this computer's
   PostgreSQL server (see :func:`check_resettable_database`).
-- A reset never leaves the experiment without a database: the copy is
-  complete before the old database is dropped, and a snapshot is only
-  dropped after a successful reset.
+- A reset and the replacement of a kept snapshot are both a swap (see
+  :func:`_swap_in_copy`): the copy is complete before the old database is
+  dropped. If renaming the copy fails after that, :meth:`DatabaseReset.close`
+  renames it, and a snapshot is only dropped while the experiment database
+  exists.
 - If the PostgreSQL role may not create databases, the snapshot is a
   ``pg_dump`` archive in ``.deploy/performance_snapshots`` of the experiment,
   which each reset restores in a single transaction. That is slower, and
@@ -55,7 +57,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from psynet.isolated_environment import drop_database, terminate_connections
+from psynet.isolated_environment import (
+    drop_database,
+    replacement_name,
+    terminate_connections,
+)
 from psynet.log import warning
 
 logger = logging.getLogger(__name__)
@@ -264,10 +270,14 @@ class DatabaseReset:
         self._description = description
         self._snapshot_directory = Path(snapshot_directory)
         self._owns_snapshot = False
-        self._database_complete = True
 
     def __call__(self):
-        """Take or restore the snapshot, with the server stopped meanwhile."""
+        """Take or restore the snapshot, with the server stopped meanwhile.
+
+        The server starts again afterwards. If the reset fails, it only
+        starts again if the experiment database exists, and the reset's error
+        propagates; :meth:`close` then repairs the database if it can.
+        """
         from psynet.db import release_local_database_connections
 
         taking = self.snapshot is None
@@ -299,53 +309,58 @@ class DatabaseReset:
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
 
     def _restart_after_failure(self):
-        """Start the server after a failed reset if its database is complete.
+        """Start the server after a failed reset if its database exists.
 
         A failure to start is only logged, so that the reset's own error is
         the one that propagates.
         """
-        if not self._database_complete:
-            logger.warning(
-                warning(
-                    f"The experiment server stays stopped, because the reset "
-                    f"failed and {self.database} may be incomplete."
-                )
-            )
-            return
         try:
-            self._start_server()
+            with self._connect() as cursor:
+                present = _database_exists(cursor, self.database)
+            if present:
+                self._start_server()
+            else:
+                logger.warning(
+                    warning(
+                        f"The experiment server stays stopped, because the reset "
+                        f"failed after dropping {self.database}."
+                    )
+                )
         except Exception:
             logger.exception("Could not restart the experiment server.")
 
     def close(self):
-        """Drop a snapshot taken here unless it is kept, once the database is complete."""
+        """Repair the database after a failed reset, then drop a snapshot taken here.
+
+        A copy left by a reset that failed after dropping the experiment
+        database becomes the experiment database again. The snapshot is kept
+        if the experiment database doesn't exist.
+        """
         import psycopg2
 
-        if not self._owns_snapshot:
-            return
-        kept = (
-            f"Kept the snapshot {self.snapshot}, because the last reset failed "
-            f"and {self.database} may be incomplete."
-        )
-        if not self._database_complete:
-            logger.warning(warning(kept))
-            return
-        if self.snapshot.endswith(".dump"):
-            os.remove(self.snapshot)
-            return
         try:
             with self._connect() as cursor:
-                if not _database_exists(cursor, self.database):
-                    logger.warning(warning(kept))
+                if not _recover_database(cursor, self.database):
+                    logger.warning(
+                        warning(
+                            f"Kept the snapshot {self.snapshot}, because "
+                            f"{self.database} no longer exists."
+                        )
+                    )
                     return
-                drop_database(cursor, self.snapshot)
+                if self._owns_snapshot and not self.snapshot.endswith(".dump"):
+                    drop_database(cursor, self.snapshot)
         except psycopg2.Error as e:
             logger.warning(
                 warning(
-                    f"Could not drop the snapshot database {self.snapshot} ({e}). "
-                    f"Drop it with 'dropdb {self.snapshot}'."
+                    f"Could not finish resetting the database ({e}). Check that "
+                    f"{self.database} exists, and drop the snapshot with "
+                    f"'dropdb {self.snapshot}'."
                 )
             )
+            return
+        if self._owns_snapshot and self.snapshot.endswith(".dump"):
+            os.remove(self.snapshot)
 
     @contextmanager
     def _connect(self):
@@ -377,15 +392,7 @@ class DatabaseReset:
             name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
         try:
             with self._connect() as cursor:
-                if self._keep_as is not None:
-                    drop_database(cursor, name)
-                self._while_in_use(
-                    cursor,
-                    self.database,
-                    sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
-                        sql.Identifier(name), sql.Identifier(self.database)
-                    ),
-                )
+                _swap_in_copy(cursor, name, self.database)
                 if self._description and self._keep_as is not None:
                     cursor.execute(
                         sql.SQL("COMMENT ON DATABASE {} IS %s").format(
@@ -440,69 +447,21 @@ class DatabaseReset:
         return str(archive)
 
     def _restore(self):
-        from psycopg2 import sql
-
-        self._database_complete = False
-        if self.snapshot.endswith(".dump"):
+        if not self.snapshot.endswith(".dump"):
             with self._connect() as cursor:
-                terminate_connections(cursor, self.database)
-            _run_postgres_tool(
-                "pg_restore",
-                self.database_url,
-                "--clean",
-                "--if-exists",
-                "--no-owner",
-                "--single-transaction",
-                self.snapshot,
-            )
-        else:
-            copy = self.database[: _MAX_NAME_LENGTH - 5] + "__new"
-            with self._connect() as cursor:
-                # A reset that failed after dropping the experiment database
-                # left a complete copy, which only needs renaming.
-                if _database_exists(cursor, self.database) or not _database_exists(
-                    cursor, copy
-                ):
-                    drop_database(cursor, copy)
-                    self._while_in_use(
-                        cursor,
-                        self.snapshot,
-                        sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
-                            sql.Identifier(copy), sql.Identifier(self.snapshot)
-                        ),
-                    )
-                    self._while_in_use(
-                        cursor,
-                        self.database,
-                        sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                            sql.Identifier(self.database)
-                        ),
-                    )
-                self._while_in_use(
-                    cursor,
-                    copy,
-                    sql.SQL("ALTER DATABASE {} RENAME TO {}").format(
-                        sql.Identifier(copy), sql.Identifier(self.database)
-                    ),
-                )
-        self._database_complete = True
-
-    def _while_in_use(self, cursor, database, statement):
-        """Run ``statement`` after terminating the connections to ``database``.
-
-        Retries if a client connects again in between.
-        """
-        import psycopg2
-
-        for attempt in range(_IN_USE_ATTEMPTS):
-            terminate_connections(cursor, database)
-            try:
-                cursor.execute(statement)
-                return
-            except psycopg2.Error as e:
-                if e.pgcode != _OBJECT_IN_USE or attempt == _IN_USE_ATTEMPTS - 1:
-                    raise
-            time.sleep(1)
+                _swap_in_copy(cursor, self.database, self.snapshot)
+            return
+        with self._connect() as cursor:
+            terminate_connections(cursor, self.database)
+        _run_postgres_tool(
+            "pg_restore",
+            self.database_url,
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--single-transaction",
+            self.snapshot,
+        )
 
     def _count_rows(self):
         from sqlalchemy import create_engine
@@ -525,6 +484,63 @@ class DatabaseReset:
         keys = list(redis_conn.scan_iter("rq:*", count=1000))
         for i in range(0, len(keys), 1000):
             redis_conn.delete(*keys[i : i + 1000])
+
+
+def _swap_in_copy(cursor, target, template):
+    """Replace database ``target``, if it exists, with a copy of ``template``.
+
+    The copy is complete before ``target`` is dropped. If renaming the copy
+    fails after that, :func:`_recover_database` can finish the swap.
+    """
+    copy = replacement_name(target)
+    _run_when_unused(cursor, copy, _statement("DROP DATABASE IF EXISTS {}", copy))
+    _run_when_unused(
+        cursor, template, _statement("CREATE DATABASE {} TEMPLATE {}", copy, template)
+    )
+    _run_when_unused(cursor, target, _statement("DROP DATABASE IF EXISTS {}", target))
+    _run_when_unused(
+        cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, target)
+    )
+
+
+def _recover_database(cursor, database):
+    """Finish or undo an interrupted :func:`_swap_in_copy`; return whether ``database`` exists."""
+    copy = replacement_name(database)
+    if _database_exists(cursor, database):
+        drop_database(cursor, copy)
+        return True
+    if not _database_exists(cursor, copy):
+        return False
+    _run_when_unused(
+        cursor, copy, _statement("ALTER DATABASE {} RENAME TO {}", copy, database)
+    )
+    logger.warning(warning(f"Restored {database} from {copy} after a failed reset."))
+    return True
+
+
+def _statement(template, *names):
+    from psycopg2 import sql
+
+    return sql.SQL(template).format(*(sql.Identifier(name) for name in names))
+
+
+def _run_when_unused(cursor, database, statement):
+    """Run ``statement`` after terminating the client connections to ``database``.
+
+    Retries if a client connects again in between, or autovacuum briefly
+    holds the database.
+    """
+    import psycopg2
+
+    for attempt in range(_IN_USE_ATTEMPTS):
+        terminate_connections(cursor, database)
+        try:
+            cursor.execute(statement)
+            return
+        except psycopg2.Error as e:
+            if e.pgcode != _OBJECT_IN_USE or attempt == _IN_USE_ATTEMPTS - 1:
+                raise
+        time.sleep(1)
 
 
 @contextmanager

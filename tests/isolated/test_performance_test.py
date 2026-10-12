@@ -442,16 +442,22 @@ def test_failed_participants_are_classified_by_failed_not_status():
 
 
 class _RecordingCursor:
-    """Record the statements run on a cursor."""
+    """Record the statements run on a cursor, failing once on each prefix in ``failures``."""
 
-    def __init__(self, cursor, statements):
-        self._cursor, self._statements = cursor, statements
+    def __init__(self, cursor, statements, failures):
+        self._cursor, self._statements, self._failures = cursor, statements, failures
 
     def execute(self, statement, params=None):
+        import psycopg2
         from psycopg2 import sql
 
         if isinstance(statement, sql.Composable):
-            self._statements.append(statement.as_string(self._cursor))
+            text = statement.as_string(self._cursor)
+            self._statements.append(text)
+            for prefix in self._failures:
+                if text.startswith(prefix):
+                    self._failures.remove(prefix)
+                    raise psycopg2.OperationalError(f"Injected failure: {text}")
         return self._cursor.execute(statement, params)
 
     def __getattr__(self, name):
@@ -475,7 +481,11 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
     from dallinger import db
 
     from psynet import perf_reset
-    from psynet.isolated_environment import create_database, drop_database
+    from psynet.isolated_environment import (
+        create_database,
+        drop_database,
+        replacement_name,
+    )
     from psynet.redis import redis_vars
 
     scratch_url = create_database(
@@ -483,13 +493,13 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
     )
     scratch = scratch_url.rsplit("/", 1)[1]
     cache = perf_reset.prefill_snapshot_name("0123456789ab", 3, 2)
-    statements = []
+    statements, failures = [], []
 
     class RecordingReset(perf_reset.DatabaseReset):
         @contextmanager
         def _connect(self):
             with super()._connect() as cursor:
-                yield _RecordingCursor(cursor, statements)
+                yield _RecordingCursor(cursor, statements, failures)
 
     def participants(n_new=0):
         connection = psycopg2.connect(scratch_url)
@@ -517,12 +527,13 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
         assert participants() == 1
         assert server.stop.call_count == server.start.call_count == 2
         assert redis_vars.get("launch_finished") is True
-        # A reset that failed after dropping the database left only the copy.
-        with perf_reset._maintenance_cursor(scratch_url) as cursor:
-            cursor.execute(f'ALTER DATABASE "{scratch}" RENAME TO "{scratch}__new"')
-        reset()
-        assert participants() == 1
+        # If the step after dropping the database fails, close() repairs it.
+        failures.append("ALTER DATABASE")
+        with pytest.raises(psycopg2.OperationalError, match="Injected"):
+            reset()
+        assert server.start.call_count == 2
         reset.close()
+        assert participants() == 1
         assert perf_reset.find_snapshot(reset.snapshot, scratch_url) is None
 
         kept = RecordingReset(
@@ -537,7 +548,9 @@ def test_database_reset_restores_the_snapshot_and_drops_only_its_own_databases(
         dropped = set(
             re.findall(r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements))
         )
-        assert dropped == {scratch, f"{scratch}__new", reset.snapshot, cache}
+        targets = {scratch, reset.snapshot, cache}
+        assert {reset.snapshot, cache} <= dropped
+        assert dropped <= targets | {replacement_name(name) for name in targets}
 
         if shutil.which("pg_dump"):
             archive = tmp_path / "snapshot.dump"
@@ -1347,3 +1360,17 @@ def test_performance_summary_handles_no_completed_or_failed_bots():
     )
     lines = format_performance_summary([result])
     assert isinstance(lines, list)
+
+
+def test_prefill_cache_key_changes_with_config_txt(tmp_path, monkeypatch):
+    from psynet.perf_reset import experiment_code_key
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "deploy.toml").write_text(
+        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
+    )
+    (tmp_path / "experiment.py").write_text("")
+    (tmp_path / "config.txt").write_text("[Config]\n")
+    key = experiment_code_key()
+    (tmp_path / "config.txt").write_text("[Config]\n# A comment\n")
+    assert experiment_code_key() != key
