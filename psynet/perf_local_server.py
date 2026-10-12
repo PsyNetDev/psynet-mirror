@@ -209,6 +209,7 @@ def _group_alive(process):
     process.poll()
     try:
         os.killpg(process.pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # macOS reports EPERM for a group that only has zombies left.
         return False
     return True
