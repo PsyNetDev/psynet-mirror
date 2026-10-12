@@ -4387,7 +4387,7 @@ def test_load_runtime_server_config_loads_generated_config():
     config.ready = True
 
     with patch(
-        "psynet.command_line.redis_vars.get",
+        "psynet.redis.redis_vars.get",
         return_value="/tmp/dallinger_develop/exp",
     ):
         load_runtime_server_config(config)
@@ -4420,7 +4420,7 @@ def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missin
     config.ready = True
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    with patch("psynet.command_line.redis_vars.get", return_value=None):
+    with patch("psynet.redis.redis_vars.get", return_value=None):
         load_runtime_server_config(config, deployment_id=deployment_id)
 
     config.load.assert_not_called()
