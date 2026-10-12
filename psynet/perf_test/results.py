@@ -528,25 +528,20 @@ def _queue_wait_p95(queue_waits, priority):
     return max(values) if values else None
 
 
-def low_priority_backlog_growing(result, limits):
-    """Return whether low-priority async jobs piled up during the steady state of ``result``.
+def low_priority_backlog_not_cleared(result):
+    """Return whether the workers didn't clear the low-priority backlog during the steady state of ``result``.
 
-    That is, at least as many were queued at the end as when the steady state
-    began, and the oldest had waited longer than ``limits.max_queue_p95_s``.
-    Then the workers can't keep up with these jobs in the long run, although
-    participants don't wait for them. Returns ``False`` without a steady
-    state to compare.
+    That is, a low-priority async job that was already waiting when the
+    steady state began was still waiting when the test ended, so in the
+    whole steady state the workers couldn't catch up with these jobs. A
+    start-up backlog that clears doesn't count. Participants don't wait for
+    these jobs. Returns ``False`` without a steady state.
     """
     if not (result.startup_phase and result.steady_state_phase):
         return False
-    low = (result.queue_waits or {}).get("low") or {}
-    at_start = (result.startup_phase.get("queue_waits") or {}).get("low") or {}
-    backlog = low.get("backlog", 0)
-    return (
-        backlog > 0
-        and backlog >= at_start.get("backlog", 0)
-        and (low.get("oldest_queued_s") or 0) > limits.max_queue_p95_s
-    )
+    oldest = ((result.queue_waits or {}).get("low") or {}).get("oldest_queued_s")
+    steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
+    return oldest is not None and oldest > steady_s
 
 
 # Bots between runs, or still being created, leave a few slots briefly empty.

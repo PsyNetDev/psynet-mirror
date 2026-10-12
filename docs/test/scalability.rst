@@ -353,9 +353,8 @@ the search test that set the capacity, the summary suggests rerunning with
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, the summary says how many worker processes the server
 had and suggests more; add them before resorting to a lower participant cap.
-If low-priority jobs piled up during the steady state of the confirmation
-test, so that at least as many were queued at its end as when the steady
-state began, the summary warns that the workers can't keep up with them in
+If low-priority jobs that were already waiting when the steady state of the
+confirmation test began were still waiting at its end, the summary warns that the workers can't keep up with them in
 the long run: their results arrive ever later, and they compete for workers
 with the high-priority jobs. Add worker processes for this too.
 

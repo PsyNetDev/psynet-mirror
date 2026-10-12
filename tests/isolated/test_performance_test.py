@@ -691,6 +691,42 @@ def test_phase_stats_split_requests_and_queue_waits_at_the_boundary(db_session):
     }
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_a_high_priority_job_that_never_started_fails_the_queue_limit(db_session):
+    from datetime import datetime, timedelta
+
+    from dallinger import db
+
+    from psynet.async_job import AsyncJob
+
+    ended_at = datetime(2026, 10, 12, 12, 10)
+    db.session.execute(
+        AsyncJob.__table__.insert(),
+        [
+            dict(
+                time_enqueued=ended_at - timedelta(seconds=waited),
+                time_started=None,
+                queue_delay=None,
+                priority="high",
+                failed=cancelled,
+                cancelled=cancelled,
+            )
+            for waited, cancelled in [(40, False), (500, True)]
+        ],
+    )
+    db.session.flush()
+
+    result = PerformanceTestResult(
+        p95_response_time=0.1, **async_job_stats(0, ended_at)
+    )
+
+    # The cancelled job is not part of the backlog.
+    assert result.queue_waits["high"]["backlog"] == 1
+    assert capacity_failures(result) == ["p95 high-priority async queue wait 40.00 s"]
+
+
 def test_report_compares_start_up_and_steady_state():
     phases = dict(
         first_completion_s=200.0,
@@ -1288,29 +1324,29 @@ def test_only_high_priority_queue_waits_limit_capacity():
         "Low-priority async jobs in the 100-bot test: p95 queue wait 140.00 s, "
         "40 still queued at the end. Participants don't wait for these"
     ) in text
-    assert "piled up" not in text
+    assert "can't keep up" not in text
 
 
-@pytest.mark.parametrize("backlog_at_start, growing", [(30, True), (80, False)])
-def test_a_growing_low_priority_backlog_in_the_confirmation_test_needs_workers(
-    caplog, backlog_at_start, growing
+# The steady state lasts 1440 - 600 = 840 s, so a job that has waited
+# longer was already waiting when it began.
+@pytest.mark.parametrize(
+    "oldest_queued_s, not_cleared", [(900.0, True), (300.0, False)]
+)
+def test_a_low_priority_backlog_left_from_the_start_up_needs_workers(
+    caplog, oldest_queued_s, not_cleared
 ):
-    def phase(backlog):
-        return dict(_PHASE, queue_waits={"low": {"backlog": backlog}})
-
-    low = {"q_delay_p95": 200.0, "backlog": 50, "oldest_queued_s": 300.0}
+    low = {"q_delay_p95": 200.0, "backlog": 50, "oldest_queued_s": oldest_queued_s}
     _confirmation_search(
         caplog,
         dict(
-            first_completion_s=600.0,
-            startup_phase=phase(backlog_at_start),
-            steady_state_phase=phase(50),
+            _STEADY,
+            actual_duration=1440.0,
             queue_waits={"high": {"q_delay_p95": 1.0}, "low": low},
         ),
     )
 
     assert "Confirmed: the 120-bot confirmation test" in caplog.text
-    assert ("workers can't keep up with them" in caplog.text) == growing
+    assert ("workers can't keep up with them" in caplog.text) == not_cleared
 
 
 def test_capacity_summary_says_when_no_limit_was_reached():

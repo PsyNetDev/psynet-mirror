@@ -26,7 +26,7 @@ from psynet.perf_test.results import (
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
-    low_priority_backlog_growing,
+    low_priority_backlog_not_cleared,
     overshoot,
     phase_limit_reasons,
     phase_queue_wait_p95,
@@ -581,8 +581,9 @@ _POSTGRES_ADVICE = (
     "server, or raise max_connections."
 )
 _LOW_PRIORITY_BACKLOG_ADVICE = (
-    "  Low-priority async jobs piled up during the steady state, so the "
-    "workers can't keep up with them in the long run. Participants don't "
+    "  Low-priority async jobs that were waiting when the steady state began "
+    "were still waiting at its end, so the workers can't keep up with them in "
+    "the long run. Participants don't "
     "wait for these jobs, but their results arrive ever later and the backlog "
     "competes for workers with high-priority jobs. Raise the worker_processes "
     "config variable, or make the jobs cheaper."
@@ -792,8 +793,8 @@ def _low_priority_lines(result, limits):
     """Report low-priority async jobs of ``result`` that waited longer than the queue limit.
 
     The limit doesn't apply to them, so this is for information, with advice
-    on worker processes if the backlog grew during the steady state (see
-    :func:`~psynet.perf_test.results.low_priority_backlog_growing`).
+    on worker processes if the backlog wasn't cleared during the steady state (see
+    :func:`~psynet.perf_test.results.low_priority_backlog_not_cleared`).
     """
     wait = queue_wait_p95(result, "low") if result else None
     if wait is None or wait <= limits.max_queue_p95_s:
@@ -806,7 +807,7 @@ def _low_priority_lines(result, limits):
         "Participants don't wait for these, so they don't count against the "
         "limits."
     ]
-    if low_priority_backlog_growing(result, limits):
+    if low_priority_backlog_not_cleared(result):
         lines.append(_LOW_PRIORITY_BACKLOG_ADVICE)
     return lines
 
