@@ -4826,7 +4826,8 @@ def _run_performance_test_with_existing_server(
         # Bot processes append to the log, so clear an earlier run's output first.
         open(bot_log, "w").close()
         bot_log_file = open(bot_log, "a")
-    print(f"Bot output log: {bot_log_file.name}")
+    if test_label is None:
+        print(f"Bot output log: {bot_log_file.name}")
     reset = reset or {}
     database_reset = None
     if reset:
@@ -4853,6 +4854,7 @@ def _run_performance_test_with_existing_server(
     if json_output:
         _write_suite_json(
             json_output,
+            quiet=test_label is not None,
             metadata=_collect_run_metadata(exp.label),
             started_at=started_at,
             all_results=all_results,
@@ -4868,6 +4870,7 @@ def _run_performance_test_with_existing_server(
 def _write_suite_json(
     json_output,
     *,
+    quiet=False,
     metadata,
     started_at,
     all_results,
@@ -4880,6 +4883,7 @@ def _write_suite_json(
     """Write a suite's results, with its options and ``metadata``, to ``json_output``.
 
     It finishes now; ``reset`` holds the database-reset options, if any.
+    Unless ``quiet``, it prints where it wrote them.
     """
     reset = reset or {}
     metadata = {
@@ -4910,7 +4914,8 @@ def _write_suite_json(
         options=options,
         all_results=all_results,
     )
-    print(f"Performance results (JSON): {json_output}")
+    if not quiet:
+        print(f"Performance results (JSON): {json_output}")
 
 
 def _check_no_real_participants(force, resetting=False):
@@ -5414,6 +5419,15 @@ def performance_test__prepare_reset(
     exp = get_experiment()
     _check_no_real_participants(force, resetting=True)
     if prefill_participants:
+        from psynet.participant import Participant
+
+        if n_existing := Participant.query.count():
+            print(
+                f"Warning: the database already has {n_existing:,} participants, "
+                "for example from earlier tests; the pre-fill adds to them, and "
+                "the snapshot keeps them all. Redeploy the app to pre-fill an "
+                "empty database."
+            )
         with open(bot_log or os.devnull, "a") as bot_log_file:
             try:
                 prefill_database(prefill_participants, bot_log_file)
