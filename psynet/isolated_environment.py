@@ -14,7 +14,10 @@ An isolated environment gives the test session:
 - a free web port (at least 100 above Dallinger's ``base_port``), claimed
   with a lock file so that concurrent sessions choose different ports;
 - the ``<database>_test_<port>`` database next to ``DATABASE_URL``, created
-  afresh when the session starts and dropped when it ends;
+  afresh when the session starts and dropped when it ends, and named in
+  :data:`DATABASE_ENV_VAR` so that commands that drop the database (see
+  :func:`psynet.perf_reset.check_resettable_database`) can tell it is
+  disposable;
 - a private ``redis-server`` on the shared Redis port plus the same offset,
   stopped when the session ends (Redis delivers live notifications to every
   database on a server, so a database number on the shared server, emptied
@@ -68,6 +71,8 @@ ISOLATED = "isolated"
 SHARED = "shared"
 #: Set for processes that a test session starts after choosing their environment.
 READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
+#: The name of the database that the isolated test session created for itself.
+DATABASE_ENV_VAR = "_PSYNET_TEST_DATABASE"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
@@ -273,6 +278,7 @@ class IsolatedEnvironment:
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
+                DATABASE_ENV_VAR: urlsplit(session_database_url).path.lstrip("/"),
                 "DATABASE_URL": session_database_url,
                 "base_port": str(base_port),
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
@@ -361,11 +367,6 @@ def drop_database(cursor, name):
     cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
-def replacement_name(name):
-    """Return the name of the copy that replaces database ``name`` during a reset."""
-    return name[:58] + "__new"
-
-
 def terminate_connections(cursor, name):
     """Terminate the other client connections to database ``name``.
 
@@ -395,8 +396,6 @@ def _drop_session_database(session_database_url):
             connection.autocommit = True
             with connection.cursor() as cursor:
                 drop_database(cursor, name)
-                # Left by a database reset that failed (see psynet.perf_reset).
-                drop_database(cursor, replacement_name(name))
         finally:
             connection.close()
     except psycopg2.Error as e:

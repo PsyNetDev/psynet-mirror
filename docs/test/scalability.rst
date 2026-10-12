@@ -350,26 +350,31 @@ load:
 
 Before the first test, PsyNet copies the experiment's database into a
 snapshot database. Before each later test, it stops the experiment server,
-copies the snapshot into a new database that replaces the experiment's,
+drops the experiment's database and creates it again from the snapshot,
 empties the async job queues and starts the server again. That takes a few
 seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
 the database's files. At the end it drops the snapshot. It only resets a
-database on your own computer, and only ever drops the experiment's own
-database, its replacement and the snapshots it names. Files that the bots
-uploaded or generated stay in the asset storage after a reset, because only
-the database rows that refer to them are reset; they cost disk space but
+database on your own computer, and a test run only ever drops the
+experiment's own database and its temporary snapshot. Kept pre-fill
+snapshots (see below) are only dropped by ``psynet performance-test
+snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
+computer. Files that the bots uploaded or
+generated stay in the asset storage after a reset, because only the
+database rows that refer to them are reset; they cost disk space but
 nothing else.
 
-If the PostgreSQL role may not create databases, PsyNet says so and keeps
-the snapshot as a ``pg_dump`` archive in the experiment's
-``.deploy/performance_snapshots`` directory instead, which it restores
-before each test with ``pg_restore``. That needs the PostgreSQL client
-programs and takes longer.
+Resetting drops the experiment's database, so these options only work in
+the database that the isolated test environment creates for each
+``performance-test local`` run by default, and drops when the run ends.
+They refuse any other database, such as the ``dallinger`` database you
+debug with. The isolated environment is skipped when ``CI`` or
+``PSYNET_TEST_ENVIRONMENT=shared`` is set, so unset those to reset. The
+PostgreSQL role must be allowed to create databases, as it already must be
+for the isolated test environment (see :doc:`/developer/running_tests`).
 
-Each copy or restore needs disk space, so before one PsyNet checks that
-the disk holding PostgreSQL's data has at least twice the database's size
-free. That margin is PsyNet's policy rather than an exact need. If the
-space isn't free, PsyNet stops and says how much space the pre-fill
+Each copy needs disk space, so before one PsyNet checks that the disk
+holding PostgreSQL's data has at least twice the database's size free. If
+the space isn't free, PsyNet stops and says how much space the pre-fill
 snapshots use. It can only check if the PostgreSQL role may read the
 server's settings and the server's data directory is on this computer,
 not in a container; otherwise it warns once and carries on.
@@ -379,8 +384,7 @@ database before the first test:
 
 .. code-block:: bash
 
-    psynet performance-test local --prefill-participants 1500 --prefill-bots 50 \
-        --n-bots auto
+    psynet performance-test local --prefill-participants 1500 --n-bots auto
 
 This runs 1,500 bots through the experiment, 50 at a time and without
 pauses, waits for their async processes to finish, and then takes the
@@ -395,30 +399,34 @@ Participants that the experiment fails by design, for example at a
 prescreen, are only counted.
 
 PsyNet keeps the pre-filled snapshot and prints its name, which comes from
-a hash of the experiment's files, the PsyNet and Dallinger versions and the
-pre-fill settings. The files are those a deployment copies, without the ones
-Git ignores, plus ``config.txt``, ``requirements.txt`` and
-``constraints.txt`` where they exist. A later run with the same files,
-versions and settings starts from that snapshot instead of pre-filling
-again; ``--fresh-prefill`` pre-fills again and replaces it. Any change to
-those files, even a comment, means a new pre-fill. If a change can't affect
-the data, such as a fixed typo, start from the old snapshot with
-``--from-snapshot <name>``, which only warns that the code differs.
+a hash of the experiment's files and the PsyNet and Dallinger versions,
+followed by the number of pre-fill participants. The files are those a
+deployment copies, without the ones Git ignores, plus ``config.txt``,
+``requirements.txt`` and ``constraints.txt`` where they exist. A later run
+with the same files, versions and number of participants starts from that
+snapshot instead of pre-filling again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
+with ``psynet performance-test snapshots --drop <name>`` and run the test
+again. Any change to those files, even a comment, means a new pre-fill. If
+a change can't affect the data, such as a fixed typo, start from the old
+snapshot with ``--from-snapshot <name>``, which only warns that the code
+differs.
 
-Pre-fill snapshots stay on the database server, or in
-``.deploy/performance_snapshots``, until you drop them; after keeping a new
-one, PsyNet lists the others and their sizes. List them, with their sizes
-and the experiment that made them, and drop them with:
+If a run is interrupted after its pre-fill finished but before the
+snapshot was taken, PsyNet still takes the snapshot as the run ends, so
+the pre-fill isn't lost.
+
+Pre-fill snapshots stay on the database server until you drop them; after
+keeping a new one, PsyNet lists the others and their sizes. List them, with
+their sizes and the experiment that made them, and drop them with:
 
 .. code-block:: bash
 
     psynet performance-test snapshots
-    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500_k50
+    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500
     psynet performance-test snapshots --drop-all
 
-``--drop-all`` drops this experiment's snapshots: those made from its
-current files, and its archives. Add ``--all-experiments`` to drop every
-pre-fill snapshot database on the server.
+``--drop-all`` drops every pre-fill snapshot on this computer's PostgreSQL
+server, whichever experiment made it.
 
 To start from real data instead, for example from a pilot, export the
 pilot with ``psynet export``, launch the experiment from the export with

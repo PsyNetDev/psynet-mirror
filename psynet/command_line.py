@@ -4364,8 +4364,8 @@ _test_options["performance_json_output"] = click.option(
     (the database snapshot that each test started from and its rows, with
     --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
     max_queue_p95_s, duration_minutes, stagger_interval_s, time_factor,
-    bot_processes, reset_database, prefill_participants, prefill_bots,
-    fresh_prefill, from_snapshot), and results (one entry per bot count tested, with all
+    bot_processes, reset_database, prefill_participants, from_snapshot),
+    and results (one entry per bot count tested, with all
     metrics).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
@@ -4379,8 +4379,6 @@ _test_options["performance_bot_log"] = click.option(
     hidden=True,
 )
 
-_DEFAULT_PREFILL_BOTS = 50
-
 _test_options["performance_reset_database"] = click.option(
     "--reset-database",
     is_flag=True,
@@ -4388,33 +4386,20 @@ _test_options["performance_reset_database"] = click.option(
     Start every test from the same database: take a snapshot before the
     first test, and before each later test stop the server, recreate the
     database from the snapshot, empty the async job queues and restart
-    the server. Adds a few seconds per test, more for a large database.""",
+    the server. Adds a few seconds per test, more for a large database.
+    Only works in the isolated test environment, so not with CI or
+    PSYNET_TEST_ENVIRONMENT=shared set.""",
 )
 
 _test_options["performance_prefill_participants"] = click.option(
     "--prefill-participants",
     type=click.IntRange(min=1),
     help="""
-    Before the first test, run this many bots through the experiment
-    without pauses, so that the tests start with that much data. The
-    resulting snapshot is kept and reused by later runs with the same
-    experiment code, PsyNet version and pre-fill settings. Implies
-    --reset-database.""",
-)
-
-_test_options["performance_prefill_bots"] = click.option(
-    "--prefill-bots",
-    type=click.IntRange(min=1),
-    help=f"""
-    How many pre-fill bots run at once (default {_DEFAULT_PREFILL_BOTS}).""",
-)
-
-_test_options["performance_fresh_prefill"] = click.option(
-    "--fresh-prefill",
-    is_flag=True,
-    help="""
-    Pre-fill again even if a snapshot for the same code and settings
-    exists, and replace it.""",
+    Before the first test, run this many bots through the experiment,
+    50 at a time and without pauses, so that the tests start with that
+    much data. The resulting snapshot is kept and reused by later runs
+    with the same experiment code, PsyNet version and number of pre-fill
+    participants. Implies --reset-database.""",
 )
 
 _test_options["performance_from_snapshot"] = click.option(
@@ -4422,8 +4407,8 @@ _test_options["performance_from_snapshot"] = click.option(
     metavar="SNAPSHOT",
     help="""
     Start every test from this pre-fill snapshot (see 'psynet
-    performance-test snapshots') or pg_dump archive, even if the
-    experiment code has changed since. Implies --reset-database.""",
+    performance-test snapshots'), even if the experiment code has changed
+    since. Implies --reset-database.""",
 )
 
 
@@ -4432,8 +4417,6 @@ def _check_database_reset_options(
     existing,
     reset_database,
     prefill_participants,
-    prefill_bots,
-    fresh_prefill,
     from_snapshot,
 ):
     """Return the database-reset options, or ``None`` without a reset.
@@ -4441,12 +4424,9 @@ def _check_database_reset_options(
     Raises
     ------
     click.UsageError
-        If the options conflict.
+        If the options conflict, or the database isn't the isolated test
+        environment's (see :func:`psynet.perf_reset.check_resettable_database`).
     """
-    if (prefill_bots or fresh_prefill) and not prefill_participants:
-        raise click.UsageError(
-            "--prefill-bots and --fresh-prefill need --prefill-participants."
-        )
     if prefill_participants and from_snapshot:
         raise click.UsageError(
             "Use either --prefill-participants or --from-snapshot, not both."
@@ -4458,12 +4438,16 @@ def _check_database_reset_options(
             "--existing can't reset the database, because the server must be "
             "restarted for each reset; leave out --existing."
         )
+    from dallinger.db import db_url
+
+    from .perf_reset import check_resettable_database
+
+    try:
+        check_resettable_database(db_url)
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
     return {
         "prefill_participants": prefill_participants,
-        "prefill_bots": (
-            (prefill_bots or _DEFAULT_PREFILL_BOTS) if prefill_participants else None
-        ),
-        "fresh_prefill": fresh_prefill,
         "from_snapshot": from_snapshot,
     }
 
@@ -4615,8 +4599,6 @@ def performance_test(ctx):
 @_test_options["performance_bot_processes"]
 @_test_options["performance_reset_database"]
 @_test_options["performance_prefill_participants"]
-@_test_options["performance_prefill_bots"]
-@_test_options["performance_fresh_prefill"]
 @_test_options["performance_from_snapshot"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
@@ -4627,8 +4609,6 @@ def performance_test__local(
     debug=False,
     reset_database=False,
     prefill_participants=None,
-    prefill_bots=None,
-    fresh_prefill=False,
     from_snapshot=None,
     **options,
 ):
@@ -4653,8 +4633,6 @@ def performance_test__local(
         existing=existing,
         reset_database=reset_database,
         prefill_participants=prefill_participants,
-        prefill_bots=prefill_bots,
-        fresh_prefill=fresh_prefill,
         from_snapshot=from_snapshot,
     )
     return _run_performance_test_local(
@@ -4878,8 +4856,6 @@ def _run_performance_test_with_existing_server(
             "bot_processes": tester.bot_processes,
             "reset_database": database_reset is not None,
             "prefill_participants": reset.get("prefill_participants"),
-            "prefill_bots": reset.get("prefill_bots"),
-            "fresh_prefill": reset.get("fresh_prefill"),
             "from_snapshot": reset.get("from_snapshot"),
         }
         _write_json_results(
@@ -4928,8 +4904,10 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
     """Return the :class:`~psynet.perf_reset.DatabaseReset` for the ``reset`` options.
 
     With ``--prefill-participants`` it starts from the cached pre-fill
-    snapshot for the current code and settings if there is one, and
-    otherwise pre-fills and keeps the snapshot.
+    snapshot for the experiment's code key (see
+    :func:`~psynet.perf_reset.experiment_code_key`) and number of pre-fill
+    participants if there is one, and otherwise pre-fills and keeps the
+    snapshot.
 
     Raises
     ------
@@ -4954,22 +4932,20 @@ def _database_reset(reset, server, experiment_label, bot_log_file):
                 "experiment files or PsyNet or Dallinger versions."
             )
     elif reset["prefill_participants"]:
-        n_participants, n_bots = reset["prefill_participants"], reset["prefill_bots"]
+        n_participants = reset["prefill_participants"]
         name = perf_reset.prefill_snapshot_name(
-            perf_reset.experiment_code_key(), n_participants, n_bots
+            perf_reset.experiment_code_key(), n_participants
         )
-        if not reset["fresh_prefill"]:
-            from_snapshot = perf_reset.find_snapshot(name, database_url)
+        from_snapshot = perf_reset.find_snapshot(name, database_url)
         if from_snapshot:
             print(
-                f"Using the cached pre-fill snapshot {from_snapshot} "
-                "(--fresh-prefill pre-fills again)."
+                f"Using the cached pre-fill snapshot {from_snapshot}. To pre-fill "
+                "again, drop it with 'psynet performance-test snapshots --drop "
+                f"{from_snapshot}'."
             )
         else:
             keep_as = name
-            prefill = functools.partial(
-                prefill_database, n_participants, n_bots, bot_log_file
-            )
+            prefill = functools.partial(prefill_database, n_participants, bot_log_file)
     return perf_reset.DatabaseReset(
         server.stop,
         server.start,
@@ -5225,57 +5201,31 @@ def _run_performance_test_with_new_server(
     "--drop-all",
     is_flag=True,
     help="""
-    Drop this experiment's pre-fill snapshots: the databases made from its
-    current code, and its pg_dump archives.""",
+    Drop every pre-fill snapshot on this computer's PostgreSQL server,
+    whichever experiment made it.""",
 )
-@click.option(
-    "--all-experiments",
-    is_flag=True,
-    help="With --drop-all, drop every experiment's pre-fill snapshot databases.",
-)
-def performance_test__snapshots(drop, drop_all, all_experiments):
+def performance_test__snapshots(drop, drop_all):
     """
     List the pre-fill snapshots of ``performance-test local``, or drop them.
 
     Lists the snapshot databases on the local PostgreSQL server, which all
-    experiments share, and this experiment's pg_dump archives.
+    experiments share.
     """
     from dallinger.db import db_url
 
-    from psynet.perf_reset import (
-        check_resettable_database,
-        drop_snapshot,
-        list_snapshots,
-        snapshot_code_key,
-    )
+    from psynet.perf_reset import check_local_database, drop_snapshot, list_snapshots
 
-    if all_experiments and not drop_all:
-        raise click.UsageError("--all-experiments needs --drop-all.")
     snapshots = list_snapshots(db_url)
-    names = list(drop)
-    if drop_all:
-        key = None if all_experiments else _current_code_key()
-        if key is None and not all_experiments:
-            raise click.UsageError(
-                "Without a deploy.toml, PsyNet can't tell which snapshots are this "
-                "experiment's; use --drop NAME, or --drop-all --all-experiments."
-            )
-        names += [
-            name
-            for name, _, _ in snapshots
-            if all_experiments
-            or name.endswith(".dump")
-            or snapshot_code_key(name) == key
-        ]
+    names = list(drop) + [name for name, _, _ in snapshots if drop_all]
     if names:
         try:
-            check_resettable_database(db_url)
+            check_local_database(db_url)
         except ValueError as e:
             raise click.ClickException(str(e)) from e
-    for name in names:
+    for name in dict.fromkeys(names):
         try:
             drop_snapshot(name, db_url)
-        except (ValueError, OSError) as e:
+        except ValueError as e:
             raise click.ClickException(str(e)) from e
         print(f"Dropped {name}")
     if drop or drop_all:
