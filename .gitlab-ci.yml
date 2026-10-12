@@ -95,7 +95,7 @@ check_already_tested:
 # jobs that would otherwise run. allow_failure keeps unplayed manual jobs from
 # blocking the pipeline and the merge. Merge trains keep their usual jobs.
 .stacked_mr_manual_rule: &stacked_mr_manual
-  if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME != $CI_DEFAULT_BRANCH
+  if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME != $CI_DEFAULT_BRANCH && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME !~ /^release-/
   when: manual
   allow_failure: true
 
