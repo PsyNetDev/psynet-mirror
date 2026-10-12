@@ -150,7 +150,9 @@ and `asv_regression` jobs wait as manual jobs. Start them when a full run is
 useful, for example before asking for review of a risky stacked change, with
 the play button in the GitLab UI or through the API with `GITLAB_TOKEN`. Each
 shard is its own job, so play every shard of a job. `merge_test_results`
-starts by itself once all pytest and Playwright shards have run:
+can only be played after all pytest and Playwright shards have run; play it
+then for the combined test report. These jobs are allowed to fail, so check
+their own results rather than the pipeline status:
 
 ```http
 POST https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/jobs/<job_id>/play
