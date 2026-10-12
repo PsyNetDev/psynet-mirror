@@ -33,6 +33,7 @@ from psynet.perf_test.results import (
     start_rate_limits,
     tester_lagged,
     top_counts,
+    wait_timeout_cause,
     wait_timeout_reasons,
 )
 
@@ -751,10 +752,11 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
 def _confirmation_exceeded(result, limits):
     """Return whether a confirmation test measured the server exceeding ``limits``.
 
-    A server that stopped, like the test's own limits, leaves it unmeasured.
+    A server that stopped, or a test that recorded no responses, leaves it
+    unmeasured, like the test's own limits.
     """
     return any(
-        server_limit and reason != "server stopped"
+        server_limit and reason not in ("server stopped", "no responses recorded")
         for reason, server_limit in capacity_failure_causes(result, limits)
     )
 
@@ -840,7 +842,6 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     outcome = capacity_outcome(results, limits)
     capacity, first_fail = outcome.capacity, outcome.first_fail
     first_reasons = "; ".join(reason for reason, _ in outcome.first_causes)
-    wait_cause, busy_cause = outcome.wait_cause, outcome.busy_cause
     lines = _capacity_headline(
         outcome, first_reasons, limit, show_cap=confirmation is None
     )
@@ -848,19 +849,30 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines += _confirmation_lines(confirmation, limits)
     if first_fail is not None:
         lines += _startup_only_lines(first_fail, limits)
-    if wait_cause:
+    # Advice covers the search's first failing test and the confirmation test.
+    advised = [r for r in (first_fail, confirmation) if r is not None]
+    if any(wait_timeout_cause(r, limits) for r in advised):
         lines.append(_WAIT_ADVICE)
-    if busy_cause or (
-        confirmation is not None and busy_early_finish_cause(confirmation, limits)
-    ):
+    if any(busy_early_finish_cause(r, limits) for r in advised):
         lines.append(_BUSY_CHAINS_ADVICE)
-    if "async queue" in first_reasons:
-        lines.append(_queue_advice(first_fail))
-    if first_fail is not None and start_rate_limits(first_fail):
+    queue_bound = next(
+        (
+            r
+            for r in advised
+            if any(
+                "async queue" in reason
+                for reason, _ in capacity_failure_causes(r, limits)
+            )
+        ),
+        None,
+    )
+    if queue_bound is not None:
+        lines.append(_queue_advice(queue_bound))
+    if any(start_rate_limits(r) for r in advised):
         lines.append(_START_RATE_ADVICE)
-    if first_fail is not None and tester_lagged(first_fail):
+    if any(tester_lagged(r) for r in advised):
         lines.append(_TESTER_LAG_ADVICE)
-    if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in results):
+    if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in run_order):
         lines.append(_POSTGRES_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
     lines += _database_growth_warnings(
