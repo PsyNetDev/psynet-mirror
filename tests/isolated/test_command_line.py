@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import click
 import pandas as pd
@@ -633,7 +633,7 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
             "bot": False,
             "proxy": None,
             "no_browsers": True,
-            "exp_config": {"threads": "4"},
+            "exp_config": {"web_processes": "4"},
         }
     ]
 
@@ -695,7 +695,7 @@ def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
 
     _debug_legacy(_Ctx(), archive=None, no_browsers=True)
 
-    assert calls[0]["exp_config"] == {"threads": "5"}
+    assert calls[0]["exp_config"] == {"web_processes": "5"}
 
 
 @pytest.mark.parametrize("raw", ["0", "-1", "two"])
@@ -4576,7 +4576,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     start_server.assert_called_once_with(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=False,
-        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1", "FLASK_SECRET_KEY": ANY},
     )
 
 

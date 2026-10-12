@@ -900,14 +900,14 @@ def run_pre_auto_reload_checks():
             )
 
 
-# Dallinger ``threads`` is gunicorn worker *processes*. Last-arrival GET
+# Dallinger ``web_processes`` (formerly ``threads``) is gunicorn worker processes. Last-arrival GET
 # /timeline occupies one process while each waiting partner POSTs hold-resume.
 # A group of size *n* therefore wants *n* workers at the wake, or extra waiters
 # sit in the listen queue. Concurrent last arrivals occupy two GET workers at
 # once. Blocking SQL on a gevent worker also starves that worker's Redis listen
 # greenlet, so Playwright hold tests use *n* + 2: one spare keeps a waiter
 # subscribe off the last-arrival SQL worker, and the second spare covers the
-# overlapping GET. That is closer to deploy (``threads=auto``) than a single
+# overlapping GET. That is closer to deploy (``web_processes = auto``) than a single
 # worker. One worker saved ~1s of startup in 2022; local gunicorn does not pay
 # a Heroku dyno cost, and performance-test / Playwright duration checks need
 # overlap rather than serialized queueing. The default covers the largest
@@ -954,7 +954,7 @@ def _debug_legacy(ctx, archive, no_browsers):
             bot=False,
             proxy=None,
             no_browsers=no_browsers,
-            exp_config={"threads": _legacy_debug_gunicorn_threads()},
+            exp_config={"web_processes": _legacy_debug_gunicorn_threads()},
         )
     finally:
         db.session.commit()
@@ -5062,6 +5062,25 @@ def _drain_pexpect_output(process):
             break
 
 
+def local_server_env(extra_env=None):
+    """Return the environment in which a local experiment server runs.
+
+    Parameters
+    ----------
+    extra_env : dict[str, str], optional
+        Environment variables to set on top of this process's environment.
+
+    Returns
+    -------
+    dict[str, str]
+    """
+    env = os.environ.copy()
+    env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
+    env.setdefault("BROWSER", "true")
+    env.update(extra_env or {})
+    return env
+
+
 def _start_local_server_and_wait_for_ready(
     command_args,
     *,
@@ -5095,16 +5114,12 @@ def _start_local_server_and_wait_for_ready(
 
     log_file = open(tmp_log_path, "a", encoding="utf-8")
     logfile = _OutputTee(sys.stdout, log_file) if debug else log_file
-    env = os.environ.copy()
-    env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
-    env.setdefault("BROWSER", "true")
-    env.update(extra_env or {})
 
     try:
         process = pexpect.spawn(
             "psynet",
             command_args,
-            env=env,
+            env=local_server_env(extra_env),
             encoding="utf-8",
             timeout=max_wait,
         )

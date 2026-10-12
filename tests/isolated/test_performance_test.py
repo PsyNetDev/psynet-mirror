@@ -1803,6 +1803,32 @@ def test_eperm_from_the_server_group_means_stopped_only_once_its_leader_exited(
             process.wait.assert_not_called()
 
 
+def test_restarts_rerun_heroku_local_with_the_first_start_secret_key(capsys, tmp_path):
+    from psynet.perf_local_server import RestartableLocalServer
+
+    config = {"base_port": 5000, "worker_processes": 3, "clock_on": True}
+    start = Mock(return_value={"tmp_log_path": str(tmp_path / "server.log")})
+    with (
+        patch("psynet.command_line._start_local_server_and_wait_for_ready", start),
+        patch("psynet.redis.redis_vars.get", return_value="/srv/exp"),
+        patch(
+            "psynet.utils.load_runtime_server_config",
+            return_value=Mock(get=lambda key, default=None: config.get(key, default)),
+        ),
+        patch("psynet.perf_local_server._wait_for_free_port"),
+        patch("psynet.perf_local_server._wait_until_server_ready"),
+        patch("psynet.perf_local_server.subprocess.Popen") as popen,
+    ):
+        RestartableLocalServer(restartable=True).start()
+
+    key = start.call_args.kwargs["extra_env"]["FLASK_SECRET_KEY"]
+    args, kwargs = popen.call_args
+    assert args[0] == ["heroku", "local", "-p", "5000", "web=1,worker=3,clock"]
+    assert kwargs["cwd"] == "/srv/exp"
+    assert kwargs["env"]["FLASK_SECRET_KEY"] == key
+    assert key not in capsys.readouterr().out
+
+
 def test_database_copies_need_twice_the_database_size_free(
     caplog, tmp_path, monkeypatch
 ):
