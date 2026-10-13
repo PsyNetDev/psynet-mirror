@@ -77,8 +77,9 @@ The capacity search uses short tests in which all bots arrive together. For
 experiments with async jobs (audio analysis, REPP tapping, LLM calls) or
 long holds, every bot hits each job and hold at once, so the search
 underestimates capacity. In the JSON, compare each result's `startup_phase`
-and `steady_state_phase`, and read the result with `"confirmation": true`,
-a long run at the suggested cap with spread-out arrivals. When they
+and `steady_state_phase`, and read the validation test (`"confirmation": true`
+in the JSON), a long run at the recommended number of participants with
+spread-out arrivals. When they
 disagree, trust the long run with spread-out arrivals. Without
 `--reset-database` that run starts on the data the search left, so if it
 fails after the database grew a lot, rerun with `--reset-database` before
@@ -86,8 +87,8 @@ capping lower. Only high-priority async jobs, which participants wait for,
 count against `--max-queue-p95-s`; a low-priority backlog (`queue_waits.low`
 in the JSON) is only reported, but if the summary warns that it grew during
 a steady state, the workers can't keep up long-term. That check uses the
-confirmation run if there is one, otherwise the capacity run or the first
-failing run. For CPU-heavy jobs,
+validation test if there is one, otherwise the largest passing test or the
+first failing one. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
 `cpu_avg` from `async_job_stats`. If the queue limits capacity, set
@@ -102,9 +103,9 @@ the experiment directory, that reaches those pages within its first 2
 minutes. Shorten or skip the light pages, such as long instructions,
 practice and questionnaires, but keep the heavy pages and their work
 unchanged: trial pages, uploads, async jobs and holds. Then run a long test
-of the full experiment at the cap the abridged search suggests, with
-`--n-bots <cap> --arrival-minutes <session minutes>` and at least two
-sessions of `--duration-minutes`, and report both runs.
+of the full experiment at the number of participants the abridged search
+recommends, with `--n-bots <recommended> --arrival-minutes <session minutes>`
+and at least two sessions of `--duration-minutes`, and report both runs.
 
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and
@@ -112,7 +113,7 @@ because every chain was busy (a line under TRIALS PER BOT, and
 bot and above 1% of bots started (`--max-busy-early-finish-rate`) counts as
 over capacity, and the search suggests a participant cap from it, as for
 slow responses. Arrival patterns change the rate, so judge it from the
-confirmation run. Besides the cap, `wait_for_networks=True` or more chains
+validation test. Besides the cap, `wait_for_networks=True` or more chains
 reduce it and may allow a higher cap.
 
 ## Interactive evidence
