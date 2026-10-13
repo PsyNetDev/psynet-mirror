@@ -690,9 +690,9 @@ already held participants, for example from an earlier run, PsyNet warns
 that every test starts from that data and says how to start from an empty
 database.
 
-If a reset fails after some tests have run, PsyNet stops the run, prints
-the summary of the tests that completed and writes them to
-``--json-output``, then exits with an error that names the reset failure.
+If a reset fails, PsyNet stops the run, prints the summary of the tests
+that completed, if any, and writes them to ``--json-output`` with
+``reset_error`` set, then exits with an error that names the reset failure.
 
 Resetting drops the experiment's database, so these options only work in
 the database that the isolated test environment creates for each
@@ -904,9 +904,9 @@ RQ; PsyNet restarts any worker container that hasn't registered after
 and the error names the container and gives the ``docker compose restart``
 command to run on the server. Pre-fill
 bots run inside the web container. If a reset fails or you interrupt the
-run, PsyNet starts the containers it stopped. If it can't, the command
-fails, saying that the app may be stopped, and prints the ``docker compose
-start`` command to run on the server. A reset interrupted between dropping
+run, PsyNet starts the containers it stopped. If it can't, it says that
+the app may be stopped and prints the ``docker compose start`` command to
+run on the server, and the command's error names both failures. A reset interrupted between dropping
 and recreating the database leaves the app without its database; destroy
 the app then, and the next run deploys it again. To start a run from an
 empty database rather than one left by earlier runs, destroy the app with

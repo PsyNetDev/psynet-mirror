@@ -229,7 +229,7 @@ class PerformanceSuite:
             self.confirmation_skipped = (
                 self.confirmation_skipped or "a test ended early"
             )
-        if self.confirmation_skipped:
+        if self.confirmation_skipped and results:
             unconfirmed = (
                 ""
                 if self.confirmation_skipped == _NO_CAP
@@ -275,9 +275,6 @@ class PerformanceSuite:
                     try:
                         self.before_test()
                     except Exception as e:
-                        # Before the first test there is nothing to keep.
-                        if not all_results:
-                            raise
                         self.reset_error = str(e) or type(e).__name__
                         logger.debug("Resetting the database failed", exc_info=True)
                         break
@@ -292,6 +289,9 @@ class PerformanceSuite:
                     self.after_test(all_results)
                 if _ended_early(result):
                     break
+        if not all_results:
+            # No test ran, as when the first reset failed; the caller reports it.
+            return all_results
         for line in format_performance_summary(
             all_results,
             self.limits,

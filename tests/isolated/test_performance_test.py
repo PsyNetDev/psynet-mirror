@@ -408,13 +408,14 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     assert "Raise PgBouncer's max_client_conn" in caplog.text
 
 
-def test_a_failed_first_reset_fails_the_suite():
+def test_a_failed_first_reset_stops_the_suite_without_results():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     before_test = Mock(side_effect=RuntimeError("snapshot failed"))
 
     with patch("psynet.perf_test.runtime.raise_open_file_limit"):
-        with pytest.raises(RuntimeError, match="snapshot failed"):
-            PerformanceSuite(tester, before_test=before_test).run([10, 20])
+        suite = PerformanceSuite(tester, before_test=before_test)
+        assert suite.run([10, 20]) == []
+    assert suite.reset_error == "snapshot failed"
 
 
 def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
@@ -2714,7 +2715,9 @@ def test_remote_output_leaves_out_stderr_unless_the_command_fails():
 def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     restart_fails, tmp_path, monkeypatch, capsys
 ):
-    import psycopg2
+    import json
+
+    import click
 
     from psynet.command_line import _run_ssh_performance_test
 
@@ -2741,16 +2744,27 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
     executor = _app_database(respond).remote.executor
     reset = {"prefill_participants": None, "from_snapshot": _APP_SNAPSHOT}
-    # A failed restart fails the command, replacing the reset's error.
     with (
         patch("psynet.command_line._ssh_executor", return_value=executor),
         patch("psynet.perf_ssh.RemoteApp.prepare", return_value=0),
-        pytest.raises(RuntimeError if restart_fails else psycopg2.Error),
+        pytest.raises(click.ClickException) as error,
     ):
         _run_ssh_performance_test(
-            "my-app", "server", _EXPERIMENT, reset, n_bots=[2], force=False
+            "my-app",
+            "server",
+            _EXPERIMENT,
+            reset,
+            n_bots=[2],
+            force=False,
+            json_output="results.json",
         )
 
+    assert "No space left" in error.value.message
+    assert (
+        "Starting the app's server processes again failed" in error.value.message
+    ) == restart_fails
+    data = json.loads((tmp_path / "results.json").read_text())
+    assert data["results"] == [] and "No space left" in data["reset_error"]
     manual = "docker compose start web worker_1 pgbouncer sidecar"
     assert (manual in capsys.readouterr().out) == restart_fails
     commands = executor.commands
@@ -2774,10 +2788,24 @@ def test_a_remote_reset_never_stops_every_service_of_an_app():
     assert not any(".yml stop" in c for c in remote.executor.commands)
 
 
-@pytest.mark.parametrize("restart_helps", [True, False])
+_REDIS_CLI = """#!/bin/sh
+cd "$FAKE_REDIS" || exit 1
+case "$1" in
+  SCARD) ls | wc -l ;;
+  SMEMBERS) ls ;;
+  HGET) sed -n "s/^$3 //p" "$2" ;;
+esac
+"""
+
+
+@pytest.mark.parametrize(
+    "scenario", ["recovers", "hangs", "restart fails", "first check fails"]
+)
 def test_a_remote_restart_restarts_workers_that_never_register(
-    restart_helps, monkeypatch
+    scenario, tmp_path, monkeypatch
 ):
+    import shlex
+    import subprocess
     from types import SimpleNamespace
 
     from psynet import perf_ssh
@@ -2791,43 +2819,75 @@ def test_a_remote_restart_restarts_workers_that_never_register(
             sleep=lambda s: clock.__setitem__(0, clock[0] + s),
         ),
     )
-    state = {"stopped": False, "restarted": False}
+    # RQ worker hashes, one file per key, read by a stub redis-cli.
+    redis = tmp_path / "redis"
+    redis.mkdir()
+    (tmp_path / "redis-cli").write_text(_REDIS_CLI)
+    (tmp_path / "redis-cli").chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    env["FAKE_REDIS"] = str(redis)
+
+    def register(hostname):
+        key = redis / f"rq:worker:{hostname}-id"
+        key.write_text(f"name {hostname}-id\nhostname {hostname}\n")
+
+    register("c1")
+    register("c2")
+    inspections = []
 
     def respond(cmd):
+        if redis_command := re.search(r"exec -T redis (.*) ; }", cmd):
+            return subprocess.run(
+                shlex.split(redis_command[1]), env=env, capture_output=True, text=True
+            ).stdout
         if ".yml stop " in cmd:
-            state["stopped"] = True
-        if ".yml restart worker_2 " in cmd:
-            state["restarted"] = True
-        healthy_workers = not state["stopped"] or (restart_helps and state["restarted"])
-        for pattern, output in [
-            ("SCARD", "2" if healthy_workers else "1"),
-            ("ps --services", "redis\nweb\nworker_1\nworker_2"),
-            ("ps -a -q", "c1\nc2"),
-            ("docker inspect", "worker_1 c1\nworker_2 c2"),
-            ("SMEMBERS", "c1\nc2" if healthy_workers else "c1"),
-        ]:
-            if pattern in cmd:
-                return output + "\n"
-        return ""
+            for key in redis.iterdir():
+                key.unlink()
+        if ".yml start " in cmd:
+            register("c1")
+        if ".yml restart " in cmd:
+            if scenario == "restart fails":
+                return 1, "Error response from daemon\n"
+            if scenario != "hangs":
+                register("c2")
+        if "docker inspect" in cmd:
+            inspections.append(cmd)
+            if scenario == "first check fails" and len(inspections) == 1:
+                return 1, "Cannot connect to the Docker daemon\n"
+            return "worker_1 c1\nworker_2 c2\n"
+        if "ps --services" in cmd:
+            return "redis\nweb\nworker_1\nworker_2\n"
+        return "c1\nc2\n" if "ps -a -q" in cmd else ""
 
     remote = perf_ssh.RemoteApp(_fake_server(respond), "my-app", "server")
     remote.prepare = Mock()
     remote.stop()
-    if restart_helps:
+    commands = remote.executor.commands
+    if scenario in ("recovers", "first check fails"):
         remote.start()
     else:
         with pytest.raises(RuntimeError) as error:
             remote.start()
-        assert "1 of 2 worker processes registered with RQ" in str(error.value)
+        restarted = scenario == "hangs"
+        assert (
+            "1 of 2 worker processes registered with RQ; worker_2 didn't"
+            + (", even after a restart." if restarted else ".")
+        ) in str(error.value)
         assert "cd ~/dallinger/my-app && docker compose restart worker_2" in str(
             error.value
         )
-        # The cleanup after a failed reset doesn't wait all over again.
-        n_commands = len(remote.executor.commands)
-        remote.start_stopped_services()
-        assert len(remote.executor.commands) == n_commands
-    restarts = [c for c in remote.executor.commands if ".yml restart" in c]
-    assert len(restarts) == 1 and "restart worker_2 ;" in restarts[0]
+        # The cleanup starts only a worker whose restart failed.
+        n_commands = len(commands)
+        if restarted:
+            remote.start_stopped_services()
+            assert len(commands) == n_commands
+        else:
+            with pytest.raises(RuntimeError):
+                remote.start_stopped_services()
+            assert ".yml start worker_2 ;" in commands[n_commands]
+    restarts = [c for c in commands if ".yml restart" in c]
+    assert len(restarts) == (2 if scenario == "restart fails" else 1)
+    assert all("restart worker_2 ;" in c for c in restarts)
 
 
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
@@ -2970,12 +3030,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
     pgbouncer_full = (
         "exit code 1: FATAL:  no more connections allowed (max_client_conn)"
     )
-    error, message = (
-        (RuntimeError, "may be stopped")
-        if cleanup_fails
-        else (click.ClickException, "Resetting the database failed")
-    )
-    with pytest.raises(error, match=message):
+    with pytest.raises(click.ClickException) as error:
         _remote_search(
             monkeypatch,
             reset={"prefill_participants": None, "from_snapshot": None},
@@ -2986,6 +3041,8 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
             json_output=str(json_output),
             max_busy_early_finish_rate=0.05,
         )
+    assert "Resetting the database failed" in error.value.message
+    assert ("my-app may be stopped" in error.value.message) == cleanup_fails
 
     data = json.loads(json_output.read_text())
     assert len(data["results"]) == 2

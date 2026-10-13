@@ -288,6 +288,7 @@ class RemoteApp:
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
         )
+        # The workers restarted, once a check found which hadn't registered.
         restarted = None
         while True:
             healthy = run_with_status(self.executor, health)[0] == 0
@@ -300,31 +301,55 @@ class RemoteApp:
                 and registered < self._n_workers
                 and waited >= _WORKER_RESTART_AFTER_S
             ):
-                restarted = self._unregistered_workers(workers)
-                if restarted:
-                    print(
-                        f"▶ Restarting {', '.join(restarted)}, which didn't "
-                        f"register with RQ within {_WORKER_RESTART_AFTER_S} s..."
-                    )
-                    self.compose("restart", *restarted)
+                restarted = self._restart_unregistered_workers(workers)
             if waited >= _SERVER_READY_TIMEOUT_S:
                 raise RuntimeError(
                     self._not_ready_message(healthy, registered, workers, restarted)
                 )
             time.sleep(2)
 
+    def _restart_unregistered_workers(self, workers):
+        """Restart those of the ``workers`` services that haven't registered with RQ.
+
+        Returns
+        -------
+        list[str] or None
+            The services restarted, or ``None`` if it couldn't check which
+            had registered. A service whose restart failed is left to
+            :meth:`start_stopped_services` and not returned.
+        """
+        missing = self._unregistered_workers(workers)
+        if not missing:
+            return missing
+        print(
+            f"▶ Restarting {', '.join(missing)}, which didn't register with RQ "
+            f"within {_WORKER_RESTART_AFTER_S} s..."
+        )
+        try:
+            self.compose("restart", *missing)
+        except RuntimeError as e:
+            logger.warning(
+                f"Could not restart {', '.join(missing)} of {self.app} on "
+                f"{self.server}: {e}"
+            )
+            self._stopped = list(dict.fromkeys(self._stopped + missing))
+            return []
+        return missing
+
     def _not_ready_message(self, healthy, registered, workers, restarted):
         """Say why the server wasn't ready, naming worker containers that didn't register."""
         problems = [] if healthy else ["its web server didn't answer"]
         missing = []
         if registered < self._n_workers:
-            missing = self._unregistered_workers(workers)
+            missing = self._unregistered_workers(workers) or []
             problem = (
                 f"{registered} of {self._n_workers} worker processes registered with RQ"
             )
             if missing:
                 problem += f"; {', '.join(missing)} didn't" + (
-                    ", even after a restart" if restarted else ""
+                    ", even after a restart"
+                    if set(missing) <= set(restarted or [])
+                    else ""
                 )
             problems.append(problem)
         message = (
@@ -343,7 +368,7 @@ class RemoteApp:
         """Return those of the ``workers`` services whose container has no RQ worker registration.
 
         RQ records each worker's hostname, which is its container's. If that
-        can't be checked, it logs why and returns an empty list.
+        can't be checked, it logs why and returns ``None``.
         """
         if not workers:
             return []
@@ -367,7 +392,7 @@ class RemoteApp:
                 f"Could not check which of {self.app}'s worker containers "
                 f"registered with RQ: {e}"
             )
-            return []
+            return None
         return [s for s in workers if hostnames.get(s) not in registered]
 
     def start_stopped_services(self):

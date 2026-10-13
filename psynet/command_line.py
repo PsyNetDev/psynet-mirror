@@ -5092,13 +5092,21 @@ def _run_performance_test_with_existing_server(
     return all_results
 
 
-def _raise_reset_error(suite):
-    """Fail the command if a database reset stopped ``suite`` early, once its results are saved."""
+def _raise_reset_error(suite, cleanup_error=None):
+    """Fail the command if a database reset stopped ``suite`` early or ``cleanup_error`` ended it, once its results are saved."""
+    problems = []
     if suite.reset_error:
-        raise click.ClickException(
+        problems.append(
             f"Resetting the database failed, so the run stopped early: "
             f"{suite.reset_error}"
         )
+    if cleanup_error is not None:
+        problems.append(
+            "Starting the app's server processes again failed: "
+            f"{str(cleanup_error) or type(cleanup_error).__name__}"
+        )
+    if problems:
+        raise click.ClickException("\n".join(problems))
 
 
 def _performance_test_timing(
@@ -6141,13 +6149,23 @@ def _run_ssh_performance_test(
             # Before the cleanup, which may fail.
             save_json(all_results, finished=True)
         finally:
+            cleanup_error = None
             if database_reset is not None:
                 # close() may take the pre-fill snapshot, which needs the app stopped.
                 try:
-                    database_reset.close()
-                finally:
-                    remote.start_stopped_services()
-    _raise_reset_error(suite)
+                    try:
+                        database_reset.close()
+                    finally:
+                        remote.start_stopped_services()
+                except Exception as e:
+                    # Reported with the reset's error, or after an error that
+                    # is already propagating.
+                    logger.warning(
+                        f"Starting {app}'s server processes again failed: "
+                        f"{str(e) or type(e).__name__}"
+                    )
+                    cleanup_error = e
+    _raise_reset_error(suite, cleanup_error)
     return all_results
 
 
