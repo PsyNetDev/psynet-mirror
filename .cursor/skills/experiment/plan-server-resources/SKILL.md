@@ -99,7 +99,7 @@ in `test/scalability`, then on the real server with
 `psynet performance-test ssh`. In the "Async job times" section, a high queue
 share means jobs wait for a free worker, and the report says how busy the
 worker processes were in the steady state. The capacity summary's
-"Workers:" paragraph then estimates `worker_processes` for the cap from the
+"Recommended settings" paragraph then estimates `worker_processes` for the cap from the
 measured utilization, the start-up burst and the server's cores, as
 described under "Async workers" in `test/scalability`. Treat it as an
 estimate: change `worker_processes` and run the test again to confirm it.

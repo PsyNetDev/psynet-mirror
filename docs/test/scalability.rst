@@ -556,9 +556,9 @@ There is no estimate if the steady state lasted under a minute or fewer than
 audio analysis per 13-minute session, whose 96-participant confirmation test
 kept 10 single-slot workers 55% busy, gets::
 
-    Workers: recommended settings for 96 participants at once:
+    Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time, so about 8 would be 70% busy. 10 workers handled 120 bots arriving together, so about 8 should handle 96 at start-up. This is an estimate from one run; rerun the test after changing worker_processes. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time, so 10 are enough. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change, and ``worker_processes >= N (minimum)``

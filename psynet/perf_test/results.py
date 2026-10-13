@@ -717,13 +717,12 @@ def recommend_workers(result, n_participants, burst=None):
         if burst and all(burst)
         else None
     )
-    floor = workers + bool(workers_falling_behind(result))
-    needed = max(steady_state, burst_n or 0, floor)
-    processes = needed
-    if result.server_cores:
-        processes = min(needed, max(1, result.server_cores - CORES_FOR_OTHERS))
+    needed = max(
+        steady_state, burst_n or 0, workers + bool(workers_falling_behind(result))
+    )
+    cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
     return WorkerAdvice(
-        processes,
+        min(needed, cores_left),
         greenlets,
         utilization,
         steady_state,

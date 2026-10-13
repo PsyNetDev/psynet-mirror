@@ -736,10 +736,16 @@ def _describe_worker_advice(advice, result, n, burst, test, above_cap):
 
     ``test`` describes the measured test, or is ``None`` if a warning already
     said how busy its workers were. ``above_cap`` says a larger test failed on
-    queue waits above the confirmed cap ``n``.
+    queue waits above the confirmed cap ``n``. The reason names only the
+    recommended number of processes.
     """
     workers, processes = result.n_rq_workers, advice.processes
     were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
+    busy = (
+        f"In {test}, the {were} busy {advice.utilization:.0%} of the time"
+        if test
+        else ""
+    )
     setting = f"worker_processes = {processes}"
     if advice.needed > processes:
         setting += " (all the cores left)"
@@ -751,37 +757,31 @@ def _describe_worker_advice(advice, result, n, burst, test, above_cap):
         )
     elif advice.lower_bound:
         setting = f"worker_processes >= {processes} (minimum)"
-        why = (
-            f"Each participant used about {advice.per_participant_s:.0f} s of worker "
-            f"time, so {workers} aren't enough; {processes} is a minimum, not a "
-            "target, because the workers were busy throughout."
-            if advice.per_participant_s
-            else f"The {were} busy throughout, so {processes} is a minimum, not a target."
+        why = f"{processes} is a minimum, not a target, because the workers were busy throughout."
+        if advice.per_participant_s:
+            why = (
+                f"Each participant used about {advice.per_participant_s:.0f} s of "
+                f"worker time, so {workers} aren't enough; {why}"
+            )
+    elif processes == advice.steady_state:
+        lead = f"{busy}, so" if busy else "So"
+        why = f"{lead} about {processes} would be {TARGET_WORKER_UTILIZATION:.0%} busy."
+    elif processes == advice.burst:
+        why = (f"{busy}. " if busy else "") + (
+            f"{burst[0]} workers handled {burst[1]:,} bots arriving together, so "
+            f"about {processes} should handle {n:,} at start-up."
         )
+    elif processes > workers:
+        why = f"{busy + ' but' if busy else 'The workers'} still fell behind, so use at least {processes}."
     else:
-        why = (
-            f"In {test}, the {were} busy {advice.utilization:.0%} of the time, so"
-            if test
-            else "So"
-        ) + (
-            f" about {advice.steady_state} would be "
-            f"{TARGET_WORKER_UTILIZATION:.0%} busy."
-        )
-        if processes > max(advice.steady_state, advice.burst or 0, workers):
-            why += f" The workers still fell behind, so use more than the current {workers}."
-    if advice.burst is not None and advice.burst >= advice.steady_state:
-        why += (
-            f" {burst[0]} workers handled {burst[1]:,} bots arriving together, so "
-            f"about {advice.burst} should handle {n:,} at start-up."
-        )
-    why += " This is an estimate from one run; rerun the test after changing worker_processes."
+        why = f"{busy}, so {processes} {'is' if processes == 1 else 'are'} enough."
     if above_cap and advice.needed <= processes:
         why += f" To go above {n:,}, raise worker_processes above {processes} and test again."
     settings = [setting]
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
     return [
-        f"  Workers: recommended settings for {n:,} participants at once:",
+        f"  Recommended settings for {n:,} participants at once:",
         *(f"      {line}" for line in settings),
         f"  {why}",
     ]
