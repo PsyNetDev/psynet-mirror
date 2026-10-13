@@ -400,42 +400,45 @@ When bots fail, the report lists what went wrong, for example
 the server managed to log, so a server that cannot reach its database shows
 them under *Bot errors* instead.
 
-The summary at the end of every run lists the tests in the order they ran,
-whether each passed the limits, and the measures that the limits check.
-Columns for busy responses, participants the experiment failed, busy chains
-and async queue waits only appear when a test had them, and the limits line
-lists only the limits that apply. *Bots started* counts every bot that
-started during the test, including bots that replaced earlier ones. *Failed
-requests* gives a percentage of all requests and *Failed bots* a percentage
-of the bots started; *Failed bots* counts every bot that raised an error.
+The summary at the end of every run lists the tests by the number of bots
+taking part at once (*Bots at once*), with the validation test last, whether
+each passed the limits, and the measures that the limits check. Columns for
+busy responses, participants the experiment failed, busy chains and async
+queue waits only appear when a test had them, and the limits line lists only
+the limits that apply. *Bots started* counts every bot that started during
+the test, including bots that replaced earlier ones. *Failed requests* gives
+a percentage of all requests and *Failed bots* a percentage of the bots
+started; *Failed bots* counts every bot that raised an error. A measure is
+red only if it broke its limit, so a failing test can show failures that
+stayed within their limits uncoloured. Response times are in milliseconds.
 *Bots finished* counts bots that completed the experiment, or shows ``-``
 when a test was shorter than one participant session, so that no bot could
 finish. The verdict follows: the recommended number of participants taking
-part at once, the *largest passing test* and why the next count failed
-(when no test failed, the verdict says the limit wasn't reached), and the
-*validation test* run at the recommended number. Without a validation
-test, the recommendation is 80% of the largest passing test. For example,
-from a capacity search of a static rating study on an SSH server (some rows
-left out)::
+part at once, the *largest passing test* and why the next count failed,
+naming each measure, its value and its limit (when no test failed, the
+verdict says the limit wasn't reached), and the *validation test* run at the
+recommended number. Without a validation test, the recommendation is 80% of
+the largest passing test. For example, from a capacity search of a static
+rating study on an SSH server (some rows left out)::
 
     PERFORMANCE TEST SUMMARY
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
-    Limits checked: p95 response time under 0.5 s, at most 0.1% of requests failing, at most 1% of bots failing.
+    Limits checked: p95 response time under 500 ms, at most 0.1% of requests failing, at most 1% of bots failing.
 
-              Bots                              p95    Median      Failed     Failed      Bots
-     Bots  started  Length  Result  Req/s  response  response    requests       bots  finished
-     ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
-       10       10   3 min  pass      2.4    0.063s    0.027s           0          0         -
-      640    1,271   3 min  FAIL    109.2    0.113s    0.037s  17 (0.09%)  631 (50%)         -
-      480      480   3 min  pass     97.0    0.074s    0.032s           0          0         -
-      560      570   3 min  FAIL    110.5    0.091s    0.036s           0  10 (1.8%)         -
-      520      520   3 min  pass    103.0    0.081s    0.033s           0          0         -  largest passing test
-      416      849  23 min  pass     90.2    0.076s    0.029s           0          0       433  validation test
+        Bots     Bots                              p95    Median      Failed     Failed      Bots
+     at once  started  Length  Result  Req/s  response  response    requests       bots  finished
+     ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+          10       10   3 min  pass      2.4     63 ms     27 ms           0          0         -
+         480      480   3 min  pass     97.0     74 ms     32 ms           0          0         -
+         520      520   3 min  pass    103.0     81 ms     33 ms           0          0         -  largest passing test
+         560      570   3 min  FAIL    110.5     91 ms     36 ms           0  10 (1.8%)         -
+         640    1,271   3 min  FAIL    109.2    113 ms     37 ms  17 (0.09%)  631 (50%)         -
+         416      849  23 min  pass     90.2     76 ms     29 ms           0          0       433  validation test
 
       -  The test was shorter than one participant session (11 min), so no bot could finish.
 
     Recommended: at most 416 participants at once.
-    Largest passing test: 520 bots at once. 560 failed: 10 of 570 bots (1.8%) failed.
+    Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) failed, over the 1% limit.
       Errors at 560: 5 x HTTP 500 on /participant_status, 3 x OperationalError, 2 x HTTP 500 on /response.
     Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
 
@@ -454,7 +457,7 @@ time bots take to start, so for steady results of a single bot count keep
 the default ``--duration-minutes``, or at least one participant session. A test whose bots didn't all start within the
 window counts as exceeding the limits, and the summary warns when starting
 the bots took more than a quarter of the test, unless ``--arrival-minutes``
-spread them out on purpose.
+spread them out on purpose or a validation test passed.
 
 With ``--json-output``, each result records the test's
 ``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the

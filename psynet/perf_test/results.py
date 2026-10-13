@@ -928,6 +928,112 @@ def phase_limit_reasons(phase, limits):
     return reasons
 
 
+@dataclass(frozen=True)
+class LimitBreach:
+    """A measure of a test that exceeded its limit; see :func:`limit_breaches`.
+
+    ``measure`` is one of :data:`_ERROR_MEASURES`, ``"wait_timeouts"``,
+    ``"busy_chains"``, ``"p95"`` or ``"queue"``; ``reason`` describes the
+    value, e.g. ``p95 response time 900 ms``, and ``limit`` the limit, e.g.
+    ``500 ms``. ``server_limit`` is as for :func:`capacity_failure_causes`.
+    """
+
+    measure: str
+    reason: str
+    limit: str
+    server_limit: bool = True
+
+
+_ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors")
+
+
+def limit_breaches(result, limits):
+    """Return a :class:`LimitBreach` for each measured limit that ``result`` exceeded.
+
+    These are the causes of :func:`capacity_failure_causes` other than a
+    stopped server, limits of the test and missing responses.
+    """
+    breaches = []
+    key_requests = result.key_requests or 0
+    request_errors = result.request_errors or 0
+    if request_errors > max(
+        limits.allowed_request_errors,
+        limits.max_request_error_rate * key_requests,
+    ):
+        breaches.append(
+            LimitBreach(
+                "request_errors",
+                plural(request_errors, "request error"),
+                f"{limits.max_request_error_rate * 100:g}%",
+            )
+        )
+    busy_responses = result.busy_responses or 0
+    if busy_responses > max(
+        limits.allowed_busy_responses,
+        limits.max_busy_response_rate * key_requests,
+    ):
+        breaches.append(
+            LimitBreach(
+                "busy_responses",
+                plural(busy_responses, "busy/stale response"),
+                f"{limits.max_busy_response_rate * 100:g}%",
+            )
+        )
+    bot_errors = result.bot_errors or 0
+    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
+    if bot_errors > max_bot_errors:
+        kinds = result.bot_error_kinds or {}
+        connection_errors = sum(kinds.get(kind, 0) for kind in _CONNECTION_LIMIT_KINDS)
+        breaches.append(
+            LimitBreach(
+                "bot_errors",
+                describe_bot_errors(result),
+                f"{limits.max_bot_error_rate * 100:g}%",
+                bot_errors - connection_errors > max_bot_errors,
+            )
+        )
+    if wait_cause := wait_timeout_cause(result, limits):
+        breaches.append(
+            LimitBreach(
+                "wait_timeouts", wait_cause, f"{limits.max_wait_timeout_rate * 100:g}%"
+            )
+        )
+    if busy_cause := busy_early_finish_cause(result, limits):
+        breaches.append(
+            LimitBreach(
+                "busy_chains",
+                busy_cause,
+                f"{limits.max_busy_early_finish_rate * 100:g}%",
+            )
+        )
+    max_p95 = f"{limits.max_p95_s * 1000:.0f} ms"
+    p95 = result.p95_response_time
+    if p95 is not None and float(p95) > limits.max_p95_s:
+        breaches.append(
+            LimitBreach("p95", f"p95 response time {float(p95) * 1000:.0f} ms", max_p95)
+        )
+    elif p95 is not None:
+        breaches += [
+            LimitBreach(
+                "p95",
+                f"p95 response time for {endpoint} {float(endpoint_p95) * 1000:.0f} ms",
+                max_p95,
+            )
+            for endpoint, endpoint_p95 in sorted((result.endpoint_p95 or {}).items())
+            if float(endpoint_p95) > limits.max_p95_s
+        ]
+    queue_wait = queue_wait_p95(result)
+    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
+        breaches.append(
+            LimitBreach(
+                "queue",
+                f"p95 high-priority async queue wait {queue_wait:.2f} s",
+                f"{limits.max_queue_p95_s:g} s",
+            )
+        )
+    return breaches
+
+
 def capacity_failure_causes(result, limits):
     """Return ``(reason, server_limit)`` for each limit that ``result`` exceeded.
 
@@ -943,68 +1049,15 @@ def capacity_failure_causes(result, limits):
     causes = [("server stopped", True)] if result.server_stopped else []
     tester_limits = _tester_limits(result)
     causes += [(reason, False) for reason in tester_limits]
-    causes += _error_causes(result, limits)
-    if wait_cause := wait_timeout_cause(result, limits):
-        causes.append((wait_cause, True))
-    if busy_cause := busy_early_finish_cause(result, limits):
-        causes.append((busy_cause, True))
-    p95 = result.p95_response_time
-    if p95 is None:
+    breaches = [(b.reason, b.server_limit) for b in limit_breaches(result, limits)]
+    if result.p95_response_time is None:
         causes.append(("no responses recorded", not tester_limits))
-    elif float(p95) > limits.max_p95_s:
-        causes.append((f"p95 response time {float(p95) * 1000:.0f} ms", True))
-    else:
-        for endpoint, endpoint_p95 in sorted((result.endpoint_p95 or {}).items()):
-            if float(endpoint_p95) > limits.max_p95_s:
-                causes.append(
-                    (
-                        f"p95 response time for {endpoint} "
-                        f"{float(endpoint_p95) * 1000:.0f} ms",
-                        True,
-                    )
-                )
-    queue_wait = queue_wait_p95(result)
-    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
-        causes.append((f"p95 high-priority async queue wait {queue_wait:.2f} s", True))
-    return causes
-
-
-def _error_causes(result, limits):
-    """Return the ``(reason, server_limit)`` causes of :func:`capacity_failure_causes` that are errors.
-
-    Those are request errors, busy or stale responses and bot errors.
-    """
-    causes = []
-    key_requests = result.key_requests or 0
-    request_errors = result.request_errors or 0
-    if request_errors > max(
-        limits.allowed_request_errors,
-        limits.max_request_error_rate * key_requests,
-    ):
-        causes.append((plural(request_errors, "request error"), True))
-    busy_responses = result.busy_responses or 0
-    if busy_responses > max(
-        limits.allowed_busy_responses,
-        limits.max_busy_response_rate * key_requests,
-    ):
-        causes.append((plural(busy_responses, "busy/stale response"), True))
-    bot_errors = result.bot_errors or 0
-    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
-    if bot_errors > max_bot_errors:
-        kinds = result.bot_error_kinds or {}
-        connection_errors = sum(kinds.get(kind, 0) for kind in _CONNECTION_LIMIT_KINDS)
-        causes.append(
-            (
-                describe_bot_errors(result),
-                bot_errors - connection_errors > max_bot_errors,
-            )
-        )
-    return causes
+    return causes + breaches
 
 
 def exceeded_error_limits(result, limits=CapacityLimits()):
     """Return whether ``result`` had too many request errors, busy responses or bot errors."""
-    return bool(_error_causes(result, limits))
+    return any(b.measure in _ERROR_MEASURES for b in limit_breaches(result, limits))
 
 
 def capacity_failures(result, limits=CapacityLimits()):

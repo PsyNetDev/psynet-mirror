@@ -319,7 +319,7 @@ def test_capacity_summary_names_the_bot_errors():
     ]
 
     assert (
-        "20 failed: 1 of 2 bots (50%) failed.\n"
+        "At 20, 1 of 2 bots (50%) failed, over the 1% limit.\n"
         "  Errors at 20: 1 x HTTP 500 on /participant_status."
     ) in _join(format_capacity_summary(results))
 
@@ -544,7 +544,10 @@ def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
             in caplog.text
         )
     else:
-        assert "and failed: p95 response time 900 ms." in caplog.text
+        assert (
+            "and failed: the p95 response time was 900 ms, over the 500 ms limit."
+            in caplog.text
+        )
         # p95 900 ms is 1.8 times the 500 ms limit: 120 / 1.8 = 66.
         assert "Recommended: try at most 66 participants at once" in caplog.text
     assert "(80% of 150)." not in caplog.text
@@ -592,7 +595,10 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
         caplog, dict(queue_waits={"high": {"q_delay_p95": 30.0}}, **_STEADY)
     )
 
-    assert "p95 high-priority async queue wait 30.00 s" in caplog.text
+    assert (
+        "the p95 high-priority async queue wait was 30.00 s, over the 5 s limit"
+        in caplog.text
+    )
     assert caplog.text.count("waited too long for") == 1
     assert "validation test, jobs that participants wait for waited" in caplog.text
 
@@ -1263,7 +1269,10 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
 
     if expected:
         assert failures == [expected]
-        assert f"No test passed. 150 bots at once failed: {expected}." in text
+        assert (
+            f"No test passed. At 150 bots at once, {expected}, over the 1% limit."
+            in text
+        )
         assert "Design experiments to avoid this" in text
     else:
         assert failures == []
@@ -1470,7 +1479,8 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
 
     assert "Recommended: at most 120 participants at once (80% of 150)." in text
     assert (
-        "Largest passing test: 150 bots at once. 200 failed: 3 request errors." in text
+        "Largest passing test: 150 bots at once. At 200, 3 of 10 requests (30%) "
+        "failed, over the 0.1% limit." in text
     )
 
 
@@ -1497,7 +1507,7 @@ def test_only_high_priority_queue_waits_limit_capacity():
     text = _join(format_capacity_summary(results, CapacityLimits(max_queue_p95_s=5)))
 
     assert "Largest passing test: 100 bots at once." in text
-    assert "200 failed: p95 high-priority async queue wait 40.00 s" in text
+    assert "At 200, the p95 high-priority async queue wait was 40.00 s" in text
     assert (
         "Low-priority async jobs in the 100-bot test: p95 queue wait 140.00 s, "
         "40 still queued at the end. Participants don't wait for these"
@@ -1793,12 +1803,12 @@ def test_capacity_summary_says_when_every_count_failed():
     slow = [_base_result(n_bots=2, p95_response_time=0.9)]
 
     assert (
-        "No test passed. 2 bots at once failed: 1 of 2 bots (50%) failed; fix "
-        "the errors or test fewer bots."
+        "No test passed. At 2 bots at once, 1 of 2 bots (50%) failed, over the 1% "
+        "limit; fix the errors or test fewer bots."
     ) in _join(format_capacity_summary(results))
     assert (
-        "No test passed. 2 bots at once failed: p95 response time 900 ms; test "
-        "fewer bots.\n"
+        "No test passed. At 2 bots at once, the p95 response time was 900 ms, over "
+        "the 500 ms limit; test fewer bots.\n"
     ) in _join(format_capacity_summary(slow))
     assert format_capacity_summary([]) == []
 
@@ -1812,7 +1822,7 @@ def test_capacity_summary_flags_a_pass_at_or_above_a_failed_smallest_count(n_pas
 
     text = _join(format_capacity_summary(results))
 
-    assert "No test passed. 10 bots at once failed" in text
+    assert "No test passed. At 10 bots at once, 1 of 2 bots (50%) failed" in text
     assert f"{n_passed} bots passed, so the results are inconsistent" in text
 
 
@@ -1822,6 +1832,9 @@ def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
         "took 30 s of the 60 s test, so the server ran fully loaded for only 50%"
         in _join(format_capacity_summary(results))
     )
+
+    validated = _base_result(n_bots=40, confirmation=True, **_STEADY)
+    assert "took" not in _join(format_capacity_summary([*results, validated]))
 
     results[0].ramp_up_s = 5.0
     assert "took" not in _join(format_capacity_summary(results))
@@ -1923,7 +1936,10 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
 
     text = _join(format_capacity_summary(results))
     assert "Largest passing test: 640 bots at once." in text
-    assert "60 request errors; p95 high-priority async queue wait 36.90 s" in text
+    assert (
+        "failed, over the 0.1% limit; the p95 high-priority async queue wait was 36.90 s"
+        in text
+    )
     assert (
         "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
         in text
@@ -2092,8 +2108,8 @@ def test_capacity_summary_says_when_even_the_smallest_count_could_not_be_tested(
 @pytest.mark.parametrize(
     "server_limit, reason",
     [
-        (dict(busy_responses=300), "300 busy/stale responses"),
-        (dict(p95_response_time=0.9), "p95 response time 900 ms"),
+        (dict(busy_responses=300), "were answered busy or stale, over the 1% limit"),
+        (dict(p95_response_time=0.9), "the p95 response time was 900 ms"),
     ],
 )
 def test_server_limits_cap_capacity_even_when_bots_started_too_slowly(
@@ -2270,19 +2286,20 @@ def test_format_test_results_no_async_job_stats():
 # --- format_performance_summary ---
 
 
-def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
+def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypatch):
     short = dict(duration_minutes=3, session_minutes=11.4, bots_succeeded=0)
     no_jobs = dict(q_delay_median=None)
     results = [
-        _base_result(n_bots=520, total_bots_started=520, **short, **no_jobs),
         _base_result(
             n_bots=560,
             total_bots_started=570,
+            request_errors=1,
             bot_errors=10,
             bot_error_kinds={"OperationalError": 10},
             **short,
             **no_jobs,
         ),
+        _base_result(n_bots=520, total_bots_started=520, **short, **no_jobs),
         _base_result(
             n_bots=416,
             confirmation=True,
@@ -2300,7 +2317,7 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
 
     assert "rating: 3 tests, 1 h 02 min" in text
     assert (
-        "Limits checked: p95 response time under 0.5 s, at most 0.1% of requests "
+        "Limits checked: p95 response time under 500 ms, at most 0.1% of requests "
         "failing, at most 1% of bots failing."
     ) in text
     assert "queue" not in text and "Busy" not in text
@@ -2313,13 +2330,18 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
-        "Largest passing test: 520 bots at once. 560 failed: 10 of 570 bots (1.8%) "
-        "failed.\n"
+        "Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) "
+        "failed, over the 1% limit.\n"
         "  Errors at 560: 10 x OperationalError.\n"
         "Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and "
         "passed."
     ) in text
     assert "Not measured: uploads over participants' own networks" in text
+    # Only the failure that broke its limit is red.
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    coloured = _join(format_performance_summary(results, terminal=True))
+    assert "m10 (1.8%)" in coloured and " 1 (" in coloured and "m1 (" not in coloured
 
 
 def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
