@@ -16,11 +16,13 @@ that no table cell is cut, so that log files stay readable.
 """
 
 import os
+import shutil
 import sys
 from io import StringIO
 
 from rich import box
 from rich.console import Console
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 from tabulate import tabulate
@@ -509,77 +511,76 @@ _HIGHLIGHT_ROW = "on grey15"
 _RECOMMENDED = "bold bright_green"
 _UNCONFIRMED = "bold bright_yellow"
 _QUIET = "dim"
-# Wide enough for any summary table, so that rich never cuts a cell; the
-# prose isn't wrapped at all.
-_RENDER_WIDTH = 1000
-# box.SIMPLE_HEAD with an ASCII rule, for output that isn't UTF-8.
+# Prose is this wide when it isn't wrapped, off a terminal.
+_UNWRAPPED = 10_000
+# box.SIMPLE_HEAD with an ASCII rule, for output that isn't UTF-8; rich's own
+# ASCII fallback draws full borders.
 _ASCII_SIMPLE_HEAD = box.Box(
     "    \n    \n -- \n    \n    \n    \n    \n    \n", ascii=True
 )
 
 
-def _stdout_encoding():
-    return getattr(sys.stdout, "encoding", None) or "utf-8"
+def _render(renderables, terminal=None, wrap=True):
+    """Render rich ``renderables`` (``None`` for a blank line) as lines of text.
 
-
-class _Capture(StringIO):
-    """A text buffer that reports the encoding of standard output, so that rich keeps to it."""
-
-    @property
-    def encoding(self):
-        return _stdout_encoding()
-
-
-def _render(renderables, color=None):
-    """Render rich ``renderables`` as lines of text.
-
-    Parameters
-    ----------
-    renderables : list
-        Rich renderables, such as :class:`rich.text.Text` and
-        :class:`rich.table.Table`; ``None`` prints a blank line.
-    color : bool, optional
-        Whether to colour the text. By default, only if standard output is a
-        terminal. Rich also honours ``NO_COLOR``.
-
-    Returns
-    -------
-    list[str]
+    For a ``terminal`` (by default, if standard output is one), prose wraps
+    at its width and is coloured unless ``NO_COLOR`` is set or ``TERM`` is
+    ``dumb``; otherwise it is plain and unwrapped. With ``wrap=False``,
+    tables keep their natural width, so that no cell is cut.
     """
-    if color is None:
-        color = sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
-    file = _Capture()
+    if terminal is None:
+        terminal = sys.stdout.isatty()
+    color = (
+        terminal and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
+    )
+    file = StringIO()
     console = Console(
         file=file,
-        # Rich ignores the width without a height, falling back to 80 columns
-        # on a dumb terminal.
-        width=_RENDER_WIDTH,
+        width=(
+            shutil.get_terminal_size((100, 25)).columns
+            if terminal and wrap
+            else _UNWRAPPED
+        ),
+        # Without a height, rich ignores the width on a dumb terminal.
         height=25,
         force_terminal=color,
         color_system="256" if color else None,
         highlight=False,
         markup=False,
         emoji=False,
-        soft_wrap=True,
     )
+    if not wrap:
+        console.width = max(console.measure(r).maximum for r in renderables)
     for renderable in renderables:
+        if isinstance(renderable, (str, Text)):
+            renderable = _hanging(
+                Text(renderable) if isinstance(renderable, str) else renderable
+            )
         console.print(*([] if renderable is None else [renderable]))
     return [line.rstrip() for line in file.getvalue().splitlines()]
 
 
+def _hanging(text):
+    """Indent the wrapped lines of ``text`` as far as its first line is indented."""
+    indent = len(text.plain) - len(text.plain.lstrip(" "))
+    return Padding(text[indent:], (0, 0, 0, indent), expand=False) if indent else text
+
+
 def _percent(share):
-    """Format ``share`` as a percentage with about two significant digits, e.g. ``1.2%`` or ``13%``."""
+    """Format ``share`` as a percentage with two significant digits, e.g. ``0.09%``, ``1.2%`` or ``13%``."""
     percent = share * 100
-    if 0 < percent < 0.05:
-        return "<0.1%"
+    if 0 < percent < 0.005:
+        return "<0.01%"
+    if percent < 0.995:
+        return f"{percent:.2f}%"
     return f"{percent:.1f}%" if percent < 9.95 else f"{percent:.0f}%"
 
 
 def _count(n, total, alert=False):
-    """Format ``n`` of ``total`` for a table cell, e.g. ``7 (1.2%)``, in red if ``alert`` and not zero."""
+    """Format ``n`` of ``total`` for a table cell, e.g. ``7 of 570 (1.2%)``, in red if ``alert`` and not zero."""
     if not n:
         return Text("0")
-    text = f"{n:,} ({_percent(n / total)})" if total else f"{n:,}"
+    text = f"{n:,} of {total:,} ({_percent(n / total)})" if total else f"{n:,}"
     return Text(text, style=_ALERT if alert else "")
 
 
@@ -610,7 +611,7 @@ def _too_short_to_finish(result):
 
 
 def _result_text(result, limits):
-    """Return the summary table's verdict on one test: ``pass``, ``FAIL`` or ``untested``."""
+    """Return ``pass``, ``FAIL``, or ``untested`` if only the test held it back."""
     causes = capacity_failure_causes(result, limits)
     if not causes:
         return Text("pass", style=_PASS)
@@ -619,13 +620,22 @@ def _result_text(result, limits):
     return Text("untested", style=_UNTESTED)
 
 
-def _summary_columns(results, limits):
-    """Return ``(header, cell)`` for each column of the summary table that ``results`` need.
+def _measures_seen(results):
+    """Return which measures that most tests lack ``results`` had, for the table and limits."""
+    seen = {
+        "busy": any(r.busy_responses for r in results),
+        "experiment": any(r.participants_failed for r in results),
+        "chains": any(r.busy_early_finishes for r in results),
+        "waits": any(count_wait_timeouts(r) for r in results),
+    }
+    for priority in PRIORITIES:
+        seen[priority] = any(queue_wait_p95(r, priority) is not None for r in results)
+    return {name for name, had in seen.items() if had}
 
-    ``cell(result)`` returns the cell text. Columns for busy responses,
-    participants the experiment failed, busy chains and queue waits only
-    appear if a test had them.
-    """
+
+def _summary_columns(results, limits):
+    """Return ``(header, cell)`` for each column of the summary table that ``results`` need."""
+    seen = _measures_seen(results)
     columns = [
         ("Bots", lambda r: f"{r.n_bots:,}"),
         ("Length", lambda r: _minutes(_test_minutes(r))),
@@ -635,35 +645,35 @@ def _summary_columns(results, limits):
         ("Median\nresponse", lambda r: _fmt(r.median_response_time, "s")),
         ("Failed\nrequests", lambda r: _count(r.request_errors, r.key_requests, True)),
     ]
-    if any(r.busy_responses for r in results):
+    if "busy" in seen:
         columns.append(
             ("Busy\nresponses", lambda r: _count(r.busy_responses, r.key_requests))
         )
     columns.append(
         ("Failed\nbots", lambda r: _count(r.bot_errors, r.total_bots_started, True))
     )
-    if any(r.participants_failed for r in results):
+    if "experiment" in seen:
         columns.append(
             (
                 "Failed by\nexperiment",
                 lambda r: _count(r.participants_failed, r.total_bots_started),
             )
         )
-    if any(r.busy_early_finishes for r in results):
+    if "chains" in seen:
         columns.append(
             (
                 "Busy\nchains",
                 lambda r: _count(_busy_early_finish_count(r), r.total_bots_started),
             )
         )
-    for priority in PRIORITIES:
-        if any(queue_wait_p95(r, priority) is not None for r in results):
-            columns.append(
-                (
-                    f"{priority.capitalize()}-priority\nqueue p95",
-                    lambda r, p=priority: _fmt(queue_wait_p95(r, p), "s"),
-                )
-            )
+    columns += [
+        (
+            f"{priority.capitalize()}-priority\nqueue p95",
+            lambda r, p=priority: _fmt(queue_wait_p95(r, p), "s"),
+        )
+        for priority in PRIORITIES
+        if priority in seen
+    ]
     columns.append(
         (
             "Bots\nfinished",
@@ -673,9 +683,9 @@ def _summary_columns(results, limits):
     return columns
 
 
-def _summary_table(results, limits, capacity):
-    """Return the summary table of ``results``, in the order run, labelling the capacity and check rows."""
-    utf = _stdout_encoding().lower().startswith("utf")
+def _summary_table(results, limits, outcome):
+    """Return the table of ``results``, in the order run, labelling the capacity and check rows."""
+    utf = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().startswith("utf")
     table = Table(
         box=box.SIMPLE_HEAD if utf else _ASCII_SIMPLE_HEAD,
         safe_box=False,
@@ -688,13 +698,15 @@ def _summary_table(results, limits, capacity):
             header, justify="left" if header == "Result" else "right", no_wrap=True
         )
     table.add_column("", no_wrap=True)
+    # Without a failure, the capacity is only a lower bound.
+    capacity_label = "capacity" if outcome and outcome.first_fail else "highest passed"
     labelled_capacity = False
     for result in results:
         label = ""
         if result.confirmation:
             label = "check at the cap"
-        elif result.n_bots == capacity and not labelled_capacity:
-            label, labelled_capacity = "capacity", True
+        elif outcome and result.n_bots == outcome.capacity and not labelled_capacity:
+            label, labelled_capacity = capacity_label, True
         table.add_row(
             *(cell(result) for _, cell in columns),
             label,
@@ -705,30 +717,29 @@ def _summary_table(results, limits, capacity):
 
 def _checked_limits(results, limits):
     """Describe the limits that apply to ``results``, leaving out those for things no test had."""
+    seen = _measures_seen(results)
 
     def rate(share):
         return f"{share * 100:g}%"
 
     checked = [f"p95 response time under {limits.max_p95_s:g} s"]
-    if any(
-        queue_wait_p95(r) is not None or r.q_delay_median is not None for r in results
-    ):
+    if "high" in seen:
         checked.append(
             f"p95 high-priority queue wait under {limits.max_queue_p95_s:g} s"
         )
     checked.append(f"at most {rate(limits.max_request_error_rate)} of requests failing")
-    if any(r.busy_responses for r in results):
+    if "busy" in seen:
         checked.append(
             f"at most {rate(limits.max_busy_response_rate)} of requests answered "
             "busy or stale"
         )
     checked.append(f"at most {rate(limits.max_bot_error_rate)} of bots failing")
-    if any(count_wait_timeouts(r) for r in results):
+    if "waits" in seen:
         checked.append(
             f"at most {rate(limits.max_wait_timeout_rate)} of participants failed "
             "for waiting too long"
         )
-    if any(r.busy_early_finishes for r in results):
+    if "chains" in seen:
         checked.append(
             f"at most {rate(limits.max_busy_early_finish_rate)} of bots getting "
             "fewer trials because every chain was busy"
@@ -743,7 +754,7 @@ def format_performance_summary(
     *,
     label=None,
     elapsed_s=None,
-    color=None,
+    terminal=None,
 ):
     """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
 
@@ -759,9 +770,9 @@ def format_performance_summary(
         The experiment's label, for the subtitle.
     elapsed_s : float, optional
         How long the suite took, for the subtitle.
-    color : bool, optional
-        Whether to colour the text; by default, only if standard output is a
-        terminal.
+    terminal : bool, optional
+        Whether to colour the text and wrap it at the terminal's width, as by
+        default when standard output is a terminal.
 
     Returns
     -------
@@ -775,17 +786,17 @@ def format_performance_summary(
     if label:
         subtitle = f"{label}: {subtitle}"
     measured = [r for r in results if not r.confirmation]
-    capacity = capacity_outcome(measured, limits).capacity if measured else None
-    renderables = [
+    outcome = capacity_outcome(measured, limits) if measured else None
+    head = [
         None,
         Text("PERFORMANCE TEST SUMMARY", style="bold"),
         Text(subtitle, style=_QUIET),
         Text(_checked_limits(results, limits), style=_QUIET),
-        _summary_table(results, limits, capacity),
     ]
+    tail = []
     short = [r.session_minutes for r in results if _too_short_to_finish(r)]
     if short:
-        renderables += [
+        tail += [
             Text(
                 f"  -  The test was shorter than one participant session "
                 f"({_minutes(max(short))}), so no bot could finish.",
@@ -793,14 +804,13 @@ def format_performance_summary(
             ),
             None,
         ]
-    notes = []
-    if database_growth := _describe_database_growth(results):
-        notes.append(
-            f"Database rows from the first test to the last: {database_growth}."
-        )
-    notes.append(_NOT_MEASURED)
-    renderables += _capacity_renderables(results, limits, time_factor, notes)
-    return _render(renderables, color)
+    tail += _capacity_renderables(results, limits, time_factor, [_NOT_MEASURED])
+    table = [_summary_table(results, limits, outcome)]
+    return (
+        _render(head, terminal)
+        + _render(table, terminal, wrap=False)
+        + _render(tail, terminal)
+    )
 
 
 def _busy_early_finish_count(result):
@@ -810,32 +820,15 @@ def _busy_early_finish_count(result):
     )
 
 
-def _describe_database_growth(results):
-    """Describe how the growing tables changed over ``results``, in the order run.
-
-    Returns e.g. ``"participant 0 to 120, trial 0 to 4,300"``, naming only
-    tables that have rows, or ``""`` if the results don't record rows.
-    """
-    if not results:
-        return ""
-    before = results[0].db_rows_before or {}
-    after = results[-1].db_rows_after or {}
-    return ", ".join(
-        f"{table} {before.get(table, 0):,} to {after.get(table, 0):,}"
-        for table in {**before, **after}
-        if before.get(table) or after.get(table)
-    )
-
-
 _POSTGRES_ADVICE = (
-    "  Some bots failed because PostgreSQL ran out of connections. The bots "
+    "Some bots failed because PostgreSQL ran out of connections. The bots "
     "open their own database connections in the processes running them, which "
     "participants don't, so this limits the test rather than the experiment. "
     "Run fewer bots at once, stop other experiments that share the database "
     "server, or raise max_connections."
 )
 _PGBOUNCER_ADVICE = (
-    "  PgBouncer, which passes the app's database connections on to "
+    "PgBouncer, which passes the app's database connections on to "
     "PostgreSQL, refused new connections because it already had "
     "max_client_conn clients ('no more connections allowed "
     "(max_client_conn)'). Its clients are the connections that the web "
@@ -1007,13 +1000,13 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
 
 
 _WAIT_ADVICE = (
-    "  Participants waited too long and the experiment failed them. Design "
+    "Participants waited too long and the experiment failed them. Design "
     "experiments to avoid this, for example with a longer max_wait_time or "
     "enough participants to fill groups and chains; at high bot counts it can "
     "also mean the server is too slow."
 )
 _BUSY_CHAINS_ADVICE = (
-    "  Participants got fewer trials because every chain they could join was "
+    "Participants got fewer trials because every chain they could join was "
     "busy, so the experiment finished their block early. Besides capping "
     "concurrent participants, you can let them wait with "
     "wait_for_networks=True or add chains, which may allow a higher cap. "
@@ -1022,13 +1015,13 @@ _BUSY_CHAINS_ADVICE = (
     "arrive over a session."
 )
 _START_RATE_ADVICE = (
-    "  Bots that cannot start fast enough limit the test rather than the "
+    "Bots that cannot start fast enough limit the test rather than the "
     "server, because the processes running the bots create each bot's "
     "participant themselves. Bots that take longer, in a longer experiment or "
     "with a larger --time-factor, give a better measure of the server."
 )
 _TESTER_LAG_ADVICE = (
-    "  A process running bots was so busy that its bots ran late and made "
+    "A process running bots was so busy that its bots ran late and made "
     "requests more slowly than participants would, so the server got less "
     "load than the bot count suggests. Spread the bots over more processes "
     "with --bot-processes, or run the test from a computer with more CPU cores."
@@ -1089,7 +1082,7 @@ def _database_growth_warnings(
         where = "The database grew a lot during these tests (rows before the first and after the last"
     if grew:
         lines.append(
-            f"  {where}: {'; '.join(grew)}). Capacity can fall as a "
+            f"{where}: {'; '.join(grew)}). Capacity can fall as a "
             "study collects data, so these results hold for about this much "
             "data; see 'Database size' in the PsyNet docs on testing scalability."
         )
@@ -1099,7 +1092,7 @@ def _database_growth_warnings(
         )
         if differ:
             lines.append(
-                f"  The {capacity_result.n_bots:,}-bot and {first_fail.n_bots:,}-bot "
+                f"The {capacity_result.n_bots:,}-bot and {first_fail.n_bots:,}-bot "
                 f"tests started with very different amounts of data ({'; '.join(differ)} "
                 "rows), so the difference between them may come from the data "
                 "rather than the load."
@@ -1114,7 +1107,7 @@ def _database_growth_warnings(
         )
         if differ:
             return lines + [
-                f"  The confirmation test started with very different amounts of "
+                f"The confirmation test started with very different amounts of "
                 f"data from the {capacity_result.n_bots:,}-bot test "
                 f"({'; '.join(differ)} rows), so its failure may come from the "
                 "data the search left. Rerun with --reset-database before "
@@ -1122,7 +1115,7 @@ def _database_growth_warnings(
             ]
     if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
         lines.append(
-            "  Rerun with --reset-database to start every test from the same data."
+            "Rerun with --reset-database to start every test from the same data."
         )
     return lines
 
@@ -1140,7 +1133,7 @@ def _startup_only_lines(result, limits):
     if not startup or steady:
         return []
     return [
-        f"  In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
+        f"In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
         f"({'; '.join(startup)}) but the steady state kept its response times, "
         "request errors and high-priority queue waits within them. The "
         "capacity counts the start-up, because participants often arrive "
@@ -1279,7 +1272,7 @@ def _low_priority_lines(result, limits):
     if wait is None or wait <= limits.max_queue_p95_s:
         return []
     return [
-        f"  Low-priority async jobs in {_describe_test(result, _confirmed(result, limits))}: p95 queue "
+        f"Low-priority async jobs in {_describe_test(result, _confirmed(result, limits))}: p95 queue "
         f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
         "queued at the end. Participants don't wait for these, so they don't "
         "count against the limits."
@@ -1357,51 +1350,31 @@ def _check_lines(result, outcome, limits):
 
 
 def _notes(items):
-    """Return the summary's notes, ``items`` of text or :class:`~rich.text.Text`, under a heading."""
+    """Return the summary's notes, text or :class:`~rich.text.Text`, as bullets under a heading."""
     if not items:
         return []
-    return [
-        None,
-        Text("Notes", style="bold"),
-        *(
-            Text.assemble("  - ", item if isinstance(item, Text) else item.strip())
-            for item in items
-        ),
-    ]
+    bullets = Table.grid()
+    bullets.add_column(no_wrap=True)
+    bullets.add_column()
+    for item in items:
+        bullets.add_row("  - ", item)
+    return [None, Text("Notes", style="bold"), bullets]
 
 
 def format_capacity_summary(
-    results, limits=CapacityLimits(), time_factor=1.0, color=None
+    results, limits=CapacityLimits(), time_factor=1.0, terminal=None
 ):
-    """Describe the capacity that ``results`` imply and suggest a participant cap.
+    """Return the verdict, worker settings and notes that end :func:`format_performance_summary`, as lines.
 
-    This is the verdict that ends :func:`format_performance_summary`, with
-    any worker settings and notes.
-
-    Parameters
-    ----------
-    results : list[PerformanceTestResult]
-        The tests, in the order they ran.
-    limits : CapacityLimits
-        The limits that the tests were judged by.
-    time_factor : float
-        The bots' time factor.
-    color : bool, optional
-        Whether to colour the text; by default, only if standard output is a
-        terminal.
-
-    Returns
-    -------
-    list[str]
+    ``terminal`` is as for :func:`format_performance_summary`.
     """
-    return _render(_capacity_renderables(results, limits, time_factor), color)
+    return _render(_capacity_renderables(results, limits, time_factor), terminal)
 
 
 def _capacity_renderables(results, limits, time_factor, extra_notes=()):
-    """Return the verdict, worker settings and notes of :func:`format_capacity_summary` for rich.
+    """Return what :func:`format_capacity_summary` renders, with ``extra_notes`` last.
 
-    ``extra_notes`` follow the notes on the capacity. Returns nothing if
-    ``results`` has only a confirmation test.
+    Returns nothing if ``results`` has only a confirmation test.
     """
     confirmation = next((r for r in results if r.confirmation), None)
     run_order, results = results, [r for r in results if not r.confirmation]
@@ -1410,9 +1383,9 @@ def _capacity_renderables(results, limits, time_factor, extra_notes=()):
     outcome = capacity_outcome(results, limits)
     capacity, first_fail = outcome.capacity, outcome.first_fail
     verdict = _recommendation(outcome, confirmation, limits)
-    capacity_lines = [Text(line) for line in _capacity_lines(outcome, limits)]
+    capacity_lines = _capacity_lines(outcome, limits)
     if not verdict:
-        capacity_lines[0].stylize("bold")
+        capacity_lines[0] = Text(capacity_lines[0], style="bold")
     verdict += capacity_lines
     if confirmation is not None:
         verdict += _check_lines(confirmation, outcome, limits)
@@ -1443,10 +1416,9 @@ def _capacity_renderables(results, limits, time_factor, extra_notes=()):
     )
     if capacity_result is not None:
         notes += _capacity_test_notes(capacity_result, time_factor)
-    renderables = [*(Text(line) if isinstance(line, str) else line for line in verdict)]
     if workers:
-        renderables += [None, *workers]
-    return renderables + _notes(notes + list(extra_notes)) + [None]
+        verdict += [None, *workers]
+    return verdict + _notes(notes + list(extra_notes)) + [None]
 
 
 def _capacity_test_notes(capacity_result, time_factor):
@@ -1528,7 +1500,7 @@ def reset_error_lines(reset_error, n_completed):
             "  The reset connects through PgBouncer, whose connections the "
             "last test's load had used up."
         )
-        lines.append(_PGBOUNCER_ADVICE)
+        lines.append(f"  {_PGBOUNCER_ADVICE}")
     return lines + [""]
 
 

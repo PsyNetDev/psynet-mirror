@@ -897,7 +897,7 @@ def render_performance_result(
             ],
             limits,
             options_data.get("time_factor", 1.0),
-            color=False,
+            terminal=False,
         )
         if line.strip() not in ("", "Notes")
     ]

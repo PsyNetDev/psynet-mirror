@@ -1417,10 +1417,6 @@ def test_summaries_report_database_growth():
         ),
     ]
 
-    assert (
-        "Database rows from the first test to the last: participant 2,000 to "
-        "3,000, trial 65,000 to 103,000." in _join(format_performance_summary(results))
-    )
     text = _join(format_capacity_summary(results))
     assert "The database grew a lot during these tests" in text
     assert "trial 65,000 and 103,000" in text
@@ -1463,7 +1459,7 @@ def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
     results = [_base_result(n_bots=50, p95_response_time=0.1, q_delay_median=None)]
     assert "queue" not in _join(format_performance_summary(results))
 
-    results[0].q_delay_median = 0.5
+    results[0].queue_waits = {"high": {"q_delay_p95": 0.1}}
     assert "queue wait under" in _join(format_performance_summary(results))
 
 
@@ -2289,15 +2285,11 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
         "failing, at most 1% of bots failing."
     ) in text
     assert "queue" not in text and "Busy" not in text
-    rows = [line.split() for line in lines if line.strip()[:1].isdigit()]
-    assert [(row[0], row[3]) for row in rows] == [
-        ("520", "pass"),
-        ("560", "FAIL"),
-        ("416", "pass"),
-    ]
-    assert rows[0][-2:] == ["-", "capacity"]
-    assert "10 (1.8%)" in " ".join(rows[1])
-    assert " ".join(rows[2][-5:]) == "433 check at the cap"
+    rows = {line.split()[0]: line for line in lines if line.strip()[:1].isdigit()}
+    assert list(rows) == ["520", "560", "416"]
+    assert " pass " in rows["520"] and rows["520"].endswith(" capacity")
+    assert " FAIL " in rows["560"] and "10 of 570 (1.8%)" in rows["560"]
+    assert rows["416"].endswith(" 433   check at the cap")
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
@@ -2310,7 +2302,7 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
     assert "Not measured: uploads over participants' own networks" in text
 
 
-def test_performance_summary_is_plain_text_off_a_terminal():
+def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     results = [
         _base_result(
             n_bots=n,
@@ -2323,11 +2315,23 @@ def test_performance_summary_is_plain_text_off_a_terminal():
     ]
     results.append(_base_result(n_bots=400, slots_started=300))
 
-    plain = _join(format_performance_summary(results))
+    plain = _join(format_performance_summary(results, terminal=False))
 
     assert "untested" in plain
     assert "\x1b[" not in plain and "\u2026" not in plain
-    assert "\x1b[" in _join(format_performance_summary(results, color=True))
+    assert "highest passed" in _join(
+        format_performance_summary([_base_result()], terminal=False)
+    )
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert "\x1b[" in _join(format_performance_summary(results, terminal=True))
+
+    monkeypatch.setenv("COLUMNS", "60")
+    monkeypatch.setenv("NO_COLOR", "1")
+    narrow = format_performance_summary(results, terminal=True)
+    notes = narrow[narrow.index("Notes") :]
+    assert len(notes) > 3 and max(map(len, notes)) <= 60
+    assert "\x1b[" not in _join(narrow) and "\u2026" not in _join(narrow)
 
 
 def test_prefill_cache_key_changes_with_config_txt(tmp_path, monkeypatch):

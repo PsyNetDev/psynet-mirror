@@ -401,28 +401,30 @@ The summary at the end of every run lists the tests in the order they ran,
 whether each passed the limits, and the measures that the limits check.
 Columns for busy responses, participants the experiment failed, busy chains
 and async queue waits only appear when a test had them, and the limits line
-lists only the limits that apply. *Failed bots* counts every bot that raised
-an error. *Bots finished* counts bots that completed the experiment, or shows
-``-`` when a test was shorter than one participant session, so that no bot
-could finish. The verdict follows: the recommended number of participants
-taking part at once, the capacity it comes from and why the next count
+lists only the limits that apply. *Failed requests* and *Failed bots* give
+the count out of the total and the percentage; *Failed bots* counts every
+bot that raised an error. *Bots finished* counts bots that completed the
+experiment, or shows ``-`` when a test was shorter than one participant
+session, so that no bot could finish. The verdict follows: the recommended
+number of participants taking part at once, the *capacity* row it comes from
+(or the *highest passed* row, if no test failed) and why the next count
 failed, and the confirmation test. Without a confirmation test, the cap is
 80% of the capacity. For example, from a capacity search of a static rating
 study on an SSH server (some rows left out)::
 
     PERFORMANCE TEST SUMMARY
-    dog-rating on rr-pc02: 11 tests, 59 min
+    dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 0.5 s, at most 0.1% of requests failing, at most 1% of bots failing.
 
-                                           p95     Median      Failed      Failed       Bots
-     Bots   Length   Result   Req/s   response   response    requests        bots   finished
-     ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-       10    3 min   pass       2.4     0.063s     0.027s           0           0          -
-      640    3 min   FAIL     109.2     0.113s     0.037s   17 (0.1%)   631 (50%)          -
-      480    3 min   pass      97.0     0.074s     0.032s           0           0          -
-      560    3 min   FAIL     110.5     0.091s     0.036s           0   10 (1.8%)          -
-      520    3 min   pass     103.0     0.081s     0.033s           0           0          -   capacity
-      416   23 min   pass      90.2     0.076s     0.029s           0           0        433   check at the cap
+                                           p95     Median                 Failed               Failed       Bots
+     Bots   Length   Result   Req/s   response   response               requests                 bots   finished
+     ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       10    3 min   pass       2.4     0.063s     0.027s                      0                    0          -
+      640    3 min   FAIL     109.2     0.113s     0.037s   17 of 19,652 (0.09%)   631 of 1,271 (50%)          -
+      480    3 min   pass      97.0     0.074s     0.032s                      0                    0          -
+      560    3 min   FAIL     110.5     0.091s     0.036s                      0     10 of 570 (1.8%)          -
+      520    3 min   pass     103.0     0.081s     0.033s                      0                    0          -   capacity
+      416   23 min   pass      90.2     0.076s     0.029s                      0                    0        433   check at the cap
 
       -  The test was shorter than one participant session (11 min), so no bot could finish.
 
@@ -432,8 +434,9 @@ study on an SSH server (some rows left out)::
     Check: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
 
 Notes on the results, such as advice on errors and database growth, follow
-under *Notes*. In a terminal the summary is coloured; in a log file it is
-plain text.
+under *Notes*. When standard output is a terminal, the summary is coloured
+and its text wraps to the terminal's width; otherwise, as in a log file, it
+is plain text with one line per paragraph. The table is never wrapped.
 
 For rough capacities of common server sizes, based on one test on a real
 server, see :ref:`choosing_server_size`.
@@ -614,8 +617,7 @@ on a fresh database therefore measures the start of a study, and a
 capacity found early in a study may not hold later.
 
 Each test reports the rows in the tables that grow, before and after it,
-under *Database rows*, and the summary shows how they changed from the
-first test to the last. By default the tests don't reset the database, so
+under *Database rows*. By default the tests don't reset the database, so
 every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
 The capacity summary warns when the database grew by more than half during
