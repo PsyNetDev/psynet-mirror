@@ -17,6 +17,7 @@ from psynet.log import bold, warning
 from psynet.perf_test.report import (
     format_capacity_summary,
     format_performance_summary,
+    reset_error_lines,
 )
 from psynet.perf_test.results import (
     CAPACITY_SEARCH_MAX,
@@ -73,6 +74,8 @@ class PerformanceSuite:
         self.before_test = before_test
         # Why find_capacity skipped its confirmation test, or None.
         self.confirmation_skipped = None
+        # Why a database reset between tests failed and stopped the suite, or None.
+        self.reset_error = None
 
     def run(self, bot_counts, bot_log_file=None):
         """Run a test for each of ``bot_counts``, in order."""
@@ -200,7 +203,11 @@ class PerformanceSuite:
             )
 
         results = self._run_suite(CAPACITY_SEARCH_MAX, next_test, bot_log_file)
-        if confirming_cap is None and results and _ended_early(results[-1]):
+        if self.reset_error and not any(r.confirmation for r in results):
+            self.confirmation_skipped = (
+                self.confirmation_skipped or "resetting the database failed"
+            )
+        elif confirming_cap is None and results and _ended_early(results[-1]):
             self.confirmation_skipped = (
                 self.confirmation_skipped or "a test ended early"
             )
@@ -236,7 +243,15 @@ class PerformanceSuite:
                 n_bots, test_options = test
                 if self.before_test is not None:
                     self.tester.release_database_connections()
-                    self.before_test()
+                    try:
+                        self.before_test()
+                    except Exception as e:
+                        # Before the first test there is nothing to keep.
+                        if not all_results:
+                            raise
+                        self.reset_error = str(e) or type(e).__name__
+                        logger.debug("Resetting the database failed", exc_info=True)
+                        break
                 elif all_results:
                     self.tester.pause_between_tests()
                 label = f"{len(all_results) + 1}" + (f"/{n_tests}" if n_tests else "")
@@ -252,6 +267,9 @@ class PerformanceSuite:
             all_results, self.limits, self.tester.time_factor
         ):
             logger.info(line)
+        if self.reset_error:
+            for line in reset_error_lines(self.reset_error, len(all_results)):
+                logger.info(line)
         return all_results
 
     def _print_suite_header(self, bots_description, search=False):

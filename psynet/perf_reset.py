@@ -270,6 +270,10 @@ class SnapshotDatabase:
         """Tell the user how to drop database ``name`` by hand."""
         return f"Drop the database {name} by hand."
 
+    def fresh_start_hint(self):
+        """Tell the user how to start from an empty experiment database."""
+        return "Relaunch the experiment to start from an empty database."
+
     def prefill_snapshot_name(self, code_key, n_participants):
         """Return the name of the pre-fill snapshot for this code and number of participants."""
         return f"{self.snapshot_prefix}{code_key}_n{n_participants}"
@@ -497,6 +501,17 @@ class DatabaseReset:
             self.snapshot_rows = self._database.count_rows()
             rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
             logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
+            n_participants = self.snapshot_rows.get("participant", 0)
+            if taking and self._prefill is None and n_participants:
+                logger.warning(
+                    warning(
+                        f"The database already held {n_participants:,} "
+                        "participants when the snapshot was taken, for example "
+                        "from an earlier run, so every test starts from that "
+                        "data rather than from a fresh database. "
+                        f"{self._database.fresh_start_hint()}"
+                    )
+                )
 
     def close(self):
         """Keep a finished pre-fill whose snapshot failed, then drop a snapshot taken here.

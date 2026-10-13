@@ -481,6 +481,13 @@ class RemoteAppDatabase(SnapshotDatabase):
             f"sh -c 'dropdb -U \"$POSTGRES_USER\" {name}'"
         )
 
+    def fresh_start_hint(self):
+        return (
+            "To start fresh, destroy the app with 'psynet destroy ssh --server "
+            f"{self.remote.server} --app {self.name}'; the next 'psynet "
+            "performance-test ssh' deploys it again with an empty database."
+        )
+
 
 class _PsqlCursor:
     """The part of a psycopg2 cursor that :mod:`psynet.perf_reset` uses, running ``psql`` in a container.

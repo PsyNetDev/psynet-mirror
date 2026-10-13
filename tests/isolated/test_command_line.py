@@ -4967,7 +4967,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         test_time_factor=2.5,
         estimated_duration_in_minutes=4.0,
     )
-    suite = Mock()
+    suite = Mock(reset_error=None)
     suite.run.return_value = []
     suite.find_capacity.return_value = []
 

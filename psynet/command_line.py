@@ -1,3 +1,4 @@
+import collections
 import datetime
 import functools
 import getpass
@@ -4234,9 +4235,12 @@ def run_remote_experiment_command(executor, app, cmd):
         channel.set_combine_stderr(True)
         channel.exec_command(remote_cmd)
 
+        recent = collections.deque(maxlen=50)
         with channel.makefile("rb", 0) as stream:
             for line in iter(stream.readline, b""):
-                sys.stdout.write(line.decode("utf-8", "replace"))
+                text = line.decode("utf-8", "replace")
+                recent.append(text.strip())
+                sys.stdout.write(text)
                 sys.stdout.flush()
 
         status = channel.recv_exit_status()
@@ -4244,8 +4248,16 @@ def run_remote_experiment_command(executor, app, cmd):
         channel.close()
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
-        raise click.Abort
+        raise click.Abort(_remote_failure_summary(status, recent))
     return status
+
+
+def _remote_failure_summary(status, recent_lines):
+    """Return ``exit code N``, followed by the last error line of a failed remote command's output, if any."""
+    errors = [
+        line for line in recent_lines if re.search(r"Error\b|Exception\b|FATAL\b", line)
+    ]
+    return f"exit code {status}" + (f": {errors[-1]}" if errors else "")
 
 
 @test.command("ssh")
@@ -4478,15 +4490,18 @@ _test_options["performance_json_output"] = click.option(
     dallinger_version, python_version, platform, experiment_label,
     started_at / finished_at (ISO timestamps), snapshot and snapshot_rows
     (the database snapshot that each test started from and its rows, with
-    --reset-database), options (n_bots_sweep, capacity_search, max_p95_s,
-    max_queue_p95_s, duration_minutes, estimated_duration_minutes,
+    --reset-database), reset_error (why a reset failed and stopped the run
+    early, or null), options (n_bots_sweep, capacity_search, max_p95_s,
+    max_queue_p95_s, max_busy_early_finish_rate, duration_minutes,
+    estimated_duration_minutes,
     session_minutes, stagger_interval_s, arrival_minutes, time_factor,
     bot_processes, reset_database, prefill_participants, from_snapshot,
     and with --n-bots auto confirm and confirmation_skipped),
     and results (one entry per test, with all metrics, including its
     duration_minutes, arrival_minutes, session_minutes, queue_waits by
-    async job priority, startup_phase and steady_state_phase, and
-    confirmation for the test that confirms a capacity search's cap).
+    async job priority, startup_phase and steady_state_phase,
+    n_rq_workers and configured_worker_processes, and confirmation for the
+    test that confirms a capacity search's cap).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
 
@@ -5044,8 +5059,19 @@ def _run_performance_test_with_existing_server(
             reset=reset,
             confirm=not no_confirm if find_capacity else None,
             confirmation_skipped=suite.confirmation_skipped,
+            reset_error=suite.reset_error,
         )
+    _raise_reset_error(suite)
     return all_results
+
+
+def _raise_reset_error(suite):
+    """Fail the command if a database reset stopped ``suite`` early, once its results are saved."""
+    if suite.reset_error:
+        raise click.ClickException(
+            f"Resetting the database failed, so the run stopped early: "
+            f"{suite.reset_error}"
+        )
 
 
 def _performance_test_timing(
@@ -5147,12 +5173,14 @@ def _write_suite_json(
     reset,
     confirm=None,
     confirmation_skipped=None,
+    reset_error=None,
 ):
     """Write a suite's results, with its options and ``metadata``, to ``json_output``.
 
-    It finishes now; ``reset`` holds the database-reset options, if any.
-    ``confirm`` and ``confirmation_skipped`` describe a capacity search's
-    confirmation test. Unless ``quiet``, it prints where it wrote them.
+    It finishes now; ``reset`` holds the database-reset options, if any, and
+    ``reset_error`` why a reset stopped the suite early. ``confirm`` and
+    ``confirmation_skipped`` describe a capacity search's confirmation test.
+    Unless ``quiet``, it prints where it wrote them.
     """
     reset = reset or {}
     metadata = {
@@ -5163,6 +5191,7 @@ def _write_suite_json(
         # growing tables.
         "snapshot": database_reset.snapshot if database_reset else None,
         "snapshot_rows": database_reset.snapshot_rows if database_reset else None,
+        "reset_error": reset_error,
     }
     options = {
         "n_bots_sweep": [
@@ -6060,7 +6089,9 @@ def _run_ssh_performance_test(
             reset=reset,
             confirm=not no_confirm if find_capacity else None,
             confirmation_skipped=suite.confirmation_skipped,
+            reset_error=suite.reset_error,
         )
+    _raise_reset_error(suite)
     return all_results
 
 

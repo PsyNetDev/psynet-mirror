@@ -24,6 +24,7 @@ from psynet.perf_test.results import (
     busy_early_finish_cause,
     capacity_failure_causes,
     capacity_outcome,
+    connection_limit_kind,
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
@@ -1112,6 +1113,27 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         )
     lines.append("")
     return lines
+
+
+def reset_error_lines(reset_error, n_completed):
+    """Explain that resetting the database failed after ``n_completed`` tests and stopped the run.
+
+    Returns list[str].
+    """
+    lines = [
+        error(
+            f"  The run stopped early: resetting the database before test "
+            f"{n_completed + 1} failed ({reset_error}). The summary above covers "
+            f"the {plural(n_completed, 'test')} that completed."
+        )
+    ]
+    if connection_limit_kind(reset_error) == PGBOUNCER_FULL:
+        lines.append(
+            "  The reset connects through PgBouncer, whose connections the "
+            "last test's load had used up."
+        )
+        lines.append(_PGBOUNCER_ADVICE)
+    return lines + [""]
 
 
 def capacity_advice(capacity_search=False):

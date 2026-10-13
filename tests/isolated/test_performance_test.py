@@ -375,6 +375,33 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
         assert PerformanceSuite(tester).run([10, 20]) == [result]
 
 
+def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    pgbouncer_full = "FATAL:  no more connections allowed (max_client_conn)"
+    before_test = Mock(side_effect=[None, None, RuntimeError(pgbouncer_full)])
+
+    with (
+        caplog.at_level("INFO"),
+        patch.object(
+            tester,
+            "_test_performance",
+            side_effect=lambda n_bots, **_: _base_result(n_bots=n_bots),
+        ),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
+    ):
+        suite = PerformanceSuite(tester, before_test=before_test)
+        results = suite.run([10, 20, 40])
+
+    assert [r.n_bots for r in results] == [10, 20]
+    assert suite.reset_error == pgbouncer_full
+    assert "CUMULATIVE PERFORMANCE TEST SUMMARY" in caplog.text
+    assert (
+        "The run stopped early: resetting the database before test 3 failed "
+        f"({pgbouncer_full}). The summary above covers the 2 tests that completed."
+    ) in caplog.text
+    assert "Raise PgBouncer's max_client_conn" in caplog.text
+
+
 def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     before_test = Mock()
@@ -1042,6 +1069,28 @@ def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_databa
         r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements)
     )
     assert set(dropped) == {created[0], reset.snapshot}
+
+
+@pytest.mark.parametrize("n_participants, warns", [(71, True), (0, False)])
+def test_a_reset_warns_when_its_snapshot_is_not_a_fresh_database(
+    caplog, n_participants, warns
+):
+    from psynet.perf_reset import DatabaseReset
+
+    database = Mock(name="my-app", wait_for_async_jobs=Mock(return_value=0))
+    database.count_rows.return_value = {"participant": n_participants}
+    database.fresh_start_hint.return_value = "Destroy the app."
+    reset = DatabaseReset(Mock(), Mock(), database=database)
+
+    with caplog.at_level("INFO"), patch.object(DatabaseReset, "_take_snapshot"):
+        reset()
+
+    assert (
+        "already held 71 participants when the snapshot was taken" in caplog.text
+    ) == warns
+    assert (
+        "rather than from a fresh database. Destroy the app." in caplog.text
+    ) == warns
 
 
 @pytest.mark.parametrize(
@@ -2428,7 +2477,7 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
-def _remote_search(monkeypatch, reset=None, **options):
+def _remote_search(monkeypatch, reset=None, reset_side_effect=None, **options):
     """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
     import re
     from dataclasses import asdict
@@ -2447,7 +2496,8 @@ def _remote_search(monkeypatch, reset=None, **options):
         patch("psynet.perf_ssh.RemoteApp.run_psynet", side_effect=run_psynet) as run,
         patch(
             "psynet.command_line._ssh_database_reset",
-            return_value=reset and Mock(snapshot=None, snapshot_rows=None),
+            return_value=reset
+            and Mock(snapshot=None, snapshot_rows=None, side_effect=reset_side_effect),
         ),
         patch("psynet.perf_ssh.RemoteApp.start_stopped_services"),
     ):
@@ -2460,6 +2510,40 @@ def _remote_search(monkeypatch, reset=None, **options):
             **options,
         )
     return [c.args[0] for c in run.call_args_list], results
+
+
+def test_a_failed_remote_reset_writes_the_json_then_fails(tmp_path, monkeypatch):
+    import json
+
+    import click
+
+    json_output = tmp_path / "results.json"
+    pgbouncer_full = (
+        "exit code 1: FATAL:  no more connections allowed (max_client_conn)"
+    )
+    with pytest.raises(click.ClickException, match="Resetting the database failed"):
+        _remote_search(
+            monkeypatch,
+            reset={"prefill_participants": None, "from_snapshot": None},
+            reset_side_effect=[None, None, click.Abort(pgbouncer_full)],
+            json_output=str(json_output),
+            max_busy_early_finish_rate=0.05,
+        )
+
+    data = json.loads(json_output.read_text())
+    assert len(data["results"]) == 2
+    assert data["reset_error"] == pgbouncer_full
+    assert data["options"]["max_busy_early_finish_rate"] == 0.05
+
+
+def test_remote_failures_name_the_last_error_line():
+    from psynet.command_line import _remote_failure_summary
+
+    lines = ["Starting", "psycopg2.OperationalError: FATAL:  no more", "Exiting"]
+    assert _remote_failure_summary(1, lines) == (
+        "exit code 1: psycopg2.OperationalError: FATAL:  no more"
+    )
+    assert _remote_failure_summary(2, ["Starting"]) == "exit code 2"
 
 
 def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkeypatch):

@@ -426,9 +426,13 @@ estimated session times ``--time-factor``), its ``startup_phase`` and
 and for each phase, has an entry for each priority (``high``, ``low``) that
 had jobs: the number of ``jobs`` that started, their ``q_delay_p95``, the
 ``backlog`` of jobs still queued at the end and how long the oldest of them
-had waited (``oldest_queued_s``). The confirmation test has ``confirmation`` set,
+had waited (``oldest_queued_s``). ``n_rq_workers`` is the number of worker
+processes running at the end of the test and
+``configured_worker_processes`` the number ``worker_processes`` configures.
+The confirmation test has ``confirmation`` set,
 and the options record ``confirmation_skipped`` with the reason it didn't
-run. When the search tests and a long test with spread-out arrivals
+run. If resetting the database failed, ``reset_error`` gives the error
+(see :ref:`performance_testing_reset`). When the search tests and a long test with spread-out arrivals
 disagree, trust the long test. For async jobs that keep the CPU busy,
 also check worker throughput by hand, as described in
 :ref:`performance_testing_async_workers`.
@@ -584,6 +588,15 @@ computer. Files that the bots uploaded or
 generated stay in the asset storage after a reset, because only the
 database rows that refer to them are reset; they cost disk space but
 nothing else.
+
+The snapshot holds whatever the database held when the run started. If it
+already held participants, for example from an earlier run, PsyNet warns
+that every test starts from that data and says how to start from an empty
+database.
+
+If a reset fails after some tests have run, PsyNet stops the run, prints
+the summary of the tests that completed and writes them to
+``--json-output``, then exits with an error that names the reset failure.
 
 Resetting drops the experiment's database, so these options only work in
 the database that the isolated test environment creates for each
@@ -788,7 +801,10 @@ run, PsyNet starts the containers it stopped. If it can't, the command
 fails, saying that the app may be stopped, and prints the ``docker compose
 start`` command to run on the server. A reset interrupted between dropping
 and recreating the database leaves the app without its database; destroy
-the app then, and the next run deploys it again.
+the app then, and the next run deploys it again. To start a run from an
+empty database rather than one left by earlier runs, destroy the app with
+``psynet destroy ssh``; the next ``psynet performance-test ssh`` deploys it
+again.
 
 Before the first reset and again before every later one, the web container
 checks that the app is a performance-test app, and runs the guards against
