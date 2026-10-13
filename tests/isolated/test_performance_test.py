@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -2410,15 +2411,19 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     )
     # Measures that most tests lack go in a second table, keyed by bot count.
     tables = plain.split("\n\n")
-    extra = next(t for t in tables if "queue p95 (s)" in t)
+    extra = next(t for t in tables if "queue p95" in t)
     assert "N/A" not in plain
     assert re.search(r"\n +100 +100 \(\d.*1\.0 s +9\.0 s", extra)
     assert max(map(len, next(t for t in tables if "Req/s" in t).splitlines())) <= 112
+    assert "\x1b[" not in _join(format_test_results(results[0]))
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert "\x1b[" in _join(format_performance_summary(results, terminal=True))
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    assert "\x1b[" in _join(format_test_results(results[0]))
     monkeypatch.setenv("TERM", "dumb")
     assert "\x1b[" not in _join(format_performance_summary(results, terminal=True))
+    assert "\x1b[" not in _join(format_test_results(results[0]))
 
     monkeypatch.setenv("COLUMNS", "60")
     monkeypatch.setenv("NO_COLOR", "1")

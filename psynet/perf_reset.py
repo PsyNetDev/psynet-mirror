@@ -74,7 +74,7 @@ from psynet.isolated_environment import (
     in_ci,
     terminate_connections,
 )
-from psynet.log import warning
+from psynet.perf_test.report import warning
 
 logger = logging.getLogger(__name__)
 
