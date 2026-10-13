@@ -1951,7 +1951,11 @@ def test_worker_advice_without_a_steady_state_names_a_longer_test(planned, advic
 
     text = _join(format_capacity_summary(results, confirmation_planned=planned))
 
-    assert advice in text
+    assert (
+        f"{advice} To go above 104, raise worker_processes above 10 and test again."
+        in text
+    )
+    assert "Raise worker_processes" not in text
 
 
 def test_queue_advice_says_when_no_worker_processes_ran():

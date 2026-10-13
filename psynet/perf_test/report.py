@@ -732,9 +732,16 @@ def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_p
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
         too_short = measured.session_minutes and not measured.steady_state_phase
-        if confirmation is None and measured.n_rq_workers and too_short:
+        long_test = confirmation is None and measured.n_rq_workers and too_short
+        if long_test:
             text.append(_long_test_text(measured, n, confirmation_planned))
-        if queue_bound is not None or behind:
+        if long_test and cap and queue_bound is first_fail:
+            # The cap's test passed with these workers; only going above it needs more.
+            text.append(
+                f"To go above {n:,}, raise worker_processes above "
+                f"{measured.n_rq_workers} and test again."
+            )
+        elif queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
         said_busy = behind and advice.utilization > MAX_WORKER_UTILIZATION
