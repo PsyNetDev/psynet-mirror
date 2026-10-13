@@ -591,11 +591,21 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
     assert caplog.text.count("waited too long for") == 1
 
 
+# A capacity search with 10 workers that failed on queue waits at 130 bots.
+_QUEUE_SEARCH = [
+    _base_result(
+        n_bots=n,
+        queue_waits={"high": {"q_delay_p95": wait}},
+        n_rq_workers=10,
+        n_rq_job_slots=10,
+    )
+    for n, wait in [(120, 2.2), (130, 8.7)]
+]
+
+
 def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
-    workers = dict(n_rq_workers=10, n_rq_job_slots=10)
     results = [
-        _base_result(n_bots=120, queue_waits={"high": {"q_delay_p95": 2.2}}, **workers),
-        _base_result(n_bots=130, queue_waits={"high": {"q_delay_p95": 8.7}}, **workers),
+        *_QUEUE_SEARCH,
         _tapping_result(96, 10, 0.55, confirmation=True, duration_minutes=26),
     ]
 
@@ -1556,6 +1566,28 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             (None, 120),
             dict(processes=14, demand=16, reason="cores"),
         ),
+        # 1 worker 73% busy needs 0.73 / 0.7 = 1.04, so 2.
+        (_tapping_result(10, 1, 0.73), 10, None, dict(processes=2, reason="estimate")),
+        # 2 workers that fell behind with half the load they could take get 3.
+        (
+            _tapping_result(
+                60,
+                2,
+                0.5,
+                startup_phase=_phase_backlog(2),
+                steady_state_phase=_phase_backlog(95),
+            ),
+            60,
+            None,
+            dict(processes=3, demand=2, reason="behind"),
+        ),
+        # 6 workers on 8 cores already use all the cores left.
+        (
+            _tapping_result(96, 6, 0.55, server_cores=8),
+            96,
+            None,
+            dict(processes=6, reason="current", all_cores=True),
+        ),
         # 10 I/O jobs at once in each 20-slot process use 60% of its core.
         (
             _tapping_result(40, 2, 10, slots=20, cpu_share=0.6),
@@ -1580,43 +1612,81 @@ def test_recommend_workers(result, n, burst, expected):
 
 
 @pytest.mark.parametrize(
-    "result, present, absent",
+    "results, present, absent",
     [
         # The 10 current workers exceed the 6 cores left, but the load uses 8.
         (
-            _tapping_result(96, 10, 0.55, server_cores=8),
+            [_tapping_result(96, 10, 0.55, server_cores=8)],
             "would use about 8 worker processes, but the 8-core server",
             "about 10",
         ),
         # The load needs 3, but only the cores keep it below the current 10.
         (
-            _tapping_result(96, 10, 0.2, server_cores=8),
+            [_tapping_result(96, 10, 0.2, server_cores=8)],
             "so this is fewer than the 10 worker processes the test ran",
             "would use about",
         ),
+        # Above a confirmed cap that already uses all the cores left.
+        (
+            _QUEUE_SEARCH
+            + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
+            "(all the cores left)\n  In the 96-bot test that confirmed this cap, "
+            "the 10 worker processes were busy 55% of the time. Keep the current "
+            "10. To go above 96, use a larger server or cheaper jobs.",
+            "raise worker_processes above",
+        ),
+        # Above a confirmed cap where the cores trim the count below the test's.
+        (
+            _QUEUE_SEARCH
+            + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=10)],
+            "8 would be about 69% busy. To go above 96, use a larger server or "
+            "cheaper jobs.",
+            "raise worker_processes above",
+        ),
+        # No bot finished in either test, so neither had a steady state.
+        (
+            [
+                _tapping_result(
+                    40,
+                    2,
+                    0.5,
+                    first_completion_s=None,
+                    startup_phase=None,
+                    steady_state_phase=None,
+                    worker_load={},
+                ),
+                _base_result(n_bots=80, queue_waits={"high": {"q_delay_p95": 8.7}}),
+            ],
+            "No estimate of worker_processes: no bot finished, so there's no "
+            "steady state to measure.",
+            "40-bot test ran for less than",
+        ),
         # A test that failed on response times, whose backlog also grew.
         (
-            _tapping_result(
-                60,
-                2,
-                0.5,
-                p95_response_time=0.9,
-                startup_phase=_phase_backlog(2),
-                steady_state_phase=_phase_backlog(95),
-            ),
+            [
+                _tapping_result(
+                    60,
+                    2,
+                    0.5,
+                    p95_response_time=0.9,
+                    startup_phase=_phase_backlog(2),
+                    steady_state_phase=_phase_backlog(95),
+                )
+            ],
             "That doesn't fail the test by itself",
             "still passes",
         ),
         # 1.5 CPU-heavy jobs running per process means busy all the time.
         (
-            _tapping_result(40, 2, 1.5, slots=20),
+            [_tapping_result(40, 2, 1.5, slots=20)],
             "worker_greenlets_per_process = 1",
             "150%",
         ),
     ],
 )
-def test_worker_text_states_what_was_measured(result, present, absent):
-    text = _join(format_test_results(result) + format_capacity_summary([result]))
+def test_worker_text_states_what_was_measured(results, present, absent):
+    test_lines = [line for r in results for line in format_test_results(r)]
+    text = _join(test_lines + format_capacity_summary(results))
 
     assert present in text and absent not in text
 
@@ -1845,8 +1915,8 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     )
     assert (
         "for one of the 2 worker processes, up to 40 jobs at once. No estimate "
-        "of worker_processes: the 640-bot test ran for less than 60 s after its "
-        "first bot finished. Raise the worker_processes config variable"
+        "of worker_processes: no bot finished, so there's no steady state to "
+        "measure. Raise worker_processes in config.txt"
     ) in text
     assert "worker_greenlets_per_process = 1" in text
 
@@ -1864,7 +1934,7 @@ def test_queue_advice_says_when_no_worker_processes_ran():
 
     text = _join(format_capacity_summary(results))
     assert "no worker processes were running, so they couldn't run" in text
-    assert "Raise the worker_processes" not in text
+    assert "Raise worker_processes" not in text
 
 
 def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():

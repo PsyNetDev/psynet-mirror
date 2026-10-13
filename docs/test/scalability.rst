@@ -580,8 +580,9 @@ the finished jobs' CPU time a share ``c`` of their run time:
   if that is fewer than the test had. If the load needs more, the summary
   says the server lacks cores.
 
-There is no estimate if the steady state lasted under a minute or fewer than
-20 worker jobs finished in it. For example, a tapping study with 43 s of
+There is no estimate if no bot finished (so there was no steady state), if
+the steady state lasted under a minute, or if fewer than 20 worker jobs
+finished in it. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130
 bots on queue waits and whose 96-participant confirmation test kept 10
 single-slot workers 55% busy, gets::
@@ -594,7 +595,8 @@ single-slot workers 55% busy, gets::
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks
 an estimate from saturated workers, and ``(all the cores left)`` a number
-that the server's cores capped. The reason says what the test measured and
+that uses every core left, so going above the cap then needs a larger server
+or cheaper jobs rather than more worker processes. The reason says what the test measured and
 what set the number: the load, the current processes, one more than
 processes that fell behind, or the cores.
 
