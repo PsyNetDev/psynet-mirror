@@ -4397,8 +4397,8 @@ _test_options["performance_max_p95_ms"] = click.option(
     default=None,
     help="""
     The 95th-percentile response time (for /timeline and /response) that a
-    test may reach while still counting as within capacity. Used by
-    --n-bots auto and by the suggested participant cap in the summary.
+    test may reach while still passing. Used by --n-bots auto and by the
+    recommended number of participants in the summary.
     Defaults to 500.""",
 )
 
@@ -4409,7 +4409,7 @@ _test_options["performance_max_queue_p95_s"] = click.option(
     help="""
     The 95th-percentile time, in seconds, that high-priority async jobs,
     which participants wait for, may wait for a worker while the test still
-    counts as within capacity. Jobs still queued when the test ends count
+    passes. Jobs still queued when the test ends count
     with the time they have waited so far. Low-priority jobs are reported
     but never fail the test. Used alongside --max-p95-ms. Defaults to 5.""",
 )
@@ -4420,8 +4420,8 @@ _test_options["performance_max_busy_early_finish_rate"] = click.option(
     default=None,
     help="""
     The share of bots started that may get fewer trials in a chain trial
-    maker because every chain was busy, while the test still counts as
-    within capacity; one such bot per trial maker is always allowed. Used
+    maker because every chain was busy, while the test still passes; one
+    such bot per trial maker is always allowed. Used
     alongside --max-p95-ms. Defaults to 0.01 (1%).""",
 )
 
@@ -4479,7 +4479,7 @@ _test_options["duration_minutes"] = click.option(
     session sees mostly the start of the study, before bots finish, and
     the suite warns about it. With --n-bots auto this sets the length of
     the search's tests, which default to one session, at most 5 minutes, so
-    that a search of up to 12 tests takes at most an hour; the confirmation
+    that a search of up to 12 tests takes at most an hour; the validation
     test sets its own length.""",
 )
 
@@ -4504,7 +4504,7 @@ _test_options["performance_json_output"] = click.option(
     duration_minutes, arrival_minutes, session_minutes, queue_waits by
     async job priority, startup_phase and steady_state_phase,
     n_rq_workers and configured_worker_processes, and confirmation for the
-    test that confirms a capacity search's cap).
+    validation test that ends a capacity search).
     Useful for downstream consumption (e.g. benchmarking tools like asv).""",
 )
 
@@ -4796,7 +4796,7 @@ def performance_test__local(
     The --n-bots parameter can accept a comma-separated list of integers
     to run sequential tests with different concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests, and
-    --n-bots auto searches for the server's capacity.
+    --n-bots auto searches for the most bots that pass the limits.
 
     By default, this command starts a new experiment server automatically,
     with a free port, a database and a Redis server of its own, so it leaves
