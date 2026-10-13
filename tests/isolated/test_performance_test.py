@@ -2445,11 +2445,9 @@ esac
 """
 
 
-@pytest.mark.parametrize(
-    "scenario", ["recovers", "hangs", "restart fails", "first check fails"]
-)
-def test_a_remote_restart_restarts_workers_that_never_register(
-    scenario, tmp_path, monkeypatch
+@pytest.mark.parametrize("recovers", [True, False])
+def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
+    recovers, tmp_path, monkeypatch
 ):
     import shlex
     import subprocess
@@ -2480,9 +2478,11 @@ def test_a_remote_restart_restarts_workers_that_never_register(
 
     register("c1")
     register("c2")
-    inspections = []
 
     def respond(cmd):
+        # Dallinger's worker_startup_timeout exits a hung worker, and Docker restarts it.
+        if recovers and clock[0] >= 130:
+            register("c2")
         if redis_command := re.search(r"exec -T redis (.*) ; }", cmd):
             return subprocess.run(
                 shlex.split(redis_command[1]), env=env, capture_output=True, text=True
@@ -2492,15 +2492,7 @@ def test_a_remote_restart_restarts_workers_that_never_register(
                 key.unlink()
         if ".yml start " in cmd:
             register("c1")
-        if ".yml restart " in cmd:
-            if scenario == "restart fails":
-                return 1, "Error response from daemon\n"
-            if scenario != "hangs":
-                register("c2")
         if "docker inspect" in cmd:
-            inspections.append(cmd)
-            if scenario == "first check fails" and len(inspections) == 1:
-                return 1, "Cannot connect to the Docker daemon\n"
             return "worker_1 c1\nworker_2 c2\n"
         if "ps --services" in cmd:
             return "redis\nweb\nworker_1\nworker_2\n"
@@ -2509,32 +2501,18 @@ def test_a_remote_restart_restarts_workers_that_never_register(
     remote = perf_ssh.RemoteApp(_fake_server(respond), "my-app", "server")
     remote.prepare = Mock()
     remote.stop()
-    commands = remote.executor.commands
-    if scenario in ("recovers", "first check fails"):
+    if recovers:
         remote.start()
     else:
         with pytest.raises(RuntimeError) as error:
             remote.start()
-        restarted = scenario == "hangs"
-        assert (
-            "1 of 2 worker processes registered with RQ; worker_2 didn't"
-            + (", even after a restart." if restarted else ".")
-        ) in str(error.value)
+        assert "1 of 2 worker processes registered with RQ; worker_2 didn't." in str(
+            error.value
+        )
         assert "cd ~/dallinger/my-app && docker compose restart worker_2" in str(
             error.value
         )
-        # The cleanup starts only a worker whose restart failed.
-        n_commands = len(commands)
-        if restarted:
-            remote.start_stopped_services()
-            assert len(commands) == n_commands
-        else:
-            with pytest.raises(RuntimeError):
-                remote.start_stopped_services()
-            assert ".yml start worker_2 ;" in commands[n_commands]
-    restarts = [c for c in commands if ".yml restart" in c]
-    assert len(restarts) == (2 if scenario == "restart fails" else 1)
-    assert all("restart worker_2 ;" in c for c in restarts)
+    assert not any(".yml restart" in c for c in remote.executor.commands)
 
 
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])

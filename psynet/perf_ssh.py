@@ -43,6 +43,9 @@ Design constraints:
   pgbouncer: it keeps server connections to the database for 60 s after
   its clients go, and could open new ones while the database is copied.
   Starting it again also gives it a fresh pool.
+- A worker that hangs in its start-up after a reset is left to Dallinger's
+  ``worker_startup_timeout``, which exits it so that Docker restarts it;
+  :meth:`RemoteApp.start` waits long enough for that.
 - Secrets in the containers' environments never leave the server: commands
   print only what they need, such as the database name.
 """
@@ -72,10 +75,9 @@ _SHARED_POSTGRES = "dallinger-postgresql-1"
 _KEPT_SERVICES = frozenset(
     {"postgresql", "redis", "frontdoor", "controller", "cloudflared"}
 )
+# Covers Dallinger's 120 s worker_startup_timeout, Docker restarting the
+# worker that it exits, and the new worker registering with RQ.
 _SERVER_READY_TIMEOUT_S = 180
-# A worker hasn't registered with RQ this long after starting is taken to have
-# hung in its start-up, which happens about once in 100 starts.
-_WORKER_RESTART_AFTER_S = 60
 _WORKER_SERVICE = re.compile(r"worker_\d+")
 _SERVICE_AND_HOSTNAME = (
     '{{index .Config.Labels "com.docker.compose.service"}} {{.Config.Hostname}}'
@@ -308,9 +310,7 @@ class RemoteApp:
         """Start the services that :meth:`stop` stopped and wait until the server answers.
 
         It waits for ``/health`` in the web container and for as many RQ
-        workers as there were before :meth:`stop`. Worker containers that
-        haven't registered with RQ ``_WORKER_RESTART_AFTER_S`` after
-        starting are restarted once.
+        workers as there were before :meth:`stop`.
 
         Raises
         ------
@@ -330,55 +330,18 @@ class RemoteApp:
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
         )
-        # The workers restarted, once a check found which hadn't registered.
-        restarted = None
         while True:
             healthy = run_with_status(self.executor, health)[0] == 0
             registered = int(self._redis("SCARD", "rq:workers") or 0)
             if healthy and registered >= self._n_workers:
                 return
-            waited = time.monotonic() - started
-            if (
-                restarted is None
-                and registered < self._n_workers
-                and waited >= _WORKER_RESTART_AFTER_S
-            ):
-                restarted = self._restart_unregistered_workers(workers)
-            if waited >= _SERVER_READY_TIMEOUT_S:
+            if time.monotonic() - started >= _SERVER_READY_TIMEOUT_S:
                 raise RuntimeError(
-                    self._not_ready_message(healthy, registered, workers, restarted)
+                    self._not_ready_message(healthy, registered, workers)
                 )
             time.sleep(2)
 
-    def _restart_unregistered_workers(self, workers):
-        """Restart those of the ``workers`` services that haven't registered with RQ.
-
-        Returns
-        -------
-        list[str] or None
-            The services restarted, or ``None`` if it couldn't check which
-            had registered. A service whose restart failed is left to
-            :meth:`start_stopped_services` and not returned.
-        """
-        missing = self._unregistered_workers(workers)
-        if not missing:
-            return missing
-        print(
-            f"▶ Restarting {', '.join(missing)}, which didn't register with RQ "
-            f"within {_WORKER_RESTART_AFTER_S} s..."
-        )
-        try:
-            self.compose("restart", *missing)
-        except RuntimeError as e:
-            logger.warning(
-                f"Could not restart {', '.join(missing)} of {self.app} on "
-                f"{self.server}: {e}"
-            )
-            self._stopped = list(dict.fromkeys(self._stopped + missing))
-            return []
-        return missing
-
-    def _not_ready_message(self, healthy, registered, workers, restarted):
+    def _not_ready_message(self, healthy, registered, workers):
         """Say why the server wasn't ready, naming worker containers that didn't register."""
         problems = [] if healthy else ["its web server didn't answer"]
         missing = []
@@ -388,11 +351,7 @@ class RemoteApp:
                 f"{registered} of {self._n_workers} worker processes registered with RQ"
             )
             if missing:
-                problem += f"; {', '.join(missing)} didn't" + (
-                    ", even after a restart"
-                    if set(missing) <= set(restarted or [])
-                    else ""
-                )
+                problem += f"; {', '.join(missing)} didn't"
             problems.append(problem)
         message = (
             f"{self.app} was not ready {_SERVER_READY_TIMEOUT_S} s after its "
