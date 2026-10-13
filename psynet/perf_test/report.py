@@ -52,6 +52,7 @@ from psynet.perf_test.results import (
     limit_breaches,
     missing_workers,
     overshoot,
+    percent,
     phase_limit_reasons,
     phase_queue_wait_p95,
     plural,
@@ -596,21 +597,11 @@ def _hanging(text):
     return Padding(text[indent:], (0, 0, 0, indent), expand=False) if indent else text
 
 
-def _percent(share):
-    """Format ``share`` as a percentage with two significant digits, e.g. ``0.09%``, ``1.2%`` or ``13%``."""
-    percent = share * 100
-    if 0 < percent < 0.005:
-        return "<0.01%"
-    if percent < 0.995:
-        return f"{percent:.2f}%"
-    return f"{percent:.1f}%" if percent < 9.95 else f"{percent:.0f}%"
-
-
 def _count(n, total, alert=False):
     """Format ``n`` and its share of ``total`` for a table cell, e.g. ``7 (1.2%)``, in red if ``alert`` and not zero."""
     if not n:
         return Text("0")
-    return _alert(f"{n:,} ({_percent(n / total)})" if total else f"{n:,}", alert)
+    return _alert(f"{n:,} ({percent(n / total)})" if total else f"{n:,}", alert)
 
 
 def _alert(text, alert):
@@ -1011,7 +1002,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_p
     lines = []
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
-        too_short = measured.session_minutes and not measured.steady_state_phase
+        too_short = measured.session_minutes and measured.steady_state_s is None
         long_test = confirmation is None and measured.n_rq_workers and too_short
         if long_test:
             text.append(_long_test_text(measured, n, confirmation_planned))
@@ -1245,16 +1236,23 @@ def _database_growth_warnings(
     return lines
 
 
+def _phase_breaches(result, limits):
+    """Return the limits that ``result``'s start-up and steady state exceeded, empty without a steady state."""
+    if result.steady_state_s is None:
+        return [], []
+    return (
+        phase_limit_reasons(result.startup_phase, limits),
+        phase_limit_reasons(result.steady_state_phase, limits),
+    )
+
+
 def _startup_only_lines(result, limits):
     """Note when ``result`` exceeded the phase limits in its start-up but not its steady state.
 
     The capacity still counts the start-up, because participants often
     arrive together when a study opens.
     """
-    if not (result.startup_phase and result.steady_state_phase):
-        return []
-    startup = phase_limit_reasons(result.startup_phase, limits)
-    steady = phase_limit_reasons(result.steady_state_phase, limits)
+    startup, steady = _phase_breaches(result, limits)
     if not startup or steady:
         return []
     return [
@@ -1270,14 +1268,6 @@ def _startup_only_lines(result, limits):
 _RAMP_UP_WARNING_SHARE = 0.25
 
 
-def _bot_failures(result):
-    """Describe how many of ``result``'s bots failed, e.g. ``7 of 570 bots (1.2%) failed``."""
-    n, started = result.bot_errors, result.total_bots_started
-    if not started:
-        return f"{plural(n, 'bot')} failed"
-    return f"{n:,} of {started:,} bots ({_percent(n / started)}) failed"
-
-
 def _reasons(result, causes, limits):
     """Join the reasons in ``causes``, from :func:`capacity_failure_causes` of ``result``.
 
@@ -1285,36 +1275,8 @@ def _reasons(result, causes, limits):
     response time was 900 ms, over the 500 ms limit``. Bot errors appear as
     a share of the bots; :func:`_error_kinds_lines` names their kinds.
     """
-    breaches = {b.reason: b for b in limit_breaches(result, limits)}
-    return "; ".join(
-        _breach_clause(result, breaches[reason]) if reason in breaches else reason
-        for reason, _ in causes
-    )
-
-
-def _breach_clause(result, breach):
-    """Describe ``breach`` of ``result`` as a clause, with its limit."""
-    requests = result.key_requests or 0
-    if breach.measure == "bot_errors":
-        what = _bot_failures(result)
-    elif breach.measure in ("request_errors", "busy_responses") and requests:
-        n = (
-            result.request_errors
-            if breach.measure == "request_errors"
-            else result.busy_responses
-        )
-        how = (
-            "failed"
-            if breach.measure == "request_errors"
-            else "were answered busy or stale"
-        )
-        what = f"{n:,} of {requests:,} requests ({_percent(n / requests)}) {how}"
-    elif breach.measure in ("p95", "endpoint_p95", "queue"):
-        name, value, unit = breach.reason.rsplit(" ", 2)
-        what = f"the {name} was {value} {unit}"
-    else:
-        what = breach.reason
-    return f"{what}, over the {breach.limit} limit"
+    clauses = {b.reason: b.clause for b in limit_breaches(result, limits)}
+    return "; ".join(clauses.get(reason, reason) for reason, _ in causes)
 
 
 def _error_kinds_lines(result, causes):
@@ -1448,8 +1410,7 @@ def _confirmed(result, limits):
     return (
         result is not None
         and not capacity_failure_causes(result, limits)
-        and result.first_completion_s is not None
-        and bool(result.steady_state_phase)
+        and result.steady_state_s is not None
     )
 
 
@@ -1484,9 +1445,8 @@ def _check_lines(result, outcome, limits):
     if not _confirmation_exceeded(result, limits):
         return [f"{test} but could not be tested: {reasons}."]
     lines = [f"{test} and failed: {reasons}.", *_error_kinds_lines(result, causes)]
-    if result.startup_phase and result.steady_state_phase:
-        startup = phase_limit_reasons(result.startup_phase, limits)
-        steady = phase_limit_reasons(result.steady_state_phase, limits)
+    if result.steady_state_s is not None:
+        startup, steady = _phase_breaches(result, limits)
         lines.append(
             "  Response times, request errors and high-priority queue waits: "
             f"start-up {'; '.join(startup) or 'within the limits'}, steady state "

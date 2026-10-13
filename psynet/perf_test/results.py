@@ -260,6 +260,13 @@ class PerformanceTestResult:
     startup_phase: dict = field(default_factory=dict)
     steady_state_phase: dict = field(default_factory=dict)
 
+    @property
+    def steady_state_s(self):
+        """Return how long the steady state lasted, or ``None`` if it was too short to report separately."""
+        if not self.steady_state_phase:
+            return None
+        return (self.actual_duration or 0) - (self.first_completion_s or 0)
+
     @classmethod
     def from_dict(cls, data):
         """Return a result from a saved JSON result.
@@ -590,8 +597,8 @@ def _worker_demand(result):
     is at most 1.
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
-    steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
-    if not (workers and load and steady_s > 0):
+    steady_s = result.steady_state_s
+    if not (workers and load and steady_s):
         return None
     running = load["busy_s"] / (workers * steady_s)
     slots = (result.n_rq_job_slots or 0) // workers
@@ -615,9 +622,9 @@ def workers_falling_behind(result):
     busy, or if the low-priority backlog grew (see
     :data:`LOW_BACKLOG_GROWTH_RATIO` and :data:`LOW_BACKLOG_GROWTH_MIN_JOBS`).
     """
-    startup, steady = result.startup_phase, result.steady_state_phase
-    if not (startup and steady):
+    if result.steady_state_s is None:
         return None
+    startup, steady = result.startup_phase, result.steady_state_phase
     reasons = []
     utilization = worker_utilization(result)
     if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
@@ -702,7 +709,7 @@ def recommend_workers(result, n_participants, burst=None):
             why = "the test ran no bots"
         elif result.first_completion_s is None:
             why = "no bot finished, so there's no steady state to measure"
-        elif not result.steady_state_phase:
+        elif result.steady_state_s is None:
             why = f"{test} ran for less than {MIN_STEADY_STATE_S} s after its first bot finished"
         elif not load:
             why = f"{test} was saved without worker measurements"
@@ -906,25 +913,11 @@ def phase_limit_reasons(phase, limits):
     """Return the response-time, request-error and queue limits that one phase exceeded.
 
     ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
-    :attr:`~PerformanceTestResult.steady_state_phase`. As in
-    :func:`queue_wait_p95`, only high-priority queue waits count, including
-    the backlog left at the end of the phase.
+    :attr:`~PerformanceTestResult.steady_state_phase`, whose keys are the
+    result's field names for those measures.
     """
-    reasons = []
-    p95 = phase.get("p95_response_time")
-    if p95 is not None and p95 > limits.max_p95_s:
-        reasons.append(f"p95 response time {p95 * 1000:.0f} ms")
-    errors = phase.get("request_errors") or 0
-    allowed = max(
-        limits.allowed_request_errors,
-        limits.max_request_error_rate * (phase.get("key_requests") or 0),
-    )
-    if errors > allowed:
-        reasons.append(plural(errors, "request error"))
-    queue_wait = phase_queue_wait_p95(phase)
-    if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
-        reasons.append(f"p95 high-priority async queue wait {queue_wait:.2f} s")
-    return reasons
+    phase_result = PerformanceTestResult.from_dict(phase)
+    return [breach.reason for breach in limit_breaches(phase_result, limits)]
 
 
 @dataclass(frozen=True)
@@ -932,18 +925,42 @@ class LimitBreach:
     """A measure of a test that exceeded its limit; see :func:`limit_breaches`.
 
     ``measure`` is one of :data:`_ERROR_MEASURES`, ``"wait_timeouts"``,
-    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"`` or ``"queue"``; ``reason`` describes the
-    value, e.g. ``p95 response time 900 ms``, and ``limit`` the limit, e.g.
-    ``500 ms``. ``server_limit`` is as for :func:`capacity_failure_causes`.
+    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"`` or ``"queue"``.
+    ``reason`` describes the value, e.g. ``p95 response time 900 ms``,
+    ``limit`` the limit, e.g. ``500 ms``, and ``clause`` both, e.g. ``the p95
+    response time was 900 ms, over the 500 ms limit``. ``value`` and
+    ``limit_value`` are the numbers compared. ``server_limit`` is as for
+    :func:`capacity_failure_causes`.
     """
 
     measure: str
     reason: str
     limit: str
+    value: float
+    limit_value: float
+    clause: str
     server_limit: bool = True
 
 
 _ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors")
+_LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains")
+
+
+def percent(share):
+    """Format ``share`` as a percentage with two significant digits, e.g. ``0.09%``, ``1.2%`` or ``13%``."""
+    value = share * 100
+    if 0 < value < 0.005:
+        return "<0.01%"
+    if value < 0.995:
+        return f"{value:.2f}%"
+    return f"{value:.1f}%" if value < 9.95 else f"{value:.0f}%"
+
+
+def _of(n, total, nouns, verb):
+    """Describe ``n`` of ``total``, e.g. ``7 of 570 bots (1.2%) failed``."""
+    if not total:
+        return f"{n:,} {nouns} {verb}"
+    return f"{n:,} of {total:,} {nouns} ({percent(n / total)}) {verb}"
 
 
 def limit_breaches(result, limits):
@@ -953,84 +970,111 @@ def limit_breaches(result, limits):
     stopped server, limits of the test and missing responses.
     """
     breaches = []
-    key_requests = result.key_requests or 0
-    request_errors = result.request_errors or 0
-    if request_errors > max(
-        limits.allowed_request_errors,
-        limits.max_request_error_rate * key_requests,
-    ):
+
+    def breach(measure, reason, limit, value, limit_value, what=None, **kwargs):
+        clause = f"{what or reason}, over the {limit} limit"
         breaches.append(
-            LimitBreach(
-                "request_errors",
-                plural(request_errors, "request error"),
-                f"{limits.max_request_error_rate * 100:g}%",
-            )
+            LimitBreach(measure, reason, limit, value, limit_value, clause, **kwargs)
         )
-    busy_responses = result.busy_responses or 0
-    if busy_responses > max(
-        limits.allowed_busy_responses,
-        limits.max_busy_response_rate * key_requests,
-    ):
-        breaches.append(
-            LimitBreach(
-                "busy_responses",
-                plural(busy_responses, "busy/stale response"),
-                f"{limits.max_busy_response_rate * 100:g}%",
-            )
-        )
+
+    requests = result.key_requests or 0
+    started = result.total_bots_started or 0
+    for measure, n, rate, allowed, noun, verb in [
+        (
+            "request_errors",
+            result.request_errors or 0,
+            limits.max_request_error_rate,
+            limits.allowed_request_errors,
+            "request error",
+            "failed",
+        ),
+        (
+            "busy_responses",
+            result.busy_responses or 0,
+            limits.max_busy_response_rate,
+            limits.allowed_busy_responses,
+            "busy/stale response",
+            "were answered busy or stale",
+        ),
+    ]:
+        allowed = max(allowed, rate * requests)
+        if n > allowed:
+            what = _of(n, requests, "requests", verb) if requests else None
+            breach(measure, plural(n, noun), f"{rate * 100:g}%", n, allowed, what)
     bot_errors = result.bot_errors or 0
-    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
+    max_bot_errors = limits.max_bot_error_rate * started
     if bot_errors > max_bot_errors:
         kinds = result.bot_error_kinds or {}
         connection_errors = sum(kinds.get(kind, 0) for kind in _CONNECTION_LIMIT_KINDS)
-        breaches.append(
-            LimitBreach(
-                "bot_errors",
-                describe_bot_errors(result),
-                f"{limits.max_bot_error_rate * 100:g}%",
-                bot_errors - connection_errors > max_bot_errors,
-            )
+        breach(
+            "bot_errors",
+            describe_bot_errors(result),
+            f"{limits.max_bot_error_rate * 100:g}%",
+            bot_errors,
+            max_bot_errors,
+            _of(bot_errors, started, "bots", "failed"),
+            server_limit=bot_errors - connection_errors > max_bot_errors,
         )
-    if wait_cause := wait_timeout_cause(result, limits):
-        breaches.append(
-            LimitBreach(
-                "wait_timeouts", wait_cause, f"{limits.max_wait_timeout_rate * 100:g}%"
-            )
+    wait_timeouts = count_wait_timeouts(result)
+    if wait_timeouts > limits.max_wait_timeout_rate * started:
+        breach(
+            "wait_timeouts",
+            wait_timeout_cause(result, limits),
+            f"{limits.max_wait_timeout_rate * 100:g}%",
+            wait_timeouts,
+            limits.max_wait_timeout_rate * started,
         )
     if busy_cause := busy_early_finish_cause(result, limits):
-        breaches.append(
-            LimitBreach(
-                "busy_chains",
-                busy_cause,
-                f"{limits.max_busy_early_finish_rate * 100:g}%",
-            )
+        breach(
+            "busy_chains",
+            busy_cause,
+            f"{limits.max_busy_early_finish_rate * 100:g}%",
+            _busy_early_finish_max(result),
+            limits.allowed_busy_early_finishes_for(started),
         )
     max_p95 = f"{limits.max_p95_s * 1000:.0f} ms"
     p95 = result.p95_response_time
     if p95 is not None and float(p95) > limits.max_p95_s:
-        breaches.append(
-            LimitBreach("p95", f"p95 response time {float(p95) * 1000:.0f} ms", max_p95)
+        value = f"{float(p95) * 1000:.0f} ms"
+        breach(
+            "p95",
+            f"p95 response time {value}",
+            max_p95,
+            float(p95),
+            limits.max_p95_s,
+            f"the p95 response time was {value}",
         )
     elif p95 is not None:
-        breaches += [
-            LimitBreach(
-                "endpoint_p95",
-                f"p95 response time for {endpoint} {float(endpoint_p95) * 1000:.0f} ms",
-                max_p95,
-            )
-            for endpoint, endpoint_p95 in sorted((result.endpoint_p95 or {}).items())
-            if float(endpoint_p95) > limits.max_p95_s
-        ]
+        for endpoint, endpoint_p95 in sorted((result.endpoint_p95 or {}).items()):
+            if float(endpoint_p95) > limits.max_p95_s:
+                value = f"{float(endpoint_p95) * 1000:.0f} ms"
+                breach(
+                    "endpoint_p95",
+                    f"p95 response time for {endpoint} {value}",
+                    max_p95,
+                    float(endpoint_p95),
+                    limits.max_p95_s,
+                    f"the p95 response time for {endpoint} was {value}",
+                )
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
-        breaches.append(
-            LimitBreach(
-                "queue",
-                f"p95 high-priority async queue wait {queue_wait:.2f} s",
-                f"{limits.max_queue_p95_s:g} s",
-            )
+        breach(
+            "queue",
+            f"p95 high-priority async queue wait {queue_wait:.2f} s",
+            f"{limits.max_queue_p95_s:g} s",
+            queue_wait,
+            limits.max_queue_p95_s,
+            f"the p95 high-priority async queue wait was {queue_wait:.2f} s",
         )
     return breaches
+
+
+def _busy_early_finish_max(result):
+    """Return the most bots that got fewer trials in any one trial maker because every chain was busy."""
+    return max(
+        (s["participants"] for s in (result.busy_early_finishes or {}).values()),
+        default=0,
+    )
 
 
 def capacity_failure_causes(result, limits):
@@ -1146,18 +1190,15 @@ def overshoot(result, limits):
     because every chain was busy. Returns ``None`` if none exceeded its limit, e.g. when only
     errors did.
     """
-    ratios = []
-    p95s = [result.p95_response_time, *(result.endpoint_p95 or {}).values()]
-    ratios += [float(p) / limits.max_p95_s for p in p95s if p is not None]
-    queue_wait = queue_wait_p95(result)
-    if queue_wait is not None and limits.max_queue_p95_s:
-        ratios.append(queue_wait / limits.max_queue_p95_s)
-    allowed_busy = limits.allowed_busy_early_finishes_for(result.total_bots_started)
-    if allowed_busy:
-        ratios += [
-            stats["participants"] / allowed_busy
-            for stats in (result.busy_early_finishes or {}).values()
-        ]
+    ratios = [
+        b.value / b.limit_value
+        for b in limit_breaches(result, limits)
+        if b.measure in _LOAD_MEASURES and b.limit_value
+    ]
+    # limit_breaches leaves out the endpoints once the overall p95 fails.
+    ratios += [
+        float(p) / limits.max_p95_s for p in (result.endpoint_p95 or {}).values()
+    ]
     worst = max(ratios, default=0)
     return worst if worst > 1 else None
 
