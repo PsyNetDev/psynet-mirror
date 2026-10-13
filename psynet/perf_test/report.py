@@ -702,7 +702,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
         )
     if behind:
         text.append(
-            f"In {_describe_test(measured, confirmed)}, {behind}, "
+            f"During {_describe_test(measured, confirmed)}, {behind}, "
             "so the workers can't keep up in the long run. The test still "
             "passes, because only high-priority queue waits count against the "
             "limits, but low-priority results arrive ever later."

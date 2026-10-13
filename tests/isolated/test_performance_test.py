@@ -1489,7 +1489,7 @@ def _phase_backlog(backlog):
     "end, busy, behind",
     [
         (95, 0.5, "the low-priority backlog grew from 2 to 95 jobs"),
-        (8, 0.9, "the worker processes were 90% busy"),
+        (8, 0.9, "the 2 worker processes were busy 90% of the time"),
         (8, 0.5, None),
     ],
 )
@@ -1562,7 +1562,9 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             _tapping_result(96, 10, 0.55, worker_load={}),
             96,
             None,
-            dict(skipped="the 96-bot test had less than 60 s of steady state"),
+            dict(
+                skipped="the 96-bot test ran for less than 60 s after its first bot finished"
+            ),
         ),
     ],
 )
@@ -1796,8 +1798,8 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     )
     assert (
         "(the server had 2 worker processes, up to 40 jobs at once). No estimate "
-        "of worker_processes: the 640-bot test had less than 60 s of steady "
-        "state. Raise the worker_processes config variable"
+        "of worker_processes: the 640-bot test ran for less than 60 s after its "
+        "first bot finished. Raise the worker_processes config variable"
     ) in text
     assert "worker_greenlets_per_process = 1" in text
 

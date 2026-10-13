@@ -627,7 +627,14 @@ def workers_falling_behind(result):
     reasons = []
     utilization = worker_utilization(result)
     if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
-        reasons.append(f"the worker processes were {utilization:.0%} busy")
+        busy = (
+            "the whole time"
+            if utilization >= _SATURATED_UTILIZATION
+            else f"{utilization:.0%} of the time"
+        )
+        workers = result.n_rq_workers
+        were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
+        reasons.append(f"the {were} busy {busy}")
     start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     if (
@@ -684,9 +691,9 @@ def recommend_workers(result, n_participants, burst=None):
         if not workers:
             why = "no worker processes were running"
         elif not load:
-            why = f"the {result.n_bots:,}-bot test had less than {MIN_STEADY_STATE_S} s of steady state"
+            why = f"the {result.n_bots:,}-bot test ran for less than {MIN_STEADY_STATE_S} s after its first bot finished"
         else:
-            why = f"only {plural(jobs, 'worker job')} finished in the steady state of the {result.n_bots:,}-bot test"
+            why = f"only {plural(jobs, 'worker job')} finished in the {result.n_bots:,}-bot test after its first bot finished"
         return WorkerAdvice(skipped=why)
     utilization, greenlets = demand
     lower_bound = utilization >= _SATURATED_UTILIZATION
