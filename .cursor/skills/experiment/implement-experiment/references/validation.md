@@ -94,6 +94,18 @@ also work out worker throughput: one worker process keeps up with about
 `worker_greenlets_per_process = 1` and raise `worker_processes`, about one
 per spare CPU core. Report how you reached the cap.
 
+Each search test lasts one session but at most 5 minutes, so in a longer
+experiment the search only loads its first few minutes, such as consent and
+instructions. If the pages that load the server most come later, consider
+an abridged version of the experiment for the search, for example a copy of
+the experiment directory, that reaches those pages within its first 2
+minutes. Shorten or skip the light pages, such as long instructions,
+practice and questionnaires, but keep the heavy pages and their work
+unchanged: trial pages, uploads, async jobs and holds. Then run a long test
+of the full experiment at the cap the abridged search suggests, with
+`--n-bots <cap> --arrival-minutes <session minutes>` and at least two
+sessions of `--duration-minutes`, and report both runs.
+
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and
 `busy_early_finishes` in the JSON). They are not failed, but more than one

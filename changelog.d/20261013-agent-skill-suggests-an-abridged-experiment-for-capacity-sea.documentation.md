@@ -1,0 +1,1 @@
+The implement-experiment agent skill now suggests running the capacity search on an abridged version of a long experiment that reaches its heavy pages within 2 minutes, then testing the full experiment at the suggested cap.
