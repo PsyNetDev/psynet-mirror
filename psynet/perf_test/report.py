@@ -1326,7 +1326,7 @@ def _capacity_lines(outcome, limits):
         if unmeasured:
             line = (
                 f"{passing} At {n_failed}, the test couldn't measure the server: "
-                f"{reasons}, so the limit wasn't found."
+                f"{reasons}. The limit wasn't found."
             )
         elif waits_only:
             line = f"{passing} At {n_failed}, {reasons}, so the limit wasn't found."
