@@ -266,41 +266,24 @@ def test_bot_errors_without_a_route_are_still_described(url):
     )
 
 
-@pytest.mark.parametrize(
-    "message, expected_kind, advice",
-    [
-        (
-            "FATAL:  sorry, too many clients already",
-            "PostgreSQL out of connections",
-            "raise max_connections",
-        ),
-        (
-            "FATAL:  no more connections allowed (max_client_conn)",
-            "PgBouncer out of client connections",
-            "Raise PgBouncer's max_client_conn (Dallinger PR #10051",
-        ),
-    ],
-)
-def test_database_connection_limits_are_named_with_advice(
-    message, expected_kind, advice
-):
+def test_database_connection_limits_are_named_with_advice():
     from psynet.perf_test.results import describe_bot_error
 
     try:
         try:
-            raise Exception(message)
+            raise Exception("FATAL:  sorry, too many clients already")
         except Exception as cause:
             raise RuntimeError("could not create participant") from cause
     except RuntimeError as err:
         kind = describe_bot_error(err)
 
-    assert kind == expected_kind
+    assert kind == "PostgreSQL out of connections"
     results = [
         _base_result(n_bots=10),
         _base_result(n_bots=20, bot_errors=5, bot_error_kinds={kind: 5}),
     ]
     text = _join(format_capacity_summary(results))
-    assert advice in text
+    assert "raise max_connections" in text
     # The bots' own connections hit the limit, so the server wasn't measured.
     assert "At 20, the test couldn't measure the server" in text
 
@@ -377,8 +360,7 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
 
 def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    pgbouncer_full = "FATAL:  no more connections allowed (max_client_conn)"
-    before_test = Mock(side_effect=[None, None, RuntimeError(f"{pgbouncer_full}.")])
+    before_test = Mock(side_effect=[None, None, RuntimeError("disk full.")])
 
     with (
         caplog.at_level("INFO"),
@@ -393,15 +375,14 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
         results = suite.run([10, 20, 40])
 
     assert [r.n_bots for r in results] == [10, 20]
-    assert suite.reset_error == f"{pgbouncer_full}."
+    assert suite.reset_error == "disk full."
     assert "PERFORMANCE TEST SUMMARY" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
-        f"({pgbouncer_full}). The summary above covers the 2 tests that completed."
+        "(disk full). The summary above covers the 2 tests that completed."
     ) in caplog.text
     plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
     assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
-    assert "Raise PgBouncer's max_client_conn" in caplog.text
 
 
 def test_a_failed_first_reset_stops_the_suite_without_results():
@@ -626,7 +607,8 @@ def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
     )
 
     assert (
-        "Rerun with --reset-database before recommending a lower number" in caplog.text
+        "so its failure may come from the data the search left. Rerun with "
+        "'performance-test ssh --reset-database' before recommending" in caplog.text
     )
 
 
@@ -1171,14 +1153,10 @@ def test_summaries_report_database_growth():
 
     text = _join(format_capacity_summary(results))
     assert (
-        "The database grew a lot during these tests: trial rows went from 65,000 "
-        "to 103,000."
+        "The database grew a lot during these tests (trial rows went from "
+        "65,000 to 103,000), so later tests ran on more data"
     ) in text
-    assert (
-        "The 260-bot test started with 65,000 trial rows and the 320-bot test "
-        "with 100,000, so the difference"
-    ) in text
-    assert "Rerun with --reset-database" in text
+    assert "--reset-database" in text
 
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
     assert "database grew" not in _join(format_capacity_summary(results))
@@ -1191,7 +1169,7 @@ def test_summaries_report_database_growth():
         "The 320-bot test added a lot of data: trial rows went from 65,000 to "
         "103,000. The server can handle fewer participants"
     ) in text
-    assert "Rerun with --reset-database" not in text
+    assert "--reset-database" not in text
 
 
 def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
@@ -2582,14 +2560,12 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
     import click
 
     json_output = tmp_path / "results.json"
-    pgbouncer_full = (
-        "exit code 1: FATAL:  no more connections allowed (max_client_conn)"
-    )
+    reset_failure = "exit code 1: disk full"
     with pytest.raises(click.ClickException) as error:
         _remote_search(
             monkeypatch,
             reset=True,
-            reset_side_effect=[None, None, click.Abort(pgbouncer_full)],
+            reset_side_effect=[None, None, click.Abort(reset_failure)],
             cleanup_error=RuntimeError("my-app may be stopped")
             if cleanup_fails
             else None,
@@ -2601,7 +2577,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
 
     data = json.loads(json_output.read_text())
     assert len(data["results"]) == 2
-    assert data["finished_at"] and data["reset_error"] == pgbouncer_full
+    assert data["finished_at"] and data["reset_error"] == reset_failure
     assert data["options"]["max_queue_p95_s"] == 8
     assert data["options"]["confirmation_skipped"] == "resetting the database failed"
 

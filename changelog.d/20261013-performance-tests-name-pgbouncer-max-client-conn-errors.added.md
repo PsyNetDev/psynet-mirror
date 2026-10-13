@@ -1,1 +1,0 @@
-Performance tests now recognise PgBouncer's "no more connections allowed (max_client_conn)" error as a limit of the test, like PostgreSQL running out of connections, and suggest raising PgBouncer's `max_client_conn` or bounding the database connection pool.

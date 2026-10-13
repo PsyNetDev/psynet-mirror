@@ -276,28 +276,19 @@ ASYNC_JOB_STAT_KEYS = (
 )
 
 
-POSTGRES_FULL = "PostgreSQL out of connections"
-PGBOUNCER_FULL = "PgBouncer out of client connections"
-# Bot errors of these kinds come from the connections that the processes
+# Bot errors of this kind come from the connections that the processes
 # running the bots open themselves, which participants don't.
-_CONNECTION_LIMIT_KINDS = (POSTGRES_FULL, PGBOUNCER_FULL)
-# PgBouncer's error when it already has max_client_conn clients, e.g.
-# "FATAL:  no more connections allowed (max_client_conn)".
-_PGBOUNCER_FULL_TEXT = "(max_client_conn)"
+POSTGRES_FULL = "PostgreSQL out of connections"
 
 
 def connection_limit_kind(error):
-    """Return ``POSTGRES_FULL`` or ``PGBOUNCER_FULL`` if ``error`` says the database refused a connection, else ``None``.
+    """Return ``POSTGRES_FULL`` if ``error`` says PostgreSQL ran out of connections, else ``None``.
 
     ``error`` is an exception or text such as a command's output.
     """
     from psynet.isolated_environment import postgres_connection_limit_message
 
-    if _PGBOUNCER_FULL_TEXT in str(error):
-        return PGBOUNCER_FULL
-    if postgres_connection_limit_message(error):
-        return POSTGRES_FULL
-    return None
+    return POSTGRES_FULL if postgres_connection_limit_message(error) else None
 
 
 # Async job priorities, as in psynet.async_job, which this module doesn't
@@ -976,7 +967,7 @@ def limit_breaches(result, limits):
     max_bot_errors = limits.max_bot_error_rate * started
     if bot_errors > max_bot_errors:
         kinds = result.bot_error_kinds or {}
-        connection_errors = sum(kinds.get(kind, 0) for kind in _CONNECTION_LIMIT_KINDS)
+        connection_errors = kinds.get(POSTGRES_FULL, 0)
         breach(
             "bot_errors",
             describe_bot_errors(result),
@@ -1055,7 +1046,7 @@ def capacity_failure_causes(result, limits):
     not measure the server at this bot count: bots didn't all start or take
     part at once, bots in a busy process ran too late to keep pace
     (so the server got less load than that many participants would give),
-    bots failed because PostgreSQL or PgBouncer refused their connections
+    bots failed because PostgreSQL ran out of connections
     (the bots open their own database connections in the processes running
     them, which participants don't), or no responses were recorded while
     bots were missing.

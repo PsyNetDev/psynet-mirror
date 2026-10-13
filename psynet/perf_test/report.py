@@ -34,7 +34,6 @@ from psynet.perf_test.results import (
     CORES_FOR_OTHERS,
     MAX_WORKER_UTILIZATION,
     MIN_STEADY_STATE_S,
-    PGBOUNCER_FULL,
     POSTGRES_FULL,
     PRIORITIES,
     SATURATED_UTILIZATION,
@@ -43,7 +42,6 @@ from psynet.perf_test.results import (
     capacity_failure_causes,
     capacity_outcome,
     confirmation_timing,
-    connection_limit_kind,
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
@@ -845,18 +843,6 @@ _POSTGRES_ADVICE = (
     "Run fewer bots at once, stop other experiments that share the database "
     "server, or raise max_connections."
 )
-_PGBOUNCER_ADVICE = (
-    "PgBouncer, which passes the app's database connections on to "
-    "PostgreSQL, refused new connections because it already had "
-    "max_client_conn clients ('no more connections allowed "
-    "(max_client_conn)'). Its clients are the connections that the web "
-    "server's workers, the async workers and the bots open, and a web "
-    "worker keeps the connections it has opened, so their number rises with "
-    "the busiest moment so far. HTTP 500 errors in the same tests probably "
-    "have this cause too. Raise PgBouncer's max_client_conn (Dallinger PR "
-    "#10051 raises it to 10,000 for docker-ssh deployments), or bound the "
-    "database connection pool, then test again."
-)
 _WORKER_ADVICE = (
     "Raise worker_processes in config.txt (worker dynos on Heroku), or make "
     "the jobs faster. For CPU-heavy jobs, such as audio analysis, also set "
@@ -1070,6 +1056,15 @@ _TESTER_LAG_ADVICE = (
     "load than the bot count suggests. Spread the bots over more processes "
     "with --bot-processes, or run the test from a computer with more CPU cores."
 )
+# (applies(result, limits), advice, whether any test counts rather than only
+# the search's first failing test and the confirmation test), in note order.
+_ADVICE_NOTES = (
+    (wait_timeout_cause, _WAIT_ADVICE, False),
+    (busy_early_finish_cause, _BUSY_CHAINS_ADVICE, False),
+    (lambda r, _: start_rate_limits(r), _START_RATE_ADVICE, False),
+    (lambda r, _: tester_lagged(r), _TESTER_LAG_ADVICE, False),
+    (lambda r, _: POSTGRES_FULL in (r.bot_error_kinds or {}), _POSTGRES_ADVICE, True),
+)
 
 
 # Tables whose row counts differ by at least this factor, and by at least
@@ -1102,79 +1097,59 @@ def _rows_went(differ):
     return _and([changes[0].replace(" from ", " went from ", 1), *changes[1:]])
 
 
-def _started_with(result_a, result_b, differ):
-    """Say how many rows ``result_a`` and ``result_b`` started with, from :func:`_tables_that_differ`."""
-    rows_a = _and([f"{a:,} {table} rows" for table, (a, _) in differ.items()])
-    rows_b = _and([f"{b:,}" for _, b in differ.values()])
-    joint = "; " if len(differ) > 1 else " and "
-    return (
-        f"{describe_test(result_a).capitalize()} started with {rows_a}{joint}"
-        f"{describe_test(result_b)} with {rows_b}"
-    )
-
-
 def _database_growth_warnings(
-    results, capacity_result, first_fail, confirmation=None, limits=CapacityLimits()
+    results, capacity_result, confirmation=None, limits=CapacityLimits()
 ):
     """Warn when the tests in ``results`` (in the order run) saw very different amounts of data.
 
     ``confirmation`` is a capacity search's confirmation test, which runs on
     the data the search tests left unless the database is reset.
     """
-    lines = []
     if not results:
-        return lines
-    same_start = len(results) > 1 and all(
+        return []
+    reset = len(results) > 1 and all(
         r.db_rows_before == results[0].db_rows_before for r in results
     )
-    if same_start:
-        # The database was reset before each test, so only growth within a
-        # test matters.
-        grew = [
+    if reset:
+        # Every test started from the same data, so only growth within a test matters.
+        grew = " ".join(
             f"{describe_test(r).capitalize()} added a lot of data: {_rows_went(differ)}."
             for r in results
             if (differ := _tables_that_differ(r.db_rows_before, r.db_rows_after))
-        ]
+        )
     else:
         differ = _tables_that_differ(
             results[0].db_rows_before or {}, results[-1].db_rows_after or {}
         )
-        grew = differ and [
-            f"The database grew a lot during these tests: {_rows_went(differ)}."
-        ]
+        grew = differ and (
+            f"The database grew a lot during these tests ({_rows_went(differ)}), "
+            "so later tests ran on more data than earlier ones; "
+            "'performance-test ssh --reset-database' starts every test from the "
+            "same data."
+        )
+    lines = []
     if grew:
         lines.append(
-            " ".join(grew)
-            + " The server can handle fewer participants as a study collects data, so "
-            "these results hold for a study with about this much data; see "
-            "'Database size' in the PsyNet docs on testing scalability."
+            f"{grew} The server can handle fewer participants as a study collects "
+            "data, so these results hold for a study with about this much data; "
+            "see 'Database size' in the PsyNet docs on testing scalability."
         )
-    if capacity_result is not None and first_fail is not None:
-        differ = _tables_that_differ(
-            capacity_result.db_rows_before or {}, first_fail.db_rows_before or {}
-        )
-        if differ:
-            lines.append(
-                f"{_started_with(capacity_result, first_fail, differ)}, so the "
-                "difference between them may come from the data rather than the load."
-            )
     if (
         capacity_result is not None
         and confirmation is not None
         and _confirmation_exceeded(confirmation, limits)
-    ):
-        differ = _tables_that_differ(
-            confirmation.db_rows_before or {}, capacity_result.db_rows_before or {}
+        and (
+            differ := _tables_that_differ(
+                capacity_result.db_rows_before or {}, confirmation.db_rows_before or {}
+            )
         )
-        if differ:
-            return lines + [
-                f"{_started_with(confirmation, capacity_result, differ)}, so the "
-                "validation test's failure may come from the data the search left. Rerun "
-                "with --reset-database before recommending a lower number."
-            ]
-    if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
+    ):
         lines.append(
-            "Rerun with --reset-database to start every test from the same data."
+            f"The validation test started with more data than "
+            f"{describe_test(capacity_result)} ({_rows_went(differ)}), so its "
+            "failure may come from the data the search left. Rerun with "
+            "'performance-test ssh --reset-database' before recommending a "
+            "lower number."
         )
     return lines
 
@@ -1285,31 +1260,25 @@ def _capacity_lines(outcome, limits):
             f"Largest passing test: {capacity:,} bots at once; no test failed, so "
             "the limit wasn't reached. Test more bots to find it."
         ]
-    n_failed = f"{first_fail.n_bots:,}"
-    reasons = _reasons(first_fail, outcome.first_causes, limits)
-    if capacity is None:
-        if unmeasured:
-            line = f"No limit found. At {n_failed}, the test couldn't measure the server: {reasons}."
-        else:
-            if waits_only:
-                advice = ""
-            elif exceeded_error_limits(first_fail, limits):
-                advice = "; fix the errors or test fewer bots"
-            else:
-                advice = "; test fewer bots"
-            line = f"No test passed. At {n_failed}, {reasons}{advice}."
+    lead = (
+        "No test passed."
+        if capacity is None
+        else f"Largest passing test: {capacity:,} bots at once."
+    )
+    unmeasured_text = "the test couldn't measure the server: " if unmeasured else ""
+    if unmeasured or waits_only:
+        end = ". The limit wasn't found."
+    elif capacity is not None:
+        end = "."
+    elif exceeded_error_limits(first_fail, limits):
+        end = "; fix the errors or test fewer bots."
     else:
-        passing = f"Largest passing test: {capacity:,} bots at once."
-        if unmeasured:
-            line = (
-                f"{passing} At {n_failed}, the test couldn't measure the server: "
-                f"{reasons}. The limit wasn't found."
-            )
-        elif waits_only:
-            line = f"{passing} At {n_failed}, {reasons}. The limit wasn't found."
-        else:
-            line = f"{passing} At {n_failed}, {reasons}."
-    lines = [line, *_error_kinds_lines(first_fail, outcome.first_causes)]
+        end = "; test fewer bots."
+    reasons = _reasons(first_fail, outcome.first_causes, limits)
+    lines = [
+        f"{lead} At {first_fail.n_bots:,}, {unmeasured_text}{reasons}{end}",
+        *_error_kinds_lines(first_fail, outcome.first_causes),
+    ]
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
         also = "" if capacity is None else "also "
@@ -1462,28 +1431,17 @@ def _capacity_renderables(
         notes += _startup_only_lines(first_fail, limits)
     # Advice covers the search's first failing test and the confirmation test.
     advised = [r for r in (first_fail, confirmation) if r is not None]
-    if any(wait_timeout_cause(r, limits) for r in advised):
-        notes.append(_WAIT_ADVICE)
-    if any(busy_early_finish_cause(r, limits) for r in advised):
-        notes.append(_BUSY_CHAINS_ADVICE)
+    for applies, text, all_tests in _ADVICE_NOTES:
+        if any(applies(r, limits) for r in (run_order if all_tests else advised)):
+            notes.append(text)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
     workers = _worker_lines(
         outcome, confirmation, capacity_result, limits, confirmation_planned
     )
-    if any(start_rate_limits(r) for r in advised):
-        notes.append(_START_RATE_ADVICE)
-    if any(tester_lagged(r) for r in advised):
-        notes.append(_TESTER_LAG_ADVICE)
-    if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in run_order):
-        notes.append(_POSTGRES_ADVICE)
-    if any(PGBOUNCER_FULL in (r.bot_error_kinds or {}) for r in run_order):
-        notes.append(_PGBOUNCER_ADVICE)
     if missing := next(filter(None, map(_missing_workers_text, run_order)), None):
         notes.append(Text(missing.strip(), style=_WARNING))
     notes += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
-    notes += _database_growth_warnings(
-        run_order, capacity_result, first_fail, confirmation, limits
-    )
+    notes += _database_growth_warnings(run_order, capacity_result, confirmation, limits)
     if capacity_result is not None:
         notes += _capacity_test_notes(
             capacity_result, time_factor, _confirmed(confirmation, limits)
@@ -1566,21 +1524,16 @@ def reset_error_lines(reset_error, n_completed, terminal=None):
 
     Returns list[str].
     """
-    lines = [
+    return format_text(
         Text(
             f"The run stopped early: resetting the database before test "
             f"{n_completed + 1} failed ({reset_error.rstrip('.')}). The summary "
             f"above covers the {plural(n_completed, 'test')} that completed.",
             style=_ALERT,
-        )
-    ]
-    if connection_limit_kind(reset_error) == PGBOUNCER_FULL:
-        lines.append(
-            "The reset connects through PgBouncer, whose connections the "
-            "last test's load had used up."
-        )
-        lines.append(_PGBOUNCER_ADVICE)
-    return format_text(*lines, None, terminal=terminal)
+        ),
+        None,
+        terminal=terminal,
+    )
 
 
 def format_text(*paragraphs, terminal=None):
