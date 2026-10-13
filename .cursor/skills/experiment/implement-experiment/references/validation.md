@@ -73,6 +73,9 @@ exists for the current implementation.
 psynet performance-test local --n-bots auto --json-output performance.json
 ```
 
+The printed summary table is an overview. Take exact numbers from the JSON,
+not by reading values off the table's columns.
+
 The capacity search uses short tests in which all bots arrive together. For
 experiments with async jobs (audio analysis, REPP tapping, LLM calls) or
 long holds, every bot hits each job and hold at once, so the search
