@@ -661,6 +661,11 @@ class WorkerAdvice:
     skipped: str | None = None
 
 
+def describe_test(result):
+    """Name ``result``'s test as the summary table does, e.g. ``the 120-bot test`` or ``the 96-bot check at the cap``."""
+    return f"the {result.n_bots:,}-bot {'check at the cap' if result.confirmation else 'test'}"
+
+
 def recommend_workers(result, n_participants, burst=None):
     """Estimate the async worker processes that ``n_participants`` taking part at once need.
 
@@ -691,7 +696,7 @@ def recommend_workers(result, n_participants, burst=None):
     demand = _worker_demand(result)
     jobs = load.get("jobs") or 0
     if demand is None or jobs < _MIN_STEADY_WORKER_JOBS or not result.n_bots:
-        test = f"the {result.n_bots:,}-bot test"
+        test = describe_test(result)
         if not workers:
             why = "no worker processes were running"
         elif not result.n_bots:

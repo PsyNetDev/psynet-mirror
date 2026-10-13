@@ -323,7 +323,8 @@ A test counts as within capacity if these stay within their limits:
   capping them reduces it. Setting ``wait_for_networks=True`` or adding
   chains reduces it too, and may allow a higher cap. How participants
   arrive can make busy chains more or less common, so judge the cap by the
-  confirmation test, whose bots arrive over a session.
+  check that ``--n-bots auto`` runs at that cap, whose bots arrive over a
+  session.
 
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
@@ -409,8 +410,9 @@ of the bots started; *Failed bots* counts every bot that raised an error.
 when a test was shorter than one participant session, so that no bot could
 finish. The verdict follows: the recommended number of participants taking
 part at once, the *capacity* row it comes from (or the *highest passed* row,
-if no test failed) and why the next count failed, and the confirmation test.
-Without a confirmation test, the cap is 80% of the capacity. For example,
+if no test failed) and why the next count failed, and the *check at the
+cap*, the confirmation test run at the suggested cap. Without that check,
+the cap is 80% of the capacity. For example,
 from a capacity search of a static rating study on an SSH server (some rows
 left out)::
 
