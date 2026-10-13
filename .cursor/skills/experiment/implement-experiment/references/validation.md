@@ -113,7 +113,7 @@ and at least two sessions of `--duration-minutes`, and report both runs.
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and
 `busy_early_finishes` in the JSON). They are not failed, but more than one
-bot and above 1% of bots started (`--max-busy-early-finish-rate`) fails the
+bot and above 1% of bots started fails the
 test, and the search's recommended number of participants comes from it,
 as for slow responses. Arrival patterns change the rate, so judge it from the
 validation test. Besides recommending fewer participants, `wait_for_networks=True` or more
