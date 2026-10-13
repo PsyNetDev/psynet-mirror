@@ -4341,10 +4341,10 @@ _test_options["performance_n_bots"] = click.option(
     answered as busy or stale, 1% of bots failing, 1% of participants
     failed by the experiment for waiting too long, and 1% getting fewer
     trials in a trial maker because every chain was busy. The search's tests
-    are short (see --duration-minutes), so a confirmation test then runs the
-    suggested participant cap with bots arriving over one session, for two
-    sessions (at most an hour), and decides whether the cap is confirmed;
-    see --no-confirm.
+    are short (see --duration-minutes), so a validation test then runs the
+    recommended number of participants with bots arriving over one session,
+    for two sessions (at most an hour), and decides whether that number is
+    confirmed; see --no-confirm.
     If not specified, will default to Experiment.test_n_bots""",
 )
 
@@ -4352,8 +4352,8 @@ _test_options["performance_no_confirm"] = click.option(
     "--no-confirm",
     is_flag=True,
     help="""
-    With --n-bots auto, skip the confirmation test at the suggested cap,
-    which can take up to an hour. It is always skipped with --time-factor 0.""",
+    With --n-bots auto, skip the validation test at the recommended number
+    of participants, which can take up to an hour. It is always skipped with --time-factor 0.""",
 )
 
 
@@ -4455,7 +4455,7 @@ _test_options["performance_arrival_minutes"] = click.option(
     Spread the arrival of each test's bots evenly over this many minutes after
     the first bot starts, as participants arrive while a study is open,
     instead of starting them --stagger seconds apart. With --n-bots auto, only
-    the confirmation test uses this window (instead of one session); that
+    the validation test uses this window (instead of one session); that
     test lasts a session longer than the window, but at most an hour, or
     --duration-minutes if that is longer, and the window must be shorter
     than this longest test. The search's tests stay short, with the bots
@@ -5154,7 +5154,7 @@ def _check_arrival_options(
         if arrival_minutes >= longest:
             raise click.UsageError(
                 f"With --n-bots auto, --arrival-minutes must be shorter than "
-                f"{longest:g} min, the length of the longest confirmation test, "
+                f"{longest:g} min, the length of the longest validation test, "
                 "so that every bot starts during it."
             )
     elif duration_minutes is not None and arrival_minutes >= duration_minutes:

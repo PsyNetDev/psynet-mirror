@@ -536,7 +536,7 @@ def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
     assert (confirmation.n_bots, confirmation.duration_minutes) == (120, 24)
     assert confirmation.arrival_minutes == 12
     assert results[0].duration_minutes == 5 and results[0].session_minutes == 12
-    assert "then a 24-min confirmation test" in caplog.text
+    assert "then a 24-min validation test" in caplog.text
     if confirmed:
         assert "Recommended: at most 120 participants at once." in caplog.text
         assert (
@@ -675,7 +675,7 @@ def test_capacity_search_can_skip_the_confirmation_test(
 
     assert not any(r.confirmation for r in results)
     assert suite.confirmation_skipped.startswith(reason)
-    assert f"Confirmation test skipped: {reason}" in caplog.text
+    assert f"Validation test skipped: {reason}" in caplog.text
     assert "Recommended: at most 12 participants at once" in caplog.text
 
 

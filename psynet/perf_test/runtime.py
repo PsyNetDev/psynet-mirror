@@ -510,7 +510,7 @@ class PerformanceTester:
         """
         logger.info("")
         logger.info(bold("=" * 80))
-        kind = "CONFIRMATION TEST" if confirmation else f"TEST {label}"
+        kind = "VALIDATION TEST" if confirmation else f"TEST {label}"
         logger.info(bold(f"{kind}: Running with {n_bots:,} concurrent bots"))
         if duration_minutes is None:
             duration_minutes, arrival_minutes = (
