@@ -545,13 +545,13 @@ the finished jobs' CPU time a share ``c`` of their run time:
   participants arriving together need about ``W × participants / capacity``
   processes. This is optimistic once the cores run out, because jobs then
   slow down.
-- *Current workers.* The summary never suggests fewer processes than the
-  test had, and suggests at least one more if the workers fell behind: more
-  than 85% busy, or a growing low-priority backlog.
-- *Cores.* The estimate is the largest of these, at most the cores where the
-  test ran less two for the web server and database, whose use the test
-  doesn't measure. If the workers need more, the summary says the server lacks
-  cores.
+- *Current workers.* The summary suggests at least the processes the test
+  had, and one more if the workers fell behind: more than 85% busy, or a
+  growing low-priority backlog.
+- *Cores.* The suggestion is at most the cores where the test ran less two
+  for the web server and database, whose use the test doesn't measure, even
+  if that is fewer than the test had. If the load needs more, the summary
+  says the server lacks cores.
 
 There is no estimate if the steady state lasted under a minute or fewer than
 20 worker jobs finished in it. For example, a tapping study with 43 s of
@@ -562,13 +562,14 @@ single-slot workers 55% busy, gets::
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time; 10 would be about 55% busy. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
-only listed when it should change, ``worker_processes >= N (minimum)`` marks
-saturated workers, and ``(all the cores left)`` a server without cores to
-spare. The reason states what the test measured and how busy the
-recommended processes would be.
+only listed when it should change. ``worker_processes >= N (minimum)`` marks
+an estimate from saturated workers, and ``(all the cores left)`` a number
+that the server's cores capped. The reason says what the test measured and
+what set the number: the load, the current processes, one more than
+processes that fell behind, or the cores.
 
 .. _performance_testing_database_size:
 

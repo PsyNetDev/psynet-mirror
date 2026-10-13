@@ -22,6 +22,7 @@ from psynet.perf_test.results import (
     PGBOUNCER_FULL,
     POSTGRES_FULL,
     PRIORITIES,
+    SATURATED_UTILIZATION,
     CapacityLimits,
     busy_early_finish_cause,
     capacity_failure_causes,
@@ -735,52 +736,62 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
 
     ``test`` describes the measured test, or is ``None`` if a warning already
     said how busy its workers were. ``above_cap`` says a larger test failed
-    on queue waits above the confirmed cap ``n``. The reason only states what
-    was measured and how busy the recommended processes would be.
+    on queue waits above the confirmed cap ``n``. The reason is a sentence on
+    what set the number of processes, after one on what the test measured.
     """
     workers, processes = result.n_rq_workers, advice.processes
-    # Only workers that fell behind need more than both the load and the current ones.
-    fell_behind = advice.needed > max(advice.demand, workers)
-    were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
-    busy = (
-        "the whole time"
-        if advice.saturated
-        else f"{advice.utilization:.0%} of the time"
-    )
-    why = f"In {test}, the {were} busy {busy}" if test else ""
-    if advice.saturated:
-        why += f", so {processes} is a minimum, not a target"
-        if advice.per_participant_s:
-            why += f"; it comes from about {advice.per_participant_s:.0f} s of worker time per participant"
-    elif fell_behind:
-        why += f", but they still fell behind, so use at least {advice.needed}"
+    ran = f"{workers} worker process{'es' if workers != 1 else ''}"
+    if advice.utilization >= SATURATED_UTILIZATION:
+        busy = "the whole time"
     else:
-        why += f"; {processes} would be about {advice.implied_utilization:.0%} busy"
-    why = why.lstrip(",; ")
-    why = why[0].upper() + why[1:] + "."
-    cores = (
-        f"{result.server_cores}-core server has only {processes} cores left after "
-        f"{CORES_FOR_OTHERS} for the web server and database; use a larger server "
-        "or cheaper jobs."
+        busy = f"{advice.utilization:.0%} of the time"
+    were = "were" if workers != 1 else "was"
+    measured = [f"In {test}, the {ran} {were} busy {busy}."] if test else []
+    implied = f"would be about {advice.implied_utilization:.0%} busy"
+    server = (
+        f"{result.server_cores}-core server has only {processes} cores left "
+        f"after {CORES_FOR_OTHERS} for the web server and database"
     )
     if advice.demand > processes:
-        why = f"{n:,} participants at once would use about {advice.demand} worker processes, but the {cores}"
-    elif fell_behind and advice.needed > processes:
-        why += f" The {cores}"
-    elif above_cap and processes < advice.cores_left:
-        why += f" To go above {n:,}, raise worker_processes above {processes} and test again."
-    setting = f"worker_processes = {processes}"
-    if advice.needed >= advice.cores_left:
-        setting += " (all the cores left)"
-    elif advice.saturated:
-        setting = f"worker_processes >= {processes} (minimum)"
+        cores = (
+            f"{n:,} participants at once would use about {advice.demand} worker "
+            f"processes, but the {server}; use a larger server or cheaper jobs."
+        )
+    else:
+        fewer = "fewer than" if processes < workers else "as many as"
+        cores = f"The {server}, so this is {fewer} the {ran} the test ran; {processes} {implied}."
+    source = advice.per_participant_s and (
+        f", and {processes} comes from about {advice.per_participant_s:.0f} s of "
+        "worker time per participant"
+    )
+    why = {
+        "estimate": [*measured, f"{processes} worker processes {implied}."],
+        "current": [*measured, f"Keep the current {workers}."],
+        "behind": [
+            *measured,
+            f"{processes} is one more than the {ran} that fell behind.",
+        ],
+        "minimum": [
+            f"{processes} is a minimum, not a target: the workers were busy the "
+            f"whole time{source or ''}."
+        ],
+        "cores": [cores],
+    }[advice.reason]
+    if above_cap and advice.reason != "cores":
+        why.append(
+            f"To go above {n:,}, raise worker_processes above {processes} and test again."
+        )
+    note = {"minimum": " (minimum)", "cores": " (all the cores left)"}.get(
+        advice.reason, ""
+    )
+    setting = f"worker_processes {'>=' if advice.reason == 'minimum' else '='} {processes}{note}"
     settings = [setting]
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
     return [
         f"  Recommended settings for {n:,} participants at once:",
         *(f"      {line}" for line in settings),
-        f"  {why}",
+        f"  {' '.join(why)}",
     ]
 
 
@@ -994,7 +1005,7 @@ def _low_priority_lines(result, limits):
     if wait is None or wait <= limits.max_queue_p95_s:
         return []
     return [
-        f"  Low-priority async jobs in {_describe_test(result, False)}: p95 queue "
+        f"  Low-priority async jobs in {_describe_test(result, _confirmed(result, limits))}: p95 queue "
         f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
         "queued at the end. Participants don't wait for these, so they don't "
         "count against the limits."

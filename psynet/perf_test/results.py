@@ -570,10 +570,10 @@ LOW_BACKLOG_GROWTH_MIN_JOBS = 10
 
 
 # Worker processes busier than this in the steady state can't keep up in the
-# long run. Busier than _SATURATED_UTILIZATION, they were busy throughout, so
+# long run. Busier than SATURATED_UTILIZATION, they were busy throughout, so
 # the demand they show is a lower bound.
 MAX_WORKER_UTILIZATION = 0.85
-_SATURATED_UTILIZATION = 0.95
+SATURATED_UTILIZATION = 0.95
 # recommend_workers sizes the worker processes to be this busy, leaving
 # headroom for bursts and for jobs that slow down under load.
 TARGET_WORKER_UTILIZATION = 0.7
@@ -591,23 +591,21 @@ def _worker_demand(result):
     With ``R`` jobs running per process and CPU share ``c`` of their run
     time, one slot per process gives ``R`` for both. With more slots, a job's
     CPU time includes its neighbours', so ``c / max(R, 1)`` is its own share.
-    CPU-heavy jobs move to one slot each, needing ``R`` processes while busy
-    ``min(R, 1)``; others keep their slots, with
-    ``max(R / slots, c × min(R, 1))`` for both.
+    CPU-heavy jobs move to one slot each, needing ``R`` processes; others
+    keep their slots, with ``max(R / slots, c × min(R, 1))`` for both. Busy
+    is at most 1.
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
     steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
-    if not (workers and load.get("jobs") and steady_s > 0):
+    if not (workers and load and steady_s > 0):
         return None
     running = load["busy_s"] / (workers * steady_s)
     slots = (result.n_rq_job_slots or 0) // workers
-    if slots <= 1:
-        return running, running, 1
     cpu = load.get("cpu_share") or 0
-    if cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
+    if slots <= 1 or cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
         return min(running, 1), running, 1
     busy = max(running / slots, cpu * min(running, 1))
-    return busy, busy, slots
+    return min(busy, 1), busy, slots
 
 
 def worker_utilization(result):
@@ -631,7 +629,7 @@ def workers_falling_behind(result):
     if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
         busy = (
             "the whole time"
-            if utilization >= _SATURATED_UTILIZATION
+            if utilization >= SATURATED_UTILIZATION
             else f"{utilization:.0%} of the time"
         )
         workers = result.n_rq_workers
@@ -655,12 +653,12 @@ class WorkerAdvice:
     greenlets: int | None = None
     utilization: float | None = None
     implied_utilization: float | None = None
-    # The processes the load needs, then at least the current ones (one more
-    # if they fell behind), before the cores cap.
+    # The processes the load needs.
     demand: int | None = None
-    needed: int | None = None
-    cores_left: float = math.inf
-    saturated: bool = False
+    # What set ``processes``: "estimate" or "minimum" (the load, when the
+    # workers were saturated), "current", "behind" (one more than the
+    # current ones) or "cores".
+    reason: str | None = None
     # Worker time per participant, if it set ``processes``.
     per_participant_s: float | None = None
     skipped: str | None = None
@@ -695,7 +693,7 @@ def recommend_workers(result, n_participants, burst=None):
     load, workers = result.worker_load or {}, result.n_rq_workers
     demand = _worker_demand(result)
     jobs = load.get("jobs") or 0
-    if demand is None or jobs < _MIN_STEADY_WORKER_JOBS:
+    if demand is None or jobs < _MIN_STEADY_WORKER_JOBS or not result.n_bots:
         test = f"the {result.n_bots:,}-bot test"
         if not workers:
             why = "no worker processes were running"
@@ -707,7 +705,7 @@ def recommend_workers(result, n_participants, burst=None):
             why = f"only {plural(jobs, 'worker job')} finished in {test} after its first bot finished"
         return WorkerAdvice(skipped=why)
     busy, per_process, greenlets = demand
-    saturated = busy >= _SATURATED_UTILIZATION
+    saturated = busy >= SATURATED_UTILIZATION
     per_participant_s = load.get("per_participant_s")
     session_s = result.avg_succeeded_duration or (result.session_minutes or 0) * 60
     single_slot = (result.n_rq_job_slots or 0) <= workers
@@ -722,21 +720,21 @@ def recommend_workers(result, n_participants, burst=None):
         _round_up(burst[0] * n_participants / burst[1]) if burst and all(burst) else 0
     )
     demand = max(steady_state, burst_n)
-    needed = max(demand, workers + bool(workers_falling_behind(result)))
+    floor = workers + bool(workers_falling_behind(result))
     cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
-    processes = min(needed, cores_left)
-    if processes != steady_state:
+    processes = min(max(demand, floor), cores_left)
+    if processes < max(demand, floor):
+        reason = "cores"
+    elif processes == workers:
+        reason = "current"
+    elif processes == demand:
+        reason = "minimum" if saturated else "estimate"
+    else:
+        reason = "behind"
+    if reason != "minimum" or processes != steady_state:
         per_participant_s = None
     return WorkerAdvice(
-        processes,
-        greenlets,
-        busy,
-        used / processes,
-        demand,
-        needed,
-        cores_left,
-        saturated,
-        per_participant_s,
+        processes, greenlets, busy, used / processes, demand, reason, per_participant_s
     )
 
 

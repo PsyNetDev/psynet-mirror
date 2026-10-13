@@ -604,8 +604,8 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "  Recommended settings for 96 participants at once:\n"
         "      worker_processes = 10\n"
         "  In the 96-bot test that confirmed this cap, the 10 worker processes "
-        "were busy 55% of the time; 10 would be about 55% busy. To go above 96, "
-        "raise worker_processes above 10 and test again."
+        "were busy 55% of the time. Keep the current 10. To go above 96, raise "
+        "worker_processes above 10 and test again."
     ) in text
 
 
@@ -1543,16 +1543,16 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             _tapping_result(96, 10, 0.55),
             96,
             (10, 120),
-            dict(processes=10, demand=8, implied_utilization=0.55),
+            dict(processes=10, demand=8, reason="current"),
         ),
         # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a minimum.
-        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, saturated=True)),
+        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, reason="minimum")),
         # 192 need 16, but 16 cores leave 14; unknown search workers give no burst.
         (
             _tapping_result(96, 10, 0.55),
             192,
             (None, 120),
-            dict(processes=14, demand=16),
+            dict(processes=14, demand=16, reason="cores"),
         ),
         # 10 I/O jobs at once in each 20-slot process use 60% of its core.
         (
@@ -1585,6 +1585,12 @@ def test_recommend_workers(result, n, burst, expected):
             _tapping_result(96, 10, 0.55, server_cores=8),
             "would use about 8 worker processes, but the 8-core server",
             "about 10",
+        ),
+        # The load needs 3, but only the cores keep it below the current 10.
+        (
+            _tapping_result(96, 10, 0.2, server_cores=8),
+            "so this is fewer than the 10 worker processes the test ran",
+            "would use about",
         ),
         # A test that failed on response times, whose backlog also grew.
         (

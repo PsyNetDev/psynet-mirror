@@ -51,8 +51,9 @@ jobs queue behind each other unless there are more worker processes. Set the
 number of worker processes with `worker_processes` in `config.txt`, and for
 CPU-heavy jobs set `worker_greenlets_per_process = 1`; on an SSH deployment
 each worker process is a separate worker container. Before a performance
-test, make a first estimate of `worker_processes` with the formula that the
-performance test summary uses, aiming for workers 70% busy:
+test, make a first estimate of `worker_processes`, aiming for workers 70%
+busy. The performance test summary uses the same formula when the workers
+were busy the whole time:
 
 ```text
 worker seconds per participant = sum of (Count × Mean wall) over worker rows / number of bots
