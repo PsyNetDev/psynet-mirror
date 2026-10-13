@@ -381,7 +381,7 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
 def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     pgbouncer_full = "FATAL:  no more connections allowed (max_client_conn)"
-    before_test = Mock(side_effect=[None, None, RuntimeError(pgbouncer_full)])
+    before_test = Mock(side_effect=[None, None, RuntimeError(f"{pgbouncer_full}.")])
 
     with (
         caplog.at_level("INFO"),
@@ -396,12 +396,14 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
         results = suite.run([10, 20, 40])
 
     assert [r.n_bots for r in results] == [10, 20]
-    assert suite.reset_error == pgbouncer_full
+    assert suite.reset_error == f"{pgbouncer_full}."
     assert "PERFORMANCE TEST SUMMARY" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
         f"({pgbouncer_full}). The summary above covers the 2 tests that completed."
     ) in caplog.text
+    plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
+    assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
     assert "Raise PgBouncer's max_client_conn" in caplog.text
 
 
@@ -2365,7 +2367,7 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     assert "queue" not in text and "Busy" not in text
     rows = {line.split()[0]: line for line in lines if line.strip()[:1].isdigit()}
     assert list(rows) == ["520", "560", "416"]
-    assert " pass " in rows["520"] and rows["520"].endswith(" largest passing test")
+    assert " pass " in rows["520"] and rows["520"].endswith(" largest passing")
     assert " FAIL " in rows["560"] and re.search(r"^ +560 +570 ", rows["560"])
     assert "10 (1.8%)" in rows["560"]
     assert rows["416"].endswith(" 433  validation test")
@@ -2403,9 +2405,15 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
 
     assert "untested" in plain
     assert "\x1b[" not in plain and "\u2026" not in plain
-    assert "largest passing test" in _join(
+    assert "largest passing" in _join(
         format_performance_summary([_base_result()], terminal=False)
     )
+    # Measures that most tests lack go in a second table, keyed by bot count.
+    tables = plain.split("\n\n")
+    extra = next(t for t in tables if "queue p95 (s)" in t)
+    assert "N/A" not in plain
+    assert re.search(r"\n +100 +100 \(\d.*1\.0 s +9\.0 s", extra)
+    assert max(map(len, next(t for t in tables if "Req/s" in t).splitlines())) <= 112
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert "\x1b[" in _join(format_performance_summary(results, terminal=True))

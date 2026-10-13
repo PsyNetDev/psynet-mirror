@@ -60,9 +60,11 @@ import uuid
 from contextlib import contextmanager
 
 import psycopg2
+from rich.text import Text
 
 from psynet.perf_reset import SYSTEM_DATABASES, SnapshotDatabase
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
+from psynet.perf_test.report import format_text
 
 logger = logging.getLogger(__name__)
 
@@ -298,12 +300,22 @@ class RemoteApp:
         try:
             self.start()
         except BaseException as e:
-            print(
+            reason = (str(e) or type(e).__name__).rstrip(".")
+            stopped = Text(
                 f"✗ {self.app} may be stopped: its server processes could not be "
-                f"started again ({str(e) or type(e).__name__}). Start them on "
-                f"{self.server} with:\n    {command}\nIf the app still doesn't "
-                "work, for example because the reset had dropped its database, "
-                "redeploy it."
+                f"started again ({reason}). Start them on {self.server} with:",
+                style="bright_red",
+            )
+            print("\n".join(format_text(stopped)))
+            # Printed as is, so that the command can be copied whole.
+            print(f"    {command}")
+            print(
+                "\n".join(
+                    format_text(
+                        "If the app still doesn't work, for example because the "
+                        "reset had dropped its database, redeploy it."
+                    )
+                )
             )
             raise
 

@@ -14,8 +14,14 @@ The tester that runs each test is passed in, so this module does not import
 import logging
 import time
 
-from psynet.log import bold, warning
-from psynet.perf_test.report import format_performance_summary, reset_error_lines
+from rich.text import Text
+
+from psynet.log import warning
+from psynet.perf_test.report import (
+    format_performance_summary,
+    format_text,
+    reset_error_lines,
+)
 from psynet.perf_test.results import (
     CAPACITY_SEARCH_MAX,
     CAPACITY_SEARCH_MAX_TESTS,
@@ -224,10 +230,11 @@ class PerformanceSuite:
                 else "; any recommendation above comes from short tests in which "
                 "the bots arrived together"
             )
-            logger.info(
-                f"  Validation test skipped: {self.confirmation_skipped}{unconfirmed}."
-            )
-            logger.info("")
+            for line in format_text(
+                f"Validation test skipped: {self.confirmation_skipped}{unconfirmed}.",
+                None,
+            ):
+                logger.info(line)
         return results
 
     def _run_suite(
@@ -293,8 +300,11 @@ class PerformanceSuite:
 
     def _print_suite_header(self, bots_description, search=False):
         tester = self.tester
-        logger.info(bold("=" * 80))
-        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
+        for line in format_text(
+            Text("=" * 80, style="bold"),
+            Text("\u26a1 PERFORMANCE TEST SUITE", style="bold"),
+        ):
+            logger.info(line)
         logger.info(f"Bots per test:        {bots_description}")
         logger.info(
             f"Test duration:        {tester.duration_minutes:g} min"
