@@ -692,13 +692,20 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
                 "couldn't run. Check the server log for workers that failed to "
                 "start, and check worker_processes."
             ]
-        above_cap = confirmed and queue_bound is not confirmation
+        above_cap = ""
+        if confirmed and queue_bound is not confirmation:
+            above_cap = (
+                " To go above the cap, add worker processes."
+                if advice.skipped
+                else " More worker processes would raise the cap; the settings "
+                "below are for the cap itself."
+            )
         had = _describe_workers(queue_bound)
         text.append(
             f"In the {queue_bound.n_bots:,}-bot test, high-priority async jobs, which "
             "participants wait for, waited too long for a worker"
             + (f" (the server had {had})." if had else ".")
-            + (" To go above the cap, add worker processes." if above_cap else "")
+            + above_cap
         )
     if behind:
         text.append(
@@ -713,9 +720,8 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
-        lines = _describe_worker_advice(
-            advice, measured, n, burst, _describe_test(measured, confirmed)
-        )
+        test = _describe_test(measured, confirmed)
+        lines = _describe_worker_advice(advice, measured, n, burst, test, bool(behind))
     if text:
         lines.insert(0, "  " + " ".join(text))
     return [warning(line) for line in lines] if behind else lines
@@ -729,8 +735,11 @@ def _describe_test(result, confirmed):
     return test
 
 
-def _describe_worker_advice(advice, result, n, burst, test):
-    """Return the recommended settings in ``advice`` for ``n`` participants at once, and why, as lines."""
+def _describe_worker_advice(advice, result, n, burst, test, warned):
+    """Return the recommended settings in ``advice`` for ``n`` participants at once, and why, as lines.
+
+    ``warned`` says the lines follow a warning that already said how busy the workers were.
+    """
     workers, processes = result.n_rq_workers, advice.processes
     needed = max(advice.steady_state, advice.burst or 0)
     were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
@@ -745,7 +754,11 @@ def _describe_worker_advice(advice, result, n, burst, test):
         )
     elif advice.lower_bound:
         setting = f"worker_processes >= {processes} (lower bound)"
-        why = f"In {test}, the {were} busy the whole time, so this is a lower bound" + (
+        why = (
+            "So this is a lower bound"
+            if warned
+            else f"In {test}, the {were} busy the whole time, so this is a lower bound"
+        ) + (
             f" from {advice.per_participant_s:.0f} s of worker time per participant."
             if advice.per_participant_s
             else "."

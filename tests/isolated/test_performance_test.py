@@ -601,7 +601,8 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
     assert (
         "In the 130-bot test, high-priority async jobs, which participants wait "
         "for, waited too long for a worker (the server had 10 worker processes). "
-        "To go above the cap, add worker processes.\n"
+        "More worker processes would raise the cap; the settings below are for "
+        "the cap itself.\n"
         "  Workers: recommended settings for 96 participants at once:\n"
         "      worker_processes = 10 (current; about 8 would do)\n"
         "  In the 96-bot test that confirmed this cap, the 10 worker processes "
