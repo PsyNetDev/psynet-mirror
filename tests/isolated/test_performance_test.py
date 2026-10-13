@@ -1984,7 +1984,11 @@ def test_worker_advice_without_a_steady_state_names_a_longer_test(planned, advic
 
     text = _join(format_capacity_summary(results, confirmation_planned=planned))
 
-    assert advice in text
+    assert (
+        f"{advice} To go above 104, raise worker_processes above 10 and test again."
+        in text
+    )
+    assert "Raise worker_processes" not in text
 
 
 def test_queue_advice_says_when_no_worker_processes_ran():
@@ -2396,9 +2400,9 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
             busy_responses=n,
             participants_failed=1,
             busy_early_finishes={"main_chain": {"participants": 1}},
-            queue_waits={"high": {"q_delay_p95": 1.0}, "low": {"q_delay_p95": 9.0}},
+            queue_waits={"high": {"q_delay_p95": high}, "low": {"q_delay_p95": 9.0}},
         )
-        for n in (100, 200)
+        for n, high in ((100, 1.0), (200, 8.0))
     ]
     results.append(_base_result(n_bots=400, slots_started=300))
 
@@ -2418,7 +2422,10 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     assert "\x1b[" not in _join(format_test_results(results[0]))
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
-    assert "\x1b[" in _join(format_performance_summary(results, terminal=True))
+    coloured = _join(format_performance_summary(results, terminal=True))
+    # Only the high-priority queue wait over its limit is red, in the second table.
+    assert re.search(r"\x1b\[91m *8\.0 s", coloured)
+    assert not re.search(r"\x1b\[91m *(1|9)\.0 s", coloured)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     assert "\x1b[" in _join(format_test_results(results[0]))
     monkeypatch.setenv("TERM", "dumb")
