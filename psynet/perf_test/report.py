@@ -577,10 +577,10 @@ def _percent(share):
 
 
 def _count(n, total, alert=False):
-    """Format ``n`` of ``total`` for a table cell, e.g. ``7 of 570 (1.2%)``, in red if ``alert`` and not zero."""
+    """Format ``n`` and its share of ``total`` for a table cell, e.g. ``7 (1.2%)``, in red if ``alert`` and not zero."""
     if not n:
         return Text("0")
-    text = f"{n:,} of {total:,} ({_percent(n / total)})" if total else f"{n:,}"
+    text = f"{n:,} ({_percent(n / total)})" if total else f"{n:,}"
     return Text(text, style=_ALERT if alert else "")
 
 
@@ -638,6 +638,7 @@ def _summary_columns(results, limits):
     seen = _measures_seen(results)
     columns = [
         ("Bots", lambda r: f"{r.n_bots:,}"),
+        ("Bots\nstarted", lambda r: f"{r.total_bots_started:,}"),
         ("Length", lambda r: _minutes(_test_minutes(r))),
         ("Result", lambda r: _result_text(r, limits)),
         ("Req/s", lambda r: _fmt(r.requests_per_sec, digits=1)),

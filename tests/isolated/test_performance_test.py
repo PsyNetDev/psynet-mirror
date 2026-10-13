@@ -1,4 +1,5 @@
 import os
+import re
 from unittest.mock import Mock, patch
 
 import pytest
@@ -2288,7 +2289,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
     rows = {line.split()[0]: line for line in lines if line.strip()[:1].isdigit()}
     assert list(rows) == ["520", "560", "416"]
     assert " pass " in rows["520"] and rows["520"].endswith(" capacity")
-    assert " FAIL " in rows["560"] and "10 of 570 (1.8%)" in rows["560"]
+    assert " FAIL " in rows["560"] and re.search(r"^ +560 +570 ", rows["560"])
+    assert "10 (1.8%)" in rows["560"]
     assert rows["416"].endswith(" 433   check at the cap")
     assert "shorter than one participant session (11 min)" in text
     assert (
