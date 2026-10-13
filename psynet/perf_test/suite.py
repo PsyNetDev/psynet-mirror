@@ -16,11 +16,11 @@ import time
 
 from rich.text import Text
 
-from psynet.log import warning
 from psynet.perf_test.report import (
     format_performance_summary,
     format_text,
     reset_error_lines,
+    warning,
 )
 from psynet.perf_test.results import (
     CAPACITY_SEARCH_MAX,

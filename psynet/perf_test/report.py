@@ -27,7 +27,7 @@ from rich.table import Table
 from rich.text import Text
 from tabulate import tabulate
 
-from psynet.log import bold, error, success, warning
+from psynet import log
 from psynet.perf_test.results import (
     ASYNC_JOB_STAT_KEYS,
     CAPACITY_HEADROOM,
@@ -66,6 +66,33 @@ from psynet.perf_test.results import (
     worker_utilization,
     workers_falling_behind,
 )
+
+
+def _colored(terminal=None):
+    """Return whether output is coloured: on a terminal, unless ``NO_COLOR`` is set or ``TERM`` is ``dumb``.
+
+    ``terminal`` defaults to whether standard output is one.
+    """
+    if terminal is None:
+        terminal = sys.stdout.isatty()
+    return (
+        terminal and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
+    )
+
+
+def _when_colored(style):
+    """Return ``style``, from :mod:`psynet.log`, applied only if :func:`_colored`."""
+
+    def styled(text):
+        return style(text) if _colored() else text
+
+    return styled
+
+
+bold = _when_colored(log.bold)
+error = _when_colored(log.error)
+success = _when_colored(log.success)
+warning = _when_colored(log.warning)
 
 
 def _fmt(value, suffix="", digits=3):
@@ -535,9 +562,7 @@ def _render(renderables, terminal=None, wrap=True):
     """
     if terminal is None:
         terminal = sys.stdout.isatty()
-    color = (
-        terminal and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
-    )
+    color = _colored(terminal)
     file = StringIO()
     console = Console(
         file=file,
@@ -689,10 +714,10 @@ def _summary_columns(results, limits):
             ),
         ),
         (
-            "p95 (ms)\nresponse",
+            "p95\nresponse",
             lambda r: _alert(_ms(r.p95_response_time), over(r, "p95")),
         ),
-        ("Median (ms)\nresponse", lambda r: _ms(r.median_response_time)),
+        ("Median\nresponse", lambda r: _ms(r.median_response_time)),
         (
             "Failed\nrequests",
             count(lambda r: r.request_errors, requests, "request_errors"),
@@ -724,7 +749,7 @@ def _summary_columns(results, limits):
         )
     extra += [
         (
-            f"{priority.capitalize()}-priority\nqueue p95 (s)",
+            f"{priority.capitalize()}-priority\nqueue p95",
             lambda r, p=priority: _alert(
                 _s(queue_wait_p95(r, p)), p == "high" and over(r, "queue")
             ),

@@ -425,15 +425,15 @@ rating study on an SSH server (some rows left out)::
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 500 ms, at most 0.1% of requests failing, at most 1% of bots failing.
 
-       Bots     Bots                         p95 (ms)  Median (ms)      Failed     Failed      Bots
-    at once  started  Length  Result  Req/s  response     response    requests       bots  finished
-    ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-         10       10   3 min  pass      2.4     63 ms        27 ms           0          0         -
-        480      480   3 min  pass     97.0     74 ms        32 ms           0          0         -
-        520      520   3 min  pass    103.0     81 ms        33 ms           0          0         -  largest passing
-        560      570   3 min  FAIL    110.5     91 ms        36 ms           0  10 (1.8%)         -
-        640    1,271   3 min  FAIL    109.2    113 ms        37 ms  17 (0.09%)  631 (50%)         -
-        416      849  23 min  pass     90.2     76 ms        29 ms           0          0       433  validation test
+       Bots     Bots                              p95    Median      Failed     Failed      Bots
+    at once  started  Length  Result  Req/s  response  response    requests       bots  finished
+    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+         10       10   3 min  pass      2.4     63 ms     27 ms           0          0         -
+        480      480   3 min  pass     97.0     74 ms     32 ms           0          0         -
+        520      520   3 min  pass    103.0     81 ms     33 ms           0          0         -  largest passing
+        560      570   3 min  FAIL    110.5     91 ms     36 ms           0  10 (1.8%)         -
+        640    1,271   3 min  FAIL    109.2    113 ms     37 ms  17 (0.09%)  631 (50%)         -
+        416      849  23 min  pass     90.2     76 ms     29 ms           0          0       433  validation test
 
       Bots finished is - where the test was shorter than one participant session (11 min), so no bot could finish.
 
