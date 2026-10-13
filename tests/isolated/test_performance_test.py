@@ -40,11 +40,8 @@ def _base_result(**overrides):
         "total_requests": 10,
         "key_requests": 10,
         "request_errors": 0,
-        "avg_response_time": 0.05,
         "median_response_time": 0.04,
         "p95_response_time": 0.1,
-        "p99_response_time": 0.12,
-        "stddev_response_time": 0.02,
         "max_response_time": 0.15,
         "avg_bot_duration": 6.3,
         "requests_per_sec": 1.6,
@@ -1762,7 +1759,6 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
             n_bots=160,
             p95_response_time=0.1,
             tester_lag_p95_s=0.24,
-            tester_cpu_share=0.95,
         ),
     ]
 
@@ -1776,7 +1772,7 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
     assert "Spread the bots over more processes with --bot-processes" in text
     assert "Recommended:" not in text
     details = _join(format_test_results(results[1]))
-    assert "240 ms" in details and "95% of a core" in details
+    assert "240 ms" in details
 
 
 def test_a_bot_process_that_did_not_report_makes_a_test_untestable():
@@ -1785,10 +1781,6 @@ def test_a_bot_process_that_did_not_report_makes_a_test_untestable():
     assert "the test couldn't measure the server" in _join(
         format_capacity_summary(results)
     )
-
-
-def test_a_busy_cpu_share_alone_does_not_fail_a_test():
-    assert capacity_failures(_base_result(tester_cpu_share=0.95)) == []
 
 
 def test_load_monitor_measures_how_late_threads_run_while_the_lock_is_held():
@@ -1808,7 +1800,7 @@ def test_load_monitor_measures_how_late_threads_run_while_the_lock_is_held():
             pass
     finally:
         sys.setswitchinterval(switch_interval)
-    _, lag_p95_s = monitor.stop()
+    lag_p95_s = monitor.stop()
 
     assert lag_p95_s > 0.1
 
@@ -1824,10 +1816,10 @@ def test_bot_processes_ignore_messages_from_an_earlier_test():
     bot_processes._test = (2, bot_state, time.time() + 60)
     bot_processes._events, bot_processes._replies = queue.Queue(), queue.Queue()
     for event in [
-        (1, "start", 7, 0.1),
-        (1, "finished", 0, (0.5, 0.2), 0),
-        (2, "start", 8, 0.1),
-        (2, "finished", 0, (0.1, 0.01), 0),
+        (1, "start", 7),
+        (1, "finished", 0, 0.2, 0),
+        (2, "start", 8),
+        (2, "finished", 0, 0.01, 0),
         None,
     ]:
         bot_processes._events.put(event)
@@ -1835,7 +1827,7 @@ def test_bot_processes_ignore_messages_from_an_earlier_test():
     bot_processes._apply_events()
 
     assert list(bot_state.running) == [8]
-    assert bot_processes._replies.get_nowait() == (2, "finished", 0, (0.1, 0.01), 0)
+    assert bot_processes._replies.get_nowait() == (2, "finished", 0, 0.01, 0)
     assert bot_processes._replies.empty()
 
 
@@ -1982,11 +1974,8 @@ def test_format_test_results_basic():
 def test_format_test_results_none_response_times():
     lines = format_test_results(
         _base_result(
-            avg_response_time=None,
             median_response_time=None,
             p95_response_time=None,
-            p99_response_time=None,
-            stddev_response_time=None,
             max_response_time=None,
             total_requests=0,
         )
@@ -2006,29 +1995,12 @@ def test_format_test_results_bots_not_in_db():
     assert "Bot error before joining" in text
 
 
-def test_format_test_results_init_times():
-    lines = format_test_results(
-        _base_result(
-            median_init_time=0.2, p95_init_time=0.5, max_init_time=0.5, n_init_samples=4
-        )
-    )
-    text = _join(lines)
-    assert "BOT INIT TIMES" in text
-    assert "Median" in text
-    assert "95th percentile" in text
-
-
 def test_format_test_results_wait_page_times():
     lines = format_test_results(
-        _base_result(
-            median_wait_page_time=1.5,
-            p95_wait_page_time=3.0,
-            max_wait_page_time=5.0,
-            n_wait_page_samples=10,
-        )
+        _base_result(median_wait_page_time=1.5, n_wait_page_samples=10)
     )
     text = _join(lines)
-    assert "TIME ON WAIT PAGES PER BOT (n=10 bots" in text
+    assert "Median time on wait pages per bot (n=10)" in text
 
 
 def test_format_test_results_async_job_stats():

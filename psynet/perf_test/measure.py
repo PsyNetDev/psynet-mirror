@@ -125,11 +125,8 @@ def request_stats(after_request_id, last_request_id):
     stats = (
         db.session.query(
             func.count(Request.id).label("count"),
-            func.avg(Request.duration).label("avg"),
             func.percentile_cont(0.5).within_group(Request.duration).label("median"),
             func.percentile_cont(0.95).within_group(Request.duration).label("p95"),
-            func.percentile_cont(0.99).within_group(Request.duration).label("p99"),
-            func.stddev_samp(Request.duration).label("stddev"),
             func.max(Request.duration).label("max"),
         )
         .filter(*key_window)
@@ -156,12 +153,9 @@ def request_stats(after_request_id, last_request_id):
         .filter(*window)
         .scalar(),
         key_requests=stats.count,
-        avg_response_time=_as_float(stats.avg),
         median_response_time=_as_float(stats.median),
         p95_response_time=_as_float(stats.p95),
         endpoint_p95=endpoint_p95,
-        p99_response_time=_as_float(stats.p99),
-        stddev_response_time=_as_float(stats.stddev),
         max_response_time=_as_float(stats.max),
         request_errors=request_errors,
         busy_responses=busy_responses,
@@ -429,8 +423,6 @@ def bot_outcome_stats(after_participant_id, errored_bot_ids):
         participants_failed=outcome_counts[_FAILED_BY_EXPERIMENT],
         failed_reasons=dict(failed_reasons.most_common()),
         median_wait_page_time=quantile(wait_page_times, 0.5),
-        p95_wait_page_time=quantile(wait_page_times, 0.95),
-        max_wait_page_time=quantile(wait_page_times, 1),
         n_wait_page_samples=len(wait_page_times) if wait_page_times else None,
         min_trial_count=min_trials,
         median_trial_count=median_trials,
@@ -535,7 +527,7 @@ def _trial_count_stats(bot_ids):
 
 
 def bot_duration_stats(bot_durations, outcomes):
-    """Return the average bot runtimes by outcome, from ``_BotState.bot_durations``."""
+    """Return the average runtime of all bots and of those that succeeded, from ``_BotState.bot_durations``."""
     return dict(
         avg_bot_duration=_mean([d for _, d, _ in bot_durations]),
         avg_succeeded_duration=_mean(
@@ -543,28 +535,6 @@ def bot_duration_stats(bot_durations, outcomes):
                 d
                 for bot_id, d, stopped in bot_durations
                 if not stopped and outcomes.get(bot_id) == _SUCCEEDED
-            ]
-        ),
-        avg_experiment_failed_duration=_mean(
-            [
-                d
-                for bot_id, d, _ in bot_durations
-                if outcomes.get(bot_id) == _FAILED_BY_EXPERIMENT
-            ]
-        ),
-        avg_failed_duration=_mean(
-            [
-                d
-                for bot_id, d, stopped in bot_durations
-                if not stopped and outcomes.get(bot_id, _OTHER_END) == _OTHER_END
-            ]
-        ),
-        avg_incomplete_duration=_mean(
-            [
-                d
-                for bot_id, d, stopped in bot_durations
-                if (stopped and outcomes.get(bot_id) != _FAILED_BY_EXPERIMENT)
-                or outcomes.get(bot_id) == _STILL_RUNNING
             ]
         ),
     )

@@ -154,7 +154,6 @@ class _BotState:
     bot_error_kinds: Counter = field(default_factory=Counter)
     # (bot_id, duration_s, stopped_by_test_end) of each finished bot.
     bot_durations: list = field(default_factory=list)
-    initialization_times: list = field(default_factory=list)
     first_bot_initialized: bool = False
     server_stopped: bool = False
     slots_started: int = 0
@@ -164,7 +163,7 @@ class _BotState:
     ramp_up_s: float | None = None
     # time.time() when a bot first completed the experiment during the test.
     first_completed_at: float | None = None
-    # (CPU share, p95 lag in s) of each process running bots.
+    # The p95 lag in seconds of each process running bots (see _LoadMonitor).
     process_loads: list = field(default_factory=list)
     # Why a bot process stopped during the test, if one did.
     bot_process_failure: str | None = None
@@ -287,8 +286,6 @@ class _LoadMonitor:
     def __init__(self):
         self._lags_ms = Counter()
         self._stopped = threading.Event()
-        self._cpu_start = time.process_time()
-        self._wall_start = time.monotonic()
         self._thread = threading.Thread(
             target=self._probe, name="psynet-lag-probe", daemon=True
         )
@@ -308,28 +305,11 @@ class _LoadMonitor:
                 return
 
     def stop(self):
-        """Stop measuring and return this process's load since it started.
-
-        Returns
-        -------
-        tuple of (float or None, float or None)
-            The CPU time used per second, counting every thread, so 1.0 means
-            a whole core; and the 95th-percentile lag in seconds.
-        """
-        wall_s = time.monotonic() - self._wall_start
-        cpu_s = time.process_time() - self._cpu_start
+        """Stop measuring and return the 95th-percentile lag in seconds, or ``None`` without samples."""
         self._stopped.set()
         self._thread.join()
         lag_p95_ms = quantile(sorted(self._lags_ms.elements()), 0.95)
-        return (
-            cpu_s / wall_s if wall_s > 0 else None,
-            None if lag_p95_ms is None else lag_p95_ms / 1000,
-        )
-
-
-def _worst(process_loads, i):
-    """Return the largest non-missing item ``i`` of the ``(cpu_share, lag_p95_s)`` pairs."""
-    return max((load[i] for load in process_loads if load[i] is not None), default=None)
+        return None if lag_p95_ms is None else lag_p95_ms / 1000
 
 
 def _fit_redis_pool_to_bots(n_bots):
@@ -625,7 +605,6 @@ class PerformanceTester:
 
         experiment = get_experiment()
         while not stop_event.is_set() and time.time() < end_time:
-            create_time = time.time()
             bot_id = None
             error_kind = None
             record("attempt")
@@ -633,7 +612,7 @@ class PerformanceTester:
                 bot = BotDriver()
                 bot.stop_event = stop_event
                 bot_id = bot.id
-                record("start", bot_id, time.time() - create_time)
+                record("start", bot_id)
                 if stop_event.is_set():
                     raise DriverStopped()
                 experiment.run_bot(
@@ -661,7 +640,7 @@ class PerformanceTester:
 
         Reports come from bot threads in this process or, as events, from
         bot processes. ``kind`` is ``"attempt"`` before a bot is created,
-        ``"start"`` with ``(bot_id, init_time_s)`` once it exists, and
+        ``"start"`` with ``(bot_id,)`` once it exists, and
         ``"end"`` with ``(bot_id, outcome, error_kind)`` when it finishes.
         ``outcome`` is ``"completed"``, ``"failed"`` (finished, but the
         experiment failed the participant), ``"stopped"`` or ``"error"``.
@@ -676,11 +655,10 @@ class PerformanceTester:
             cls._record_bot_end(bot_state, bot_id, outcome, end_time, error_kind)
 
     @staticmethod
-    def _record_bot_start(bot_state, bot_id, init_time):
+    def _record_bot_start(bot_state, bot_id):
         """Record that a bot started, for the live status and results."""
         now = time.time()
         with bot_state.lock:
-            bot_state.initialization_times.append(init_time)
             bot_state.first_bot_initialized = True
             bot_state.running[bot_id] = now
             bot_state.peak_running = max(bot_state.peak_running, len(bot_state.running))
@@ -865,7 +843,6 @@ class PerformanceTester:
             initial_state["max_participant_id"], bot_state.errored_bot_ids
         )
         total_requests = request_summary["total_requests"]
-        init_times = sorted(bot_state.initialization_times)
         result = PerformanceTestResult(
             n_bots=n,
             duration_minutes=duration_minutes,
@@ -877,8 +854,10 @@ class PerformanceTester:
             slots_started=bot_state.slots_started,
             peak_running=bot_state.peak_running,
             ramp_up_s=bot_state.ramp_up_s,
-            tester_cpu_share=_worst(bot_state.process_loads, 0),
-            tester_lag_p95_s=_worst(bot_state.process_loads, 1),
+            tester_lag_p95_s=max(
+                (lag for lag in bot_state.process_loads if lag is not None),
+                default=None,
+            ),
             total_bots_started=bot_state.total_bots_started,
             db_rows_before=initial_state["db_rows"],
             db_rows_after=database_rows(),
@@ -887,10 +866,6 @@ class PerformanceTester:
             ),
             bot_errors=bot_state.total_bot_errors,
             bot_error_kinds=dict(bot_state.bot_error_kinds.most_common()),
-            median_init_time=quantile(init_times, 0.5),
-            p95_init_time=quantile(init_times, 0.95),
-            max_init_time=quantile(init_times, 1),
-            n_init_samples=len(init_times),
             **request_summary,
             **async_job_summary,
             **bot_stats,
@@ -962,7 +937,7 @@ class _ThreadBots:
 
     def end_test(self, timeout_s):
         """Stop the test's bots, as :meth:`_BotProcesses.end_test` does, for this process."""
-        load = (None, None) if self._load is None else self._load.stop()
+        load = None if self._load is None else self._load.stop()
         self._load = None
         self._stop_event.set()
         return [load], [], _join_threads(self._threads, timeout_s)
@@ -1148,7 +1123,7 @@ class _BotProcesses:
 
         Returns
         -------
-        tuple of (list of tuple, list of int, int)
+        tuple of (list of float or None, list of int, int)
             The load of each child that reported, as returned by
             :meth:`_LoadMonitor.stop`; the numbers of those that didn't; and
             how many bots were still running when the children stopped

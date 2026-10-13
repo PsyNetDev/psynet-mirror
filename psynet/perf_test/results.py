@@ -165,7 +165,6 @@ class PerformanceTestResult:
     # Seconds from the test start until the last bot slot started.
     ramp_up_s: float | None = None
     # Of the busiest process running bots; see runtime._LoadMonitor.
-    tester_cpu_share: float | None = None
     tester_lag_p95_s: float | None = None
     total_bots_started: int = 0
     # Bots whose participant ended approved or submitted and was not failed.
@@ -190,33 +189,19 @@ class PerformanceTestResult:
     bot_errors: int = 0
     # Number of bot errors of each kind, most common first.
     bot_error_kinds: dict[str, int] = field(default_factory=dict)
-    avg_response_time: float | None = None
     median_response_time: float | None = None
     p95_response_time: float | None = None
     endpoint_p95: dict[str, float] = field(default_factory=dict)
-    p99_response_time: float | None = None
-    stddev_response_time: float | None = None
     max_response_time: float | None = None
     avg_bot_duration: float | None = None
-    # How long creating each bot took, over n_init_samples bots.
-    median_init_time: float | None = None
-    p95_init_time: float | None = None
-    max_init_time: float | None = None
-    n_init_samples: int = 0
     request_errors: int = 0
     # HTTP 409 and 503 responses; see measure._split_failed_requests.
     busy_responses: int = 0
     # Total time each bot that succeeded or was failed by the experiment
     # spent on wait pages, over n_wait_page_samples bots.
     median_wait_page_time: float | None = None
-    p95_wait_page_time: float | None = None
-    max_wait_page_time: float | None = None
     n_wait_page_samples: int | None = None
     avg_succeeded_duration: float | None = None
-    avg_experiment_failed_duration: float | None = None
-    # Of bots that raised or whose participant ended with another status.
-    avg_failed_duration: float | None = None
-    avg_incomplete_duration: float | None = None
     # Of all async jobs that started.
     q_delay_median: float | None = None
     # For "high" and "low" priority async jobs, if any: how many started,

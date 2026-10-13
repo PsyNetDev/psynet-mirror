@@ -123,7 +123,6 @@ def format_test_results(result):
         "",
         *_bot_outcome_lines(result),
         *_runtime_lines(result),
-        *_init_time_lines(result),
         *_request_lines(result),
         *_async_job_lines(result),
         *_phase_lines(result),
@@ -282,12 +281,6 @@ def _runtime_lines(result):
     for label, value in [
         ("Avg runtime", result.avg_bot_duration),
         ("Avg runtime (succeeded)", result.avg_succeeded_duration),
-        (
-            "Avg runtime (failed by the experiment)",
-            result.avg_experiment_failed_duration,
-        ),
-        ("Avg runtime (bot error or other status)", result.avg_failed_duration),
-        ("Avg runtime (stopped at the end)", result.avg_incomplete_duration),
     ]:
         if value is not None:
             rows.append([label, f"{value:.1f}s"])
@@ -299,27 +292,7 @@ def _runtime_lines(result):
                 warning(lag) if tester_lagged(result) else lag,
             ]
         )
-    if result.tester_cpu_share is not None:
-        rows.append(
-            ["Bot process CPU (busiest)", f"{result.tester_cpu_share:.0%} of a core"]
-        )
     return [*_section("BOT RUNTIMES"), *(_label_table(rows) if rows else []), ""]
-
-
-def _init_time_lines(result):
-    """Return the BOT INIT TIMES section, or nothing if no bot started."""
-    if not result.n_init_samples:
-        return []
-    rows = [
-        ["Median", _fmt(result.median_init_time, "s")],
-        ["95th percentile", _fmt(result.p95_init_time, "s")],
-        ["Max", _fmt(result.max_init_time, "s")],
-    ]
-    return [
-        *_section(f"BOT INIT TIMES (n={result.n_init_samples}):"),
-        *_label_table(rows),
-        "",
-    ]
 
 
 def _request_lines(result):
@@ -343,26 +316,19 @@ def _request_lines(result):
         [
             ["Median", _fmt(result.median_response_time, "s")],
             ["95th percentile", _fmt(result.p95_response_time, "s")],
-            ["99th percentile", _fmt(result.p99_response_time, "s")],
             ["Max", _fmt(result.max_response_time, "s")],
-            ["Mean", _fmt(result.avg_response_time, "s")],
-            ["Std dev", _fmt(result.stddev_response_time, "s")],
         ]
     )
     lines.append("")
 
     if result.median_wait_page_time is not None:
         n_wait = result.n_wait_page_samples
-        bot_word = "bot" if n_wait == 1 else "bots"
-        lines += _section(
-            f"TIME ON WAIT PAGES PER BOT (n={n_wait} {bot_word} that completed "
-            "or were failed by the experiment)"
-        )
         lines += _label_table(
             [
-                ["Median", f"{result.median_wait_page_time:.1f}s"],
-                ["95th percentile", f"{result.p95_wait_page_time:.1f}s"],
-                ["Max", f"{result.max_wait_page_time:.1f}s"],
+                [
+                    f"Median time on wait pages per bot (n={n_wait})",
+                    f"{result.median_wait_page_time:.1f}s",
+                ]
             ]
         )
         lines.append("")
@@ -387,18 +353,6 @@ def _request_lines(result):
     return lines
 
 
-_ASYNC_TABLE_LEGEND = [
-    "  Avg/Med/P95/Max — statistics on actual execution time",
-    "  CPU Avg — mean CPU time of the job's own thread",
-    "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)",
-    "  Q Share — avg of per-job queue_delay / (queue_delay + exec_time),",
-    "    i.e. avg percentage of total time spent queuing rather than executing",
-    "  Colors: yellow = Q Share > 20% and Q P95 > 0.2s (moderate contention)",
-    "          red = Q Share > 20% and Q P95 > 0.5s (significant contention)",
-    "\n",
-]
-
-
 def _async_job_lines(result):
     """Return the ASYNC JOB TIMES section and any backlog left at the end."""
     worker_info = _describe_workers(result)
@@ -412,13 +366,14 @@ def _async_job_lines(result):
                 ps.get("priority") or "",
                 ps["count"],
                 *(_fmt(ps.get(key)) for key in ASYNC_JOB_STAT_KEYS if key != "q_share"),
-                _q_share_text(ps["q_share"], ps["q_p95"]),
+                "N/A" if ps["q_share"] is None else f"{ps['q_share']:.0%}",
             ]
             for ps in result.async_job_stats
         ]
         lines = [
             *_section(f"ASYNC JOB TIMES ({n_procs} completed{worker_info})"),
-            *_ASYNC_TABLE_LEGEND,
+            "  Run times, then Q: the wait for a worker; Q Share: the average share "
+            "of a job's time spent waiting.",
             *_table_lines(
                 proc_rows,
                 headers=[
@@ -491,18 +446,6 @@ def _missing_workers_text(result):
         "failed or hung at start-up, and restart them. (psynet debug local "
         "without --legacy always starts one.)"
     )
-
-
-def _q_share_text(q_share, q_p95):
-    """Format an async job's queue share, colored by how much it queued."""
-    if q_share is None or q_p95 is None:
-        return "N/A"
-    text = f"{q_share:.0%}"
-    if q_share > 0.2 and q_p95 > 0.5:
-        return error(text)
-    if q_share > 0.2 and q_p95 > 0.2:
-        return warning(text)
-    return text
 
 
 def _database_row_lines(result):
