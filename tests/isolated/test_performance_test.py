@@ -1304,7 +1304,7 @@ def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(
     text = _join(format_capacity_summary(results))
 
     assert ("Recommended:" in text) == capped
-    assert ("(80% of 10)" if capped else "so the limit wasn't found") in text
+    assert ("(80% of 10)" if capped else "The limit wasn't found.") in text
     assert "Design experiments to avoid this" in text
     assert ("40 bots also passed, so the results are inconsistent" in text) == (
         larger_passed

@@ -1329,7 +1329,7 @@ def _capacity_lines(outcome, limits):
                 f"{reasons}. The limit wasn't found."
             )
         elif waits_only:
-            line = f"{passing} At {n_failed}, {reasons}, so the limit wasn't found."
+            line = f"{passing} At {n_failed}, {reasons}. The limit wasn't found."
         else:
             line = f"{passing} At {n_failed}, {reasons}."
     lines = [line, *_error_kinds_lines(first_fail, outcome.first_causes)]
