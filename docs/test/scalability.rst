@@ -594,7 +594,11 @@ the finished jobs' CPU time a share ``c`` of their run time:
 
 There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
-finished in it. For example, a tapping study with 43 s of
+finished in it. Search tests are often shorter than a session, so a search
+that skipped its validation test then names a longer test to run at the
+cap, with ``--arrival-minutes``. When the estimate is lower than the
+current processes, the summary still suggests keeping them, and says how
+many the load needs. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130
 bots on queue waits and whose 96-participant validation test kept 10
 single-slot workers 55% busy, gets::
@@ -602,7 +606,7 @@ single-slot workers 55% busy, gets::
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10 (the load needs about 8). To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks

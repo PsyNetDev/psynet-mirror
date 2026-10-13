@@ -630,8 +630,8 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "Recommended settings for 96 participants at once:\n"
         "    worker_processes = 10\n"
         "In the 96-bot validation test, the 10 worker processes "
-        "were busy 55% of the time. Keep the current 10. To go above 96, raise "
-        "worker_processes above 10 and test again."
+        "were busy 55% of the time. Keep the current 10 (the load needs about "
+        "8). To go above 96, raise worker_processes above 10 and test again."
     ) in text
 
 
@@ -1654,7 +1654,8 @@ def test_recommend_workers(result, n, burst, expected):
             + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
             "(all the cores left)\nIn the 96-bot validation test, "
             "the 10 worker processes were busy 55% of the time. Keep the current "
-            "10. To go above 96, use a larger server or cheaper jobs.",
+            "10 (the load needs about 8). To go above 96, use a larger server or "
+            "cheaper jobs.",
             "raise worker_processes above",
         ),
         # Above a confirmed cap where the cores trim the count below the test's.
@@ -1947,6 +1948,40 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         "measure. Raise worker_processes in config.txt"
     ) in text
     assert "worker_greenlets_per_process = 1" in text
+
+
+@pytest.mark.parametrize(
+    "planned, advice",
+    [
+        (
+            True,
+            "The validation test, which lasts longer than a session, would "
+            "measure it; to run it alone, use --n-bots 104 --arrival-minutes 13 "
+            "--duration-minutes 26.",
+        ),
+        (
+            False,
+            "A test longer than a session measures it: --n-bots 104 "
+            "--arrival-minutes 13 --duration-minutes 26.",
+        ),
+    ],
+)
+def test_worker_advice_without_a_steady_state_names_a_longer_test(planned, advice):
+    results = [
+        _base_result(
+            n_bots=n,
+            session_minutes=13,
+            duration_minutes=4,
+            n_rq_workers=10,
+            n_rq_job_slots=10,
+            queue_waits={"high": {"q_delay_p95": wait}},
+        )
+        for n, wait in [(130, 4.2), (140, 7.3)]
+    ]
+
+    text = _join(format_capacity_summary(results, confirmation_planned=planned))
+
+    assert advice in text
 
 
 def test_queue_advice_says_when_no_worker_processes_ran():
