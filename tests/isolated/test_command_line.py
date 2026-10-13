@@ -4786,7 +4786,6 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         ("performance_stagger", "-0.5"),
         ("performance_max_p95_ms", "0"),
         ("performance_max_queue_p95_s", "-1"),
-        ("performance_max_busy_early_finish_rate", "1.5"),
     ],
 )
 def test_performance_test_options_reject_out_of_range_values(option, value):
@@ -4848,7 +4847,7 @@ def test_bot_processes_option_accepts_auto_or_a_positive_count():
     for value, expected in [(" Auto", "'auto'"), ("4", "4")]:
         result = CliRunner().invoke(command, ["--bot-processes", value])
         assert result.output.strip() == expected
-    assert CliRunner().invoke(command, []).output.strip() == "None"
+    assert CliRunner().invoke(command, []).output.strip() == "'auto'"
     for invalid in ["0", "two"]:
         result = CliRunner().invoke(command, ["--bot-processes", invalid])
         assert result.exit_code == 2
@@ -4919,16 +4918,6 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
             ),
         ),
         (
-            dict(n_bots="auto", arrival_minutes=10),
-            dict(
-                duration_minutes=4,
-                stagger_interval_s=0.5,
-                time_factor=1.0,
-                bot_processes="auto",
-                arrival_minutes=10,
-            ),
-        ),
-        (
             dict(arrival_minutes=1.5),
             dict(
                 duration_minutes=7.5,
@@ -4944,7 +4933,6 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
         "defaults",
         "capacity-search-without-pauses",
         "capacity-search-tests-last-a-session",
-        "capacity-search-arrivals-only-for-confirmation",
         "arrivals-lengthen-the-default",
     ],
 )
@@ -4995,6 +4983,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     suite_class.assert_called_once_with(
         performance_tester.return_value,
         limits=CapacityLimits(),
+        before_test=None,
         label=experiment.label,
         after_test=ANY,
     )
@@ -5010,7 +4999,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     [
         (dict(arrival_minutes=1, stagger=2), "use one"),
         (dict(arrival_minutes=2, duration_minutes=2), "shorter than --duration"),
-        (dict(n_bots="auto", arrival_minutes=60), "shorter than 60 min"),
+        (dict(n_bots="auto", arrival_minutes=10), "can't be used with --n-bots auto"),
     ],
 )
 def test_arrival_minutes_rejects_conflicting_options(options, message):
@@ -5020,12 +5009,6 @@ def test_arrival_minutes_rejects_conflicting_options(options, message):
         _run_performance_test_local(
             existing=True, json_output=None, debug=False, **options
         )
-
-
-def test_capacity_search_accepts_an_arrival_window_longer_than_its_tests():
-    from psynet.command_line import _check_arrival_options
-
-    _check_arrival_options(n_bots="auto", arrival_minutes=10, duration_minutes=1)
 
 
 def test_performance_test_flags_keep_zeros_and_omit_unset_options():

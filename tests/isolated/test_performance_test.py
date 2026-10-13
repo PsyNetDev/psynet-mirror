@@ -457,22 +457,15 @@ def test_capacity_search_tests_last_a_session_up_to_five_minutes(
 
 
 @pytest.mark.parametrize(
-    "session_minutes, arrival_minutes, expected",
-    [
-        (12, None, (24, 12)),
-        (0.08, None, (2, 0.1)),
-        (45, None, (60, 30)),
-        (None, None, (1, None)),
-        (12, 3, (15, 3)),
-        (12, 55, (60, 55)),
-    ],
+    "session_minutes, expected",
+    [(12, (24, 12)), (0.08, (2, 0.1)), (45, (60, 30)), (None, (1, None))],
 )
 def test_confirmation_test_spreads_arrivals_over_a_session_and_lasts_two(
-    session_minutes, arrival_minutes, expected
+    session_minutes, expected
 ):
     from psynet.perf_test.results import confirmation_timing
 
-    assert confirmation_timing(session_minutes, 1, arrival_minutes) == expected
+    assert confirmation_timing(session_minutes, 1) == expected
 
 
 def _search(tester, fake_test, **kwargs):
@@ -554,15 +547,6 @@ def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
         # p95 900 ms is 1.8 times the 500 ms limit: 120 / 1.8 = 66.
         assert "Recommended: try at most 66 participants at once" in caplog.text
     assert "(80% of 150)." not in caplog.text
-
-
-def test_arrival_minutes_only_spread_the_confirmation_test(caplog):
-    _, results, arrivals = _confirmation_search(
-        caplog, dict(_STEADY), arrival_minutes=3
-    )
-
-    assert arrivals == [None] * 8 + [3]
-    assert results[-1].duration_minutes == 15
 
 
 @pytest.mark.parametrize(
@@ -1137,7 +1121,7 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
 
 @pytest.mark.parametrize(
     "participants, max_rate, passes",
-    [(1, None, True), (2, None, False), (2, 0.05, True)],
+    [(1, 0.01, True), (2, 0.01, False), (2, 0.05, True)],
 )
 def test_busy_chains_allow_one_bot_and_a_configurable_share(
     participants, max_rate, passes
@@ -1147,7 +1131,7 @@ def test_busy_chains_allow_one_bot_and_a_configurable_share(
         total_bots_started=55,
         busy_early_finishes={"main_chain": {"participants": participants}},
     )
-    limits = CapacityLimits.from_options(max_busy_early_finish_rate=max_rate)
+    limits = CapacityLimits(max_busy_early_finish_rate=max_rate)
 
     assert (capacity_failures(result, limits) == []) == passes
 
@@ -2638,7 +2622,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
             if cleanup_fails
             else None,
             json_output=str(json_output),
-            max_busy_early_finish_rate=0.05,
+            max_queue_p95_s=8,
         )
     assert "Resetting the database failed" in error.value.message
     assert ("my-app may be stopped" in error.value.message) == cleanup_fails
@@ -2646,7 +2630,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
     data = json.loads(json_output.read_text())
     assert len(data["results"]) == 2
     assert data["finished_at"] and data["reset_error"] == pgbouncer_full
-    assert data["options"]["max_busy_early_finish_rate"] == 0.05
+    assert data["options"]["max_queue_p95_s"] == 8
     assert data["options"]["confirmation_skipped"] == "resetting the database failed"
 
 
@@ -2723,10 +2707,9 @@ def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkey
     "options, n_tests, last_command",
     [
         (dict(no_confirm=True), 8, "--duration-minutes 5 "),
-        (dict(arrival_minutes=3), 9, "--duration-minutes 15 --arrival-minutes 3 "),
         (dict(reset=True), 9, "--arrival-minutes 12.0 "),
     ],
-    ids=["no-confirm", "arrival-minutes", "reset-database"],
+    ids=["no-confirm", "reset-database"],
 )
 def test_remote_search_options_reach_the_right_tests(
     monkeypatch, options, n_tests, last_command

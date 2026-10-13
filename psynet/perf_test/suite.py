@@ -150,7 +150,7 @@ class PerformanceSuite:
         else:
             self.confirmation_skipped = None
         confirm_minutes, confirm_arrival = confirmation_timing(
-            tester.session_minutes, tester.duration_minutes, tester.arrival_minutes
+            tester.session_minutes, tester.duration_minutes
         )
         max_tests = CAPACITY_SEARCH_MAX_TESTS
         between = (
@@ -200,7 +200,6 @@ class PerformanceSuite:
                     highest_pass = n_bots
             n_bots = next_capacity_probe(highest_pass, lowest_fail)
             if n_bots is not None:
-                # The tester's arrival window is for the confirmation test.
                 return n_bots, tester.duration_minutes, None, False
             if self.confirmation_skipped:
                 return None
@@ -336,9 +335,7 @@ class PerformanceSuite:
         if tester.arrival_minutes:
             logger.info(
                 f"Bot arrivals:         evenly over {tester.arrival_minutes:g} min"
-                + (" in the validation test" if search else "")
             )
-        if tester.arrival_minutes and not search:
             logger.info(
                 f"Bot start stagger:    ~{tester.stagger_interval_s:g}s, "
                 "after a bot finishes"

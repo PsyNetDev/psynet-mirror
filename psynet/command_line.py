@@ -4320,20 +4320,11 @@ _test_options["performance_n_bots"] = click.option(
     "--n-bots",
     callback=_validate_performance_n_bots,
     help="""
-    The --n-bots parameter can accept a comma-separated list of integers
-    to run sequential tests with different maximum concurrency levels.
-    Example: --n-bots "5,10,20" will run three separate tests.
-    Use --n-bots auto to search for the largest bot count that keeps the
-    95th-percentile response time under --max-p95-ms and high-priority async
-    queue waits under --max-queue-p95-s, with at most 0.1% of requests failing, 1%
-    answered as busy or stale, 1% of bots failing, 1% of participants
-    failed by the experiment for waiting too long, and 1% getting fewer
-    trials in a trial maker because every chain was busy. The search's tests
-    are short (see --duration-minutes), so a validation test then runs the
-    recommended number of participants with bots arriving over one session,
-    for two sessions (at most an hour), and decides whether that number is
-    confirmed; see --no-confirm.
-    If not specified, will default to Experiment.test_n_bots""",
+    Bots at once in each test: a comma-separated list, such as 5,10,20, runs
+    one test per count, and 'auto' searches for the most bots that stay within
+    the capacity limits, then runs a validation test at the recommended
+    number (see 'Testing scalability' in the docs). Defaults to
+    Experiment.test_n_bots.""",
 )
 
 _test_options["performance_no_confirm"] = click.option(
@@ -4341,14 +4332,14 @@ _test_options["performance_no_confirm"] = click.option(
     is_flag=True,
     help="""
     With --n-bots auto, skip the validation test at the recommended number
-    of participants, which can take up to an hour. It is always skipped with --time-factor 0.""",
+    of participants, which can take up to an hour.""",
 )
 
 
 def _validate_bot_processes(ctx, param, value):
-    """Click callback: return ``--bot-processes`` as ``"auto"``, a whole number or ``None``."""
-    if value is None or value.strip().lower() == "auto":
-        return None if value is None else "auto"
+    """Click callback: return ``--bot-processes`` as ``"auto"`` or a whole number."""
+    if value.strip().lower() == "auto":
+        return "auto"
     try:
         n_processes = int(value)
     except ValueError:
@@ -4360,14 +4351,12 @@ def _validate_bot_processes(ctx, param, value):
 
 _test_options["performance_bot_processes"] = click.option(
     "--bot-processes",
+    default="auto",
+    show_default=True,
     callback=_validate_bot_processes,
     help="""
-    Number of processes to run the bots in. One process tops out at a few
-    hundred requests per second, and a test in which the bots in a process
-    run more than 50 ms late (p95) counts as could not be tested. 'auto' (the default)
-    uses a process per 250 bots, up to one per four CPU cores; with --n-bots
-    auto it plans for the largest count the search may test, except over
-    SSH, where each test plans for its own bot count.""",
+    Number of processes to run the bots in. 'auto' uses a process per 250
+    bots, up to one per four CPU cores.""",
 )
 
 _test_options["performance_force"] = click.option(
@@ -4384,10 +4373,8 @@ _test_options["performance_max_p95_ms"] = click.option(
     type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
-    The 95th-percentile response time (for /timeline and /response) that a
-    test may reach while still passing. Used by --n-bots auto and by the
-    recommended number of participants in the summary.
-    Defaults to 500.""",
+    The 95th-percentile response time of /timeline and /response that a
+    passing test may reach. Defaults to 500.""",
 )
 
 _test_options["performance_max_queue_p95_s"] = click.option(
@@ -4395,44 +4382,27 @@ _test_options["performance_max_queue_p95_s"] = click.option(
     type=click.FloatRange(min=0),
     default=None,
     help="""
-    The 95th-percentile time, in seconds, that high-priority async jobs,
-    which participants wait for, may wait for a worker while the test still
-    passes. Jobs still queued when the test ends count
-    with the time they have waited so far. Low-priority jobs are reported
-    but never fail the test. Used alongside --max-p95-ms. Defaults to 5.""",
-)
-
-_test_options["performance_max_busy_early_finish_rate"] = click.option(
-    "--max-busy-early-finish-rate",
-    type=click.FloatRange(min=0, max=1),
-    default=None,
-    help="""
-    The share of bots started that may get fewer trials in a chain trial
-    maker because every chain was busy, while the test still passes; one
-    such bot per trial maker is always allowed. Used
-    alongside --max-p95-ms. Defaults to 0.01 (1%).""",
+    The 95th-percentile time, in seconds, that high-priority async jobs may
+    wait for a worker in a passing test. Defaults to 5.""",
 )
 
 _test_options["performance_time_factor"] = click.option(
     "--time-factor",
     type=click.FloatRange(min=0),
-    default=None,
+    default=1.0,
+    show_default=True,
     help="""
-    Multiply the timings in time_estimate by a random amount around this factor.
-    Each bot's pace varies randomly from 0.7 to 3 times this factor, because
-    people rarely work much faster than the time estimates. Above 0, bots also
-    never submit a page before its minimum duration (Page.min_duration), such
-    as a recording's duration. When equal to zero, the bot will run through the
-    experiment as fast as possible. If not specified, defaults to 1.0""",
+    Pace the bots at about this multiple of the timeline's time estimates;
+    each bot's pace varies from 0.7 to 3 times it. 0 runs the bots as fast
+    as possible.""",
 )
 
 _test_options["performance_stagger"] = click.option(
     "--stagger",
     type=click.FloatRange(min=0),
     help="""
-    Average time interval to wait (in seconds) between starting each bot.
-    Start times will vary randomly using a gamma distribution with an upper bound of 5x this value.
-    If not specified, will default to Experiment.test_parallel_stagger_interval_s (0.1 s)""",
+    Average seconds between starting bots. Defaults to
+    Experiment.test_parallel_stagger_interval_s (0.1 s).""",
 )
 
 _test_options["performance_arrival_minutes"] = click.option(
@@ -4440,18 +4410,9 @@ _test_options["performance_arrival_minutes"] = click.option(
     type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
-    Spread the arrival of each test's bots evenly over this many minutes after
-    the first bot starts, as participants arrive while a study is open,
-    instead of starting them --stagger seconds apart. With --n-bots auto, only
-    the validation test uses this window (instead of one session); that
-    test lasts a session longer than the window, but at most an hour, or
-    --duration-minutes if that is longer, and the window must be shorter
-    than this longest test. The search's tests stay short, with the bots
-    starting together. Can't be combined with --stagger; bots that replace
-    finished ones still start after the experiment's
-    test_parallel_stagger_interval_s. Otherwise it must be shorter than
-    --duration-minutes, and without --duration-minutes it is added to the
-    default test length.""",
+    Spread each test's bots evenly over this many minutes, as participants
+    arrive while a study is open, instead of --stagger. Not with --n-bots
+    auto, whose validation test spreads them over one session.""",
 )
 
 _test_options["duration_minutes"] = click.option(
@@ -4459,16 +4420,9 @@ _test_options["duration_minutes"] = click.option(
     type=click.FloatRange(min=0, min_open=True),
     default=None,
     help="""
-    Length of each test in minutes, including first-bot initialization and
-    ramp-up towards 'n-bots'. If not specified, a test lasts 1.5 participant
-    sessions (the timeline's estimated duration times --time-factor), rounded
-    up to whole minutes, at most 30 minutes and at least
-    Experiment.test_duration_minutes (1 minute). A test shorter than one
-    session sees mostly the start of the study, before bots finish, and
-    the suite warns about it. With --n-bots auto this sets the length of
-    the search's tests, which default to one session, at most 5 minutes, so
-    that a search of up to 12 tests takes at most an hour; the validation
-    test sets its own length.""",
+    Length of each test in minutes. Defaults to 1.5 participant sessions
+    (at most 30 minutes), or one session (at most 5 minutes) for the tests
+    of --n-bots auto.""",
 )
 
 _test_options["performance_json_output"] = click.option(
@@ -4476,27 +4430,29 @@ _test_options["performance_json_output"] = click.option(
     type=click.Path(dir_okay=False, writable=True),
     default=None,
     help="""
-    If provided, write performance test results to this path as JSON, after
-    each test and when the run ends.
-    The file will contain a top-level object with: schema_version, psynet_version,
-    dallinger_version, python_version, platform, experiment_label,
-    started_at / finished_at (ISO timestamps; finished_at is null until the
-    run ends, or if it was interrupted), snapshot and snapshot_rows
-    (the database snapshot that each test started from and its rows, with
-    --reset-database), reset_error (why a reset failed and stopped the run
-    early, or null), options (n_bots_sweep, capacity_search, max_p95_s,
-    max_queue_p95_s, max_busy_early_finish_rate, duration_minutes,
-    estimated_duration_minutes,
-    session_minutes, stagger_interval_s, arrival_minutes, time_factor,
-    bot_processes, reset_database, prefill_participants,
-    and with --n-bots auto confirm and confirmation_skipped),
-    and results (one entry per test, with all metrics, including its
-    duration_minutes, arrival_minutes, session_minutes, queue_waits by
-    async job priority, startup_phase and steady_state_phase,
-    n_rq_workers and configured_worker_processes, and confirmation for the
-    validation test that ends a capacity search).
-    Useful for downstream consumption (e.g. benchmarking tools like asv).""",
+    Write the results, with the run's options and environment, to this path
+    as JSON after each test (see 'Testing scalability' in the docs).""",
 )
+
+
+def _performance_load_options(function):
+    """Add the options that set a performance test's load and limits."""
+    for name in reversed(
+        [
+            "performance_n_bots",
+            "performance_stagger",
+            "performance_time_factor",
+            "duration_minutes",
+            "performance_arrival_minutes",
+            "performance_no_confirm",
+            "performance_max_p95_ms",
+            "performance_max_queue_p95_s",
+            "performance_bot_processes",
+        ]
+    ):
+        function = _test_options[name](function)
+    return function
+
 
 # ``performance-test ssh`` chooses where the remote run writes its bot log, so
 # that it can copy the log back afterwards. It also prints where it saved the
@@ -4662,20 +4618,11 @@ def performance_test(ctx):
 
 @performance_test.command("local")
 @_test_options["existing"]
-@_test_options["performance_n_bots"]
-@_test_options["performance_stagger"]
-@_test_options["performance_time_factor"]
-@_test_options["duration_minutes"]
-@_test_options["performance_arrival_minutes"]
-@_test_options["performance_no_confirm"]
-@_test_options["performance_max_p95_ms"]
-@_test_options["performance_max_queue_p95_s"]
-@_test_options["performance_max_busy_early_finish_rate"]
+@_performance_load_options
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_log"]
 @_test_options["performance_test_label"]
 @_test_options["performance_suite_started_s_ago"]
-@_test_options["performance_bot_processes"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @_in_isolated_test_environment
@@ -4811,24 +4758,22 @@ def _run_performance_test_with_existing_server(
     json_output=None,
     n_bots=None,
     stagger=None,
-    time_factor=None,
+    time_factor=1.0,
     duration_minutes=None,
     arrival_minutes=None,
-    no_confirm=False,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    max_busy_early_finish_rate=None,
-    bot_processes=None,
+    bot_processes="auto",
     bot_log=None,
     test_label=None,
     suite_started_s_ago=None,
     force=False,
+    **suite_options,
 ):
     """Run performance test connecting to an already-running server.
 
     With ``test_label``, it runs a single test of the one count in ``n_bots``
     under that label, without a suite; with ``suite_started_s_ago`` too, it
     first pauses as between the tests of a suite that started that long ago.
+    ``suite_options`` are those of :func:`_run_performance_suite`.
     """
     import logging
     import sys
@@ -4851,41 +4796,34 @@ def _run_performance_test_with_existing_server(
         )
         sys.exit(1)
 
-    from psynet.perf_test import CapacityLimits, PerformanceSuite, PerformanceTester
+    from psynet.perf_test import PerformanceTester
 
     _check_no_real_participants(force)
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
     bot_counts = n_bots or [exp.test_n_bots]
-    find_capacity = bot_counts == "auto"
-    if test_label is not None and (find_capacity or len(bot_counts) != 1):
+    if test_label is not None and (bot_counts == "auto" or len(bot_counts) != 1):
         raise click.UsageError("--test-label runs one test of one --n-bots count.")
 
     estimated_duration_minutes = exp.estimated_duration_in_minutes
-    time_factor, duration_minutes = _performance_test_timing(
-        estimated_duration_minutes=estimated_duration_minutes,
-        minimum_minutes=exp.test_duration_minutes,
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        arrival_minutes=arrival_minutes,
-        find_capacity=find_capacity,
-    )
     tester = PerformanceTester(
         authenticated_session=exp.authenticated_session,
         base_url=exp.base_url,
-        duration_minutes=duration_minutes,
+        duration_minutes=_performance_test_duration(
+            estimated_duration_minutes=estimated_duration_minutes,
+            minimum_minutes=exp.test_duration_minutes,
+            time_factor=time_factor,
+            duration_minutes=duration_minutes,
+            arrival_minutes=arrival_minutes,
+            find_capacity=bot_counts == "auto",
+        ),
         stagger_interval_s=(
             exp.test_parallel_stagger_interval_s if stagger is None else float(stagger)
         ),
         time_factor=time_factor,
-        bot_processes="auto" if bot_processes is None else bot_processes,
+        bot_processes=bot_processes,
         estimated_duration_minutes=estimated_duration_minutes,
         arrival_minutes=arrival_minutes,
-    )
-    limits = CapacityLimits.from_options(
-        max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
-        max_queue_p95_s=max_queue_p95_s,
-        max_busy_early_finish_rate=max_busy_early_finish_rate,
     )
     # Bot processes append to this log too.
     if bot_log is None:
@@ -4903,58 +4841,162 @@ def _run_performance_test_with_existing_server(
     remote = test_label is not None or bot_log is not None
     if not remote:
         print(f"Bot output log: {bot_log_file.name}")
+    with bot_log_file:
+        if test_label is None:
+            return _run_performance_suite(
+                tester,
+                bot_counts,
+                bot_log_file=bot_log_file,
+                label=exp.label,
+                metadata=_collect_run_metadata(exp.label),
+                json_output=json_output,
+                quiet=remote,
+                **suite_options,
+            )
+        with tester.bot_runner(bot_counts[0], bot_log_file):
+            if suite_started_s_ago is not None:
+                tester.pause_between_tests(
+                    datetime.datetime.now()
+                    - datetime.timedelta(seconds=suite_started_s_ago)
+                )
+            result = tester.run_test(
+                test_label,
+                bot_counts[0],
+                bot_log_file,
+                tester.duration_minutes,
+                arrival_minutes,
+            )
+        if json_output:
+            _write_json_results(
+                json_output,
+                metadata=_collect_run_metadata(exp.label),
+                options={},
+                all_results=[result],
+            )
+        return [result]
+
+
+def _run_performance_suite(
+    tester,
+    n_bots,
+    *,
+    bot_log_file,
+    label,
+    metadata,
+    json_output=None,
+    no_confirm=False,
+    max_p95_ms=None,
+    max_queue_p95_s=None,
+    database_reset=None,
+    prefill_participants=None,
+    quiet=False,
+    cleanup=None,
+):
+    """Run the tests of ``n_bots`` with ``tester`` and return their results.
+
+    Parameters
+    ----------
+    tester : PerformanceTester or RemotePerformanceTester
+        Runs each test.
+    n_bots : list[int] or str
+        The ``--n-bots`` counts, or ``"auto"`` for a capacity search.
+    bot_log_file : file
+        Where the bots log.
+    label : str
+        The experiment's label for the summary.
+    metadata : dict
+        The environment that :func:`_write_json_results` records.
+    json_output : str, optional
+        Where to write the results after each test.
+    no_confirm, max_p95_ms, max_queue_p95_s
+        The options of the same names.
+    database_reset : psynet.perf_ssh.DatabaseReset, optional
+        Resets the database before each test; closed at the end.
+    prefill_participants : int, optional
+        The ``--prefill-participants`` option, for the JSON.
+    quiet : bool
+        Whether to leave out where the JSON was written.
+    cleanup : callable, optional
+        Called after ``database_reset`` closes, even after an error, for
+        example to start the services it stopped.
+
+    Raises
+    ------
+    click.ClickException
+        If a reset stopped the run early, or ``cleanup`` failed, once the
+        results are saved.
+    """
+    from psynet.perf_test import CapacityLimits, PerformanceSuite
+
+    find_capacity = n_bots == "auto"
+    limits = CapacityLimits.from_options(
+        max_p95_s=None if max_p95_ms is None else max_p95_ms / 1000,
+        max_queue_p95_s=max_queue_p95_s,
+    )
+    options = {
+        "capacity_search": find_capacity,
+        "max_p95_s": limits.max_p95_s,
+        "max_queue_p95_s": limits.max_queue_p95_s,
+        "duration_minutes": tester.duration_minutes,
+        "estimated_duration_minutes": tester.estimated_duration_minutes,
+        "session_minutes": tester.session_minutes,
+        "stagger_interval_s": tester.stagger_interval_s,
+        "arrival_minutes": tester.arrival_minutes,
+        "time_factor": tester.time_factor,
+        "bot_processes": tester.bot_processes,
+        "reset_database": database_reset is not None,
+        "prefill_participants": prefill_participants,
+    }
+    if find_capacity:
+        options["confirm"] = not no_confirm
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
-    metadata = _collect_run_metadata(exp.label) if json_output else None
 
     def save_json(all_results, finished=False):
         if json_output:
             _write_suite_json(
                 json_output,
-                quiet=remote,
-                metadata=metadata,
-                started_at=started_at,
-                all_results=all_results,
-                capacity_search=find_capacity,
-                limits=limits,
-                tester=tester,
-                confirm=not no_confirm if find_capacity else None,
-                confirmation_skipped=suite.confirmation_skipped,
-                reset_error=suite.reset_error,
+                suite,
+                all_results,
+                metadata={**metadata, "started_at": started_at},
+                options=options,
                 finished=finished,
+                quiet=quiet,
             )
 
     suite = PerformanceSuite(
         tester,
         limits=limits,
-        label=exp.label,
+        before_test=database_reset,
+        label=label,
         after_test=save_json,
     )
+    cleanup_error = None
     try:
-        if test_label is not None:
-            with tester.bot_runner(bot_counts[0], bot_log_file):
-                if suite_started_s_ago is not None:
-                    tester.pause_between_tests(
-                        datetime.datetime.now()
-                        - datetime.timedelta(seconds=suite_started_s_ago)
-                    )
-                all_results = [
-                    tester.run_test(
-                        test_label,
-                        bot_counts[0],
-                        bot_log_file,
-                        duration_minutes,
-                        arrival_minutes,
-                    )
-                ]
-        elif find_capacity:
+        if find_capacity:
             all_results = suite.find_capacity(
                 bot_log_file=bot_log_file, confirm=not no_confirm
             )
         else:
-            all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
+            all_results = suite.run(n_bots, bot_log_file=bot_log_file)
+        # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
-        bot_log_file.close()
+        if database_reset is not None:
+            try:
+                try:
+                    database_reset.close()
+                finally:
+                    if cleanup is not None:
+                        cleanup()
+            except Exception as e:
+                # Reported with the reset's error, or after an error that
+                # is already propagating.
+                logger.warning(
+                    "Starting the app's server processes again failed: "
+                    f"{str(e) or type(e).__name__}"
+                )
+                cleanup_error = e
+    _raise_reset_error(suite, cleanup_error)
     return all_results
 
 
@@ -4975,7 +5017,7 @@ def _raise_reset_error(suite, cleanup_error=None):
         raise click.ClickException("\n".join(problems))
 
 
-def _performance_test_timing(
+def _performance_test_duration(
     *,
     estimated_duration_minutes,
     minimum_minutes,
@@ -4984,7 +5026,7 @@ def _performance_test_timing(
     arrival_minutes,
     find_capacity,
 ):
-    """Return the bots' time factor and the test length, filling in their defaults.
+    """Return the length of each (search) test in minutes, filling in its default.
 
     Parameters
     ----------
@@ -4992,33 +5034,22 @@ def _performance_test_timing(
         The experiment's ``estimated_duration_in_minutes``.
     minimum_minutes : float
         The shortest default test, ``Experiment.test_duration_minutes``.
-    time_factor, duration_minutes, arrival_minutes : float or None
-        The ``--time-factor``, ``--duration-minutes`` and ``--arrival-minutes``
-        options.
+    time_factor : float
+        The ``--time-factor`` option.
+    duration_minutes, arrival_minutes : float or None
+        The ``--duration-minutes`` and ``--arrival-minutes`` options.
     find_capacity : bool
         Whether this is a capacity search (``--n-bots auto``).
-
-    Returns
-    -------
-    tuple of (float, float)
-        The time factor and the length of each (search) test, in minutes.
     """
     from psynet.perf_test import default_duration_minutes
 
-    # Documented CLI default is 1.0 (realistic pacing). Do not fall back to
-    # Experiment.test_time_factor, which defaults to 0.0 for correctness tests.
-    time_factor = 1.0 if time_factor is None else time_factor
-    if duration_minutes is None:
-        duration_minutes = default_duration_minutes(
-            estimated_duration_minutes * time_factor,
-            minimum_minutes,
-            search=find_capacity,
-        )
-        # A capacity search applies --arrival-minutes to its confirmation
-        # test only.
-        if not find_capacity:
-            duration_minutes += arrival_minutes or 0
-    return time_factor, duration_minutes
+    if duration_minutes is not None:
+        return duration_minutes
+    return default_duration_minutes(
+        estimated_duration_minutes * time_factor,
+        minimum_minutes,
+        search=find_capacity,
+    ) + (arrival_minutes or 0)
 
 
 def _check_arrival_options(
@@ -5041,19 +5072,13 @@ def _check_arrival_options(
         raise click.UsageError(
             "--arrival-minutes and --stagger both set when bots start; use one."
         )
-    from psynet.perf_test.results import MAX_CONFIRMATION_DURATION_MINUTES
-
     if n_bots == "auto":
-        # The search's tests don't use the window; its confirmation test
-        # lasts an hour at most, unless the search's tests are longer.
-        longest = max(MAX_CONFIRMATION_DURATION_MINUTES, duration_minutes or 0)
-        if arrival_minutes >= longest:
-            raise click.UsageError(
-                f"With --n-bots auto, --arrival-minutes must be shorter than "
-                f"{longest:g} min, the length of the longest validation test, "
-                "so that every bot starts during it."
-            )
-    elif duration_minutes is not None and arrival_minutes >= duration_minutes:
+        raise click.UsageError(
+            "--arrival-minutes can't be used with --n-bots auto, whose validation "
+            "test spreads the bots' arrivals over one session. To try another "
+            "window, run that test alone with --n-bots N --arrival-minutes M."
+        )
+    if duration_minutes is not None and arrival_minutes >= duration_minutes:
         raise click.UsageError(
             "--arrival-minutes must be shorter than --duration-minutes, so that "
             "every bot starts during the test."
@@ -5061,34 +5086,19 @@ def _check_arrival_options(
 
 
 def _write_suite_json(
-    json_output,
-    *,
-    quiet=False,
-    metadata,
-    started_at,
-    all_results,
-    capacity_search,
-    limits,
-    tester,
-    database_reset=None,
-    prefill_participants=None,
-    confirm=None,
-    confirmation_skipped=None,
-    reset_error=None,
-    finished=True,
+    json_output, suite, all_results, *, metadata, options, finished, quiet=False
 ):
-    """Write a suite's results, with its options and ``metadata``, to ``json_output``.
+    """Write ``suite``'s results so far, with its ``options`` and ``metadata``, to ``json_output``.
 
     Unless ``finished``, the suite is still running, ``finished_at`` is
-    null, and a failed write is only logged. ``database_reset`` is the
-    suite's :class:`~psynet.perf_ssh.DatabaseReset`, if any, and
-    ``reset_error`` why a reset stopped the suite early. ``confirm`` and
-    ``confirmation_skipped`` describe a capacity search's confirmation test.
-    Once ``finished``, unless ``quiet``, it prints where it wrote them.
+    null, and a failed write is only logged. Once ``finished``, unless
+    ``quiet``, it prints where it wrote them.
     """
+    database_reset = suite.before_test
+    # A remote run records the server's environment, such as its PsyNet version.
     metadata = {
+        **(getattr(suite.tester, "remote_metadata", None) or {}),
         **metadata,
-        "started_at": started_at,
         "finished_at": (
             datetime.datetime.now().isoformat(timespec="seconds") if finished else None
         ),
@@ -5096,29 +5106,14 @@ def _write_suite_json(
         # growing tables.
         "snapshot": database_reset.snapshot if database_reset else None,
         "snapshot_rows": database_reset.snapshot_rows if database_reset else None,
-        "reset_error": reset_error,
+        "reset_error": suite.reset_error,
     }
     options = {
-        "n_bots_sweep": [
-            result.n_bots for result in all_results if not result.confirmation
-        ],
-        "capacity_search": capacity_search,
-        "max_p95_s": limits.max_p95_s,
-        "max_queue_p95_s": limits.max_queue_p95_s,
-        "max_busy_early_finish_rate": limits.max_busy_early_finish_rate,
-        "duration_minutes": tester.duration_minutes,
-        "estimated_duration_minutes": tester.estimated_duration_minutes,
-        "session_minutes": tester.session_minutes,
-        "stagger_interval_s": tester.stagger_interval_s,
-        "arrival_minutes": tester.arrival_minutes,
-        "time_factor": tester.time_factor,
-        "bot_processes": tester.bot_processes,
-        "reset_database": database_reset is not None,
-        "prefill_participants": prefill_participants,
+        "n_bots_sweep": [r.n_bots for r in all_results if not r.confirmation],
+        **options,
     }
-    if capacity_search:
-        options["confirm"] = confirm
-        options["confirmation_skipped"] = confirmation_skipped
+    if options["capacity_search"]:
+        options["confirmation_skipped"] = suite.confirmation_skipped
     try:
         _write_json_results(
             json_output,
@@ -5565,17 +5560,8 @@ def performance_test__prepare_reset(
     deployed in debug mode from this directory for performance tests.""",
 )
 @_add_ssh_deployment_options
-@_test_options["performance_n_bots"]
-@_test_options["performance_stagger"]
-@_test_options["performance_time_factor"]
-@_test_options["duration_minutes"]
-@_test_options["performance_arrival_minutes"]
-@_test_options["performance_no_confirm"]
-@_test_options["performance_max_p95_ms"]
-@_test_options["performance_max_queue_p95_s"]
-@_test_options["performance_max_busy_early_finish_rate"]
+@_performance_load_options
 @_test_options["performance_json_output"]
-@_test_options["performance_bot_processes"]
 @click.option(
     "--reset-database",
     is_flag=True,
@@ -5719,18 +5705,14 @@ def _run_ssh_performance_test(
     *,
     reset=False,
     prefill_participants=None,
-    json_output=None,
     n_bots=None,
     stagger=None,
-    time_factor=None,
+    time_factor=1.0,
     duration_minutes=None,
     arrival_minutes=None,
-    no_confirm=False,
-    max_p95_ms=None,
-    max_queue_p95_s=None,
-    max_busy_early_finish_rate=None,
-    bot_processes=None,
+    bot_processes="auto",
     force=False,
+    **suite_options,
 ):
     """Run a suite from this computer, each test in ``app``'s web container.
 
@@ -5738,12 +5720,13 @@ def _run_ssh_performance_test(
     :func:`_prepare_performance_test_app`). With ``reset``, the database is
     reset before each test, after ``prefill_participants`` bots have run
     through the experiment. Default test lengths are those of
-    ``performance-test local``.
+    ``performance-test local``, and ``suite_options`` those of
+    :func:`_run_performance_suite`.
     """
     import logging
 
     from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
-    from psynet.perf_test import CapacityLimits, PerformanceSuite, log_to_console
+    from psynet.perf_test import log_to_console
 
     log_to_console(logging.INFO)
     bot_log_file = tempfile.NamedTemporaryFile(
@@ -5758,92 +5741,40 @@ def _run_ssh_performance_test(
         _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )
     bot_counts = n_bots or [experiment["test_n_bots"]]
-    find_capacity = bot_counts == "auto"
-    time_factor, duration_minutes = _performance_test_timing(
-        estimated_duration_minutes=experiment["estimated_duration_minutes"],
-        minimum_minutes=experiment["test_duration_minutes"],
-        time_factor=time_factor,
-        duration_minutes=duration_minutes,
-        arrival_minutes=arrival_minutes,
-        find_capacity=find_capacity,
-    )
     tester = RemotePerformanceTester(
         remote,
-        duration_minutes=duration_minutes,
+        duration_minutes=_performance_test_duration(
+            estimated_duration_minutes=experiment["estimated_duration_minutes"],
+            minimum_minutes=experiment["test_duration_minutes"],
+            time_factor=time_factor,
+            duration_minutes=duration_minutes,
+            arrival_minutes=arrival_minutes,
+            find_capacity=bot_counts == "auto",
+        ),
         stagger_interval_s=(
             experiment["test_parallel_stagger_interval_s"]
             if stagger is None
             else stagger
         ),
         time_factor=time_factor,
-        bot_processes="auto" if bot_processes is None else bot_processes,
+        bot_processes=bot_processes,
         estimated_duration_minutes=experiment["estimated_duration_minutes"],
         arrival_minutes=arrival_minutes,
     )
-    limits = CapacityLimits.from_options(
-        max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
-        max_queue_p95_s=max_queue_p95_s,
-        max_busy_early_finish_rate=max_busy_early_finish_rate,
-    )
     with bot_log_file, _exit_on_sigterm():
-        database_reset = (
-            _ssh_database_reset(remote, prefill_participants) if reset else None
-        )
-        started_at = datetime.datetime.now().isoformat(timespec="seconds")
-
-        def save_json(all_results, finished=False):
-            if json_output:
-                _write_suite_json(
-                    json_output,
-                    metadata=tester.remote_metadata
-                    or {"experiment_label": experiment["label"]},
-                    started_at=started_at,
-                    all_results=all_results,
-                    capacity_search=find_capacity,
-                    limits=limits,
-                    tester=tester,
-                    database_reset=database_reset,
-                    prefill_participants=prefill_participants,
-                    confirm=not no_confirm if find_capacity else None,
-                    confirmation_skipped=suite.confirmation_skipped,
-                    reset_error=suite.reset_error,
-                    finished=finished,
-                )
-
-        suite = PerformanceSuite(
+        return _run_performance_suite(
             tester,
-            limits=limits,
-            before_test=database_reset,
+            bot_counts,
+            bot_log_file=bot_log_file,
             label=f"{app} on {server}",
-            after_test=save_json,
+            metadata={"experiment_label": experiment["label"]},
+            database_reset=(
+                _ssh_database_reset(remote, prefill_participants) if reset else None
+            ),
+            prefill_participants=prefill_participants,
+            cleanup=remote.start_stopped_services,
+            **suite_options,
         )
-        try:
-            if find_capacity:
-                all_results = suite.find_capacity(
-                    bot_log_file=bot_log_file, confirm=not no_confirm
-                )
-            else:
-                all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
-            # Before the cleanup, which may fail.
-            save_json(all_results, finished=True)
-        finally:
-            cleanup_error = None
-            if database_reset is not None:
-                try:
-                    try:
-                        database_reset.close()
-                    finally:
-                        remote.start_stopped_services()
-                except Exception as e:
-                    # Reported with the reset's error, or after an error that
-                    # is already propagating.
-                    logger.warning(
-                        f"Starting {app}'s server processes again failed: "
-                        f"{str(e) or type(e).__name__}"
-                    )
-                    cleanup_error = e
-    _raise_reset_error(suite, cleanup_error)
-    return all_results
 
 
 def _ssh_database_reset(remote, prefill_participants):
@@ -5926,16 +5857,7 @@ def audit_simulate(ctx, n_bots=None):
 
 @audit.command("performance-test")
 @_test_options["existing"]
-@_test_options["performance_n_bots"]
-@_test_options["performance_stagger"]
-@_test_options["performance_time_factor"]
-@_test_options["duration_minutes"]
-@_test_options["performance_arrival_minutes"]
-@_test_options["performance_no_confirm"]
-@_test_options["performance_max_p95_ms"]
-@_test_options["performance_max_queue_p95_s"]
-@_test_options["performance_max_busy_early_finish_rate"]
-@_test_options["performance_bot_processes"]
+@_performance_load_options
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
 @_in_isolated_test_environment

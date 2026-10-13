@@ -87,7 +87,7 @@ def default_duration_minutes(session_minutes, minimum, search=False):
     return max(minimum, min(math.ceil(sessions * session_minutes), longest))
 
 
-def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
+def confirmation_timing(session_minutes, minimum):
     """Return ``(duration_minutes, arrival_minutes)`` for a capacity search's confirmation test.
 
     Bots arrive evenly over one session and the test lasts two, so that it
@@ -102,9 +102,6 @@ def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
         :func:`default_duration_minutes`.
     minimum : float
         The shortest test, the search tests' duration.
-    arrival_minutes : float, optional
-        The arrival window the user chose, which the confirmation keeps; the
-        test then lasts a session longer than it, up to the same hour.
 
     Returns
     -------
@@ -113,17 +110,12 @@ def confirmation_timing(session_minutes, minimum, arrival_minutes=None):
         ``None`` if the session length is unknown.
     """
     session_minutes = session_minutes or 0
-    if arrival_minutes:
-        duration = arrival_minutes + max(session_minutes, 1)
-    else:
-        # A short study still gets a steady state long enough to report.
-        duration = max(
-            _CONFIRMATION_SESSIONS * session_minutes,
-            session_minutes + MIN_STEADY_STATE_S / 60,
-        )
+    # A short study still gets a steady state long enough to report.
+    duration = max(
+        _CONFIRMATION_SESSIONS * session_minutes,
+        session_minutes + MIN_STEADY_STATE_S / 60,
+    )
     duration = max(minimum, min(math.ceil(duration), MAX_CONFIRMATION_DURATION_MINUTES))
-    if arrival_minutes:
-        return duration, arrival_minutes
     return duration, round(min(session_minutes, duration / 2), 1) or None
 
 
@@ -488,15 +480,9 @@ class CapacityLimits:
     allowed_busy_early_finishes: int = 1
 
     @classmethod
-    def from_options(
-        cls, max_p95_s=None, max_queue_p95_s=None, max_busy_early_finish_rate=None
-    ):
+    def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
         """Return limits from optional settings; ``None`` means the default."""
-        options = {
-            "max_p95_s": max_p95_s,
-            "max_queue_p95_s": max_queue_p95_s,
-            "max_busy_early_finish_rate": max_busy_early_finish_rate,
-        }
+        options = {"max_p95_s": max_p95_s, "max_queue_p95_s": max_queue_p95_s}
         return cls(
             **{
                 name: float(value)
