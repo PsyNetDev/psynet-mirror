@@ -3076,6 +3076,21 @@ def test_an_interrupted_remote_search_keeps_the_finished_tests_json(
     assert json_output.stat().st_mode & 0o777 == 0o666 & ~umask
 
 
+def test_a_failed_per_test_json_write_doesnt_stop_the_run(monkeypatch):
+    finished_at = []
+
+    def write(json_output, *, metadata, **_):
+        finished_at.append(metadata["finished_at"])
+        if len(finished_at) == 1:
+            raise OSError("No space left on device")
+
+    with patch("psynet.command_line._write_json_results", side_effect=write):
+        _, results = _remote_search(monkeypatch, json_output="results.json")
+
+    assert len(results) > 1 and len(finished_at) == len(results) + 1
+    assert finished_at[-1] is not None
+
+
 def test_remote_failures_name_the_last_error_line():
     from psynet.command_line import _remote_failure_summary
 

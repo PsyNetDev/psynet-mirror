@@ -5213,8 +5213,8 @@ def _write_suite_json(
 ):
     """Write a suite's results, with its options and ``metadata``, to ``json_output``.
 
-    Unless ``finished``, the suite is still running, and ``finished_at`` is
-    null. ``reset`` holds the database-reset options, if any, and
+    Unless ``finished``, the suite is still running, ``finished_at`` is
+    null, and a failed write is only logged. ``reset`` holds the database-reset options, if any, and
     ``reset_error`` why a reset stopped the suite early. ``confirm`` and
     ``confirmation_skipped`` describe a capacity search's confirmation test.
     Once ``finished``, unless ``quiet``, it prints where it wrote them.
@@ -5254,12 +5254,21 @@ def _write_suite_json(
     if capacity_search:
         options["confirm"] = confirm
         options["confirmation_skipped"] = confirmation_skipped
-    _write_json_results(
-        json_output,
-        metadata=metadata,
-        options=options,
-        all_results=all_results,
-    )
+    try:
+        _write_json_results(
+            json_output,
+            metadata=metadata,
+            options=options,
+            all_results=all_results,
+        )
+    except (OSError, ValueError) as e:
+        if finished:
+            raise
+        logger.warning(
+            f"Could not save the results so far to {json_output}, so the run "
+            f"continues without them for now: {e}"
+        )
+        return
     if finished and not quiet:
         print(f"Performance results (JSON): {json_output}")
 
