@@ -27,6 +27,7 @@ from psynet.perf_test.results import (
     busy_early_finish_cause,
     capacity_failure_causes,
     capacity_outcome,
+    confirmation_timing,
     connection_limit_kind,
     count_wait_timeouts,
     describe_bot_errors,
@@ -652,7 +653,26 @@ _WORKER_ADVICE = (
 )
 
 
-def _worker_lines(outcome, confirmation, capacity_result, limits):
+def _long_test_text(result, n, confirmation_planned):
+    """Say which test longer than a session would measure the workers for ``n`` participants.
+
+    ``result`` is a test too short to reach the steady state, and
+    ``confirmation_planned`` whether its capacity search meant to run a
+    confirmation test.
+    """
+    duration, arrival = confirmation_timing(
+        result.session_minutes, result.duration_minutes or 0
+    )
+    test = f"--n-bots {n} --arrival-minutes {arrival:g} --duration-minutes {duration:g}"
+    if confirmation_planned:
+        return (
+            "The confirmation test, which lasts longer than a session, would "
+            f"measure it; to run it alone, use {test}."
+        )
+    return f"A test longer than a session measures it: {test}."
+
+
+def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_planned):
     """Return the capacity summary's paragraph on async worker processes, if it applies.
 
     It appears when high-priority queue waits failed a test, when the workers
@@ -711,6 +731,9 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     lines = []
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
+        too_short = measured.session_minutes and not measured.steady_state_phase
+        if confirmation is None and measured.n_rq_workers and too_short:
+            text.append(_long_test_text(measured, n, confirmation_planned))
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
@@ -771,9 +794,12 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     minimum = f"{processes} is a minimum, not a target"
     if sources:
         minimum += ": " + ", and ".join(sources)
+    keep = f"Keep the current {workers}"
+    if advice.demand < workers:
+        keep += f" (the load needs about {advice.demand})"
     why = {
         "estimate": [*measured, f"{processes} worker processes {implied}."],
-        "current": [*measured, f"Keep the current {workers}."],
+        "current": [*measured, f"{keep}."],
         "behind": [
             *measured,
             f"{processes} is one more than the {ran} that fell behind.",
@@ -1104,8 +1130,13 @@ def _confirmation_lines(result, limits):
     return lines
 
 
-def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
+def format_capacity_summary(
+    results, limits=CapacityLimits(), time_factor=1.0, *, confirmation_planned=False
+):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
+
+    ``confirmation_planned`` says that the capacity search meant to end with
+    a confirmation test, for advice when it didn't run.
 
     Returns list[str].
     """
@@ -1136,7 +1167,9 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if any(busy_early_finish_cause(r, limits) for r in advised):
         lines.append(_BUSY_CHAINS_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
-    lines += _worker_lines(outcome, confirmation, capacity_result, limits)
+    lines += _worker_lines(
+        outcome, confirmation, capacity_result, limits, confirmation_planned
+    )
     if any(start_rate_limits(r) for r in advised):
         lines.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):

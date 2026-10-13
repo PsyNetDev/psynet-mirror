@@ -202,7 +202,12 @@ class PerformanceSuite:
                 confirmation=True,
             )
 
-        results = self._run_suite(CAPACITY_SEARCH_MAX, next_test, bot_log_file)
+        results = self._run_suite(
+            CAPACITY_SEARCH_MAX,
+            next_test,
+            bot_log_file,
+            confirmation_planned=not self.confirmation_skipped,
+        )
         if self.reset_error and not any(r.confirmation for r in results):
             self.confirmation_skipped = (
                 self.confirmation_skipped or "resetting the database failed"
@@ -224,13 +229,22 @@ class PerformanceSuite:
             logger.info("")
         return results
 
-    def _run_suite(self, max_bots, next_test, bot_log_file, n_tests=None):
+    def _run_suite(
+        self,
+        max_bots,
+        next_test,
+        bot_log_file,
+        n_tests=None,
+        confirmation_planned=False,
+    ):
         """Run tests until ``next_test(results_so_far)`` returns ``None``.
 
         ``next_test`` returns the next test's bot count and the keyword
         arguments for :meth:`PerformanceTester.run_test`. Stops early if a
         test ends early, then prints the summary. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
+        ``confirmation_planned`` says a capacity search meant to end with a
+        confirmation test.
 
         Returns
         -------
@@ -264,7 +278,10 @@ class PerformanceSuite:
         for line in format_performance_summary(all_results):
             logger.info(line)
         for line in format_capacity_summary(
-            all_results, self.limits, self.tester.time_factor
+            all_results,
+            self.limits,
+            self.tester.time_factor,
+            confirmation_planned=confirmation_planned,
         ):
             logger.info(line)
         if self.reset_error:
