@@ -7,7 +7,7 @@ taking the experiment at once, then reads the server's ``Request`` and
 suite runs a test per bot count, or with :meth:`PerformanceSuite.find_capacity`
 searches for the largest bot count that stays within :class:`CapacityLimits`.
 Its ``before_test`` hook can reset the database before each test (see
-:mod:`psynet.perf_reset`).
+:class:`psynet.perf_ssh.DatabaseReset`).
 
 The package is split by what each part needs to import:
 

@@ -4,9 +4,9 @@ This computer drives the suite: each test is its own
 ``performance-test local --existing`` in the app's web container, whose
 JSON result is read back. A reset has to stop that container, which would
 stop a suite running inside it with it. With ``--reset-database``, between
-tests :class:`RemoteApp` stops the app's server processes,
-:class:`psynet.perf_reset.DatabaseReset` restores the snapshot, and the
-processes start again. :class:`RemotePerformanceTester` is the tester that
+tests :class:`DatabaseReset` stops the app's server processes with
+:class:`RemoteApp`, restores the snapshot, and starts the processes again.
+:class:`RemotePerformanceTester` is the tester that
 :class:`psynet.perf_test.PerformanceSuite` sees, so the capacity search and
 summaries are those of a local run.
 
@@ -27,14 +27,12 @@ Design constraints:
   its web container, is what says whether an app is one; that of this
   computer never counts. ``prepare-reset`` checks it again before every reset.
 - SQL runs through ``docker exec <postgres container> psql`` as the
-  container's superuser (:class:`RemoteAppDatabase`), never through an SSH
+  container's superuser (:class:`_PsqlCursor`), never through an SSH
   tunnel, so the database is never reached as if it were local.
-- Only the app's own database is reset, and only snapshots named after the
-  app (``psynet_prefill_<app>_<code>_n<N>``) are listed or dropped, so apps
-  that share a PostgreSQL never see each other's snapshots. The database
-  name comes from the web container's ``DATABASE_URL`` and must be the app
-  name; the PostgreSQL container is the one Dallinger's export finds for
-  the app.
+- Only the app's own database and the snapshot taken during the run are
+  ever dropped. The database name comes from the web container's
+  ``DATABASE_URL`` and must be the app name; the PostgreSQL container is
+  the one Dallinger's export finds for the app.
 - Before each reset the web container checks that the database has only bot
   participants and that the app doesn't recruit real ones (see
   ``psynet performance-test prepare-reset``); live mode always refuses.
@@ -50,21 +48,22 @@ Design constraints:
 """
 
 import csv
+import datetime
+import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shlex
 import time
 import uuid
 from contextlib import contextmanager
 
-import psycopg2
 from rich.text import Text
 
-from psynet.perf_reset import SYSTEM_DATABASES, SnapshotDatabase
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
-from psynet.perf_test.report import format_text
+from psynet.perf_test.report import format_text, warning
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +88,49 @@ _HEALTH_PROBE = (
     "import urllib.request; "
     "urllib.request.urlopen('http://localhost:5000/health', timeout=10)"
 )
+# Async jobs left from pre-filling would never run after a reset,
+# because the reset deletes their RQ jobs.
+_ASYNC_DRAIN_TIMEOUT_S = 3600
+_IN_USE_ATTEMPTS = 10
+_OBJECT_IN_USE = "55006"
+_MAX_NAME_LENGTH = 63
+_SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1", "dallinger"})
+_SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
+
+
+def experiment_code_key():
+    """Return a short hash of the experiment's files and the PsyNet and Dallinger versions.
+
+    ``performance-test ssh`` updates its app when this changes. The files are
+    those that a deployment would copy, without the ones Git ignores, such
+    as generated boilerplate, plus the ``_SETTINGS_FILES`` that exist.
+
+    Raises
+    ------
+    ValueError
+        If the experiment has no ``deploy.toml``.
+    """
+    import dallinger.version
+
+    import psynet
+    from psynet.deployment_info import authored_deployment_files
+
+    files = authored_deployment_files()
+    if files is None:
+        raise ValueError("The experiment has no deploy.toml.")
+    listed = {destination for destination, _ in files}
+    files += [(name, name) for name in _SETTINGS_FILES if name not in listed]
+    digest = hashlib.sha256(
+        f"{psynet.__version__}\0{dallinger.version.__version__}".encode()
+    )
+    for destination, source in sorted(files):
+        if not os.path.isfile(source):
+            continue
+        digest.update(f"\0{destination}\0".encode())
+        with open(source, "rb") as f:
+            while chunk := f.read(1 << 20):
+                digest.update(chunk)
+    return digest.hexdigest()[:12]
 
 
 def run_with_status(executor, cmd):
@@ -460,24 +502,16 @@ class RemoteApp:
             self.bot_log_file.flush()
 
 
-class RemoteSqlError(psycopg2.Error):
-    """A statement that ``psql`` ran on the server failed.
+class RemoteSqlError(RuntimeError):
+    """A statement that ``psql`` ran on the server failed; ``pgcode`` is its SQLSTATE, if known."""
 
-    It is a :class:`psycopg2.Error`, with the SQLSTATE in ``pgcode``, so
-    that :mod:`psynet.perf_reset` handles it like a local error.
-    """
-
-    def __init__(self, message, sqlstate=None):
+    def __init__(self, message, pgcode=None):
         super().__init__(message)
-        self._sqlstate = sqlstate
-
-    @property
-    def pgcode(self):
-        return self._sqlstate
+        self.pgcode = pgcode
 
 
 def _app_postgres_container(executor, app):
-    """Return the app's PostgreSQL container and whether it is the app's own.
+    """Return the app's PostgreSQL container.
 
     Newer Dallinger versions give an app its own ``<app>_postgresql``
     container; other apps use the server's shared ``dallinger-postgresql-1``.
@@ -501,7 +535,7 @@ def _app_postgres_container(executor, app):
         if inspect(
             container, "{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}"
         ):
-            return container, container == own
+            return container
         if container == own and inspect(container, "{{.Id}}"):
             raise ValueError(
                 f"The PostgreSQL container {own} exists but isn't running; "
@@ -510,109 +544,205 @@ def _app_postgres_container(executor, app):
     raise ValueError(f"Could not find a PostgreSQL container for the app {app}.")
 
 
-class RemoteAppDatabase(SnapshotDatabase):
-    """The database of an app on an SSH server, reached with ``docker exec ... psql``.
+class DatabaseReset:
+    """Reset an SSH app's database to a snapshot before each test of a suite.
 
-    The database is named after the app, as Dallinger names it; its
-    PostgreSQL container is the app's own or the server's shared one.
+    It is the suite's ``before_test`` hook (see
+    :class:`psynet.perf_test.PerformanceSuite`). The first call pre-fills the
+    database if asked, waits for async jobs to finish, and takes the snapshot
+    with ``CREATE DATABASE ... TEMPLATE``, a file-level copy that keeps
+    sequences, indexes and table bloat. Every later call drops the database
+    and creates it again from the snapshot. :meth:`close` drops the snapshot.
+
+    PostgreSQL only copies or drops a database that nobody is connected to,
+    so each call stops the app's server processes (:meth:`RemoteApp.stop`),
+    terminates the connections that remain, and starts the processes again
+    afterwards, which also empties their in-memory caches. It deletes the RQ
+    job keys from Redis, because jobs refer to rows by ID, but keeps the
+    other keys, such as the launch flags without which the app would launch
+    the experiment again. Files that tests add to the asset storage remain;
+    only the rows that refer to them go.
 
     Parameters
     ----------
     remote : RemoteApp
         The app.
+    prefill_participants : int, optional
+        Bots to run through the experiment before the snapshot is taken, so
+        that every test starts with their data.
 
     Raises
     ------
     ValueError
-        If the app's PostgreSQL container can't be found or isn't running.
+        If the app's PostgreSQL container can't be found, or the web
+        container's database isn't the app's own.
     """
 
-    def __init__(self, remote):
-        self.container, self.isolated = _app_postgres_container(
-            remote.executor, remote.app
-        )
+    def __init__(self, remote, prefill_participants=None):
         self.remote = remote
-        super().__init__(
-            remote.app,
-            f"psynet_prefill_{remote.app}_",
-            "psynet performance-test snapshots "
-            f"--server {remote.server} --app {remote.app}",
-        )
-
-    def check_resettable(self):
-        """Raise ``ValueError`` unless the web container's database is the app's own."""
-        name = self.remote.database_name()
-        if name != self.name or name in SYSTEM_DATABASES or name == "dallinger":
+        self.database = remote.app
+        # The first check that the database may be reset, before anything changes.
+        remote.prepare()
+        name = remote.database_name()
+        if name != self.database or name in _SYSTEM_DATABASES:
             raise ValueError(
                 f"Refusing to reset the database {name!r}: performance tests only "
                 f"reset the app's own database, which is named after the app "
-                f"({self.name})."
+                f"({self.database})."
+            )
+        self.container = _app_postgres_container(remote.executor, remote.app)
+        self._prefill_participants = prefill_participants
+        self.snapshot = None
+        # Rows in each growing table of the snapshot, once taken.
+        self.snapshot_rows = None
+
+    def __call__(self):
+        """Take or restore the snapshot, with the app's server processes stopped meanwhile.
+
+        They start again afterwards. If taking or restoring the snapshot
+        fails, they stay stopped and the error propagates; the caller then
+        calls :meth:`close` and :meth:`RemoteApp.start_stopped_services`.
+        """
+        taking = self.snapshot is None
+        if taking:
+            waiting = self.remote.prepare(
+                prefill_participants=self._prefill_participants,
+                async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S,
+            )
+            if waiting:
+                raise RuntimeError(
+                    f"{waiting:,} async jobs had not finished after "
+                    f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so no snapshot was "
+                    "taken: their jobs would be lost at each reset. Check the "
+                    "experiment's async jobs in the server log."
+                )
+        logger.info("")
+        logger.info(
+            "Taking a snapshot of the database..."
+            if taking
+            else f"Resetting the database to {self.snapshot}..."
+        )
+        self.remote.stop()
+        if taking:
+            stamp = f"_snapshot_{datetime.datetime.now():%Y%m%d%H%M%S}"
+            name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
+            self._copy(self.database, name)
+            self.snapshot = name
+        else:
+            self._check_disk_space(self.snapshot)
+            self._run_when_unused(
+                self.database, f"DROP DATABASE IF EXISTS {_quote_ident(self.database)}"
+            )
+            self._copy(self.snapshot, self.database)
+        self.remote.clear_job_queues()
+        self.remote.start()
+        if self.snapshot_rows is None:
+            from psynet.perf_test.measure import database_rows
+
+            self.snapshot_rows = database_rows(self._cursor(self.database))
+            rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
+            logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
+            n_participants = self.snapshot_rows.get("participant", 0)
+            if not self._prefill_participants and n_participants:
+                logger.warning(
+                    warning(
+                        f"The database already held {n_participants:,} "
+                        "participants when the snapshot was taken, for example "
+                        "from an earlier run, so every test starts from that "
+                        "data rather than from a fresh database. To start "
+                        "fresh, destroy the app with 'psynet destroy ssh "
+                        f"--server {self.remote.server} --app {self.database}'; "
+                        "the next 'psynet performance-test ssh' deploys it again "
+                        "with an empty database."
+                    )
+                )
+
+    def close(self):
+        """Drop the snapshot, warning instead of raising if that fails.
+
+        That way a test's own error is the one that propagates;
+        ``click.Abort`` and ``click.exceptions.Exit``, which are also
+        :class:`RuntimeError`, still propagate.
+        """
+        import click
+
+        if self.snapshot is None:
+            return
+        try:
+            self._run_when_unused(
+                self.snapshot, f"DROP DATABASE IF EXISTS {_quote_ident(self.snapshot)}"
+            )
+        except (click.Abort, click.exceptions.Exit):
+            raise
+        except RuntimeError as e:
+            logger.warning(
+                warning(
+                    f"Could not drop the snapshot database {self.snapshot} ({e}). "
+                    f"Drop it on {self.remote.server} with: docker exec "
+                    f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
+                    f"{self.snapshot}'"
+                )
             )
 
-    def prefill_snapshot_name(self, code_key, n_participants):
-        """Return the snapshot name, which includes the app name.
+    def _cursor(self, database="postgres"):
+        return _PsqlCursor(self.remote.executor, self.container, database)
 
-        Raises
-        ------
-        ValueError
-            If the name would be longer than PostgreSQL's 63 characters.
-        """
-        name = super().prefill_snapshot_name(code_key, n_participants)
-        if len(name) > 63:
-            raise ValueError(
-                f"The app name {self.name} is too long for the pre-fill snapshot "
-                f"name {name}, which PostgreSQL would cut to 63 characters; use a "
-                "shorter app name."
-            )
-        return name
+    def _copy(self, source, name):
+        """Create database ``name`` as a copy of database ``source``."""
+        self._check_disk_space(source)
+        self._run_when_unused(
+            source,
+            f"CREATE DATABASE {_quote_ident(name)} TEMPLATE {_quote_ident(source)}",
+        )
 
-    @contextmanager
-    def cursor(self, database="postgres"):
-        """Yield a cursor whose statements run with ``psql`` in the PostgreSQL container."""
-        yield _PsqlCursor(self.remote.executor, self.container, database)
-
-    def free_disk_space(self, directory):
-        """Return the free bytes of ``directory`` in the PostgreSQL container.
-
-        Raises
-        ------
-        RuntimeError
-            If ``df`` fails, so that the reset refuses rather than risks
-            filling the server's disk.
-        """
+    def _check_disk_space(self, source):
+        """Raise unless PostgreSQL's data directory has twice the size of database ``source`` free."""
+        cursor = self._cursor()
+        cursor.execute(f"SELECT pg_database_size({_quote_literal(source)})")
+        needed = 2 * int(cursor.fetchone()[0])
+        cursor.execute("SHOW data_directory")
+        directory = cursor.fetchone()[0]
         cmd = (
             f"docker exec {shlex.quote(self.container)} df -Pk {shlex.quote(directory)}"
         )
         try:
-            return int(self.remote.run(cmd).splitlines()[-1].split()[3]) * 1024
+            free = int(self.remote.run(cmd).splitlines()[-1].split()[3]) * 1024
         except (RuntimeError, IndexError, ValueError) as e:
             raise RuntimeError(
                 f"Could not read the free disk space of {directory} in "
                 f"{self.container}, so the database is not copied: {e}"
             ) from e
+        if free < needed:
+            raise RuntimeError(
+                f"Copying {source} needs about {_size(needed)} of free disk space "
+                f"(PsyNet asks for twice the database's size), but {directory} has "
+                f"only {_size(free)} free."
+            )
 
-    def clear_job_queues(self):
-        self.remote.clear_job_queues()
+    def _run_when_unused(self, database, statement):
+        """Run ``statement`` after terminating the client connections to ``database``.
 
-    def wait_for_async_jobs(self, timeout_s):
-        return self.remote.prepare(async_timeout_s=timeout_s)
-
-    def drop_hint(self, name):
-        return (
-            f"Drop it on {self.remote.server} with: docker exec {self.container} "
-            f"sh -c 'dropdb -U \"$POSTGRES_USER\" {name}'"
-        )
-
-    def fresh_start_hint(self):
-        return (
-            "To start fresh, destroy the app with 'psynet destroy ssh --server "
-            f"{self.remote.server} --app {self.name}'; the next 'psynet "
-            "performance-test ssh' deploys it again with an empty database."
-        )
+        Retries if a client connects again in between, or autovacuum briefly
+        holds the database.
+        """
+        cursor = self._cursor()
+        for attempt in range(_IN_USE_ATTEMPTS):
+            cursor.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                f"WHERE datname = {_quote_literal(database)} "
+                "AND pid <> pg_backend_pid() AND backend_type = 'client backend'"
+            )
+            try:
+                cursor.execute(statement)
+                return
+            except RemoteSqlError as e:
+                if e.pgcode != _OBJECT_IN_USE or attempt == _IN_USE_ATTEMPTS - 1:
+                    raise
+            time.sleep(1)
 
 
 class _PsqlCursor:
-    """The part of a psycopg2 cursor that :mod:`psynet.perf_reset` uses, running ``psql`` in a container.
+    """The part of a DB-API cursor that :func:`~psynet.perf_test.measure.database_rows` uses, running ``psql`` in a container.
 
     Each statement runs on its own, in autocommit mode, as the container's
     ``POSTGRES_USER`` over the container's local socket. Values come back
@@ -625,14 +755,13 @@ class _PsqlCursor:
         self._database = database
         self._rows = []
 
-    def execute(self, statement, params=None):
-        query = _render(statement, params)
+    def execute(self, statement):
         psql = shlex.quote('PGUSER="$POSTGRES_USER" exec psql "$@"')
         cmd = (
             "docker exec -e PGOPTIONS=-cclient_min_messages=warning "
             f"{shlex.quote(self._container)} sh -c {psql} psql "
             "-X -q -t --csv -v ON_ERROR_STOP=1 -v VERBOSITY=verbose "
-            f"-d {shlex.quote(self._database)} -c {shlex.quote(query)}"
+            f"-d {shlex.quote(self._database)} -c {shlex.quote(statement)}"
         )
         status, output = run_with_status(self._executor, cmd)
         if status:
@@ -652,34 +781,17 @@ class _PsqlCursor:
         return rows
 
 
-def _render(statement, params=None):
-    """Return ``statement``, a string or :mod:`psycopg2.sql` object, as SQL text with ``params`` filled in."""
-    from psycopg2 import sql
-
-    if isinstance(statement, sql.Composed):
-        text = "".join(_render(part) for part in statement.seq)
-    elif isinstance(statement, sql.SQL):
-        text = statement.string
-    elif isinstance(statement, sql.Identifier):
-        text = ".".join('"' + s.replace('"', '""') + '"' for s in statement.strings)
-    elif isinstance(statement, sql.Literal):
-        text = _literal(statement.wrapped)
-    else:
-        text = statement
-    if params is not None:
-        text = text % tuple(_literal(value) for value in params)
-    return text
+def _quote_ident(name):
+    return '"' + name.replace('"', '""') + '"'
 
 
-def _literal(value):
-    if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float)):
-        return repr(value)
+def _quote_literal(value):
     # PostgreSQL's standard_conforming_strings (on by default) keeps backslashes literal.
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _size(n_bytes):
+    return f"{n_bytes / 1e9:,.1f} GB" if n_bytes >= 1e9 else f"{n_bytes / 1e6:,.0f} MB"
 
 
 def _performance_test_flags(**options):
@@ -755,9 +867,6 @@ class RemotePerformanceTester:
     def pause_between_tests(self):
         """Make the next remote test pause first, as a local suite pauses between tests."""
         self._pause_before_test = True
-
-    def release_database_connections(self):
-        """Do nothing: the bots' connections close when their remote test ends."""
 
     def run_test(
         self, title, n_bots, bot_log_file, duration_minutes, arrival_minutes=None

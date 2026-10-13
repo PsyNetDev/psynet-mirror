@@ -5,7 +5,6 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from psynet.isolated_environment import ENV_VAR, READY_ENV_VAR, SHARED
 from psynet.perf_test import (
     CapacityLimits,
     PerformanceSuite,
@@ -982,241 +981,6 @@ def test_failed_participants_are_classified_by_failed_not_status():
     assert _bot_outcome(failed, errored=True) == "failed by the experiment"
     assert _bot_outcome(approved, errored=True) != "failed by the experiment"
     assert _failure_reason(failed) == "timeline_hold:barrier:round_N, fail_on_timeout"
-
-
-class _RecordingCursor:
-    """Record the statements composed with ``psycopg2.sql`` that run on a cursor."""
-
-    def __init__(self, cursor, statements):
-        self._cursor, self._statements = cursor, statements
-
-    def execute(self, statement, params=None):
-        from psycopg2 import sql
-
-        if isinstance(statement, sql.Composable):
-            self._statements.append(statement.as_string(self._cursor))
-        return self._cursor.execute(statement, params)
-
-    def __getattr__(self, name):
-        return getattr(self._cursor, name)
-
-
-@pytest.fixture
-def scratch_database(db_session, monkeypatch):
-    """Yield a scratch database's URL and a list of databases to drop afterwards.
-
-    The scratch database stands in for the isolated test session's own.
-    """
-    from dallinger import db
-
-    from psynet.isolated_environment import (
-        DATABASE_ENV_VAR,
-        create_database,
-        drop_database,
-    )
-    from psynet.perf_reset import LocalDatabase
-
-    url = create_database(
-        db.engine.url.render_as_string(hide_password=False), suffix="_scratch_test_0"
-    )
-    created = [url.rsplit("/", 1)[1]]
-    monkeypatch.setenv(DATABASE_ENV_VAR, created[0])
-    yield url, created
-    with LocalDatabase(url).cursor() as cursor:
-        for name in created:
-            drop_database(cursor, name)
-
-
-def _participants(database_url, n_new=0):
-    """Add ``n_new`` rows to a minimal participant table; return its row count."""
-    import psycopg2
-
-    connection = psycopg2.connect(database_url)
-    try:
-        with connection, connection.cursor() as cursor:
-            cursor.execute("CREATE TABLE IF NOT EXISTS participant (id serial)")
-            for _ in range(n_new):
-                cursor.execute("INSERT INTO participant DEFAULT VALUES")
-            cursor.execute("SELECT count(*) FROM participant")
-            return cursor.fetchone()[0]
-    finally:
-        connection.close()
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
-def test_database_reset_restores_snapshots_and_drops_only_its_own(scratch_database):
-    import re
-    from contextlib import contextmanager
-
-    from psynet import perf_reset
-    from psynet.redis import redis_vars
-
-    url, created = scratch_database
-    database = perf_reset.LocalDatabase(url)
-    cache = database.prefill_snapshot_name("0123456789ab", 3)
-    created.append(cache)
-    statements = []
-
-    class RecordingReset(perf_reset.DatabaseReset):
-        @contextmanager
-        def _connect(self):
-            with super()._connect() as cursor:
-                yield _RecordingCursor(cursor, statements)
-
-    _participants(url, 1)
-    redis_vars.set("launch_finished", True)
-    server = Mock()
-    reset = RecordingReset(server.stop, server.start, database=database)
-    reset()
-    created.append(reset.snapshot)
-    assert reset.snapshot_rows == {"participant": 1}
-    _participants(url, 1)
-    reset()
-    assert _participants(url) == 1
-    assert server.stop.call_count == server.start.call_count == 2
-    assert redis_vars.get("launch_finished") is True
-    reset.close()
-    assert database.find_snapshot(reset.snapshot) is None
-
-    prefill = RecordingReset(
-        server.stop,
-        server.start,
-        prefill=lambda: _participants(url, 2),
-        keep_as=cache,
-        database=database,
-    )
-    prefill()
-    prefill.close()
-    assert cache in [name for name, _, _ in database.list_snapshots()]
-    _participants(url, 5)
-    cached = RecordingReset(
-        server.stop, server.start, from_snapshot=cache, database=database
-    )
-    cached()
-    cached.close()
-    assert _participants(url) == 3
-
-    dropped = re.findall(
-        r'DROP DATABASE (?:IF EXISTS )?"([^"]+)"', " ".join(statements)
-    )
-    assert set(dropped) == {created[0], reset.snapshot}
-
-
-@pytest.mark.parametrize("n_participants, warns", [(71, True), (0, False)])
-def test_a_reset_warns_when_its_snapshot_is_not_a_fresh_database(
-    caplog, n_participants, warns
-):
-    from psynet.perf_reset import DatabaseReset
-
-    database = Mock(name="my-app", wait_for_async_jobs=Mock(return_value=0))
-    database.count_rows.return_value = {"participant": n_participants}
-    database.fresh_start_hint.return_value = "Destroy the app."
-    reset = DatabaseReset(Mock(), Mock(), database=database)
-
-    with caplog.at_level("INFO"), patch.object(DatabaseReset, "_take_snapshot"):
-        reset()
-
-    assert (
-        "already held 71 participants when the snapshot was taken" in caplog.text
-    ) == warns
-    assert (
-        "rather than from a fresh database. Destroy the app." in caplog.text
-    ) == warns
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
-)
-@pytest.mark.parametrize("second_stop", [None, RuntimeError("still stopping")])
-def test_close_keeps_a_finished_prefill_whose_snapshot_was_not_taken(
-    scratch_database, second_stop
-):
-    from psynet import perf_reset
-
-    url, created = scratch_database
-    database = perf_reset.LocalDatabase(url)
-    keep = database.prefill_snapshot_name("fedcba987654", 2)
-    created.append(keep)
-    server = Mock()
-    server.stop.side_effect = [KeyboardInterrupt, second_stop]
-    reset = perf_reset.DatabaseReset(
-        server.stop, server.start, prefill=Mock(), keep_as=keep, database=database
-    )
-    with pytest.raises(KeyboardInterrupt):
-        reset()
-    reset.close()
-    assert server.stop.call_count == 2
-    assert database.find_snapshot(keep) == keep
-
-
-@pytest.mark.parametrize(
-    "url, allowed",
-    [
-        ("postgresql://u:p@localhost/dallinger_test_5000", True),
-        ("postgresql:///dallinger_test_5000?host=/tmp", True),
-        ("postgresql://u:p@localhost/postgres", False),
-        ("postgresql://u:p@localhost/template1", False),
-        ("postgresql://u:p@db.example.org/dallinger_test_5000", False),
-    ],
-)
-def test_reset_refuses_system_and_remote_databases(url, allowed):
-    from psynet.isolated_environment import DATABASE_ENV_VAR
-    from psynet.perf_reset import check_resettable_database
-
-    environ = {DATABASE_ENV_VAR: "dallinger_test_5000"}
-    if allowed:
-        check_resettable_database(url, environ)
-    else:
-        with pytest.raises(ValueError, match="Refusing"):
-            check_resettable_database(url, environ)
-
-
-def test_reset_in_ci_accepts_another_host_only_for_the_session_database():
-    from psynet.isolated_environment import DATABASE_ENV_VAR
-    from psynet.perf_reset import check_resettable_database
-
-    environ = {"CI": "true", DATABASE_ENV_VAR: "dallinger_test_5000"}
-    check_resettable_database("postgresql://u@postgres/dallinger_test_5000", environ)
-    with pytest.raises(ValueError, match="Refusing"):
-        check_resettable_database("postgresql://u@postgres/dallinger", environ)
-
-
-def test_reset_refuses_a_session_variable_naming_a_debug_database():
-    from psynet.isolated_environment import DATABASE_ENV_VAR
-    from psynet.perf_reset import check_resettable_database
-
-    with pytest.raises(ValueError, match="Refusing"):
-        check_resettable_database(
-            "postgresql://u:p@localhost/dallinger", {DATABASE_ENV_VAR: "dallinger"}
-        )
-
-
-@pytest.mark.parametrize(
-    "environ",
-    [{"CI": "1"}, {READY_ENV_VAR: "1"}, {ENV_VAR: SHARED}, None],
-    ids=["ci", "ready-without-isolation", "shared", "isolated"],
-)
-def test_reset_only_drops_the_isolated_session_database(environ):
-    from psynet.isolated_environment import (
-        DEFAULT_DATABASE_URL,
-        IsolatedEnvironment,
-        should_isolate,
-    )
-    from psynet.perf_reset import check_resettable_database
-
-    shared = {"DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)}
-    if environ is None:
-        with IsolatedEnvironment.start({**os.environ, **shared}) as environment:
-            check_resettable_database(environment.env["DATABASE_URL"], environment.env)
-        return
-    environ = {**shared, **environ}
-    assert not should_isolate(environ)
-    with pytest.raises(ValueError, match="only works in .* isolated test environment"):
-        check_resettable_database(
-            "postgresql://dallinger:dallinger@localhost/dallinger", environ
-        )
 
 
 @pytest.mark.parametrize(
@@ -2426,8 +2190,8 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     assert "\x1b[" not in _join(narrow) and "\u2026" not in _join(narrow)
 
 
-def test_prefill_cache_key_changes_with_config_txt(tmp_path, monkeypatch):
-    from psynet.perf_reset import experiment_code_key
+def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
+    from psynet.perf_ssh import experiment_code_key
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "deploy.toml").write_text(
@@ -2472,119 +2236,6 @@ def test_performance_tests_refuse_participants_that_bots_did_not_create(db_sessi
     _check_no_real_participants(force=True)
 
 
-@pytest.mark.parametrize("leader_exited", [True, False])
-def test_eperm_from_the_server_group_means_stopped_only_once_its_leader_exited(
-    leader_exited,
-):
-    from itertools import count
-
-    import click
-
-    from psynet.perf_local_server import _stop_process_group
-
-    process = Mock(pid=12345, returncode=0 if leader_exited else None)
-    with (
-        patch("psynet.perf_local_server.os.killpg", side_effect=PermissionError),
-        patch("psynet.perf_local_server.time.monotonic", side_effect=count(0, 20)),
-        patch("psynet.perf_local_server.time.sleep"),
-    ):
-        if leader_exited:
-            _stop_process_group(process)
-            process.wait.assert_called_once()
-        else:
-            with pytest.raises(click.ClickException, match="did not stop"):
-                _stop_process_group(process)
-            process.wait.assert_not_called()
-
-
-def _restart_local_server(server_dir, tmp_path, **config):
-    """Start and restart a ``RestartableLocalServer`` with stubbed processes.
-
-    Returns the mocks of the first start and of the restart's ``Popen``.
-    """
-    from psynet.perf_local_server import RestartableLocalServer
-
-    config = {"base_port": 5000, **config}
-    start = Mock(return_value={"tmp_log_path": str(tmp_path / "server.log")})
-    with (
-        patch("psynet.command_line._start_local_server_and_wait_for_ready", start),
-        patch("psynet.command_line._stop_server"),
-        patch("psynet.redis.redis_vars.get", return_value=server_dir),
-        patch(
-            "psynet.utils.load_runtime_server_config",
-            return_value=Mock(get=lambda key, default=None: config.get(key, default)),
-        ),
-        patch("psynet.perf_local_server._wait_for_free_port"),
-        patch("psynet.perf_local_server._wait_until_server_ready"),
-        patch("psynet.perf_local_server.subprocess.Popen") as popen,
-    ):
-        RestartableLocalServer(restartable=True).start()
-    return start, popen
-
-
-def test_restarts_rerun_heroku_local_with_the_first_start_secret_key(capsys, tmp_path):
-    (tmp_path / "Procfile").touch()
-    start, popen = _restart_local_server(
-        str(tmp_path), tmp_path, worker_processes=3, clock_on=True
-    )
-
-    key = start.call_args.kwargs["extra_env"]["FLASK_SECRET_KEY"]
-    args, kwargs = popen.call_args
-    assert args[0] == ["heroku", "local", "-p", "5000", "web=1,worker=3,clock"]
-    assert kwargs["cwd"] == str(tmp_path)
-    assert kwargs["env"]["FLASK_SECRET_KEY"] == key
-    assert key not in capsys.readouterr().out
-
-
-def test_restarts_start_no_clock_process_without_clock_on(tmp_path):
-    (tmp_path / "Procfile").touch()
-    _, popen = _restart_local_server(str(tmp_path), tmp_path, clock_on=False)
-    assert popen.call_args.args[0][-1] == "web=1,worker=1"
-
-
-@pytest.mark.parametrize("server_dir", [None, "missing", "no_procfile"])
-def test_restarts_need_the_server_directory_and_its_procfile(server_dir, tmp_path):
-    import click
-
-    if server_dir:
-        server_dir = str(tmp_path / server_dir)
-    (tmp_path / "no_procfile").mkdir()
-    with pytest.raises(click.ClickException, match="Procfile") as error:
-        _restart_local_server(server_dir, tmp_path)
-    assert repr(server_dir) in error.value.message
-
-
-def test_database_copies_need_twice_the_database_size_free(
-    caplog, tmp_path, monkeypatch
-):
-    import psycopg2
-
-    from psynet.isolated_environment import DATABASE_ENV_VAR
-    from psynet.perf_reset import DatabaseReset, LocalDatabase
-
-    monkeypatch.setenv(DATABASE_ENV_VAR, "experiment_test_0")
-    reset = DatabaseReset(
-        Mock(), Mock(), database=LocalDatabase("postgresql:///experiment_test_0")
-    )
-    cursor = Mock()
-    (tmp_path / "PG_VERSION").write_text("16")
-    cursor.fetchone.side_effect = [(1e9,), (str(tmp_path),)]
-    with (
-        patch("psynet.perf_reset.shutil.disk_usage", return_value=Mock(free=1.5e9)),
-        patch.object(LocalDatabase, "list_snapshots", return_value=[("s", 3e9, None)]),
-        pytest.raises(RuntimeError, match=r"2\.0 GB.*3\.0 GB.*snapshots --drop"),
-    ):
-        reset._check_disk_space(cursor, "experiment")
-
-    # A data directory in a container, or one PostgreSQL won't show, isn't checked.
-    cursor.fetchone.side_effect = [(1e9,), ("/in/a/container",)]
-    reset._check_disk_space(cursor, "experiment")
-    assert "isn't on this computer" in caplog.text
-    cursor.fetchone.side_effect = [(1e9,)]
-    cursor.execute.side_effect = [None, psycopg2.Error("permission denied")]
-    reset._check_disk_space(cursor, "experiment")
-
-
 @pytest.mark.parametrize(
     "mode, recruiter, live",
     [
@@ -2606,7 +2257,6 @@ def test_live_recruitment_counts_as_real_participants(mode, recruiter, live):
     )
 
 
-_APP_SNAPSHOT = "psynet_prefill_my-app_0123456789ab_n5"
 _EXPERIMENT = {
     "label": "Test",
     "test_n_bots": 2,
@@ -2636,57 +2286,66 @@ def _fake_server(respond):
     return executor
 
 
-def _app_database(respond, isolated=True):
-    from psynet.perf_ssh import RemoteApp, RemoteAppDatabase
+def _remote_app(respond, isolated=True):
+    """Return a ``RemoteApp`` of ``my-app`` whose server answers with ``respond(cmd)``."""
+    from psynet.perf_ssh import RemoteApp
 
     def answer(cmd):
         if cmd.startswith("docker inspect"):
             own = "my-app_postgresql" in cmd
             return "172.18.0.2" if own == isolated else ""
+        if "DATABASE_URL" in cmd:
+            return "my-app\n"
         return respond(cmd)
 
-    return RemoteAppDatabase(RemoteApp(_fake_server(answer), "my-app", "server"))
+    remote = RemoteApp(_fake_server(answer), "my-app", "server")
+    remote.prepare = Mock(return_value=0)
+    return remote
 
 
-def test_a_remote_reset_restores_only_the_apps_database_in_its_container():
-    from psynet.perf_reset import DatabaseReset
+def test_a_remote_reset_restores_only_the_apps_database_in_its_container(caplog):
+    from psynet.perf_ssh import DatabaseReset
 
     attempts = []
 
     def respond(cmd):
-        if "DROP DATABASE" in cmd and not attempts:
+        if 'DROP DATABASE IF EXISTS "my-app"' in cmd and not attempts:
             attempts.append(cmd)
             return 1, 'ERROR:  55006: database "my-app" is being accessed\n'
-        if "DATABASE_URL" in cmd:
-            return "my-app\n"
-        if "pg_database_size" in cmd:
-            return "1000\n"
-        if "data_directory" in cmd:
-            return "/var/lib/postgresql/data\n"
-        if " df " in cmd:
-            return "Filesystem 1024-blocks Used Available Capacity Mounted\nx 9 0 9999 1% /\n"
-        if "pg_tables" in cmd:
-            return "participant\n"
-        if "count(*)" in cmd:
-            return "3\n"
+        for pattern, output in [
+            ("pg_database_size", "1000"),
+            ("data_directory", "/var/lib/postgresql/data"),
+            (" df ", "Filesystem 1024-blocks Used Available Capacity\nx 9 0 9999 1% /"),
+            ("pg_tables", "participant"),
+            ("count(*)", "3"),
+        ]:
+            if pattern in cmd:
+                return output + "\n"
         return ""
 
-    database = _app_database(respond)
-    server = Mock()
-    reset = DatabaseReset(
-        server.stop, server.start, from_snapshot=_APP_SNAPSHOT, database=database
-    )
-    reset()
-    reset.close()
+    remote = _remote_app(respond)
+    remote.stop, remote.start = Mock(), Mock()
+    reset = DatabaseReset(remote)
+    with caplog.at_level("INFO"):
+        reset()
+        reset()
+        reset.close()
 
-    commands = database.remote.executor.commands
-    sql = [c for c in commands if " psql " in c]
+    sql = [c for c in remote.executor.commands if " psql " in c]
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
-    assert [c for c in sql if "DROP DATABASE" in c] == attempts * 2
-    assert any(f'CREATE DATABASE "my-app" TEMPLATE "{_APP_SNAPSHOT}"' in c for c in sql)
-    assert any("redis-cli --scan --pattern" in c for c in commands)
+    snapshot = reset.snapshot
+    assert snapshot.startswith("my-app_snapshot_")
+    assert re.findall(r"(?:CREATE|DROP) DATABASE [^']*", " ".join(sql)) == [
+        f'CREATE DATABASE "{snapshot}" TEMPLATE "my-app"',
+        'DROP DATABASE IF EXISTS "my-app"',
+        'DROP DATABASE IF EXISTS "my-app"',
+        f'CREATE DATABASE "my-app" TEMPLATE "{snapshot}"',
+        f'DROP DATABASE IF EXISTS "{snapshot}"',
+    ]
+    assert any("redis-cli --scan --pattern" in c for c in remote.executor.commands)
     assert reset.snapshot_rows == {"participant": 3}
-    assert server.stop.call_count == server.start.call_count == 1
+    assert remote.stop.call_count == remote.start.call_count == 2
+    assert "already held 3 participants when the snapshot was taken" in caplog.text
 
 
 def test_remote_output_leaves_out_stderr_unless_the_command_fails():
@@ -2719,8 +2378,6 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
         if restart_fails and ".yml start " in cmd:
             return 1, "Error: no such container\n"
         for pattern, output in [
-            ("datname = '", "1"),
-            ("DATABASE_URL", "my-app"),
             ("SCARD", "1"),
             ("ps --services", "postgresql\nredis\nweb\nworker_1\npgbouncer\nsidecar"),
             ("pg_database_size", "1000"),
@@ -2734,8 +2391,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
     monkeypatch.chdir(tmp_path)
     # Its handler would keep writing to capsys's stdout after this test.
     monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
-    executor = _app_database(respond).remote.executor
-    reset = {"prefill_participants": None, "from_snapshot": _APP_SNAPSHOT}
+    executor = _remote_app(respond).executor
     with (
         patch("psynet.command_line._ssh_executor", return_value=executor),
         patch("psynet.perf_ssh.RemoteApp.prepare", return_value=0),
@@ -2745,7 +2401,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
             "my-app",
             "server",
             _EXPERIMENT,
-            reset,
+            reset=True,
             n_bots=[2],
             force=False,
             json_output="results.json",
@@ -2773,8 +2429,7 @@ def test_a_remote_reset_never_stops_every_service_of_an_app():
     def respond(cmd):
         return "postgresql\nredis\nfrontdoor\n" if "ps --services" in cmd else "0\n"
 
-    remote = _app_database(respond).remote
-    remote.prepare = Mock()
+    remote = _remote_app(respond)
     with pytest.raises(RuntimeError, match="None of my-app's server processes"):
         remote.stop()
     assert not any(".yml stop" in c for c in remote.executor.commands)
@@ -2884,53 +2539,27 @@ def test_a_remote_restart_restarts_workers_that_never_register(
 
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
 def test_a_remote_reset_refuses_a_database_not_named_after_the_app(web_database):
-    database = _app_database(lambda cmd: f"{web_database}\n")
+    from psynet.perf_ssh import DatabaseReset, RemoteApp
+
+    remote = RemoteApp(_fake_server(lambda cmd: f"{web_database}\n"), "my-app", "s")
+    remote.prepare = Mock()
     with pytest.raises(ValueError, match="Refusing to reset"):
-        database.check_resettable()
-
-
-def test_remote_snapshots_are_the_apps_own_and_need_free_disk_space():
-
-    database = _app_database(lambda cmd: "")
-    assert database.prefill_snapshot_name("0123456789ab", 5) == _APP_SNAPSHOT
-    assert not database.owns_snapshot("psynet_prefill_my-app-2_0123456789ab_n5")
-    assert not database.owns_snapshot("psynet_prefill_0123456789ab_n5")
-    with pytest.raises(ValueError, match="not a pre-fill snapshot of my-app"):
-        database.check_snapshot("psynet_prefill_other_0123456789ab_n5")
+        DatabaseReset(remote)
 
 
 def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
-    from psynet.perf_reset import DatabaseReset
+    from psynet.perf_ssh import DatabaseReset
 
-    database = _app_database(
-        lambda cmd: "my-app\n" if "DATABASE_URL" in cmd else (1, "df: denied\n")
-    )
-    reset = DatabaseReset(Mock(), Mock(), database=database)
-    cursor = Mock(fetchone=Mock(side_effect=[(1e9,), ("/var/lib/postgresql/data",)]))
+    def respond(cmd):
+        if "pg_database_size" in cmd:
+            return "1000\n"
+        if "data_directory" in cmd:
+            return "/var/lib/postgresql/data\n"
+        return 1, "df: denied\n"
+
+    reset = DatabaseReset(_remote_app(respond))
     with pytest.raises(RuntimeError, match="free disk space"):
-        reset._check_disk_space(cursor, "my-app")
-
-
-@pytest.mark.parametrize("isolated", [True, False])
-def test_destroy_drops_only_the_apps_snapshots_on_a_shared_postgres(isolated):
-    from psynet.command_line import _drop_ssh_app_snapshots
-
-    listing = "\n".join(
-        f"{name},1000,"
-        for name in (_APP_SNAPSHOT, "psynet_prefill_other_0123456789ab_n5")
-    )
-    database = _app_database(
-        lambda cmd: listing + "\n" if "FROM pg_database" in cmd else "",
-        isolated=isolated,
-    )
-    with patch(
-        "psynet.command_line._ssh_executor", return_value=database.remote.executor
-    ):
-        _drop_ssh_app_snapshots("server", "my-app")
-
-    drops = [c for c in database.remote.executor.commands if "DROP DATABASE" in c]
-    assert len(drops) == (0 if isolated else 1)
-    assert all(f'"{_APP_SNAPSHOT}"' in drop for drop in drops)
+        reset._check_disk_space("my-app")
 
 
 def test_a_suite_drives_remote_tests_through_their_json_results():
@@ -2965,7 +2594,7 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
 
 def _remote_search(
     monkeypatch,
-    reset=None,
+    reset=False,
     reset_side_effect=None,
     cleanup_error=None,
     interrupt_at_test=None,
@@ -3003,7 +2632,7 @@ def _remote_search(
             "my-app",
             "server",
             {**_EXPERIMENT, "estimated_duration_minutes": 12},
-            reset,
+            reset=reset,
             n_bots="auto",
             **options,
         )
@@ -3025,7 +2654,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
     with pytest.raises(click.ClickException) as error:
         _remote_search(
             monkeypatch,
-            reset={"prefill_participants": None, "from_snapshot": None},
+            reset=True,
             reset_side_effect=[None, None, click.Abort(pgbouncer_full)],
             cleanup_error=RuntimeError("my-app may be stopped")
             if cleanup_fails
@@ -3117,7 +2746,7 @@ def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkey
     [
         (dict(no_confirm=True), 8, "--duration-minutes 5 "),
         (dict(arrival_minutes=3), 9, "--duration-minutes 15 --arrival-minutes 3 "),
-        (dict(reset={"from_snapshot": None}), 9, "--arrival-minutes 12.0 "),
+        (dict(reset=True), 9, "--arrival-minutes 12.0 "),
     ],
     ids=["no-confirm", "arrival-minutes", "reset-database"],
 )

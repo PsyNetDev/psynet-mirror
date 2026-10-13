@@ -484,10 +484,6 @@ class PerformanceTester:
                 )
             )
 
-    def release_database_connections(self):
-        """Close the bots' pooled database connections, for example before a reset."""
-        self._bots.release_database_connections()
-
     def run_test(self, title, n, bot_log_file, duration_minutes, arrival_minutes=None):
         """Run one test of ``n`` bots for ``duration_minutes``, print its results and return them.
 
@@ -975,13 +971,6 @@ class _ThreadBots:
         """Return ``None``: threads can't stop the way a process can."""
         return None
 
-    @staticmethod
-    def release_database_connections():
-        """Close this process's pooled database connections."""
-        from psynet.db import release_local_database_connections
-
-        release_local_database_connections()
-
     def close(self, timeout_s=_BOT_PROCESS_EXIT_JOIN_S):
         """Stop any bots still running, waiting up to ``timeout_s`` for them."""
         self._stop_event.set()
@@ -996,10 +985,7 @@ def _serve_bot_commands(bots, index, commands, events):
     test_id = 0
     while True:
         command, *args = commands.get()
-        if command == "release":
-            bots.release_database_connections()
-            events.put((test_id, "released", index))
-        elif command == "test":
+        if command == "test":
             test_id, end_time, n_slots = args
             record = partial(_put_bot_event, events, test_id)
             bots.begin_test(None, end_time, n_slots, record=record)
@@ -1018,7 +1004,7 @@ def _put_bot_event(events, test_id, kind, *args):
     events.put((test_id, kind, *args))
 
 
-_REPLY_KINDS = frozenset({"ready", "failed", "finished", "released"})
+_REPLY_KINDS = frozenset({"ready", "failed", "finished"})
 
 
 class _BotProcesses:
@@ -1027,14 +1013,13 @@ class _BotProcesses:
     The parent keeps all the bookkeeping. It sends each child commands on the
     child's own queue: ``("test", test_id, end_time, n_slots)`` before a test,
     ``("slot",)`` to start one bot slot, ``("stop", timeout_s)`` to stop the
-    test's bots, ``("release",)`` to close its database connections before a
-    database reset, and ``("exit",)`` to stop them and exit. Children send
+    test's bots, and ``("exit",)`` to stop them and exit. Children send
     messages on one shared queue, each tagged with the test it belongs to
     (0 before the first test): ``(test_id, kind, *args)`` for each bot's
     progress, which a thread here applies to the test's ``bot_state`` with
     :meth:`PerformanceTester._record_bot_event` just as a bot thread in the
     parent would, and ``(test_id, kind, index, *payload)`` replies:
-    ``"ready"``, ``"released"``, ``"failed"`` with a traceback, and
+    ``"ready"``, ``"failed"`` with a traceback, and
     ``"finished"`` with the child's load (see :class:`_LoadMonitor`) and how
     many of its bots were still running. Messages from an earlier test are dropped, so bots that
     outlive their test can't affect the next one.
@@ -1188,21 +1173,6 @@ class _BotProcesses:
                     f"(exit code {process.exitcode})"
                 )
         return None
-
-    def release_database_connections(self, timeout_s=30):
-        """Have the children close their pooled database connections, and wait for them."""
-        for commands in self._commands:
-            commands.put(("release",))
-        replies = self._collect_replies("released", timeout_s)
-        silent = [i + 1 for i in range(len(self._processes)) if i not in replies]
-        if silent:
-            logger.warning(
-                warning(
-                    f"Bot processes {silent} did not confirm within {timeout_s} s "
-                    "that they closed their database connections; the reset "
-                    "terminates any that remain."
-                )
-            )
 
     def close(self, timeout_s=10):
         """Ask the children to exit, terminating any that don't within ``timeout_s``."""

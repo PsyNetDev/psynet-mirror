@@ -5,7 +5,7 @@ searching for capacity, and stops early when a test ends early. A capacity
 search's tests are short, so it ends with one longer confirmation test, with
 spread-out arrivals, at the cap it suggests. Its
 ``before_test`` hook can reset the database before each test (see
-:mod:`psynet.perf_reset`).
+:class:`psynet.perf_ssh.DatabaseReset`).
 
 The tester that runs each test is passed in, so this module does not import
 :mod:`psynet.perf_test.runtime`; tests can give the suite a fake tester.
@@ -67,8 +67,7 @@ class PerformanceSuite:
         The limits that the capacity search and summary judge tests by.
     before_test : callable, optional
         Called before each test, including the first, instead of the pause
-        between tests, once the bots have closed their database connections;
-        for example a :class:`psynet.perf_reset.DatabaseReset`.
+        between tests; for example a :class:`psynet.perf_ssh.DatabaseReset`.
     label : str, optional
         The experiment's label, for the summary.
     after_test : callable, optional
@@ -268,7 +267,6 @@ class PerformanceSuite:
             while (test := next_test(all_results)) is not None:
                 n_bots, duration_minutes, arrival_minutes, confirmation = test
                 if self.before_test is not None:
-                    self.tester.release_database_connections()
                     try:
                         self.before_test()
                     except Exception as e:

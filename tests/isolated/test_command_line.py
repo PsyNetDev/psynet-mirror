@@ -1162,21 +1162,20 @@ def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_pat
     assert bot_log.read_text() == "bot 1 failed\n"
 
 
-@pytest.mark.parametrize("command", ["ssh", "snapshots"])
-def test_performance_test_ssh_commands_refuse_app_names_with_shell_syntax(command):
+def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
     from psynet.command_line import performance_test
 
     with patch("psynet.command_line._ssh_executor") as executor:
         result = CliRunner().invoke(
-            performance_test.commands[command], ["--app", "x;touch /tmp/pwned"]
+            performance_test.commands["ssh"], ["--app", "x;touch /tmp/pwned"]
         )
     assert result.exit_code == 2
     assert "invalid characters" in result.output
     executor.assert_not_called()
 
 
-def _invoke_performance_test_ssh(command, args, *, apps, app_info, code_key="new"):
-    """Invoke ``performance-test <command>`` on a fake server with ``apps``, whose web containers report ``app_info``."""
+def _invoke_performance_test_ssh(args, *, apps, app_info, code_key="new"):
+    """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``."""
     from types import SimpleNamespace
 
     from psynet.command_line import performance_test
@@ -1193,15 +1192,14 @@ def _invoke_performance_test_ssh(command, args, *, apps, app_info, code_key="new
         patch("psynet.command_line._ssh_executor"),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
-        patch("psynet.perf_ssh.RemoteAppDatabase") as database,
         patch("psynet.command_line._current_code_key", return_value=code_key),
         patch("psynet.command_line._debug_ssh") as deploy,
         patch("psynet.command_line._run_ssh_performance_test") as run,
     ):
         result = CliRunner().invoke(
-            performance_test.commands[command], ["--app", "my-app", *args]
+            performance_test.commands["ssh"], ["--app", "my-app", *args]
         )
-    return result, deploy, run, database
+    return result, deploy, run
 
 
 _MARKED = {
@@ -1221,8 +1219,8 @@ _MARKED = {
     ids=["deploys-a-missing-app", "reuses-an-unchanged-app", "updates-a-changed-app"],
 )
 def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
-    result, deploy, run, _ = _invoke_performance_test_ssh(
-        "ssh", [], apps=apps, app_info=_MARKED, code_key=code_key
+    result, deploy, run = _invoke_performance_test_ssh(
+        [], apps=apps, app_info=_MARKED, code_key=code_key
     )
 
     assert result.exit_code == 0, result.output
@@ -1244,8 +1242,8 @@ def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
 
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
 def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
-    result, deploy, run, _ = _invoke_performance_test_ssh(
-        "ssh", args, apps=["my-app"], app_info={"performance_test_app": False}
+    result, deploy, run = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info={"performance_test_app": False}
     )
 
     assert result.exit_code == 1
@@ -1256,8 +1254,8 @@ def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
 
 
 def test_performance_test_ssh_refuses_apps_that_never_launched():
-    result, deploy, run, _ = _invoke_performance_test_ssh(
-        "ssh", [], apps=["my-app"], app_info={**_MARKED, "launched": False}
+    result, deploy, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info={**_MARKED, "launched": False}
     )
 
     assert result.exit_code == 1
@@ -1269,23 +1267,13 @@ def test_performance_test_ssh_refuses_apps_that_never_launched():
 
 def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     app_info = {k: v for k, v in _MARKED.items() if k != "experiment"}
-    result, _, run, _ = _invoke_performance_test_ssh(
-        "ssh", [], apps=["my-app"], app_info=app_info, code_key="old"
+    result, _, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info=app_info, code_key="old"
     )
 
     assert result.exit_code == 1
     assert "Could not load the experiment in my-app" in result.output
     run.assert_not_called()
-
-
-def test_performance_test_snapshots_refuse_apps_it_did_not_deploy():
-    result, _, _, database = _invoke_performance_test_ssh(
-        "snapshots", [], apps=["my-app"], app_info={}
-    )
-
-    assert result.exit_code == 1
-    assert "didn't deploy it" in result.output
-    database.assert_not_called()
 
 
 def test_performance_test_deploys_mark_the_app_and_record_its_code_key():
@@ -1297,7 +1285,7 @@ def test_performance_test_deploys_mark_the_app_and_record_its_code_key():
         patch("psynet.command_line._pre_launch") as pre_launch,
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
-        patch("psynet.perf_reset.experiment_code_key", return_value="abc"),
+        patch("psynet.perf_ssh.experiment_code_key", return_value="abc"),
     ):
         _debug_ssh(
             ctx,
@@ -4785,7 +4773,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     start_server.assert_called_once_with(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=False,
-        extra_env={"PSYNET_PERFORMANCE_TEST": "1", "FLASK_SECRET_KEY": ANY},
+        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
 
 
@@ -5007,7 +4995,6 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     suite_class.assert_called_once_with(
         performance_tester.return_value,
         limits=CapacityLimits(),
-        before_test=None,
         label=experiment.label,
         after_test=ANY,
     )
@@ -5039,34 +5026,6 @@ def test_capacity_search_accepts_an_arrival_window_longer_than_its_tests():
     from psynet.command_line import _check_arrival_options
 
     _check_arrival_options(n_bots="auto", arrival_minutes=10, duration_minutes=1)
-
-
-def test_database_reset_options_imply_a_reset_and_reject_conflicts(monkeypatch):
-    from psynet.command_line import _check_database_reset_options
-    from psynet.isolated_environment import DATABASE_ENV_VAR
-
-    monkeypatch.setattr("dallinger.db.db_url", "postgresql:///dallinger_test_5000")
-    monkeypatch.setenv(DATABASE_ENV_VAR, "dallinger_test_5000")
-    none = dict(
-        existing=False,
-        reset_database=False,
-        prefill_participants=None,
-        from_snapshot=None,
-    )
-    assert _check_database_reset_options(**none) is None
-    assert _check_database_reset_options(**{**none, "prefill_participants": 100}) == {
-        "prefill_participants": 100,
-        "from_snapshot": None,
-    }
-    for conflict in [
-        dict(existing=True, reset_database=True),
-        dict(prefill_participants=5, from_snapshot="snapshot"),
-    ]:
-        with pytest.raises(click.UsageError):
-            _check_database_reset_options(**{**none, **conflict})
-    monkeypatch.delenv(DATABASE_ENV_VAR)
-    with pytest.raises(click.UsageError, match="isolated test environment"):
-        _check_database_reset_options(**{**none, "reset_database": True})
 
 
 def test_performance_test_flags_keep_zeros_and_omit_unset_options():
@@ -5124,7 +5083,7 @@ def test_write_json_results_emits_expected_schema(tmp_path):
         "duration_minutes": 1.5,
         "stagger_interval_s": 0.1,
         "time_factor": 1.0,
-        "from_snapshot": Path("snapshot.dump"),
+        "bot_log": Path("bots.log"),
     }
     low_backlog = {"jobs": 3, "q_delay_p95": 9.0, "backlog": 2, "oldest_queued_s": 12.0}
     all_results = [
@@ -5144,7 +5103,7 @@ def test_write_json_results_emits_expected_schema(tmp_path):
     assert payload["schema_version"] == 1
     for key, expected in metadata.items():
         assert payload[key] == expected
-    assert payload["options"] == {**options, "from_snapshot": "snapshot.dump"}
+    assert payload["options"] == {**options, "bot_log": "bots.log"}
     assert [r["n_bots"] for r in payload["results"]] == [1, 2]
     assert payload["results"][0]["p95_response_time"] == 0.5
     assert payload["results"][1]["p95_response_time"] is None
