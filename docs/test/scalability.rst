@@ -596,7 +596,8 @@ There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
 finished in it. Search tests are often shorter than a session, so a search
 that skipped its validation test then names a longer test to run at the
-cap, with ``--arrival-minutes``. When the estimate is lower than the
+cap, with ``--arrival-minutes``; if queue waits failed a test above the cap,
+it adds that going above the cap needs more worker processes. When the estimate is lower than the
 current processes, the summary still suggests keeping them, and says how
 many the load needs. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130
