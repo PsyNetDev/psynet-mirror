@@ -233,6 +233,16 @@ database_template_path = ".deploy/database_template.zip"
 DEFAULT_LOCALE = "en"
 INITIAL_RECRUITMENT_SIZE = 1
 
+BROWSER_CAPABILITY_TOKENS = frozenset(
+    {
+        "microphone",
+        "camera",
+        "screen_capture",
+        "video_recording",
+        "audio_playback",
+    }
+)
+
 
 @dataclass
 class ResponseResult:
@@ -716,6 +726,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     initial_recruitment_size = INITIAL_RECRUITMENT_SIZE
     logos = []
     max_allowed_base_payment = 30
+    browser_capabilities: frozenset = frozenset()
 
     timeline = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
@@ -2693,6 +2704,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+        cls.check_browser_capabilities()
+
+    @classmethod
+    def check_browser_capabilities(cls):
+        unknown = frozenset(cls.browser_capabilities) - BROWSER_CAPABILITY_TOKENS
+        if unknown:
+            raise ValueError(
+                f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
+                f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
+            )
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):
