@@ -51,6 +51,7 @@ from psynet.perf_test.measure import (
     phase_stats,
     request_stats,
     wait_for_async_jobs,
+    worker_load,
 )
 from psynet.perf_test.report import (
     format_test_results,
@@ -937,18 +938,24 @@ class PerformanceTester:
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
         completed_at = bot_state.first_completed_at
+        steady_from = ended_at
         if completed_at is not None:
             result.first_completion_s = completed_at - start_time
             if actual_duration - result.first_completion_s >= MIN_STEADY_STATE_S:
+                steady_from = datetime.datetime.fromtimestamp(completed_at)
                 result.startup_phase, result.steady_state_phase = phase_stats(
                     initial_state["max_request_id"],
                     last_request_id,
                     initial_state["max_async_job_id"],
                     ended_at,
-                    datetime.datetime.fromtimestamp(completed_at),
+                    steady_from,
                 )
+        result.worker_load = worker_load(
+            initial_state["max_async_job_id"], ended_at, steady_from, outcomes
+        )
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         result.configured_worker_processes = configured_worker_processes()
+        result.server_cores = os.cpu_count()
         # Release the locks the counts took before the next test starts.
         db.session.rollback()
         self._report_test_results(result)

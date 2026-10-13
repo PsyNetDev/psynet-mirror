@@ -599,6 +599,73 @@ def configured_worker_processes():
         return None
 
 
+def worker_load(after_async_job_id, ended_at, boundary, outcomes):
+    """Return how busy the async worker processes were during a test.
+
+    Only :class:`~psynet.async_job.WorkerAsyncJob` jobs count; local jobs
+    run in the web process.
+
+    Parameters
+    ----------
+    after_async_job_id : int
+        Only count jobs with a larger ID.
+    ended_at : datetime.datetime
+        When the test ended.
+    boundary : datetime.datetime
+        When the steady state began, or ``ended_at`` if it had none.
+    outcomes : dict
+        Each bot's outcome by participant ID, from :func:`bot_outcome_stats`.
+
+    Returns
+    -------
+    dict
+        ``jobs``, the worker jobs that finished, and ``steady_jobs``, those
+        that finished in the steady state; ``busy_s``, the seconds worker
+        jobs spent running in the steady state, summed over jobs;
+        ``cpu_share``, their CPU time as a share of their run time
+        (``None`` without finished jobs); ``cpu_heavy``, whether that share
+        makes them CPU-heavy, as in ``psynet test local``; and
+        ``per_participant_s``, the run time of the worker jobs of a bot that
+        completed the experiment, on average (``None`` if none did).
+    """
+    from dallinger import db
+    from sqlalchemy import extract, func
+
+    from psynet.async_job import CPU_HEAVY_RATIO
+    from psynet.async_job import WorkerAsyncJob as Job
+
+    succeeded = [bot_id for bot_id, o in outcomes.items() if o == _SUCCEEDED]
+    done = Job.finished == True  # noqa: E712
+    finished_at = func.coalesce(Job.time_finished, ended_at)
+    running_s = extract(
+        "epoch",
+        func.least(finished_at, ended_at) - func.greatest(Job.time_started, boundary),
+    )
+    jobs, steady_jobs, busy_s, cpu_s, wall_s, succeeded_s = (
+        db.session.query(
+            func.count(Job.id).filter(done),
+            func.count(Job.id).filter(done, Job.time_finished > boundary),
+            func.sum(running_s).filter(Job.failed.is_(False), finished_at > boundary),
+            func.sum(Job.cpu_time).filter(done),
+            func.sum(Job.time_taken).filter(done, Job.cpu_time.isnot(None)),
+            func.sum(Job.time_taken).filter(done, Job.participant_id.in_(succeeded)),
+        )
+        .filter(Job.id > after_async_job_id, Job.time_started <= ended_at)
+        .one()
+    )
+    cpu_share = float(cpu_s) / float(wall_s) if wall_s else None
+    return dict(
+        jobs=jobs,
+        steady_jobs=steady_jobs,
+        busy_s=float(busy_s or 0),
+        cpu_share=cpu_share,
+        cpu_heavy=cpu_share is not None and cpu_share >= CPU_HEAVY_RATIO,
+        per_participant_s=(
+            float(succeeded_s or 0) / len(succeeded) if succeeded else None
+        ),
+    )
+
+
 _SUCCEEDED = "succeeded"
 _FAILED_BY_EXPERIMENT = "failed by the experiment"
 _STILL_RUNNING = "still running"

@@ -16,10 +16,12 @@ from psynet.log import bold, error, success, warning
 from psynet.perf_test.results import (
     ASYNC_JOB_STAT_KEYS,
     CAPACITY_HEADROOM,
+    CORES_FOR_OTHERS,
     MIN_STEADY_STATE_S,
     PGBOUNCER_FULL,
     POSTGRES_FULL,
     PRIORITIES,
+    TARGET_WORKER_UTILIZATION,
     CapacityLimits,
     busy_early_finish_cause,
     capacity_failure_causes,
@@ -29,19 +31,21 @@ from psynet.perf_test.results import (
     describe_bot_errors,
     describe_busy_early_finish,
     exceeded_error_limits,
-    low_priority_backlog_falling_behind,
     missing_workers,
     overshoot,
     phase_limit_reasons,
     phase_queue_wait_p95,
     plural,
     queue_wait_p95,
+    recommend_workers,
     retry_bot_count,
     start_rate_limits,
     tester_lagged,
     top_counts,
     wait_timeout_cause,
     wait_timeout_reasons,
+    worker_utilization,
+    workers_falling_behind,
 )
 
 
@@ -400,6 +404,11 @@ def _async_job_lines(result):
         ]
     if missing := _missing_workers_text(result):
         lines += [warning(missing), ""]
+    if (utilization := worker_utilization(result)) is not None:
+        lines += [
+            f"  Worker processes busy in the steady state: {utilization:.0%}.",
+            "",
+        ]
 
     for priority in PRIORITIES:
         waits = (result.queue_waits or {}).get(priority) or {}
@@ -643,31 +652,134 @@ _WORKER_ADVICE = (
 )
 
 
-def _queue_advice(result, confirmed=False):
-    """Return advice for a test whose high-priority async jobs waited too long for a worker.
+def _queue_limited(result, limits):
+    """Return whether high-priority async jobs in ``result`` waited longer than ``limits`` allow."""
+    wait = queue_wait_p95(result)
+    return wait is not None and wait > limits.max_queue_p95_s
 
-    With ``confirmed``, a confirmation test kept the limits at the cap, so
-    the advice is for going above it.
+
+def _worker_lines(outcome, confirmation, capacity_result, results, limits):
+    """Return the capacity summary's paragraph on async worker processes, if it applies.
+
+    It appears when high-priority queue waits failed the search's first
+    failing test or the confirmation test, when the workers fell behind in
+    the steady state, and whenever the tests ran worker jobs and suggest a
+    cap, which the estimate is then for. The confirmation test's steady
+    state sizes the workers, or else that of the test that set the capacity
+    or first failed.
     """
-    if result.n_rq_workers == 0:
-        return (
-            "  High-priority async jobs, which participants wait for, waited for "
-            "a worker, but no worker processes were running, so they couldn't "
-            "run. Check the server log for workers that failed to start, and "
-            "check worker_processes."
+    first_fail = outcome.first_fail
+    queue_bound = next(
+        (r for r in (first_fail, confirmation) if r and _queue_limited(r, limits)),
+        None,
+    )
+    candidates = [r for r in (confirmation, capacity_result, first_fail) if r]
+    if not candidates:
+        return []
+    measured = next((r for r in candidates if r.steady_state_phase), candidates[0])
+    confirmed = _confirmed(confirmation, limits)
+    cap = confirmation.n_bots if confirmed else outcome.cap
+    behind = workers_falling_behind(measured)
+    ran_worker_jobs = any((r.worker_load or {}).get("jobs") for r in results)
+    if not (queue_bound or behind or (ran_worker_jobs and cap)):
+        return []
+    text = []
+    if queue_bound is not None:
+        if queue_bound.n_rq_workers == 0:
+            return [
+                "  High-priority async jobs, which participants wait for, waited "
+                "for a worker, but no worker processes were running, so they "
+                "couldn't run. Check the server log for workers that failed to "
+                "start, and check worker_processes."
+            ]
+        above_cap = confirmed and queue_bound is not confirmation
+        where = "the search's" if above_cap else "the"
+        had = _describe_workers(queue_bound)
+        text.append(
+            f"In {where} {queue_bound.n_bots:,}-bot test, high-priority async "
+            "jobs, which participants wait for, waited too long for a worker"
+            + (f" (the server had {had})." if had else ".")
+            + (" To go above the cap, add worker processes." if above_cap else "")
         )
-    workers = _describe_workers(result)
-    had = f" The server had {workers}." if workers else ""
-    if confirmed:
-        return (
-            f"  In the search's {result.n_bots:,}-bot test, high-priority async "
-            f"jobs waited too long for a worker.{had} To go above the cap, "
-            f"{_WORKER_ADVICE[0].lower()}{_WORKER_ADVICE[1:]} More workers only "
-            "help if the server has CPU cores to spare."
+    if behind:
+        text.append(
+            f"In the steady state of the {_test_name(measured)} test, {behind}, "
+            "so the workers can't keep up in the long run. The test still "
+            "passes, because participants don't wait for low-priority jobs, "
+            "but their results arrive ever later and they compete for workers "
+            "with high-priority jobs."
+        )
+    burst = None
+    if queue_bound and queue_bound is first_fail and capacity_result:
+        burst = (capacity_result.n_rq_workers, capacity_result.n_bots)
+    advice = recommend_workers(measured, cap or measured.n_bots, burst)
+    if advice.skipped:
+        text.append(f"No estimate of worker_processes: {advice.skipped}.")
+        if queue_bound is not None or behind:
+            text.append(_WORKER_ADVICE)
+    else:
+        text.append(_describe_worker_advice(advice, measured, burst))
+    paragraph = "  " + " ".join(text)
+    return [warning(paragraph) if behind else paragraph]
+
+
+def _describe_worker_advice(advice, result, burst):
+    """Word a :class:`~psynet.perf_test.results.WorkerAdvice` for ``result``, showing its inputs."""
+    n, workers = advice.n_participants, result.n_rq_workers
+    wanted = max(advice.steady_state, advice.burst or 0)
+    if advice.short_of_cores:
+        text = (
+            f"Workers: {n:,} participants at once need about {wanted} worker "
+            f"processes, but the {result.server_cores}-core server has only "
+            f"{advice.cores_left} cores left for them, so it lacks cores: use a "
+            "larger server or make the jobs cheaper rather than adding workers."
+        )
+    else:
+        at_least = "at least" if advice.lower_bound else "about"
+        text = f"Workers: for {n:,} participants at once, "
+        if advice.processes > workers or advice.lower_bound:
+            text += f"{at_least} {advice.processes} worker processes"
+        else:
+            text += (
+                f"the server's {workers} worker processes are enough "
+                f"(about {advice.processes} would do)"
+            )
+        if result.worker_load.get("cpu_heavy"):
+            text += " with worker_greenlets_per_process = 1 (the jobs are CPU-heavy)"
+        elif advice.greenlets > 1:
+            text += f", each running up to {advice.greenlets} jobs at once as now"
+        text += "."
+    were = "worker processes were" if workers != 1 else "worker process was"
+    text += (
+        f" In the steady state of the {_test_name(result)} test, its {workers} "
+        f"{were} {advice.utilization:.0%} busy, so "
+    )
+    if advice.per_participant_s:
+        text += (
+            "this is a lower bound from "
+            f"{advice.per_participant_s:.0f} s of worker time per participant "
+            "who completed."
+        )
+    else:
+        text += (
+            f"about {advice.steady_state} would be "
+            f"{TARGET_WORKER_UTILIZATION:.0%} busy."
+        )
+    if advice.burst is not None:
+        text += (
+            f" The start-up burst needs about {advice.burst} ({burst[1]:,} bots "
+            f"passed the search with {burst[0]}); this is optimistic once the "
+            "cores run out, because jobs then slow down."
+        )
+    if advice.cores_left is not None and not advice.short_of_cores:
+        text += (
+            f" The server has {result.server_cores} cores, leaving "
+            f"{advice.cores_left} for workers after {CORES_FOR_OTHERS} for the "
+            "web server and database, whose use the test doesn't measure."
         )
     return (
-        "  High-priority async jobs, which participants wait for, waited too "
-        f"long for a worker.{had} {_WORKER_ADVICE}"
+        text + " This is an estimate from one run; confirm it with another test "
+        "after changing worker_processes."
     )
 
 
@@ -875,35 +987,17 @@ def _capacity_headline(outcome, first_reasons, limit, limits, *, show_cap=True):
 def _low_priority_lines(result, limits):
     """Report low-priority async jobs of ``result`` that waited longer than the queue limit.
 
-    The limit doesn't apply to them, so this is for information, with a
-    warning and advice on worker processes if the workers fell behind with
-    them during the steady state (see
-    :func:`~psynet.perf_test.results.low_priority_backlog_falling_behind`).
+    The limit doesn't apply to them, so this is for information.
     """
-    if result is None:
+    wait = queue_wait_p95(result, "low") if result is not None else None
+    if wait is None or wait <= limits.max_queue_p95_s:
         return []
-    test = _test_name(result)
-    lines = []
-    wait = queue_wait_p95(result, "low")
-    if wait is not None and wait > limits.max_queue_p95_s:
-        lines.append(
-            f"  Low-priority async jobs in the {test} test: p95 queue wait "
-            f"{wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still queued "
-            "at the end. Participants don't wait for these, so they don't count "
-            "against the limits."
-        )
-    if falling_behind := low_priority_backlog_falling_behind(result):
-        lines.append(
-            warning(
-                f"  In the steady state of the {test} test, {falling_behind}, so "
-                "the workers can't keep up with low-priority jobs in the long "
-                "run. The test still passes, because participants don't wait "
-                "for these jobs, but their results arrive ever later and the "
-                f"backlog competes for workers with high-priority jobs. "
-                f"{_WORKER_ADVICE}"
-            )
-        )
-    return lines
+    return [
+        f"  Low-priority async jobs in the {_test_name(result)} test: p95 queue "
+        f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
+        "queued at the end. Participants don't wait for these, so they don't "
+        "count against the limits."
+    ]
 
 
 def _confirmation_exceeded(result, limits):
@@ -1020,25 +1114,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_WAIT_ADVICE)
     if any(busy_early_finish_cause(r, limits) for r in advised):
         lines.append(_BUSY_CHAINS_ADVICE)
-    queue_bound = next(
-        (
-            r
-            for r in advised
-            if any(
-                "async queue" in reason
-                for reason, _ in capacity_failure_causes(r, limits)
-            )
-        ),
-        None,
-    )
-    if queue_bound is not None:
-        lines.append(
-            _queue_advice(
-                queue_bound,
-                confirmed=queue_bound is not confirmation
-                and _confirmed(confirmation, limits),
-            )
-        )
+    capacity_result = next((r for r in results if r.n_bots == capacity), None)
+    lines += _worker_lines(outcome, confirmation, capacity_result, run_order, limits)
     if any(start_rate_limits(r) for r in advised):
         lines.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):
@@ -1049,7 +1126,6 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         lines.append(_PGBOUNCER_ADVICE)
     if missing := next(filter(None, map(_missing_workers_text, run_order)), None):
         lines.append(warning(missing))
-    capacity_result = next((r for r in results if r.n_bots == capacity), None)
     lines += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
     lines += _database_growth_warnings(
         run_order, capacity_result, first_fail, confirmation, limits

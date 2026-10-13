@@ -529,7 +529,7 @@ def _launch_unless_cancelled(spec):
         )
 
 
-_CPU_HEAVY_RATIO = 0.5
+CPU_HEAVY_RATIO = 0.5
 
 
 def _get_cpu_time_summary():
@@ -577,7 +577,7 @@ def _format_cpu_time_summary(rows):
     """Format the output of :func:`_get_cpu_time_summary` as a table.
 
     A row counts as CPU-heavy when its mean CPU time is at least
-    ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
+    ``CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
     each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
     column says whether that core is in a worker or the web process. Web
     jobs have no priority and show ``-``.
@@ -596,7 +596,7 @@ def _format_cpu_time_summary(rows):
     ]
     table = [header]
     for row in rows:
-        cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
+        cpu_heavy = row["mean_cpu"] >= CPU_HEAVY_RATIO * row["mean_wall"]
         table.append(
             [
                 row["runs_in"],
@@ -611,7 +611,7 @@ def _format_cpu_time_summary(rows):
         )
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
-        f"Async job CPU time (CPU-heavy: mean CPU >= {_CPU_HEAVY_RATIO:.0%} "
+        f"Async job CPU time (CPU-heavy: mean CPU >= {CPU_HEAVY_RATIO:.0%} "
         "of mean wall time):"
     ]
     for line in table:

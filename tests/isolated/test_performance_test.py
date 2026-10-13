@@ -19,8 +19,9 @@ from psynet.perf_test.measure import (
     _split_failed_requests,
     async_job_stats,
     phase_stats,
+    worker_load,
 )
-from psynet.perf_test.results import retry_bot_count
+from psynet.perf_test.results import recommend_workers, retry_bot_count
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -583,23 +584,30 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
     )
 
     assert "p95 high-priority async queue wait 30.00 s" in caplog.text
-    assert caplog.text.count("High-priority async jobs, which participants") == 1
+    assert caplog.text.count("waited too long for a worker") == 1
 
 
 def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
+    workers = dict(n_rq_workers=10, n_rq_job_slots=10)
     results = [
-        _base_result(n_bots=120, queue_waits={"high": {"q_delay_p95": 2.2}}),
-        _base_result(n_bots=130, queue_waits={"high": {"q_delay_p95": 8.7}}),
-        _base_result(n_bots=96, confirmation=True, duration_minutes=26, **_STEADY),
+        _base_result(n_bots=120, queue_waits={"high": {"q_delay_p95": 2.2}}, **workers),
+        _base_result(n_bots=130, queue_waits={"high": {"q_delay_p95": 8.7}}, **workers),
+        _tapping_result(96, 10, 0.55, confirmation=True, duration_minutes=26),
     ]
 
     text = _join(format_capacity_summary(results))
 
     assert "Confirmed: the 96-bot confirmation test" in text
     assert (
-        "In the search's 130-bot test, high-priority async jobs waited too long "
-        "for a worker. The server had 2 worker processes, up to 40 jobs at once. "
-        "To go above the cap, raise the worker_processes"
+        "In the search's 130-bot test, high-priority async jobs, which "
+        "participants wait for, waited too long for a worker (the server had 10 "
+        "worker processes). To go above the cap, add worker processes. Workers: "
+        "for 96 participants at once, the server's 10 worker processes are "
+        "enough (about 8 would do) with worker_greenlets_per_process = 1 (the "
+        "jobs are CPU-heavy). In the steady state of the 96-bot confirmation "
+        "test, its 10 worker processes were 55% busy, so about 8 would be 70% "
+        "busy. The start-up burst needs about 8 (120 bots passed the search "
+        "with 10)"
     ) in text
 
 
@@ -1472,55 +1480,140 @@ def test_only_high_priority_queue_waits_limit_capacity():
     assert "can't keep up" not in text
 
 
-# The steady state lasts 1440 - 600 = 840 s, so a job that has waited
-# longer was already waiting when it began.
-@pytest.mark.parametrize(
-    "oldest_queued_s, not_cleared", [(900.0, True), (300.0, False)]
-)
-def test_a_low_priority_backlog_left_from_the_start_up_needs_workers(
-    caplog, oldest_queued_s, not_cleared
-):
-    low = {"q_delay_p95": 200.0, "backlog": 50, "oldest_queued_s": oldest_queued_s}
-    _confirmation_search(
-        caplog,
-        dict(
-            _STEADY,
-            actual_duration=1440.0,
-            queue_waits={"high": {"q_delay_p95": 1.0}, "low": low},
-        ),
-    )
-
-    assert "Confirmed: the 120-bot confirmation test" in caplog.text
-    assert (
-        "workers can't keep up with low-priority jobs" in caplog.text
-    ) == not_cleared
-
-
 def _phase_backlog(backlog):
     return dict(_PHASE, queue_waits={"low": {"q_delay_p95": 1.0, "backlog": backlog}})
 
 
-@pytest.mark.parametrize("start, end, warns", [(2, 95, True), (2, 8, False)])
-def test_a_growing_low_priority_backlog_warns_but_passes(start, end, warns):
+@pytest.mark.parametrize(
+    "end, busy_s, behind",
+    [
+        (95, 0, "the low-priority backlog grew from 2 to 95 jobs"),
+        (8, 0.9 * 2 * 860, "the worker processes were 90% busy"),
+        (8, 0.5 * 2 * 860, None),
+    ],
+)
+def test_workers_falling_behind_warn_but_pass(end, busy_s, behind):
     result = _base_result(
         n_bots=60,
+        n_rq_job_slots=2,
         actual_duration=1560.0,
         first_completion_s=700.0,
-        startup_phase=_phase_backlog(start),
+        startup_phase=_phase_backlog(2),
         steady_state_phase=_phase_backlog(end),
         queue_waits={"low": {"q_delay_p95": 1.0, "backlog": end}},
+        worker_load=dict(jobs=10, steady_jobs=10, busy_s=busy_s),
     )
 
     text = _join(format_capacity_summary([result]))
 
     assert capacity_failures(result) == []
     assert "at least 60 concurrent bots" in text
-    grew = (
-        f"the low-priority backlog grew from {start} to {end} jobs, so the workers "
-        "can't keep up with low-priority jobs in the long run"
+    if behind:
+        assert f"{behind}, so the workers can't keep up in the long run" in text
+    assert ("Raise the worker_processes config variable" in text) == bool(behind)
+
+
+def _tapping_result(n_bots, workers, busy, **overrides):
+    """Return a test like tapping's on a 16-core server: 43 s of CPU-heavy worker time per 777 s session."""
+    fields = dict(
+        n_bots=n_bots,
+        n_rq_workers=workers,
+        n_rq_job_slots=workers,
+        server_cores=16,
+        avg_succeeded_duration=777.0,
+        actual_duration=1800.0,
+        first_completion_s=900.0,
+        startup_phase=_PHASE,
+        steady_state_phase=_PHASE,
+        worker_load=dict(
+            jobs=900,
+            steady_jobs=500,
+            busy_s=busy * workers * 900,
+            cpu_share=0.9,
+            cpu_heavy=True,
+            per_participant_s=43.0,
+        ),
     )
-    assert (grew in text) == warns
-    assert ("Raise the worker_processes config variable" in text) == warns
+    return _base_result(**{**fields, **overrides})
+
+
+# One worker keeps up with about 777 / 43 = 18 participants, so 3 with about 54.
+@pytest.mark.parametrize(
+    "result, n, burst, expected",
+    [
+        # The confirmed 96 kept 10 workers 55% busy, and 120 passed the search.
+        (_tapping_result(96, 10, 0.55), 96, (10, 120), dict(processes=8, burst=8)),
+        # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a lower bound.
+        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, lower_bound=True)),
+        # 192 need 16 workers, but 16 cores leave only 14.
+        (
+            _tapping_result(96, 10, 0.55),
+            192,
+            None,
+            dict(processes=14, short_of_cores=True),
+        ),
+        (
+            _tapping_result(96, 10, 0.55, steady_state_phase={}),
+            96,
+            None,
+            dict(skipped=("the 96-bot test had less than 60 s of steady state")),
+        ),
+    ],
+)
+def test_recommend_workers(result, n, burst, expected):
+    advice = recommend_workers(result, n, burst)
+
+    assert {key: getattr(advice, key) for key in expected} == expected
+    if not advice.skipped:
+        assert advice.greenlets == 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_worker_load_sums_worker_time_in_the_steady_state(db_session):
+    from datetime import datetime, timedelta
+
+    from dallinger import db
+
+    from psynet.async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
+
+    start = datetime(2026, 10, 12, 12)
+
+    def at(seconds):
+        return start + timedelta(seconds=seconds)
+
+    worker, local = (
+        c.__mapper__.polymorphic_identity for c in (WorkerAsyncJob, LocalAsyncJob)
+    )
+    # (started, finished, CPU s, type); the steady state is from 60 s to 100 s.
+    jobs = [(50, 70, 18.0, worker), (80, 90, 9.0, worker), (95, None, None, worker)]
+    jobs.append((80, 90, 1.0, local))
+    db.session.execute(
+        AsyncJob.__table__.insert(),
+        [
+            dict(
+                type=job_type,
+                time_started=at(started),
+                time_finished=finished and at(finished),
+                time_taken=finished and float(finished - started),
+                cpu_time=cpu,
+                finished=finished is not None,
+                failed=False,
+            )
+            for started, finished, cpu, job_type in jobs
+        ],
+    )
+    db.session.flush()
+
+    assert worker_load(0, at(100), at(60), outcomes={}) == dict(
+        jobs=2,
+        steady_jobs=2,
+        busy_s=25.0,
+        cpu_share=pytest.approx(0.9),
+        cpu_heavy=True,
+        per_participant_s=None,
+    )
 
 
 def test_fewer_running_workers_than_configured_are_flagged():
@@ -1700,8 +1793,9 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         in text
     )
     assert (
-        "The server had 2 worker processes, up to 40 jobs at once. Raise the "
-        "worker_processes config variable"
+        "(the server had 2 worker processes, up to 40 jobs at once). No estimate "
+        "of worker_processes: the 640-bot test had less than 60 s of steady "
+        "state. Raise the worker_processes config variable"
     ) in text
     assert "worker_greenlets_per_process = 1" in text
 
