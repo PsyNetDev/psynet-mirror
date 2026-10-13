@@ -693,66 +693,86 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
                 "start, and check worker_processes."
             ]
         above_cap = confirmed and queue_bound is not confirmation
-        where = "the search's" if above_cap else "the"
         had = _describe_workers(queue_bound)
         text.append(
-            f"In {where} {queue_bound.n_bots:,}-bot test, high-priority async jobs, which "
+            f"In the {queue_bound.n_bots:,}-bot test, high-priority async jobs, which "
             "participants wait for, waited too long for a worker"
             + (f" (the server had {had})." if had else ".")
             + (" To go above the cap, add worker processes." if above_cap else "")
         )
     if behind:
         text.append(
-            f"In the steady state of the {_test_name(measured)} test, {behind}, "
+            f"In {_describe_test(measured, confirmed)}, {behind}, "
             "so the workers can't keep up in the long run. The test still "
             "passes, because only high-priority queue waits count against the "
             "limits, but low-priority results arrive ever later."
         )
+    lines = []
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
-        text.append(_describe_worker_advice(advice, measured, n, burst))
-    paragraph = "  " + " ".join(text)
-    return [warning(paragraph) if behind else paragraph]
+        lines = _describe_worker_advice(
+            advice, measured, n, burst, _describe_test(measured, confirmed)
+        )
+    if text:
+        lines.insert(0, "  " + " ".join(text))
+    return [warning(line) for line in lines] if behind else lines
 
 
-def _describe_worker_advice(advice, result, n, burst):
-    """Word ``advice`` for ``n`` participants at once, with the inputs from ``result``."""
+def _describe_test(result, confirmed):
+    """Describe ``result``'s test by what it did, e.g. ``the 96-bot test that confirmed this cap``."""
+    test = f"the {result.n_bots:,}-bot test"
+    if result.confirmation:
+        test += " that confirmed this cap" if confirmed else " of this cap"
+    return test
+
+
+def _describe_worker_advice(advice, result, n, burst, test):
+    """Return the recommended settings in ``advice`` for ``n`` participants at once, and why, as lines."""
     workers, processes = result.n_rq_workers, advice.processes
     needed = max(advice.steady_state, advice.burst or 0)
-    slots = f" with worker_greenlets_per_process = {advice.greenlets}"
+    were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
+    setting = f"worker_processes = {processes}"
     if needed > processes:
-        first = (
-            f"Workers: {n:,} participants at once need about {needed} processes, "
+        setting += " (all the cores left)"
+        why = (
+            f"{n:,} participants at once need about {needed} worker processes, "
             f"but the {result.server_cores}-core server has only {processes} "
-            f"left after {CORES_FOR_OTHERS} for the web server and database, so "
-            "it lacks cores; use a larger server or cheaper jobs."
+            f"cores left after {CORES_FOR_OTHERS} for the web server and "
+            "database, so it lacks cores; use a larger server or cheaper jobs."
         )
-    elif processes <= workers and not advice.lower_bound:
-        first = (
-            f"Workers: the server's {workers} worker processes are enough for "
-            f"{n:,} participants at once; about {processes} would do{slots}."
+    elif advice.lower_bound:
+        setting = f"worker_processes >= {processes} (lower bound)"
+        why = f"In {test}, the {were} busy the whole time, so this is a lower bound" + (
+            f" from {advice.per_participant_s:.0f} s of worker time per participant."
+            if advice.per_participant_s
+            else "."
         )
     else:
-        about = "at least" if advice.lower_bound else "about"
-        first = f"Workers: {n:,} participants at once need {about} {processes} processes{slots}."
-    busy = (
-        f"The {_test_name(result)} test's {plural(workers, 'worker')} "
-        f"{'were' if workers != 1 else 'was'} {advice.utilization:.0%} busy"
-    )
-    busy += (
-        ", so this is a lower bound"
-        if advice.lower_bound
-        else f" (target {TARGET_WORKER_UTILIZATION:.0%})"
-    )
-    if advice.burst is not None and advice.burst >= advice.steady_state:
-        busy += (
-            f"; the start-up burst also needs about {advice.burst} "
-            f"({burst[1]:,} passed with {burst[0]})"
+        if processes <= workers:
+            setting = (
+                f"worker_processes = {workers} (current; about {processes} would do)"
+            )
+        why = (
+            f"In {test}, the {were} busy {advice.utilization:.0%} of the time, so {advice.steady_state} would "
+            f"be about {TARGET_WORKER_UTILIZATION:.0%} busy."
         )
-    return f"{first} {busy}. Estimate from one run; confirm after changing worker_processes."
+    if advice.burst is not None and advice.burst >= advice.steady_state:
+        why += (
+            f" At start-up, {burst[0]} workers handled {burst[1]:,} bots arriving "
+            f"together, so {advice.burst} should handle {n:,}."
+        )
+    settings = [setting]
+    if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
+        settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
+    return [
+        f"  Workers: recommended settings for {n:,} participants at once:",
+        *(f"      {line}" for line in settings),
+        f"  {why} This is an estimate from one run; rerun the test after "
+        "changing worker_processes.",
+    ]
 
 
 _WAIT_ADVICE = (

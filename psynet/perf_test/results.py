@@ -648,6 +648,8 @@ class WorkerAdvice:
     steady_state: int | None = None
     burst: int | None = None
     lower_bound: bool = False
+    # Worker time per participant, if the lower bound comes from it.
+    per_participant_s: float | None = None
     skipped: str | None = None
 
 
@@ -691,7 +693,9 @@ def recommend_workers(result, n_participants, burst=None):
     per_participant_s = load.get("per_participant_s")
     session_s = result.avg_succeeded_duration or (result.session_minutes or 0) * 60
     single_slot = (result.n_rq_job_slots or 0) <= workers
-    if lower_bound and per_participant_s and session_s and single_slot:
+    if not (lower_bound and session_s and single_slot):
+        per_participant_s = None
+    if per_participant_s:
         needed = n_participants * per_participant_s / session_s
     else:
         needed = utilization * workers * n_participants / result.n_bots
@@ -705,7 +709,13 @@ def recommend_workers(result, n_participants, burst=None):
     if result.server_cores:
         processes = min(processes, max(1, result.server_cores - CORES_FOR_OTHERS))
     return WorkerAdvice(
-        processes, greenlets, utilization, steady_state, burst_n, lower_bound
+        processes,
+        greenlets,
+        utilization,
+        steady_state,
+        burst_n,
+        lower_bound,
+        per_participant_s,
     )
 
 

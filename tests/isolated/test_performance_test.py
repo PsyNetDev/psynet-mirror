@@ -599,14 +599,16 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
 
     assert "Confirmed: the 96-bot confirmation test" in text
     assert (
-        "In the search's 130-bot test, high-priority async jobs, which "
-        "participants wait for, waited too long for a worker (the server had 10 "
-        "worker processes). To go above the cap, add worker processes. Workers: "
-        "the server's 10 worker processes are enough for 96 participants at "
-        "once; about 8 would do with worker_greenlets_per_process = 1. The "
-        "96-bot confirmation test's 10 workers were 55% busy (target 70%); the "
-        "start-up burst also needs about 8 (120 passed with 10). Estimate from "
-        "one run; confirm after changing worker_processes."
+        "In the 130-bot test, high-priority async jobs, which participants wait "
+        "for, waited too long for a worker (the server had 10 worker processes). "
+        "To go above the cap, add worker processes.\n"
+        "  Workers: recommended settings for 96 participants at once:\n"
+        "      worker_processes = 10 (current; about 8 would do)\n"
+        "  In the 96-bot test that confirmed this cap, the 10 worker processes "
+        "were busy 55% of the time, so 8 would be about 70% busy. At start-up, "
+        "10 workers handled 120 bots arriving together, so 8 should handle 96. "
+        "This is an estimate from one run; rerun the test after changing "
+        "worker_processes."
     ) in text
 
 
@@ -1508,11 +1510,8 @@ def test_workers_falling_behind_warn_but_pass(end, busy, behind):
     if behind:
         assert f"{behind}, so the workers can't keep up in the long run" in text
     assert ("can't keep up" in text) == bool(behind)
-    assert (
-        "Workers: 60 participants at once need about 3 processes"
-        if busy == 0.9
-        else "Workers: the server's 2 worker processes are enough"
-    ) in text
+    setting = "= 3" if busy == 0.9 else "= 2 (current; about 2 would do)"
+    assert f"      worker_processes {setting}" in text
 
 
 def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
