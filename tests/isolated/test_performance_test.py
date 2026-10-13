@@ -373,7 +373,7 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     result = _base_result(n_bots=10, server_stopped=False, unreported_bot_processes=[2])
     with (
-        patch.object(tester, "_test_performance", return_value=result),
+        patch.object(tester, "run_test", return_value=result),
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
     ):
         assert PerformanceSuite(tester).run([10, 20]) == [result]
@@ -388,8 +388,8 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
         caplog.at_level("INFO"),
         patch.object(
             tester,
-            "_test_performance",
-            side_effect=lambda n_bots, **_: _base_result(n_bots=n_bots),
+            "run_test",
+            side_effect=lambda title, n_bots, *_: _base_result(n_bots=n_bots),
         ),
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
     ):
@@ -425,8 +425,8 @@ def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
     with (
         patch.object(
             tester,
-            "_test_performance",
-            side_effect=lambda n_bots, **_: _base_result(n_bots=n_bots),
+            "run_test",
+            side_effect=lambda title, n_bots, *_: _base_result(n_bots=n_bots),
         ),
         patch.object(tester, "pause_between_tests") as pause,
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
@@ -481,8 +481,8 @@ def _search(tester, fake_test, **kwargs):
     with (
         patch.object(
             tester,
-            "_test_performance",
-            side_effect=lambda n_bots, bot_log_file, duration_minutes, arrival_minutes: (
+            "run_test",
+            side_effect=lambda title, n_bots, bot_log_file, duration_minutes, arrival_minutes: (
                 fake_test(n_bots, duration_minutes, arrival_minutes)
             ),
         ),
@@ -650,20 +650,6 @@ def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
     )
 
 
-def test_a_run_test_interrupted_by_ctrl_c_raises_keyboard_interrupt():
-    tester = _session_tester()
-    with patch.object(tester, "_test_performance", side_effect=KeyboardInterrupt):
-        with pytest.raises(KeyboardInterrupt):
-            tester.run_test(
-                "1",
-                10,
-                None,
-                duration_minutes=24,
-                arrival_minutes=12,
-                confirmation=True,
-            )
-
-
 @pytest.mark.parametrize(
     "time_factor, estimated, confirm, reason",
     [
@@ -704,7 +690,7 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     )
     with (
         caplog.at_level("INFO"),
-        patch.object(tester, "_test_performance", return_value=_base_result()),
+        patch.object(tester, "run_test", return_value=_base_result()),
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
     ):
         PerformanceSuite(tester).run([2])
@@ -930,12 +916,12 @@ def test_capacity_search_brackets_then_bisects(
 ):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
 
-    def fake_test(n_bots, **_):
+    def fake_test(title, n_bots, *_):
         overrides = over_capacity if n_bots > capacity else {}
         return _base_result(n_bots=n_bots, server_stopped=False, **overrides)
 
     with (
-        patch.object(tester, "_test_performance", side_effect=fake_test),
+        patch.object(tester, "run_test", side_effect=fake_test),
         patch.object(tester, "pause_between_tests"),
         patch("psynet.perf_test.runtime.raise_open_file_limit"),
         patch("psynet.perf_test.runtime._fit_redis_pool_to_bots"),
@@ -1891,7 +1877,6 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         pool = redis.ConnectionPool(max_connections=2, **server)
     monkeypatch.setattr(db, "redis_conn", redis.Redis(connection_pool=pool))
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
-    tester.duration_minutes = 0
     with patch.multiple(
         tester,
         _capture_initial_state=Mock(),
@@ -1900,7 +1885,7 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         _clear_realtime_status=Mock(),
         _calculate_and_report_results=Mock(),
     ):
-        tester.run_test("1/1", 5, bot_log_file=None)
+        tester.run_test("TEST 1/1", 5, None, duration_minutes=0)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:
@@ -2974,7 +2959,7 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
 
     assert [r.n_bots for r in results] == [2, 4]
     assert before_test.call_count == 2
-    assert "--test-label 2/2" in remote.run_psynet.call_args.args[0]
+    assert "--test-label 'TEST 2/2'" in remote.run_psynet.call_args.args[0]
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
@@ -2993,7 +2978,7 @@ def _remote_search(
     from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
-        if re.search(rf"--test-label {interrupt_at_test}\b", args):
+        if re.search(rf"--test-label 'TEST {interrupt_at_test}'", args):
             raise KeyboardInterrupt
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1

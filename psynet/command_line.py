@@ -5075,7 +5075,15 @@ def _run_performance_test_with_existing_server(
                         datetime.datetime.now()
                         - datetime.timedelta(seconds=suite_started_s_ago)
                     )
-                all_results = [tester.run_test(test_label, bot_counts[0], bot_log_file)]
+                all_results = [
+                    tester.run_test(
+                        test_label,
+                        bot_counts[0],
+                        bot_log_file,
+                        duration_minutes,
+                        arrival_minutes,
+                    )
+                ]
         elif find_capacity:
             all_results = suite.find_capacity(
                 bot_log_file=bot_log_file, confirm=not no_confirm

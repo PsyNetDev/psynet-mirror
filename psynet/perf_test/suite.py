@@ -92,10 +92,12 @@ class PerformanceSuite:
     def run(self, bot_counts, bot_log_file=None):
         """Run a test for each of ``bot_counts``, in order."""
         self._print_suite_header(", ".join(str(n) for n in bot_counts))
+        tester = self.tester
 
         def next_test(results):
             if len(results) < len(bot_counts):
-                return bot_counts[len(results)], {}
+                n_bots = bot_counts[len(results)]
+                return n_bots, tester.duration_minutes, tester.arrival_minutes, False
             return None
 
         return self._run_suite(
@@ -200,20 +202,14 @@ class PerformanceSuite:
             n_bots = next_capacity_probe(highest_pass, lowest_fail)
             if n_bots is not None:
                 # The tester's arrival window is for the confirmation test.
-                return n_bots, dict(
-                    duration_minutes=tester.duration_minutes, arrival_minutes=None
-                )
+                return n_bots, tester.duration_minutes, None, False
             if self.confirmation_skipped:
                 return None
             confirming_cap = capacity_outcome(results, self.limits).cap
             if confirming_cap is None:
                 self.confirmation_skipped = _NO_CAP
                 return None
-            return confirming_cap, dict(
-                duration_minutes=confirm_minutes,
-                arrival_minutes=confirm_arrival,
-                confirmation=True,
-            )
+            return confirming_cap, confirm_minutes, confirm_arrival, True
 
         results = self._run_suite(
             CAPACITY_SEARCH_MAX,
@@ -253,8 +249,9 @@ class PerformanceSuite:
     ):
         """Run tests until ``next_test(results_so_far)`` returns ``None``.
 
-        ``next_test`` returns the next test's bot count and the keyword
-        arguments for :meth:`PerformanceTester.run_test`. Stops early if a
+        ``next_test`` returns the next test's bot count, length and arrival
+        window in minutes, and whether it is the confirmation test, and the
+        suite records them in the test's result. Stops early if a
         test ends early, then prints the summary. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
         ``confirmation_planned`` says a capacity search meant to end with a
@@ -269,7 +266,7 @@ class PerformanceSuite:
         started = time.monotonic()
         with self.tester.bot_runner(max_bots, bot_log_file):
             while (test := next_test(all_results)) is not None:
-                n_bots, test_options = test
+                n_bots, duration_minutes, arrival_minutes, confirmation = test
                 if self.before_test is not None:
                     self.tester.release_database_connections()
                     try:
@@ -280,10 +277,19 @@ class PerformanceSuite:
                         break
                 elif all_results:
                     self.tester.pause_between_tests()
-                label = f"{len(all_results) + 1}" + (f"/{n_tests}" if n_tests else "")
+                if confirmation:
+                    title = "VALIDATION TEST"
+                else:
+                    title = f"TEST {len(all_results) + 1}" + (
+                        f"/{n_tests}" if n_tests else ""
+                    )
                 result = self.tester.run_test(
-                    label, n_bots, bot_log_file, **test_options
+                    title, n_bots, bot_log_file, duration_minutes, arrival_minutes
                 )
+                result.duration_minutes = duration_minutes
+                result.arrival_minutes = arrival_minutes
+                result.session_minutes = self.tester.session_minutes
+                result.confirmation = confirmation
                 all_results.append(result)
                 if self.after_test is not None:
                     self.after_test(all_results)

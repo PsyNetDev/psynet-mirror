@@ -721,31 +721,21 @@ _GROWING_TABLES = (
 )
 
 
-def database_rows(connection=None):
+def database_rows(cursor=None):
     """Return the number of rows in each of ``_GROWING_TABLES``.
 
     Exact counts take well under a second even at hundreds of thousands of
     trials, and run twice per test. PostgreSQL's ``reltuples`` estimates would
     be cheaper, but only autovacuum and ``ANALYZE`` update them, so they lag
     behind a test that adds rows quickly. Tables that don't exist are left
-    out. Counts on ``connection``, a SQLAlchemy connection, or by default on
-    Dallinger's session; the caller should end the transaction afterwards.
+    out. Counts with ``cursor``, a DB-API cursor on the experiment database,
+    or by default in Dallinger's session; the caller should end the
+    transaction afterwards.
     """
-    from dallinger import db
-    from sqlalchemy import inspect, text
+    if cursor is None:
+        from dallinger import db
 
-    bind = db.session.get_bind() if connection is None else connection
-    connection = db.session if connection is None else connection
-    existing = set(inspect(bind).get_table_names())
-    tables = [table for table in _GROWING_TABLES if table in existing]
-    if not tables:
-        return {}
-    row = connection.execute(text(_count_rows_statement(tables))).one()
-    return dict(row._mapping)
-
-
-def database_rows_on_cursor(cursor):
-    """Return :func:`database_rows` counted with a DB-API ``cursor`` on the experiment database."""
+        cursor = db.session.connection().connection.cursor()
     names = ", ".join(f"'{table}'" for table in _GROWING_TABLES)
     cursor.execute(
         "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() "
@@ -755,15 +745,9 @@ def database_rows_on_cursor(cursor):
     tables = [table for table in _GROWING_TABLES if table in existing]
     if not tables:
         return {}
-    cursor.execute(_count_rows_statement(tables))
+    columns = ", ".join(f'(SELECT count(*) FROM "{table}")' for table in tables)
+    cursor.execute(f"SELECT {columns}")
     return {table: int(n) for table, n in zip(tables, cursor.fetchone())}
-
-
-def _count_rows_statement(tables):
-    columns = ", ".join(
-        f'(SELECT count(*) FROM "{table}") AS "{table}"' for table in tables
-    )
-    return f"SELECT {columns}"
 
 
 _BUSY_STATUS_CODES = frozenset({409, 503})

@@ -488,49 +488,15 @@ class PerformanceTester:
         """Close the bots' pooled database connections, for example before a reset."""
         self._bots.release_database_connections()
 
-    def run_test(
-        self,
-        label,
-        n_bots,
-        bot_log_file,
-        *,
-        duration_minutes=None,
-        arrival_minutes=None,
-        confirmation=False,
-    ):
-        """Run one test of ``n_bots`` bots, print its results and return them.
+    def run_test(self, title, n, bot_log_file, duration_minutes, arrival_minutes=None):
+        """Run one test of ``n`` bots for ``duration_minutes``, print its results and return them.
 
-        ``duration_minutes`` and ``arrival_minutes`` replace the tester's for
-        this test only, as for the confirmation test that ends a capacity
-        search (``confirmation``); without ``duration_minutes`` the test uses
-        the tester's duration and arrival window.
+        With ``arrival_minutes`` the bots arrive evenly over that window.
+        ``title`` heads the test's output, e.g. ``TEST 2/3``.
         """
         logger.info("")
         logger.info(bold("=" * 80))
-        kind = "VALIDATION TEST" if confirmation else f"TEST {label}"
-        logger.info(bold(f"{kind}: Running with {n_bots:,} concurrent bots"))
-        if duration_minutes is None:
-            duration_minutes, arrival_minutes = (
-                self.duration_minutes,
-                self.arrival_minutes,
-            )
-        result = self._test_performance(
-            n_bots,
-            bot_log_file=bot_log_file,
-            duration_minutes=duration_minutes,
-            arrival_minutes=arrival_minutes,
-        )
-        result.duration_minutes = duration_minutes
-        result.arrival_minutes = arrival_minutes
-        result.session_minutes = self.session_minutes
-        result.confirmation = confirmation
-        return result
-
-    def _test_performance(self, n, bot_log_file, duration_minutes, arrival_minutes):
-        """Run a load test with n concurrent bots for ``duration_minutes``.
-
-        With ``arrival_minutes`` the bots arrive evenly over that window.
-        """
+        logger.info(bold(f"{title}: Running with {n:,} concurrent bots"))
         logger.info("")
         arriving = f", arriving over {arrival_minutes:g} min" if arrival_minutes else ""
         logger.info(
@@ -954,13 +920,9 @@ class PerformanceTester:
         result.server_cores = os.cpu_count()
         # Release the locks the counts took before the next test starts.
         db.session.rollback()
-        self._report_test_results(result)
-        return result
-
-    def _report_test_results(self, result):
-        """Print detailed results after a single test completes."""
         for line in format_test_results(result):
             logger.info(line)
+        return result
 
 
 class _ThreadBots:

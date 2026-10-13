@@ -147,8 +147,7 @@ class PerformanceTestResult:
 
     Field names are the JSON keys, in order. Times are in seconds, and a
     measurement is ``None`` when the test did not produce it. Every field has
-    a default so that :meth:`from_dict` can read results that older or newer
-    PsyNet versions saved.
+    a default, for :meth:`from_dict`.
     """
 
     n_bots: int = 0
@@ -1087,15 +1086,10 @@ class CapacityOutcome:
     # Whether the first failure only shows that the test couldn't measure
     # the server.
     unmeasured: bool
-    # The first failure's wait-timeout reason, if it had too many.
-    wait_cause: str | None
-    # The first failure's busy-chain reason, if too many participants got
-    # fewer trials because every chain was busy. Unlike wait timeouts, this
-    # sets the capacity: how often chains are busy depends on how many
-    # participants take part at once, so a cap reduces it.
-    busy_cause: str | None
     # Whether wait timeouts were the first failure's only server limit; they
-    # can come from the design, so alone they don't show the capacity.
+    # can come from the design, so alone they don't show the capacity. Busy
+    # chains, unlike wait timeouts, set the capacity: fewer participants at
+    # once keep chains free.
     waits_only: bool
 
     @property
@@ -1122,7 +1116,6 @@ def capacity_outcome(results, limits=CapacityLimits()):
         min(failed, key=lambda f: f[0].n_bots) if failed else (None, [])
     )
     wait_cause = first_fail and wait_timeout_cause(first_fail, limits) or None
-    busy_cause = first_fail and busy_early_finish_cause(first_fail, limits) or None
     return CapacityOutcome(
         capacity=max(
             (n for n in passed if first_fail is None or n < first_fail.n_bots),
@@ -1132,8 +1125,6 @@ def capacity_outcome(results, limits=CapacityLimits()):
         first_fail=first_fail,
         first_causes=first_causes,
         unmeasured=not any(server_limit for _, server_limit in first_causes),
-        wait_cause=wait_cause,
-        busy_cause=busy_cause,
         waits_only=bool(wait_cause)
         and not any(
             server_limit and reason != wait_cause

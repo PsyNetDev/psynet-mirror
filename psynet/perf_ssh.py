@@ -760,34 +760,21 @@ class RemotePerformanceTester:
         """Do nothing: the bots' connections close when their remote test ends."""
 
     def run_test(
-        self,
-        label,
-        n_bots,
-        bot_log_file,
-        *,
-        duration_minutes=None,
-        arrival_minutes=None,
-        confirmation=False,
+        self, title, n_bots, bot_log_file, duration_minutes, arrival_minutes=None
     ):
         """Run one test of ``n_bots`` bots on the server and return its result.
 
-        The options are as for :meth:`psynet.perf_test.PerformanceTester.run_test`.
-        The remote test always gets its length, so it never chooses a default
-        of its own. After :meth:`pause_between_tests`, it pauses first and
-        waits for async jobs that the suite's earlier tests queued.
+        The arguments are as for :meth:`psynet.perf_test.PerformanceTester.run_test`.
+        After :meth:`pause_between_tests`, it pauses first and waits for async
+        jobs that the suite's earlier tests queued.
         """
         suite_started_s_ago = None
         if self._pause_before_test:
             self._pause_before_test = False
             suite_started_s_ago = round(time.monotonic() - self._suite_started)
-        if duration_minutes is None:
-            duration_minutes, arrival_minutes = (
-                self.duration_minutes,
-                self.arrival_minutes,
-            )
         args = "performance-test local --existing" + _performance_test_flags(
             n_bots=[n_bots],
-            test_label=label,
+            test_label=title,
             suite_started_s_ago=suite_started_s_ago,
             duration_minutes=duration_minutes,
             arrival_minutes=arrival_minutes,
@@ -801,9 +788,4 @@ class RemotePerformanceTester:
             self.remote_metadata = {
                 k: v for k, v in payload.items() if k not in ("options", "results")
             }
-        result = PerformanceTestResult.from_dict(payload["results"][0])
-        result.duration_minutes = duration_minutes
-        result.arrival_minutes = arrival_minutes
-        result.session_minutes = self.session_minutes
-        result.confirmation = confirmation
-        return result
+        return PerformanceTestResult.from_dict(payload["results"][0])

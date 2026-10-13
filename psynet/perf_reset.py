@@ -323,10 +323,10 @@ class SnapshotDatabase:
 
     def count_rows(self):
         """Return the rows in each growing table of the experiment database."""
-        from psynet.perf_test.measure import database_rows_on_cursor
+        from psynet.perf_test.measure import database_rows
 
         with self.cursor(self.name) as cursor:
-            return database_rows_on_cursor(cursor)
+            return database_rows(cursor)
 
 
 class LocalDatabase(SnapshotDatabase):
