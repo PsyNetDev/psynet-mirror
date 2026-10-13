@@ -2361,7 +2361,7 @@ esac
 
 @pytest.mark.parametrize("recovers", [True, False])
 def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
-    recovers, tmp_path, monkeypatch
+    recovers, tmp_path, monkeypatch, capsys
 ):
     import shlex
     import subprocess
@@ -2426,6 +2426,8 @@ def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
         assert "cd ~/dallinger/my-app && docker compose restart worker_2" in str(
             error.value
         )
+    waiting = "Waiting for worker processes to register (1 of 2; up to 180 s)"
+    assert capsys.readouterr().out.count(waiting) == (3 if recovers else 4)
     assert not any(".yml restart" in c for c in remote.executor.commands)
 
 

@@ -327,6 +327,7 @@ class RemoteApp:
         self._stopped = []
         workers = [s for s in services if _WORKER_SERVICE.fullmatch(s)]
         started = time.monotonic()
+        next_progress_s = 20
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
         )
@@ -335,10 +336,18 @@ class RemoteApp:
             registered = int(self._redis("SCARD", "rq:workers") or 0)
             if healthy and registered >= self._n_workers:
                 return
-            if time.monotonic() - started >= _SERVER_READY_TIMEOUT_S:
+            waited = time.monotonic() - started
+            if waited >= _SERVER_READY_TIMEOUT_S:
                 raise RuntimeError(
                     self._not_ready_message(healthy, registered, workers)
                 )
+            if registered < self._n_workers and waited >= next_progress_s:
+                print(
+                    "  Waiting for worker processes to register "
+                    f"({registered} of {self._n_workers}; up to "
+                    f"{_SERVER_READY_TIMEOUT_S} s)..."
+                )
+                next_progress_s = waited + 45
             time.sleep(2)
 
     def _not_ready_message(self, healthy, registered, workers):
