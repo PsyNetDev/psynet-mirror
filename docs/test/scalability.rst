@@ -529,21 +529,24 @@ the finished jobs' CPU time a share ``c`` of their run time:
   job's CPU time includes what the other jobs in its process used meanwhile,
   so ``c / max(R, 1)`` is the CPU share of each job. If that is at least 50%,
   the jobs are CPU-heavy: the summary suggests
-  ``worker_greenlets_per_process = 1`` and counts the processes' CPU,
-  ``U = c × min(R, 1)``. Otherwise it keeps the configured slots, and a
+  ``worker_greenlets_per_process = 1``, and each running job then needs a
+  process, ``U = R``. Otherwise it keeps the configured slots, and a
   process is busy when its slots or its core are:
   ``U = max(R / slots, c × min(R, 1))``.
 - *Steady state.* ``U × W × (participants / bots) / 0.7`` processes keep the
   workers 70% busy, leaving headroom for bursts and for jobs that slow down
   under load. Workers at least 95% busy couldn't show the full demand, so the
-  estimate is then a lower bound; with one slot per process it comes from the
+  estimate is then a minimum; with one slot per process it comes from the
   worker time per participant who completed, as
   ``participants × (worker time per participant) / (session length × 0.7)``.
 - *Start-up burst.* When the queue limit set the search's capacity, the
   participants arriving together need about ``W × participants / capacity``
   processes. This is optimistic once the cores run out, because jobs then
   slow down.
-- *Cores.* The estimate is the larger of the two, at most the cores where the
+- *Current workers.* The summary never suggests fewer processes than the
+  test had, and suggests at least one more if the workers fell behind: more
+  than 85% busy, or a growing low-priority backlog.
+- *Cores.* The estimate is the largest of these, at most the cores where the
   test ran less two for the web server and database, whose use the test
   doesn't measure. If the workers need more, the summary says the server lacks
   cores.
@@ -554,11 +557,11 @@ audio analysis per 13-minute session, whose 96-participant confirmation test
 kept 10 single-slot workers 55% busy, gets::
 
     Workers: recommended settings for 96 participants at once:
-        worker_processes = 10 (current; about 8 would do)
-    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time, so 8 would be about 70% busy. At start-up, 10 workers handled 120 bots arriving together, so 8 should handle 96. This is an estimate from one run; rerun the test after changing worker_processes.
+        worker_processes = 10
+    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time, so about 8 would be 70% busy. 10 workers handled 120 bots arriving together, so about 8 should handle 96 at start-up. This is an estimate from one run; rerun the test after changing worker_processes. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
-only listed when it should change, and ``worker_processes >= N (lower bound)``
+only listed when it should change, and ``worker_processes >= N (minimum)``
 marks saturated workers.
 
 .. _performance_testing_database_size:

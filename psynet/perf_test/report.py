@@ -17,6 +17,7 @@ from psynet.perf_test.results import (
     ASYNC_JOB_STAT_KEYS,
     CAPACITY_HEADROOM,
     CORES_FOR_OTHERS,
+    MAX_WORKER_UTILIZATION,
     MIN_STEADY_STATE_S,
     PGBOUNCER_FULL,
     POSTGRES_FULL,
@@ -684,6 +685,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     if not (queue_bound or behind or (ran_jobs and (cap or not advice.skipped))):
         return []
     text = []
+    above_cap = confirmed and queue_bound not in (None, confirmation)
     if queue_bound is not None:
         if queue_bound.n_rq_workers == 0:
             return [
@@ -692,27 +694,20 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
                 "couldn't run. Check the server log for workers that failed to "
                 "start, and check worker_processes."
             ]
-        above_cap = ""
-        if confirmed and queue_bound is not confirmation:
-            above_cap = (
-                " To go above the cap, add worker processes."
-                if advice.skipped
-                else " More worker processes would raise the cap; the settings "
-                "below are for the cap itself."
-            )
         had = _describe_workers(queue_bound)
         text.append(
-            f"In the {queue_bound.n_bots:,}-bot test, high-priority async jobs, which "
-            "participants wait for, waited too long for a worker"
-            + (f" (the server had {had})." if had else ".")
-            + above_cap
+            f"In the {queue_bound.n_bots:,}-bot test, jobs that participants wait "
+            "for waited too long for " + (f"one of the {had}." if had else "a worker.")
         )
+        if above_cap and advice.skipped:
+            text.append("To go above the cap, add worker processes.")
     if behind:
         text.append(
             f"During {_describe_test(measured, confirmed)}, {behind}, "
             "so the workers can't keep up in the long run. The test still "
-            "passes, because only high-priority queue waits count against the "
-            "limits, but low-priority results arrive ever later."
+            "passes, because participants don't wait for low-priority jobs, but "
+            "their results arrive later and later and the jobs keep the workers "
+            "busy."
         )
     lines = []
     if advice.skipped:
@@ -720,8 +715,9 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
-        test = _describe_test(measured, confirmed)
-        lines = _describe_worker_advice(advice, measured, n, burst, test, bool(behind))
+        said_busy = behind and advice.utilization > MAX_WORKER_UTILIZATION
+        test = _describe_test(measured, confirmed) if not said_busy else None
+        lines = _describe_worker_advice(advice, measured, n, burst, test, above_cap)
     if text:
         lines.insert(0, "  " + " ".join(text))
     return [warning(line) for line in lines] if behind else lines
@@ -731,60 +727,63 @@ def _describe_test(result, confirmed):
     """Describe ``result``'s test by what it did, e.g. ``the 96-bot test that confirmed this cap``."""
     test = f"the {result.n_bots:,}-bot test"
     if result.confirmation:
-        test += " that confirmed this cap" if confirmed else " of this cap"
+        test += " that confirmed this cap" if confirmed else " that checked this cap"
     return test
 
 
-def _describe_worker_advice(advice, result, n, burst, test, warned):
+def _describe_worker_advice(advice, result, n, burst, test, above_cap):
     """Return the recommended settings in ``advice`` for ``n`` participants at once, and why, as lines.
 
-    ``warned`` says the lines follow a warning that already said how busy the workers were.
+    ``test`` describes the measured test, or is ``None`` if a warning already
+    said how busy its workers were. ``above_cap`` says a larger test failed on
+    queue waits above the confirmed cap ``n``.
     """
     workers, processes = result.n_rq_workers, advice.processes
-    needed = max(advice.steady_state, advice.burst or 0)
     were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
     setting = f"worker_processes = {processes}"
-    if needed > processes:
+    if advice.needed > processes:
         setting += " (all the cores left)"
         why = (
-            f"{n:,} participants at once need about {needed} worker processes, "
+            f"{n:,} participants at once need about {advice.needed} worker processes, "
             f"but the {result.server_cores}-core server has only {processes} "
             f"cores left after {CORES_FOR_OTHERS} for the web server and "
             "database, so it lacks cores; use a larger server or cheaper jobs."
         )
     elif advice.lower_bound:
-        setting = f"worker_processes >= {processes} (lower bound)"
+        setting = f"worker_processes >= {processes} (minimum)"
         why = (
-            "So this is a lower bound"
-            if warned
-            else f"In {test}, the {were} busy the whole time, so this is a lower bound"
-        ) + (
-            f" from {advice.per_participant_s:.0f} s of worker time per participant."
+            f"Each participant used about {advice.per_participant_s:.0f} s of worker "
+            f"time, so {workers} aren't enough; {processes} is a minimum, not a "
+            "target, because the workers were busy throughout."
             if advice.per_participant_s
-            else "."
+            else f"The {were} busy throughout, so {processes} is a minimum, not a target."
         )
     else:
-        if processes <= workers:
-            setting = (
-                f"worker_processes = {workers} (current; about {processes} would do)"
-            )
         why = (
-            f"In {test}, the {were} busy {advice.utilization:.0%} of the time, so {advice.steady_state} would "
-            f"be about {TARGET_WORKER_UTILIZATION:.0%} busy."
+            f"In {test}, the {were} busy {advice.utilization:.0%} of the time, so"
+            if test
+            else "So"
+        ) + (
+            f" about {advice.steady_state} would be "
+            f"{TARGET_WORKER_UTILIZATION:.0%} busy."
         )
+        if processes > max(advice.steady_state, advice.burst or 0, workers):
+            why += f" The workers still fell behind, so use more than the current {workers}."
     if advice.burst is not None and advice.burst >= advice.steady_state:
         why += (
-            f" At start-up, {burst[0]} workers handled {burst[1]:,} bots arriving "
-            f"together, so {advice.burst} should handle {n:,}."
+            f" {burst[0]} workers handled {burst[1]:,} bots arriving together, so "
+            f"about {advice.burst} should handle {n:,} at start-up."
         )
+    why += " This is an estimate from one run; rerun the test after changing worker_processes."
+    if above_cap and advice.needed <= processes:
+        why += f" To go above {n:,}, raise worker_processes above {processes} and test again."
     settings = [setting]
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
     return [
         f"  Workers: recommended settings for {n:,} participants at once:",
         *(f"      {line}" for line in settings),
-        f"  {why} This is an estimate from one run; rerun the test after "
-        "changing worker_processes.",
+        f"  {why}",
     ]
 
 
@@ -998,7 +997,7 @@ def _low_priority_lines(result, limits):
     if wait is None or wait <= limits.max_queue_p95_s:
         return []
     return [
-        f"  Low-priority async jobs in the {_test_name(result)} test: p95 queue "
+        f"  Low-priority async jobs in {_describe_test(result, False)}: p95 queue "
         f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
         "queued at the end. Participants don't wait for these, so they don't "
         "count against the limits."

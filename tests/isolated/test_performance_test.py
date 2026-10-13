@@ -584,7 +584,7 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
     )
 
     assert "p95 high-priority async queue wait 30.00 s" in caplog.text
-    assert caplog.text.count("waited too long for a worker") == 1
+    assert caplog.text.count("waited too long for") == 1
 
 
 def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
@@ -599,17 +599,16 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
 
     assert "Confirmed: the 96-bot confirmation test" in text
     assert (
-        "In the 130-bot test, high-priority async jobs, which participants wait "
-        "for, waited too long for a worker (the server had 10 worker processes). "
-        "More worker processes would raise the cap; the settings below are for "
-        "the cap itself.\n"
+        "In the 130-bot test, jobs that participants wait for waited too long "
+        "for one of the 10 worker processes.\n"
         "  Workers: recommended settings for 96 participants at once:\n"
-        "      worker_processes = 10 (current; about 8 would do)\n"
+        "      worker_processes = 10\n"
         "  In the 96-bot test that confirmed this cap, the 10 worker processes "
-        "were busy 55% of the time, so 8 would be about 70% busy. At start-up, "
-        "10 workers handled 120 bots arriving together, so 8 should handle 96. "
-        "This is an estimate from one run; rerun the test after changing "
-        "worker_processes."
+        "were busy 55% of the time, so about 8 would be 70% busy. 10 workers "
+        "handled 120 bots arriving together, so about 8 should handle 96 at "
+        "start-up. This is an estimate from one run; rerun the test after "
+        "changing worker_processes. To go above 96, raise worker_processes "
+        "above 10 and test again."
     ) in text
 
 
@@ -1511,8 +1510,8 @@ def test_workers_falling_behind_warn_but_pass(end, busy, behind):
     if behind:
         assert f"{behind}, so the workers can't keep up in the long run" in text
     assert ("can't keep up" in text) == bool(behind)
-    setting = "= 3" if busy == 0.9 else "= 2 (current; about 2 would do)"
-    assert f"      worker_processes {setting}" in text
+    # Workers that fell behind need more than the current 2, never fewer.
+    assert f"      worker_processes = {3 if behind else 2}" in text
 
 
 def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
@@ -1541,9 +1540,15 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
 @pytest.mark.parametrize(
     "result, n, burst, expected",
     [
-        # The confirmed 96 kept 10 workers 55% busy, and 120 passed the search.
-        (_tapping_result(96, 10, 0.55), 96, (10, 120), dict(processes=8, burst=8)),
-        # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a lower bound.
+        # The confirmed 96 kept 10 workers 55% busy, and 120 passed the search;
+        # 8 would do, but the advice keeps the current 10.
+        (
+            _tapping_result(96, 10, 0.55),
+            96,
+            (10, 120),
+            dict(processes=10, steady_state=8, burst=8),
+        ),
+        # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a minimum.
         (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, lower_bound=True)),
         # 192 need 16, but 16 cores leave 14; unknown search workers give no burst.
         (
@@ -1798,7 +1803,7 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         in text
     )
     assert (
-        "(the server had 2 worker processes, up to 40 jobs at once). No estimate "
+        "for one of the 2 worker processes, up to 40 jobs at once. No estimate "
         "of worker_processes: the 640-bot test ran for less than 60 s after its "
         "first bot finished. Raise the worker_processes config variable"
     ) in text

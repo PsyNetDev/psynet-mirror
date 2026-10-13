@@ -577,6 +577,9 @@ _SATURATED_UTILIZATION = 0.95
 # recommend_workers sizes the worker processes to be this busy, leaving
 # headroom for bursts and for jobs that slow down under load.
 TARGET_WORKER_UTILIZATION = 0.7
+# Matches psynet.async_job's rule: a job is CPU-heavy if its CPU time is at
+# least this share of its run time.
+_CPU_HEAVY_RATIO = 0.5
 _MIN_STEADY_WORKER_JOBS = 20
 # Cores left for the web server and database, which the test doesn't measure.
 CORES_FOR_OTHERS = 2
@@ -589,11 +592,9 @@ def _worker_demand(result):
     their run time: one slot per process gives ``U = R``. With more slots, a
     job's CPU time includes its neighbours', so ``c / max(R, 1)`` is the
     per-job CPU share. If that makes the jobs CPU-heavy, they move to one
-    slot each and ``U = c × min(R, 1)``; otherwise
-    ``U = max(R / slots, c × min(R, 1))`` with the slots kept.
+    slot each and ``U = R``; otherwise ``U = max(R / slots, c × min(R, 1))``
+    with the slots kept.
     """
-    from psynet.async_job import _CPU_HEAVY_RATIO
-
     load, workers = result.worker_load or {}, result.n_rq_workers
     steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
     if not (workers and load.get("jobs") and steady_s > 0):
@@ -604,7 +605,7 @@ def _worker_demand(result):
         return running, 1
     cpu = load.get("cpu_share") or 0
     if cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
-        return cpu * min(running, 1), 1
+        return running, 1
     return max(running / slots, cpu * min(running, 1)), slots
 
 
@@ -654,6 +655,9 @@ class WorkerAdvice:
     utilization: float | None = None
     steady_state: int | None = None
     burst: int | None = None
+    # The processes needed before the cores cap: at least the current ones,
+    # and one more if the workers fell behind.
+    needed: int | None = None
     lower_bound: bool = False
     # Worker time per participant, if the lower bound comes from it.
     per_participant_s: float | None = None
@@ -664,7 +668,8 @@ def recommend_workers(result, n_participants, burst=None):
     """Estimate the async worker processes that ``n_participants`` taking part at once need.
 
     ``max(U × W × n_participants / N / u, W_b × n_participants / N_b)``, at
-    most the cores less :data:`CORES_FOR_OTHERS`, with ``U`` and the greenlets
+    at least the current ``W`` (``W + 1`` if :func:`workers_falling_behind`)
+    and at most the cores less :data:`CORES_FOR_OTHERS`, with ``U`` and the greenlets
     from :func:`_worker_demand` and ``u`` :data:`TARGET_WORKER_UTILIZATION`.
     For saturated single-slot workers the steady-state term is the lower
     bound ``n_participants × D / (S × u)``, with ``D`` the worker time per
@@ -712,15 +717,18 @@ def recommend_workers(result, n_participants, burst=None):
         if burst and all(burst)
         else None
     )
-    processes = max(steady_state, burst_n or 0)
+    floor = workers + bool(workers_falling_behind(result))
+    needed = max(steady_state, burst_n or 0, floor)
+    processes = needed
     if result.server_cores:
-        processes = min(processes, max(1, result.server_cores - CORES_FOR_OTHERS))
+        processes = min(needed, max(1, result.server_cores - CORES_FOR_OTHERS))
     return WorkerAdvice(
         processes,
         greenlets,
         utilization,
         steady_state,
         burst_n,
+        needed,
         lower_bound,
         per_participant_s,
     )
