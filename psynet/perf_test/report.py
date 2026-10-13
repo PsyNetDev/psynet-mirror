@@ -48,6 +48,7 @@ from psynet.perf_test.results import (
     describe_busy_early_finish,
     describe_test,
     exceeded_error_limits,
+    limit_breaches,
     missing_workers,
     overshoot,
     phase_limit_reasons,
@@ -581,8 +582,20 @@ def _count(n, total, alert=False):
     """Format ``n`` and its share of ``total`` for a table cell, e.g. ``7 (1.2%)``, in red if ``alert`` and not zero."""
     if not n:
         return Text("0")
-    text = f"{n:,} ({_percent(n / total)})" if total else f"{n:,}"
+    return _alert(f"{n:,} ({_percent(n / total)})" if total else f"{n:,}", alert)
+
+
+def _alert(text, alert):
+    """Return ``text`` for a table cell, in red if ``alert``."""
     return Text(text, style=_ALERT if alert else "")
+
+
+def _ms(seconds):
+    """Format a response time in milliseconds, e.g. ``63 ms`` or ``8.5 ms``."""
+    if seconds is None:
+        return "N/A"
+    ms = seconds * 1000
+    return f"{ms:.1f} ms" if ms < 9.95 else f"{ms:.0f} ms"
 
 
 def _minutes(minutes):
@@ -637,41 +650,71 @@ def _measures_seen(results):
 def _summary_columns(results, limits):
     """Return ``(header, cell)`` for each column of the summary table that ``results`` need."""
     seen = _measures_seen(results)
+
+    def over(result, measure):
+        return any(b.measure == measure for b in limit_breaches(result, limits))
+
     columns = [
-        ("Bots", lambda r: f"{r.n_bots:,}"),
+        ("Bots\nat once", lambda r: f"{r.n_bots:,}"),
         ("Bots\nstarted", lambda r: f"{r.total_bots_started:,}"),
         ("Length", lambda r: _minutes(_test_minutes(r))),
         ("Result", lambda r: _result_text(r, limits)),
         ("Req/s", lambda r: _fmt(r.requests_per_sec, digits=1)),
-        ("p95\nresponse", lambda r: _fmt(r.p95_response_time, "s")),
-        ("Median\nresponse", lambda r: _fmt(r.median_response_time, "s")),
-        ("Failed\nrequests", lambda r: _count(r.request_errors, r.key_requests, True)),
+        (
+            "p95\nresponse",
+            lambda r: _alert(_ms(r.p95_response_time), over(r, "p95")),
+        ),
+        ("Median\nresponse", lambda r: _ms(r.median_response_time)),
+        (
+            "Failed\nrequests",
+            lambda r: _count(
+                r.request_errors, r.key_requests, over(r, "request_errors")
+            ),
+        ),
     ]
     if "busy" in seen:
         columns.append(
-            ("Busy\nresponses", lambda r: _count(r.busy_responses, r.key_requests))
+            (
+                "Busy\nresponses",
+                lambda r: _count(
+                    r.busy_responses, r.key_requests, over(r, "busy_responses")
+                ),
+            )
         )
     columns.append(
-        ("Failed\nbots", lambda r: _count(r.bot_errors, r.total_bots_started, True))
+        (
+            "Failed\nbots",
+            lambda r: _count(r.bot_errors, r.total_bots_started, over(r, "bot_errors")),
+        )
     )
     if "experiment" in seen:
         columns.append(
             (
                 "Failed by\nexperiment",
-                lambda r: _count(r.participants_failed, r.total_bots_started),
+                lambda r: _count(
+                    r.participants_failed,
+                    r.total_bots_started,
+                    over(r, "wait_timeouts"),
+                ),
             )
         )
     if "chains" in seen:
         columns.append(
             (
                 "Busy\nchains",
-                lambda r: _count(_busy_early_finish_count(r), r.total_bots_started),
+                lambda r: _count(
+                    _busy_early_finish_count(r),
+                    r.total_bots_started,
+                    over(r, "busy_chains"),
+                ),
             )
         )
     columns += [
         (
             f"{priority.capitalize()}-priority\nqueue p95",
-            lambda r, p=priority: _fmt(queue_wait_p95(r, p), "s"),
+            lambda r, p=priority: _alert(
+                _fmt(queue_wait_p95(r, p), "s"), p == "high" and over(r, "queue")
+            ),
         )
         for priority in PRIORITIES
         if priority in seen
@@ -686,7 +729,7 @@ def _summary_columns(results, limits):
 
 
 def _summary_table(results, limits, outcome):
-    """Return the table of ``results``, in the order run, labelling the capacity and check rows."""
+    """Return the table of ``results`` by bot count, validation test last, labelling the capacity and validation rows."""
     utf = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().startswith("utf")
     table = Table(
         box=box.SIMPLE_HEAD if utf else _ASCII_SIMPLE_HEAD,
@@ -702,7 +745,7 @@ def _summary_table(results, limits, outcome):
         )
     table.add_column("", no_wrap=True)
     labelled_capacity = False
-    for result in results:
+    for result in sorted(results, key=lambda r: (r.confirmation, r.n_bots)):
         label = ""
         if result.confirmation:
             label = "validation test"
@@ -723,7 +766,7 @@ def _checked_limits(results, limits):
     def rate(share):
         return f"{share * 100:g}%"
 
-    checked = [f"p95 response time under {limits.max_p95_s:g} s"]
+    checked = [f"p95 response time under {limits.max_p95_s * 1000:g} ms"]
     if "high" in seen:
         checked.append(
             f"p95 high-priority queue wait under {limits.max_queue_p95_s:g} s"
@@ -1163,17 +1206,43 @@ def _bot_failures(result):
     return f"{n:,} of {started:,} bots ({_percent(n / started)}) failed"
 
 
-def _reasons(result, causes):
+def _reasons(result, causes, limits):
     """Join the reasons in ``causes``, from :func:`capacity_failure_causes` of ``result``.
 
-    Bot errors appear as a share of the bots; :func:`_error_kinds_lines`
-    names their kinds.
+    A measured limit is named with its value and limit, e.g. ``the p95
+    response time was 900 ms, over the 500 ms limit``. Bot errors appear as
+    a share of the bots; :func:`_error_kinds_lines` names their kinds.
     """
-    bot_errors = describe_bot_errors(result)
+    breaches = {b.reason: b for b in limit_breaches(result, limits)}
     return "; ".join(
-        _bot_failures(result) if reason == bot_errors else reason
+        _breach_clause(result, breaches[reason]) if reason in breaches else reason
         for reason, _ in causes
     )
+
+
+def _breach_clause(result, breach):
+    """Describe ``breach`` of ``result`` as a clause, with its limit."""
+    requests = result.key_requests or 0
+    if breach.measure == "bot_errors":
+        what = _bot_failures(result)
+    elif breach.measure in ("request_errors", "busy_responses") and requests:
+        n = (
+            result.request_errors
+            if breach.measure == "request_errors"
+            else result.busy_responses
+        )
+        how = (
+            "failed"
+            if breach.measure == "request_errors"
+            else "were answered busy or stale"
+        )
+        what = f"{n:,} of {requests:,} requests ({_percent(n / requests)}) {how}"
+    elif breach.measure in ("p95", "queue"):
+        name, value, unit = breach.reason.rsplit(" ", 2)
+        what = f"the {name} was {value} {unit}"
+    else:
+        what = breach.reason
+    return f"{what}, over the {breach.limit} limit"
 
 
 def _error_kinds_lines(result, causes):
@@ -1240,7 +1309,7 @@ def _capacity_lines(outcome, limits):
             "the limit wasn't reached. Test more bots to find it."
         ]
     n_failed = f"{first_fail.n_bots:,}"
-    reasons = _reasons(first_fail, outcome.first_causes)
+    reasons = _reasons(first_fail, outcome.first_causes, limits)
     if capacity is None:
         if unmeasured:
             line = f"No limit found. {n_failed} bots at once could not be tested: {reasons}."
@@ -1251,15 +1320,15 @@ def _capacity_lines(outcome, limits):
                 advice = "; fix the errors or test fewer bots"
             else:
                 advice = "; test fewer bots"
-            line = f"No test passed. {n_failed} bots at once failed: {reasons}{advice}."
-    elif unmeasured or waits_only:
-        verdict = "could not be tested" if unmeasured else "failed"
-        line = (
-            f"Largest passing test: {capacity:,} bots at once. "
-            f"{n_failed} {verdict}: {reasons}, so the limit wasn't found."
-        )
+            line = f"No test passed. At {n_failed} bots at once, {reasons}{advice}."
     else:
-        line = f"Largest passing test: {capacity:,} bots at once. {n_failed} failed: {reasons}."
+        passing = f"Largest passing test: {capacity:,} bots at once."
+        if unmeasured:
+            line = f"{passing} {n_failed} could not be tested: {reasons}, so the limit wasn't found."
+        elif waits_only:
+            line = f"{passing} At {n_failed}, {reasons}, so the limit wasn't found."
+        else:
+            line = f"{passing} At {n_failed}, {reasons}."
     lines = [line, *_error_kinds_lines(first_fail, outcome.first_causes)]
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
@@ -1336,7 +1405,7 @@ def _check_lines(result, outcome, limits):
                 "state, so it only saw the start-up."
             ]
         return [f"{test} and passed."]
-    reasons = _reasons(result, causes)
+    reasons = _reasons(result, causes, limits)
     if not _confirmation_exceeded(result, limits):
         return [f"{test} but could not be tested: {reasons}."]
     lines = [f"{test} and failed: {reasons}.", *_error_kinds_lines(result, causes)]
@@ -1423,14 +1492,19 @@ def _capacity_renderables(results, limits, time_factor, extra_notes=()):
         run_order, capacity_result, first_fail, confirmation, limits
     )
     if capacity_result is not None:
-        notes += _capacity_test_notes(capacity_result, time_factor)
+        notes += _capacity_test_notes(
+            capacity_result, time_factor, _confirmed(confirmation, limits)
+        )
     if workers:
         verdict += [None, *workers]
     return verdict + _notes(notes + list(extra_notes)) + [None]
 
 
-def _capacity_test_notes(capacity_result, time_factor):
-    """Return notes on the test that set the capacity: errors within the limits, design failures and a slow start."""
+def _capacity_test_notes(capacity_result, time_factor, validated=False):
+    """Return notes on the test that set the capacity: errors within the limits, design failures and a slow start.
+
+    A validation test that passed (``validated``) makes the note on a slow start moot.
+    """
     capacity = capacity_result.n_bots
     notes = []
     tolerated = []
@@ -1476,6 +1550,7 @@ def _capacity_test_notes(capacity_result, time_factor):
         and ramp_up > _RAMP_UP_WARNING_SHARE * test_length
         # Arrivals spread on purpose take long to start.
         and not capacity_result.arrival_minutes
+        and not validated
     ):
         notes.append(
             f"Starting all {capacity:,} bots took {ramp_up:.0f} s of the "

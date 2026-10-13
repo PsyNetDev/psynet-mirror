@@ -61,7 +61,7 @@ def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
     html = performance(capacity_search=False)
     assert "<td>Yes</td>" in html
     assert "<td>No: p95 response time 3000 ms</td>" in html
-    assert "Largest passing test: 8 bots at once. 16 failed:" in html
+    assert "Largest passing test: 8 bots at once. At 16, " in html
     assert ">Notes<" not in html
     assert "psynet performance-test ssh" in html
     assert "--n-bots auto" in html
