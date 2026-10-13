@@ -1016,3 +1016,81 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
     assert 'id="error-identifiers"' not in error
     assert "error_page_presentation.researcher_contact_message" in error
     assert "experiment.error_page_content" not in error
+
+
+# ---------------------------------------------------------------------------
+# browser-detect.html entry-check bug guards
+# ---------------------------------------------------------------------------
+
+def _render_browser_detect(*, force_google_chrome=True, allow_mobile_devices=True, lucid=False):
+    from flask import Flask, render_template_string
+
+    from psynet.graphics import PsyNetLogo
+
+    app = Flask(__name__, template_folder=str(resources.files("psynet") / "templates"))
+    app.jinja_env.add_extension("jinja2.ext.i18n")
+    app.jinja_env.install_null_translations(newstyle=True)
+    app.jinja_env.globals["pgettext"] = lambda context, message: message
+
+    with app.test_request_context("/"):
+        return render_template_string(
+            '{% import "macros/browser-detect.html" as bd with context %}'
+            "{{ bd.head() }}",
+            experiment=SimpleNamespace(
+                psynet_logo=PsyNetLogo(),
+                with_lucid_recruitment=lambda: lucid,
+            ),
+            config=SimpleNamespace(
+                allow_mobile_devices=allow_mobile_devices,
+                force_google_chrome=force_google_chrome,
+                force_incognito_mode=False,
+                min_browser_version="105.0",
+            ),
+        )
+
+
+def test_browser_detect_handles_detectIncognito_rejection():
+    """detectIncognito() throws on modern Firefox; without .catch the promise
+    rejection is unhandled, browser.isValidated stays undefined, and Firefox
+    slips through force_google_chrome=True."""
+    html = _render_browser_detect()
+    after_then = html[html.index("detectIncognito().then("):]
+    assert ".catch(" in after_then, (
+        "detectIncognito() promise has no .catch — an unhandled rejection leaves "
+        "browser.isValidated undefined and admits any browser silently."
+    )
+
+
+def test_browser_detect_accepts_chromium_based_browsers():
+    """force_google_chrome=True must admit Edge, Brave, and Opera (all Chromium-
+    based), not only the exact 'Chrome' string returned by detectIncognito."""
+    html = _render_browser_detect()
+    validate_start = html.index("browser.validate = function")
+    validate_fn = html[validate_start: html.index("return browser;")]
+    assert '"Edge"' in validate_fn, (
+        "isChrome only matches exact 'Chrome' from detectIncognito; "
+        "Chromium-based browsers (Edge, Brave, Opera) are incorrectly rejected."
+    )
+
+
+def test_browser_detect_identifies_ipad_os_as_mobile():
+    """iPadOS 13+ sends a macOS User-Agent, so the UA regex alone misses it.
+    The fix must add a touch-point check alongside the UA string."""
+    html = _render_browser_detect(allow_mobile_devices=False)
+    assert "maxTouchPoints" in html, (
+        "isMobile check uses only a UA regex; iPadOS 13+ reports macOS UA "
+        "and is not detected as mobile."
+    )
+
+
+
+def test_ad_and_consent_do_not_call_terminate_participant():
+    """terminateParticipant is defined in psynet.js, which is not loaded on
+    ad.html or consent.html. Calling it from those pages throws a ReferenceError."""
+    templates = resources.files("psynet") / "templates"
+    for name in ("ad.html", "consent.html"):
+        source = (templates / name).read_text(encoding="utf-8")
+        assert "terminateParticipant" not in source, (
+            f"{name} calls terminateParticipant, but psynet.js is not loaded "
+            "on this page — the call throws ReferenceError."
+        )

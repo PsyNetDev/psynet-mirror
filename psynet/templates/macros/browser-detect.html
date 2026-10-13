@@ -323,7 +323,8 @@
         browser.minVersion = "{{ config.min_browser_version }}";
         browser.version = platform.version;
         browser.isOldVersion = !isVersionAtLeast(browser.version, browser.minVersion);
-        browser.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        browser.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                        || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
 
         function renderInstruction(iconName, text, details = '') {
             var line = getIcon(iconName) + ' <span class="display-5">' + text + '</span>' + details;
@@ -409,13 +410,24 @@
                 return false;
             }
 
-            detectIncognito().then((result) => {
-                browser.name = result.browserName;
-                browser.isIncognito = result.isPrivate;
-                browser.isChrome = result.browserName === "Chrome";
+            var chromiumBrands = ["Chrome", "Chromium", "Edge", "Brave", "Opera"];
+
+            // Detect brand from UA so gating works even if detectIncognito throws.
+            function detectBrandFromUA() {
+                var ua = navigator.userAgent;
+                if (/Edg\//i.test(ua)) return "Edge";
+                if (/OPR\//i.test(ua)) return "Opera";
+                if (/Chromium/i.test(ua)) return "Chromium";
+                if (/Chrome/i.test(ua)) return "Chrome";
+                if (/Firefox/i.test(ua)) return "Firefox";
+                if (/Safari/i.test(ua)) return "Safari";
+                return "Unknown";
+            }
+
+            function runBrowserCheck() {
                 var correctBrowserUsed = true;
                 if (browser.forceGoogleChrome) {
-                    correctBrowserUsed = correctBrowserUsed && browser.isChrome && !browser.isOldVersion
+                    correctBrowserUsed = correctBrowserUsed && browser.isChrome && !browser.isOldVersion;
                 }
                 if (browser.forceIncognitoMode) {
                     correctBrowserUsed = correctBrowserUsed && browser.isIncognito;
@@ -430,10 +442,25 @@
                         window.onbeforeunload = null;
                         window.location.replace(url);
                     {% endif %}
-                    return false;
+                    return;
                 }
                 console.log("Browser check finished");
                 browser.isValidated = true;
+            }
+
+            // Set brand from UA; detectIncognito refines it if it succeeds.
+            browser.name = detectBrandFromUA();
+            browser.isChrome = chromiumBrands.indexOf(browser.name) !== -1;
+
+            detectIncognito().then((result) => {
+                browser.isIncognito = result.isPrivate;
+                browser.name = result.browserName;
+                browser.isChrome = chromiumBrands.indexOf(result.browserName) !== -1;
+                runBrowserCheck();
+            }).catch((err) => {
+                console.warn("detectIncognito failed:", err);
+                browser.isIncognito = null;
+                runBrowserCheck();
             });
             return true;
         }
