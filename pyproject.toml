@@ -77,6 +77,7 @@ experiment = [
     "pytest-mock",
     "pytest-timeout",
     "python-gettext",
+    "rich>=13",
     "rpdb",
     "slack_sdk",  # For Slack notifications
     "tabulate",

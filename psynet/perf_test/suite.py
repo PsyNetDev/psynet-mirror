@@ -12,13 +12,10 @@ The tester that runs each test is passed in, so this module does not import
 """
 
 import logging
+import time
 
 from psynet.log import bold, warning
-from psynet.perf_test.report import (
-    format_capacity_summary,
-    format_performance_summary,
-    reset_error_lines,
-)
+from psynet.perf_test.report import format_performance_summary, reset_error_lines
 from psynet.perf_test.results import (
     CAPACITY_SEARCH_MAX,
     CAPACITY_SEARCH_MAX_TESTS,
@@ -66,12 +63,15 @@ class PerformanceSuite:
         Called before each test, including the first, instead of the pause
         between tests, once the bots have closed their database connections;
         for example a :class:`psynet.perf_reset.DatabaseReset`.
+    label : str, optional
+        The experiment's label, for the summary.
     """
 
-    def __init__(self, tester, limits=None, before_test=None):
+    def __init__(self, tester, limits=None, before_test=None, label=None):
         self.tester = tester
         self.limits = limits or CapacityLimits()
         self.before_test = before_test
+        self.label = label
         # Why find_capacity skipped its confirmation test, or None.
         self.confirmation_skipped = None
         # Why a database reset between tests failed and stopped the suite, or None.
@@ -238,6 +238,7 @@ class PerformanceSuite:
             One result per test, in the order they ran.
         """
         all_results = []
+        started = time.monotonic()
         with self.tester.bot_runner(max_bots, bot_log_file):
             while (test := next_test(all_results)) is not None:
                 n_bots, test_options = test
@@ -261,10 +262,12 @@ class PerformanceSuite:
                 all_results.append(result)
                 if _ended_early(result):
                     break
-        for line in format_performance_summary(all_results):
-            logger.info(line)
-        for line in format_capacity_summary(
-            all_results, self.limits, self.tester.time_factor
+        for line in format_performance_summary(
+            all_results,
+            self.limits,
+            self.tester.time_factor,
+            label=self.label,
+            elapsed_s=time.monotonic() - started,
         ):
             logger.info(line)
         if self.reset_error:

@@ -1,15 +1,28 @@
 """Format performance test results for the terminal.
 
 :func:`format_test_results` reports one test, :func:`format_performance_summary`
-compares the tests of a suite, and :func:`format_capacity_summary` explains
-where a capacity search stopped and what to try next.
+summarizes the tests of a suite in a table followed by a verdict, and
+:func:`format_capacity_summary` gives that verdict alone: where a capacity
+search stopped and what to try next.
 
 These are pure functions of saved results and limits from
 :mod:`psynet.perf_test.results`; they don't import bots or the database, so
 they can format results that were read back from JSON. The wording is what
 users read, and tests pin much of it, so change it deliberately.
+
+The summary is rendered with rich into lines of text, so that callers can
+log or save it. It is coloured only for a terminal, and rendered wide enough
+that no table cell is cut, so that log files stay readable.
 """
 
+import os
+import sys
+from io import StringIO
+
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 from tabulate import tabulate
 
 from psynet.log import bold, error, success, warning
@@ -50,8 +63,8 @@ from psynet.perf_test.results import (
 )
 
 
-def _fmt(value, suffix=""):
-    return f"{value:.3f}{suffix}" if value is not None else "N/A"
+def _fmt(value, suffix="", digits=3):
+    return f"{value:.{digits}f}{suffix}" if value is not None else "N/A"
 
 
 def _describe_workers(result):
@@ -480,125 +493,314 @@ def _database_row_lines(result):
     ]
 
 
-def _ratio(value, baseline, is_baseline):
-    """Format ``value / baseline`` for the summary's "vs base" columns."""
-    if is_baseline:
-        return "\u2014"
-    if value is None or not baseline or baseline <= 0:
-        return "N/A"
-    return f"{value / baseline:.1f}x"
-
-
 _NOT_MEASURED = (
-    "  Not measured: uploads over participants' own networks (bots upload from "
+    "Not measured: uploads over participants' own networks (bots upload from "
     "next to the server), media downloads and bandwidth, the front door (web "
     "proxy or Cloudflare tunnel) and browser rendering. Check these separately "
     "if your study plays or records a lot of media."
 )
 
+_PASS = "bright_green"
+_FAIL = "bold bright_red"
+_UNTESTED = "bright_yellow"
+_ALERT = "bright_red"
+_WARNING = "bright_yellow"
+_HIGHLIGHT_ROW = "on grey15"
+_RECOMMENDED = "bold bright_green"
+_UNCONFIRMED = "bold bright_yellow"
+_QUIET = "dim"
+# Wide enough for any summary table, so that rich never cuts a cell; the
+# prose isn't wrapped at all.
+_RENDER_WIDTH = 1000
+# box.SIMPLE_HEAD with an ASCII rule, for output that isn't UTF-8.
+_ASCII_SIMPLE_HEAD = box.Box(
+    "    \n    \n -- \n    \n    \n    \n    \n    \n", ascii=True
+)
 
-def format_performance_summary(results):
-    """Format cross-test comparison table.
 
-    ``results`` are in the order the tests ran. Returns list[str].
+def _stdout_encoding():
+    return getattr(sys.stdout, "encoding", None) or "utf-8"
+
+
+class _Capture(StringIO):
+    """A text buffer that reports the encoding of standard output, so that rich keeps to it."""
+
+    @property
+    def encoding(self):
+        return _stdout_encoding()
+
+
+def _render(renderables, color=None):
+    """Render rich ``renderables`` as lines of text.
+
+    Parameters
+    ----------
+    renderables : list
+        Rich renderables, such as :class:`rich.text.Text` and
+        :class:`rich.table.Table`; ``None`` prints a blank line.
+    color : bool, optional
+        Whether to colour the text. By default, only if standard output is a
+        terminal. Rich also honours ``NO_COLOR``.
+
+    Returns
+    -------
+    list[str]
     """
-    lines = []
-    database_growth = _describe_database_growth(results)
-    # The confirmation test is longer than the others, so it comes last
-    # rather than serving as the baseline.
-    results = sorted(results, key=lambda r: (r.confirmation, r.n_bots))
+    if color is None:
+        color = sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
+    file = _Capture()
+    console = Console(
+        file=file,
+        # Rich ignores the width without a height, falling back to 80 columns
+        # on a dumb terminal.
+        width=_RENDER_WIDTH,
+        height=25,
+        force_terminal=color,
+        color_system="256" if color else None,
+        highlight=False,
+        markup=False,
+        emoji=False,
+        soft_wrap=True,
+    )
+    for renderable in renderables:
+        console.print(*([] if renderable is None else [renderable]))
+    return [line.rstrip() for line in file.getvalue().splitlines()]
 
-    show_scaling = len(results) > 1 and results[0].median_response_time is not None
-    baseline_response_median = results[0].median_response_time if show_scaling else None
-    baseline_q_median = results[0].q_delay_median if show_scaling else None
 
-    show_failed = any(r.participants_failed for r in results)
-    show_busy = any(r.busy_early_finishes for r in results)
-    summary_headers = ["Bots", "Succeeded"]
-    if show_failed:
-        summary_headers.append("Failed by exp.")
-    if show_busy:
-        summary_headers.append("Busy chains (sum)")
-    summary_headers += [
-        "Requests",
-        "Req/s",
-        "Resp P95 (s)",
-        "Resp Med (s)",
+def _percent(share):
+    """Format ``share`` as a percentage with about two significant digits, e.g. ``1.2%`` or ``13%``."""
+    percent = share * 100
+    if 0 < percent < 0.05:
+        return "<0.1%"
+    return f"{percent:.1f}%" if percent < 9.95 else f"{percent:.0f}%"
+
+
+def _count(n, total, alert=False):
+    """Format ``n`` of ``total`` for a table cell, e.g. ``7 (1.2%)``, in red if ``alert`` and not zero."""
+    if not n:
+        return Text("0")
+    text = f"{n:,} ({_percent(n / total)})" if total else f"{n:,}"
+    return Text(text, style=_ALERT if alert else "")
+
+
+def _minutes(minutes):
+    """Format a length of time, e.g. ``3 min``, ``0.25 min`` or ``1 h 02 min``."""
+    if minutes >= 59.5:
+        hours, rest = divmod(round(minutes), 60)
+        return f"{hours} h {rest:02d} min"
+    if minutes >= 9.95:
+        return f"{round(minutes)} min"
+    return f"{minutes:.2g} min"
+
+
+def _test_minutes(result):
+    """Return how long ``result``'s test was meant to last, in minutes."""
+    if result.duration_minutes is not None:
+        return result.duration_minutes
+    return (result.actual_duration or 0) / 60
+
+
+def _too_short_to_finish(result):
+    """Return whether ``result``'s test was shorter than one session and no bot finished."""
+    return (
+        not result.bots_succeeded
+        and bool(result.session_minutes)
+        and _test_minutes(result) < result.session_minutes
+    )
+
+
+def _result_text(result, limits):
+    """Return the summary table's verdict on one test: ``pass``, ``FAIL`` or ``untested``."""
+    causes = capacity_failure_causes(result, limits)
+    if not causes:
+        return Text("pass", style=_PASS)
+    if any(server_limit for _, server_limit in causes):
+        return Text("FAIL", style=_FAIL)
+    return Text("untested", style=_UNTESTED)
+
+
+def _summary_columns(results, limits):
+    """Return ``(header, cell)`` for each column of the summary table that ``results`` need.
+
+    ``cell(result)`` returns the cell text. Columns for busy responses,
+    participants the experiment failed, busy chains and queue waits only
+    appear if a test had them.
+    """
+    columns = [
+        ("Bots", lambda r: f"{r.n_bots:,}"),
+        ("Length", lambda r: _minutes(_test_minutes(r))),
+        ("Result", lambda r: _result_text(r, limits)),
+        ("Req/s", lambda r: _fmt(r.requests_per_sec, digits=1)),
+        ("p95\nresponse", lambda r: _fmt(r.p95_response_time, "s")),
+        ("Median\nresponse", lambda r: _fmt(r.median_response_time, "s")),
+        ("Failed\nrequests", lambda r: _count(r.request_errors, r.key_requests, True)),
     ]
-    if show_scaling:
-        summary_headers.append("Resp Med vs base")
-    summary_headers.append("Q Med all (s)")
-    if show_scaling:
-        summary_headers.append("Q Med vs base")
-    show_low = any("low" in (r.queue_waits or {}) for r in results)
-    summary_headers.append("Q P95 high (s)")
-    if show_low:
-        summary_headers.append("Q P95 low (s)")
-
-    summary_rows = []
-    for i, result in enumerate(results):
-        response_median = result.median_response_time
-        q_median = result.q_delay_median
-        row = [
-            f"{result.n_bots} (confirmation)" if result.confirmation else result.n_bots,
-            result.bots_succeeded,
-        ]
-        if show_failed:
-            row.append(result.participants_failed)
-        if show_busy:
-            row.append(_busy_early_finish_count(result))
-        row += [
-            result.total_requests,
+    if any(r.busy_responses for r in results):
+        columns.append(
+            ("Busy\nresponses", lambda r: _count(r.busy_responses, r.key_requests))
+        )
+    columns.append(
+        ("Failed\nbots", lambda r: _count(r.bot_errors, r.total_bots_started, True))
+    )
+    if any(r.participants_failed for r in results):
+        columns.append(
             (
-                f"{result.requests_per_sec:.1f}"
-                if result.requests_per_sec is not None
-                else "N/A"
-            ),
-            _fmt(result.p95_response_time),
-            _fmt(response_median),
-        ]
-        if show_scaling:
-            row.append(_ratio(response_median, baseline_response_median, i == 0))
-        row.append(_fmt(q_median))
-        if show_scaling:
-            row.append(_ratio(q_median, baseline_q_median, i == 0))
-        row.append(_fmt(queue_wait_p95(result)))
-        if show_low:
-            row.append(_fmt(queue_wait_p95(result, "low")))
-        summary_rows.append(row)
+                "Failed by\nexperiment",
+                lambda r: _count(r.participants_failed, r.total_bots_started),
+            )
+        )
+    if any(r.busy_early_finishes for r in results):
+        columns.append(
+            (
+                "Busy\nchains",
+                lambda r: _count(_busy_early_finish_count(r), r.total_bots_started),
+            )
+        )
+    for priority in PRIORITIES:
+        if any(queue_wait_p95(r, priority) is not None for r in results):
+            columns.append(
+                (
+                    f"{priority.capitalize()}-priority\nqueue p95",
+                    lambda r, p=priority: _fmt(queue_wait_p95(r, p), "s"),
+                )
+            )
+    columns.append(
+        (
+            "Bots\nfinished",
+            lambda r: "-" if _too_short_to_finish(r) else f"{r.bots_succeeded:,}",
+        )
+    )
+    return columns
 
-    lines.append("")
-    lines.append(bold("CUMULATIVE PERFORMANCE TEST SUMMARY\n"))
-    lines.append(
-        "  Resp P95 / Resp Med — 95th percentile / median HTTP response time for key "
-        "endpoints (/timeline, /response)"
+
+def _summary_table(results, limits, capacity):
+    """Return the summary table of ``results``, in the order run, labelling the capacity and check rows."""
+    utf = _stdout_encoding().lower().startswith("utf")
+    table = Table(
+        box=box.SIMPLE_HEAD if utf else _ASCII_SIMPLE_HEAD,
+        safe_box=False,
+        header_style="bold",
+        pad_edge=False,
     )
-    if show_busy:
-        lines.append(
-            "  Busy chains (sum) — bots that got fewer trials because every chain was "
-            "busy, summed over trial makers"
+    columns = _summary_columns(results, limits)
+    for header, _ in columns:
+        table.add_column(
+            header, justify="left" if header == "Result" else "right", no_wrap=True
         )
-    lines.append("  Q Med all — median queue delay across all async jobs")
-    lines.append(
-        "  Q P95 high / low — 95th percentile queue delay of high- or "
-        "low-priority jobs, or the wait of the oldest one still queued at the "
-        "end if longer; participants only wait for high-priority jobs, so only "
-        "these count against --max-queue-p95-s"
-    )
-    if show_scaling:
-        lines.append("  vs base — ratio of the median to the lowest bot count's")
-    lines.append("")
-    table = tabulate(summary_rows, headers=summary_headers, tablefmt="simple")
-    for line in table.splitlines():
-        lines.append(f"  {line}")
-    lines.append("")
-    if database_growth:
-        lines.append(
-            f"  Database rows from the first test to the last: {database_growth}."
+    table.add_column("", no_wrap=True)
+    labelled_capacity = False
+    for result in results:
+        label = ""
+        if result.confirmation:
+            label = "check at the cap"
+        elif result.n_bots == capacity and not labelled_capacity:
+            label, labelled_capacity = "capacity", True
+        table.add_row(
+            *(cell(result) for _, cell in columns),
+            label,
+            style=_HIGHLIGHT_ROW if label else None,
         )
-        lines.append("")
-    lines += [_NOT_MEASURED, ""]
-    return lines
+    return table
+
+
+def _checked_limits(results, limits):
+    """Describe the limits that apply to ``results``, leaving out those for things no test had."""
+
+    def rate(share):
+        return f"{share * 100:g}%"
+
+    checked = [f"p95 response time under {limits.max_p95_s:g} s"]
+    if any(
+        queue_wait_p95(r) is not None or r.q_delay_median is not None for r in results
+    ):
+        checked.append(
+            f"p95 high-priority queue wait under {limits.max_queue_p95_s:g} s"
+        )
+    checked.append(f"at most {rate(limits.max_request_error_rate)} of requests failing")
+    if any(r.busy_responses for r in results):
+        checked.append(
+            f"at most {rate(limits.max_busy_response_rate)} of requests answered "
+            "busy or stale"
+        )
+    checked.append(f"at most {rate(limits.max_bot_error_rate)} of bots failing")
+    if any(count_wait_timeouts(r) for r in results):
+        checked.append(
+            f"at most {rate(limits.max_wait_timeout_rate)} of participants failed "
+            "for waiting too long"
+        )
+    if any(r.busy_early_finishes for r in results):
+        checked.append(
+            f"at most {rate(limits.max_busy_early_finish_rate)} of bots getting "
+            "fewer trials because every chain was busy"
+        )
+    return f"Limits checked: {', '.join(checked)}."
+
+
+def format_performance_summary(
+    results,
+    limits=CapacityLimits(),
+    time_factor=1.0,
+    *,
+    label=None,
+    elapsed_s=None,
+    color=None,
+):
+    """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
+
+    Parameters
+    ----------
+    results : list[PerformanceTestResult]
+        The tests, in the order they ran.
+    limits : CapacityLimits
+        The limits that the tests were judged by.
+    time_factor : float
+        The bots' time factor.
+    label : str, optional
+        The experiment's label, for the subtitle.
+    elapsed_s : float, optional
+        How long the suite took, for the subtitle.
+    color : bool, optional
+        Whether to colour the text; by default, only if standard output is a
+        terminal.
+
+    Returns
+    -------
+    list[str]
+    """
+    if not results:
+        return []
+    subtitle = plural(len(results), "test")
+    if elapsed_s is not None:
+        subtitle += f", {_minutes(elapsed_s / 60)}"
+    if label:
+        subtitle = f"{label}: {subtitle}"
+    measured = [r for r in results if not r.confirmation]
+    capacity = capacity_outcome(measured, limits).capacity if measured else None
+    renderables = [
+        None,
+        Text("PERFORMANCE TEST SUMMARY", style="bold"),
+        Text(subtitle, style=_QUIET),
+        Text(_checked_limits(results, limits), style=_QUIET),
+        _summary_table(results, limits, capacity),
+    ]
+    short = [r.session_minutes for r in results if _too_short_to_finish(r)]
+    if short:
+        renderables += [
+            Text(
+                f"  -  The test was shorter than one participant session "
+                f"({_minutes(max(short))}), so no bot could finish.",
+                style=_QUIET,
+            ),
+            None,
+        ]
+    notes = []
+    if database_growth := _describe_database_growth(results):
+        notes.append(
+            f"Database rows from the first test to the last: {database_growth}."
+        )
+    notes.append(_NOT_MEASURED)
+    renderables += _capacity_renderables(results, limits, time_factor, notes)
+    return _render(renderables, color)
 
 
 def _busy_early_finish_count(result):
@@ -689,7 +891,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     if queue_bound is not None:
         if queue_bound.n_rq_workers == 0:
             return [
-                "  High-priority async jobs, which participants wait for, waited "
+                "High-priority async jobs, which participants wait for, waited "
                 "for a worker, but no worker processes were running, so they "
                 "couldn't run. Check the server log for workers that failed to "
                 "start, and check worker_processes."
@@ -719,8 +921,8 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
         test = _describe_test(measured, confirmed) if not said_busy else None
         lines = _describe_worker_advice(advice, measured, n, test, above_cap)
     if text:
-        lines.insert(0, "  " + " ".join(text))
-    return [warning(line) for line in lines] if behind else lines
+        lines.insert(0, " ".join(text))
+    return [Text(line, style=_WARNING if behind else "") for line in lines]
 
 
 def _describe_test(result, confirmed):
@@ -789,9 +991,9 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
     return [
-        f"  Recommended settings for {n:,} participants at once:",
-        *(f"      {line}" for line in settings),
-        f"  {' '.join(why)}",
+        f"Recommended settings for {n:,} participants at once:",
+        *(f"    {line}" for line in settings),
+        " ".join(why),
     ]
 
 
@@ -941,29 +1143,95 @@ def _startup_only_lines(result, limits):
 _RAMP_UP_WARNING_SHARE = 0.25
 
 
-def _capacity_headline(outcome, first_reasons, limit, limits, *, show_cap=True):
-    """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
+def _bot_failures(result):
+    """Describe how many of ``result``'s bots failed, e.g. ``7 of 570 bots (1.2%) failed``."""
+    n, started = result.bot_errors, result.total_bots_started
+    if not started:
+        return f"{plural(n, 'bot')} failed"
+    return f"{n:,} of {started:,} bots ({_percent(n / started)}) failed"
+
+
+def _reasons(result, causes):
+    """Join the reasons in ``causes``, from :func:`capacity_failure_causes` of ``result``.
+
+    Bot errors appear as a share of the bots; :func:`_error_kinds_lines`
+    names their kinds.
+    """
+    bot_errors = describe_bot_errors(result)
+    return "; ".join(
+        _bot_failures(result) if reason == bot_errors else reason
+        for reason, _ in causes
+    )
+
+
+def _error_kinds_lines(result, causes):
+    """Name the kinds of ``result``'s bot errors, if too many bots failed, e.g. ``Errors at 560: 5 x HTTP 500 on /response.``"""
+    kinds = list((result.bot_error_kinds or {}).items())
+    if not kinds or describe_bot_errors(result) not in [r for r, _ in causes]:
+        return []
+    named = ", ".join(f"{n:,} x {kind}" for kind, n in kinds[:5])
+    more = ", ..." if len(kinds) > 5 else ""
+    return [f"  Errors at {result.n_bots:,}: {named}{more}."]
+
+
+def _recommendation(outcome, confirmation, limits):
+    """Return the verdict's first line, the recommended participant cap, if there is one.
+
+    A confirmation test that passed confirms its cap, and one that exceeded
+    the limits suggests a lower cap to check; without one, the cap is
+    :data:`CAPACITY_HEADROOM` of the capacity.
+    """
+    if confirmation is None:
+        if outcome.cap is None:
+            return []
+        text, style = (
+            f"at most {outcome.cap:,} participants at once "
+            f"({CAPACITY_HEADROOM:.0%} of {outcome.capacity:,}).",
+            _RECOMMENDED,
+        )
+    elif _confirmed(confirmation, limits):
+        text, style = (
+            f"at most {confirmation.n_bots:,} participants at once.",
+            _RECOMMENDED,
+        )
+    elif _confirmation_exceeded(confirmation, limits):
+        retry = retry_bot_count(confirmation, limits)
+        rerun = f"--n-bots {retry} --duration-minutes {confirmation.duration_minutes or 0:g}"
+        if confirmation.arrival_minutes:
+            rerun += f" --arrival-minutes {confirmation.arrival_minutes:g}"
+        text, style = (
+            f"try at most {retry:,} participants at once, and check it with {rerun}.",
+            _UNCONFIRMED,
+        )
+    else:
+        text, style = (
+            f"at most {confirmation.n_bots:,} participants at once, but the check "
+            "left this cap unconfirmed.",
+            _UNCONFIRMED,
+        )
+    return [Text(f"Recommended: {text}", style=style)]
+
+
+def _capacity_lines(outcome, limits):
+    """Return the verdict's lines on the capacity: what passed, what failed first and why.
 
     Only a server limit sets the capacity, so a first failure that could not
     be tested (``outcome.unmeasured``) or that only had wait timeouts
     (``outcome.waits_only``) leaves it a lower bound, without a cap. Busy
     chains do set it, because fewer participants at once keep chains free.
-    Pass ``show_cap=False`` when a confirmation test reports the cap instead.
     """
     capacity, passed, first_fail = outcome.capacity, outcome.passed, outcome.first_fail
     unmeasured, waits_only = outcome.unmeasured, outcome.waits_only
     if first_fail is None:
         return [
-            f"  Capacity: at least {capacity:,} concurrent bots kept {limit}. "
+            f"Capacity: at least {capacity:,} bots at once; no test failed. "
             "Test more bots to find the limit."
         ]
     n_failed = f"{first_fail.n_bots:,}"
+    reasons = _reasons(first_fail, outcome.first_causes)
     if capacity is None:
         if unmeasured:
-            lines = [
-                f"  Capacity unknown: {n_failed} bots could not be tested "
-                f"({first_reasons})."
-            ]
+            line = f"Capacity unknown. {n_failed} bots at once could not be tested: {reasons}."
         else:
             if waits_only:
                 advice = ""
@@ -971,21 +1239,18 @@ def _capacity_headline(outcome, first_reasons, limit, limits, *, show_cap=True):
                 advice = "; fix the errors or test fewer bots"
             else:
                 advice = "; test fewer bots"
-            lines = [
-                f"  Even {n_failed} bots exceeded the limits ({first_reasons}){advice}."
-            ]
+            line = f"No test passed. {n_failed} bots at once failed: {reasons}{advice}."
+    elif unmeasured or waits_only:
+        verdict = "could not be tested" if unmeasured else "failed"
+        line = (
+            f"Capacity: at least {capacity:,} bots at once. "
+            f"{n_failed} {verdict}: {reasons}."
+        )
     else:
-        lower_bound = unmeasured or waits_only
-        verdict = "could not be tested" if unmeasured else "did not"
-        lines = [
-            f"  Capacity: {'at least' if lower_bound else 'about'} {capacity:,} "
-            f"concurrent bots kept {limit}; {n_failed} {verdict} ({first_reasons})."
-        ]
-        if show_cap and outcome.cap is not None:
-            lines.append(
-                f"  Cap concurrent participants at about {outcome.cap:,} "
-                f"({CAPACITY_HEADROOM:.0%} of {capacity:,})."
-            )
+        line = (
+            f"Capacity: {capacity:,} bots at once passed. {n_failed} failed: {reasons}."
+        )
+    lines = [line, *_error_kinds_lines(first_fail, outcome.first_causes)]
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
         also = "" if capacity is None else "also "
@@ -1034,42 +1299,37 @@ def _confirmed(result, limits):
     )
 
 
-def _confirmation_lines(result, limits):
+def _check_lines(result, outcome, limits):
     """Report whether the confirmation test that ended a capacity search kept the limits.
 
     Only a test that kept the limits and reached the steady state confirms
     the cap.
     """
     n = result.n_bots
+    share = ""
+    if outcome.capacity and outcome.cap == n:
+        share = f" ({CAPACITY_HEADROOM:.0%} of {outcome.capacity:,})"
     arriving = (
-        f"bots arriving over {result.arrival_minutes:g} min"
+        f"arriving over {_minutes(result.arrival_minutes)}"
         if result.arrival_minutes
-        else "bots starting together"
+        else "starting together"
     )
-    test = (
-        f"the {n:,}-bot confirmation test ({arriving}, "
-        f"{result.duration_minutes or 0:g} min long)"
+    ran = _minutes(
+        result.actual_duration / 60 if result.actual_duration else _test_minutes(result)
     )
-    unconfirmed = (
-        f"The search's cap of about {n:,} concurrent participants is unconfirmed."
-    )
+    test = f"Check: {n:,} bots{share}, {arriving}, ran for {ran}"
     causes = capacity_failure_causes(result, limits)
     if not causes:
         if not _confirmed(result, limits):
             return [
-                f"  Not confirmed: {test} kept the limits but never reached the "
-                f"steady state, so it only saw the start-up. {unconfirmed}"
+                f"{test} and kept the limits but never reached the steady "
+                "state, so it only saw the start-up."
             ]
-        return [
-            f"  Confirmed: {test} kept the same limits. Cap concurrent "
-            f"participants at about {n:,}."
-        ]
-    reasons = "; ".join(reason for reason, _ in causes)
+        return [f"{test} and passed."]
+    reasons = _reasons(result, causes)
     if not _confirmation_exceeded(result, limits):
-        return [
-            f"  Not confirmed: {test} could not be tested ({reasons}). {unconfirmed}"
-        ]
-    lines = [f"  Not confirmed: {test} exceeded the limits ({reasons})."]
+        return [f"{test} but could not be tested: {reasons}."]
+    lines = [f"{test} and failed: {reasons}.", *_error_kinds_lines(result, causes)]
     if result.startup_phase and result.steady_state_phase:
         startup = phase_limit_reasons(result.startup_phase, limits)
         steady = phase_limit_reasons(result.steady_state_phase, limits)
@@ -1082,68 +1342,108 @@ def _confirmation_lines(result, limits):
         lines.append(
             "  The test reached too little steady state to judge it separately."
         )
-    retry = retry_bot_count(result, limits)
-    ratio = overshoot(result, limits)
-    why = f", as the worst measure reached {ratio:.1f} times its limit" if ratio else ""
-    rerun = f"--n-bots {retry} --duration-minutes {result.duration_minutes or 0:g}"
-    if result.arrival_minutes:
-        rerun += f" --arrival-minutes {result.arrival_minutes:g}"
-    lines.append(
-        f"  Try capping concurrent participants at about {retry:,}{why}, and "
-        f"check it with {rerun}."
-    )
+    if ratio := overshoot(result, limits):
+        lines.append(f"  The worst measure reached {ratio:.1f} times its limit.")
     return lines
 
 
-def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
+def _notes(items):
+    """Return the summary's notes, ``items`` of text or :class:`~rich.text.Text`, under a heading."""
+    if not items:
+        return []
+    return [
+        None,
+        Text("Notes", style="bold"),
+        *(
+            Text.assemble("  - ", item if isinstance(item, Text) else item.strip())
+            for item in items
+        ),
+    ]
+
+
+def format_capacity_summary(
+    results, limits=CapacityLimits(), time_factor=1.0, color=None
+):
     """Describe the capacity that ``results`` imply and suggest a participant cap.
 
-    Returns list[str].
+    This is the verdict that ends :func:`format_performance_summary`, with
+    any worker settings and notes.
+
+    Parameters
+    ----------
+    results : list[PerformanceTestResult]
+        The tests, in the order they ran.
+    limits : CapacityLimits
+        The limits that the tests were judged by.
+    time_factor : float
+        The bots' time factor.
+    color : bool, optional
+        Whether to colour the text; by default, only if standard output is a
+        terminal.
+
+    Returns
+    -------
+    list[str]
+    """
+    return _render(_capacity_renderables(results, limits, time_factor), color)
+
+
+def _capacity_renderables(results, limits, time_factor, extra_notes=()):
+    """Return the verdict, worker settings and notes of :func:`format_capacity_summary` for rich.
+
+    ``extra_notes`` follow the notes on the capacity. Returns nothing if
+    ``results`` has only a confirmation test.
     """
     confirmation = next((r for r in results if r.confirmation), None)
     run_order, results = results, [r for r in results if not r.confirmation]
     if not results:
         return []
-    limit = limits.describe(
-        include_queue=any(
-            queue_wait_p95(r) is not None or r.q_delay_median is not None
-            for r in results
-        )
-    )
     outcome = capacity_outcome(results, limits)
     capacity, first_fail = outcome.capacity, outcome.first_fail
-    first_reasons = "; ".join(reason for reason, _ in outcome.first_causes)
-    lines = _capacity_headline(
-        outcome, first_reasons, limit, limits, show_cap=confirmation is None
-    )
+    verdict = _recommendation(outcome, confirmation, limits)
+    capacity_lines = [Text(line) for line in _capacity_lines(outcome, limits)]
+    if not verdict:
+        capacity_lines[0].stylize("bold")
+    verdict += capacity_lines
     if confirmation is not None:
-        lines += _confirmation_lines(confirmation, limits)
+        verdict += _check_lines(confirmation, outcome, limits)
+    notes = []
     if first_fail is not None:
-        lines += _startup_only_lines(first_fail, limits)
+        notes += _startup_only_lines(first_fail, limits)
     # Advice covers the search's first failing test and the confirmation test.
     advised = [r for r in (first_fail, confirmation) if r is not None]
     if any(wait_timeout_cause(r, limits) for r in advised):
-        lines.append(_WAIT_ADVICE)
+        notes.append(_WAIT_ADVICE)
     if any(busy_early_finish_cause(r, limits) for r in advised):
-        lines.append(_BUSY_CHAINS_ADVICE)
+        notes.append(_BUSY_CHAINS_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
-    lines += _worker_lines(outcome, confirmation, capacity_result, limits)
+    workers = _worker_lines(outcome, confirmation, capacity_result, limits)
     if any(start_rate_limits(r) for r in advised):
-        lines.append(_START_RATE_ADVICE)
+        notes.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):
-        lines.append(_TESTER_LAG_ADVICE)
+        notes.append(_TESTER_LAG_ADVICE)
     if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in run_order):
-        lines.append(_POSTGRES_ADVICE)
+        notes.append(_POSTGRES_ADVICE)
     if any(PGBOUNCER_FULL in (r.bot_error_kinds or {}) for r in run_order):
-        lines.append(_PGBOUNCER_ADVICE)
+        notes.append(_PGBOUNCER_ADVICE)
     if missing := next(filter(None, map(_missing_workers_text, run_order)), None):
-        lines.append(warning(missing))
-    lines += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
-    lines += _database_growth_warnings(
+        notes.append(Text(missing.strip(), style=_WARNING))
+    notes += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
+    notes += _database_growth_warnings(
         run_order, capacity_result, first_fail, confirmation, limits
     )
-    if capacity is None:
-        return lines + [""]
+    if capacity_result is not None:
+        notes += _capacity_test_notes(capacity_result, time_factor)
+    renderables = [*(Text(line) if isinstance(line, str) else line for line in verdict)]
+    if workers:
+        renderables += [None, *workers]
+    return renderables + _notes(notes + list(extra_notes)) + [None]
+
+
+def _capacity_test_notes(capacity_result, time_factor):
+    """Return notes on the test that set the capacity: errors within the limits, design failures and a slow start."""
+    capacity = capacity_result.n_bots
+    notes = []
     tolerated = []
     if capacity_result.request_errors:
         tolerated.append(plural(capacity_result.request_errors, "request error"))
@@ -1162,8 +1462,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     ]
     if tolerated:
         found = " and ".join(filter(None, [", ".join(tolerated[:-1]), tolerated[-1]]))
-        lines.append(
-            f"  The {capacity:,}-bot test had {found}, within "
+        notes.append(
+            f"The {capacity:,}-bot test had {found}, within "
             "the limits; check the logs in case they point to a bug."
         )
     other_failures = {
@@ -1173,8 +1473,8 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     }
     if other_failures:
         also, why = ("also ", " for other reasons") if wait_timeouts else ("", "")
-        lines.append(
-            f"  In the {capacity:,}-bot test the experiment {also}failed "
+        notes.append(
+            f"In the {capacity:,}-bot test the experiment {also}failed "
             f"{plural(sum(other_failures.values()), 'participant')}{why} "
             f"({top_counts(other_failures)}). These don't "
             "count against capacity; check that the design expects them."
@@ -1188,19 +1488,18 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         # Arrivals spread on purpose take long to start.
         and not capacity_result.arrival_minutes
     ):
-        lines.append(
-            f"  Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
+        notes.append(
+            f"Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
             f"{test_length:.0f} s test, so the server ran fully loaded for only "
             f"{1 - ramp_up / test_length:.0%} of it; use a longer "
             "--duration-minutes to confirm the capacity."
         )
     if not time_factor:
-        lines.append(
-            "  These bots ran without pauses (--time-factor 0) and load the server "
+        notes.append(
+            "These bots ran without pauses (--time-factor 0) and load the server "
             "far more than people do; use --time-factor 1 to size a participant cap."
         )
-    lines.append("")
-    return lines
+    return notes
 
 
 def reset_error_lines(reset_error, n_completed):

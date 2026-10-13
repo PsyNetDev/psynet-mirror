@@ -5005,7 +5005,10 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         **{"arrival_minutes": None, **expected},
     )
     suite_class.assert_called_once_with(
-        performance_tester.return_value, limits=CapacityLimits(), before_test=None
+        performance_tester.return_value,
+        limits=CapacityLimits(),
+        before_test=None,
+        label=experiment.label,
     )
     searching = options.get("n_bots") == "auto"
     assert (suite.find_capacity.called, suite.run.called) == (

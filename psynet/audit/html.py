@@ -888,7 +888,7 @@ def render_performance_result(
             "</tr>"
         )
     summary = [
-        line.strip()
+        line.strip().removeprefix("- ")
         for line in format_capacity_summary(
             [
                 PerformanceTestResult.from_dict(row)
@@ -897,8 +897,9 @@ def render_performance_result(
             ],
             limits,
             options_data.get("time_factor", 1.0),
+            color=False,
         )
-        if line.strip()
+        if line.strip() not in ("", "Notes")
     ]
     notes = summary + capacity_advice(
         capacity_search=bool(options_data.get("capacity_search"))

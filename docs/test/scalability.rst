@@ -397,16 +397,43 @@ When bots fail, the report lists what went wrong, for example
 the server managed to log, so a server that cannot reach its database shows
 them under *Bot errors* instead.
 
-The summary at the end of every run reports the capacity it found and, once a
-larger bot count has exceeded the limits, suggests capping the number of
-participants taking part at once at 80% of it. After a confirmation test the
-cap comes from that test, for example::
+The summary at the end of every run lists the tests in the order they ran,
+whether each passed the limits, and the measures that the limits check.
+Columns for busy responses, participants the experiment failed, busy chains
+and async queue waits only appear when a test had them, and the limits line
+lists only the limits that apply. *Failed bots* counts every bot that raised
+an error. *Bots finished* counts bots that completed the experiment, or shows
+``-`` when a test was shorter than one participant session, so that no bot
+could finish. The verdict follows: the recommended number of participants
+taking part at once, the capacity it comes from and why the next count
+failed, and the confirmation test. Without a confirmation test, the cap is
+80% of the capacity. For example, from a capacity search of a static rating
+study on an SSH server (some rows left out)::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 high-priority async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy (1 always allowed); 170 did not (p95 response time 622 ms).
-    Confirmed: the 128-bot confirmation test (bots arriving over 12 min, 24 min long) kept the same limits. Cap concurrent participants at about 128.
+    PERFORMANCE TEST SUMMARY
+    dog-rating on rr-pc02: 11 tests, 59 min
+    Limits checked: p95 response time under 0.5 s, at most 0.1% of requests failing, at most 1% of bots failing.
 
-Without a confirmation test, the second line reads ``Cap concurrent
-participants at about 128 (80% of 160).``
+                                           p95     Median      Failed      Failed       Bots
+     Bots   Length   Result   Req/s   response   response    requests        bots   finished
+     ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+       10    3 min   pass       2.4     0.063s     0.027s           0           0          -
+      640    3 min   FAIL     109.2     0.113s     0.037s   17 (0.1%)   631 (50%)          -
+      480    3 min   pass      97.0     0.074s     0.032s           0           0          -
+      560    3 min   FAIL     110.5     0.091s     0.036s           0   10 (1.8%)          -
+      520    3 min   pass     103.0     0.081s     0.033s           0           0          -   capacity
+      416   23 min   pass      90.2     0.076s     0.029s           0           0        433   check at the cap
+
+      -  The test was shorter than one participant session (11 min), so no bot could finish.
+
+    Recommended: at most 416 participants at once.
+    Capacity: 520 bots at once passed. 560 failed: 10 of 570 bots (1.8%) failed.
+      Errors at 560: 5 x HTTP 500 on /participant_status, 3 x OperationalError, 2 x HTTP 500 on /response.
+    Check: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
+
+Notes on the results, such as advice on errors and database growth, follow
+under *Notes*. In a terminal the summary is coloured; in a log file it is
+plain text.
 
 For rough capacities of common server sizes, based on one test on a real
 server, see :ref:`choosing_server_size`.

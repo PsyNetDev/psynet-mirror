@@ -506,11 +506,8 @@ class CapacityLimits:
             self.max_busy_early_finish_rate * (total_bots_started or 0),
         )
 
-    def describe(self, include_queue=True):
-        """Return the limits as a phrase, for summaries.
-
-        Pass ``include_queue=False`` when the tests ran no async jobs.
-        """
+    def describe(self):
+        """Return the limits as a phrase, for the suite header and the audit."""
         response = f"p95 response time under {self.max_p95_s * 1000:.0f} ms"
         errors = (
             f"at most {self.max_request_error_rate:.1%} of requests failing "
@@ -524,8 +521,6 @@ class CapacityLimits:
             f"because every chain was busy ({self.allowed_busy_early_finishes} "
             "always allowed)"
         )
-        if not include_queue:
-            return f"{response} and {errors}"
         return (
             f"{response}, p95 high-priority async queue wait under "
             f"{self.max_queue_p95_s:g} s and {errors}"

@@ -5026,7 +5026,9 @@ def _run_performance_test_with_existing_server(
         except ValueError as e:
             bot_log_file.close()
             raise click.ClickException(str(e)) from e
-    suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
+    suite = PerformanceSuite(
+        tester, limits=limits, before_test=database_reset, label=exp.label
+    )
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
         if test_label is not None:
@@ -6075,7 +6077,12 @@ def _run_ssh_performance_test(
     )
     with bot_log_file, _exit_on_sigterm():
         database_reset = _ssh_database_reset(remote, reset, experiment["label"])
-        suite = PerformanceSuite(tester, limits=limits, before_test=database_reset)
+        suite = PerformanceSuite(
+            tester,
+            limits=limits,
+            before_test=database_reset,
+            label=f"{app} on {server}",
+        )
         started_at = datetime.datetime.now().isoformat(timespec="seconds")
         try:
             if find_capacity:
