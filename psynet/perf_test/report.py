@@ -22,7 +22,6 @@ from psynet.perf_test.results import (
     PGBOUNCER_FULL,
     POSTGRES_FULL,
     PRIORITIES,
-    TARGET_WORKER_UTILIZATION,
     CapacityLimits,
     busy_early_finish_cause,
     capacity_failure_causes,
@@ -704,10 +703,10 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     if behind:
         text.append(
             f"During {_describe_test(measured, confirmed)}, {behind}, "
-            "so the workers can't keep up in the long run. The test still "
-            "passes, because participants don't wait for low-priority jobs, but "
-            "their results arrive later and later and the jobs keep the workers "
-            "busy."
+            "so the workers can't keep up in the long run. That doesn't fail the "
+            "test by itself, because participants don't wait for low-priority "
+            "jobs, but their results arrive later and later and the jobs keep "
+            "the workers busy."
         )
     lines = []
     if advice.skipped:
@@ -717,7 +716,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     else:
         said_busy = behind and advice.utilization > MAX_WORKER_UTILIZATION
         test = _describe_test(measured, confirmed) if not said_busy else None
-        lines = _describe_worker_advice(advice, measured, n, burst, test, above_cap)
+        lines = _describe_worker_advice(advice, measured, n, test, above_cap)
     if text:
         lines.insert(0, "  " + " ".join(text))
     return [warning(line) for line in lines] if behind else lines
@@ -731,52 +730,50 @@ def _describe_test(result, confirmed):
     return test
 
 
-def _describe_worker_advice(advice, result, n, burst, test, above_cap):
+def _describe_worker_advice(advice, result, n, test, above_cap):
     """Return the recommended settings in ``advice`` for ``n`` participants at once, and why, as lines.
 
     ``test`` describes the measured test, or is ``None`` if a warning already
-    said how busy its workers were. ``above_cap`` says a larger test failed on
-    queue waits above the confirmed cap ``n``. The reason names only the
-    recommended number of processes.
+    said how busy its workers were. ``above_cap`` says a larger test failed
+    on queue waits above the confirmed cap ``n``. The reason only states what
+    was measured and how busy the recommended processes would be.
     """
     workers, processes = result.n_rq_workers, advice.processes
+    # Only workers that fell behind need more than both the load and the current ones.
+    fell_behind = advice.needed > max(advice.demand, workers)
     were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
     busy = (
-        f"In {test}, the {were} busy {advice.utilization:.0%} of the time"
-        if test
-        else ""
+        "the whole time"
+        if advice.saturated
+        else f"{advice.utilization:.0%} of the time"
     )
-    setting = f"worker_processes = {processes}"
-    if advice.needed > processes:
-        setting += " (all the cores left)"
-        why = (
-            f"{n:,} participants at once need about {advice.needed} worker processes, "
-            f"but the {result.server_cores}-core server has only {processes} "
-            f"cores left after {CORES_FOR_OTHERS} for the web server and "
-            "database, so it lacks cores; use a larger server or cheaper jobs."
-        )
-    elif advice.lower_bound:
-        setting = f"worker_processes >= {processes} (minimum)"
-        why = f"{processes} is a minimum, not a target, because the workers were busy throughout."
+    why = f"In {test}, the {were} busy {busy}" if test else ""
+    if advice.saturated:
+        why += f", so {processes} is a minimum, not a target"
         if advice.per_participant_s:
-            why = (
-                f"Each participant used about {advice.per_participant_s:.0f} s of "
-                f"worker time, so {workers} aren't enough; {why}"
-            )
-    elif processes == advice.steady_state:
-        lead = f"{busy}, so" if busy else "So"
-        why = f"{lead} about {processes} would be {TARGET_WORKER_UTILIZATION:.0%} busy."
-    elif processes == advice.burst:
-        why = (f"{busy}. " if busy else "") + (
-            f"{burst[0]} workers handled {burst[1]:,} bots arriving together, so "
-            f"about {processes} should handle {n:,} at start-up."
-        )
-    elif processes > workers:
-        why = f"{busy + ' but' if busy else 'The workers'} still fell behind, so use at least {processes}."
+            why += f"; it comes from about {advice.per_participant_s:.0f} s of worker time per participant"
+    elif fell_behind:
+        why += f", but they still fell behind, so use at least {advice.needed}"
     else:
-        why = f"{busy}, so {processes} {'is' if processes == 1 else 'are'} enough."
-    if above_cap and advice.needed <= processes:
+        why += f"; {processes} would be about {advice.implied_utilization:.0%} busy"
+    why = why.lstrip(",; ")
+    why = why[0].upper() + why[1:] + "."
+    cores = (
+        f"{result.server_cores}-core server has only {processes} cores left after "
+        f"{CORES_FOR_OTHERS} for the web server and database; use a larger server "
+        "or cheaper jobs."
+    )
+    if advice.demand > processes:
+        why = f"{n:,} participants at once would use about {advice.demand} worker processes, but the {cores}"
+    elif fell_behind and advice.needed > processes:
+        why += f" The {cores}"
+    elif above_cap and processes < advice.cores_left:
         why += f" To go above {n:,}, raise worker_processes above {processes} and test again."
+    setting = f"worker_processes = {processes}"
+    if advice.needed >= advice.cores_left:
+        setting += " (all the cores left)"
+    elif advice.saturated:
+        setting = f"worker_processes >= {processes} (minimum)"
     settings = [setting]
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")

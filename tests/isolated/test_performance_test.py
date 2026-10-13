@@ -604,8 +604,8 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "  Recommended settings for 96 participants at once:\n"
         "      worker_processes = 10\n"
         "  In the 96-bot test that confirmed this cap, the 10 worker processes "
-        "were busy 55% of the time, so 10 are enough. To go above 96, raise "
-        "worker_processes above 10 and test again."
+        "were busy 55% of the time; 10 would be about 55% busy. To go above 96, "
+        "raise worker_processes above 10 and test again."
     ) in text
 
 
@@ -1543,16 +1543,16 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             _tapping_result(96, 10, 0.55),
             96,
             (10, 120),
-            dict(processes=10, steady_state=8, burst=8),
+            dict(processes=10, demand=8, implied_utilization=0.55),
         ),
         # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a minimum.
-        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, lower_bound=True)),
+        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, saturated=True)),
         # 192 need 16, but 16 cores leave 14; unknown search workers give no burst.
         (
             _tapping_result(96, 10, 0.55),
             192,
             (None, 120),
-            dict(processes=14, burst=None),
+            dict(processes=14, demand=16),
         ),
         # 10 I/O jobs at once in each 20-slot process use 60% of its core.
         (
@@ -1562,7 +1562,7 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             dict(processes=2, greenlets=20),
         ),
         (
-            _tapping_result(96, 10, 0.55, worker_load={}),
+            _tapping_result(96, 10, 0.55, worker_load={}, steady_state_phase=None),
             96,
             None,
             dict(
@@ -1575,6 +1575,42 @@ def test_recommend_workers(result, n, burst, expected):
     advice = recommend_workers(result, n, burst)
 
     assert {key: getattr(advice, key) for key in expected} == expected
+
+
+@pytest.mark.parametrize(
+    "result, present, absent",
+    [
+        # The 10 current workers exceed the 6 cores left, but the load uses 8.
+        (
+            _tapping_result(96, 10, 0.55, server_cores=8),
+            "would use about 8 worker processes, but the 8-core server",
+            "about 10",
+        ),
+        # A test that failed on response times, whose backlog also grew.
+        (
+            _tapping_result(
+                60,
+                2,
+                0.5,
+                p95_response_time=0.9,
+                startup_phase=_phase_backlog(2),
+                steady_state_phase=_phase_backlog(95),
+            ),
+            "That doesn't fail the test by itself",
+            "still passes",
+        ),
+        # 1.5 CPU-heavy jobs running per process means busy all the time.
+        (
+            _tapping_result(40, 2, 1.5, slots=20),
+            "worker_greenlets_per_process = 1",
+            "150%",
+        ),
+    ],
+)
+def test_worker_text_states_what_was_measured(result, present, absent):
+    text = _join(format_test_results(result) + format_capacity_summary([result]))
+
+    assert present in text and absent not in text
 
 
 @pytest.mark.parametrize(

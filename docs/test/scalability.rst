@@ -374,9 +374,10 @@ test: the confirmation test if there was one, otherwise the test that set the
 capacity, or the first failing test if none passed. It warns when the worker
 processes were more than 85% busy in the steady state, or when the
 low-priority backlog at the end of the steady state is at least twice the
-backlog at the end of the start-up and at least 10 jobs longer. The test still
-passes, because only high-priority queue waits count against the limits, but
-low-priority results arrive ever later. Whenever the queue limit or this check
+backlog at the end of the start-up and at least 10 jobs longer. That doesn't
+fail the test by itself, because participants don't wait for low-priority
+jobs, but their results arrive later and later and the jobs keep the workers
+busy. Whenever the queue limit or this check
 fires, and whenever that test ran worker jobs in its steady state, the summary
 estimates ``worker_processes`` for the cap, or without one for that test's
 bot count; see :ref:`performance_testing_async_workers`.
@@ -529,8 +530,9 @@ the finished jobs' CPU time a share ``c`` of their run time:
   job's CPU time includes what the other jobs in its process used meanwhile,
   so ``c / max(R, 1)`` is the CPU share of each job. If that is at least 50%,
   the jobs are CPU-heavy: the summary suggests
-  ``worker_greenlets_per_process = 1``, and each running job then needs a
-  process, ``U = R``. Otherwise it keeps the configured slots, and a
+  ``worker_greenlets_per_process = 1``, and sizes for each running job
+  needing a process, ``U = R``, while reporting the processes as busy
+  ``min(R, 1)`` of the time. Otherwise it keeps the configured slots, and a
   process is busy when its slots or its core are:
   ``U = max(R / slots, c × min(R, 1))``.
 - *Steady state.* ``U × W × (participants / bots) / 0.7`` processes keep the
@@ -553,16 +555,20 @@ the finished jobs' CPU time a share ``c`` of their run time:
 
 There is no estimate if the steady state lasted under a minute or fewer than
 20 worker jobs finished in it. For example, a tapping study with 43 s of
-audio analysis per 13-minute session, whose 96-participant confirmation test
-kept 10 single-slot workers 55% busy, gets::
+audio analysis per 13-minute session, whose capacity search failed at 130
+bots on queue waits and whose 96-participant confirmation test kept 10
+single-slot workers 55% busy, gets::
 
+    In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time, so 10 are enough. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time; 10 would be about 55% busy. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
-only listed when it should change, and ``worker_processes >= N (minimum)``
-marks saturated workers.
+only listed when it should change, ``worker_processes >= N (minimum)`` marks
+saturated workers, and ``(all the cores left)`` a server without cores to
+spare. The reason states what the test measured and how busy the
+recommended processes would be.
 
 .. _performance_testing_database_size:
 

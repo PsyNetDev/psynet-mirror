@@ -586,14 +586,14 @@ CORES_FOR_OTHERS = 2
 
 
 def _worker_demand(result):
-    """Return ``(utilization, greenlets)`` for the steady state of ``result``, or ``None``.
+    """Return ``(busy, demand, greenlets)`` per process for the steady state of ``result``, or ``None``.
 
-    With ``R`` jobs running per process on average and CPU share ``c`` of
-    their run time: one slot per process gives ``U = R``. With more slots, a
-    job's CPU time includes its neighbours', so ``c / max(R, 1)`` is the
-    per-job CPU share. If that makes the jobs CPU-heavy, they move to one
-    slot each and ``U = R``; otherwise ``U = max(R / slots, c × min(R, 1))``
-    with the slots kept.
+    With ``R`` jobs running per process and CPU share ``c`` of their run
+    time, one slot per process gives ``R`` for both. With more slots, a job's
+    CPU time includes its neighbours', so ``c / max(R, 1)`` is its own share.
+    CPU-heavy jobs move to one slot each, needing ``R`` processes while busy
+    ``min(R, 1)``; others keep their slots, with
+    ``max(R / slots, c × min(R, 1))`` for both.
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
     steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
@@ -602,11 +602,12 @@ def _worker_demand(result):
     running = load["busy_s"] / (workers * steady_s)
     slots = (result.n_rq_job_slots or 0) // workers
     if slots <= 1:
-        return running, 1
+        return running, running, 1
     cpu = load.get("cpu_share") or 0
     if cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
-        return running, 1
-    return max(running / slots, cpu * min(running, 1)), slots
+        return min(running, 1), running, 1
+    busy = max(running / slots, cpu * min(running, 1))
+    return busy, busy, slots
 
 
 def worker_utilization(result):
@@ -653,13 +654,14 @@ class WorkerAdvice:
     processes: int | None = None
     greenlets: int | None = None
     utilization: float | None = None
-    steady_state: int | None = None
-    burst: int | None = None
-    # The processes needed before the cores cap: at least the current ones,
-    # and one more if the workers fell behind.
+    implied_utilization: float | None = None
+    # The processes the load needs, then at least the current ones (one more
+    # if they fell behind), before the cores cap.
+    demand: int | None = None
     needed: int | None = None
-    lower_bound: bool = False
-    # Worker time per participant, if the lower bound comes from it.
+    cores_left: float = math.inf
+    saturated: bool = False
+    # Worker time per participant, if it set ``processes``.
     per_participant_s: float | None = None
     skipped: str | None = None
 
@@ -667,13 +669,14 @@ class WorkerAdvice:
 def recommend_workers(result, n_participants, burst=None):
     """Estimate the async worker processes that ``n_participants`` taking part at once need.
 
-    ``max(U × W × n_participants / N / u, W_b × n_participants / N_b)``, at
-    at least the current ``W`` (``W + 1`` if :func:`workers_falling_behind`)
-    and at most the cores less :data:`CORES_FOR_OTHERS`, with ``U`` and the greenlets
-    from :func:`_worker_demand` and ``u`` :data:`TARGET_WORKER_UTILIZATION`.
-    For saturated single-slot workers the steady-state term is the lower
-    bound ``n_participants × D / (S × u)``, with ``D`` the worker time per
-    participant who completed and ``S`` the session length.
+    The demand is ``max(U × W × n_participants / N / u, W_b × n_participants / N_b)``,
+    with ``U`` and the greenlets from :func:`_worker_demand` and ``u``
+    :data:`TARGET_WORKER_UTILIZATION`. For saturated single-slot workers the
+    first term is the minimum ``n_participants × D / (S × u)``, with ``D``
+    the worker time per participant who completed and ``S`` the session
+    length. The advice is at least the current ``W`` (``W + 1`` if
+    :func:`workers_falling_behind`) and at most the cores less
+    :data:`CORES_FOR_OTHERS`.
 
     Parameters
     ----------
@@ -693,42 +696,46 @@ def recommend_workers(result, n_participants, burst=None):
     demand = _worker_demand(result)
     jobs = load.get("jobs") or 0
     if demand is None or jobs < _MIN_STEADY_WORKER_JOBS:
+        test = f"the {result.n_bots:,}-bot test"
         if not workers:
             why = "no worker processes were running"
+        elif not result.steady_state_phase:
+            why = f"{test} ran for less than {MIN_STEADY_STATE_S} s after its first bot finished"
         elif not load:
-            why = f"the {result.n_bots:,}-bot test ran for less than {MIN_STEADY_STATE_S} s after its first bot finished"
+            why = f"{test} was saved without worker measurements"
         else:
-            why = f"only {plural(jobs, 'worker job')} finished in the {result.n_bots:,}-bot test after its first bot finished"
+            why = f"only {plural(jobs, 'worker job')} finished in {test} after its first bot finished"
         return WorkerAdvice(skipped=why)
-    utilization, greenlets = demand
-    lower_bound = utilization >= _SATURATED_UTILIZATION
+    busy, per_process, greenlets = demand
+    saturated = busy >= _SATURATED_UTILIZATION
     per_participant_s = load.get("per_participant_s")
     session_s = result.avg_succeeded_duration or (result.session_minutes or 0) * 60
     single_slot = (result.n_rq_job_slots or 0) <= workers
-    if not (lower_bound and session_s and single_slot):
+    if not (saturated and session_s and single_slot):
         per_participant_s = None
     if per_participant_s:
-        needed = n_participants * per_participant_s / session_s
+        used = n_participants * per_participant_s / session_s
     else:
-        needed = utilization * workers * n_participants / result.n_bots
-    steady_state = _round_up(needed / TARGET_WORKER_UTILIZATION)
+        used = per_process * workers * n_participants / result.n_bots
+    steady_state = _round_up(used / TARGET_WORKER_UTILIZATION)
     burst_n = (
-        _round_up(burst[0] * n_participants / burst[1])
-        if burst and all(burst)
-        else None
+        _round_up(burst[0] * n_participants / burst[1]) if burst and all(burst) else 0
     )
-    needed = max(
-        steady_state, burst_n or 0, workers + bool(workers_falling_behind(result))
-    )
+    demand = max(steady_state, burst_n)
+    needed = max(demand, workers + bool(workers_falling_behind(result)))
     cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
+    processes = min(needed, cores_left)
+    if processes != steady_state:
+        per_participant_s = None
     return WorkerAdvice(
-        min(needed, cores_left),
+        processes,
         greenlets,
-        utilization,
-        steady_state,
-        burst_n,
+        busy,
+        used / processes,
+        demand,
         needed,
-        lower_bound,
+        cores_left,
+        saturated,
         per_participant_s,
     )
 

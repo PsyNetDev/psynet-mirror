@@ -101,5 +101,4 @@ share means jobs wait for a free worker, and the report says how busy the
 worker processes were in the steady state. The capacity summary's
 "Recommended settings" paragraph then estimates `worker_processes` for the cap from the
 measured utilization, the start-up burst and the server's cores, as
-described under "Async workers" in `test/scalability`. Treat it as an
-estimate: change `worker_processes` and run the test again to confirm it.
+described under "Async workers" in `test/scalability`.
