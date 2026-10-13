@@ -659,6 +659,8 @@ class WorkerAdvice:
     # workers were saturated), "current", "behind" (one more than the
     # current ones) or "cores".
     reason: str | None = None
+    # Whether ``processes`` uses all the cores left.
+    all_cores: bool = False
     # Worker time per participant, if it set ``processes``.
     per_participant_s: float | None = None
     skipped: str | None = None
@@ -697,6 +699,10 @@ def recommend_workers(result, n_participants, burst=None):
         test = f"the {result.n_bots:,}-bot test"
         if not workers:
             why = "no worker processes were running"
+        elif not result.n_bots:
+            why = "the test ran no bots"
+        elif result.first_completion_s is None:
+            why = "no bot finished, so there's no steady state to measure"
         elif not result.steady_state_phase:
             why = f"{test} ran for less than {MIN_STEADY_STATE_S} s after its first bot finished"
         elif not load:
@@ -728,13 +734,20 @@ def recommend_workers(result, n_participants, burst=None):
     elif processes == workers:
         reason = "current"
     elif processes == demand:
-        reason = "minimum" if saturated else "estimate"
+        reason = "minimum" if saturated and processes == steady_state else "estimate"
     else:
         reason = "behind"
-    if reason != "minimum" or processes != steady_state:
+    if reason != "minimum":
         per_participant_s = None
     return WorkerAdvice(
-        processes, greenlets, busy, used / processes, demand, reason, per_participant_s
+        processes,
+        greenlets,
+        busy,
+        used / processes,
+        demand,
+        reason,
+        processes >= cores_left,
+        per_participant_s,
     )
 
 

@@ -645,9 +645,8 @@ _PGBOUNCER_ADVICE = (
     "database connection pool, then test again."
 )
 _WORKER_ADVICE = (
-    "Raise the worker_processes config variable (worker dynos on Heroku), or "
-    "make the jobs faster. A worker process runs one CPU-heavy job, such as "
-    "audio analysis, at a time, so for those also set "
+    "Raise worker_processes in config.txt (worker dynos on Heroku), or make "
+    "the jobs faster. For CPU-heavy jobs, such as audio analysis, also set "
     "worker_greenlets_per_process = 1 and plan on one worker process per CPU "
     "core; see 'Async workers' in the PsyNet docs on testing scalability."
 )
@@ -757,13 +756,19 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
             f"{n:,} participants at once would use about {advice.demand} worker "
             f"processes, but the {server}; use a larger server or cheaper jobs."
         )
+    elif processes < workers:
+        cores = f"The {server}, so this is fewer than the {ran} the test ran; {processes} {implied}."
     else:
-        fewer = "fewer than" if processes < workers else "as many as"
-        cores = f"The {server}, so this is {fewer} the {ran} the test ran; {processes} {implied}."
-    source = advice.per_participant_s and (
-        f", and {processes} comes from about {advice.per_participant_s:.0f} s of "
-        "worker time per participant"
-    )
+        cores = f"The {ran} fell behind, but the {server}; use a larger server or cheaper jobs."
+    sources = ["the workers were busy the whole time"] if test else []
+    if advice.per_participant_s:
+        sources.append(
+            f"it comes from about {advice.per_participant_s:.0f} s of worker time "
+            "per participant"
+        )
+    minimum = f"{processes} is a minimum, not a target"
+    if sources:
+        minimum += ": " + ", and ".join(sources)
     why = {
         "estimate": [*measured, f"{processes} worker processes {implied}."],
         "current": [*measured, f"Keep the current {workers}."],
@@ -771,20 +776,22 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
             *measured,
             f"{processes} is one more than the {ran} that fell behind.",
         ],
-        "minimum": [
-            f"{processes} is a minimum, not a target: the workers were busy the "
-            f"whole time{source or ''}."
-        ],
+        "minimum": [f"{minimum}."],
         "cores": [cores],
     }[advice.reason]
-    if above_cap and advice.reason != "cores":
+    if above_cap and not advice.all_cores:
         why.append(
             f"To go above {n:,}, raise worker_processes above {processes} and test again."
         )
-    note = {"minimum": " (minimum)", "cores": " (all the cores left)"}.get(
-        advice.reason, ""
+    elif above_cap and advice.reason != "cores":
+        why.append(f"To go above {n:,}, use a larger server or cheaper jobs.")
+    notes = ["minimum"] * (advice.reason == "minimum")
+    notes += ["all the cores left"] * advice.all_cores
+    setting = (
+        f"worker_processes {'>=' if advice.reason == 'minimum' else '='} {processes}"
     )
-    setting = f"worker_processes {'>=' if advice.reason == 'minimum' else '='} {processes}{note}"
+    if notes:
+        setting += f" ({'; '.join(notes)})"
     settings = [setting]
     if advice.greenlets != (result.n_rq_job_slots or 0) // workers:
         settings.append(f"worker_greenlets_per_process = {advice.greenlets}")
