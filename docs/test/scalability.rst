@@ -637,8 +637,8 @@ To read the numbers:
   collect: the number of participants you plan to recruit, times the
   trials each one makes.
 - If the study will collect much more, test with that much data (see
-  :ref:`performance_testing_reset`), or run a validation test that ends
-  near the planned total, for example a long test at the suggested cap. If
+  :ref:`performance_testing_reset`), or run a long test that ends near the
+  planned total, for example at the recommended number of participants. If
   response times rise steadily during that test, a query is getting slower
   as data accumulates; profile it with ``psynet test local --sql-profile``
   (see :doc:`/test/sqlalchemy_profiling`).

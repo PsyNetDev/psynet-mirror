@@ -30,7 +30,7 @@ from psynet.perf_test.results import (
 
 logger = logging.getLogger(__name__)
 
-_NO_CAP = "the search suggested no cap to confirm"
+_NO_CAP = "the search recommended no number of participants to validate"
 
 
 def _ended_early(result):
@@ -147,7 +147,7 @@ class PerformanceSuite:
         )
         search_minutes = max_tests * tester.duration_minutes
         if self.confirmation_skipped:
-            confirming = f"no confirmation test ({self.confirmation_skipped})"
+            confirming = f"no validation test ({self.confirmation_skipped})"
         else:
             arriving = (
                 f", bots arriving over {confirm_arrival:g} min"
@@ -155,8 +155,9 @@ class PerformanceSuite:
                 else ""
             )
             confirming = (
-                f"then a {confirm_minutes:g}-min confirmation test at the suggested "
-                f"cap{arriving}; up to {search_minutes + confirm_minutes:g} min in all"
+                f"then a {confirm_minutes:g}-min validation test at the recommended "
+                f"number of participants{arriving}; up to "
+                f"{search_minutes + confirm_minutes:g} min in all"
             )
         logger.info(
             f"Expected run time:    up to {max_tests} tests of "
@@ -215,11 +216,11 @@ class PerformanceSuite:
             unconfirmed = (
                 ""
                 if self.confirmation_skipped == _NO_CAP
-                else "; any cap above comes from short tests in which the bots "
-                "arrived together"
+                else "; any recommendation above comes from short tests in which "
+                "the bots arrived together"
             )
             logger.info(
-                f"  Confirmation test skipped: {self.confirmation_skipped}{unconfirmed}."
+                f"  Validation test skipped: {self.confirmation_skipped}{unconfirmed}."
             )
             logger.info("")
         return results
@@ -298,7 +299,7 @@ class PerformanceSuite:
         if tester.arrival_minutes:
             logger.info(
                 f"Bot arrivals:         evenly over {tester.arrival_minutes:g} min"
-                + (" in the confirmation test" if search else "")
+                + (" in the validation test" if search else "")
             )
         if tester.arrival_minutes and not search:
             logger.info(
