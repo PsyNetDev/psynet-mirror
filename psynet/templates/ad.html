@@ -63,12 +63,7 @@
 {% block scripts %}
     <script>
         document.addEventListener("DOMContentLoaded", function (event) {
-            let isValidBrowser = browser.validate();
-            {% if experiment.with_lucid_recruitment() %}
-                if (!isValidBrowser) {
-                    terminateParticipant("invalid-browser");
-                }
-            {% endif %}
+            browser.validate();
         });
 
         function proceedToConsentPage(event) {
