@@ -1178,22 +1178,6 @@ def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
     assert limits == CapacityLimits(max_p95_s=0.0)
 
 
-def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
-    results = [
-        _base_result(n_bots=100, p95_response_time=0.2),
-        _base_result(n_bots=150, p95_response_time=0.4),
-        _base_result(n_bots=200, p95_response_time=0.3, request_errors=3),
-    ]
-
-    text = _join(format_capacity_summary(results))
-
-    assert "Recommended: at most 120 participants at once (80% of 150)." in text
-    assert (
-        "Largest passing test: 150 bots at once. At 200, 3 of 10 requests (30%) "
-        "failed, over the 0.1% limit." in text
-    )
-
-
 def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
     results = [_base_result(n_bots=50, p95_response_time=0.1, q_delay_median=None)]
     assert "queue" not in _join(format_performance_summary(results))
@@ -1486,57 +1470,6 @@ def test_fewer_running_workers_than_configured_are_flagged():
     assert "Only" not in _join(format_capacity_summary([result]))
 
 
-def test_capacity_summary_says_when_no_limit_was_reached():
-    results = [_base_result(n_bots=50, p95_response_time=0.1)]
-
-    text = _join(format_capacity_summary(results, time_factor=0))
-
-    assert "Largest passing test: 50 bots at once; no test failed" in text
-    assert "Recommended:" not in text
-    assert "--time-factor 1" in text
-
-
-def test_capacity_summary_uses_counts_below_the_first_failure():
-    results = [
-        _base_result(n_bots=10, p95_response_time=0.1),
-        _base_result(n_bots=20, p95_response_time=0.1, bot_errors=1),
-        _base_result(n_bots=40, p95_response_time=0.1),
-    ]
-
-    text = _join(format_capacity_summary(results))
-
-    assert "Largest passing test: 10 bots at once." in text
-    assert "inconsistent" in text
-
-
-def test_capacity_summary_says_when_every_count_failed():
-    results = [_base_result(n_bots=n, bot_errors=1) for n in (2, 4)]
-    slow = [_base_result(n_bots=2, p95_response_time=0.9)]
-
-    assert (
-        "No test passed. At 2, 1 of 2 bots (50%) failed, over the 1% "
-        "limit; fix the errors or test fewer bots."
-    ) in _join(format_capacity_summary(results))
-    assert (
-        "No test passed. At 2, the p95 response time was 900 ms, over "
-        "the 500 ms limit; test fewer bots.\n"
-    ) in _join(format_capacity_summary(slow))
-    assert format_capacity_summary([]) == []
-
-
-@pytest.mark.parametrize("n_passed", [20, 10])
-def test_capacity_summary_flags_a_pass_at_or_above_a_failed_smallest_count(n_passed):
-    results = [
-        _base_result(n_bots=10, p95_response_time=0.1, bot_errors=1),
-        _base_result(n_bots=n_passed, p95_response_time=0.1),
-    ]
-
-    text = _join(format_capacity_summary(results))
-
-    assert "No test passed. At 10, 1 of 2 bots (50%) failed" in text
-    assert f"{n_passed} bots passed, so the results are inconsistent" in text
-
-
 def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
     results = [_base_result(n_bots=50, actual_duration=60.0, ramp_up_s=30.0)]
     assert (
@@ -1716,20 +1649,6 @@ def test_queue_advice_says_when_no_worker_processes_ran():
     assert "Raise worker_processes" not in text
 
 
-def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
-    results = [
-        _base_result(n_bots=80, p95_response_time=0.085),
-        _base_result(n_bots=160, slots_started=160, peak_running=140),
-    ]
-
-    text = _join(format_capacity_summary(results))
-
-    assert "Largest passing test: 80 bots at once" in text
-    assert "At 160, the test couldn't measure the server" in text
-    assert "limit the test rather than the server" in text
-    assert "Recommended:" not in text
-
-
 def test_a_test_whose_bots_ran_late_could_not_be_tested():
     results = [
         _base_result(n_bots=80, p95_response_time=0.085, tester_lag_p95_s=0.01),
@@ -1816,41 +1735,111 @@ _POSTGRES_BOT_ERRORS = dict(
 )
 
 
+def _bots(n, **overrides):
+    return _base_result(**{"n_bots": n, "p95_response_time": 0.1, **overrides})
+
+
 @pytest.mark.parametrize(
-    "unmeasured",
+    "results, expected, absent",
     [
-        dict(peak_running=100, p95_response_time=None, **_POSTGRES_BOT_ERRORS),
-        dict(peak_running=160, **_POSTGRES_BOT_ERRORS),
-        dict(slots_started=160, peak_running=0),
+        (
+            [
+                _bots(100),
+                _bots(150, p95_response_time=0.4),
+                _bots(200, request_errors=3),
+            ],
+            [
+                "Recommended: at most 120 participants at once (80% of 150).",
+                "Largest passing test: 150 bots at once. At 200, 3 of 10 requests "
+                "(30%) failed, over the 0.1% limit.",
+            ],
+            [],
+        ),
+        (
+            [_bots(50)],
+            ["Largest passing test: 50 bots at once; no test failed"],
+            ["Recommended:"],
+        ),
+        (
+            [_bots(10), _bots(20, bot_errors=1), _bots(40)],
+            [
+                "Largest passing test: 10 bots at once.",
+                "40 bots also passed, so the results are inconsistent",
+            ],
+            [],
+        ),
+        (
+            [_bots(2, bot_errors=1), _bots(4, bot_errors=1)],
+            [
+                "No test passed. At 2, 1 of 2 bots (50%) failed, over the 1% "
+                "limit; fix the errors or test fewer bots."
+            ],
+            [],
+        ),
+        (
+            [_bots(2, p95_response_time=0.9)],
+            [
+                "No test passed. At 2, the p95 response time was 900 ms, over "
+                "the 500 ms limit; test fewer bots."
+            ],
+            [],
+        ),
+        *(
+            (
+                [_bots(10, bot_errors=1), _bots(n)],
+                [
+                    "No test passed. At 10, 1 of 2 bots (50%) failed",
+                    f"{n} bots passed, so the results are inconsistent",
+                ],
+                [],
+            )
+            for n in (20, 10)
+        ),
+        (
+            [_bots(80), _bots(160, slots_started=160, peak_running=140)],
+            [
+                "Largest passing test: 80 bots at once",
+                "At 160, the test couldn't measure the server",
+                "limit the test rather than the server",
+            ],
+            ["Recommended:"],
+        ),
+        *(
+            (
+                [_bots(80), _base_result(n_bots=160, **unmeasured)],
+                ["Largest passing test: 80 bots at once"],
+                ["Recommended:"],
+            )
+            for unmeasured in [
+                dict(peak_running=100, p95_response_time=None, **_POSTGRES_BOT_ERRORS),
+                dict(peak_running=160, **_POSTGRES_BOT_ERRORS),
+                dict(slots_started=160, peak_running=0),
+            ]
+        ),
+        (
+            [_bots(10, **_POSTGRES_BOT_ERRORS)],
+            [
+                "No test passed. At 10, the test couldn't measure the server: 40 "
+                "of 400 bots (10%) failed",
+                "The limit wasn't found.",
+                "raise max_connections",
+            ],
+            ["Recommended:", "did not keep"],
+        ),
     ],
-    ids=["slow-start-and-postgres", "postgres-only", "none-running"],
 )
-def test_capacity_summary_does_not_suggest_a_cap_when_the_test_could_not_measure(
-    unmeasured,
-):
-    results = [
-        _base_result(n_bots=80, p95_response_time=0.085),
-        _base_result(n_bots=160, **unmeasured),
-    ]
-
+def test_capacity_verdicts(results, expected, absent):
     text = _join(format_capacity_summary(results))
+    for line in expected:
+        assert line in text
+    for line in absent:
+        assert line not in text
 
-    assert "Largest passing test: 80 bots at once" in text
-    assert "Recommended:" not in text
 
-
-def test_capacity_summary_says_when_even_the_smallest_count_could_not_be_tested():
-    results = [_base_result(n_bots=10, p95_response_time=0.1, **_POSTGRES_BOT_ERRORS)]
-
-    text = _join(format_capacity_summary(results))
-
-    assert (
-        "At 10, the test couldn't measure the server: 40 of 400 bots (10%) failed"
-        in text
-    )
-    assert "raise max_connections" in text
-    assert "Recommended:" not in text
-    assert "did not keep" not in text
+def test_capacity_summary_asks_for_pauses_when_bots_ran_without_them():
+    text = _join(format_capacity_summary([_bots(50)], time_factor=0))
+    assert "--time-factor 1" in text
+    assert format_capacity_summary([]) == []
 
 
 @pytest.mark.parametrize(
@@ -1938,82 +1927,65 @@ def test_each_endpoint_must_stay_within_the_response_time_limit(monkeypatch):
 # --- format_test_results ---
 
 
-def test_format_test_results_basic():
-    lines = format_test_results(_base_result())
-    text = _join(lines)
-    assert "TEST RESULTS" in text
-    assert "BOT OUTCOMES" in text
-    assert "BOT RUNTIMES" in text
-    assert "REQUEST METRICS" in text
-    assert "RESPONSE TIMES" in text
-    assert "TRIALS PER BOT" in text
+_ASYNC_JOB_STATS = [
+    {
+        "trial_maker_id": "tm1",
+        "label": "create_trial",
+        "count": 5,
+        "avg": 0.1,
+        "median": 0.09,
+        "p95": 0.2,
+        "max": 0.3,
+        "q_avg": 0.01,
+        "q_median": 0.015,
+        "q_p95": 0.02,
+        "q_share": 0.05,
+    }
+]
 
 
-def test_format_test_results_none_response_times():
-    lines = format_test_results(
-        _base_result(
-            median_response_time=None,
-            p95_response_time=None,
-            max_response_time=None,
-            total_requests=0,
-        )
-    )
-    text = _join(lines)
-    assert "N/A" in text
-    assert "RESPONSE TIMES" in text
-
-
-def test_format_test_results_bots_not_in_db():
-    lines = format_test_results(
-        _base_result(
-            total_bots_started=5, bots_succeeded=1, bots_failed=1, bots_incomplete=1
-        )
-    )
-    text = _join(lines)
-    assert "Bot error before joining" in text
-
-
-def test_format_test_results_wait_page_times():
-    lines = format_test_results(
-        _base_result(median_wait_page_time=1.5, n_wait_page_samples=10)
-    )
-    text = _join(lines)
-    assert "Median time on wait pages per bot (n=10)" in text
-
-
-def test_format_test_results_async_job_stats():
-    lines = format_test_results(
-        _base_result(
-            async_job_stats=[
-                {
-                    "trial_maker_id": "tm1",
-                    "label": "create_trial",
-                    "count": 5,
-                    "avg": 0.1,
-                    "median": 0.09,
-                    "p95": 0.2,
-                    "max": 0.3,
-                    "q_avg": 0.01,
-                    "q_median": 0.015,
-                    "q_p95": 0.02,
-                    "q_share": 0.05,
-                }
-            ]
-        )
-    )
-    text = _join(lines)
-    assert "ASYNC JOB TIMES" in text
-    assert "2 worker processes, up to 40 jobs at once" in text
-    assert "tm1" in text
-    assert "create_trial" in text
-    assert "Q Med" in text
-
-
-def test_format_test_results_no_async_job_stats():
-    lines = format_test_results(_base_result(async_job_stats=None))
-    text = _join(lines)
-    assert "No completed async jobs" in text
-    assert "2 worker processes, up to 40 jobs at once" in text
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        (
+            {},
+            ["BOT OUTCOMES", "BOT RUNTIMES", "REQUEST METRICS", "TRIALS PER BOT"],
+        ),
+        (
+            dict(
+                median_response_time=None,
+                p95_response_time=None,
+                max_response_time=None,
+                total_requests=0,
+            ),
+            ["RESPONSE TIMES", "N/A"],
+        ),
+        (
+            dict(
+                total_bots_started=5, bots_succeeded=1, bots_failed=1, bots_incomplete=1
+            ),
+            ["Bot error before joining"],
+        ),
+        (
+            dict(median_wait_page_time=1.5, n_wait_page_samples=10),
+            ["Median time on wait pages per bot (n=10)"],
+        ),
+        (
+            dict(async_job_stats=_ASYNC_JOB_STATS),
+            ["ASYNC JOB TIMES", "tm1", "create_trial", "Q Med"],
+        ),
+        (dict(async_job_stats=None), ["No completed async jobs"]),
+    ],
+    ids=["basic", "no-responses", "bots-not-in-db", "wait-pages", "jobs", "no-jobs"],
+)
+def test_format_test_results(overrides, expected):
+    text = _join(format_test_results(_base_result(**overrides)))
+    for line in [
+        "TEST RESULTS",
+        "2 worker processes, up to 40 jobs at once",
+        *expected,
+    ]:
+        assert line in text
 
 
 # --- format_performance_summary ---
@@ -2220,6 +2192,19 @@ def _fake_server(respond):
     return executor
 
 
+def _answers(responses):
+    """Return a ``respond`` for :func:`_fake_server` that answers with the first of ``responses`` whose pattern is in the command, else ``""``."""
+    return lambda cmd: next((out for pat, out in responses.items() if pat in cmd), "")
+
+
+# A database of 1,000 bytes on a disk with plenty of free space.
+_DISK = {
+    "pg_database_size": "1000\n",
+    "data_directory": "/var/lib/postgresql/data\n",
+    " df ": "Filesystem 1024-blocks Used Available\nx 9 0 9999 1% /\n",
+}
+
+
 def _remote_app(respond, isolated=True):
     """Return a ``RemoteApp`` of ``my-app`` whose server answers with ``respond(cmd)``."""
     from psynet.perf_ssh import RemoteApp
@@ -2240,22 +2225,13 @@ def _remote_app(respond, isolated=True):
 def test_a_remote_reset_restores_only_the_apps_database_in_its_container(caplog):
     from psynet.perf_ssh import DatabaseReset
 
-    attempts = []
+    in_use = [(1, 'ERROR:  55006: database "my-app" is being accessed\n')]
+    answers = _answers({**_DISK, "pg_tables": "participant\n", "count(*)": "3\n"})
 
     def respond(cmd):
-        if 'DROP DATABASE IF EXISTS "my-app"' in cmd and not attempts:
-            attempts.append(cmd)
-            return 1, 'ERROR:  55006: database "my-app" is being accessed\n'
-        for pattern, output in [
-            ("pg_database_size", "1000"),
-            ("data_directory", "/var/lib/postgresql/data"),
-            (" df ", "Filesystem 1024-blocks Used Available Capacity\nx 9 0 9999 1% /"),
-            ("pg_tables", "participant"),
-            ("count(*)", "3"),
-        ]:
-            if pattern in cmd:
-                return output + "\n"
-        return ""
+        if 'DROP DATABASE IF EXISTS "my-app"' in cmd and in_use:
+            return in_use.pop()
+        return answers(cmd)
 
     remote = _remote_app(respond)
     remote.stop, remote.start = Mock(), Mock()
@@ -2306,21 +2282,22 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
 
     from psynet.command_line import _run_ssh_performance_test
 
-    def respond(cmd):
-        if "CREATE DATABASE" in cmd:
-            return 1, "ERROR:  53100: could not extend file: No space left\n"
-        if restart_fails and ".yml start " in cmd:
-            return 1, "Error: no such container\n"
-        for pattern, output in [
-            ("SCARD", "1"),
-            ("ps --services", "postgresql\nredis\nweb\nworker_1\npgbouncer\nsidecar"),
-            ("pg_database_size", "1000"),
-            ("data_directory", "/var/lib/postgresql/data"),
-            (" df ", "Filesystem 1024-blocks Used Available\nx 9 0 9999 1% /"),
-        ]:
-            if pattern in cmd:
-                return output + "\n"
-        return ""
+    respond = _answers(
+        {
+            "CREATE DATABASE": (
+                1,
+                "ERROR:  53100: could not extend file: No space left\n",
+            ),
+            **(
+                {".yml start ": (1, "Error: no such container\n")}
+                if restart_fails
+                else {}
+            ),
+            "SCARD": "1\n",
+            "ps --services": "postgresql\nredis\nweb\nworker_1\npgbouncer\nsidecar\n",
+            **_DISK,
+        }
+    )
 
     monkeypatch.chdir(tmp_path)
     # Its handler would keep writing to capsys's stdout after this test.
@@ -2360,10 +2337,9 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
 
 
 def test_a_remote_reset_never_stops_every_service_of_an_app():
-    def respond(cmd):
-        return "postgresql\nredis\nfrontdoor\n" if "ps --services" in cmd else "0\n"
-
-    remote = _remote_app(respond)
+    remote = _remote_app(
+        _answers({"ps --services": "postgresql\nredis\nfrontdoor\n", "": "0\n"})
+    )
     with pytest.raises(RuntimeError, match="None of my-app's server processes"):
         remote.stop()
     assert not any(".yml stop" in c for c in remote.executor.commands)
@@ -2462,14 +2438,8 @@ def test_a_remote_reset_refuses_a_database_not_named_after_the_app(web_database)
 def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
     from psynet.perf_ssh import DatabaseReset
 
-    def respond(cmd):
-        if "pg_database_size" in cmd:
-            return "1000\n"
-        if "data_directory" in cmd:
-            return "/var/lib/postgresql/data\n"
-        return 1, "df: denied\n"
-
-    reset = DatabaseReset(_remote_app(respond))
+    disk_unknown = {**_DISK, " df ": (1, "df: denied\n")}
+    reset = DatabaseReset(_remote_app(_answers(disk_unknown)))
     with pytest.raises(RuntimeError, match="free disk space"):
         reset._check_disk_space("my-app")
 
