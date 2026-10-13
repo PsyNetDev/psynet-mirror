@@ -418,15 +418,15 @@ left out)::
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 0.5 s, at most 0.1% of requests failing, at most 1% of bots failing.
 
-               Bots                                  p95     Median       Failed      Failed       Bots
-     Bots   started   Length   Result   Req/s   response   response     requests        bots   finished
-     ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-       10        10    3 min   pass       2.4     0.063s     0.027s            0           0          -
-      640     1,271    3 min   FAIL     109.2     0.113s     0.037s   17 (0.09%)   631 (50%)          -
-      480       480    3 min   pass      97.0     0.074s     0.032s            0           0          -
-      560       570    3 min   FAIL     110.5     0.091s     0.036s            0   10 (1.8%)          -
-      520       520    3 min   pass     103.0     0.081s     0.033s            0           0          -   capacity
-      416       849   23 min   pass      90.2     0.076s     0.029s            0           0        433   check at the cap
+              Bots                              p95    Median      Failed     Failed      Bots
+     Bots  started  Length  Result  Req/s  response  response    requests       bots  finished
+     ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+       10       10   3 min  pass      2.4    0.063s    0.027s           0          0         -
+      640    1,271   3 min  FAIL    109.2    0.113s    0.037s  17 (0.09%)  631 (50%)         -
+      480      480   3 min  pass     97.0    0.074s    0.032s           0          0         -
+      560      570   3 min  FAIL    110.5    0.091s    0.036s           0  10 (1.8%)         -
+      520      520   3 min  pass    103.0    0.081s    0.033s           0          0         -  capacity
+      416      849  23 min  pass     90.2    0.076s    0.029s           0          0       433  check at the cap
 
       -  The test was shorter than one participant session (11 min), so no bot could finish.
 
@@ -595,7 +595,7 @@ single-slot workers 55% busy, gets::
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot test that confirmed this cap, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot check at the cap, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks

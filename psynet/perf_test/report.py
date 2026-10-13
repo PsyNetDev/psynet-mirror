@@ -691,6 +691,7 @@ def _summary_table(results, limits, outcome):
         box=box.SIMPLE_HEAD if utf else _ASCII_SIMPLE_HEAD,
         safe_box=False,
         header_style="bold",
+        padding=(0, 1, 0, 0),
         pad_edge=False,
     )
     columns = _summary_columns(results, limits)
@@ -898,7 +899,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
             text.append("To go above the cap, add worker processes.")
     if behind:
         text.append(
-            f"During {_describe_test(measured, confirmed)}, {behind}, "
+            f"During {_test_name(measured)}, {behind}, "
             "so the workers can't keep up in the long run. That doesn't fail the "
             "test by itself, because participants don't wait for low-priority "
             "jobs, but their results arrive later and later and the jobs keep "
@@ -911,19 +912,11 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
             text.append(_WORKER_ADVICE)
     else:
         said_busy = behind and advice.utilization > MAX_WORKER_UTILIZATION
-        test = _describe_test(measured, confirmed) if not said_busy else None
+        test = _test_name(measured) if not said_busy else None
         lines = _describe_worker_advice(advice, measured, n, test, above_cap)
     if text:
         lines.insert(0, " ".join(text))
     return [Text(line, style=_WARNING if behind else "") for line in lines]
-
-
-def _describe_test(result, confirmed):
-    """Describe ``result``'s test by what it did, e.g. ``the 96-bot test that confirmed this cap``."""
-    test = f"the {result.n_bots:,}-bot test"
-    if result.confirmation:
-        test += " that confirmed this cap" if confirmed else " that checked this cap"
-    return test
 
 
 def _describe_worker_advice(advice, result, n, test, above_cap):
@@ -1012,8 +1005,8 @@ _BUSY_CHAINS_ADVICE = (
     "concurrent participants, you can let them wait with "
     "wait_for_networks=True or add chains, which may allow a higher cap. "
     "How participants arrive can make busy chains more or less common, so "
-    "judge the cap by the confirmation test of --n-bots auto, whose bots "
-    "arrive over a session."
+    "judge the cap by the check at the cap that --n-bots auto runs, whose "
+    "bots arrive over a session."
 )
 _START_RATE_ADVICE = (
     "Bots that cannot start fast enough limit the test rather than the "
@@ -1038,19 +1031,40 @@ _DB_GROWTH_MIN_ROWS = 10_000
 
 
 def _test_name(result):
-    """Name ``result``'s test, e.g. ``120-bot`` or ``96-bot confirmation``."""
-    return f"{result.n_bots:,}-bot{' confirmation' if result.confirmation else ''}"
+    """Name ``result``'s test as the summary table does, e.g. ``the 120-bot test`` or ``the 96-bot check at the cap``."""
+    return f"the {result.n_bots:,}-bot {'check at the cap' if result.confirmation else 'test'}"
+
+
+def _and(items):
+    """Join ``items`` as ``a, b and c``."""
+    return " and ".join([", ".join(items[:-1]), items[-1]] if len(items) > 1 else items)
 
 
 def _tables_that_differ(rows_a, rows_b):
-    """Return ``"table a and b"`` descriptions of the tables whose row counts differ a lot."""
-    differ = []
+    """Return ``{table: (rows in a, rows in b)}`` for the tables whose row counts differ a lot."""
+    differ = {}
     for table in {**rows_a, **rows_b}:
         a, b = rows_a.get(table, 0), rows_b.get(table, 0)
         low, high = sorted((a, b))
         if high - low >= _DB_GROWTH_MIN_ROWS and high >= _DB_GROWTH_RATIO * low:
-            differ.append(f"{table} {a:,} and {b:,}")
+            differ[table] = (a, b)
     return differ
+
+
+def _rows_went(differ):
+    """Describe ``differ`` from :func:`_tables_that_differ`, e.g. ``trial rows went from 409 to 56,569``."""
+    changes = [f"{table} rows from {a:,} to {b:,}" for table, (a, b) in differ.items()]
+    return _and([changes[0].replace(" from ", " went from ", 1), *changes[1:]])
+
+
+def _started_with(result_a, result_b, differ):
+    """Say how many rows ``result_a`` and ``result_b`` started with, from :func:`_tables_that_differ`."""
+    rows_a = _and([f"{a:,} {table} rows" for table, (a, _) in differ.items()])
+    rows_b = _and([f"{b:,}" for _, b in differ.values()])
+    return (
+        f"{_test_name(result_a).capitalize()} started with {rows_a} and "
+        f"{_test_name(result_b)} with {rows_b}"
+    )
 
 
 def _database_growth_warnings(
@@ -1071,21 +1085,22 @@ def _database_growth_warnings(
         # The database was reset before each test, so only growth within a
         # test matters.
         grew = [
-            f"the {_test_name(r)} test {'; '.join(differ)}"
+            f"{_test_name(r).capitalize()} added a lot of data: {_rows_went(differ)}."
             for r in results
             if (differ := _tables_that_differ(r.db_rows_before, r.db_rows_after))
         ]
-        where = "Every test started from the same data, but some grew it a lot (rows before and after"
     else:
-        grew = _tables_that_differ(
+        differ = _tables_that_differ(
             results[0].db_rows_before or {}, results[-1].db_rows_after or {}
         )
-        where = "The database grew a lot during these tests (rows before the first and after the last"
+        grew = differ and [
+            f"The database grew a lot during these tests: {_rows_went(differ)}."
+        ]
     if grew:
         lines.append(
-            f"{where}: {'; '.join(grew)}). Capacity can fall as a "
-            "study collects data, so these results hold for about this much "
-            "data; see 'Database size' in the PsyNet docs on testing scalability."
+            " ".join(grew) + " Capacity can fall as a study collects data, so "
+            "these results hold for a study with about this much data; see "
+            "'Database size' in the PsyNet docs on testing scalability."
         )
     if capacity_result is not None and first_fail is not None:
         differ = _tables_that_differ(
@@ -1093,10 +1108,8 @@ def _database_growth_warnings(
         )
         if differ:
             lines.append(
-                f"The {capacity_result.n_bots:,}-bot and {first_fail.n_bots:,}-bot "
-                f"tests started with very different amounts of data ({'; '.join(differ)} "
-                "rows), so the difference between them may come from the data "
-                "rather than the load."
+                f"{_started_with(capacity_result, first_fail, differ)}, so the "
+                "difference between them may come from the data rather than the load."
             )
     if (
         capacity_result is not None
@@ -1104,15 +1117,13 @@ def _database_growth_warnings(
         and _confirmation_exceeded(confirmation, limits)
     ):
         differ = _tables_that_differ(
-            capacity_result.db_rows_before or {}, confirmation.db_rows_before or {}
+            confirmation.db_rows_before or {}, capacity_result.db_rows_before or {}
         )
         if differ:
             return lines + [
-                f"The confirmation test started with very different amounts of "
-                f"data from the {capacity_result.n_bots:,}-bot test "
-                f"({'; '.join(differ)} rows), so its failure may come from the "
-                "data the search left. Rerun with --reset-database before "
-                "capping lower."
+                f"{_started_with(confirmation, capacity_result, differ)}, so the "
+                "check's failure may come from the data the search left. Rerun "
+                "with --reset-database before capping lower."
             ]
     if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
         lines.append(
@@ -1273,7 +1284,7 @@ def _low_priority_lines(result, limits):
     if wait is None or wait <= limits.max_queue_p95_s:
         return []
     return [
-        f"Low-priority async jobs in {_describe_test(result, _confirmed(result, limits))}: p95 queue "
+        f"Low-priority async jobs in {_test_name(result)}: p95 queue "
         f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
         "queued at the end. Participants don't wait for these, so they don't "
         "count against the limits."

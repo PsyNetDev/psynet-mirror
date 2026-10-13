@@ -618,7 +618,7 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "for one of the 10 worker processes.\n"
         "Recommended settings for 96 participants at once:\n"
         "    worker_processes = 10\n"
-        "In the 96-bot test that confirmed this cap, the 10 worker processes "
+        "In the 96-bot check at the cap, the 10 worker processes "
         "were busy 55% of the time. Keep the current 10. To go above 96, raise "
         "worker_processes above 10 and test again."
     ) in text
@@ -1362,7 +1362,7 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
         assert "Capacity: 100 bots at once passed" in search
         assert "Recommended: at most 80 participants at once" in search
         assert "wait_for_networks=True" in search
-        assert "judge the cap by the confirmation test" in search
+        assert "judge the cap by the check at the cap" in search
 
 
 @pytest.mark.parametrize(
@@ -1413,14 +1413,20 @@ def test_summaries_report_database_growth():
         _base_result(
             n_bots=320,
             request_errors=5,
-            db_rows_before={"participant": 2_400, "trial": 75_000},
+            db_rows_before={"participant": 2_400, "trial": 100_000},
             db_rows_after={"participant": 3_000, "trial": 103_000},
         ),
     ]
 
     text = _join(format_capacity_summary(results))
-    assert "The database grew a lot during these tests" in text
-    assert "trial 65,000 and 103,000" in text
+    assert (
+        "The database grew a lot during these tests: trial rows went from 65,000 "
+        "to 103,000."
+    ) in text
+    assert (
+        "The 260-bot test started with 65,000 trial rows and the 320-bot test "
+        "with 100,000, so the difference"
+    ) in text
     assert "Rerun with --reset-database" in text
 
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
@@ -1431,8 +1437,8 @@ def test_summaries_report_database_growth():
     results[-1].db_rows_after = {"participant": 3_000, "trial": 103_000}
     text = _join(format_capacity_summary(results))
     assert (
-        "Every test started from the same data, but some grew it a lot (rows "
-        "before and after: the 320-bot test trial 65,000 and 103,000)"
+        "The 320-bot test added a lot of data: trial rows went from 65,000 to "
+        "103,000. Capacity can fall"
     ) in text
     assert "Rerun with --reset-database" not in text
 
@@ -1627,7 +1633,7 @@ def test_recommend_workers(result, n, burst, expected):
         (
             _QUEUE_SEARCH
             + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
-            "(all the cores left)\nIn the 96-bot test that confirmed this cap, "
+            "(all the cores left)\nIn the 96-bot check at the cap, "
             "the 10 worker processes were busy 55% of the time. Keep the current "
             "10. To go above 96, use a larger server or cheaper jobs.",
             "raise worker_processes above",
@@ -2291,7 +2297,7 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
     assert " pass " in rows["520"] and rows["520"].endswith(" capacity")
     assert " FAIL " in rows["560"] and re.search(r"^ +560 +570 ", rows["560"])
     assert "10 (1.8%)" in rows["560"]
-    assert rows["416"].endswith(" 433   check at the cap")
+    assert rows["416"].endswith(" 433  check at the cap")
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
