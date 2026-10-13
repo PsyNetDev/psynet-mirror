@@ -121,7 +121,7 @@ Controlling the load
     ``--n-bots 100 --arrival-minutes 10`` a new bot arrives every 6 seconds.
     Use it when participants will arrive gradually; the default, where
     every bot arrives within seconds, matches a study that opens many places
-    at once. With ``--n-bots auto`` only the confirmation test uses the
+    at once. With ``--n-bots auto`` only the validation test uses the
     window; the search's tests stay short, with the bots starting together
     (see :ref:`performance_testing_capacity`). Bots that replace finished
     ones still start after ``Experiment.test_parallel_stagger_interval_s``,
@@ -323,7 +323,7 @@ A test counts as within capacity if these stay within their limits:
   capping them reduces it. Setting ``wait_for_networks=True`` or adding
   chains reduces it too, and may allow a higher cap. How participants
   arrive can make busy chains more or less common, so judge the cap by the
-  check that ``--n-bots auto`` runs at that cap, whose bots arrive over a
+  validation test that ``--n-bots auto`` runs, whose bots arrive over a
   session.
 
 The limits apply to the whole test, start-up included, because a real study
@@ -338,17 +338,17 @@ studies they see only the start-up. In an experiment with async jobs,
 such as audio analysis, or with long timeline holds, every bot reaches each
 job and each hold at the same moment, so queue waits are longer than
 when participants arrive spread out, and the search underestimates the
-capacity. The search therefore ends with a *confirmation test*: it runs the
+capacity. The search therefore ends with a *validation test*: it runs the
 participant cap it suggests (80% of the capacity), with bots arriving
 evenly over one participant session and the test lasting two sessions, at
 most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
 state, so for long studies also run a long test of the cap by hand. With your own
-``--arrival-minutes``, the confirmation uses that window instead of one
+``--arrival-minutes``, the validation test uses that window instead of one
 session and lasts a session longer, again at most an hour, or
 ``--duration-minutes`` if that is longer; the window must be shorter than
-this longest confirmation test. The summary reports the cap as
-confirmed only if the confirmation test stayed within the limits and
+this longest validation test. The summary reports the cap as
+confirmed only if the validation test stayed within the limits and
 reached its steady state; one that never got there leaves the cap
 unconfirmed. If the test exceeded the limits, the summary shows which
 limits the start-up and the steady state exceeded, and suggests a lower
@@ -356,12 +356,12 @@ cap, scaled by how far the test overshot its limits (but at least half the
 tested cap), with the command to check it. A test that could not measure
 the server, for example because the server stopped, no responses were
 recorded or the bots couldn't start fast enough, leaves the cap unconfirmed without a suggestion. The
-search does not run again. Add ``--no-confirm`` to skip the confirmation
+search does not run again. Add ``--no-confirm`` to skip the validation
 test; it is always skipped with ``--time-factor 0``, whose pace isn't
 realistic, when the experiment's estimated session length is unknown, and
 when the search suggests no cap.
 
-Without ``--reset-database``, the confirmation test runs on the data that
+Without ``--reset-database``, the validation test runs on the data that
 the search tests left. If it fails after starting with much more data than
 the search test that set the capacity, the summary suggests rerunning with
 ``--reset-database`` before capping lower.
@@ -371,7 +371,7 @@ is what caps capacity, the summary says how many worker processes the server
 had; add more before resorting to a lower participant cap. After a confirmed
 cap it words this as how to go above the cap.
 The summary also checks whether the workers keep up in the long run, in one
-test: the confirmation test if there was one, otherwise the test that set the
+test: the validation test if there was one, otherwise the test that set the
 capacity, or the first failing test if none passed. It warns when the worker
 processes were more than 85% busy in the steady state, or when the
 low-priority backlog at the end of the steady state is at least twice the
@@ -390,7 +390,7 @@ handles more than about 100 bots this takes 8 to 12 tests. By default each
 search test lasts one participant session, rounded up to whole minutes, at
 most 5 minutes and at least ``Experiment.test_duration_minutes``;
 ``--duration-minutes`` sets another length. A search of a 12-minute study
-therefore takes 40 to 60 minutes, and its confirmation test another 24
+therefore takes 40 to 60 minutes, and its validation test another 24
 minutes. The run prints its upper bound when it starts.
 
 When bots fail, the report lists what went wrong, for example
@@ -409,10 +409,10 @@ of the bots started; *Failed bots* counts every bot that raised an error.
 *Bots finished* counts bots that completed the experiment, or shows ``-``
 when a test was shorter than one participant session, so that no bot could
 finish. The verdict follows: the recommended number of participants taking
-part at once, the *capacity* row it comes from (or the *highest passed* row,
-if no test failed) and why the next count failed, and the *check at the
-cap*, the confirmation test run at the suggested cap. Without that check,
-the cap is 80% of the capacity. For example,
+part at once, the *largest passing test* and why the next count failed
+(when no test failed, the verdict says the limit wasn't reached), and the
+*validation test* run at the recommended number. Without a validation
+test, the recommendation is 80% of the largest passing test. For example,
 from a capacity search of a static rating study on an SSH server (some rows
 left out)::
 
@@ -422,20 +422,20 @@ left out)::
 
               Bots                              p95    Median      Failed     Failed      Bots
      Bots  started  Length  Result  Req/s  response  response    requests       bots  finished
-     ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+     ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
        10       10   3 min  pass      2.4    0.063s    0.027s           0          0         -
       640    1,271   3 min  FAIL    109.2    0.113s    0.037s  17 (0.09%)  631 (50%)         -
       480      480   3 min  pass     97.0    0.074s    0.032s           0          0         -
       560      570   3 min  FAIL    110.5    0.091s    0.036s           0  10 (1.8%)         -
-      520      520   3 min  pass    103.0    0.081s    0.033s           0          0         -  capacity
-      416      849  23 min  pass     90.2    0.076s    0.029s           0          0       433  check at the cap
+      520      520   3 min  pass    103.0    0.081s    0.033s           0          0         -  largest passing test
+      416      849  23 min  pass     90.2    0.076s    0.029s           0          0       433  validation test
 
       -  The test was shorter than one participant session (11 min), so no bot could finish.
 
     Recommended: at most 416 participants at once.
-    Capacity: 520 bots at once passed. 560 failed: 10 of 570 bots (1.8%) failed.
+    Largest passing test: 520 bots at once. 560 failed: 10 of 570 bots (1.8%) failed.
       Errors at 560: 5 x HTTP 500 on /participant_status, 3 x OperationalError, 2 x HTTP 500 on /response.
-    Check: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
+    Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
 
 Notes on the results, such as advice on errors and database growth, follow
 under *Notes*. When standard output is a terminal, the summary is coloured
@@ -472,7 +472,7 @@ for ``performance-test ssh``). For a test with a steady state,
 seconds worker jobs ran in it (``busy_s``), the finished jobs' CPU time as a
 share of their run time (``cpu_share``) and the worker time per bot that
 completed (``per_participant_s``).
-The confirmation test has ``confirmation`` set,
+The JSON flag ``confirmation`` marks the validation test,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. If resetting the database failed, ``reset_error`` gives the error
 (see :ref:`performance_testing_reset`). When the search tests and a long test with spread-out arrivals
@@ -591,13 +591,13 @@ There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
 finished in it. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130
-bots on queue waits and whose 96-participant confirmation test kept 10
+bots on queue waits and whose 96-participant validation test kept 10
 single-slot workers 55% busy, gets::
 
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot check at the cap, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks
@@ -637,7 +637,7 @@ To read the numbers:
   collect: the number of participants you plan to recruit, times the
   trials each one makes.
 - If the study will collect much more, test with that much data (see
-  :ref:`performance_testing_reset`), or run a confirmation test that ends
+  :ref:`performance_testing_reset`), or run a validation test that ends
   near the planned total, for example a long test at the suggested cap. If
   response times rise steadily during that test, a query is getting slower
   as data accumulates; profile it with ``psynet test local --sql-profile``

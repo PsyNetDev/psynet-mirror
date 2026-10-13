@@ -662,8 +662,8 @@ class WorkerAdvice:
 
 
 def describe_test(result):
-    """Name ``result``'s test as the summary table does, e.g. ``the 120-bot test`` or ``the 96-bot check at the cap``."""
-    return f"the {result.n_bots:,}-bot {'check at the cap' if result.confirmation else 'test'}"
+    """Name ``result``'s test as the summary table does, e.g. ``the 120-bot test`` or ``the 96-bot validation test``."""
+    return f"the {result.n_bots:,}-bot {'validation test' if result.confirmation else 'test'}"
 
 
 def recommend_workers(result, n_participants, burst=None):

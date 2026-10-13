@@ -701,15 +701,13 @@ def _summary_table(results, limits, outcome):
             header, justify="left" if header == "Result" else "right", no_wrap=True
         )
     table.add_column("", no_wrap=True)
-    # Without a failure, the capacity is only a lower bound.
-    capacity_label = "capacity" if outcome and outcome.first_fail else "highest passed"
     labelled_capacity = False
     for result in results:
         label = ""
         if result.confirmation:
-            label = "check at the cap"
+            label = "validation test"
         elif outcome and result.n_bots == outcome.capacity and not labelled_capacity:
-            label, labelled_capacity = capacity_label, True
+            label, labelled_capacity = "largest passing test", True
         table.add_row(
             *(cell(result) for _, cell in columns),
             label,
@@ -897,7 +895,9 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
             "for waited too long for " + (f"one of the {had}." if had else "a worker.")
         )
         if above_cap and advice.skipped:
-            text.append("To go above the cap, add worker processes.")
+            text.append(
+                "To go above the recommended number of participants, add worker processes."
+            )
     if behind:
         text.append(
             f"During {describe_test(measured)}, {behind}, "
@@ -1004,9 +1004,9 @@ _BUSY_CHAINS_ADVICE = (
     "Participants got fewer trials because every chain they could join was "
     "busy, so the experiment finished their block early. Besides capping "
     "concurrent participants, you can let them wait with "
-    "wait_for_networks=True or add chains, which may allow a higher cap. "
+    "wait_for_networks=True or add chains, which may allow more participants at once. "
     "How participants arrive can make busy chains more or less common, so "
-    "judge the cap by the check that --n-bots auto runs at that cap, whose "
+    "judge the cap by the validation test that --n-bots auto runs, whose "
     "bots arrive over a session."
 )
 _START_RATE_ADVICE = (
@@ -1095,7 +1095,8 @@ def _database_growth_warnings(
         ]
     if grew:
         lines.append(
-            " ".join(grew) + " Capacity can fall as a study collects data, so "
+            " ".join(grew)
+            + " The server can handle fewer participants as a study collects data, so "
             "these results hold for a study with about this much data; see "
             "'Database size' in the PsyNet docs on testing scalability."
         )
@@ -1119,7 +1120,7 @@ def _database_growth_warnings(
         if differ:
             return lines + [
                 f"{_started_with(confirmation, capacity_result, differ)}, so the "
-                "check's failure may come from the data the search left. Rerun "
+                "validation test's failure may come from the data the search left. Rerun "
                 "with --reset-database before capping lower."
             ]
     if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
@@ -1145,7 +1146,7 @@ def _startup_only_lines(result, limits):
         f"In the {result.n_bots:,}-bot test, the start-up exceeded the limits "
         f"({'; '.join(startup)}) but the steady state kept its response times, "
         "request errors and high-priority queue waits within them. The "
-        "capacity counts the start-up, because participants often arrive "
+        "limits apply to the start-up too, because participants often arrive "
         "together when a study opens; if yours will arrive gradually, rerun "
         "with --arrival-minutes to match."
     ]
@@ -1211,13 +1212,13 @@ def _recommendation(outcome, confirmation, limits):
         if confirmation.arrival_minutes:
             rerun += f" --arrival-minutes {confirmation.arrival_minutes:g}"
         text, style = (
-            f"try at most {retry:,} participants at once, and check it with {rerun}.",
+            f"try at most {retry:,} participants at once, and validate it with {rerun}.",
             _UNCONFIRMED,
         )
     else:
         text, style = (
-            f"at most {confirmation.n_bots:,} participants at once, but the check "
-            "left this cap unconfirmed.",
+            f"at most {confirmation.n_bots:,} participants at once, but the validation "
+            "test didn't confirm it.",
             _UNCONFIRMED,
         )
     return [Text(f"Recommended: {text}", style=style)]
@@ -1235,14 +1236,14 @@ def _capacity_lines(outcome, limits):
     unmeasured, waits_only = outcome.unmeasured, outcome.waits_only
     if first_fail is None:
         return [
-            f"Capacity: at least {capacity:,} bots at once; no test failed. "
-            "Test more bots to find the limit."
+            f"Largest passing test: {capacity:,} bots at once; no test failed, so "
+            "the limit wasn't reached. Test more bots to find it."
         ]
     n_failed = f"{first_fail.n_bots:,}"
     reasons = _reasons(first_fail, outcome.first_causes)
     if capacity is None:
         if unmeasured:
-            line = f"Capacity unknown. {n_failed} bots at once could not be tested: {reasons}."
+            line = f"No test passed. {n_failed} bots at once could not be tested: {reasons}."
         else:
             if waits_only:
                 advice = ""
@@ -1254,13 +1255,11 @@ def _capacity_lines(outcome, limits):
     elif unmeasured or waits_only:
         verdict = "could not be tested" if unmeasured else "failed"
         line = (
-            f"Capacity: at least {capacity:,} bots at once. "
-            f"{n_failed} {verdict}: {reasons}."
+            f"Largest passing test: {capacity:,} bots at once. "
+            f"{n_failed} {verdict}: {reasons}, so the limit wasn't found."
         )
     else:
-        line = (
-            f"Capacity: {capacity:,} bots at once passed. {n_failed} failed: {reasons}."
-        )
+        line = f"Largest passing test: {capacity:,} bots at once. {n_failed} failed: {reasons}."
     lines = [line, *_error_kinds_lines(first_fail, outcome.first_causes)]
     above_fail = [n for n in passed if capacity is None or n > first_fail.n_bots]
     if above_fail and (capacity is None or not unmeasured):
@@ -1328,7 +1327,7 @@ def _check_lines(result, outcome, limits):
     ran = _minutes(
         result.actual_duration / 60 if result.actual_duration else _test_minutes(result)
     )
-    test = f"Check: {n:,} bots{share}, {arriving}, ran for {ran}"
+    test = f"Validation test: {n:,} bots{share}, {arriving}, ran for {ran}"
     causes = capacity_failure_causes(result, limits)
     if not causes:
         if not _confirmed(result, limits):
@@ -1351,7 +1350,7 @@ def _check_lines(result, outcome, limits):
         )
     else:
         lines.append(
-            "  The check reached too little steady state to judge it separately."
+            "  The validation test reached too little steady state to judge it separately."
         )
     if ratio := overshoot(result, limits):
         lines.append(f"  The worst measure reached {ratio:.1f} times its limit.")
@@ -1467,7 +1466,7 @@ def _capacity_test_notes(capacity_result, time_factor):
             f"In the {capacity:,}-bot test the experiment {also}failed "
             f"{plural(sum(other_failures.values()), 'participant')}{why} "
             f"({top_counts(other_failures)}). These don't "
-            "count against capacity; check that the design expects them."
+            "count against the limits; check that the design expects them."
         )
     ramp_up = capacity_result.ramp_up_s
     test_length = capacity_result.actual_duration
@@ -1482,12 +1481,12 @@ def _capacity_test_notes(capacity_result, time_factor):
             f"Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
             f"{test_length:.0f} s test, so the server ran fully loaded for only "
             f"{1 - ramp_up / test_length:.0%} of it; use a longer "
-            "--duration-minutes to confirm the capacity."
+            "--duration-minutes to confirm this result."
         )
     if not time_factor:
         notes.append(
             "These bots ran without pauses (--time-factor 0) and load the server "
-            "far more than people do; use --time-factor 1 to size a participant cap."
+            "far more than people do; use --time-factor 1 to size the number of participants."
         )
     return notes
 

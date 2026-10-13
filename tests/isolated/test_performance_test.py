@@ -539,7 +539,10 @@ def test_capacity_search_ends_with_a_long_confirmation_test(caplog, confirmed):
     assert "then a 24-min confirmation test" in caplog.text
     if confirmed:
         assert "Recommended: at most 120 participants at once." in caplog.text
-        assert "Check: 120 bots (80% of 150), arriving over 12 min" in caplog.text
+        assert (
+            "Validation test: 120 bots (80% of 150), arriving over 12 min"
+            in caplog.text
+        )
     else:
         assert "and failed: p95 response time 900 ms." in caplog.text
         # p95 900 ms is 1.8 times the 500 ms limit: 120 / 1.8 = 66.
@@ -578,7 +581,8 @@ def test_a_confirmation_that_measures_nothing_leaves_the_cap_unconfirmed(
 
     assert expected in caplog.text
     assert (
-        "at most 120 participants at once, but the check left this cap" in caplog.text
+        "at most 120 participants at once, but the validation test didn't confirm it"
+        in caplog.text
     )
     assert "and passed." not in caplog.text and "try at most" not in caplog.text
 
@@ -590,7 +594,7 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
 
     assert "p95 high-priority async queue wait 30.00 s" in caplog.text
     assert caplog.text.count("waited too long for") == 1
-    assert "check at the cap, jobs that participants wait for waited" in caplog.text
+    assert "validation test, jobs that participants wait for waited" in caplog.text
 
 
 # A capacity search with 10 workers that failed on queue waits at 130 bots.
@@ -619,7 +623,7 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "for one of the 10 worker processes.\n"
         "Recommended settings for 96 participants at once:\n"
         "    worker_processes = 10\n"
-        "In the 96-bot check at the cap, the 10 worker processes "
+        "In the 96-bot validation test, the 10 worker processes "
         "were busy 55% of the time. Keep the current 10. To go above 96, raise "
         "worker_processes above 10 and test again."
     ) in text
@@ -1261,7 +1265,7 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
         assert "Design experiments to avoid this" in text
     else:
         assert failures == []
-        assert "at least 150" in text
+        assert "Largest passing test: 150 bots at once; no test failed" in text
 
 
 @pytest.mark.parametrize(
@@ -1292,7 +1296,7 @@ def test_only_wait_timeouts_alone_leave_capacity_without_a_cap(
     text = _join(format_capacity_summary(results))
 
     assert ("Recommended:" in text) == capped
-    assert ("10 bots at once passed" if capped else "at least 10") in text
+    assert ("(80% of 10)" if capped else "so the limit wasn't found") in text
     assert "Design experiments to avoid this" in text
     assert ("40 bots also passed, so the results are inconsistent" in text) == (
         larger_passed
@@ -1317,7 +1321,7 @@ def test_a_passing_test_reports_participants_failed_by_design(failed_reasons, wo
     text = _join(format_capacity_summary([result]))
 
     assert wording in text
-    assert "These don't count against capacity" in text
+    assert "These don't count against the limits" in text
 
 
 @pytest.mark.parametrize("participants", [1, 23])
@@ -1360,10 +1364,10 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
                 [_base_result(n_bots=100, total_bots_started=100), result]
             )
         )
-        assert "Capacity: 100 bots at once passed" in search
+        assert "Largest passing test: 100 bots at once." in search
         assert "Recommended: at most 80 participants at once" in search
         assert "wait_for_networks=True" in search
-        assert "judge the cap by the check that --n-bots auto runs" in search
+        assert "judge the cap by the validation test that --n-bots auto runs" in search
 
 
 @pytest.mark.parametrize(
@@ -1439,7 +1443,7 @@ def test_summaries_report_database_growth():
     text = _join(format_capacity_summary(results))
     assert (
         "The 320-bot test added a lot of data: trial rows went from 65,000 to "
-        "103,000. Capacity can fall"
+        "103,000. The server can handle fewer participants"
     ) in text
     assert "Rerun with --reset-database" not in text
 
@@ -1460,7 +1464,9 @@ def test_capacity_summary_suggests_a_cap_below_the_measured_capacity():
     text = _join(format_capacity_summary(results))
 
     assert "Recommended: at most 120 participants at once (80% of 150)." in text
-    assert "Capacity: 150 bots at once passed. 200 failed: 3 request errors." in text
+    assert (
+        "Largest passing test: 150 bots at once. 200 failed: 3 request errors." in text
+    )
 
 
 def test_capacity_summary_mentions_queue_waits_only_with_async_jobs():
@@ -1485,7 +1491,7 @@ def test_only_high_priority_queue_waits_limit_capacity():
 
     text = _join(format_capacity_summary(results, CapacityLimits(max_queue_p95_s=5)))
 
-    assert "Capacity: 100 bots at once passed" in text
+    assert "Largest passing test: 100 bots at once." in text
     assert "200 failed: p95 high-priority async queue wait 40.00 s" in text
     assert (
         "Low-priority async jobs in the 100-bot test: p95 queue wait 140.00 s, "
@@ -1519,7 +1525,7 @@ def test_workers_falling_behind_warn_but_pass(end, busy, behind):
     text = _join(format_capacity_summary([result]))
 
     assert capacity_failures(result) == []
-    assert "Capacity: at least 60 bots at once" in text
+    assert "Largest passing test: 60 bots at once" in text
     if behind:
         assert f"{behind}, so the workers can't keep up in the long run" in text
     assert ("can't keep up" in text) == bool(behind)
@@ -1634,7 +1640,7 @@ def test_recommend_workers(result, n, burst, expected):
         (
             _QUEUE_SEARCH
             + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
-            "(all the cores left)\nIn the 96-bot check at the cap, "
+            "(all the cores left)\nIn the 96-bot validation test, "
             "the 10 worker processes were busy 55% of the time. Keep the current "
             "10. To go above 96, use a larger server or cheaper jobs.",
             "raise worker_processes above",
@@ -1759,7 +1765,7 @@ def test_capacity_summary_says_when_no_limit_was_reached():
 
     text = _join(format_capacity_summary(results, time_factor=0))
 
-    assert "at least 50" in text
+    assert "Largest passing test: 50 bots at once; no test failed" in text
     assert "Recommended:" not in text
     assert "--time-factor 1" in text
 
@@ -1773,7 +1779,7 @@ def test_capacity_summary_uses_counts_below_the_first_failure():
 
     text = _join(format_capacity_summary(results))
 
-    assert "Capacity: 10 bots at once passed" in text
+    assert "Largest passing test: 10 bots at once." in text
     assert "inconsistent" in text
 
 
@@ -1911,7 +1917,7 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     ]
 
     text = _join(format_capacity_summary(results))
-    assert "Capacity: 640 bots at once passed" in text
+    assert "Largest passing test: 640 bots at once." in text
     assert "60 request errors; p95 high-priority async queue wait 36.90 s" in text
     assert (
         "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
@@ -1949,7 +1955,7 @@ def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
 
     text = _join(format_capacity_summary(results))
 
-    assert "Capacity: at least 80 bots at once" in text
+    assert "Largest passing test: 80 bots at once" in text
     assert "160 could not be tested" in text
     assert "limit the test rather than the server" in text
     assert "Recommended:" not in text
@@ -1971,7 +1977,7 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
         "not keep pace (use more --bot-processes)"
     ]
     text = _join(format_capacity_summary(results))
-    assert "Capacity: at least 80 bots at once" in text
+    assert "Largest passing test: 80 bots at once" in text
     assert "160 could not be tested" in text
     assert "Spread the bots over more processes with --bot-processes" in text
     assert "Recommended:" not in text
@@ -2063,7 +2069,7 @@ def test_capacity_summary_does_not_suggest_a_cap_when_the_test_could_not_measure
 
     text = _join(format_capacity_summary(results))
 
-    assert "Capacity: at least 80 bots at once" in text
+    assert "Largest passing test: 80 bots at once" in text
     assert "Recommended:" not in text
 
 
@@ -2095,7 +2101,7 @@ def test_server_limits_cap_capacity_even_when_bots_started_too_slowly(
 
     text = _join(format_capacity_summary(results))
 
-    assert "Capacity: 80 bots at once passed" in text
+    assert "Largest passing test: 80 bots at once." in text
     assert reason in text
     assert "Recommended: at most 64 participants at once" in text
 
@@ -2295,17 +2301,17 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict():
     assert "queue" not in text and "Busy" not in text
     rows = {line.split()[0]: line for line in lines if line.strip()[:1].isdigit()}
     assert list(rows) == ["520", "560", "416"]
-    assert " pass " in rows["520"] and rows["520"].endswith(" capacity")
+    assert " pass " in rows["520"] and rows["520"].endswith(" largest passing test")
     assert " FAIL " in rows["560"] and re.search(r"^ +560 +570 ", rows["560"])
     assert "10 (1.8%)" in rows["560"]
-    assert rows["416"].endswith(" 433  check at the cap")
+    assert rows["416"].endswith(" 433  validation test")
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
-        "Capacity: 520 bots at once passed. 560 failed: 10 of 570 bots (1.8%) "
+        "Largest passing test: 520 bots at once. 560 failed: 10 of 570 bots (1.8%) "
         "failed.\n"
         "  Errors at 560: 10 x OperationalError.\n"
-        "Check: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and "
+        "Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and "
         "passed."
     ) in text
     assert "Not measured: uploads over participants' own networks" in text
@@ -2328,7 +2334,7 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
 
     assert "untested" in plain
     assert "\x1b[" not in plain and "\u2026" not in plain
-    assert "highest passed" in _join(
+    assert "largest passing test" in _join(
         format_performance_summary([_base_result()], terminal=False)
     )
     monkeypatch.setenv("TERM", "xterm-256color")
