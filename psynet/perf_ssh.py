@@ -584,9 +584,9 @@ class DatabaseReset:
         self.remote.stop()
         if taking:
             stamp = f"_snapshot_{datetime.datetime.now():%Y%m%d%H%M%S}"
-            name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
-            self._copy(self.database, name)
-            self.snapshot = name
+            # Named first, so that close() drops a copy that was interrupted.
+            self.snapshot = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
+            self._copy(self.database, self.snapshot)
         else:
             self._check_disk_space(self.snapshot)
             self._run_when_unused(
