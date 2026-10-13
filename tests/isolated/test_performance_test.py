@@ -2726,6 +2726,62 @@ def test_a_remote_reset_never_stops_every_service_of_an_app():
     assert not any(".yml stop" in c for c in remote.executor.commands)
 
 
+@pytest.mark.parametrize("restart_helps", [True, False])
+def test_a_remote_restart_restarts_workers_that_never_register(
+    restart_helps, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from psynet import perf_ssh
+
+    clock = [0.0]
+    monkeypatch.setattr(
+        perf_ssh,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: clock[0],
+            sleep=lambda s: clock.__setitem__(0, clock[0] + s),
+        ),
+    )
+    state = {"stopped": False, "restarted": False}
+
+    def respond(cmd):
+        if ".yml stop " in cmd:
+            state["stopped"] = True
+        if ".yml restart worker_2 " in cmd:
+            state["restarted"] = True
+        healthy_workers = not state["stopped"] or (restart_helps and state["restarted"])
+        for pattern, output in [
+            ("SCARD", "2" if healthy_workers else "1"),
+            ("ps --services", "redis\nweb\nworker_1\nworker_2"),
+            ("ps -a -q", "c1\nc2"),
+            ("docker inspect", "worker_1 c1\nworker_2 c2"),
+            ("SMEMBERS", "c1\nc2" if healthy_workers else "c1"),
+        ]:
+            if pattern in cmd:
+                return output + "\n"
+        return ""
+
+    remote = perf_ssh.RemoteApp(_fake_server(respond), "my-app", "server")
+    remote.prepare = Mock()
+    remote.stop()
+    if restart_helps:
+        remote.start()
+    else:
+        with pytest.raises(RuntimeError) as error:
+            remote.start()
+        assert "1 of 2 worker processes registered with RQ" in str(error.value)
+        assert "cd ~/dallinger/my-app && docker compose restart worker_2" in str(
+            error.value
+        )
+        # The cleanup after a failed reset doesn't wait all over again.
+        n_commands = len(remote.executor.commands)
+        remote.start_stopped_services()
+        assert len(remote.executor.commands) == n_commands
+    restarts = [c for c in remote.executor.commands if ".yml restart" in c]
+    assert len(restarts) == 1 and "restart worker_2 ;" in restarts[0]
+
+
 @pytest.mark.parametrize("web_database", ["dallinger", "other-app"])
 def test_a_remote_reset_refuses_a_database_not_named_after_the_app(web_database):
     database = _app_database(lambda cmd: f"{web_database}\n")
@@ -2807,7 +2863,9 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
-def _remote_search(monkeypatch, reset=None, reset_side_effect=None, **options):
+def _remote_search(
+    monkeypatch, reset=None, reset_side_effect=None, cleanup_error=None, **options
+):
     """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
     import re
     from dataclasses import asdict
@@ -2829,7 +2887,10 @@ def _remote_search(monkeypatch, reset=None, reset_side_effect=None, **options):
             return_value=reset
             and Mock(snapshot=None, snapshot_rows=None, side_effect=reset_side_effect),
         ),
-        patch("psynet.perf_ssh.RemoteApp.start_stopped_services"),
+        patch(
+            "psynet.perf_ssh.RemoteApp.start_stopped_services",
+            side_effect=cleanup_error,
+        ),
     ):
         results = _run_ssh_performance_test(
             "my-app",
@@ -2842,7 +2903,10 @@ def _remote_search(monkeypatch, reset=None, reset_side_effect=None, **options):
     return [c.args[0] for c in run.call_args_list], results
 
 
-def test_a_failed_remote_reset_writes_the_json_then_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_a_failed_remote_reset_writes_the_json_then_fails(
+    cleanup_fails, tmp_path, monkeypatch
+):
     import json
 
     import click
@@ -2851,11 +2915,19 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(tmp_path, monkeypatch)
     pgbouncer_full = (
         "exit code 1: FATAL:  no more connections allowed (max_client_conn)"
     )
-    with pytest.raises(click.ClickException, match="Resetting the database failed"):
+    error, message = (
+        (RuntimeError, "may be stopped")
+        if cleanup_fails
+        else (click.ClickException, "Resetting the database failed")
+    )
+    with pytest.raises(error, match=message):
         _remote_search(
             monkeypatch,
             reset={"prefill_participants": None, "from_snapshot": None},
             reset_side_effect=[None, None, click.Abort(pgbouncer_full)],
+            cleanup_error=RuntimeError("my-app may be stopped")
+            if cleanup_fails
+            else None,
             json_output=str(json_output),
             max_busy_early_finish_rate=0.05,
         )

@@ -1,0 +1,1 @@
+`psynet performance-test ssh --reset-database` now restarts a worker container that hangs at start-up after a reset instead of ending the run; if it still doesn't register, the error names it and gives the restart command, without a traceback. `--json-output` is now written even when the cleanup after a failed reset fails, so the results of the tests that completed are kept.

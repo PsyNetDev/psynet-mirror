@@ -5045,27 +5045,27 @@ def _run_performance_test_with_existing_server(
             )
         else:
             all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
+        # Before the cleanup, which may fail.
+        if json_output:
+            _write_suite_json(
+                json_output,
+                quiet=remote,
+                metadata=_collect_run_metadata(exp.label),
+                started_at=started_at,
+                all_results=all_results,
+                capacity_search=find_capacity,
+                limits=limits,
+                tester=tester,
+                database_reset=database_reset,
+                reset=reset,
+                confirm=not no_confirm if find_capacity else None,
+                confirmation_skipped=suite.confirmation_skipped,
+                reset_error=suite.reset_error,
+            )
     finally:
         bot_log_file.close()
         if database_reset is not None:
             database_reset.close()
-
-    if json_output:
-        _write_suite_json(
-            json_output,
-            quiet=remote,
-            metadata=_collect_run_metadata(exp.label),
-            started_at=started_at,
-            all_results=all_results,
-            capacity_search=find_capacity,
-            limits=limits,
-            tester=tester,
-            database_reset=database_reset,
-            reset=reset,
-            confirm=not no_confirm if find_capacity else None,
-            confirmation_skipped=suite.confirmation_skipped,
-            reset_error=suite.reset_error,
-        )
     _raise_reset_error(suite)
     return all_results
 
@@ -6091,6 +6091,23 @@ def _run_ssh_performance_test(
                 )
             else:
                 all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
+            # Before the cleanup, which may fail.
+            if json_output:
+                _write_suite_json(
+                    json_output,
+                    metadata=tester.remote_metadata
+                    or {"experiment_label": experiment["label"]},
+                    started_at=started_at,
+                    all_results=all_results,
+                    capacity_search=find_capacity,
+                    limits=limits,
+                    tester=tester,
+                    database_reset=database_reset,
+                    reset=reset,
+                    confirm=not no_confirm if find_capacity else None,
+                    confirmation_skipped=suite.confirmation_skipped,
+                    reset_error=suite.reset_error,
+                )
         finally:
             if database_reset is not None:
                 # close() may take the pre-fill snapshot, which needs the app stopped.
@@ -6098,22 +6115,6 @@ def _run_ssh_performance_test(
                     database_reset.close()
                 finally:
                     remote.start_stopped_services()
-    if json_output:
-        _write_suite_json(
-            json_output,
-            metadata=tester.remote_metadata
-            or {"experiment_label": experiment["label"]},
-            started_at=started_at,
-            all_results=all_results,
-            capacity_search=find_capacity,
-            limits=limits,
-            tester=tester,
-            database_reset=database_reset,
-            reset=reset,
-            confirm=not no_confirm if find_capacity else None,
-            confirmation_skipped=suite.confirmation_skipped,
-            reset_error=suite.reset_error,
-        )
     _raise_reset_error(suite)
     return all_results
 

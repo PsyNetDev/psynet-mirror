@@ -891,7 +891,12 @@ services you added to the app's compose file, so that no connection holds
 on to the old database. It then recreates the database from the snapshot,
 as above, with ``psql`` inside the app's PostgreSQL container, empties the
 app's async job queues, and starts again only the containers it stopped,
-waiting until the web server answers and the workers are back. Pre-fill
+waiting until the web server answers and the workers are back. A worker
+container occasionally hangs while it starts and never registers with
+RQ; PsyNet restarts any worker container that hasn't registered after
+60 s, once. If one still hasn't registered after 180 s, the reset fails,
+and the error names the container and gives the ``docker compose restart``
+command to run on the server. Pre-fill
 bots run inside the web container. If a reset fails or you interrupt the
 run, PsyNet starts the containers it stopped. If it can't, the command
 fails, saying that the app may be stopped, and prints the ``docker compose

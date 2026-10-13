@@ -72,6 +72,16 @@ _KEPT_SERVICES = frozenset(
     {"postgresql", "redis", "frontdoor", "controller", "cloudflared"}
 )
 _SERVER_READY_TIMEOUT_S = 180
+# A worker hasn't registered with RQ this long after starting is taken to have
+# hung in its start-up, which happens about once in 100 starts.
+_WORKER_RESTART_AFTER_S = 60
+_WORKER_SERVICE = re.compile(r"worker_\d+")
+_SERVICE_AND_HOSTNAME = (
+    '{{index .Config.Labels "com.docker.compose.service"}} {{.Config.Hostname}}'
+)
+_REGISTERED_HOSTNAMES = (
+    'for w in $(redis-cli SMEMBERS rq:workers); do redis-cli HGET "$w" hostname; done'
+)
 _SQLSTATE = re.compile(r"ERROR:\s+([0-9A-Z]{5}):")
 _HEALTH_PROBE = (
     "import urllib.request; "
@@ -123,7 +133,7 @@ class RemoteApp:
             f"docker compose -f ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
         )
         self._n_workers = 0
-        # Services that stop() stopped, until start() has the server ready again.
+        # Services that stop() stopped, until start() starts them again.
         self._stopped = []
 
     def run(self, cmd):
@@ -254,34 +264,109 @@ class RemoteApp:
         """Start the services that :meth:`stop` stopped and wait until the server answers.
 
         It waits for ``/health`` in the web container and for as many RQ
-        workers as there were before :meth:`stop`.
+        workers as there were before :meth:`stop`. Worker containers that
+        haven't registered with RQ ``_WORKER_RESTART_AFTER_S`` after
+        starting are restarted once.
 
         Raises
         ------
         RuntimeError
-            If the server isn't ready within ``_SERVER_READY_TIMEOUT_S``.
+            If the server isn't ready within ``_SERVER_READY_TIMEOUT_S``; the
+            message names the worker containers that didn't register and
+            how to restart them.
         """
         print(f"▶ Starting {self.app}'s server processes...")
-        if self._stopped:
-            self.compose("start", *self._stopped)
-        deadline = time.monotonic() + _SERVER_READY_TIMEOUT_S
+        services = self._stopped
+        if services:
+            self.compose("start", *services)
+        # Once started, waiting for them again after a failed reset wouldn't help.
+        self._stopped = []
+        workers = [s for s in services if _WORKER_SERVICE.fullmatch(s)]
+        started = time.monotonic()
         health = " ".join(
             [self._compose, "exec -T web python -c", shlex.quote(_HEALTH_PROBE)]
         )
+        restarted = None
         while True:
             healthy = run_with_status(self.executor, health)[0] == 0
-            if (
-                healthy
-                and int(self._redis("SCARD", "rq:workers") or 0) >= self._n_workers
-            ):
-                self._stopped = []
+            registered = int(self._redis("SCARD", "rq:workers") or 0)
+            if healthy and registered >= self._n_workers:
                 return
-            if time.monotonic() >= deadline:
+            waited = time.monotonic() - started
+            if (
+                restarted is None
+                and registered < self._n_workers
+                and waited >= _WORKER_RESTART_AFTER_S
+            ):
+                restarted = self._unregistered_workers(workers)
+                if restarted:
+                    print(
+                        f"▶ Restarting {', '.join(restarted)}, which didn't "
+                        f"register with RQ within {_WORKER_RESTART_AFTER_S} s..."
+                    )
+                    self.compose("restart", *restarted)
+            if waited >= _SERVER_READY_TIMEOUT_S:
                 raise RuntimeError(
-                    f"{self.app} was not ready {_SERVER_READY_TIMEOUT_S} s after its "
-                    "server processes started; see its logs in Dozzle."
+                    self._not_ready_message(healthy, registered, workers, restarted)
                 )
             time.sleep(2)
+
+    def _not_ready_message(self, healthy, registered, workers, restarted):
+        """Say why the server wasn't ready, naming worker containers that didn't register."""
+        problems = [] if healthy else ["its web server didn't answer"]
+        missing = []
+        if registered < self._n_workers:
+            missing = self._unregistered_workers(workers)
+            problem = (
+                f"{registered} of {self._n_workers} worker processes registered with RQ"
+            )
+            if missing:
+                problem += f"; {', '.join(missing)} didn't" + (
+                    ", even after a restart" if restarted else ""
+                )
+            problems.append(problem)
+        message = (
+            f"{self.app} was not ready {_SERVER_READY_TIMEOUT_S} s after its "
+            f"server processes started: {'; '.join(problems)}."
+        )
+        if missing:
+            return (
+                f"{message} Restart {'it' if len(missing) == 1 else 'them'} on "
+                f"{self.server} with 'cd ~/dallinger/{self.app} && docker compose "
+                f"restart {' '.join(missing)}', then run the test again."
+            )
+        return f"{message} See its logs in Dozzle."
+
+    def _unregistered_workers(self, workers):
+        """Return those of the ``workers`` services whose container has no RQ worker registration.
+
+        RQ records each worker's hostname, which is its container's. If that
+        can't be checked, it logs why and returns an empty list.
+        """
+        if not workers:
+            return []
+        try:
+            containers = self.compose("ps", "-a", "-q", *workers).split()
+            hostnames = dict(
+                line.split()
+                for line in self.run(
+                    f"docker inspect --format {shlex.quote(_SERVICE_AND_HOSTNAME)} "
+                    + " ".join(map(shlex.quote, containers))
+                ).splitlines()
+                if line.strip()
+            )
+            registered = set(
+                self.compose(
+                    "exec", "-T", "redis", "sh", "-c", _REGISTERED_HOSTNAMES
+                ).split()
+            )
+        except (RuntimeError, ValueError) as e:
+            logger.warning(
+                f"Could not check which of {self.app}'s worker containers "
+                f"registered with RQ: {e}"
+            )
+            return []
+        return [s for s in workers if hostnames.get(s) not in registered]
 
     def start_stopped_services(self):
         """Start the services that :meth:`stop` stopped, if they haven't started again, as after a failed reset.
