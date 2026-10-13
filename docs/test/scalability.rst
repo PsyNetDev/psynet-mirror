@@ -709,9 +709,11 @@ refuses to reset if it can't check.
 
 If a run is killed before it drops its snapshot, the snapshot stays. With
 Cloudflare ingress the app has its own PostgreSQL container, whose volume
-goes when you destroy the app. With classic ingress, drop it from the shared
-PostgreSQL container with ``docker exec dallinger-postgresql-1 dropdb -U
-dallinger <name>``, because destroying the app doesn't.
+goes when you destroy the app. With classic ingress, apps share one
+PostgreSQL container, and ``psynet destroy ssh`` doesn't remove the
+``*_snapshot_*`` or ``psynet_prefill_*`` databases that interrupted runs or
+older PsyNet versions left there; drop them by hand with ``docker exec
+dallinger-postgresql-1 dropdb -U dallinger <name>``.
 
 To test with the amount of data the study will reach, pre-fill the
 database before the first test:
