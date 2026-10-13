@@ -577,43 +577,49 @@ _SATURATED_UTILIZATION = 0.95
 # recommend_workers sizes the worker processes to be this busy, leaving
 # headroom for bursts and for jobs that slow down under load.
 TARGET_WORKER_UTILIZATION = 0.7
-# Fewer worker jobs than this in the steady state give no reliable estimate.
 _MIN_STEADY_WORKER_JOBS = 20
 # Cores left for the web server and database, which the test doesn't measure.
 CORES_FOR_OTHERS = 2
 
 
-def _slots_per_worker(result):
-    return (result.n_rq_job_slots or result.n_rq_workers) // result.n_rq_workers
+def _worker_demand(result):
+    """Return ``(utilization, greenlets)`` for the steady state of ``result``, or ``None``.
+
+    With ``R`` jobs running per process on average and CPU share ``c`` of
+    their run time: one slot per process gives ``U = R``. With more slots, a
+    job's CPU time includes its neighbours', so ``c / max(R, 1)`` is the
+    per-job CPU share. If that makes the jobs CPU-heavy, they move to one
+    slot each and ``U = c × min(R, 1)``; otherwise
+    ``U = max(R / slots, c × min(R, 1))`` with the slots kept.
+    """
+    from psynet.async_job import _CPU_HEAVY_RATIO
+
+    load, workers = result.worker_load or {}, result.n_rq_workers
+    steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
+    if not (workers and load.get("jobs") and steady_s > 0):
+        return None
+    running = load["busy_s"] / (workers * steady_s)
+    slots = (result.n_rq_job_slots or 0) // workers
+    if slots <= 1:
+        return running, 1
+    cpu = load.get("cpu_share") or 0
+    if cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
+        return cpu * min(running, 1), 1
+    return max(running / slots, cpu * min(running, 1)), slots
 
 
 def worker_utilization(result):
-    """Return the share of the steady state of ``result`` that its worker processes were busy, or ``None``.
-
-    A process with several job slots (``worker_greenlets_per_process``) is
-    busy when its slots are all taken or its CPU core is. A job's CPU time
-    includes what the process's other jobs used meanwhile, so the jobs' CPU
-    share of their run time is the process's CPU use while jobs run.
-    """
-    load, workers = result.worker_load or {}, result.n_rq_workers
-    if not (workers and result.steady_state_phase and load.get("steady_jobs")):
-        return None
-    steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
-    running = load["busy_s"] / (workers * steady_s)
-    cpu = (load.get("cpu_share") or 0) * min(1, running)
-    return max(running / _slots_per_worker(result), cpu)
+    """Return the share of the steady state of ``result`` that its worker processes were busy, or ``None``."""
+    demand = _worker_demand(result)
+    return demand[0] if demand else None
 
 
 def workers_falling_behind(result):
     """Say how the async workers fell behind in the steady state of ``result``, or return ``None``.
 
-    They fell behind if they were busy more than
-    :data:`MAX_WORKER_UTILIZATION` of the time (see
-    :func:`worker_utilization`), or if the low-priority backlog grew (see
+    They fell behind if they were more than :data:`MAX_WORKER_UTILIZATION`
+    busy, or if the low-priority backlog grew (see
     :data:`LOW_BACKLOG_GROWTH_RATIO` and :data:`LOW_BACKLOG_GROWTH_MIN_JOBS`).
-    A start-up backlog that clears doesn't count. Only high-priority queue
-    waits fail a test, so this only warns. Returns ``None`` without a steady
-    state.
     """
     startup, steady = result.startup_phase, result.steady_state_phase
     if not (startup and steady):
@@ -634,97 +640,78 @@ def workers_falling_behind(result):
 
 @dataclass
 class WorkerAdvice:
-    """The ``worker_processes`` that :func:`recommend_workers` suggests, and what it is based on."""
+    """What :func:`recommend_workers` suggests; ``skipped`` says why if nothing."""
 
-    n_participants: int
-    # Why there is no estimate, if there isn't one.
-    skipped: str | None = None
     processes: int | None = None
     greenlets: int | None = None
     utilization: float | None = None
-    # Worker processes that the steady state and the start-up burst need.
     steady_state: int | None = None
     burst: int | None = None
-    # Worker time per participant, if steady_state is a lower bound from it.
-    per_participant_s: float | None = None
     lower_bound: bool = False
-    # Cores left for worker processes, if known, and whether that is too few.
-    cores_left: int | None = None
-    short_of_cores: bool = False
+    skipped: str | None = None
 
 
 def recommend_workers(result, n_participants, burst=None):
-    """Estimate how many async worker processes ``n_participants`` taking part at once need.
+    """Estimate the async worker processes that ``n_participants`` taking part at once need.
 
-    The steady state of ``result`` gives the workers' utilization ``U``
-    (see :func:`worker_utilization`), so ``W`` workers with ``N`` bots need
-    ``U × W × n_participants / N / u`` processes to be busy a share ``u``
-    (:data:`TARGET_WORKER_UTILIZATION`) of the time. Saturated workers
-    understate the demand, which is then a lower bound; for workers that run
-    one job at a time, it comes from the worker time ``D`` per participant
-    who completed and the session length ``S``, as
-    ``n_participants × D / (S × u)``. The start-up burst needs about
-    ``W × n_participants / N_capacity`` processes, which is optimistic once
-    the cores run out, because jobs then slow down. The suggestion is the
-    larger, at most the server's cores less :data:`CORES_FOR_OTHERS`.
+    ``max(U × W × n_participants / N / u, W_b × n_participants / N_b)``, at
+    most the cores less :data:`CORES_FOR_OTHERS`, with ``U`` and the greenlets
+    from :func:`_worker_demand` and ``u`` :data:`TARGET_WORKER_UTILIZATION`.
+    For saturated single-slot workers the steady-state term is the lower
+    bound ``n_participants × D / (S × u)``, with ``D`` the worker time per
+    participant who completed and ``S`` the session length.
 
     Parameters
     ----------
     result : PerformanceTestResult
-        A test with a steady state, usually the confirmation test.
+        A test with ``W`` workers and ``N`` bots, measured in its steady state.
     n_participants : int
-        The participants taking part at once to size the workers for.
+        The participants at once to size the workers for.
     burst : tuple of (int, int), optional
-        The worker processes of the capacity search and the capacity they
-        handled, if high-priority queue waits set the capacity.
+        ``(W_b, N_b)``: the workers of the capacity search and the capacity
+        they handled, when high-priority queue waits set it.
 
     Returns
     -------
     WorkerAdvice
-        With ``skipped`` saying why if ``result`` gives no estimate.
     """
-    advice = WorkerAdvice(n_participants)
     load, workers = result.worker_load or {}, result.n_rq_workers
-    steady_jobs = load.get("steady_jobs") or 0
-    if not workers:
-        advice.skipped = "no worker processes were running"
-    elif not result.steady_state_phase:
-        advice.skipped = (
-            f"the {result.n_bots:,}-bot test had less than {MIN_STEADY_STATE_S} s "
-            "of steady state"
-        )
-    elif steady_jobs < _MIN_STEADY_WORKER_JOBS:
-        advice.skipped = (
-            f"only {plural(steady_jobs, 'worker job')} finished in the steady "
-            f"state of the {result.n_bots:,}-bot test"
-        )
-    if advice.skipped:
-        return advice
-    advice.utilization = worker_utilization(result)
-    advice.lower_bound = advice.utilization >= _SATURATED_UTILIZATION
-    slots = _slots_per_worker(result)
-    per_participant_s = load.get("per_participant_s") if slots == 1 else None
+    demand = _worker_demand(result)
+    jobs = load.get("jobs") or 0
+    if demand is None or jobs < _MIN_STEADY_WORKER_JOBS:
+        if not workers:
+            why = "no worker processes were running"
+        elif not load:
+            why = f"the {result.n_bots:,}-bot test had less than {MIN_STEADY_STATE_S} s of steady state"
+        else:
+            why = f"only {plural(jobs, 'worker job')} finished in the steady state of the {result.n_bots:,}-bot test"
+        return WorkerAdvice(skipped=why)
+    utilization, greenlets = demand
+    lower_bound = utilization >= _SATURATED_UTILIZATION
+    per_participant_s = load.get("per_participant_s")
     session_s = result.avg_succeeded_duration or (result.session_minutes or 0) * 60
-    if advice.lower_bound and per_participant_s and session_s:
-        advice.per_participant_s = per_participant_s
+    single_slot = (result.n_rq_job_slots or 0) <= workers
+    if lower_bound and per_participant_s and session_s and single_slot:
         needed = n_participants * per_participant_s / session_s
     else:
-        needed = advice.utilization * workers * n_participants / result.n_bots
-    advice.steady_state = _round_up(needed / TARGET_WORKER_UTILIZATION)
-    if burst:
-        advice.burst = _round_up(burst[0] * n_participants / burst[1])
-    advice.processes = max(advice.steady_state, advice.burst or 0)
+        needed = utilization * workers * n_participants / result.n_bots
+    steady_state = _round_up(needed / TARGET_WORKER_UTILIZATION)
+    burst_n = (
+        _round_up(burst[0] * n_participants / burst[1])
+        if burst and all(burst)
+        else None
+    )
+    processes = max(steady_state, burst_n or 0)
     if result.server_cores:
-        advice.cores_left = max(1, result.server_cores - CORES_FOR_OTHERS)
-        advice.short_of_cores = advice.processes > advice.cores_left
-        advice.processes = min(advice.processes, advice.cores_left)
-    advice.greenlets = 1 if load.get("cpu_heavy") else slots
-    return advice
+        processes = min(processes, max(1, result.server_cores - CORES_FOR_OTHERS))
+    return WorkerAdvice(
+        processes, greenlets, utilization, steady_state, burst_n, lower_bound
+    )
 
 
 def _round_up(value):
-    """Round ``value`` up, ignoring float error such as ``8.000000001``."""
-    return math.ceil(round(value, 6))
+    """Round ``value`` up to at least 1, ignoring float error such as ``8.000000001``."""
+    return max(1, math.ceil(round(value, 6)))
 
 
 def missing_workers(result):

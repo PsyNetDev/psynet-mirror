@@ -652,25 +652,20 @@ _WORKER_ADVICE = (
 )
 
 
-def _queue_limited(result, limits):
-    """Return whether high-priority async jobs in ``result`` waited longer than ``limits`` allow."""
-    wait = queue_wait_p95(result)
-    return wait is not None and wait > limits.max_queue_p95_s
-
-
-def _worker_lines(outcome, confirmation, capacity_result, results, limits):
+def _worker_lines(outcome, confirmation, capacity_result, limits):
     """Return the capacity summary's paragraph on async worker processes, if it applies.
 
-    It appears when high-priority queue waits failed the search's first
-    failing test or the confirmation test, when the workers fell behind in
-    the steady state, and whenever the tests ran worker jobs and suggest a
-    cap, which the estimate is then for. The confirmation test's steady
-    state sizes the workers, or else that of the test that set the capacity
-    or first failed.
+    It appears when high-priority queue waits failed a test, when the workers
+    fell behind, or when the measured test ran worker jobs, sized for the cap
+    or, without one, for that test's bots.
     """
     first_fail = outcome.first_fail
     queue_bound = next(
-        (r for r in (first_fail, confirmation) if r and _queue_limited(r, limits)),
+        (
+            r
+            for r in (first_fail, confirmation)
+            if r and (queue_wait_p95(r) or 0) > limits.max_queue_p95_s
+        ),
         None,
     )
     candidates = [r for r in (confirmation, capacity_result, first_fail) if r]
@@ -679,9 +674,14 @@ def _worker_lines(outcome, confirmation, capacity_result, results, limits):
     measured = next((r for r in candidates if r.steady_state_phase), candidates[0])
     confirmed = _confirmed(confirmation, limits)
     cap = confirmation.n_bots if confirmed else outcome.cap
+    n = cap or measured.n_bots
+    burst = None
+    if queue_bound is not None and queue_bound is first_fail and capacity_result:
+        burst = (capacity_result.n_rq_workers, capacity_result.n_bots)
+    advice = recommend_workers(measured, n, burst)
     behind = workers_falling_behind(measured)
-    ran_worker_jobs = any((r.worker_load or {}).get("jobs") for r in results)
-    if not (queue_bound or behind or (ran_worker_jobs and cap)):
+    ran_jobs = (measured.worker_load or {}).get("jobs")
+    if not (queue_bound or behind or (ran_jobs and (cap or not advice.skipped))):
         return []
     text = []
     if queue_bound is not None:
@@ -696,8 +696,8 @@ def _worker_lines(outcome, confirmation, capacity_result, results, limits):
         where = "the search's" if above_cap else "the"
         had = _describe_workers(queue_bound)
         text.append(
-            f"In {where} {queue_bound.n_bots:,}-bot test, high-priority async "
-            "jobs, which participants wait for, waited too long for a worker"
+            f"In {where} {queue_bound.n_bots:,}-bot test, high-priority async jobs, which "
+            "participants wait for, waited too long for a worker"
             + (f" (the server had {had})." if had else ".")
             + (" To go above the cap, add worker processes." if above_cap else "")
         )
@@ -705,82 +705,54 @@ def _worker_lines(outcome, confirmation, capacity_result, results, limits):
         text.append(
             f"In the steady state of the {_test_name(measured)} test, {behind}, "
             "so the workers can't keep up in the long run. The test still "
-            "passes, because participants don't wait for low-priority jobs, "
-            "but their results arrive ever later and they compete for workers "
-            "with high-priority jobs."
+            "passes, because only high-priority queue waits count against the "
+            "limits, but low-priority results arrive ever later."
         )
-    burst = None
-    if queue_bound and queue_bound is first_fail and capacity_result:
-        burst = (capacity_result.n_rq_workers, capacity_result.n_bots)
-    advice = recommend_workers(measured, cap or measured.n_bots, burst)
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
-        text.append(_describe_worker_advice(advice, measured, burst))
+        text.append(_describe_worker_advice(advice, measured, n, burst))
     paragraph = "  " + " ".join(text)
     return [warning(paragraph) if behind else paragraph]
 
 
-def _describe_worker_advice(advice, result, burst):
-    """Word a :class:`~psynet.perf_test.results.WorkerAdvice` for ``result``, showing its inputs."""
-    n, workers = advice.n_participants, result.n_rq_workers
-    wanted = max(advice.steady_state, advice.burst or 0)
-    if advice.short_of_cores:
-        text = (
-            f"Workers: {n:,} participants at once need about {wanted} worker "
-            f"processes, but the {result.server_cores}-core server has only "
-            f"{advice.cores_left} cores left for them, so it lacks cores: use a "
-            "larger server or make the jobs cheaper rather than adding workers."
+def _describe_worker_advice(advice, result, n, burst):
+    """Word ``advice`` for ``n`` participants at once, with the inputs from ``result``."""
+    workers, processes = result.n_rq_workers, advice.processes
+    needed = max(advice.steady_state, advice.burst or 0)
+    slots = f" with worker_greenlets_per_process = {advice.greenlets}"
+    if needed > processes:
+        first = (
+            f"Workers: {n:,} participants at once need about {needed} processes, "
+            f"but the {result.server_cores}-core server has only {processes} "
+            f"left after {CORES_FOR_OTHERS} for the web server and database, so "
+            "it lacks cores; use a larger server or cheaper jobs."
+        )
+    elif processes <= workers and not advice.lower_bound:
+        first = (
+            f"Workers: the server's {workers} worker processes are enough for "
+            f"{n:,} participants at once; about {processes} would do{slots}."
         )
     else:
-        at_least = "at least" if advice.lower_bound else "about"
-        text = f"Workers: for {n:,} participants at once, "
-        if advice.processes > workers or advice.lower_bound:
-            text += f"{at_least} {advice.processes} worker processes"
-        else:
-            text += (
-                f"the server's {workers} worker processes are enough "
-                f"(about {advice.processes} would do)"
-            )
-        if result.worker_load.get("cpu_heavy"):
-            text += " with worker_greenlets_per_process = 1 (the jobs are CPU-heavy)"
-        elif advice.greenlets > 1:
-            text += f", each running up to {advice.greenlets} jobs at once as now"
-        text += "."
-    were = "worker processes were" if workers != 1 else "worker process was"
-    text += (
-        f" In the steady state of the {_test_name(result)} test, its {workers} "
-        f"{were} {advice.utilization:.0%} busy, so "
+        about = "at least" if advice.lower_bound else "about"
+        first = f"Workers: {n:,} participants at once need {about} {processes} processes{slots}."
+    busy = (
+        f"The {_test_name(result)} test's {plural(workers, 'worker')} "
+        f"{'were' if workers != 1 else 'was'} {advice.utilization:.0%} busy"
     )
-    if advice.per_participant_s:
-        text += (
-            "this is a lower bound from "
-            f"{advice.per_participant_s:.0f} s of worker time per participant "
-            "who completed."
-        )
-    else:
-        text += (
-            f"about {advice.steady_state} would be "
-            f"{TARGET_WORKER_UTILIZATION:.0%} busy."
-        )
-    if advice.burst is not None:
-        text += (
-            f" The start-up burst needs about {advice.burst} ({burst[1]:,} bots "
-            f"passed the search with {burst[0]}); this is optimistic once the "
-            "cores run out, because jobs then slow down."
-        )
-    if advice.cores_left is not None and not advice.short_of_cores:
-        text += (
-            f" The server has {result.server_cores} cores, leaving "
-            f"{advice.cores_left} for workers after {CORES_FOR_OTHERS} for the "
-            "web server and database, whose use the test doesn't measure."
-        )
-    return (
-        text + " This is an estimate from one run; confirm it with another test "
-        "after changing worker_processes."
+    busy += (
+        ", so this is a lower bound"
+        if advice.lower_bound
+        else f" (target {TARGET_WORKER_UTILIZATION:.0%})"
     )
+    if advice.burst is not None and advice.burst >= advice.steady_state:
+        busy += (
+            f"; the start-up burst also needs about {advice.burst} "
+            f"({burst[1]:,} passed with {burst[0]})"
+        )
+    return f"{first} {busy}. Estimate from one run; confirm after changing worker_processes."
 
 
 _WAIT_ADVICE = (
@@ -1115,7 +1087,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     if any(busy_early_finish_cause(r, limits) for r in advised):
         lines.append(_BUSY_CHAINS_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
-    lines += _worker_lines(outcome, confirmation, capacity_result, run_order, limits)
+    lines += _worker_lines(outcome, confirmation, capacity_result, limits)
     if any(start_rate_limits(r) for r in advised):
         lines.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):

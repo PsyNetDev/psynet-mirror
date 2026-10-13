@@ -375,11 +375,11 @@ capacity, or the first failing test if none passed. It warns when the worker
 processes were more than 85% busy in the steady state, or when the
 low-priority backlog at the end of the steady state is at least twice the
 backlog at the end of the start-up and at least 10 jobs longer. The test still
-passes, because only high-priority queue waits fail a test, but low-priority
-results arrive ever later and compete for workers with the high-priority jobs.
-Whenever the queue limit or this check fires, and whenever the tests ran
-worker jobs and the summary suggests a cap, it estimates ``worker_processes``
-from the same test; see :ref:`performance_testing_async_workers`.
+passes, because only high-priority queue waits count against the limits, but
+low-priority results arrive ever later. Whenever the queue limit or this check
+fires, and whenever that test ran worker jobs in its steady state, the summary
+estimates ``worker_processes`` for the cap, or without one for that test's
+bot count; see :ref:`performance_testing_async_workers`.
 
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
@@ -432,11 +432,11 @@ had waited (``oldest_queued_s``). ``n_rq_workers`` is the number of worker
 processes running at the end of the test,
 ``configured_worker_processes`` the number ``worker_processes`` configures
 and ``server_cores`` the CPU cores where the test ran (the web container's,
-for ``performance-test ssh``). ``worker_load`` records the worker jobs that
-finished (``jobs``, and ``steady_jobs`` in the steady state), the seconds
-they ran in the steady state (``busy_s``), their CPU time as a share of
-their run time (``cpu_share``, and ``cpu_heavy`` if at least 50%) and the
-worker time per bot that completed (``per_participant_s``).
+for ``performance-test ssh``). For a test with a steady state,
+``worker_load`` records the worker jobs that finished in it (``jobs``), the
+seconds worker jobs ran in it (``busy_s``), the finished jobs' CPU time as a
+share of their run time (``cpu_share``) and the worker time per bot that
+completed (``per_participant_s``).
 The confirmation test has ``confirmation`` set,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. If resetting the database failed, ``reset_error`` gives the error
@@ -519,41 +519,41 @@ still occupies its worker until it finishes. On SSH servers the worker
 containers get a low CPU priority, so that a busy worker doesn't slow down
 participants' pages, but they still use every core that is free.
 
-The capacity summary estimates ``worker_processes`` for you, for the cap it
-suggests, from the steady state of one test (see
-:ref:`performance_testing_capacity`). Each test's async section shows how
-busy the worker processes were in the steady state. The estimate works like
-this:
+The capacity summary estimates ``worker_processes`` for you from the steady
+state of one test (see :ref:`performance_testing_capacity`), and each test's
+async section shows how busy the worker processes were. With ``W`` worker
+processes, ``R`` jobs running per process on average in the steady state and
+the finished jobs' CPU time a share ``c`` of their run time:
 
-- *Utilization.* ``U`` is the time worker jobs ran in the steady state,
-  divided by the worker processes ``W`` and the steady state's length. A
-  process with several job slots is busy when its slots are all taken or its
-  CPU core is.
-- *Steady state.* ``W × U × (cap / bots) / 0.7`` processes keep the workers
-  70% busy at the cap, leaving headroom for bursts and for jobs that slow down
-  under load. Workers that were at least 95% busy couldn't show the full
-  demand, so the estimate is then a lower bound. For workers that run one job
-  at a time it comes from the worker time per participant who completed
-  instead, as ``cap × (worker time per participant) / (session length × 0.7)``.
+- *Utilization.* With one job slot per process, ``U = R``. With more slots, a
+  job's CPU time includes what the other jobs in its process used meanwhile,
+  so ``c / max(R, 1)`` is the CPU share of each job. If that is at least 50%,
+  the jobs are CPU-heavy: the summary suggests
+  ``worker_greenlets_per_process = 1`` and counts the processes' CPU,
+  ``U = c × min(R, 1)``. Otherwise it keeps the configured slots, and a
+  process is busy when its slots or its core are:
+  ``U = max(R / slots, c × min(R, 1))``.
+- *Steady state.* ``U × W × (participants / bots) / 0.7`` processes keep the
+  workers 70% busy, leaving headroom for bursts and for jobs that slow down
+  under load. Workers at least 95% busy couldn't show the full demand, so the
+  estimate is then a lower bound; with one slot per process it comes from the
+  worker time per participant who completed, as
+  ``participants × (worker time per participant) / (session length × 0.7)``.
 - *Start-up burst.* When the queue limit set the search's capacity, the
-  burst of participants arriving together needs about
-  ``W × cap / capacity`` processes. This is optimistic once the cores run
-  out, because jobs then slow down.
-- *Cores.* The suggestion is the larger of the two, at most the cores where
-  the test ran less two for the web server and database, whose use the test
-  doesn't measure. If the workers need more, the summary says that the server
-  lacks cores rather than suggesting more workers.
-- *Job slots.* It suggests ``worker_greenlets_per_process = 1`` when the jobs
-  are CPU-heavy (CPU at least 50% of their run time, weighted by run time),
-  and otherwise keeps the configured slots.
+  participants arriving together need about ``W × participants / capacity``
+  processes. This is optimistic once the cores run out, because jobs then
+  slow down.
+- *Cores.* The estimate is the larger of the two, at most the cores where the
+  test ran less two for the web server and database, whose use the test
+  doesn't measure. If the workers need more, the summary says the server lacks
+  cores.
 
-There is no estimate if the steady state lasted under a minute or fewer
-than 20 worker jobs finished in it; the summary says which. For example, a
-tapping study with 43 s of audio analysis per 13-minute session, whose
-96-participant confirmation test kept 10 single-slot workers 55% busy on a
-16-core server, gets::
+There is no estimate if the steady state lasted under a minute or fewer than
+20 worker jobs finished in it. For example, a tapping study with 43 s of
+audio analysis per 13-minute session, whose 96-participant confirmation test
+kept 10 single-slot workers 55% busy, gets::
 
-    Workers: for 96 participants at once, the server's 10 worker processes are enough (about 8 would do) with worker_greenlets_per_process = 1 (the jobs are CPU-heavy). In the steady state of the 96-bot confirmation test, its 10 worker processes were 55% busy, so about 8 would be 70% busy. The start-up burst needs about 8 (120 bots passed the search with 10); this is optimistic once the cores run out, because jobs then slow down. The server has 16 cores, leaving 14 for workers after 2 for the web server and database, whose use the test doesn't measure. This is an estimate from one run; confirm it with another test after changing worker_processes.
+    Workers: the server's 10 worker processes are enough for 96 participants at once; about 8 would do with worker_greenlets_per_process = 1. The 96-bot confirmation test's 10 workers were 55% busy (target 70%); the start-up burst also needs about 8 (120 passed with 10). Estimate from one run; confirm after changing worker_processes.
 
 .. _performance_testing_database_size:
 

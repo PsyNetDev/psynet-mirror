@@ -938,7 +938,6 @@ class PerformanceTester:
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
         completed_at = bot_state.first_completed_at
-        steady_from = ended_at
         if completed_at is not None:
             result.first_completion_s = completed_at - start_time
             if actual_duration - result.first_completion_s >= MIN_STEADY_STATE_S:
@@ -950,9 +949,9 @@ class PerformanceTester:
                     ended_at,
                     steady_from,
                 )
-        result.worker_load = worker_load(
-            initial_state["max_async_job_id"], ended_at, steady_from, outcomes
-        )
+                result.worker_load = worker_load(
+                    initial_state["max_async_job_id"], ended_at, steady_from, outcomes
+                )
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         result.configured_worker_processes = configured_worker_processes()
         result.server_cores = os.cpu_count()
