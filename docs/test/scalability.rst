@@ -302,8 +302,8 @@ A test passes if these stay within their limits:
   ``max_wait_time`` or enough participants to fill groups and chains. At
   high bot counts they can also mean the server is too slow. Because they
   may come from the design, when wait timeouts are all that the smallest
-  failing count exceeded, the summary says the limit wasn't found and
-  recommends no number of participants. Other failures, such as
+  failing count exceeded, the summary gives the largest passing test, says
+  the limit wasn't found and recommends no number of participants. Other failures, such as
   prescreens, are part of the design: the summary reports them but they
   don't count against the limits;
 - the share of bots that got fewer trials in a chain trial maker because
@@ -494,7 +494,7 @@ because PgBouncer on an SSH server did ("no more connections allowed
 point to the test: the bots open database connections in the processes
 running them that participants' browsers don't. For PgBouncer, the summary
 suggests raising its ``max_client_conn`` (`Dallinger PR #10051
-<https://github.com/Dallinger/Dallinger/pull/10051>`__ raises it to 2,000
+<https://github.com/Dallinger/Dallinger/pull/10051>`__ raises it to 10,000
 for SSH servers) or bounding the database connection pool. Bots that run late because their process is too busy (see
 :ref:`performance_testing_bot_processes`) are a limit of the test too. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
