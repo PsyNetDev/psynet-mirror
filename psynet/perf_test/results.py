@@ -144,50 +144,51 @@ class PerformanceTestResult:
 
     n_bots: int = 0
     duration_minutes: float | None = None
-    # Minutes over which the bots arrived, or None if they started --stagger
-    # seconds apart.
+    #: Minutes over which the bots arrived, or None if they started --stagger
+    #: seconds apart.
     arrival_minutes: float | None = None
-    # How long a bot takes the experiment: the timeline's estimate times the
-    # bots' time factor.
+    #: How long a bot takes the experiment: the timeline's estimate times the
+    #: bots' time factor.
     session_minutes: float | None = None
-    # Whether this is the confirmation test that ends a capacity search.
+    #: Whether this is the confirmation test that ends a capacity search.
     confirmation: bool = False
     actual_duration: float | None = None
     server_stopped: bool = False
-    # Why a bot process stopped during the test, if one did.
+    #: Why a bot process stopped during the test, if one did.
     bot_process_failure: str | None = None
-    # Numbers of bot processes that didn't report after the test.
+    #: Numbers of bot processes that didn't report after the test.
     unreported_bot_processes: list[int] = field(default_factory=list)
     bot_processes: int = 1
     slots_started: int | None = None
-    # Most bots that were taking part at the same moment.
+    #: Most bots that were taking part at the same moment.
     peak_running: int | None = None
-    # Seconds from the test start until the last bot slot started.
+    #: Seconds from the test start until the last bot slot started.
     ramp_up_s: float | None = None
-    # Of the busiest process running bots; see runtime._LoadMonitor.
+    #: Of the busiest process running bots; see runtime._LoadMonitor.
     tester_lag_p95_s: float | None = None
     total_bots_started: int = 0
-    # Bots whose participant ended approved or submitted and was not failed.
+    #: Bots whose participant ended approved or submitted and was not failed.
     bots_succeeded: int = 0
-    # Bots that raised, or whose participant ended with another status.
+    #: Bots that raised, or whose participant ended with another status.
     bots_failed: int = 0
-    # Bots still taking the experiment when the test ended.
+    #: Bots still taking the experiment when the test ended.
     bots_incomplete: int = 0
-    # Participants the experiment failed, e.g. at a prescreen or a hold timeout.
+    #: Participants the experiment failed, e.g. at a prescreen or a hold timeout.
     participants_failed: int = 0
-    # Number of failed participants by reason (see measure._failure_reason), most
-    # common first.
+    #: Number of failed participants by reason (see measure._failure_reason), most
+    #: common first.
     failed_reasons: dict[str, int] = field(default_factory=dict)
-    # Rows in each table that grows as the study collects data
-    # (see measure.database_rows), before the test and after the bots stopped.
+    #: Rows in each table that grows as the study collects data
+    #: (see measure.database_rows), before the test.
     db_rows_before: dict[str, int] = field(default_factory=dict)
+    #: The same rows after the bots stopped.
     db_rows_after: dict[str, int] = field(default_factory=dict)
     total_requests: int = 0
-    # Requests to /timeline and /response, which the response times cover.
+    #: Requests to /timeline and /response, which the response times cover.
     key_requests: int = 0
     requests_per_sec: float | None = None
     bot_errors: int = 0
-    # Number of bot errors of each kind, most common first.
+    #: Number of bot errors of each kind, most common first.
     bot_error_kinds: dict[str, int] = field(default_factory=dict)
     median_response_time: float | None = None
     p95_response_time: float | None = None
@@ -195,46 +196,50 @@ class PerformanceTestResult:
     max_response_time: float | None = None
     avg_bot_duration: float | None = None
     request_errors: int = 0
-    # HTTP 409 and 503 responses; see measure._split_failed_requests.
+    #: HTTP 409 and 503 responses; see measure._split_failed_requests.
     busy_responses: int = 0
-    # Total time each bot that succeeded or was failed by the experiment
-    # spent on wait pages, over n_wait_page_samples bots.
+    #: Median total time that a bot that succeeded or was failed by the
+    #: experiment spent on wait pages.
     median_wait_page_time: float | None = None
+    #: Bots that median_wait_page_time covers.
     n_wait_page_samples: int | None = None
     avg_succeeded_duration: float | None = None
-    # Of all async jobs that started.
+    #: Of all async jobs that started.
     q_delay_median: float | None = None
-    # For "high" and "low" priority async jobs, if any: how many started,
-    # their p95 queue wait, and the backlog still queued at the end and how
-    # long its oldest job had waited (see measure._queue_waits).
+    #: For "high" and "low" priority async jobs, if any: how many started,
+    #: their p95 queue wait, and the backlog still queued at the end and how
+    #: long its oldest job had waited (see measure._queue_waits).
     queue_waits: dict[str, dict] = field(default_factory=dict)
-    # Duration, CPU and queue-delay statistics by trial maker, job label and
-    # priority.
+    #: Duration, CPU and queue-delay statistics by trial maker, job label and
+    #: priority.
     async_job_stats: list[dict] = field(default_factory=list)
-    # Trials per bot that succeeded.
+    #: Fewest trials of a bot that succeeded.
     min_trial_count: int | None = None
+    #: Median trials of a bot that succeeded.
     median_trial_count: int | None = None
+    #: Most trials of a bot that succeeded.
     max_trial_count: int | None = None
-    # Bots whose chain trial makers finished a block early because every
-    # eligible chain or node was busy, by trial maker (see
-    # measure.busy_early_finish_stats).
+    #: Bots whose chain trial makers finished a block early because every
+    #: eligible chain or node was busy, by trial maker (see
+    #: measure.busy_early_finish_stats).
     busy_early_finishes: dict[str, dict] = field(default_factory=dict)
-    # Async worker processes registered with RQ at the end of the test.
+    #: Async worker processes registered with RQ at the end of the test.
     n_rq_workers: int | None = None
-    # Jobs the async workers can run at once.
+    #: Jobs the async workers can run at once.
     n_rq_job_slots: int | None = None
-    # The server's worker_processes config variable.
+    #: The server's worker_processes config variable.
     configured_worker_processes: int | None = None
-    # How busy the async workers were (see measure.worker_load).
+    #: How busy the async workers were (see measure.worker_load).
     worker_load: dict = field(default_factory=dict)
-    # CPU cores where the test ran: on an SSH server, the web container's.
+    #: CPU cores where the test ran: on an SSH server, the web container's.
     server_cores: int | None = None
-    # Seconds from the test start until the first bot completed the
-    # experiment, where the steady state begins.
+    #: Seconds from the test start until the first bot completed the
+    #: experiment, where the steady state begins.
     first_completion_s: float | None = None
-    # Metrics before and after first_completion_s (see measure.phase_stats),
-    # empty unless the steady state lasted at least MIN_STEADY_STATE_S.
+    #: Metrics before first_completion_s (see measure.phase_stats), empty
+    #: unless the steady state lasted at least MIN_STEADY_STATE_S.
     startup_phase: dict = field(default_factory=dict)
+    #: The same metrics from first_completion_s on, empty as startup_phase is.
     steady_state_phase: dict = field(default_factory=dict)
 
     @property
