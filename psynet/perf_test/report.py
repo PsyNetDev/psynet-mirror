@@ -837,7 +837,7 @@ _PGBOUNCER_ADVICE = (
     "worker keeps the connections it has opened, so their number rises with "
     "the busiest moment so far. HTTP 500 errors in the same tests probably "
     "have this cause too. Raise PgBouncer's max_client_conn (Dallinger PR "
-    "#10051 raises it to 2000 for docker-ssh deployments), or bound the "
+    "#10051 raises it to 10,000 for docker-ssh deployments), or bound the "
     "database connection pool, then test again."
 )
 _WORKER_ADVICE = (
