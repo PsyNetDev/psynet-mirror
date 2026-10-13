@@ -635,7 +635,9 @@ def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
         dict(p95_response_time=0.9, db_rows_before={"trial": 50_000}, **_STEADY),
     )
 
-    assert "Rerun with --reset-database before capping lower" in caplog.text
+    assert (
+        "Rerun with --reset-database before recommending a lower number" in caplog.text
+    )
 
 
 def test_a_run_test_interrupted_by_ctrl_c_raises_keyboard_interrupt():
@@ -1367,7 +1369,10 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
         assert "Largest passing test: 100 bots at once." in search
         assert "Recommended: at most 80 participants at once" in search
         assert "wait_for_networks=True" in search
-        assert "judge the cap by the validation test that --n-bots auto runs" in search
+        assert (
+            "judge the recommended number by the validation test that --n-bots auto"
+            in search
+        )
 
 
 @pytest.mark.parametrize(

@@ -456,8 +456,8 @@ def _missing_workers_text(result):
     return (
         f"  Only {running:,} of the {configured:,} async worker processes that "
         "worker_processes configures were running at the end of "
-        f"{describe_test(result)}, so the server had less capacity for async "
-        "jobs than configured. Check the server log for worker processes that "
+        f"{describe_test(result)}, so the server could run fewer async jobs "
+        "at once than configured. Check the server log for worker processes that "
         "failed or hung at start-up, and restart them. (psynet debug local "
         "without --legacy always starts one.)"
     )
@@ -1002,12 +1002,12 @@ _WAIT_ADVICE = (
 )
 _BUSY_CHAINS_ADVICE = (
     "Participants got fewer trials because every chain they could join was "
-    "busy, so the experiment finished their block early. Besides capping "
-    "concurrent participants, you can let them wait with "
+    "busy, so the experiment finished their block early. Besides recommending "
+    "fewer participants at once, you can let them wait with "
     "wait_for_networks=True or add chains, which may allow more participants at once. "
     "How participants arrive can make busy chains more or less common, so "
-    "judge the cap by the validation test that --n-bots auto runs, whose "
-    "bots arrive over a session."
+    "judge the recommended number by the validation test that --n-bots auto "
+    "runs, whose bots arrive over a session."
 )
 _START_RATE_ADVICE = (
     "Bots that cannot start fast enough limit the test rather than the "
@@ -1121,7 +1121,7 @@ def _database_growth_warnings(
             return lines + [
                 f"{_started_with(confirmation, capacity_result, differ)}, so the "
                 "validation test's failure may come from the data the search left. Rerun "
-                "with --reset-database before capping lower."
+                "with --reset-database before recommending a lower number."
             ]
     if lines and any(r.db_rows_before != results[0].db_rows_before for r in results):
         lines.append(
@@ -1243,7 +1243,7 @@ def _capacity_lines(outcome, limits):
     reasons = _reasons(first_fail, outcome.first_causes)
     if capacity is None:
         if unmeasured:
-            line = f"No test passed. {n_failed} bots at once could not be tested: {reasons}."
+            line = f"No limit found. {n_failed} bots at once could not be tested: {reasons}."
         else:
             if waits_only:
                 advice = ""
@@ -1531,8 +1531,8 @@ def capacity_advice(capacity_search=False):
         "Local results only show how the experiment copes on this computer. "
         "For numbers that apply to your study, launch the experiment on its "
         "deployment server (psynet debug ssh) and run psynet performance-test "
-        "ssh there; the server's CPU, memory and worker settings set the real "
-        "capacity.",
+        "ssh there; the server's CPU, memory and worker settings decide how "
+        "many participants it can handle.",
         "Bots fetch pages and submit answers without a browser, so the results "
         "leave out the static files, media and JavaScript requests that "
         "participants' browsers make.",

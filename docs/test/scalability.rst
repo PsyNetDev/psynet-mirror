@@ -84,8 +84,8 @@ between bots when recruitment has closed. Start it with
 ``psynet performance-test local`` does this for the server it starts. The
 default ``psynet debug local`` server does not stop itself.
 
-Local results show how the experiment copes on your computer. For a
-participant cap, measure the deployment server with
+Local results show how the experiment copes on your computer. To choose
+how many participants to run at once, measure the deployment server with
 ``psynet performance-test ssh`` (see below).
 
 Controlling the load
@@ -261,12 +261,12 @@ well, so you don't have to guess a list of counts:
 
     psynet performance-test local --n-bots auto --time-factor 1
 
-A test counts as within capacity if these stay within their limits:
+A test passes if these stay within their limits:
 
 - the share of ``/timeline`` and ``/response`` requests that fail, at most
   0.1% (one failed request is always allowed), and the share of bots that
   fail, at most 1%. A single stray error doesn't fail a test, however short,
-  but the summary still reports any errors at the capacity it found. Busy
+  but the summary still reports any errors in the largest passing test. Busy
   (HTTP 503) and stale-page (HTTP 409) responses don't count as request
   errors. Bots retry those that PsyNet marks as busy or stale, and a bot
   that gives up, or gets a 409 or 503 it doesn't retry, counts as a failed
@@ -302,10 +302,10 @@ A test counts as within capacity if these stay within their limits:
   ``max_wait_time`` or enough participants to fill groups and chains. At
   high bot counts they can also mean the server is too slow. Because they
   may come from the design, when wait timeouts are all that the smallest
-  failing count exceeded the summary reports the capacity as a lower bound,
-  without a participant cap. Other failures, such as prescreens, are part
-  of the design: the summary reports them but they don't count against
-  capacity;
+  failing count exceeded, the summary says the limit wasn't found and
+  recommends no number of participants. Other failures, such as
+  prescreens, are part of the design: the summary reports them but they
+  don't count against the limits;
 - the share of bots that got fewer trials in a chain trial maker because
   every chain (or node, in a static trial maker) they could take was busy,
   at most 1% for each trial maker, set with
@@ -318,11 +318,12 @@ A test counts as within capacity if these stay within their limits:
   job. The participant is not failed, so the test
   results show these bots under *trials per bot* instead, with their median
   number of trials and the trial maker's ``expected_trials_per_participant``.
-  Unlike wait timeouts, this sets the capacity and the suggested cap:
-  chains are busy more often the more participants take part at once, so
-  capping them reduces it. Setting ``wait_for_networks=True`` or adding
-  chains reduces it too, and may allow a higher cap. How participants
-  arrive can make busy chains more or less common, so judge the cap by the
+  Unlike wait timeouts, this sets the largest passing test and the
+  recommended number of participants: chains are busy more often the more
+  participants take part at once, so fewer participants reduce it.
+  Setting ``wait_for_networks=True`` or adding chains reduces it too, and
+  may allow more participants at once. How participants arrive can make
+  busy chains more or less common, so judge the recommended number by the
   validation test that ``--n-bots auto`` runs, whose bots arrive over a
   session.
 
@@ -337,42 +338,43 @@ The search's tests are short and their bots arrive together, so for most
 studies they see only the start-up. In an experiment with async jobs,
 such as audio analysis, or with long timeline holds, every bot reaches each
 job and each hold at the same moment, so queue waits are longer than
-when participants arrive spread out, and the search underestimates the
-capacity. The search therefore ends with a *validation test*: it runs the
-participant cap it suggests (80% of the capacity), with bots arriving
+when participants arrive spread out, and the search underestimates how
+many participants the server can handle. The search therefore ends with a
+*validation test*: it runs the recommended number of participants (80% of
+the largest passing test), with bots arriving
 evenly over one participant session and the test lasting two sessions, at
 most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
-state, so for long studies also run a long test of the cap by hand. With your own
+state, so for long studies also run a long test of the recommended number by hand. With your own
 ``--arrival-minutes``, the validation test uses that window instead of one
 session and lasts a session longer, again at most an hour, or
 ``--duration-minutes`` if that is longer; the window must be shorter than
-this longest validation test. The summary reports the cap as
-confirmed only if the validation test stayed within the limits and
-reached its steady state; one that never got there leaves the cap
-unconfirmed. If the test exceeded the limits, the summary shows which
-limits the start-up and the steady state exceeded, and suggests a lower
-cap, scaled by how far the test overshot its limits (but at least half the
-tested cap), with the command to check it. A test that could not measure
+this longest validation test. The summary only confirms the recommended
+number if the validation test stayed within the limits and reached its
+steady state; one that never got there leaves it unconfirmed. If the test
+exceeded the limits, the summary shows which limits the start-up and the
+steady state exceeded, and recommends trying a lower number, scaled by how
+far the test overshot its limits (but at least half the tested number),
+with the command to validate it. A test that could not measure
 the server, for example because the server stopped, no responses were
-recorded or the bots couldn't start fast enough, leaves the cap unconfirmed without a suggestion. The
+recorded or the bots couldn't start fast enough, leaves the recommendation unconfirmed without a suggestion. The
 search does not run again. Add ``--no-confirm`` to skip the validation
 test; it is always skipped with ``--time-factor 0``, whose pace isn't
 realistic, when the experiment's estimated session length is unknown, and
-when the search suggests no cap.
+when the search recommends no number.
 
 Without ``--reset-database``, the validation test runs on the data that
 the search tests left. If it fails after starting with much more data than
-the search test that set the capacity, the summary suggests rerunning with
-``--reset-database`` before capping lower.
+the largest passing test, the summary suggests rerunning with
+``--reset-database`` before recommending a lower number.
 
 The summary names the limit that a failing test exceeded. If the queue limit
-is what caps capacity, the summary says how many worker processes the server
-had; add more before resorting to a lower participant cap. After a confirmed
-cap it words this as how to go above the cap.
+is what failed the next count, the summary says how many worker processes
+the server had; add more before settling for fewer participants. After a
+confirmed recommendation it words this as how to go above that number.
 The summary also checks whether the workers keep up in the long run, in one
-test: the validation test if there was one, otherwise the test that set the
-capacity, or the first failing test if none passed. It warns when the worker
+test: the validation test if there was one, otherwise the largest passing
+test, or the first failing test if none passed. It warns when the worker
 processes were more than 85% busy in the steady state, or when the
 low-priority backlog at the end of the steady state is at least twice the
 backlog at the end of the start-up and at least 10 jobs longer. That doesn't
@@ -380,7 +382,7 @@ fail the test by itself, because participants don't wait for low-priority
 jobs, but their results arrive later and later and the jobs keep the workers
 busy. Whenever the queue limit or this check
 fires, and whenever that test ran worker jobs in its steady state, the summary
-estimates ``worker_processes`` for the cap, or without one for that test's
+estimates ``worker_processes`` for the recommended number of participants, or without one for that test's
 bot count; see :ref:`performance_testing_async_workers`.
 
 The search starts at 10 bots and doubles the count until a test fails, then
@@ -496,12 +498,12 @@ suggests raising its ``max_client_conn`` (`Dallinger PR #10051
 for SSH servers) or bounding the database connection pool. Bots that run late because their process is too busy (see
 :ref:`performance_testing_bot_processes`) are a limit of the test too. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
-count exceeded, the summary reports the capacity as "at least" the largest
-passing count and doesn't suggest a participant cap. If no count passed, it
-reports that the smallest count could not be tested, with advice on what
-held the test back. Response times, queue
-waits, request errors and busy responses still cap the capacity in a test
-that also had these limits.
+count exceeded, the summary gives the largest passing test, says the limit
+wasn't found and recommends no number of participants. If no count passed,
+it says no limit was found because the smallest count could not be tested,
+with advice on what held the test back. Response times, queue waits,
+request errors and busy responses still fail a test that also had these
+limits.
 
 Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are
@@ -516,7 +518,7 @@ barrier or :func:`~psynet.page.wait_while`, keeps a websocket open, and the web 
 accepted it holds a Redis connection for it. Redis allows 10,000 clients by
 default, shared by the whole app, so about 10,000 participants can wait at
 once on an SSH server. A web worker's open-file limit, often 1,024 with two
-files per waiting participant, also caps it at about 500 per worker. This
+files per waiting participant, also limits it to about 500 per worker. This
 needs a Dallinger release newer than 12.4; with 12.4 and earlier, a web
 worker runs out of Redis connections once about 100 participants have waited
 on it.
@@ -554,7 +556,7 @@ still occupies its worker until it finishes. On SSH servers the worker
 containers get a low CPU priority, so that a busy worker doesn't slow down
 participants' pages, but they still use every core that is free.
 
-The capacity summary estimates ``worker_processes`` for you from the steady
+The summary estimates ``worker_processes`` for you from the steady
 state of one test (see :ref:`performance_testing_capacity`), and each test's
 async section shows how busy the worker processes were. With ``W`` worker
 processes, ``R`` jobs running per process on average in the steady state and
@@ -575,9 +577,9 @@ the finished jobs' CPU time a share ``c`` of their run time:
   estimate is then a minimum; with one slot per process it comes from the
   worker time per participant who completed, as
   ``participants × (worker time per participant) / (session length × 0.7)``.
-- *Start-up burst.* When the queue limit set the search's capacity, the
-  participants arriving together need about ``W × participants / capacity``
-  processes. This is optimistic once the cores run out, because jobs then
+- *Start-up burst.* When the queue limit failed the search's next count,
+  the participants arriving together need about
+  ``W × participants / (largest passing test)`` processes. This is optimistic once the cores run out, because jobs then
   slow down.
 - *Current workers.* The summary suggests at least the processes the test
   had, and one more if the workers fell behind: more than 85% busy, or a
@@ -602,7 +604,7 @@ single-slot workers 55% busy, gets::
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks
 an estimate from saturated workers, and ``(all the cores left)`` a number
-that uses every core left, so going above the cap then needs a larger server
+that uses every core left, so going above the recommended number then needs a larger server
 or cheaper jobs rather than more worker processes. The reason says what the test measured and
 what set the number: the load, the current processes, one more than
 processes that fell behind, or the cores.
@@ -612,19 +614,19 @@ processes that fell behind, or the cores.
 Database size
 -------------
 
-Capacity depends on how much data the experiment has already collected,
-not only on how many participants take part at once. Some queries read
+How many participants a server can handle depends on how much data the
+experiment has already collected, not only on how many take part at once. Some queries read
 more rows as the tables grow: in one static rating study, the same 208
 bots got a 95th-percentile response time of 0.2 s while the database held
 100,000 to 150,000 trials and 7 s once it held 190,000 to 214,000. A test
 on a fresh database therefore measures the start of a study, and a
-capacity found early in a study may not hold later.
+recommendation found early in a study may not hold later.
 
 Each test reports the rows in the tables that grow, before and after it,
 under *Database rows*. By default the tests don't reset the database, so
 every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
-The capacity summary warns when the database grew by more than half during
+The summary warns when the database grew by more than half during
 the tests (and by at least 10,000 rows; with ``--reset-database``, during
 any one test), or when the largest passing and
 smallest failing bot counts started with very different amounts of data,
@@ -632,7 +634,7 @@ and then suggests ``--reset-database``.
 
 To read the numbers:
 
-- Treat a capacity as holding for about the amount of data the tests ran
+- Treat a recommendation as holding for about the amount of data the tests ran
   with. Compare the trial and participant rows with what the study will
   collect: the number of participants you plan to recruit, times the
   trials each one makes.
@@ -961,7 +963,7 @@ report shows the 95th percentile of this lag for the worst process under
 *Bot runtimes* as *Bot lag*. A test in which it exceeded 50 ms counts as
 could not be tested, like a test whose bots could not start fast enough.
 With ``--n-bots auto``, the search treats that bot count as failed, and the
-summary reports the capacity as at least the largest count that passed and
+summary gives the largest passing test, says the limit wasn't found and
 suggests more ``--bot-processes``. Increase ``--bot-processes`` and run again
 to measure further.
 
@@ -993,5 +995,5 @@ number it handles.
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a
-capacity search (``--n-bots auto``) on the real server to choose the
-participant cap.
+capacity search (``--n-bots auto``) on the real server to choose how many
+participants to run at once.

@@ -30,7 +30,7 @@ from psynet.perf_test.results import (
 
 logger = logging.getLogger(__name__)
 
-_NO_CAP = "the search recommended no number of participants to validate"
+_NO_CAP = "the search found no number of participants to recommend"
 
 
 def _ended_early(result):
