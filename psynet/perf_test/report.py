@@ -751,12 +751,14 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         f"{result.server_cores}-core server has only {processes} cores left "
         f"after {CORES_FOR_OTHERS} for the web server and database"
     )
+    # Only the cores keep the count below the test's, so no larger server is needed yet.
+    trimmed = advice.demand <= processes < workers
     if advice.demand > processes:
         cores = (
             f"{n:,} participants at once would use about {advice.demand} worker "
             f"processes, but the {server}; use a larger server or cheaper jobs."
         )
-    elif processes < workers:
+    elif trimmed:
         cores = f"The {server}, so this is fewer than the {ran} the test ran; {processes} {implied}."
     else:
         cores = f"The {ran} fell behind, but the {server}; use a larger server or cheaper jobs."
@@ -783,7 +785,7 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         why.append(
             f"To go above {n:,}, raise worker_processes above {processes} and test again."
         )
-    elif above_cap and advice.reason != "cores":
+    elif above_cap and (advice.reason != "cores" or trimmed):
         why.append(f"To go above {n:,}, use a larger server or cheaper jobs.")
     notes = ["minimum"] * (advice.reason == "minimum")
     notes += ["all the cores left"] * advice.all_cores

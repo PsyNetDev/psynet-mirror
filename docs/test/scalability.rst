@@ -553,7 +553,7 @@ the finished jobs' CPU time a share ``c`` of their run time:
   if that is fewer than the test had. If the load needs more, the summary
   says the server lacks cores.
 
-There is no estimate if no bot finished, so there was no steady state, if
+There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
 finished in it. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130

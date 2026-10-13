@@ -1633,6 +1633,14 @@ def test_recommend_workers(result, n, burst, expected):
             "10. To go above 96, use a larger server or cheaper jobs.",
             "raise worker_processes above",
         ),
+        # Above a confirmed cap where the cores trim the count below the test's.
+        (
+            _QUEUE_SEARCH
+            + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=10)],
+            "8 would be about 69% busy. To go above 96, use a larger server or "
+            "cheaper jobs.",
+            "raise worker_processes above",
+        ),
         # No bot finished in either test, so neither had a steady state.
         (
             [
