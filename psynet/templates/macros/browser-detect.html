@@ -169,13 +169,14 @@
         function renderBrowserWarning() {
             hideResumeModal();
             var warningMsg = "";
-            if (browser.forceGoogleChrome) {
+            if (!browser.cssHasSupported) {
+                warningMsg = "{{ pgettext("browser_compatibility", "Your browser is out of date and does not support features required by this experiment. Please update your browser to the latest version or install Google Chrome.") | replace('"',"'") | safe }}";
+            }
+            if (browser.forceGoogleChrome && warningMsg === "") {
                 if (!browser.isChrome) {
                     warningMsg = "{{ pgettext("browser_compatibility", "You need to use Google Chrome to take part in the experiment.")  | replace('"',"'")|safe }} {{ pgettext("browser_compatibility", "You are using")  | replace('"',"'")|safe }} " + browser.name + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
-                } else {
-                    if (browser.isOldVersion) {
-                        warningMsg = "{{ pgettext("browser_compatibility", "You need to use the latest version of Google Chrome to take part in the experiment.")  | replace('"',"'") | safe  }}  (> " + browser.minVersion + "). {{ pgettext("browser_compatibility", "You are using:") | replace('"',"'") | safe }}: " + browser.version + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
-                    }
+                } else if (browser.isOldVersion) {
+                    warningMsg = "{{ pgettext("browser_compatibility", "You need to use the latest version of Google Chrome to take part in the experiment.")  | replace('"',"'") | safe  }}  (> " + browser.minVersion + "). {{ pgettext("browser_compatibility", "You are using:") | replace('"',"'") | safe }}: " + browser.version + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
                 }
             }
 
@@ -201,16 +202,16 @@
             out += '<table class="table mt-3">';
             out += '<tbody>';
 
-            if (browser.forceGoogleChrome && !browser.isChrome) {
+            if ((browser.forceGoogleChrome && !browser.isChrome) || !browser.cssHasSupported) {
                 var chromeLink = "<a href='https://www.google.com/chrome/' target='_blank'>{{ pgettext("browser_compatibility", "Click here")  | replace('"',"'") | safe }}" + getIcon('link') + "</a>";
-                if (browser.isOldVersion) {
+                if (browser.isOldVersion || !browser.cssHasSupported) {
                     out += renderInstruction('download-chrome', "{{ pgettext("browser_compatibility", "Install the latest version of Google Chrome")  | replace('"',"'") | safe }}: " + chromeLink);
                 } else {
                     out += renderInstruction('download-chrome', "{{ pgettext("browser_compatibility", "Install Google Chrome if you haven't")  | replace('"',"'") | safe }}" + chromeLink);
                 }
             }
             out += renderInstruction('copy-filled', "{{ pgettext("browser_compatibility", "Copy the link below")  | replace('"',"'") | safe }}", renderCopyArea('url', window.location.href));
-            if (browser.forceGoogleChrome && !browser.isChrome) {
+            if ((browser.forceGoogleChrome && !browser.isChrome) || !browser.cssHasSupported) {
                 out += renderInstruction('open-chrome', "{{ pgettext("browser_compatibility", "Open Google Chrome")  | replace('"',"'") | safe }}");
             }
 
@@ -325,6 +326,7 @@
         browser.isOldVersion = !isVersionAtLeast(browser.version, browser.minVersion);
         browser.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
                         || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+        browser.cssHasSupported = (typeof CSS !== 'undefined' && !!CSS.supports && CSS.supports("selector(:has(a))"));
 
         function renderInstruction(iconName, text, details = '') {
             var line = getIcon(iconName) + ' <span class="display-5">' + text + '</span>' + details;
@@ -425,7 +427,7 @@
             }
 
             function runBrowserCheck() {
-                var correctBrowserUsed = true;
+                var correctBrowserUsed = browser.cssHasSupported;
                 if (browser.forceGoogleChrome) {
                     correctBrowserUsed = correctBrowserUsed && browser.isChrome && !browser.isOldVersion;
                 }

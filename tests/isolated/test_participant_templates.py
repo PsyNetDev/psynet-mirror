@@ -1094,3 +1094,40 @@ def test_ad_and_consent_do_not_call_terminate_participant():
             f"{name} calls terminateParticipant, but psynet.js is not loaded "
             "on this page — the call throws ReferenceError."
         )
+
+
+def test_browser_detect_requires_css_has_unconditionally():
+    """PsyNet's own CSS uses :has() internally (participant.css, timeline-page.html).
+    The check must fire for all browsers regardless of force_google_chrome."""
+    html = _render_browser_detect(force_google_chrome=False)
+    assert "cssHasSupported" in html, (
+        "No cssHasSupported variable found — the :has() support check is missing."
+    )
+    assert 'CSS.supports("selector(:has(a))")' in html, (
+        "CSS.supports check for :has() not found in rendered JS."
+    )
+    validate_start = html.index("browser.validate = function")
+    validate_fn = html[validate_start : html.index("return browser;")]
+    assert "cssHasSupported" in validate_fn, (
+        "cssHasSupported is not checked inside browser.validate — "
+        "the :has() gate is not wired into the entry check."
+    )
+
+
+def test_browser_capabilities_accepts_valid_tokens():
+    from psynet.experiment import BROWSER_CAPABILITY_TOKENS, Experiment
+
+    class Exp(Experiment):
+        browser_capabilities = {"microphone", "camera"}
+
+    Exp.check_browser_capabilities()  # must not raise
+
+
+def test_browser_capabilities_rejects_unknown_token():
+    from psynet.experiment import Experiment
+
+    class Exp(Experiment):
+        browser_capabilities = {"not_a_real_capability"}
+
+    with pytest.raises(ValueError, match="not_a_real_capability"):
+        Exp.check_browser_capabilities()
