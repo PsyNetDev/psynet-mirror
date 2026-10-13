@@ -40,7 +40,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 
-from psynet.log import bold, warning
 from psynet.perf_test.measure import (
     async_job_stats,
     bot_duration_stats,
@@ -53,9 +52,7 @@ from psynet.perf_test.measure import (
     wait_for_async_jobs,
     worker_load,
 )
-from psynet.perf_test.report import (
-    format_test_results,
-)
+from psynet.perf_test.report import bold, format_test_results, warning
 from psynet.perf_test.results import (
     MIN_STEADY_STATE_S,
     PerformanceTestResult,
