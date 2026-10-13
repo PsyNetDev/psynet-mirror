@@ -264,7 +264,6 @@
     {{ super() }}
 
     <script src="{{ url_for('static', filename='scripts/jquery-3.7.1.min.js') }}"></script>
-    <script>window.psynetHeadJQuery = jQuery;</script>
     <script src="{{ url_for('static', filename='scripts/JSZip/jszip.min.js') }}"></script>
 
     {% for src in js_dependencies %}
@@ -289,9 +288,6 @@
 
 {% block libs %}
     {{ super() }}
-    {# Dallinger versions without the jquery block reload jQuery here; restore
-       the head copy so jQuery plugins loaded as js_dependencies stay registered. #}
-    <script>window.jQuery = window.$ = window.psynetHeadJQuery;</script>
     <script src="{{ url_for('static', filename='scripts/platform.min.js') }}"></script>
 {% endblock %}
 

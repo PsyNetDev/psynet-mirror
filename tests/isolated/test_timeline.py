@@ -111,14 +111,7 @@ def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     assert "scripts/survey-jquery/" not in template
     # A second jQuery from Dallinger's libs block would drop head-loaded plugins.
     assert "{% block jquery %}{% endblock %}" in template
-    head_block = template.split("{% block head %}")[1].split("{% endblock %}")[0]
-    assert head_block.index("jquery-3.7.1.min.js") < head_block.index(
-        "window.psynetHeadJQuery = jQuery;"
-    )
-    libs_block = template.split("{% block libs %}")[1].split("{% endblock %}")[0]
-    assert libs_block.index("{{ super() }}") < libs_block.index(
-        "window.jQuery = window.$ = window.psynetHeadJQuery;"
-    )
+    assert "psynetHeadJQuery" not in template
 
 
 def test_automatic_trial_waits_for_page_ready():
