@@ -83,10 +83,10 @@ underestimates how many participants the server can handle. In the JSON, compare
 and `steady_state_phase`, and read the validation test (`"confirmation": true`
 in the JSON), a long run at the recommended number of participants with
 spread-out arrivals. When they
-disagree, trust the long run with spread-out arrivals. Without
-`--reset-database` that run starts on the data the search left, so if it
-fails after the database grew a lot, rerun with `--reset-database` before
-recommending a lower number. Only high-priority async jobs, which participants wait for,
+disagree, trust the long run with spread-out arrivals. That run starts on
+the data the search left, so if it fails after the database grew a lot,
+rerun on the server with `psynet performance-test ssh --reset-database`
+before recommending a lower number. Only high-priority async jobs, which participants wait for,
 count against `--max-queue-p95-s`; a low-priority backlog (`queue_waits.low`
 in the JSON) is only reported, but if the summary warns that it grew during
 a steady state, the workers can't keep up long-term. That check uses the

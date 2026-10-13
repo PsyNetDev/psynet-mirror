@@ -121,12 +121,12 @@ Controlling the load
     ``--n-bots 100 --arrival-minutes 10`` a new bot arrives every 6 seconds.
     Use it when participants will arrive gradually; the default, where
     every bot arrives within seconds, matches a study that opens many places
-    at once. With ``--n-bots auto`` only the validation test uses the
-    window; the search's tests stay short, with the bots starting together
-    (see :ref:`performance_testing_capacity`). Bots that replace finished
-    ones still start after ``Experiment.test_parallel_stagger_interval_s``,
-    so ``--arrival-minutes`` can't be combined with ``--stagger``. Otherwise
-    the window must be shorter than ``--duration-minutes``; without
+    at once. Bots that replace finished ones still start after
+    ``Experiment.test_parallel_stagger_interval_s``, so ``--arrival-minutes``
+    can't be combined with ``--stagger``. It can't be combined with
+    ``--n-bots auto`` either, whose validation test always spreads arrivals
+    over one session (see :ref:`performance_testing_capacity`). The window
+    must be shorter than ``--duration-minutes``; without
     ``--duration-minutes`` it is added to the default test length.
 
 ``--time-factor``
@@ -159,73 +159,31 @@ Reading the results
 
 The main numbers are the response times for ``/timeline`` and ``/response``:
 the median shows the typical delay, and the 95th percentile shows the delay
-that the slowest participants experience. The report also shows:
+that the slowest participants experience. *Bot outcomes* counts how each bot
+ended. *Completed successfully* leaves out participants that the experiment
+failed, for example at a prescreen or when a wait timed out (see
+:meth:`~psynet.participant.Participant.fail`); they are counted under *Failed
+by the experiment*, with their most common failure tags, because they often
+still end ``approved``. *Bot errors* lists what went wrong for every bot that
+raised an error, for example ``HTTP 500 on /response``. The request error
+count only includes errors that the server managed to log, so a server that
+cannot reach its database shows them under *Bot errors* instead.
 
-- **Bot outcomes**: how many bots started and how each ended. *Completed
-  successfully* counts bots that finished the experiment without the
-  experiment failing their participant. *Failed by the experiment* counts
-  participants that the experiment failed, for example at a prescreen or
-  when a wait timed out (see :meth:`~psynet.participant.Participant.fail`).
-  They often still end ``approved`` after the unsuccessful end; ``failed``
-  is what matters, so check this line as well as the first. A breakdown lists the most common failure reasons, built from the
-  participants' failure tags, and marks those that mean the participant
-  waited too long. *Bot error or other status* counts bots that raised an
-  error, or whose participant ended with another status such as
-  ``returned``. *Stopped at the end of the test* counts bots still taking
-  the experiment when the test ended. A bot stopped there while waiting at
-  a hold whose time limit had passed, but which it had not checked again,
-  is not yet counted as failed. *Bot error before joining* counts bots
-  that raised an error before their participant was created. The *Bot
-  errors* list below counts every bot that raised an error, including
-  those whose participant the experiment failed, so its total can exceed
-  the error rows above.
-- **Bot runtimes**, separately for each of these outcomes, and **trials per
-  bot** (for bots that completed successfully). Below the trials, a line for
-  each chain trial maker says how many bots got fewer trials because every
-  chain was busy, for example ``23 of 150 bots started (15%) got fewer
-  trials in main_chain because every chain was busy; median 41 of 60
-  trials.`` Bots started include those that replaced bots that finished.
-  Chains that are busy only with their last trials don't count, because
-  they would have nothing left to give.
-- **Request metrics**: total requests, errors and throughput. A
-  *Busy/stale responses (409/503)* line appears when ``/timeline`` or
-  ``/response`` answered with HTTP 503, which PsyNet sends when the
-  experiment is busy, or HTTP 409, which it sends when a page went stale.
-  Bots retry those that PsyNet marks as busy or stale. These responses are
-  not counted as request errors.
-- **Time on wait pages per bot**, for experiments with wait pages: the
-  total time each bot that completed successfully or was failed by the
-  experiment spent waiting. Failed bots are included because those that
-  timed out waited longest.
-- **Async job times**: for experiments with async jobs, such
-  as audio analysis, the execution time, CPU time and time spent waiting in
-  the queue, for each label and :ref:`priority <async_job_priority>`, with
-  the number of worker processes and how many jobs they can run at once.
-  If fewer worker processes were running at the end of the test than
-  ``worker_processes`` configures, the report warns and names both
-  numbers. A high queue share, highlighted in yellow or red, means more worker
-  processes are needed; see :ref:`performance_testing_async_workers`. With a
-  steady state, the report also says how busy the worker processes were. Below
-  the table, the report counts the jobs of each priority still queued when
-  the test ended.
-- **Start-up vs steady state**: the request count, 95th-percentile response
-  time, request errors and the 95th-percentile queue wait of high- and of
-  low-priority async jobs, separately for the start-up and the steady
-  state, with the low-priority jobs still queued at the end of each. A
-  finished wait counts in the phase in which the job started. A job still
-  queued when the start-up ended also counts in the start-up's queue wait,
-  with the time it had waited so far. The start-up lasts until the first bot
-  completes the experiment: until then every bot is in its first session,
-  as when a study opens and its first participants arrive together, so
-  queues fill up and slow pages are hit by everyone at once. The steady
-  state is the rest of the test, when bots finish and are replaced at
-  different points of the experiment. The table appears when the steady
-  state lasts at least a minute; otherwise the report says how far the
-  test got.
-- **Database rows**: the rows in the tables that grow as a study collects
-  data (participants, trials, responses, nodes, networks, async jobs
-  and assets), before the test and after it. See
-  :ref:`performance_testing_database_size`.
+The other sections give the bots' runtimes and trials per bot, with a line
+for each chain trial maker whose bots got fewer trials because every chain
+was busy; the requests, including busy or stale (HTTP 503 or 409) responses,
+which bots retry and which don't count as request errors; the median time
+bots spent on wait pages; and, for experiments with async jobs, each job
+label's run time, CPU time and queue wait, with the number of worker
+processes and how busy they were. The report warns if fewer worker processes
+were running than ``worker_processes`` configures. *Start-up vs steady
+state* splits the response times, request errors and queue waits at the
+moment the first bot completes the experiment: until then every bot is in
+its first session, as when a study opens, so queues fill up and slow pages
+are hit by everyone at once. It appears when the steady state lasts at least
+a minute. *Database rows* counts the rows of the tables that grow as a study
+collects data, before and after the test (see
+:ref:`performance_testing_database_size`).
 
 Response times are measured inside the server, from when a web worker starts
 handling a request until it finishes. They do not include time that a request
@@ -263,69 +221,44 @@ well, so you don't have to guess a list of counts:
 
 A test passes if these stay within their limits:
 
-- the share of ``/timeline`` and ``/response`` requests that fail, at most
-  0.1% (one failed request is always allowed), and the share of bots that
-  fail, at most 1%. A single stray error doesn't fail a test, however short,
-  but the summary still reports any errors in the largest passing test. Busy
-  (HTTP 503) and stale-page (HTTP 409) responses don't count as request
-  errors. Bots retry those that PsyNet marks as busy or stale, and a bot
-  that gives up, or gets a 409 or 503 it doesn't retry, counts as a failed
-  bot;
-- the share of ``/timeline`` and ``/response`` requests answered as busy or
-  stale, at most 1% (ten are always allowed). Bots retry these responses,
-  so without this limit a server stuck on lock contention could pass with
-  no errors and short response times. The allowance covers the occasional
-  contention at timeline holds and in synchronized groups;
+- failed ``/timeline`` and ``/response`` requests: at most 0.1% (one is
+  always allowed);
+- failed bots: at most 1%;
+- ``/timeline`` and ``/response`` requests answered busy or stale (HTTP 503
+  or 409): at most 1% (ten are always allowed);
 - the 95th-percentile response time for ``/timeline`` and ``/response``,
-  together and for each of them, limited by ``--max-p95-ms`` (default 500);
+  together and for each of them: ``--max-p95-ms`` (default 500);
 - the 95th-percentile time that high-priority async jobs wait in the queue
-  for a worker, limited by ``--max-queue-p95-s`` (default 5). Participants
-  often sit on a wait page during this time, so it matters as much as
-  response time. Jobs still waiting when the test ends count with the time
-  they have waited so far, so a queue that never drains fails the test.
-  Local jobs, which have no priority, count as high priority. Participants
-  don't wait for low-priority jobs, such as analyses of trials without
-  feedback (see :ref:`async_job_priority`), so a backlog of these, which
-  often builds up in the start-up, never fails a test. When their queue
-  wait exceeds the limit, the summary reports it and how many were still
-  queued at the end;
-- the share of bots whose participants the experiment failed for waiting
-  too long, at most 1%. These are participants failed when a
-  :func:`~psynet.page.wait_while` (including async code blocks that wait),
-  a barrier, or a ``while_loop`` with ``max_loop_time`` (such as waiting
-  for a trial) timed out, or when a group barrier timed out between
-  barriers. In a test that has such failures, members of a sync group
-  failed because the group fell below its minimum size count too, because
-  they usually follow from them. In a real study those participants would
-  be lost, so wait timeouts count as failures at any bot count, and
-  experiments should be designed to avoid them, for example with a longer
-  ``max_wait_time`` or enough participants to fill groups and chains. At
-  high bot counts they can also mean the server is too slow. Because they
-  may come from the design, when wait timeouts are all that the smallest
-  failing count exceeded, the summary gives the largest passing test, says
-  the limit wasn't found and recommends no number of participants. Other failures, such as
-  prescreens, are part of the design: the summary reports them but they
-  don't count against the limits;
-- the share of bots that got fewer trials in a chain trial maker because
-  every chain (or node, in a static trial maker) they could take was busy,
-  at most 1% for each trial maker, set with
-  ``--max-busy-early-finish-rate`` (default 0.01). One such bot per trial maker
-  is always allowed, so that a single busy chain doesn't fail a small test. With the default
-  ``wait_for_networks=False``, a participant who finds every eligible chain
-  awaiting an async job or out of trial capacity finishes the block
-  early instead of waiting. Static trial makers don't limit trials per node
-  during selection, so they only do this when every node awaits an async
-  job. The participant is not failed, so the test
-  results show these bots under *trials per bot* instead, with their median
-  number of trials and the trial maker's ``expected_trials_per_participant``.
-  Unlike wait timeouts, this sets the largest passing test and the
-  recommended number of participants: chains are busy more often the more
-  participants take part at once, so fewer participants reduce it.
-  Setting ``wait_for_networks=True`` or adding chains reduces it too, and
-  may allow more participants at once. How participants arrive can make
-  busy chains more or less common, so judge the recommended number by the
-  validation test that ``--n-bots auto`` runs, whose bots arrive over a
-  session.
+  for a worker: ``--max-queue-p95-s`` (default 5). Jobs still waiting when
+  the test ends count with the time they have waited so far, and local
+  jobs, which have no priority, count as high priority;
+- participants that the experiment failed for waiting too long: at most 1%;
+- bots that got fewer trials in a chain trial maker because every chain (or
+  node, in a static trial maker) they could take was busy: at most 1% for
+  each trial maker (one is always allowed).
+
+A single stray error doesn't fail a test, however short, but the summary
+still reports any errors in the largest passing test. Bots retry busy and
+stale responses, so without their own limit a server stuck on lock
+contention could pass with no errors. Participants often sit on a wait page
+while a high-priority job waits, so its queue wait matters as much as
+response time. Participants don't wait for low-priority jobs, such as
+analyses of trials without feedback (see :ref:`async_job_priority`), so these
+never fail a test; the summary reports their queue wait when it exceeds the
+limit.
+
+Wait timeouts are participants failed when a :func:`~psynet.page.wait_while`,
+a barrier or a ``while_loop`` with ``max_loop_time`` timed out, together with
+members of a sync group that then fell below its minimum size. Real
+participants would be lost, so they count at any bot count, but they may come
+from the design, for example a short ``max_wait_time`` or too few
+participants to fill groups and chains. When they are all that the smallest
+failing count exceeded, the summary gives the largest passing test, says the
+limit wasn't found and recommends no number of participants. Busy chains do
+set the recommendation, because fewer participants at once keep chains free;
+``wait_for_networks=True`` or more chains also help. Other failures, such as
+prescreens, are part of the design: the summary reports them but they don't
+count against the limits.
 
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
@@ -345,11 +278,9 @@ the largest passing test), with bots arriving
 evenly over one participant session and the test lasting two sessions, at
 most an hour, so that the test reaches its steady state. A study over 30
 minutes gets less than two sessions, and one over about an hour no steady
-state, so for long studies also run a long test of the recommended number by hand. With your own
-``--arrival-minutes``, the validation test uses that window instead of one
-session and lasts a session longer, again at most an hour, or
-``--duration-minutes`` if that is longer; the window must be shorter than
-this longest validation test. The summary only confirms the recommended
+state, so for long studies also run a long test of the recommended number by
+hand. To validate another arrival window, run the test by hand with
+``--n-bots N --arrival-minutes M``. The summary only confirms the recommended
 number if the validation test stayed within the limits and reached its
 steady state; one that never got there leaves it unconfirmed. If the test
 exceeded the limits, the summary shows which limits the start-up and the
@@ -363,10 +294,12 @@ test; it is always skipped with ``--time-factor 0``, whose pace isn't
 realistic, when the experiment's estimated session length is unknown, and
 when the search recommends no number.
 
-Without ``--reset-database``, the validation test runs on the data that
-the search tests left. If it fails after starting with much more data than
-the largest passing test, the summary suggests rerunning with
-``--reset-database`` before recommending a lower number.
+Without ``--reset-database`` (see :ref:`performance_testing_reset`), the
+validation test runs on the data that the search tests left. If it fails
+after starting with much more data than the largest passing test, the
+summary says that its failure may come from the data, and suggests
+rerunning with ``performance-test ssh --reset-database`` before
+recommending a lower number.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what failed the next count, the summary says how many worker processes
@@ -395,30 +328,15 @@ most 5 minutes and at least ``Experiment.test_duration_minutes``;
 therefore takes 40 to 60 minutes, and its validation test another 24
 minutes. The run prints its upper bound when it starts.
 
-When bots fail, the report lists what went wrong, for example
-``HTTP 500 on /response``. The request error count only includes errors that
-the server managed to log, so a server that cannot reach its database shows
-them under *Bot errors* instead.
-
-The summary at the end of every run lists the tests by the number of bots
-taking part at once (*Bots at once*), with the validation test last, whether
-each passed the limits, and the measures that the limits check. Busy
-responses, participants the experiment failed, busy chains and async queue
-waits only appear when a test had them, in a second table under the first,
-with the same rows; the limits line lists only the limits that apply. *Bots started* counts every bot that started during
-the test, including bots that replaced earlier ones. *Failed requests* gives
-a percentage of all requests and *Failed bots* a percentage of the bots
-started; *Failed bots* counts every bot that raised an error. A measure is
-red only if it broke its limit, so a failing test can show failures that
-stayed within their limits uncoloured. Response times are in milliseconds
-and queue waits in seconds. An empty cell shows ``-``: *Bots finished*
-counts bots that completed the experiment, or shows ``-`` when a test was
-shorter than one participant session, so that no bot could finish. The verdict follows: the recommended number of participants taking
-part at once, the *largest passing test* and why the next count failed,
-naming each measure, its value and its limit (when no test failed, the
-verdict says the limit wasn't reached), and the *validation test* run at the
-recommended number. Without a validation test, the recommendation is 80% of
-the largest passing test. For example, from a capacity search of a static
+The summary at the end of every run tabulates the tests by the number of
+bots taking part at once, with the validation test last, whether each
+passed, and the measures that the limits check. Measures that only some
+tests had, such as busy responses, busy chains or queue waits, go in a
+second table. A measure is red only if it broke its limit. The verdict
+follows: the recommended number of participants taking part at once, the
+*largest passing test* and why the next count failed, and the *validation
+test*. Without a validation test, the recommendation is 80% of the largest
+passing test. For example, from a capacity search of a static
 rating study on an SSH server (some rows left out)::
 
     PERFORMANCE TEST SUMMARY
@@ -459,30 +377,16 @@ window counts as exceeding the limits, and the summary warns when starting
 the bots took more than a quarter of the test, unless ``--arrival-minutes``
 spread them out on purpose or a validation test passed.
 
-With ``--json-output``, each result records the test's
-``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the
-estimated session times ``--time-factor``), its ``startup_phase`` and
-``steady_state_phase`` metrics, and per async job label and priority, in
-``async_job_stats``, how long the jobs took, how much CPU they used
-(``cpu_avg``) and how long they waited. ``queue_waits``, for the whole test
-and for each phase, has an entry for each priority (``high``, ``low``) that
-had jobs: the number of ``jobs`` that started, their ``q_delay_p95``, the
-``backlog`` of jobs still queued at the end and how long the oldest of them
-had waited (``oldest_queued_s``). ``n_rq_workers`` is the number of worker
-processes running at the end of the test,
-``configured_worker_processes`` the number ``worker_processes`` configures
-and ``server_cores`` the CPU cores where the test ran (the web container's,
-for ``performance-test ssh``). For a test with a steady state,
-``worker_load`` records the worker jobs that finished in it (``jobs``), the
-seconds worker jobs ran in it (``busy_s``), the finished jobs' CPU time as a
-share of their run time (``cpu_share``) and the worker time per bot that
-completed (``per_participant_s``).
-The JSON flag ``confirmation`` marks the validation test,
-and the options record ``confirmation_skipped`` with the reason it didn't
-run. If resetting the database failed, ``reset_error`` gives the error
-(see :ref:`performance_testing_reset`). The file is rewritten after each
-test, so a run that crashes or that you interrupt keeps the tests that
-finished; ``finished_at`` stays null until the run ends. When the search tests and a long test with spread-out arrivals
+With ``--json-output``, the file records the run's options and, for each
+test, every measure in the report; the ``PerformanceTestResult`` dataclass in
+``psynet/perf_test/results.py`` describes the fields. ``confirmation`` marks
+the validation test, and the options record ``confirmation_skipped`` with
+the reason it didn't run. If resetting the database failed, ``reset_error``
+gives the error (see :ref:`performance_testing_reset`). The file is
+rewritten after each test, so a run that crashes or that you interrupt keeps
+the tests that finished; ``finished_at`` stays null until the run ends.
+
+When the search tests and a long test with spread-out arrivals
 disagree, trust the long test.
 
 The processes running the bots create each bot's participant themselves, so
@@ -493,29 +397,25 @@ is roughly that start rate multiplied by how long each bot takes to finish
 the experiment. A longer experiment, or a larger ``--time-factor``, keeps
 more bots taking part at once. A test in which fewer than 90% of the
 requested bots were ever taking part at the same time counts as exceeding
-the limits. Bots that fail because PostgreSQL ran out of connections, or
-because PgBouncer on an SSH server did ("no more connections allowed
-(max_client_conn)"), count against the bot error limit too, but they also
-point to the test: the bots open database connections in the processes
-running them that participants' browsers don't. For PgBouncer, the summary
-suggests raising its ``max_client_conn`` (`Dallinger PR #10051
-<https://github.com/Dallinger/Dallinger/pull/10051>`__ raises it to 10,000
-for SSH servers) or bounding the database connection pool. Bots that run late because their process is too busy (see
+the limits. Bots that fail because PostgreSQL ran out of connections count
+against the bot error limit too, but they also point to the test: the bots
+open database connections in the processes running them that participants'
+browsers don't. Bots that run late because their process is too busy (see
 :ref:`performance_testing_bot_processes`) are a limit of the test too. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
 count exceeded, the summary gives the largest passing test, says the limit
 wasn't found and recommends no number of participants. If no count passed,
-it says no limit was found and why the test couldn't measure the server
-at the smallest count, with advice on what held the test back. Response times, queue waits,
+it says why the test couldn't measure the server at the smallest count,
+with advice on what held the test back. Response times, queue waits,
 request errors and busy responses still fail a test that also had these
 limits.
 
 Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are
 created and replaced rather than a realistic load, so avoid testing
-shortened versions of an experiment. The test doesn't reset the database, so later tests in a
-sweep run against more data than earlier ones (see
-:ref:`performance_testing_database_size`).
+shortened versions of an experiment. Unless ``performance-test ssh
+--reset-database`` resets the database, later tests in a sweep run against
+more data than earlier ones (see :ref:`performance_testing_database_size`).
 
 Bots don't open websockets, so the search doesn't measure how many
 participants can wait at once. A participant on a waiting page, such as a
@@ -561,38 +461,20 @@ still occupies its worker until it finishes. On SSH servers the worker
 containers get a low CPU priority, so that a busy worker doesn't slow down
 participants' pages, but they still use every core that is free.
 
-The summary estimates ``worker_processes`` for you from the steady
-state of one test (see :ref:`performance_testing_capacity`), and each test's
-async section shows how busy the worker processes were. With ``W`` worker
-processes, ``R`` jobs running per process on average in the steady state and
-the finished jobs' CPU time a share ``c`` of their run time:
-
-- *Utilization.* With one job slot per process, ``U = R``. With more slots, a
-  job's CPU time includes what the other jobs in its process used meanwhile,
-  so ``c / max(R, 1)`` is the CPU share of each job. If that is at least 50%,
-  the jobs are CPU-heavy: the summary suggests
-  ``worker_greenlets_per_process = 1``, and sizes for each running job
-  needing a process, ``U = R``, while reporting the processes as busy
-  ``min(R, 1)`` of the time. Otherwise it keeps the configured slots, and a
-  process is busy when its slots or its core are:
-  ``U = max(R / slots, c × min(R, 1))``.
-- *Steady state.* ``U × W × (participants / bots) / 0.7`` processes keep the
-  workers 70% busy, leaving headroom for bursts and for jobs that slow down
-  under load. Workers at least 95% busy couldn't show the full demand, so the
-  estimate is then a minimum; with one slot per process it comes from the
-  worker time per participant who completed, as
-  ``participants × (worker time per participant) / (session length × 0.7)``.
-- *Start-up burst.* When the queue limit failed the search's next count,
-  the participants arriving together need about
-  ``W × participants / (largest passing test)`` processes. This is optimistic once the cores run out, because jobs then
-  slow down.
-- *Current workers.* The summary suggests at least the processes the test
-  had, and one more if the workers fell behind: more than 85% busy, or a
-  growing low-priority backlog.
-- *Cores.* The suggestion is at most the cores where the test ran less two
-  for the web server and database, whose use the test doesn't measure, even
-  if that is fewer than the test had. If the load needs more, the summary
-  says the server lacks cores.
+The summary estimates ``worker_processes`` for you from the steady state of
+one test (see :ref:`performance_testing_capacity`), and each test's async
+section shows how busy the worker processes were. The estimate keeps the
+workers about 70% busy at the recommended number of participants. If each
+job's CPU time is at least half its run time, the jobs are CPU-heavy: the
+summary suggests ``worker_greenlets_per_process = 1`` and sizes one process
+for each running job. When the queue limit failed the search's next count,
+it also scales the search's workers to the participants arriving together.
+It suggests at least the processes the test had, one more if they fell
+behind (more than 85% busy, or a growing low-priority backlog), and at most
+the cores where the test ran less two for the web server and database.
+Workers at least 95% busy couldn't show the full demand, so the estimate is
+then a minimum. The ``recommend_workers`` docstring in
+``psynet/perf_test/results.py`` gives the formula.
 
 There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
@@ -636,11 +518,9 @@ Each test reports the rows in the tables that grow, before and after it,
 under *Database rows*. By default the tests don't reset the database, so
 every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
-The summary warns when the database grew by more than half during
-the tests (and by at least 10,000 rows; with ``--reset-database``, during
-any one test), or when the largest passing and
-smallest failing bot counts started with very different amounts of data,
-and then suggests ``--reset-database``.
+The summary warns when the database grew by more than half during the
+tests (and by at least 10,000 rows; with ``--reset-database``, during any
+one test), and suggests ``performance-test ssh --reset-database``.
 
 To read the numbers:
 
@@ -658,122 +538,14 @@ To read the numbers:
   a small study look worse than it will be. Relaunch the experiment to
   start again from an empty database.
 
-.. _performance_testing_reset:
-
-Starting every test from the same data
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-``--reset-database`` starts every test from the same database, so that the
-tests of a capacity search differ only in load. This section describes
-``performance-test local``; :ref:`performance_testing_server_reset` explains
-what differs on a server.
-
-.. code-block:: bash
-
-    psynet performance-test local --reset-database --n-bots auto
-
-Before the first test, PsyNet copies the experiment's database into a
-snapshot database. Before each later test, it stops the experiment server,
-drops the experiment's database and creates it again from the snapshot,
-empties the async job queues and starts the server again. That takes a few
-seconds, plus a few seconds per gigabyte of data, because PostgreSQL copies
-the database's files. At the end it drops the snapshot. A test run only
-ever drops the experiment's own database and its temporary snapshot. Kept pre-fill
-snapshots (see below) are only dropped by ``psynet performance-test
-snapshots``, whose ``--drop-all`` drops every pre-fill snapshot on this
-computer. Files that the bots uploaded or
-generated stay in the asset storage after a reset, because only the
-database rows that refer to them are reset; they cost disk space but
-nothing else.
-
-The snapshot holds whatever the database held when the run started. If it
-already held participants, for example from an earlier run, PsyNet warns
-that every test starts from that data and says how to start from an empty
-database.
-
-If a reset fails, PsyNet stops the run, prints the summary of the tests
-that completed, if any, and writes them to ``--json-output`` with
-``reset_error`` set, then exits with an error that names the reset failure.
-
-Resetting drops the experiment's database, so these options only work in
-the database that the isolated test environment creates for each
-``performance-test local`` run by default, and drops when the run ends.
-They refuse any other database, such as the ``dallinger`` database you
-debug with. The isolated environment is skipped when ``CI`` or
-``PSYNET_TEST_ENVIRONMENT=shared`` is set, so unset those to reset. The
-PostgreSQL role must be allowed to create databases, as it already must be
-for the isolated test environment (see :doc:`/developer/running_tests`).
-
-Each copy needs disk space, so before one PsyNet checks that the disk
-holding PostgreSQL's data has at least twice the database's size free. If
-the space isn't free, PsyNet stops and says how much space the pre-fill
-snapshots use. It can only check if the PostgreSQL role may read the
-server's settings and the server's data directory is on this computer,
-not in a container; otherwise it warns once and carries on.
-
-To test with the amount of data the study will reach, pre-fill the
-database before the first test:
-
-.. code-block:: bash
-
-    psynet performance-test local --prefill-participants 1500 --n-bots auto
-
-This runs 1,500 bots through the experiment, 50 at a time and without
-pauses, waits for their async jobs to finish, and then takes the
-snapshot, so every test starts with 1,500 participants' data. The bots use
-the same routes as participants, so the data is what the experiment itself
-stores, but it takes time: at about 250 requests per participant, a few
-hundred requests per second fill 1,500 participants in about an hour.
-The pre-fill adds to whatever the database already holds, such as bots
-from earlier tests, and the snapshot keeps it all; PsyNet warns when the
-database isn't empty.
-
-If any pre-fill bot raises an error, the run stops without keeping a
-snapshot, because the data would differ from what participants leave.
-Participants that the experiment fails by design, for example at a
-prescreen, are only counted.
-
-PsyNet keeps the pre-filled snapshot and prints its name, which comes from
-a hash of the experiment's files and the PsyNet and Dallinger versions,
-followed by the number of pre-fill participants. The files are those a
-deployment copies, without the ones Git ignores, plus ``config.txt``,
-``requirements.txt`` and ``constraints.txt`` where they exist. A later run
-with the same files, versions and number of participants starts from that
-snapshot instead of pre-filling again. PsyNet never changes a kept snapshot: to pre-fill again, drop it
-with ``psynet performance-test snapshots --drop <name>`` and run the test
-again. Any change to those files, even a comment, means a new pre-fill. If
-a change can't affect the data, such as a fixed typo, start from the old
-snapshot with ``--from-snapshot <name>``, which only warns that the code
-differs.
-
-If a run is interrupted after its pre-fill finished but before the
-snapshot was taken, PsyNet still takes the snapshot as the run ends, so
-the pre-fill isn't lost.
-
-Pre-fill snapshots stay on the database server until you drop them; after
-keeping a new one, PsyNet lists the others and their sizes. List them, with
-their sizes and the experiment that made them, and drop them with:
-
-.. code-block:: bash
-
-    psynet performance-test snapshots
-    psynet performance-test snapshots --drop psynet_prefill_0123456789ab_n1500
-    psynet performance-test snapshots --drop-all
-
-``--drop-all`` drops every pre-fill snapshot on this computer's PostgreSQL
-server, whichever experiment made it.
-
-To start from real data instead, for example from a pilot, export the
+To test with real data, for example from a pilot, export the
 pilot with ``psynet export``, add ``performance_test_app = true`` to
 ``config.txt``, launch a new app from the export with ``psynet debug ssh
 --app my-experiment-perf --archive export.zip`` (see
-:doc:`/deploy/reference/deploy_from_archive`), remove the line from ``config.txt`` again, and
-run ``psynet performance-test ssh --app my-experiment-perf`` (see
-:ref:`performance_testing_server_app`). Every test then starts with at least
-the pilot's data.
-
-Locally, these options need the server that ``performance-test local``
-starts, so they can't be combined with ``--existing``.
+:doc:`/deploy/reference/deploy_from_archive`), remove the line from
+``config.txt`` again, and run ``psynet performance-test ssh --app
+my-experiment-perf`` (see :ref:`performance_testing_server_app`). Every test
+then starts with at least the pilot's data.
 
 .. _performance_testing_server:
 
@@ -805,7 +577,7 @@ stops the test on the server.
 
 By default the test does not reset the database, so repeated runs
 accumulate data (see :ref:`performance_testing_database_size` and
-:ref:`performance_testing_server_reset`). Make
+:ref:`performance_testing_reset`). Make
 sure the app allows enough participants for the number of bots, and that
 nobody else is using it during the test.
 
@@ -827,15 +599,11 @@ issue certificates for a private address, so classic ingress fails there.
 
 The app's config marks it as a performance-test app with
 ``performance_test_app = true``, and records the hash of the experiment's
-files and the PsyNet and Dallinger versions that it was deployed with (the
-same hash that names pre-fill snapshots, see :ref:`performance_testing_reset`).
+files and the PsyNet and Dallinger versions that it was deployed with.
 Each run reads both inside the app's web container. If the hash differs
 from that of the experiment directory, the run first updates the app as
 ``psynet debug ssh --update`` does: it rebuilds and restarts the app's
-containers but keeps its database, with the data of earlier tests, and its
-pre-fill snapshots. The old snapshots no longer match the new hash, so a
-run with ``--prefill-participants`` pre-fills again, adding to the data
-already in the database, and keeps the old snapshots until you drop them.
+containers but keeps its database, with the data of earlier tests.
 The database keeps the tables of the earlier code, and
 launch steps, such as creating networks, don't run again; if the change
 needs them, destroy the app and let the next run deploy it again. Update
@@ -845,8 +613,7 @@ mark.
 
 If an app of that name exists but isn't marked, for example one you
 deployed with ``psynet debug ssh`` or ``psynet deploy ssh``, every run
-refuses it, as does ``psynet performance-test snapshots --app``; choose
-another app name. Setting ``performance_test_app = true`` in ``config.txt``
+refuses it; choose another app name. Setting ``performance_test_app = true`` in ``config.txt``
 yourself declares that the app's data is disposable: performance tests may
 add to it, reset it and drop it. ``psynet deploy ssh`` and other live
 deployments refuse to deploy with it set.
@@ -866,7 +633,7 @@ the command that destroys it:
 
 As a second check, ``performance-test ssh`` and ``performance-test local``
 refuse to start if the database has participants that PsyNet bots didn't
-create (bots from earlier tests and pre-fills don't count), if the
+create (bots from earlier tests don't count), if the
 experiment runs in live mode, or if its recruiter can bring real
 participants. Test recruiters are the development and mock recruiters,
 Hot Air, generic, bots and simulated participants. If the experiment isn't
@@ -876,75 +643,95 @@ loading a bot export, or for an experiment configured with Prolific. When
 the run ends, PsyNet copies the bot log out of the container and prints
 where it saved it.
 
-.. _performance_testing_server_reset:
+.. _performance_testing_reset:
 
-Resetting the database on a server
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Starting every test from the same data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``performance-test ssh`` takes the same ``--reset-database``,
-``--prefill-participants`` and ``--from-snapshot`` options as
-``performance-test local`` (see :ref:`performance_testing_reset`):
+``--reset-database`` starts every test of ``performance-test ssh`` from the
+same database, so that the tests of a capacity search differ only in load:
 
 .. code-block:: bash
 
     psynet performance-test ssh --app my-experiment-perf --reset-database --n-bots auto
-    psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
-With these options, before each later test, PsyNet stops the app's
-running or restarting containers except
+Before the first test, PsyNet waits for the app's async jobs to finish and
+copies its database into a temporary snapshot database,
+``<app>_snapshot_<time>``, in the app's PostgreSQL server. Before each later
+test, it stops the app's running or restarting containers except
 PostgreSQL, Redis and the front door (``frontdoor``, ``controller`` and
 ``cloudflared``): the web, worker, clock and PgBouncer containers, and any
 services you added to the app's compose file, so that no connection holds
-on to the old database. It then recreates the database from the snapshot,
-as above, with ``psql`` inside the app's PostgreSQL container, empties the
-app's async job queues, and starts again only the containers it stopped,
-waiting until the web server answers and the workers are back. A worker
-container occasionally hangs while it starts and never registers with
-RQ; PsyNet restarts any worker container that hasn't registered after
-60 s, once. If one still hasn't registered after 180 s, the reset fails,
-and the error names the container and gives the ``docker compose restart``
-command to run on the server. Pre-fill
-bots run inside the web container. If a reset fails or you interrupt the
-run, PsyNet starts the containers it stopped. If it can't, it says that
-the app may be stopped and prints the ``docker compose start`` command to
-run on the server, and the command's error names both failures. A reset interrupted between dropping
-and recreating the database leaves the app without its database; destroy
-the app then, and the next run deploys it again. To start a run from an
-empty database rather than one left by earlier runs, destroy the app with
-``psynet destroy ssh``; the next ``psynet performance-test ssh`` deploys it
-again.
+on to the old database. It then recreates the database from the snapshot
+with ``psql`` inside the app's PostgreSQL container, empties the app's async
+job queues, and starts again only the containers it stopped, waiting until
+the web server answers and the workers have registered with RQ. That takes
+a few seconds per gigabyte of data on top of restarting the app. At the end
+it drops the snapshot, and prints a ``dropdb`` command if that fails. Files
+that the bots uploaded or generated stay in the asset storage, because only
+the database rows that refer to them are reset.
+
+The snapshot holds whatever the database held when the run started. If it
+already held participants, for example from an earlier run, PsyNet warns
+that every test starts from that data. To start from an empty database,
+destroy the app with ``psynet destroy ssh``; the next ``psynet
+performance-test ssh`` deploys it again.
+
+If a worker still hasn't registered 180 s after the restart, the reset
+fails, and the error names the worker containers and gives the ``docker
+compose restart`` command to run on the server. A worker container
+occasionally hangs while it starts; with Dallinger's
+``worker_startup_timeout`` (`Dallinger PR #10086
+<https://github.com/Dallinger/Dallinger/pull/10086>`__, default 120 s), it
+exits instead and Docker starts it again, and `Dallinger PR #10087
+<https://github.com/Dallinger/Dallinger/pull/10087>`__ removes the usual
+cause of the hang.
+
+If a reset fails, PsyNet stops the run, prints the summary of the tests
+that completed, if any, writes them to ``--json-output`` with
+``reset_error`` set, and exits with an error that names the reset failure.
+If a reset fails or you interrupt the run, PsyNet starts the containers it
+stopped. If it can't, it says that the app may be stopped, prints the
+``docker compose start`` command to run on the server, and the error names
+both failures. A reset interrupted between dropping and recreating the
+database leaves the app without its database; destroy the app then, and
+the next run deploys it again.
 
 Before the first reset and again before every later one, the web container
 checks that the app is a performance-test app, and runs the guards against
-real data, with the same ``--force`` as above. Neither command
-resets an experiment running in live mode, even with ``--force``. A
-reset only touches the app's own database, whose name is the app name; it
-refuses if the web container uses a database with another name. The free
-disk space check runs inside the PostgreSQL container, and if it can't
-check, it refuses to reset rather than warning.
+real data, with the same ``--force`` as above. A reset never touches an
+experiment running in live mode, even with ``--force``. It only touches the
+app's own database, whose name is the app name, and refuses if the web
+container uses a database with another name. Each copy needs disk space,
+so before one PsyNet checks, inside the PostgreSQL container, that the disk
+holding PostgreSQL's data has at least twice the database's size free, and
+refuses to reset if it can't check.
 
-Snapshots live in the PostgreSQL server that the app uses, and their names
-include the app name, such as
-``psynet_prefill_my-experiment-perf_0123456789ab_n1500``, so that apps sharing
-one PostgreSQL server don't share snapshots. PostgreSQL limits database
-names to 63 characters, so very long app names can't keep pre-fill
-snapshots. List and drop an app's snapshots with:
+If a run is killed before it drops its snapshot, the snapshot stays. With
+Cloudflare ingress the app has its own PostgreSQL container, whose volume
+goes when you destroy the app. With classic ingress, drop it from the shared
+PostgreSQL container with ``docker exec dallinger-postgresql-1 dropdb -U
+dallinger <name>``, because destroying the app doesn't.
+
+To test with the amount of data the study will reach, pre-fill the
+database before the first test:
 
 .. code-block:: bash
 
-    psynet performance-test snapshots --app my-experiment-perf
-    psynet performance-test snapshots --app my-experiment-perf --drop-all
+    psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
-Here ``--drop-all`` drops only that app's snapshots. ``psynet destroy ssh``
-drops them too: with Cloudflare ingress the app has its own PostgreSQL
-container, whose volume goes with the app, and with classic ingress PsyNet
-drops the app's pre-fill snapshots from the shared PostgreSQL server before
-destroying the app. A run drops its temporary snapshot, named
-``<app>_snapshot_<time>``, when it ends, and prints a ``dropdb`` command if
-that fails. If a run is killed first, the temporary snapshot stays: with
-classic ingress, drop it from the shared PostgreSQL container with
-``docker exec dallinger-postgresql-1 dropdb -U dallinger <name>``, because
-destroying the app doesn't.
+This implies ``--reset-database``. It runs 1,500 bots through the
+experiment inside the web container, 50 at a time and without pauses, waits
+for their async jobs to finish, and then takes the snapshot, so every test
+starts with 1,500 participants' data. The bots use the same routes as
+participants, so the data is what the experiment itself stores, but it
+takes time: at about 250 requests per participant, a few hundred requests
+per second fill 1,500 participants in about an hour, and every run
+pre-fills again. The pre-fill adds to whatever the database already holds,
+and PsyNet warns when it isn't empty. If any pre-fill bot raises an error,
+the run stops, because the data would differ from what participants leave.
+Participants that the experiment fails by design, for example at a
+prescreen, are only counted.
 
 .. _performance_testing_bot_processes:
 
@@ -981,11 +768,6 @@ With ``--n-bots auto``, the search treats that bot count as failed, and the
 summary gives the largest passing test, says the limit wasn't found and
 suggests more ``--bot-processes``. Increase ``--bot-processes`` and run again
 to measure further.
-
-The report also shows the busiest process's CPU use, as a share of one core,
-under *Bot process CPU*. It doesn't decide whether a test passes, but a
-process near a whole core is close to its limit. Both numbers are saved in
-the JSON results as ``tester_lag_p95_s`` and ``tester_cpu_share``.
 
 With ``performance-test ssh`` the bot processes run on the experiment server
 and take CPU from it, which is why ``auto`` uses at most one process per four
