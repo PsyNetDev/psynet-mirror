@@ -503,8 +503,8 @@ for SSH servers) or bounding the database connection pool. Bots that run late be
 the only limits the smallest failing
 count exceeded, the summary gives the largest passing test, says the limit
 wasn't found and recommends no number of participants. If no count passed,
-it says no limit was found because the smallest count could not be tested,
-with advice on what held the test back. Response times, queue waits,
+it says no limit was found and why the test couldn't measure the server
+at the smallest count, with advice on what held the test back. Response times, queue waits,
 request errors and busy responses still fail a test that also had these
 limits.
 
