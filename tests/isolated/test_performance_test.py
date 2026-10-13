@@ -3002,6 +3002,9 @@ def test_an_interrupted_remote_search_keeps_the_finished_tests_json(
     assert [r["n_bots"] for r in data["results"]] == [10, 20]
     assert data["finished_at"] is None
     assert list(tmp_path.iterdir()) == [json_output]
+    umask = os.umask(0)
+    os.umask(umask)
+    assert json_output.stat().st_mode & 0o777 == 0o666 & ~umask
 
 
 def test_remote_failures_name_the_last_error_line():

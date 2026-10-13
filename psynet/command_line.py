@@ -4870,16 +4870,15 @@ def _write_json_results(json_output, *, metadata, options, all_results):
     }
     # Written to a temporary file and renamed, so that an interrupt can't
     # leave a truncated file in place of the last complete one.
+    # Unlike mkstemp's owner-only files, open() applies the umask.
     path = Path(json_output)
-    fd, temporary = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
+    temporary = path.with_name(f".{path.name}.{os.urandom(6).hex()}.tmp")
     try:
-        with os.fdopen(fd, "w") as f:
+        with open(temporary, "x") as f:
             json.dump(payload, f, indent=2, allow_nan=False, default=str)
         os.replace(temporary, path)
     except BaseException:
-        Path(temporary).unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
         raise
 
 
