@@ -17,6 +17,7 @@ from psynet.perf_test.results import (
     ASYNC_JOB_STAT_KEYS,
     CAPACITY_HEADROOM,
     MIN_STEADY_STATE_S,
+    PGBOUNCER_FULL,
     POSTGRES_FULL,
     PRIORITIES,
     CapacityLimits,
@@ -26,7 +27,9 @@ from psynet.perf_test.results import (
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
-    low_priority_backlog_not_cleared,
+    exceeded_error_limits,
+    low_priority_backlog_falling_behind,
+    missing_workers,
     overshoot,
     phase_limit_reasons,
     phase_queue_wait_p95,
@@ -184,7 +187,7 @@ def _bot_outcome_lines(result):
         ["Stopped at the end of the test", result.bots_incomplete],
     ]
     if bots_not_in_db > 0:
-        outcome_rows.append(["Never reached DB", bots_not_in_db])
+        outcome_rows.append(["Bot error before joining", bots_not_in_db])
     lines = [*_section("BOT OUTCOMES"), *_label_table(outcome_rows), ""]
 
     if result.failed_reasons:
@@ -210,7 +213,9 @@ def _bot_outcome_lines(result):
 
     if result.bot_error_kinds:
         lines += [
-            *_section("BOT ERRORS"),
+            *_section(f"BOT ERRORS (n={result.bot_errors:,})"),
+            "  Every bot that raised an error, including those counted above as "
+            "failed by the experiment or as a bot error before joining.",
             *_label_table([[kind, n] for kind, n in result.bot_error_kinds.items()]),
             "",
         ]
@@ -392,6 +397,8 @@ def _async_job_lines(result):
             "  No completed async jobs.",
             "",
         ]
+    if missing := _missing_workers_text(result):
+        lines += [warning(missing), ""]
 
     for priority in PRIORITIES:
         waits = (result.queue_waits or {}).get(priority) or {}
@@ -411,6 +418,22 @@ def _async_job_lines(result):
                 "",
             ]
     return lines
+
+
+def _missing_workers_text(result):
+    """Warn if fewer async worker processes ran in ``result`` than ``worker_processes`` configures."""
+    missing = missing_workers(result)
+    if missing is None:
+        return None
+    running, configured = missing
+    return (
+        f"  Only {running:,} of the {configured:,} async worker processes that "
+        "worker_processes configures were running at the end of the "
+        f"{result.n_bots:,}-bot test, so the server had less capacity for async "
+        "jobs than configured. Check the server log for worker processes that "
+        "failed or hung at start-up, and restart them. (psynet debug local "
+        "without --legacy always starts one.)"
+    )
 
 
 def _q_share_text(q_share, q_p95):
@@ -479,9 +502,12 @@ def format_performance_summary(results):
     baseline_q_median = results[0].q_delay_median if show_scaling else None
 
     show_failed = any(r.participants_failed for r in results)
+    show_busy = any(r.busy_early_finishes for r in results)
     summary_headers = ["Bots", "Succeeded"]
     if show_failed:
         summary_headers.append("Failed by exp.")
+    if show_busy:
+        summary_headers.append("Busy chains")
     summary_headers += [
         "Requests",
         "Req/s",
@@ -508,6 +534,8 @@ def format_performance_summary(results):
         ]
         if show_failed:
             row.append(result.participants_failed)
+        if show_busy:
+            row.append(_busy_early_finish_count(result))
         row += [
             result.total_requests,
             (
@@ -534,6 +562,11 @@ def format_performance_summary(results):
         "  Resp P95 / Resp Med — 95th percentile / median HTTP response time for key "
         "endpoints (/timeline, /response)"
     )
+    if show_busy:
+        lines.append(
+            "  Busy chains — bots that got fewer trials because every chain was "
+            "busy, summed over trial makers"
+        )
     lines.append("  Q Med all — median queue delay across all async jobs")
     lines.append(
         "  Q P95 high / low — 95th percentile queue delay of high- or "
@@ -555,6 +588,13 @@ def format_performance_summary(results):
         lines.append("")
     lines += [_NOT_MEASURED, ""]
     return lines
+
+
+def _busy_early_finish_count(result):
+    """Return how many bots in ``result`` got fewer trials because every chain was busy, over all trial makers."""
+    return sum(
+        stats["participants"] for stats in (result.busy_early_finishes or {}).values()
+    )
 
 
 def _describe_database_growth(results):
@@ -581,18 +621,33 @@ _POSTGRES_ADVICE = (
     "Run fewer bots at once, stop other experiments that share the database "
     "server, or raise max_connections."
 )
-_LOW_PRIORITY_BACKLOG_ADVICE = (
-    "  Low-priority async jobs that were waiting when the steady state began "
-    "were still waiting at its end, so the workers can't keep up with them in "
-    "the long run. Participants don't "
-    "wait for these jobs, but their results arrive ever later and the backlog "
-    "competes for workers with high-priority jobs. Raise the worker_processes "
-    "config variable, or make the jobs cheaper."
+_PGBOUNCER_ADVICE = (
+    "  PgBouncer, which passes the app's database connections on to "
+    "PostgreSQL, refused new connections because it already had "
+    "max_client_conn clients ('no more connections allowed "
+    "(max_client_conn)'). Its clients are the connections that the web "
+    "server's workers, the async workers and the bots open, and a web "
+    "worker keeps the connections it has opened, so their number rises with "
+    "the busiest moment so far. HTTP 500 errors in the same tests probably "
+    "have this cause too. Raise PgBouncer's max_client_conn (Dallinger PR "
+    "#10051 raises it to 2000 for docker-ssh deployments), or bound the "
+    "database connection pool, then test again."
+)
+_WORKER_ADVICE = (
+    "Raise the worker_processes config variable (worker dynos on Heroku), or "
+    "make the jobs faster. A worker process runs one CPU-heavy job, such as "
+    "audio analysis, at a time, so for those also set "
+    "worker_greenlets_per_process = 1 and plan on one worker process per CPU "
+    "core; see 'Async workers' in the PsyNet docs on testing scalability."
 )
 
 
-def _queue_advice(result):
-    """Return advice for a test whose high-priority async jobs waited too long for a worker."""
+def _queue_advice(result, confirmed=False):
+    """Return advice for a test whose high-priority async jobs waited too long for a worker.
+
+    With ``confirmed``, a confirmation test kept the limits at the cap, so
+    the advice is for going above it.
+    """
     if result.n_rq_workers == 0:
         return (
             "  High-priority async jobs, which participants wait for, waited for "
@@ -602,14 +657,16 @@ def _queue_advice(result):
         )
     workers = _describe_workers(result)
     had = f" The server had {workers}." if workers else ""
+    if confirmed:
+        return (
+            f"  In the search's {result.n_bots:,}-bot test, high-priority async "
+            f"jobs waited too long for a worker.{had} To go above the cap, "
+            f"{_WORKER_ADVICE[0].lower()}{_WORKER_ADVICE[1:]} More workers only "
+            "help if the server has CPU cores to spare."
+        )
     return (
         "  High-priority async jobs, which participants wait for, waited too "
-        f"long for a worker.{had} Raise the worker_processes config variable "
-        "(worker dynos on Heroku), or make the jobs faster. A worker process "
-        "runs one CPU-heavy job, such as audio analysis, at a time, so for "
-        "those also set worker_greenlets_per_process = 1 and plan on one "
-        "worker process per CPU core; see 'Async workers' in the PsyNet docs "
-        "on testing scalability."
+        f"long for a worker.{had} {_WORKER_ADVICE}"
     )
 
 
@@ -649,6 +706,11 @@ _DB_GROWTH_RATIO = 1.5
 _DB_GROWTH_MIN_ROWS = 10_000
 
 
+def _test_name(result):
+    """Name ``result``'s test, e.g. ``120-bot`` or ``96-bot confirmation``."""
+    return f"{result.n_bots:,}-bot{' confirmation' if result.confirmation else ''}"
+
+
 def _tables_that_differ(rows_a, rows_b):
     """Return ``"table a and b"`` descriptions of the tables whose row counts differ a lot."""
     differ = []
@@ -671,13 +733,26 @@ def _database_growth_warnings(
     lines = []
     if not results:
         return lines
-    grew = _tables_that_differ(
-        results[0].db_rows_before or {}, results[-1].db_rows_after or {}
+    same_start = len(results) > 1 and all(
+        r.db_rows_before == results[0].db_rows_before for r in results
     )
+    if same_start:
+        # The database was reset before each test, so only growth within a
+        # test matters.
+        grew = [
+            f"the {_test_name(r)} test {'; '.join(differ)}"
+            for r in results
+            if (differ := _tables_that_differ(r.db_rows_before, r.db_rows_after))
+        ]
+        where = "Every test started from the same data, but some grew it a lot (rows before and after"
+    else:
+        grew = _tables_that_differ(
+            results[0].db_rows_before or {}, results[-1].db_rows_after or {}
+        )
+        where = "The database grew a lot during these tests (rows before the first and after the last"
     if grew:
         lines.append(
-            "  The database grew a lot during these tests (rows before the first "
-            f"and after the last: {'; '.join(grew)}). Capacity can fall as a "
+            f"  {where}: {'; '.join(grew)}). Capacity can fall as a "
             "study collects data, so these results hold for about this much "
             "data; see 'Database size' in the PsyNet docs on testing scalability."
         )
@@ -740,7 +815,7 @@ def _startup_only_lines(result, limits):
 _RAMP_UP_WARNING_SHARE = 0.25
 
 
-def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
+def _capacity_headline(outcome, first_reasons, limit, limits, *, show_cap=True):
     """Return the capacity summary's first lines: the capacity, and a cap if the server set it.
 
     Only a server limit sets the capacity, so a first failure that could not
@@ -764,9 +839,14 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
                 f"({first_reasons})."
             ]
         else:
-            advice = "" if waits_only else "; fix any errors or test fewer bots"
+            if waits_only:
+                advice = ""
+            elif exceeded_error_limits(first_fail, limits):
+                advice = "; fix the errors or test fewer bots"
+            else:
+                advice = "; test fewer bots"
             lines = [
-                f"  Even {n_failed} bots did not keep {limit} ({first_reasons}){advice}."
+                f"  Even {n_failed} bots exceeded the limits ({first_reasons}){advice}."
             ]
     else:
         lower_bound = unmeasured or waits_only
@@ -793,23 +873,34 @@ def _capacity_headline(outcome, first_reasons, limit, *, show_cap=True):
 def _low_priority_lines(result, limits):
     """Report low-priority async jobs of ``result`` that waited longer than the queue limit.
 
-    The limit doesn't apply to them, so this is for information, with advice
-    on worker processes if the backlog wasn't cleared during the steady state (see
-    :func:`~psynet.perf_test.results.low_priority_backlog_not_cleared`).
+    The limit doesn't apply to them, so this is for information, with a
+    warning and advice on worker processes if the workers fell behind with
+    them during the steady state (see
+    :func:`~psynet.perf_test.results.low_priority_backlog_falling_behind`).
     """
-    wait = queue_wait_p95(result, "low") if result else None
-    if wait is None or wait <= limits.max_queue_p95_s:
+    if result is None:
         return []
-    test = f"{result.n_bots:,}-bot{' confirmation' if result.confirmation else ''}"
-    lines = [
-        f"  Low-priority async jobs in the {test} test: p95 queue wait "
-        f"{wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still queued at "
-        "the end. "
-        "Participants don't wait for these, so they don't count against the "
-        "limits."
-    ]
-    if low_priority_backlog_not_cleared(result):
-        lines.append(_LOW_PRIORITY_BACKLOG_ADVICE)
+    test = _test_name(result)
+    lines = []
+    wait = queue_wait_p95(result, "low")
+    if wait is not None and wait > limits.max_queue_p95_s:
+        lines.append(
+            f"  Low-priority async jobs in the {test} test: p95 queue wait "
+            f"{wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still queued "
+            "at the end. Participants don't wait for these, so they don't count "
+            "against the limits."
+        )
+    if falling_behind := low_priority_backlog_falling_behind(result):
+        lines.append(
+            warning(
+                f"  In the steady state of the {test} test, {falling_behind}, so "
+                "the workers can't keep up with low-priority jobs in the long "
+                "run. The test still passes, because participants don't wait "
+                "for these jobs, but their results arrive ever later and the "
+                f"backlog competes for workers with high-priority jobs. "
+                f"{_WORKER_ADVICE}"
+            )
+        )
     return lines
 
 
@@ -822,6 +913,16 @@ def _confirmation_exceeded(result, limits):
     return any(
         server_limit and reason not in ("server stopped", "no responses recorded")
         for reason, server_limit in capacity_failure_causes(result, limits)
+    )
+
+
+def _confirmed(result, limits):
+    """Return whether ``result``, a confirmation test, kept ``limits`` and reached the steady state."""
+    return (
+        result is not None
+        and not capacity_failure_causes(result, limits)
+        and result.first_completion_s is not None
+        and bool(result.steady_state_phase)
     )
 
 
@@ -846,7 +947,7 @@ def _confirmation_lines(result, limits):
     )
     causes = capacity_failure_causes(result, limits)
     if not causes:
-        if result.first_completion_s is None or not result.steady_state_phase:
+        if not _confirmed(result, limits):
             return [
                 f"  Not confirmed: {test} kept the limits but never reached the "
                 f"steady state, so it only saw the start-up. {unconfirmed}"
@@ -905,7 +1006,7 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
     capacity, first_fail = outcome.capacity, outcome.first_fail
     first_reasons = "; ".join(reason for reason, _ in outcome.first_causes)
     lines = _capacity_headline(
-        outcome, first_reasons, limit, show_cap=confirmation is None
+        outcome, first_reasons, limit, limits, show_cap=confirmation is None
     )
     if confirmation is not None:
         lines += _confirmation_lines(confirmation, limits)
@@ -929,13 +1030,23 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         None,
     )
     if queue_bound is not None:
-        lines.append(_queue_advice(queue_bound))
+        lines.append(
+            _queue_advice(
+                queue_bound,
+                confirmed=queue_bound is not confirmation
+                and _confirmed(confirmation, limits),
+            )
+        )
     if any(start_rate_limits(r) for r in advised):
         lines.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):
         lines.append(_TESTER_LAG_ADVICE)
     if any(POSTGRES_FULL in (r.bot_error_kinds or {}) for r in run_order):
         lines.append(_POSTGRES_ADVICE)
+    if any(PGBOUNCER_FULL in (r.bot_error_kinds or {}) for r in run_order):
+        lines.append(_PGBOUNCER_ADVICE)
+    if missing := next(filter(None, map(_missing_workers_text, run_order)), None):
+        lines.append(warning(missing))
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
     lines += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
     lines += _database_growth_warnings(
@@ -980,7 +1091,13 @@ def format_capacity_summary(results, limits=CapacityLimits(), time_factor=1.0):
         )
     ramp_up = capacity_result.ramp_up_s
     test_length = capacity_result.actual_duration
-    if ramp_up and test_length and ramp_up > _RAMP_UP_WARNING_SHARE * test_length:
+    if (
+        ramp_up
+        and test_length
+        and ramp_up > _RAMP_UP_WARNING_SHARE * test_length
+        # Arrivals spread on purpose take long to start.
+        and not capacity_result.arrival_minutes
+    ):
         lines.append(
             f"  Starting all {capacity:,} bots took {ramp_up:.0f} s of the "
             f"{test_length:.0f} s test, so the server ran fully loaded for only "

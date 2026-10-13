@@ -267,23 +267,43 @@ def test_bot_errors_without_a_route_are_still_described(url):
     )
 
 
-def test_postgres_running_out_of_connections_is_named_with_advice():
+@pytest.mark.parametrize(
+    "message, expected_kind, advice",
+    [
+        (
+            "FATAL:  sorry, too many clients already",
+            "PostgreSQL out of connections",
+            "raise max_connections",
+        ),
+        (
+            "FATAL:  no more connections allowed (max_client_conn)",
+            "PgBouncer out of client connections",
+            "Raise PgBouncer's max_client_conn (Dallinger PR #10051",
+        ),
+    ],
+)
+def test_database_connection_limits_are_named_with_advice(
+    message, expected_kind, advice
+):
     from psynet.perf_test.results import describe_bot_error
 
     try:
         try:
-            raise Exception("FATAL:  sorry, too many clients already")
+            raise Exception(message)
         except Exception as cause:
             raise RuntimeError("could not create participant") from cause
     except RuntimeError as err:
         kind = describe_bot_error(err)
 
-    assert kind == "PostgreSQL out of connections"
+    assert kind == expected_kind
     results = [
         _base_result(n_bots=10),
         _base_result(n_bots=20, bot_errors=5, bot_error_kinds={kind: 5}),
     ]
-    assert "raise max_connections" in _join(format_capacity_summary(results))
+    text = _join(format_capacity_summary(results))
+    assert advice in text
+    # The bots' own connections hit the limit, so the server wasn't measured.
+    assert "20 could not be tested" in text
 
 
 def test_capacity_summary_names_the_bot_errors():
@@ -530,6 +550,23 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
     assert caplog.text.count("High-priority async jobs, which participants") == 1
 
 
+def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
+    results = [
+        _base_result(n_bots=120, queue_waits={"high": {"q_delay_p95": 2.2}}),
+        _base_result(n_bots=130, queue_waits={"high": {"q_delay_p95": 8.7}}),
+        _base_result(n_bots=96, confirmation=True, duration_minutes=26, **_STEADY),
+    ]
+
+    text = _join(format_capacity_summary(results))
+
+    assert "Confirmed: the 96-bot confirmation test" in text
+    assert (
+        "In the search's 130-bot test, high-priority async jobs waited too long "
+        "for a worker. The server had 2 worker processes, up to 40 jobs at once. "
+        "To go above the cap, raise the worker_processes"
+    ) in text
+
+
 def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
     _confirmation_search(
         caplog,
@@ -599,7 +636,7 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
         PerformanceSuite(tester).run([2])
 
     assert "Estimated session:    13.0 min" in caplog.text
-    assert ("only sees the start of the study" in caplog.text) == warns
+    assert ("sees mostly the start of the study" in caplog.text) == warns
 
 
 def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
@@ -1140,7 +1177,7 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
 
     if expected:
         assert failures == [expected]
-        assert "Even 150 bots did not keep" in text
+        assert "Even 150 bots exceeded the limits" in text
         assert f"({expected})." in text
         assert "Design experiments to avoid this" in text
     else:
@@ -1296,6 +1333,16 @@ def test_summaries_report_database_growth():
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
     assert "database grew" not in _join(format_capacity_summary(results))
 
+    # After --reset-database every test starts from the same data.
+    results[-1].db_rows_before = results[0].db_rows_before
+    results[-1].db_rows_after = {"participant": 3_000, "trial": 103_000}
+    text = _join(format_capacity_summary(results))
+    assert (
+        "Every test started from the same data, but some grew it a lot (rows "
+        "before and after: the 320-bot test trial 65,000 and 103,000)"
+    ) in text
+    assert "Rerun with --reset-database" not in text
+
 
 def test_capacity_limits_from_options_keeps_zero_and_defaults_none():
     limits = CapacityLimits.from_options(max_p95_s=0, max_queue_p95_s=None)
@@ -1367,7 +1414,49 @@ def test_a_low_priority_backlog_left_from_the_start_up_needs_workers(
     )
 
     assert "Confirmed: the 120-bot confirmation test" in caplog.text
-    assert ("workers can't keep up with them" in caplog.text) == not_cleared
+    assert (
+        "workers can't keep up with low-priority jobs" in caplog.text
+    ) == not_cleared
+
+
+def _phase_backlog(backlog):
+    return dict(_PHASE, queue_waits={"low": {"q_delay_p95": 1.0, "backlog": backlog}})
+
+
+@pytest.mark.parametrize("start, end, warns", [(2, 95, True), (2, 8, False)])
+def test_a_growing_low_priority_backlog_warns_but_passes(start, end, warns):
+    result = _base_result(
+        n_bots=60,
+        actual_duration=1560.0,
+        first_completion_s=700.0,
+        startup_phase=_phase_backlog(start),
+        steady_state_phase=_phase_backlog(end),
+        queue_waits={"low": {"q_delay_p95": 1.0, "backlog": end}},
+    )
+
+    text = _join(format_capacity_summary([result]))
+
+    assert capacity_failures(result) == []
+    assert "at least 60 concurrent bots" in text
+    grew = (
+        f"the low-priority backlog grew from {start} to {end} jobs, so the workers "
+        "can't keep up with low-priority jobs in the long run"
+    )
+    assert (grew in text) == warns
+    assert ("Raise the worker_processes config variable" in text) == warns
+
+
+def test_fewer_running_workers_than_configured_are_flagged():
+    result = _base_result(n_rq_workers=8, configured_worker_processes=10)
+
+    expected = (
+        "Only 8 of the 10 async worker processes that worker_processes configures"
+    )
+    assert expected in _join(format_test_results(result))
+    assert expected in _join(format_capacity_summary([result]))
+
+    result.n_rq_workers = 10
+    assert "Only" not in _join(format_capacity_summary([result]))
 
 
 def test_capacity_summary_says_when_no_limit_was_reached():
@@ -1395,8 +1484,16 @@ def test_capacity_summary_uses_counts_below_the_first_failure():
 
 def test_capacity_summary_says_when_every_count_failed():
     results = [_base_result(n_bots=n, bot_errors=1) for n in (2, 4)]
+    slow = [_base_result(n_bots=2, p95_response_time=0.9)]
 
-    assert "Even 2 bots did not keep" in _join(format_capacity_summary(results))
+    assert (
+        "Even 2 bots exceeded the limits (1 bot error); fix the errors or test "
+        "fewer bots."
+    ) in _join(format_capacity_summary(results))
+    assert (
+        "  Even 2 bots exceeded the limits (p95 response time 900 ms); test fewer "
+        "bots.\n"
+    ) in _join(format_capacity_summary(slow))
     assert format_capacity_summary([]) == []
 
 
@@ -1409,7 +1506,7 @@ def test_capacity_summary_flags_a_pass_at_or_above_a_failed_smallest_count(n_pas
 
     text = _join(format_capacity_summary(results))
 
-    assert "Even 10 bots did not keep" in text
+    assert "Even 10 bots exceeded the limits" in text
     assert f"{n_passed} bots passed, so the results are inconsistent" in text
 
 
@@ -1421,6 +1518,10 @@ def test_capacity_summary_warns_when_starting_the_bots_took_much_of_the_test():
     )
 
     results[0].ramp_up_s = 5.0
+    assert "took" not in _join(format_capacity_summary(results))
+
+    # Spread arrivals start slowly on purpose.
+    results[0].ramp_up_s, results[0].arrival_minutes = 30.0, 0.5
     assert "took" not in _join(format_capacity_summary(results))
 
 
@@ -1796,7 +1897,7 @@ def test_format_test_results_bots_not_in_db():
         )
     )
     text = _join(lines)
-    assert "Never reached DB" in text
+    assert "Bot error before joining" in text
 
 
 def test_format_test_results_init_times():

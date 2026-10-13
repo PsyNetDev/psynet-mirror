@@ -588,6 +588,17 @@ def count_rq_workers():
         return None, None
 
 
+def configured_worker_processes():
+    """Return the server's ``worker_processes`` config variable, or ``None`` if it can't be read."""
+    try:
+        from dallinger.config import get_config
+
+        return int(get_config().get("worker_processes", 1))
+    except Exception as e:
+        logger.warning(f"Could not read worker_processes: {e}")
+        return None
+
+
 _SUCCEEDED = "succeeded"
 _FAILED_BY_EXPERIMENT = "failed by the experiment"
 _STILL_RUNNING = "still running"

@@ -4450,7 +4450,7 @@ _test_options["duration_minutes"] = click.option(
     sessions (the timeline's estimated duration times --time-factor), rounded
     up to whole minutes, at most 30 minutes and at least
     Experiment.test_duration_minutes (1 minute). A test shorter than one
-    session only sees the start of the study, before any bot finishes, and
+    session sees mostly the start of the study, before bots finish, and
     the suite warns about it. With --n-bots auto this sets the length of
     the search's tests, which default to one session, at most 5 minutes, so
     that a search of up to 12 tests takes at most an hour; the confirmation

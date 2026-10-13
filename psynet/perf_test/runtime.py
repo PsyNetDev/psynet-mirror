@@ -45,6 +45,7 @@ from psynet.perf_test.measure import (
     async_job_stats,
     bot_duration_stats,
     bot_outcome_stats,
+    configured_worker_processes,
     count_rq_workers,
     database_rows,
     phase_stats,
@@ -947,6 +948,7 @@ class PerformanceTester:
                     datetime.datetime.fromtimestamp(completed_at),
                 )
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
+        result.configured_worker_processes = configured_worker_processes()
         # Release the locks the counts took before the next test starts.
         db.session.rollback()
         self._report_test_results(result)

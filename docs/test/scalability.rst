@@ -174,7 +174,11 @@ that the slowest participants experience. The report also shows:
   ``returned``. *Stopped at the end of the test* counts bots still taking
   the experiment when the test ended. A bot stopped there while waiting at
   a hold whose time limit had passed, but which it had not checked again,
-  is not yet counted as failed.
+  is not yet counted as failed. *Bot error before joining* counts bots
+  that raised an error before their participant was created. The *Bot
+  errors* list below counts every bot that raised an error, including
+  those whose participant the experiment failed, so its total can exceed
+  the error rows above.
 - **Bot runtimes**, separately for each of these outcomes, and **trials per
   bot** (for bots that completed successfully). Below the trials, a line for
   each chain trial maker says how many bots got fewer trials because every
@@ -196,8 +200,10 @@ that the slowest participants experience. The report also shows:
 - **Async job times**: for experiments with async jobs, such
   as audio analysis, the execution time, CPU time and time spent waiting in
   the queue, for each label and :ref:`priority <async_job_priority>`, with
-  the number of worker processes and how many jobs they can run at once. A
-  high queue share, highlighted in yellow or red, means more worker
+  the number of worker processes and how many jobs they can run at once.
+  If fewer worker processes were running at the end of the test than
+  ``worker_processes`` configures, the report warns and names both
+  numbers. A high queue share, highlighted in yellow or red, means more worker
   processes are needed; see :ref:`performance_testing_async_workers`. Below
   the table, the report counts the jobs of each priority still queued when
   the test ended.
@@ -358,13 +364,17 @@ the search test that set the capacity, the summary suggests rerunning with
 The summary names the limit that a failing test exceeded. If the queue limit
 is what caps capacity, the summary says how many worker processes the server
 had and suggests more; add them before resorting to a lower participant cap.
-The summary also checks one test for low-priority jobs that were already
-waiting when its steady state began and were still waiting at its end: the
+After a confirmed cap it words this as how to go above the cap, since more
+workers only help if the server has CPU cores to spare.
+The summary also checks one test for a growing low-priority backlog: the
 confirmation test if there was one, otherwise the test that set the capacity,
-or the first failing test if none passed. If it finds any, it warns that the
-workers can't keep up with them in the long run: their results arrive ever
-later, and they compete for workers with the high-priority jobs. Add worker
-processes for this too.
+or the first failing test if none passed. It warns when the backlog at the
+end of the steady state is at least twice the backlog at the end of the
+start-up and at least 10 jobs, or when jobs that were already waiting when
+the steady state began were still waiting at its end. The test still
+passes, but the workers can't keep up with low-priority jobs in the long
+run: their results arrive ever later, and they compete for workers with the
+high-priority jobs. Add worker processes for this too.
 
 The search starts at 10 bots and doubles the count until a test fails, then
 halves the gap between the largest passing and smallest failing counts until
@@ -401,7 +411,8 @@ server far more than people do. Each test's measurement window includes the
 time bots take to start, so for steady results of a single bot count keep
 the default ``--duration-minutes``, or at least one participant session. A test whose bots didn't all start within the
 window counts as exceeding the limits, and the summary warns when starting
-the bots took more than a quarter of the test.
+the bots took more than a quarter of the test, unless ``--arrival-minutes``
+spread them out on purpose.
 
 With ``--json-output``, each result records the test's
 ``duration_minutes``, ``arrival_minutes`` and ``session_minutes`` (the
@@ -427,10 +438,14 @@ is roughly that start rate multiplied by how long each bot takes to finish
 the experiment. A longer experiment, or a larger ``--time-factor``, keeps
 more bots taking part at once. A test in which fewer than 90% of the
 requested bots were ever taking part at the same time counts as exceeding
-the limits. Bots that fail because PostgreSQL ran out of connections count
-against the bot error limit too, but they also point to the test: the bots
-open database connections in the processes running them that participants'
-browsers don't. Bots that run late because their process is too busy (see
+the limits. Bots that fail because PostgreSQL ran out of connections, or
+because PgBouncer on an SSH server did ("no more connections allowed
+(max_client_conn)"), count against the bot error limit too, but they also
+point to the test: the bots open database connections in the processes
+running them that participants' browsers don't. For PgBouncer, the summary
+suggests raising its ``max_client_conn`` (`Dallinger PR #10051
+<https://github.com/Dallinger/Dallinger/pull/10051>`__ raises it to 2,000
+for SSH servers) or bounding the database connection pool. Bots that run late because their process is too busy (see
 :ref:`performance_testing_bot_processes`) are a limit of the test too. These are limits of the test, not of the server, so when they are
 the only limits the smallest failing
 count exceeded, the summary reports the capacity as "at least" the largest
@@ -518,7 +533,8 @@ first test to the last. By default the tests don't reset the database, so
 every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
 The capacity summary warns when the database grew by more than half during
-the tests (and by at least 10,000 rows), or when the largest passing and
+the tests (and by at least 10,000 rows; with ``--reset-database``, during
+any one test), or when the largest passing and
 smallest failing bot counts started with very different amounts of data,
 and then suggests ``--reset-database``.
 

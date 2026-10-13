@@ -132,8 +132,9 @@ def short_test_warning(duration_minutes, session_minutes):
         return None
     return (
         f"The test lasts {duration_minutes:g} min, but a participant session takes "
-        f"about {session_minutes:.1f} min, so the test only sees the start of the "
-        "study, before any bot finishes, and not its steady state. Use "
+        f"about {session_minutes:.1f} min, so bots that take the whole session "
+        "don't finish during it, and the test sees mostly the start of the "
+        "study rather than its steady state. Use "
         f"--duration-minutes {math.ceil(_DEFAULT_SESSIONS_PER_TEST * session_minutes)} "
         "or more to see both."
     )
@@ -241,9 +242,12 @@ class PerformanceTestResult:
     # eligible chain or node was busy, by trial maker (see
     # measure.busy_early_finish_stats).
     busy_early_finishes: dict[str, dict] = field(default_factory=dict)
+    # Async worker processes registered with RQ at the end of the test.
     n_rq_workers: int | None = None
     # Jobs the async workers can run at once.
     n_rq_job_slots: int | None = None
+    # The server's worker_processes config variable.
+    configured_worker_processes: int | None = None
     # Seconds from the test start until the first bot completed the
     # experiment, where the steady state begins.
     first_completion_s: float | None = None
@@ -285,6 +289,28 @@ ASYNC_JOB_STAT_KEYS = (
 
 
 POSTGRES_FULL = "PostgreSQL out of connections"
+PGBOUNCER_FULL = "PgBouncer out of client connections"
+# Bot errors of these kinds come from the connections that the processes
+# running the bots open themselves, which participants don't.
+_CONNECTION_LIMIT_KINDS = (POSTGRES_FULL, PGBOUNCER_FULL)
+# PgBouncer's error when it already has max_client_conn clients, e.g.
+# "FATAL:  no more connections allowed (max_client_conn)".
+_PGBOUNCER_FULL_TEXT = "(max_client_conn)"
+
+
+def connection_limit_kind(error):
+    """Return ``POSTGRES_FULL`` or ``PGBOUNCER_FULL`` if ``error`` says the database refused a connection, else ``None``.
+
+    ``error`` is an exception or text such as a command's output.
+    """
+    from psynet.isolated_environment import postgres_connection_limit_message
+
+    if _PGBOUNCER_FULL_TEXT in str(error):
+        return PGBOUNCER_FULL
+    if postgres_connection_limit_message(error):
+        return POSTGRES_FULL
+    return None
+
 
 # Async job priorities, as in psynet.async_job, which this module doesn't
 # import so that it doesn't need a database.
@@ -354,13 +380,11 @@ def describe_bot_error(err):
     """
     import requests
 
-    from psynet.isolated_environment import postgres_connection_limit_message
-
     cause, seen = err, set()
     while cause is not None and id(cause) not in seen:
         seen.add(id(cause))
-        if postgres_connection_limit_message(cause):
-            return POSTGRES_FULL
+        if kind := connection_limit_kind(cause):
+            return kind
         response = getattr(cause, "response", None)
         if isinstance(cause, requests.HTTPError) and response is not None:
             route = urlparse(response.url or "").path.strip("/").split("/")[0]
@@ -515,20 +539,51 @@ def _queue_wait_p95(queue_waits, priority):
     return max(values) if values else None
 
 
-def low_priority_backlog_not_cleared(result):
-    """Return whether the workers didn't clear the low-priority backlog during the steady state of ``result``.
+# The low-priority backlog "grew" during the steady state if it ended at
+# least this many times as long as it began, and at least this many jobs
+# longer. A tapping study whose 3 workers couldn't keep up with 60
+# participants went from 2 jobs to 95.
+LOW_BACKLOG_GROWTH_RATIO = 2
+LOW_BACKLOG_GROWTH_MIN_JOBS = 10
 
-    That is, a low-priority async job that was already waiting when the
-    steady state began was still waiting when the test ended, so in the
-    whole steady state the workers couldn't catch up with these jobs. A
-    start-up backlog that clears doesn't count. Participants don't wait for
-    these jobs. Returns ``False`` without a steady state.
+
+def low_priority_backlog_falling_behind(result):
+    """Say how the workers fell behind with low-priority async jobs in the steady state of ``result``, or return ``None``.
+
+    They fell behind if the low-priority backlog grew during the steady
+    state (see :data:`LOW_BACKLOG_GROWTH_RATIO` and
+    :data:`LOW_BACKLOG_GROWTH_MIN_JOBS`), or if a job that was already
+    waiting when the steady state began was still waiting when the test
+    ended. A start-up backlog that clears doesn't count. Participants don't
+    wait for these jobs, so this never fails a test. Returns ``None``
+    without a steady state.
     """
-    if not (result.startup_phase and result.steady_state_phase):
-        return False
+    startup, steady = result.startup_phase, result.steady_state_phase
+    if not (startup and steady):
+        return None
+    start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog", 0)
+    end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog", 0)
+    if (
+        end >= LOW_BACKLOG_GROWTH_RATIO * start
+        and end - start >= LOW_BACKLOG_GROWTH_MIN_JOBS
+    ):
+        return f"the low-priority backlog grew from {start:,} to {end:,} jobs"
     oldest = ((result.queue_waits or {}).get("low") or {}).get("oldest_queued_s")
     steady_s = (result.actual_duration or 0) - (result.first_completion_s or 0)
-    return oldest is not None and oldest > steady_s
+    if oldest is not None and oldest > steady_s:
+        return (
+            "low-priority jobs that were waiting when the steady state began "
+            "were still waiting at its end"
+        )
+    return None
+
+
+def missing_workers(result):
+    """Return ``(running, configured)`` worker processes if fewer ran than ``worker_processes`` configures, else ``None``."""
+    running, configured = result.n_rq_workers, result.configured_worker_processes
+    if running is None or not configured or running >= configured:
+        return None
+    return running, configured
 
 
 # Bots between runs, or still being created, leave a few slots briefly empty.
@@ -701,37 +756,15 @@ def capacity_failure_causes(result, limits):
     not measure the server at this bot count: bots didn't all start or take
     part at once, bots in a busy process ran too late to keep pace
     (so the server got less load than that many participants would give),
-    bots failed because PostgreSQL ran out of connections (the
-    bots open their own database connections in the processes running them,
-    which participants don't), or no responses were recorded while bots were
-    missing.
+    bots failed because PostgreSQL or PgBouncer refused their connections
+    (the bots open their own database connections in the processes running
+    them, which participants don't), or no responses were recorded while
+    bots were missing.
     """
     causes = [("server stopped", True)] if result.server_stopped else []
     tester_limits = _tester_limits(result)
     causes += [(reason, False) for reason in tester_limits]
-    key_requests = result.key_requests or 0
-    request_errors = result.request_errors or 0
-    if request_errors > max(
-        limits.allowed_request_errors,
-        limits.max_request_error_rate * key_requests,
-    ):
-        causes.append((plural(request_errors, "request error"), True))
-    busy_responses = result.busy_responses or 0
-    if busy_responses > max(
-        limits.allowed_busy_responses,
-        limits.max_busy_response_rate * key_requests,
-    ):
-        causes.append((plural(busy_responses, "busy/stale response"), True))
-    bot_errors = result.bot_errors or 0
-    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
-    if bot_errors > max_bot_errors:
-        postgres_errors = (result.bot_error_kinds or {}).get(POSTGRES_FULL, 0)
-        causes.append(
-            (
-                describe_bot_errors(result),
-                bot_errors - postgres_errors > max_bot_errors,
-            )
-        )
+    causes += _error_causes(result, limits)
     if wait_cause := wait_timeout_cause(result, limits):
         causes.append((wait_cause, True))
     if busy_cause := busy_early_finish_cause(result, limits):
@@ -755,6 +788,44 @@ def capacity_failure_causes(result, limits):
     if queue_wait is not None and queue_wait > limits.max_queue_p95_s:
         causes.append((f"p95 high-priority async queue wait {queue_wait:.2f} s", True))
     return causes
+
+
+def _error_causes(result, limits):
+    """Return the ``(reason, server_limit)`` causes of :func:`capacity_failure_causes` that are errors.
+
+    Those are request errors, busy or stale responses and bot errors.
+    """
+    causes = []
+    key_requests = result.key_requests or 0
+    request_errors = result.request_errors or 0
+    if request_errors > max(
+        limits.allowed_request_errors,
+        limits.max_request_error_rate * key_requests,
+    ):
+        causes.append((plural(request_errors, "request error"), True))
+    busy_responses = result.busy_responses or 0
+    if busy_responses > max(
+        limits.allowed_busy_responses,
+        limits.max_busy_response_rate * key_requests,
+    ):
+        causes.append((plural(busy_responses, "busy/stale response"), True))
+    bot_errors = result.bot_errors or 0
+    max_bot_errors = limits.max_bot_error_rate * (result.total_bots_started or 0)
+    if bot_errors > max_bot_errors:
+        kinds = result.bot_error_kinds or {}
+        connection_errors = sum(kinds.get(kind, 0) for kind in _CONNECTION_LIMIT_KINDS)
+        causes.append(
+            (
+                describe_bot_errors(result),
+                bot_errors - connection_errors > max_bot_errors,
+            )
+        )
+    return causes
+
+
+def exceeded_error_limits(result, limits=CapacityLimits()):
+    """Return whether ``result`` had too many request errors, busy responses or bot errors."""
+    return bool(_error_causes(result, limits))
 
 
 def capacity_failures(result, limits=CapacityLimits()):
