@@ -933,7 +933,7 @@ class LimitBreach:
     """A measure of a test that exceeded its limit; see :func:`limit_breaches`.
 
     ``measure`` is one of :data:`_ERROR_MEASURES`, ``"wait_timeouts"``,
-    ``"busy_chains"``, ``"p95"`` or ``"queue"``; ``reason`` describes the
+    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"`` or ``"queue"``; ``reason`` describes the
     value, e.g. ``p95 response time 900 ms``, and ``limit`` the limit, e.g.
     ``500 ms``. ``server_limit`` is as for :func:`capacity_failure_causes`.
     """
@@ -1015,7 +1015,7 @@ def limit_breaches(result, limits):
     elif p95 is not None:
         breaches += [
             LimitBreach(
-                "p95",
+                "endpoint_p95",
                 f"p95 response time for {endpoint} {float(endpoint_p95) * 1000:.0f} ms",
                 max_p95,
             )
