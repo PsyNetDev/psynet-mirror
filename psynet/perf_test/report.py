@@ -508,7 +508,7 @@ def format_performance_summary(results):
     if show_failed:
         summary_headers.append("Failed by exp.")
     if show_busy:
-        summary_headers.append("Busy chains")
+        summary_headers.append("Busy chains (sum)")
     summary_headers += [
         "Requests",
         "Req/s",
@@ -565,7 +565,7 @@ def format_performance_summary(results):
     )
     if show_busy:
         lines.append(
-            "  Busy chains — bots that got fewer trials because every chain was "
+            "  Busy chains (sum) — bots that got fewer trials because every chain was "
             "busy, summed over trial makers"
         )
     lines.append("  Q Med all — median queue delay across all async jobs")

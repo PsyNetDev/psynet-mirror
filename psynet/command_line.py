@@ -4253,11 +4253,14 @@ def run_remote_experiment_command(executor, app, cmd):
 
 
 def _remote_failure_summary(status, recent_lines):
-    """Return ``exit code N``, followed by the last error line of a failed remote command's output, if any."""
-    errors = [
-        line for line in recent_lines if re.search(r"Error\b|Exception\b|FATAL\b", line)
-    ]
-    return f"exit code {status}" + (f": {errors[-1]}" if errors else "")
+    """Return ``exit code N``, followed by the last error line of a failed remote command's output.
+
+    Without an error line, the last non-empty line is used instead, if any.
+    """
+    lines = [line for line in recent_lines if line]
+    errors = [line for line in lines if re.search(r"Error\b|Exception\b|FATAL\b", line)]
+    last = (errors or lines)[-1:]
+    return f"exit code {status}" + (f": {last[0]}" if last else "")
 
 
 @test.command("ssh")
@@ -5738,7 +5741,10 @@ def performance_test__app_info(json_output):
     from psynet.experiment import get_experiment, is_experiment_launched
 
     info = _performance_test_app_info()
-    info["launched"] = bool(is_experiment_launched())
+    try:
+        info["launched"] = bool(is_experiment_launched())
+    except Exception as e:
+        logger.warning(f"Could not check whether the experiment has launched: {e}")
     try:
         exp = get_experiment()
         info["experiment"] = {

@@ -402,6 +402,15 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     assert "Raise PgBouncer's max_client_conn" in caplog.text
 
 
+def test_a_failed_first_reset_fails_the_suite():
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    before_test = Mock(side_effect=RuntimeError("snapshot failed"))
+
+    with patch("psynet.perf_test.runtime.raise_open_file_limit"):
+        with pytest.raises(RuntimeError, match="snapshot failed"):
+            PerformanceSuite(tester, before_test=before_test).run([10, 20])
+
+
 def test_a_suite_calls_before_test_before_every_test_instead_of_pausing():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     before_test = Mock()
@@ -2534,6 +2543,7 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(tmp_path, monkeypatch)
     assert len(data["results"]) == 2
     assert data["reset_error"] == pgbouncer_full
     assert data["options"]["max_busy_early_finish_rate"] == 0.05
+    assert data["options"]["confirmation_skipped"] == "resetting the database failed"
 
 
 def test_remote_failures_name_the_last_error_line():
@@ -2543,7 +2553,10 @@ def test_remote_failures_name_the_last_error_line():
     assert _remote_failure_summary(1, lines) == (
         "exit code 1: psycopg2.OperationalError: FATAL:  no more"
     )
-    assert _remote_failure_summary(2, ["Starting"]) == "exit code 2"
+    assert _remote_failure_summary(2, ["Starting", "Killed", ""]) == (
+        "exit code 2: Killed"
+    )
+    assert _remote_failure_summary(3, []) == "exit code 3"
 
 
 def test_a_remote_capacity_search_ends_with_a_confirmation_test(tmp_path, monkeypatch):

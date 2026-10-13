@@ -308,8 +308,8 @@ A test counts as within capacity if these stay within their limits:
 - the share of bots that got fewer trials in a chain trial maker because
   every chain (or node, in a static trial maker) they could take was busy,
   at most 1% for each trial maker, set with
-  ``--max-busy-early-finish-rate`` (default 0.01). One such bot is always
-  allowed, so that a single busy chain doesn't fail a small test. With the default
+  ``--max-busy-early-finish-rate`` (default 0.01). One such bot per trial maker
+  is always allowed, so that a single busy chain doesn't fail a small test. With the default
   ``wait_for_networks=False``, a participant who finds every eligible chain
   awaiting an async job or out of trial capacity finishes the block
   early instead of waiting. Static trial makers don't limit trials per node
@@ -373,7 +373,7 @@ The summary also checks one test for a growing low-priority backlog: the
 confirmation test if there was one, otherwise the test that set the capacity,
 or the first failing test if none passed. It warns when the backlog at the
 end of the steady state is at least twice the backlog at the end of the
-start-up and at least 10 jobs, or when jobs that were already waiting when
+start-up and at least 10 jobs longer, or when jobs that were already waiting when
 the steady state began were still waiting at its end. The test still
 passes, but the workers can't keep up with low-priority jobs in the long
 run: their results arrive ever later, and they compete for workers with the

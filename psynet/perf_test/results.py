@@ -578,8 +578,8 @@ def low_priority_backlog_falling_behind(result):
     startup, steady = result.startup_phase, result.steady_state_phase
     if not (startup and steady):
         return None
-    start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog", 0)
-    end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog", 0)
+    start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
+    end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     if (
         end >= LOW_BACKLOG_GROWTH_RATIO * start
         and end - start >= LOW_BACKLOG_GROWTH_MIN_JOBS
