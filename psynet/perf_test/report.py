@@ -46,6 +46,7 @@ from psynet.perf_test.results import (
     count_wait_timeouts,
     describe_bot_errors,
     describe_busy_early_finish,
+    describe_test,
     exceeded_error_limits,
     missing_workers,
     overshoot,
@@ -454,8 +455,8 @@ def _missing_workers_text(result):
     running, configured = missing
     return (
         f"  Only {running:,} of the {configured:,} async worker processes that "
-        "worker_processes configures were running at the end of the "
-        f"{result.n_bots:,}-bot test, so the server had less capacity for async "
+        "worker_processes configures were running at the end of "
+        f"{describe_test(result)}, so the server had less capacity for async "
         "jobs than configured. Check the server log for worker processes that "
         "failed or hung at start-up, and restart them. (psynet debug local "
         "without --legacy always starts one.)"
@@ -892,14 +893,14 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
             ]
         had = _describe_workers(queue_bound)
         text.append(
-            f"In the {queue_bound.n_bots:,}-bot test, jobs that participants wait "
+            f"In {describe_test(queue_bound)}, jobs that participants wait "
             "for waited too long for " + (f"one of the {had}." if had else "a worker.")
         )
         if above_cap and advice.skipped:
             text.append("To go above the cap, add worker processes.")
     if behind:
         text.append(
-            f"During {_test_name(measured)}, {behind}, "
+            f"During {describe_test(measured)}, {behind}, "
             "so the workers can't keep up in the long run. That doesn't fail the "
             "test by itself, because participants don't wait for low-priority "
             "jobs, but their results arrive later and later and the jobs keep "
@@ -912,7 +913,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
             text.append(_WORKER_ADVICE)
     else:
         said_busy = behind and advice.utilization > MAX_WORKER_UTILIZATION
-        test = _test_name(measured) if not said_busy else None
+        test = describe_test(measured) if not said_busy else None
         lines = _describe_worker_advice(advice, measured, n, test, above_cap)
     if text:
         lines.insert(0, " ".join(text))
@@ -1005,7 +1006,7 @@ _BUSY_CHAINS_ADVICE = (
     "concurrent participants, you can let them wait with "
     "wait_for_networks=True or add chains, which may allow a higher cap. "
     "How participants arrive can make busy chains more or less common, so "
-    "judge the cap by the check at the cap that --n-bots auto runs, whose "
+    "judge the cap by the check that --n-bots auto runs at that cap, whose "
     "bots arrive over a session."
 )
 _START_RATE_ADVICE = (
@@ -1028,11 +1029,6 @@ _TESTER_LAG_ADVICE = (
 # that failed once the study held twice as many.
 _DB_GROWTH_RATIO = 1.5
 _DB_GROWTH_MIN_ROWS = 10_000
-
-
-def _test_name(result):
-    """Name ``result``'s test as the summary table does, e.g. ``the 120-bot test`` or ``the 96-bot check at the cap``."""
-    return f"the {result.n_bots:,}-bot {'check at the cap' if result.confirmation else 'test'}"
 
 
 def _and(items):
@@ -1061,9 +1057,10 @@ def _started_with(result_a, result_b, differ):
     """Say how many rows ``result_a`` and ``result_b`` started with, from :func:`_tables_that_differ`."""
     rows_a = _and([f"{a:,} {table} rows" for table, (a, _) in differ.items()])
     rows_b = _and([f"{b:,}" for _, b in differ.values()])
+    joint = "; " if len(differ) > 1 else " and "
     return (
-        f"{_test_name(result_a).capitalize()} started with {rows_a} and "
-        f"{_test_name(result_b)} with {rows_b}"
+        f"{describe_test(result_a).capitalize()} started with {rows_a}{joint}"
+        f"{describe_test(result_b)} with {rows_b}"
     )
 
 
@@ -1085,7 +1082,7 @@ def _database_growth_warnings(
         # The database was reset before each test, so only growth within a
         # test matters.
         grew = [
-            f"{_test_name(r).capitalize()} added a lot of data: {_rows_went(differ)}."
+            f"{describe_test(r).capitalize()} added a lot of data: {_rows_went(differ)}."
             for r in results
             if (differ := _tables_that_differ(r.db_rows_before, r.db_rows_after))
         ]
@@ -1284,7 +1281,7 @@ def _low_priority_lines(result, limits):
     if wait is None or wait <= limits.max_queue_p95_s:
         return []
     return [
-        f"Low-priority async jobs in {_test_name(result)}: p95 queue "
+        f"Low-priority async jobs in {describe_test(result)}: p95 queue "
         f"wait {wait:.2f} s, {_backlog(result.queue_waits, 'low'):,} still "
         "queued at the end. Participants don't wait for these, so they don't "
         "count against the limits."
@@ -1354,7 +1351,7 @@ def _check_lines(result, outcome, limits):
         )
     else:
         lines.append(
-            "  The test reached too little steady state to judge it separately."
+            "  The check reached too little steady state to judge it separately."
         )
     if ratio := overshoot(result, limits):
         lines.append(f"  The worst measure reached {ratio:.1f} times its limit.")

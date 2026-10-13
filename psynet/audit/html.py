@@ -871,7 +871,7 @@ def render_performance_result(
         failures = capacity_failures(result, limits)
         verdict = f"No: {', '.join(failures)}" if failures else "Yes"
         target = str(row.get("n_bots", "")) + (
-            " (confirmation)" if result.confirmation else ""
+            " (check at the cap)" if result.confirmation else ""
         )
         body.append(
             "<tr>"

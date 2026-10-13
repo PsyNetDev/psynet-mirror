@@ -590,6 +590,7 @@ def test_a_confirmation_that_fails_on_queue_wait_gets_the_queue_advice(caplog):
 
     assert "p95 high-priority async queue wait 30.00 s" in caplog.text
     assert caplog.text.count("waited too long for") == 1
+    assert "check at the cap, jobs that participants wait for waited" in caplog.text
 
 
 # A capacity search with 10 workers that failed on queue waits at 130 bots.
@@ -1362,7 +1363,7 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
         assert "Capacity: 100 bots at once passed" in search
         assert "Recommended: at most 80 participants at once" in search
         assert "wait_for_networks=True" in search
-        assert "judge the cap by the check at the cap" in search
+        assert "judge the cap by the check that --n-bots auto runs" in search
 
 
 @pytest.mark.parametrize(
@@ -2333,6 +2334,8 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert "\x1b[" in _join(format_performance_summary(results, terminal=True))
+    monkeypatch.setenv("TERM", "dumb")
+    assert "\x1b[" not in _join(format_performance_summary(results, terminal=True))
 
     monkeypatch.setenv("COLUMNS", "60")
     monkeypatch.setenv("NO_COLOR", "1")
