@@ -42,6 +42,7 @@ from psynet.perf_test.results import (
     busy_early_finish_cause,
     capacity_failure_causes,
     capacity_outcome,
+    confirmation_timing,
     connection_limit_kind,
     count_wait_timeouts,
     describe_bot_errors,
@@ -513,6 +514,8 @@ _HIGHLIGHT_ROW = "on grey15"
 _RECOMMENDED = "bold bright_green"
 _UNCONFIRMED = "bold bright_yellow"
 _QUIET = "dim"
+# What an empty summary table cell shows.
+_EMPTY = "-"
 # Prose is this wide when it isn't wrapped, off a terminal.
 _UNWRAPPED = 10_000
 # box.SIMPLE_HEAD with an ASCII rule, for output that isn't UTF-8; rich's own
@@ -593,9 +596,16 @@ def _alert(text, alert):
 def _ms(seconds):
     """Format a response time in milliseconds, e.g. ``63 ms`` or ``8.5 ms``."""
     if seconds is None:
-        return "N/A"
+        return _EMPTY
     ms = seconds * 1000
     return f"{ms:.1f} ms" if 0 < ms < 9.95 else f"{ms:.0f} ms"
+
+
+def _s(seconds):
+    """Format a queue wait in seconds, e.g. ``0.25 s``, ``4.2 s`` or ``18.5 s``."""
+    if seconds is None:
+        return _EMPTY
+    return f"{seconds:.2f} s" if seconds < 0.995 else f"{seconds:.1f} s"
 
 
 def _minutes(minutes):
@@ -648,88 +658,87 @@ def _measures_seen(results):
 
 
 def _summary_columns(results, limits):
-    """Return ``(header, cell)`` for each column of the summary table that ``results`` need."""
+    """Return ``(main, extra)``: the ``(header, cell)`` columns of the two summary tables.
+
+    ``extra`` has the measures that most tests lack (see
+    :func:`_measures_seen`), so that the main table fits a common terminal.
+    """
     seen = _measures_seen(results)
 
     def over(result, measure):
         return any(b.measure == measure for b in limit_breaches(result, limits))
 
-    columns = [
+    def count(n, total, measure):
+        return lambda r: _count(n(r), total(r), over(r, measure))
+
+    def requests(r):
+        return r.key_requests
+
+    def started(r):
+        return r.total_bots_started
+
+    main = [
         ("Bots\nat once", lambda r: f"{r.n_bots:,}"),
         ("Bots\nstarted", lambda r: f"{r.total_bots_started:,}"),
         ("Length", lambda r: _minutes(_test_minutes(r))),
         ("Result", lambda r: _result_text(r, limits)),
-        ("Req/s", lambda r: _fmt(r.requests_per_sec, digits=1)),
         (
-            "p95\nresponse",
-            lambda r: _alert(_ms(r.p95_response_time), over(r, "p95")),
-        ),
-        ("Median\nresponse", lambda r: _ms(r.median_response_time)),
-        (
-            "Failed\nrequests",
-            lambda r: _count(
-                r.request_errors, r.key_requests, over(r, "request_errors")
+            "Req/s",
+            lambda r: (
+                _EMPTY if r.requests_per_sec is None else f"{r.requests_per_sec:.1f}"
             ),
         ),
+        (
+            "p95 (ms)\nresponse",
+            lambda r: _alert(_ms(r.p95_response_time), over(r, "p95")),
+        ),
+        ("Median (ms)\nresponse", lambda r: _ms(r.median_response_time)),
+        (
+            "Failed\nrequests",
+            count(lambda r: r.request_errors, requests, "request_errors"),
+        ),
+        ("Failed\nbots", count(lambda r: r.bot_errors, started, "bot_errors")),
+        (
+            "Bots\nfinished",
+            lambda r: _EMPTY if _too_short_to_finish(r) else f"{r.bots_succeeded:,}",
+        ),
     ]
+    extra = []
     if "busy" in seen:
-        columns.append(
+        extra.append(
             (
                 "Busy\nresponses",
-                lambda r: _count(
-                    r.busy_responses, r.key_requests, over(r, "busy_responses")
-                ),
+                count(lambda r: r.busy_responses, requests, "busy_responses"),
             )
         )
-    columns.append(
-        (
-            "Failed\nbots",
-            lambda r: _count(r.bot_errors, r.total_bots_started, over(r, "bot_errors")),
-        )
-    )
     if "experiment" in seen:
-        columns.append(
+        extra.append(
             (
                 "Failed by\nexperiment",
-                lambda r: _count(
-                    r.participants_failed,
-                    r.total_bots_started,
-                    over(r, "wait_timeouts"),
-                ),
+                count(lambda r: r.participants_failed, started, "wait_timeouts"),
             )
         )
     if "chains" in seen:
-        columns.append(
-            (
-                "Busy\nchains",
-                lambda r: _count(
-                    _busy_early_finish_count(r),
-                    r.total_bots_started,
-                    over(r, "busy_chains"),
-                ),
-            )
+        extra.append(
+            ("Busy\nchains", count(_busy_early_finish_count, started, "busy_chains"))
         )
-    columns += [
+    extra += [
         (
-            f"{priority.capitalize()}-priority\nqueue p95",
+            f"{priority.capitalize()}-priority\nqueue p95 (s)",
             lambda r, p=priority: _alert(
-                _fmt(queue_wait_p95(r, p), "s"), p == "high" and over(r, "queue")
+                _s(queue_wait_p95(r, p)), p == "high" and over(r, "queue")
             ),
         )
         for priority in PRIORITIES
         if priority in seen
     ]
-    columns.append(
-        (
-            "Bots\nfinished",
-            lambda r: "-" if _too_short_to_finish(r) else f"{r.bots_succeeded:,}",
-        )
-    )
-    return columns
+    if extra:
+        extra.insert(0, main[0])
+    return main, extra
 
 
-def _summary_table(results, limits, outcome):
-    """Return the table of ``results`` by bot count, validation test last, labelling the capacity and validation rows."""
+def _summary_table(results, columns, outcome):
+    """Return a table of ``columns`` for ``results`` by bot count, validation test last, labelling the capacity and validation rows."""
     utf = (getattr(sys.stdout, "encoding", None) or "utf-8").lower().startswith("utf")
     table = Table(
         box=box.SIMPLE_HEAD if utf else _ASCII_SIMPLE_HEAD,
@@ -737,8 +746,8 @@ def _summary_table(results, limits, outcome):
         header_style="bold",
         padding=(0, 1, 0, 0),
         pad_edge=False,
+        show_edge=False,
     )
-    columns = _summary_columns(results, limits)
     for header, _ in columns:
         table.add_column(
             header, justify="left" if header == "Result" else "right", no_wrap=True
@@ -750,7 +759,7 @@ def _summary_table(results, limits, outcome):
         if result.confirmation:
             label = "validation test"
         elif outcome and result.n_bots == outcome.capacity and not labelled_capacity:
-            label, labelled_capacity = "largest passing test", True
+            label, labelled_capacity = "largest passing", True
         table.add_row(
             *(cell(result) for _, cell in columns),
             label,
@@ -799,6 +808,7 @@ def format_performance_summary(
     label=None,
     elapsed_s=None,
     terminal=None,
+    confirmation_planned=False,
 ):
     """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
 
@@ -817,6 +827,9 @@ def format_performance_summary(
     terminal : bool, optional
         Whether to colour the text and wrap it at the terminal's width, as by
         default when standard output is a terminal.
+    confirmation_planned : bool
+        Whether the capacity search meant to end with a validation test, for
+        advice when it didn't run.
 
     Returns
     -------
@@ -842,19 +855,21 @@ def format_performance_summary(
     if short:
         tail += [
             Text(
-                f"  -  The test was shorter than one participant session "
-                f"({_minutes(max(short))}), so no bot could finish.",
+                f"  Bots finished is {_EMPTY} where the test was shorter than one "
+                f"participant session ({_minutes(max(short))}), so no bot could finish.",
                 style=_QUIET,
             ),
             None,
         ]
-    tail += _capacity_renderables(results, limits, time_factor, [_NOT_MEASURED])
-    table = [_summary_table(results, limits, outcome)]
-    return (
-        _render(head, terminal)
-        + _render(table, terminal, wrap=False)
-        + _render(tail, terminal)
+    tail += _capacity_renderables(
+        results, limits, time_factor, [_NOT_MEASURED], confirmation_planned
     )
+    tables = []
+    for columns in _summary_columns(results, limits):
+        if columns:
+            table = _summary_table(results, columns, outcome)
+            tables += ["", *_render([table], terminal, wrap=False)]
+    return _render(head, terminal) + tables + [""] + _render(tail, terminal)
 
 
 def _busy_early_finish_count(result):
@@ -891,7 +906,26 @@ _WORKER_ADVICE = (
 )
 
 
-def _worker_lines(outcome, confirmation, capacity_result, limits):
+def _long_test_text(result, n, confirmation_planned):
+    """Say which test longer than a session would measure the workers for ``n`` participants.
+
+    ``result`` is a test too short to reach the steady state, and
+    ``confirmation_planned`` whether its capacity search meant to run a
+    validation test.
+    """
+    duration, arrival = confirmation_timing(
+        result.session_minutes, result.duration_minutes or 0
+    )
+    test = f"--n-bots {n} --arrival-minutes {arrival:g} --duration-minutes {duration:g}"
+    if confirmation_planned:
+        return (
+            "The validation test, which lasts longer than a session, would "
+            f"measure it; to run it alone, use {test}."
+        )
+    return f"A test longer than a session measures it: {test}."
+
+
+def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_planned):
     """Return the capacity summary's paragraph on async worker processes, if it applies.
 
     It appears when high-priority queue waits failed a test, when the workers
@@ -952,6 +986,9 @@ def _worker_lines(outcome, confirmation, capacity_result, limits):
     lines = []
     if advice.skipped:
         text.append(f"No estimate of worker_processes: {advice.skipped}.")
+        too_short = measured.session_minutes and not measured.steady_state_phase
+        if confirmation is None and measured.n_rq_workers and too_short:
+            text.append(_long_test_text(measured, n, confirmation_planned))
         if queue_bound is not None or behind:
             text.append(_WORKER_ADVICE)
     else:
@@ -1004,9 +1041,12 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     minimum = f"{processes} is a minimum, not a target"
     if sources:
         minimum += ": " + ", and ".join(sources)
+    keep = f"Keep the current {workers}"
+    if advice.demand < workers:
+        keep += f" (the load needs about {advice.demand})"
     why = {
         "estimate": [*measured, f"{processes} worker processes {implied}."],
-        "current": [*measured, f"Keep the current {workers}."],
+        "current": [*measured, f"{keep}."],
         "behind": [
             *measured,
             f"{processes} is one more than the {ran} that fell behind.",
@@ -1442,16 +1482,29 @@ def _notes(items):
 
 
 def format_capacity_summary(
-    results, limits=CapacityLimits(), time_factor=1.0, terminal=None
+    results,
+    limits=CapacityLimits(),
+    time_factor=1.0,
+    terminal=None,
+    *,
+    confirmation_planned=False,
 ):
     """Return the verdict, worker settings and notes that end :func:`format_performance_summary`, as lines.
 
-    ``terminal`` is as for :func:`format_performance_summary`.
+    ``terminal`` and ``confirmation_planned`` are as for
+    :func:`format_performance_summary`.
     """
-    return _render(_capacity_renderables(results, limits, time_factor), terminal)
+    return _render(
+        _capacity_renderables(
+            results, limits, time_factor, confirmation_planned=confirmation_planned
+        ),
+        terminal,
+    )
 
 
-def _capacity_renderables(results, limits, time_factor, extra_notes=()):
+def _capacity_renderables(
+    results, limits, time_factor, extra_notes=(), confirmation_planned=False
+):
     """Return what :func:`format_capacity_summary` renders, with ``extra_notes`` last.
 
     Returns nothing if ``results`` has only a confirmation test.
@@ -1479,7 +1532,9 @@ def _capacity_renderables(results, limits, time_factor, extra_notes=()):
     if any(busy_early_finish_cause(r, limits) for r in advised):
         notes.append(_BUSY_CHAINS_ADVICE)
     capacity_result = next((r for r in results if r.n_bots == capacity), None)
-    workers = _worker_lines(outcome, confirmation, capacity_result, limits)
+    workers = _worker_lines(
+        outcome, confirmation, capacity_result, limits, confirmation_planned
+    )
     if any(start_rate_limits(r) for r in advised):
         notes.append(_START_RATE_ADVICE)
     if any(tester_lagged(r) for r in advised):
@@ -1569,25 +1624,46 @@ def _capacity_test_notes(capacity_result, time_factor, validated=False):
     return notes
 
 
-def reset_error_lines(reset_error, n_completed):
+def reset_error_lines(reset_error, n_completed, terminal=None):
     """Explain that resetting the database failed after ``n_completed`` tests and stopped the run.
+
+    ``terminal`` is as for :func:`format_performance_summary`.
 
     Returns list[str].
     """
     lines = [
-        error(
-            f"  The run stopped early: resetting the database before test "
-            f"{n_completed + 1} failed ({reset_error}). The summary above covers "
-            f"the {plural(n_completed, 'test')} that completed."
+        Text(
+            f"The run stopped early: resetting the database before test "
+            f"{n_completed + 1} failed ({reset_error.rstrip('.')}). The summary "
+            f"above covers the {plural(n_completed, 'test')} that completed.",
+            style=_ALERT,
         )
     ]
     if connection_limit_kind(reset_error) == PGBOUNCER_FULL:
         lines.append(
-            "  The reset connects through PgBouncer, whose connections the "
+            "The reset connects through PgBouncer, whose connections the "
             "last test's load had used up."
         )
-        lines.append(f"  {_PGBOUNCER_ADVICE}")
-    return lines + [""]
+        lines.append(_PGBOUNCER_ADVICE)
+    return format_text(*lines, None, terminal=terminal)
+
+
+def format_text(*paragraphs, terminal=None):
+    """Return ``paragraphs`` as lines that wrap and are coloured like the summary's prose.
+
+    Parameters
+    ----------
+    *paragraphs : str, rich.text.Text or None
+        The paragraphs, ``None`` for a blank line. A paragraph's wrapped lines
+        are indented as far as its first line.
+    terminal : bool, optional
+        As for :func:`format_performance_summary`.
+
+    Returns
+    -------
+    list[str]
+    """
+    return _render(list(paragraphs), terminal)
 
 
 def capacity_advice(capacity_search=False):

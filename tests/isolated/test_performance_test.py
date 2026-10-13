@@ -381,7 +381,7 @@ def test_a_suite_stops_after_a_bot_process_does_not_report():
 def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     pgbouncer_full = "FATAL:  no more connections allowed (max_client_conn)"
-    before_test = Mock(side_effect=[None, None, RuntimeError(pgbouncer_full)])
+    before_test = Mock(side_effect=[None, None, RuntimeError(f"{pgbouncer_full}.")])
 
     with (
         caplog.at_level("INFO"),
@@ -396,12 +396,14 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
         results = suite.run([10, 20, 40])
 
     assert [r.n_bots for r in results] == [10, 20]
-    assert suite.reset_error == pgbouncer_full
+    assert suite.reset_error == f"{pgbouncer_full}."
     assert "PERFORMANCE TEST SUMMARY" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
         f"({pgbouncer_full}). The summary above covers the 2 tests that completed."
     ) in caplog.text
+    plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
+    assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
     assert "Raise PgBouncer's max_client_conn" in caplog.text
 
 
@@ -630,8 +632,8 @@ def test_worker_advice_after_a_confirmed_cap_is_for_going_above_it():
         "Recommended settings for 96 participants at once:\n"
         "    worker_processes = 10\n"
         "In the 96-bot validation test, the 10 worker processes "
-        "were busy 55% of the time. Keep the current 10. To go above 96, raise "
-        "worker_processes above 10 and test again."
+        "were busy 55% of the time. Keep the current 10 (the load needs about "
+        "8). To go above 96, raise worker_processes above 10 and test again."
     ) in text
 
 
@@ -1654,7 +1656,8 @@ def test_recommend_workers(result, n, burst, expected):
             + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
             "(all the cores left)\nIn the 96-bot validation test, "
             "the 10 worker processes were busy 55% of the time. Keep the current "
-            "10. To go above 96, use a larger server or cheaper jobs.",
+            "10 (the load needs about 8). To go above 96, use a larger server or "
+            "cheaper jobs.",
             "raise worker_processes above",
         ),
         # Above a confirmed cap where the cores trim the count below the test's.
@@ -1947,6 +1950,40 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         "measure. Raise worker_processes in config.txt"
     ) in text
     assert "worker_greenlets_per_process = 1" in text
+
+
+@pytest.mark.parametrize(
+    "planned, advice",
+    [
+        (
+            True,
+            "The validation test, which lasts longer than a session, would "
+            "measure it; to run it alone, use --n-bots 104 --arrival-minutes 13 "
+            "--duration-minutes 26.",
+        ),
+        (
+            False,
+            "A test longer than a session measures it: --n-bots 104 "
+            "--arrival-minutes 13 --duration-minutes 26.",
+        ),
+    ],
+)
+def test_worker_advice_without_a_steady_state_names_a_longer_test(planned, advice):
+    results = [
+        _base_result(
+            n_bots=n,
+            session_minutes=13,
+            duration_minutes=4,
+            n_rq_workers=10,
+            n_rq_job_slots=10,
+            queue_waits={"high": {"q_delay_p95": wait}},
+        )
+        for n, wait in [(130, 4.2), (140, 7.3)]
+    ]
+
+    text = _join(format_capacity_summary(results, confirmation_planned=planned))
+
+    assert advice in text
 
 
 def test_queue_advice_says_when_no_worker_processes_ran():
@@ -2330,7 +2367,7 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     assert "queue" not in text and "Busy" not in text
     rows = {line.split()[0]: line for line in lines if line.strip()[:1].isdigit()}
     assert list(rows) == ["520", "560", "416"]
-    assert " pass " in rows["520"] and rows["520"].endswith(" largest passing test")
+    assert " pass " in rows["520"] and rows["520"].endswith(" largest passing")
     assert " FAIL " in rows["560"] and re.search(r"^ +560 +570 ", rows["560"])
     assert "10 (1.8%)" in rows["560"]
     assert rows["416"].endswith(" 433  validation test")
@@ -2368,9 +2405,15 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
 
     assert "untested" in plain
     assert "\x1b[" not in plain and "\u2026" not in plain
-    assert "largest passing test" in _join(
+    assert "largest passing" in _join(
         format_performance_summary([_base_result()], terminal=False)
     )
+    # Measures that most tests lack go in a second table, keyed by bot count.
+    tables = plain.split("\n\n")
+    extra = next(t for t in tables if "queue p95 (s)" in t)
+    assert "N/A" not in plain
+    assert re.search(r"\n +100 +100 \(\d.*1\.0 s +9\.0 s", extra)
+    assert max(map(len, next(t for t in tables if "Req/s" in t).splitlines())) <= 112
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert "\x1b[" in _join(format_performance_summary(results, terminal=True))

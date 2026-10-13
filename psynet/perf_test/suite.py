@@ -14,8 +14,14 @@ The tester that runs each test is passed in, so this module does not import
 import logging
 import time
 
-from psynet.log import bold, warning
-from psynet.perf_test.report import format_performance_summary, reset_error_lines
+from rich.text import Text
+
+from psynet.log import warning
+from psynet.perf_test.report import (
+    format_performance_summary,
+    format_text,
+    reset_error_lines,
+)
 from psynet.perf_test.results import (
     CAPACITY_SEARCH_MAX,
     CAPACITY_SEARCH_MAX_TESTS,
@@ -203,7 +209,12 @@ class PerformanceSuite:
                 confirmation=True,
             )
 
-        results = self._run_suite(CAPACITY_SEARCH_MAX, next_test, bot_log_file)
+        results = self._run_suite(
+            CAPACITY_SEARCH_MAX,
+            next_test,
+            bot_log_file,
+            confirmation_planned=not self.confirmation_skipped,
+        )
         if self.reset_error and not any(r.confirmation for r in results):
             self.confirmation_skipped = (
                 self.confirmation_skipped or "resetting the database failed"
@@ -219,19 +230,29 @@ class PerformanceSuite:
                 else "; any recommendation above comes from short tests in which "
                 "the bots arrived together"
             )
-            logger.info(
-                f"  Validation test skipped: {self.confirmation_skipped}{unconfirmed}."
-            )
-            logger.info("")
+            for line in format_text(
+                f"Validation test skipped: {self.confirmation_skipped}{unconfirmed}.",
+                None,
+            ):
+                logger.info(line)
         return results
 
-    def _run_suite(self, max_bots, next_test, bot_log_file, n_tests=None):
+    def _run_suite(
+        self,
+        max_bots,
+        next_test,
+        bot_log_file,
+        n_tests=None,
+        confirmation_planned=False,
+    ):
         """Run tests until ``next_test(results_so_far)`` returns ``None``.
 
         ``next_test`` returns the next test's bot count and the keyword
         arguments for :meth:`PerformanceTester.run_test`. Stops early if a
         test ends early, then prints the summary. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
+        ``confirmation_planned`` says a capacity search meant to end with a
+        confirmation test.
 
         Returns
         -------
@@ -269,6 +290,7 @@ class PerformanceSuite:
             self.tester.time_factor,
             label=self.label,
             elapsed_s=time.monotonic() - started,
+            confirmation_planned=confirmation_planned,
         ):
             logger.info(line)
         if self.reset_error:
@@ -278,8 +300,11 @@ class PerformanceSuite:
 
     def _print_suite_header(self, bots_description, search=False):
         tester = self.tester
-        logger.info(bold("=" * 80))
-        logger.info(bold("\u26a1 PERFORMANCE TEST SUITE"))
+        for line in format_text(
+            Text("=" * 80, style="bold"),
+            Text("\u26a1 PERFORMANCE TEST SUITE", style="bold"),
+        ):
+            logger.info(line)
         logger.info(f"Bots per test:        {bots_description}")
         logger.info(
             f"Test duration:        {tester.duration_minutes:g} min"

@@ -402,18 +402,18 @@ them under *Bot errors* instead.
 
 The summary at the end of every run lists the tests by the number of bots
 taking part at once (*Bots at once*), with the validation test last, whether
-each passed the limits, and the measures that the limits check. Columns for
-busy responses, participants the experiment failed, busy chains and async
-queue waits only appear when a test had them, and the limits line lists only
-the limits that apply. *Bots started* counts every bot that started during
+each passed the limits, and the measures that the limits check. Busy
+responses, participants the experiment failed, busy chains and async queue
+waits only appear when a test had them, in a second table under the first,
+with the same rows; the limits line lists only the limits that apply. *Bots started* counts every bot that started during
 the test, including bots that replaced earlier ones. *Failed requests* gives
 a percentage of all requests and *Failed bots* a percentage of the bots
 started; *Failed bots* counts every bot that raised an error. A measure is
 red only if it broke its limit, so a failing test can show failures that
-stayed within their limits uncoloured. Response times are in milliseconds.
-*Bots finished* counts bots that completed the experiment, or shows ``-``
-when a test was shorter than one participant session, so that no bot could
-finish. The verdict follows: the recommended number of participants taking
+stayed within their limits uncoloured. Response times are in milliseconds
+and queue waits in seconds. An empty cell shows ``-``: *Bots finished*
+counts bots that completed the experiment, or shows ``-`` when a test was
+shorter than one participant session, so that no bot could finish. The verdict follows: the recommended number of participants taking
 part at once, the *largest passing test* and why the next count failed,
 naming each measure, its value and its limit (when no test failed, the
 verdict says the limit wasn't reached), and the *validation test* run at the
@@ -425,17 +425,17 @@ rating study on an SSH server (some rows left out)::
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 500 ms, at most 0.1% of requests failing, at most 1% of bots failing.
 
-        Bots     Bots                              p95    Median      Failed     Failed      Bots
-     at once  started  Length  Result  Req/s  response  response    requests       bots  finished
-     ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-          10       10   3 min  pass      2.4     63 ms     27 ms           0          0         -
-         480      480   3 min  pass     97.0     74 ms     32 ms           0          0         -
-         520      520   3 min  pass    103.0     81 ms     33 ms           0          0         -  largest passing test
-         560      570   3 min  FAIL    110.5     91 ms     36 ms           0  10 (1.8%)         -
-         640    1,271   3 min  FAIL    109.2    113 ms     37 ms  17 (0.09%)  631 (50%)         -
-         416      849  23 min  pass     90.2     76 ms     29 ms           0          0       433  validation test
+       Bots     Bots                         p95 (ms)  Median (ms)      Failed     Failed      Bots
+    at once  started  Length  Result  Req/s  response     response    requests       bots  finished
+    ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+         10       10   3 min  pass      2.4     63 ms        27 ms           0          0         -
+        480      480   3 min  pass     97.0     74 ms        32 ms           0          0         -
+        520      520   3 min  pass    103.0     81 ms        33 ms           0          0         -  largest passing
+        560      570   3 min  FAIL    110.5     91 ms        36 ms           0  10 (1.8%)         -
+        640    1,271   3 min  FAIL    109.2    113 ms        37 ms  17 (0.09%)  631 (50%)         -
+        416      849  23 min  pass     90.2     76 ms        29 ms           0          0       433  validation test
 
-      -  The test was shorter than one participant session (11 min), so no bot could finish.
+      Bots finished is - where the test was shorter than one participant session (11 min), so no bot could finish.
 
     Recommended: at most 416 participants at once.
     Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) failed, over the 1% limit.
@@ -445,7 +445,7 @@ rating study on an SSH server (some rows left out)::
 Notes on the results, such as advice on errors and database growth, follow
 under *Notes*. When standard output is a terminal, the summary is coloured
 and its text wraps to the terminal's width; otherwise, as in a log file, it
-is plain text with one line per paragraph. The table is never wrapped.
+is plain text with one line per paragraph. The tables are never wrapped.
 
 For rough capacities of common server sizes, based on one test on a real
 server, see :ref:`choosing_server_size`.
@@ -594,7 +594,11 @@ the finished jobs' CPU time a share ``c`` of their run time:
 
 There is no estimate if no bot finished (so there was no steady state), if
 the steady state lasted under a minute, or if fewer than 20 worker jobs
-finished in it. For example, a tapping study with 43 s of
+finished in it. Search tests are often shorter than a session, so a search
+that skipped its validation test then names a longer test to run at the
+cap, with ``--arrival-minutes``. When the estimate is lower than the
+current processes, the summary still suggests keeping them, and says how
+many the load needs. For example, a tapping study with 43 s of
 audio analysis per 13-minute session, whose capacity search failed at 130
 bots on queue waits and whose 96-participant validation test kept 10
 single-slot workers 55% busy, gets::
@@ -602,7 +606,7 @@ single-slot workers 55% busy, gets::
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10. To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10 (the load needs about 8). To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``worker_greenlets_per_process`` is
 only listed when it should change. ``worker_processes >= N (minimum)`` marks
