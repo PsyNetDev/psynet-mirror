@@ -480,7 +480,9 @@ completed (``per_participant_s``).
 The JSON flag ``confirmation`` marks the validation test,
 and the options record ``confirmation_skipped`` with the reason it didn't
 run. If resetting the database failed, ``reset_error`` gives the error
-(see :ref:`performance_testing_reset`). When the search tests and a long test with spread-out arrivals
+(see :ref:`performance_testing_reset`). The file is rewritten after each
+test, so a run that crashes or that you interrupt keeps the tests that
+finished; ``finished_at`` stays null until the run ends. When the search tests and a long test with spread-out arrivals
 disagree, trust the long test.
 
 The processes running the bots create each bot's participant themselves, so

@@ -5009,6 +5009,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         limits=CapacityLimits(),
         before_test=None,
         label=experiment.label,
+        after_test=ANY,
     )
     searching = options.get("n_bots") == "auto"
     assert (suite.find_capacity.called, suite.run.called) == (

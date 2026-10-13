@@ -2864,7 +2864,12 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
 
 
 def _remote_search(
-    monkeypatch, reset=None, reset_side_effect=None, cleanup_error=None, **options
+    monkeypatch,
+    reset=None,
+    reset_side_effect=None,
+    cleanup_error=None,
+    interrupt_at_test=None,
+    **options,
 ):
     """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
     import re
@@ -2873,6 +2878,8 @@ def _remote_search(
     from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
+        if re.search(rf"--test-label {interrupt_at_test}\b", args):
+            raise KeyboardInterrupt
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1
         result = _base_result(n_bots=n_bots, p95_response_time=p95, **_STEADY)
@@ -2934,9 +2941,24 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
 
     data = json.loads(json_output.read_text())
     assert len(data["results"]) == 2
-    assert data["reset_error"] == pgbouncer_full
+    assert data["finished_at"] and data["reset_error"] == pgbouncer_full
     assert data["options"]["max_busy_early_finish_rate"] == 0.05
     assert data["options"]["confirmation_skipped"] == "resetting the database failed"
+
+
+def test_an_interrupted_remote_search_keeps_the_finished_tests_json(
+    tmp_path, monkeypatch
+):
+    import json
+
+    json_output = tmp_path / "results.json"
+    with pytest.raises(KeyboardInterrupt):
+        _remote_search(monkeypatch, interrupt_at_test=3, json_output=str(json_output))
+
+    data = json.loads(json_output.read_text())
+    assert [r["n_bots"] for r in data["results"]] == [10, 20]
+    assert data["finished_at"] is None
+    assert list(tmp_path.iterdir()) == [json_output]
 
 
 def test_remote_failures_name_the_last_error_line():

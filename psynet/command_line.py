@@ -4488,10 +4488,12 @@ _test_options["performance_json_output"] = click.option(
     type=click.Path(dir_okay=False, writable=True),
     default=None,
     help="""
-    If provided, write performance test results to this path as JSON.
+    If provided, write performance test results to this path as JSON, after
+    each test and when the run ends.
     The file will contain a top-level object with: schema_version, psynet_version,
     dallinger_version, python_version, platform, experiment_label,
-    started_at / finished_at (ISO timestamps), snapshot and snapshot_rows
+    started_at / finished_at (ISO timestamps; finished_at is null until the
+    run ends, or if it was interrupted), snapshot and snapshot_rows
     (the database snapshot that each test started from and its rows, with
     --reset-database), reset_error (why a reset failed and stopped the run
     early, or null), options (n_bots_sweep, capacity_search, max_p95_s,
@@ -4866,8 +4868,19 @@ def _write_json_results(json_output, *, metadata, options, all_results):
         "options": options,
         "results": [asdict(r) for r in all_results],
     }
-    with open(json_output, "w") as f:
-        json.dump(payload, f, indent=2, allow_nan=False, default=str)
+    # Written to a temporary file and renamed, so that an interrupt can't
+    # leave a truncated file in place of the last complete one.
+    path = Path(json_output)
+    fd, temporary = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=2, allow_nan=False, default=str)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def _check_existing_server_answers():
@@ -5026,10 +5039,35 @@ def _run_performance_test_with_existing_server(
         except ValueError as e:
             bot_log_file.close()
             raise click.ClickException(str(e)) from e
-    suite = PerformanceSuite(
-        tester, limits=limits, before_test=database_reset, label=exp.label
-    )
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
+    metadata = _collect_run_metadata(exp.label) if json_output else None
+
+    def save_json(all_results, finished=False):
+        if json_output:
+            _write_suite_json(
+                json_output,
+                quiet=remote,
+                metadata=metadata,
+                started_at=started_at,
+                all_results=all_results,
+                capacity_search=find_capacity,
+                limits=limits,
+                tester=tester,
+                database_reset=database_reset,
+                reset=reset,
+                confirm=not no_confirm if find_capacity else None,
+                confirmation_skipped=suite.confirmation_skipped,
+                reset_error=suite.reset_error,
+                finished=finished,
+            )
+
+    suite = PerformanceSuite(
+        tester,
+        limits=limits,
+        before_test=database_reset,
+        label=exp.label,
+        after_test=save_json,
+    )
     try:
         if test_label is not None:
             with tester.bot_runner(bot_counts[0], bot_log_file):
@@ -5046,22 +5084,7 @@ def _run_performance_test_with_existing_server(
         else:
             all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
         # Before the cleanup, which may fail.
-        if json_output:
-            _write_suite_json(
-                json_output,
-                quiet=remote,
-                metadata=_collect_run_metadata(exp.label),
-                started_at=started_at,
-                all_results=all_results,
-                capacity_search=find_capacity,
-                limits=limits,
-                tester=tester,
-                database_reset=database_reset,
-                reset=reset,
-                confirm=not no_confirm if find_capacity else None,
-                confirmation_skipped=suite.confirmation_skipped,
-                reset_error=suite.reset_error,
-            )
+        save_json(all_results, finished=True)
     finally:
         bot_log_file.close()
         if database_reset is not None:
@@ -5179,19 +5202,23 @@ def _write_suite_json(
     confirm=None,
     confirmation_skipped=None,
     reset_error=None,
+    finished=True,
 ):
     """Write a suite's results, with its options and ``metadata``, to ``json_output``.
 
-    It finishes now; ``reset`` holds the database-reset options, if any, and
+    Unless ``finished``, the suite is still running, and ``finished_at`` is
+    null. ``reset`` holds the database-reset options, if any, and
     ``reset_error`` why a reset stopped the suite early. ``confirm`` and
     ``confirmation_skipped`` describe a capacity search's confirmation test.
-    Unless ``quiet``, it prints where it wrote them.
+    Once ``finished``, unless ``quiet``, it prints where it wrote them.
     """
     reset = reset or {}
     metadata = {
         **metadata,
         "started_at": started_at,
-        "finished_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "finished_at": (
+            datetime.datetime.now().isoformat(timespec="seconds") if finished else None
+        ),
         # The snapshot every test started from, and the rows in each of its
         # growing tables.
         "snapshot": database_reset.snapshot if database_reset else None,
@@ -5226,7 +5253,7 @@ def _write_suite_json(
         options=options,
         all_results=all_results,
     )
-    if not quiet:
+    if finished and not quiet:
         print(f"Performance results (JSON): {json_output}")
 
 
@@ -6077,21 +6104,9 @@ def _run_ssh_performance_test(
     )
     with bot_log_file, _exit_on_sigterm():
         database_reset = _ssh_database_reset(remote, reset, experiment["label"])
-        suite = PerformanceSuite(
-            tester,
-            limits=limits,
-            before_test=database_reset,
-            label=f"{app} on {server}",
-        )
         started_at = datetime.datetime.now().isoformat(timespec="seconds")
-        try:
-            if find_capacity:
-                all_results = suite.find_capacity(
-                    bot_log_file=bot_log_file, confirm=not no_confirm
-                )
-            else:
-                all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
-            # Before the cleanup, which may fail.
+
+        def save_json(all_results, finished=False):
             if json_output:
                 _write_suite_json(
                     json_output,
@@ -6107,7 +6122,25 @@ def _run_ssh_performance_test(
                     confirm=not no_confirm if find_capacity else None,
                     confirmation_skipped=suite.confirmation_skipped,
                     reset_error=suite.reset_error,
+                    finished=finished,
                 )
+
+        suite = PerformanceSuite(
+            tester,
+            limits=limits,
+            before_test=database_reset,
+            label=f"{app} on {server}",
+            after_test=save_json,
+        )
+        try:
+            if find_capacity:
+                all_results = suite.find_capacity(
+                    bot_log_file=bot_log_file, confirm=not no_confirm
+                )
+            else:
+                all_results = suite.run(bot_counts, bot_log_file=bot_log_file)
+            # Before the cleanup, which may fail.
+            save_json(all_results, finished=True)
         finally:
             if database_reset is not None:
                 # close() may take the pre-fill snapshot, which needs the app stopped.

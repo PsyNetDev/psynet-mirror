@@ -65,13 +65,19 @@ class PerformanceSuite:
         for example a :class:`psynet.perf_reset.DatabaseReset`.
     label : str, optional
         The experiment's label, for the summary.
+    after_test : callable, optional
+        Called with the list of results so far after each test, for example
+        to save them.
     """
 
-    def __init__(self, tester, limits=None, before_test=None, label=None):
+    def __init__(
+        self, tester, limits=None, before_test=None, label=None, after_test=None
+    ):
         self.tester = tester
         self.limits = limits or CapacityLimits()
         self.before_test = before_test
         self.label = label
+        self.after_test = after_test
         # Why find_capacity skipped its confirmation test, or None.
         self.confirmation_skipped = None
         # Why a database reset between tests failed and stopped the suite, or None.
@@ -261,6 +267,8 @@ class PerformanceSuite:
                     label, n_bots, bot_log_file, **test_options
                 )
                 all_results.append(result)
+                if self.after_test is not None:
+                    self.after_test(all_results)
                 if _ended_early(result):
                     break
         for line in format_performance_summary(
