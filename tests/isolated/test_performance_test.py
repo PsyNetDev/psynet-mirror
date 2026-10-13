@@ -305,7 +305,7 @@ def test_database_connection_limits_are_named_with_advice(
     text = _join(format_capacity_summary(results))
     assert advice in text
     # The bots' own connections hit the limit, so the server wasn't measured.
-    assert "20 could not be tested" in text
+    assert "At 20, the test couldn't measure the server" in text
 
 
 def test_capacity_summary_names_the_bot_errors():
@@ -1269,10 +1269,7 @@ def test_only_participants_failed_for_waiting_too_long_limit_capacity(
 
     if expected:
         assert failures == [expected]
-        assert (
-            f"No test passed. At 150 bots at once, {expected}, over the 1% limit."
-            in text
-        )
+        assert f"No test passed. At 150, {expected}, over the 1% limit." in text
         assert "Design experiments to avoid this" in text
     else:
         assert failures == []
@@ -1803,11 +1800,11 @@ def test_capacity_summary_says_when_every_count_failed():
     slow = [_base_result(n_bots=2, p95_response_time=0.9)]
 
     assert (
-        "No test passed. At 2 bots at once, 1 of 2 bots (50%) failed, over the 1% "
+        "No test passed. At 2, 1 of 2 bots (50%) failed, over the 1% "
         "limit; fix the errors or test fewer bots."
     ) in _join(format_capacity_summary(results))
     assert (
-        "No test passed. At 2 bots at once, the p95 response time was 900 ms, over "
+        "No test passed. At 2, the p95 response time was 900 ms, over "
         "the 500 ms limit; test fewer bots.\n"
     ) in _join(format_capacity_summary(slow))
     assert format_capacity_summary([]) == []
@@ -1822,7 +1819,7 @@ def test_capacity_summary_flags_a_pass_at_or_above_a_failed_smallest_count(n_pas
 
     text = _join(format_capacity_summary(results))
 
-    assert "No test passed. At 10 bots at once, 1 of 2 bots (50%) failed" in text
+    assert "No test passed. At 10, 1 of 2 bots (50%) failed" in text
     assert f"{n_passed} bots passed, so the results are inconsistent" in text
 
 
@@ -1977,7 +1974,7 @@ def test_capacity_summary_does_not_suggest_a_cap_when_bots_started_too_slowly():
     text = _join(format_capacity_summary(results))
 
     assert "Largest passing test: 80 bots at once" in text
-    assert "160 could not be tested" in text
+    assert "At 160, the test couldn't measure the server" in text
     assert "limit the test rather than the server" in text
     assert "Recommended:" not in text
 
@@ -1999,7 +1996,7 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
     ]
     text = _join(format_capacity_summary(results))
     assert "Largest passing test: 80 bots at once" in text
-    assert "160 could not be tested" in text
+    assert "At 160, the test couldn't measure the server" in text
     assert "Spread the bots over more processes with --bot-processes" in text
     assert "Recommended:" not in text
     details = _join(format_test_results(results[1]))
@@ -2009,7 +2006,9 @@ def test_a_test_whose_bots_ran_late_could_not_be_tested():
 def test_a_bot_process_that_did_not_report_makes_a_test_untestable():
     results = [_base_result(n_bots=80), _base_result(unreported_bot_processes=[2])]
     assert "bot process(es) 2 did not report" in capacity_failures(results[1])[0]
-    assert "could not be tested" in _join(format_capacity_summary(results))
+    assert "the test couldn't measure the server" in _join(
+        format_capacity_summary(results)
+    )
 
 
 def test_a_busy_cpu_share_alone_does_not_fail_a_test():
@@ -2099,7 +2098,10 @@ def test_capacity_summary_says_when_even_the_smallest_count_could_not_be_tested(
 
     text = _join(format_capacity_summary(results))
 
-    assert "10 bots at once could not be tested: 40 of 400 bots (10%) failed" in text
+    assert (
+        "At 10, the test couldn't measure the server: 40 of 400 bots (10%) failed"
+        in text
+    )
     assert "raise max_connections" in text
     assert "Recommended:" not in text
     assert "did not keep" not in text
@@ -2173,13 +2175,18 @@ def test_a_storm_of_busy_responses_exceeds_capacity():
     ) == ["300 busy/stale responses"]
 
 
-def test_each_endpoint_must_stay_within_the_response_time_limit():
+def test_each_endpoint_must_stay_within_the_response_time_limit(monkeypatch):
     result = _base_result(
         p95_response_time=0.426,
         endpoint_p95={"/timeline": 0.191, "/response": 0.511},
     )
 
     assert capacity_failures(result) == ["p95 response time for /response 511 ms"]
+    # The overall p95 is within the limit, so its cell isn't red.
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    summary = _join(format_performance_summary([result], terminal=True))
+    assert " 426 ms" in summary and "m426 ms" not in summary
 
 
 # --- format_test_results ---

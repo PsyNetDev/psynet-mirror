@@ -595,7 +595,7 @@ def _ms(seconds):
     if seconds is None:
         return "N/A"
     ms = seconds * 1000
-    return f"{ms:.1f} ms" if ms < 9.95 else f"{ms:.0f} ms"
+    return f"{ms:.1f} ms" if 0 < ms < 9.95 else f"{ms:.0f} ms"
 
 
 def _minutes(minutes):
@@ -1237,7 +1237,7 @@ def _breach_clause(result, breach):
             else "were answered busy or stale"
         )
         what = f"{n:,} of {requests:,} requests ({_percent(n / requests)}) {how}"
-    elif breach.measure in ("p95", "queue"):
+    elif breach.measure in ("p95", "endpoint_p95", "queue"):
         name, value, unit = breach.reason.rsplit(" ", 2)
         what = f"the {name} was {value} {unit}"
     else:
@@ -1312,7 +1312,7 @@ def _capacity_lines(outcome, limits):
     reasons = _reasons(first_fail, outcome.first_causes, limits)
     if capacity is None:
         if unmeasured:
-            line = f"No limit found. {n_failed} bots at once could not be tested: {reasons}."
+            line = f"No limit found. At {n_failed}, the test couldn't measure the server: {reasons}."
         else:
             if waits_only:
                 advice = ""
@@ -1320,11 +1320,14 @@ def _capacity_lines(outcome, limits):
                 advice = "; fix the errors or test fewer bots"
             else:
                 advice = "; test fewer bots"
-            line = f"No test passed. At {n_failed} bots at once, {reasons}{advice}."
+            line = f"No test passed. At {n_failed}, {reasons}{advice}."
     else:
         passing = f"Largest passing test: {capacity:,} bots at once."
         if unmeasured:
-            line = f"{passing} {n_failed} could not be tested: {reasons}, so the limit wasn't found."
+            line = (
+                f"{passing} At {n_failed}, the test couldn't measure the server: "
+                f"{reasons}, so the limit wasn't found."
+            )
         elif waits_only:
             line = f"{passing} At {n_failed}, {reasons}, so the limit wasn't found."
         else:
