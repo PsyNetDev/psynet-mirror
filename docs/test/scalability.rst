@@ -298,8 +298,9 @@ Without ``--reset-database`` (see :ref:`performance_testing_reset`), the
 validation test runs on the data that the search tests left. If it fails
 after starting with much more data than the largest passing test, the
 summary says that its failure may come from the data, and suggests
-rerunning with ``performance-test ssh --reset-database`` before
-recommending a lower number.
+rerunning on a fresh database (after restarting ``psynet debug local``, or
+with ``performance-test ssh --reset-database``) before recommending a
+lower number.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what failed the next count, the summary says how many worker processes
@@ -520,7 +521,9 @@ every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
 The summary warns when the database grew by more than half during the
 tests (and by at least 10,000 rows; with ``--reset-database``, during any
-one test), and suggests ``performance-test ssh --reset-database``.
+one test). After a local run it suggests restarting ``psynet debug local``
+for a fresh database, and after ``performance-test ssh`` it suggests
+``--reset-database``.
 
 To read the numbers:
 

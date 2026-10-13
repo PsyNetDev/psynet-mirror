@@ -766,6 +766,7 @@ def format_performance_summary(
     elapsed_s=None,
     terminal=None,
     confirmation_planned=False,
+    ssh=False,
 ):
     """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
 
@@ -787,6 +788,9 @@ def format_performance_summary(
     confirmation_planned : bool
         Whether the capacity search meant to end with a validation test, for
         advice when it didn't run.
+    ssh : bool
+        Whether the tests ran with ``performance-test ssh``, for advice on
+        starting from a fresh database.
 
     Returns
     -------
@@ -819,7 +823,7 @@ def format_performance_summary(
             None,
         ]
     tail += _capacity_renderables(
-        results, limits, time_factor, [_NOT_MEASURED], confirmation_planned
+        results, limits, time_factor, [_NOT_MEASURED], confirmation_planned, ssh
     )
     tables = []
     for columns in _summary_columns(results, limits):
@@ -1098,12 +1102,13 @@ def _rows_went(differ):
 
 
 def _database_growth_warnings(
-    results, capacity_result, confirmation=None, limits=CapacityLimits()
+    results, capacity_result, confirmation=None, limits=CapacityLimits(), ssh=False
 ):
     """Warn when the tests in ``results`` (in the order run) saw very different amounts of data.
 
     ``confirmation`` is a capacity search's confirmation test, which runs on
-    the data the search tests left unless the database is reset.
+    the data the search tests left unless the database is reset. ``ssh`` is
+    as for :func:`format_performance_summary`.
     """
     if not results:
         return []
@@ -1124,8 +1129,14 @@ def _database_growth_warnings(
         grew = differ and (
             f"The database grew a lot during these tests ({_rows_went(differ)}), "
             "so later tests ran on more data than earlier ones; "
-            "'performance-test ssh --reset-database' starts every test from the "
-            "same data."
+            + (
+                "'performance-test ssh --reset-database' starts every test from "
+                "the same data."
+                if ssh
+                else "restart 'psynet debug local' for a fresh database, or use "
+                "'performance-test ssh --reset-database' on a server to start "
+                "every test from the same data."
+            )
         )
     lines = []
     if grew:
@@ -1147,9 +1158,14 @@ def _database_growth_warnings(
         lines.append(
             f"The validation test started with more data than "
             f"{describe_test(capacity_result)} ({_rows_went(differ)}), so its "
-            "failure may come from the data the search left. Rerun with "
-            "'performance-test ssh --reset-database' before recommending a "
-            "lower number."
+            "failure may come from the data the search left. "
+            + (
+                "Rerun with 'performance-test ssh --reset-database'"
+                if ssh
+                else "Rerun on a fresh database, after restarting 'psynet debug "
+                "local' or with 'performance-test ssh --reset-database' on a server,"
+            )
+            + " before recommending a lower number."
         )
     return lines
 
@@ -1392,22 +1408,27 @@ def format_capacity_summary(
     terminal=None,
     *,
     confirmation_planned=False,
+    ssh=False,
 ):
     """Return the verdict, worker settings and notes that end :func:`format_performance_summary`, as lines.
 
-    ``terminal`` and ``confirmation_planned`` are as for
+    ``terminal``, ``confirmation_planned`` and ``ssh`` are as for
     :func:`format_performance_summary`.
     """
     return _render(
         _capacity_renderables(
-            results, limits, time_factor, confirmation_planned=confirmation_planned
+            results,
+            limits,
+            time_factor,
+            confirmation_planned=confirmation_planned,
+            ssh=ssh,
         ),
         terminal,
     )
 
 
 def _capacity_renderables(
-    results, limits, time_factor, extra_notes=(), confirmation_planned=False
+    results, limits, time_factor, extra_notes=(), confirmation_planned=False, ssh=False
 ):
     """Return what :func:`format_capacity_summary` renders, with ``extra_notes`` last.
 
@@ -1441,7 +1462,9 @@ def _capacity_renderables(
     if missing := next(filter(None, map(_missing_workers_text, run_order)), None):
         notes.append(Text(missing.strip(), style=_WARNING))
     notes += _low_priority_lines(confirmation or capacity_result or first_fail, limits)
-    notes += _database_growth_warnings(run_order, capacity_result, confirmation, limits)
+    notes += _database_growth_warnings(
+        run_order, capacity_result, confirmation, limits, ssh
+    )
     if capacity_result is not None:
         notes += _capacity_test_notes(
             capacity_result, time_factor, _confirmed(confirmation, limits)

@@ -792,6 +792,8 @@ class RemotePerformanceTester:
         As for :class:`~psynet.perf_test.PerformanceTester`.
     """
 
+    ssh = True
+
     def __init__(
         self,
         remote,

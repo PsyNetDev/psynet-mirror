@@ -607,8 +607,9 @@ def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
     )
 
     assert (
-        "so its failure may come from the data the search left. Rerun with "
-        "'performance-test ssh --reset-database' before recommending" in caplog.text
+        "so its failure may come from the data the search left. Rerun on a fresh "
+        "database, after restarting 'psynet debug local' or with 'performance-test "
+        "ssh --reset-database' on a server, before recommending" in caplog.text
     )
 
 
@@ -1156,7 +1157,10 @@ def test_summaries_report_database_growth():
         "The database grew a lot during these tests (trial rows went from "
         "65,000 to 103,000), so later tests ran on more data"
     ) in text
-    assert "--reset-database" in text
+    assert "restart 'psynet debug local' for a fresh database" in text
+    ssh_text = _join(format_capacity_summary(results, ssh=True))
+    assert "'performance-test ssh --reset-database' starts every test" in ssh_text
+    assert "psynet debug local" not in ssh_text
 
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
     assert "database grew" not in _join(format_capacity_summary(results))
