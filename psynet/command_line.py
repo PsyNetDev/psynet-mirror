@@ -5730,14 +5730,15 @@ def _performance_test_app_info():
 @click.option("--json-output", required=True, type=click.Path(dir_okay=False))
 def performance_test__app_info(json_output):
     """
-    Write whether this app is a performance-test app, and its experiment's test defaults, to --json-output; used by ``performance-test ssh``.
+    Write whether this app is a performance-test app, whether it has launched, and its experiment's test defaults, to --json-output; used by ``performance-test ssh``.
 
     The defaults are left out if the experiment can't be loaded, so that an
     app whose experiment is broken can still be updated.
     """
-    from psynet.experiment import get_experiment
+    from psynet.experiment import get_experiment, is_experiment_launched
 
     info = _performance_test_app_info()
+    info["launched"] = bool(is_experiment_launched())
     try:
         exp = get_experiment()
         info["experiment"] = {
@@ -5762,8 +5763,9 @@ def _require_performance_test_app(server, app):
     Raises
     ------
     click.ClickException
-        If ``performance-test ssh`` didn't deploy the app, or that can't be
-        checked.
+        If ``performance-test ssh`` didn't deploy the app, its deploy never
+        finished launching the experiment, or that can't be checked. Apps
+        whose PsyNet predates the launch check count as launched.
     """
     from psynet.perf_ssh import RemoteApp
 
@@ -5785,6 +5787,13 @@ def _require_performance_test_app(server, app):
         raise click.ClickException(
             f"Refusing to use {app} on {server}: 'performance-test ssh' didn't "
             f"deploy it, so it may hold data that matters. {advice}"
+        )
+    if info.get("launched") is False:
+        raise click.ClickException(
+            f"Refusing to use {app} on {server}: its deploy didn't finish launching "
+            "the experiment, so its containers run but it can't be tested. Destroy "
+            f"it with 'psynet destroy ssh --server {server} --app {app}' and rerun "
+            "this command to deploy it again, or choose another --app name."
         )
     return info
 
@@ -5893,7 +5902,8 @@ def performance_test__docker_ssh(
     a performance-test app, whose data is disposable. Later runs reuse it,
     updating it first if the experiment's files, PsyNet or Dallinger have
     changed; the update keeps its database. They refuse apps that this
-    command didn't deploy. The app is kept after the run; destroy it with
+    command didn't deploy, or whose deploy didn't finish launching the
+    experiment. The app is kept after the run; destroy it with
     ``psynet destroy ssh``.
 
     The bots run inside the app's web container, while this computer runs

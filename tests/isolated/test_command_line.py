@@ -1255,6 +1255,18 @@ def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
     run.assert_not_called()
 
 
+def test_performance_test_ssh_refuses_apps_that_never_launched():
+    result, deploy, run, _ = _invoke_performance_test_ssh(
+        "ssh", [], apps=["my-app"], app_info={**_MARKED, "launched": False}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't finish launching" in result.output
+    assert "psynet destroy ssh --server server --app my-app" in result.output
+    deploy.assert_not_called()
+    run.assert_not_called()
+
+
 def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     app_info = {k: v for k, v in _MARKED.items() if k != "experiment"}
     result, _, run, _ = _invoke_performance_test_ssh(

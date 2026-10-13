@@ -754,6 +754,12 @@ yourself declares that the app's data is disposable: performance tests may
 add to it, reset it and drop it. ``psynet deploy ssh`` and other live
 deployments refuse to deploy with it set.
 
+Runs also refuse a marked app whose deploy never finished launching the
+experiment, for example because Dallinger's launch request timed out while
+a new Cloudflare tunnel came up: its containers run, but the experiment
+has no launch steps behind it. Destroy it with ``psynet destroy ssh`` and
+rerun, or choose another app name.
+
 After a run, the app stays on the server for later runs, and PsyNet prints
 the command that destroys it:
 
