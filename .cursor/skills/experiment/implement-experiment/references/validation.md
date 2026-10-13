@@ -96,11 +96,11 @@ per spare CPU core. Report how you reached the cap.
 
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and
-`busy_early_finishes` in the JSON). They are not failed, but above 1% of bots
-started the run counts as over capacity, and the search suggests a
-participant cap from it, as for slow responses. Judge the rate from the
-confirmation run: the short search tests overstate it, because every bot
-arrives at once. Besides the cap, `wait_for_networks=True` or more chains
+`busy_early_finishes` in the JSON). They are not failed, but more than one
+bot and above 1% of bots started (`--max-busy-early-finish-rate`) counts as
+over capacity, and the search suggests a participant cap from it, as for
+slow responses. Arrival patterns change the rate, so judge it from the
+confirmation run. Besides the cap, `wait_for_networks=True` or more chains
 reduce it and may allow a higher cap.
 
 ## Interactive evidence

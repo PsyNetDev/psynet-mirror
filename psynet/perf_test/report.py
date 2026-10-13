@@ -681,8 +681,9 @@ _BUSY_CHAINS_ADVICE = (
     "busy, so the experiment finished their block early. Besides capping "
     "concurrent participants, you can let them wait with "
     "wait_for_networks=True or add chains, which may allow a higher cap. "
-    "Bots that all arrive at once overstate this, so judge it by a test with "
-    "--arrival-minutes."
+    "How participants arrive can make busy chains more or less common, so "
+    "judge the cap by the confirmation test of --n-bots auto, whose bots "
+    "arrive over a session."
 )
 _START_RATE_ADVICE = (
     "  Bots that cannot start fast enough limit the test rather than the "

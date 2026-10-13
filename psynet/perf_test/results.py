@@ -460,6 +460,9 @@ class CapacityLimits:
         loses data, so the default matches ``max_wait_timeout_rate``. It
         grows with the number of participants taking part at once, so unlike
         wait timeouts it sets the capacity and the suggested cap.
+    allowed_busy_early_finishes : int
+        Number of such bots per trial maker that is acceptable however few
+        bots a test starts, so that one unlucky bot doesn't fail a small test.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -471,18 +474,31 @@ class CapacityLimits:
     max_bot_error_rate: float = 0.01
     max_wait_timeout_rate: float = 0.01
     max_busy_early_finish_rate: float = 0.01
+    allowed_busy_early_finishes: int = 1
 
     @classmethod
-    def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
+    def from_options(
+        cls, max_p95_s=None, max_queue_p95_s=None, max_busy_early_finish_rate=None
+    ):
         """Return limits from optional settings; ``None`` means the default."""
-        defaults = cls()
+        options = {
+            "max_p95_s": max_p95_s,
+            "max_queue_p95_s": max_queue_p95_s,
+            "max_busy_early_finish_rate": max_busy_early_finish_rate,
+        }
         return cls(
-            max_p95_s=defaults.max_p95_s if max_p95_s is None else float(max_p95_s),
-            max_queue_p95_s=(
-                defaults.max_queue_p95_s
-                if max_queue_p95_s is None
-                else float(max_queue_p95_s)
-            ),
+            **{
+                name: float(value)
+                for name, value in options.items()
+                if value is not None
+            }
+        )
+
+    def allowed_busy_early_finishes_for(self, total_bots_started):
+        """Return how many bots per trial maker may get fewer trials because every chain was busy."""
+        return max(
+            self.allowed_busy_early_finishes,
+            self.max_busy_early_finish_rate * (total_bots_started or 0),
         )
 
     def describe(self, include_queue=True):
@@ -499,8 +515,9 @@ class CapacityLimits:
             f"{self.max_bot_error_rate:.0%} of bots failing, "
             f"{self.max_wait_timeout_rate:.0%} of participants failed by the "
             "experiment for waiting too long and "
-            f"{self.max_busy_early_finish_rate:.0%} getting fewer trials "
-            "because every chain was busy"
+            f"{self.max_busy_early_finish_rate * 100:g}% getting fewer trials "
+            f"because every chain was busy ({self.allowed_busy_early_finishes} "
+            "always allowed)"
         )
         if not include_queue:
             return f"{response} and {errors}"
@@ -685,9 +702,9 @@ def describe_busy_early_finish(result, trial_maker_id, detail=False):
     trial_maker_id : str
         A key of ``result.busy_early_finishes``.
     detail : bool
-        Also give the share of bots and their median number of trials, e.g.
-        ``23 of 150 bots started (15%) got fewer trials in main_chain because
-        every chain was busy; median 41 of 60 trials``.
+        Also give their median number of trials, e.g. ``23 of 150 bots
+        started (15%) got fewer trials in main_chain because every chain was
+        busy; median 41 of 60 trials``.
 
     Counts are of bots started, which include the bots that replaced those
     that finished, so a bot that got no trials and was replaced at once
@@ -696,7 +713,7 @@ def describe_busy_early_finish(result, trial_maker_id, detail=False):
     stats = result.busy_early_finishes[trial_maker_id]
     n, started = stats["participants"], result.total_bots_started or 0
     who = plural(n, "bot")
-    if detail and started:
+    if started:
         who = f"{n:,} of {started:,} bots started ({n / started:.0%})"
     text = (
         f"{who} got fewer trials in {trial_maker_id} because every "
@@ -713,9 +730,10 @@ def busy_early_finish_cause(result, limits):
     """Return why ``result`` had too many bots get fewer trials because every chain was busy, or ``None``.
 
     Each trial maker is judged separately against
-    ``limits.max_busy_early_finish_rate``.
+    ``limits.max_busy_early_finish_rate`` and
+    ``limits.allowed_busy_early_finishes``.
     """
-    allowed = limits.max_busy_early_finish_rate * (result.total_bots_started or 0)
+    allowed = limits.allowed_busy_early_finishes_for(result.total_bots_started)
     over = [
         describe_busy_early_finish(result, trial_maker_id)
         for trial_maker_id, stats in (result.busy_early_finishes or {}).items()
@@ -929,7 +947,7 @@ def overshoot(result, limits):
     queue_wait = queue_wait_p95(result)
     if queue_wait is not None and limits.max_queue_p95_s:
         ratios.append(queue_wait / limits.max_queue_p95_s)
-    allowed_busy = limits.max_busy_early_finish_rate * (result.total_bots_started or 0)
+    allowed_busy = limits.allowed_busy_early_finishes_for(result.total_bots_started)
     if allowed_busy:
         ratios += [
             stats["participants"] / allowed_busy

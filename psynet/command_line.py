@@ -4399,6 +4399,17 @@ _test_options["performance_max_queue_p95_s"] = click.option(
     but never fail the test. Used alongside --max-p95-ms. Defaults to 5.""",
 )
 
+_test_options["performance_max_busy_early_finish_rate"] = click.option(
+    "--max-busy-early-finish-rate",
+    type=click.FloatRange(min=0, max=1),
+    default=None,
+    help="""
+    The share of bots started that may get fewer trials in a chain trial
+    maker because every chain was busy, while the test still counts as
+    within capacity; one such bot per trial maker is always allowed. Used
+    alongside --max-p95-ms. Defaults to 0.01 (1%).""",
+)
+
 _test_options["performance_time_factor"] = click.option(
     "--time-factor",
     type=click.FloatRange(min=0),
@@ -4740,6 +4751,7 @@ def performance_test(ctx):
 @_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
+@_test_options["performance_max_busy_early_finish_rate"]
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_log"]
 @_test_options["performance_test_label"]
@@ -4898,6 +4910,7 @@ def _run_performance_test_with_existing_server(
     no_confirm=False,
     max_p95_ms=None,
     max_queue_p95_s=None,
+    max_busy_early_finish_rate=None,
     bot_processes=None,
     bot_log=None,
     test_label=None,
@@ -4969,6 +4982,7 @@ def _run_performance_test_with_existing_server(
     limits = CapacityLimits.from_options(
         max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
         max_queue_p95_s=max_queue_p95_s,
+        max_busy_early_finish_rate=max_busy_early_finish_rate,
     )
     # Bot processes append to this log too.
     if bot_log is None:
@@ -5157,6 +5171,7 @@ def _write_suite_json(
         "capacity_search": capacity_search,
         "max_p95_s": limits.max_p95_s,
         "max_queue_p95_s": limits.max_queue_p95_s,
+        "max_busy_early_finish_rate": limits.max_busy_early_finish_rate,
         "duration_minutes": tester.duration_minutes,
         "estimated_duration_minutes": tester.estimated_duration_minutes,
         "session_minutes": tester.session_minutes,
@@ -5820,6 +5835,7 @@ def performance_test__prepare_reset(
 @_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
+@_test_options["performance_max_busy_early_finish_rate"]
 @_test_options["performance_json_output"]
 @_test_options["performance_bot_processes"]
 @_test_options["performance_reset_database"]
@@ -5955,6 +5971,7 @@ def _run_ssh_performance_test(
     no_confirm=False,
     max_p95_ms=None,
     max_queue_p95_s=None,
+    max_busy_early_finish_rate=None,
     bot_processes=None,
     force=False,
 ):
@@ -6009,6 +6026,7 @@ def _run_ssh_performance_test(
     limits = CapacityLimits.from_options(
         max_p95_s=None if max_p95_ms is None else float(max_p95_ms) / 1000,
         max_queue_p95_s=max_queue_p95_s,
+        max_busy_early_finish_rate=max_busy_early_finish_rate,
     )
     with bot_log_file, _exit_on_sigterm():
         database_reset = _ssh_database_reset(remote, reset, experiment["label"])
@@ -6148,6 +6166,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["performance_no_confirm"]
 @_test_options["performance_max_p95_ms"]
 @_test_options["performance_max_queue_p95_s"]
+@_test_options["performance_max_busy_early_finish_rate"]
 @_test_options["performance_bot_processes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory

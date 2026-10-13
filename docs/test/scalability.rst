@@ -307,7 +307,9 @@ A test counts as within capacity if these stay within their limits:
   capacity;
 - the share of bots that got fewer trials in a chain trial maker because
   every chain (or node, in a static trial maker) they could take was busy,
-  at most 1% for each trial maker. With the default
+  at most 1% for each trial maker, set with
+  ``--max-busy-early-finish-rate`` (default 0.01). One such bot is always
+  allowed, so that a single busy chain doesn't fail a small test. With the default
   ``wait_for_networks=False``, a participant who finds every eligible chain
   awaiting an async job or out of trial capacity finishes the block
   early instead of waiting. Static trial makers don't limit trials per node
@@ -318,8 +320,9 @@ A test counts as within capacity if these stay within their limits:
   Unlike wait timeouts, this sets the capacity and the suggested cap:
   chains are busy more often the more participants take part at once, so
   capping them reduces it. Setting ``wait_for_networks=True`` or adding
-  chains reduces it too, and may allow a higher cap. Bots that all arrive
-  together overstate it, so check it with ``--arrival-minutes`` too.
+  chains reduces it too, and may allow a higher cap. How participants
+  arrive can make busy chains more or less common, so judge the cap by the
+  confirmation test, whose bots arrive over a session.
 
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
@@ -396,7 +399,7 @@ larger bot count has exceeded the limits, suggests capping the number of
 participants taking part at once at 80% of it. After a confirmation test the
 cap comes from that test, for example::
 
-    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 high-priority async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy; 170 did not (p95 response time 622 ms).
+    Capacity: about 160 concurrent bots kept p95 response time under 500 ms, p95 high-priority async queue wait under 5 s and at most 0.1% of requests failing (1 always allowed), 1% of requests answered busy or stale (10 always allowed), 1% of bots failing, 1% of participants failed by the experiment for waiting too long and 1% getting fewer trials because every chain was busy (1 always allowed); 170 did not (p95 response time 622 ms).
     Confirmed: the 128-bot confirmation test (bots arriving over 12 min, 24 min long) kept the same limits. Cap concurrent participants at about 128.
 
 Without a confirmation test, the second line reads ``Cap concurrent

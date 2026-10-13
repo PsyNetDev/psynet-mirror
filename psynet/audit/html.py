@@ -860,7 +860,9 @@ def render_performance_result(
     options_data = evidence.performance_data.get("options")
     options_data = options_data if isinstance(options_data, dict) else {}
     limits = CapacityLimits.from_options(
-        options_data.get("max_p95_s"), options_data.get("max_queue_p95_s")
+        options_data.get("max_p95_s"),
+        options_data.get("max_queue_p95_s"),
+        options_data.get("max_busy_early_finish_rate"),
     )
     body: list[str] = []
     for row in evidence.performance_results:

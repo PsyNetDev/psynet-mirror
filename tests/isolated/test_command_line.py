@@ -4786,6 +4786,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         ("performance_stagger", "-0.5"),
         ("performance_max_p95_ms", "0"),
         ("performance_max_queue_p95_s", "-1"),
+        ("performance_max_busy_early_finish_rate", "1.5"),
     ],
 )
 def test_performance_test_options_reject_out_of_range_values(option, value):

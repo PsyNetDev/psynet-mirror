@@ -1271,7 +1271,8 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
         assert "1 bot that got fewer trials in main_chain" in summary
     else:
         assert capacity_failures(result) == [
-            "23 bots got fewer trials in main_chain because every chain was busy"
+            "23 of 150 bots started (15%) got fewer trials in main_chain because "
+            "every chain was busy"
         ]
         # 23 is 15 times the 1.5 allowed, so a retry goes down to half.
         assert retry_bot_count(result, CapacityLimits()) == 75
@@ -1283,6 +1284,24 @@ def test_participants_who_got_fewer_trials_because_chains_were_busy_limit_capaci
         assert "Capacity: about 100 concurrent bots" in search
         assert "Cap concurrent participants at about 80" in search
         assert "wait_for_networks=True" in search
+        assert "judge the cap by the confirmation test" in search
+
+
+@pytest.mark.parametrize(
+    "participants, max_rate, passes",
+    [(1, None, True), (2, None, False), (2, 0.05, True)],
+)
+def test_busy_chains_allow_one_bot_and_a_configurable_share(
+    participants, max_rate, passes
+):
+    result = _base_result(
+        n_bots=42,
+        total_bots_started=55,
+        busy_early_finishes={"main_chain": {"participants": participants}},
+    )
+    limits = CapacityLimits.from_options(max_busy_early_finish_rate=max_rate)
+
+    assert (capacity_failures(result, limits) == []) == passes
 
 
 def test_test_results_show_participants_the_experiment_failed():
