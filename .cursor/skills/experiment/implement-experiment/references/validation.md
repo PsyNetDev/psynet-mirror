@@ -67,7 +67,7 @@ on the order of the estimated duration if you want completions). Skip
 an expensive re-run when a suitable `audit/artifacts/performance.json` already
 exists for the current implementation.
 
-### Sizing the participant cap
+### Choosing how many participants to run at once
 
 ```bash
 psynet performance-test local --n-bots auto --json-output performance.json
@@ -76,14 +76,14 @@ psynet performance-test local --n-bots auto --json-output performance.json
 The capacity search uses short tests in which all bots arrive together. For
 experiments with async jobs (audio analysis, REPP tapping, LLM calls) or
 long holds, every bot hits each job and hold at once, so the search
-underestimates capacity. In the JSON, compare each result's `startup_phase`
+underestimates how many participants the server can handle. In the JSON, compare each result's `startup_phase`
 and `steady_state_phase`, and read the validation test (`"confirmation": true`
 in the JSON), a long run at the recommended number of participants with
 spread-out arrivals. When they
 disagree, trust the long run with spread-out arrivals. Without
 `--reset-database` that run starts on the data the search left, so if it
 fails after the database grew a lot, rerun with `--reset-database` before
-capping lower. Only high-priority async jobs, which participants wait for,
+recommending a lower number. Only high-priority async jobs, which participants wait for,
 count against `--max-queue-p95-s`; a low-priority backlog (`queue_waits.low`
 in the JSON) is only reported, but if the summary warns that it grew during
 a steady state, the workers can't keep up long-term. That check uses the
@@ -91,9 +91,9 @@ validation test if there is one, otherwise the largest passing test or the
 first failing one. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
-`cpu_avg` from `async_job_stats`. If the queue limits capacity, set
+`cpu_avg` from `async_job_stats`. If the queue fails the next count, set
 `worker_greenlets_per_process = 1` and raise `worker_processes`, about one
-per spare CPU core. Report how you reached the cap.
+per spare CPU core. Report how you reached the recommended number of participants.
 
 Each search test lasts one session but at most 5 minutes, so in a longer
 experiment the search only loads its first few minutes, such as consent and
@@ -110,11 +110,11 @@ and at least two sessions of `--duration-minutes`, and report both runs.
 For chain experiments, also check how many participants got fewer trials
 because every chain was busy (a line under TRIALS PER BOT, and
 `busy_early_finishes` in the JSON). They are not failed, but more than one
-bot and above 1% of bots started (`--max-busy-early-finish-rate`) counts as
-over capacity, and the search suggests a participant cap from it, as for
-slow responses. Arrival patterns change the rate, so judge it from the
-validation test. Besides the cap, `wait_for_networks=True` or more chains
-reduce it and may allow a higher cap.
+bot and above 1% of bots started (`--max-busy-early-finish-rate`) fails the
+test, and the search's recommended number of participants comes from it,
+as for slow responses. Arrival patterns change the rate, so judge it from the
+validation test. Besides recommending fewer participants, `wait_for_networks=True` or more
+chains reduce it and may allow more participants at once.
 
 ## Interactive evidence
 
