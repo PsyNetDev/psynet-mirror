@@ -1630,7 +1630,7 @@ def test_recommend_workers(result, n, burst, expected):
         (
             _QUEUE_SEARCH
             + [_tapping_result(96, 10, 0.55, confirmation=True, server_cores=12)],
-            "(all the cores left)\n  In the 96-bot test that confirmed this cap, "
+            "(all the cores left)\nIn the 96-bot test that confirmed this cap, "
             "the 10 worker processes were busy 55% of the time. Keep the current "
             "10. To go above 96, use a larger server or cheaper jobs.",
             "raise worker_processes above",
