@@ -666,7 +666,7 @@ def _long_test_text(result, n, confirmation_planned):
     test = f"--n-bots {n} --arrival-minutes {arrival:g} --duration-minutes {duration:g}"
     if confirmation_planned:
         return (
-            "The confirmation test, which lasts longer than a session, would "
+            "The search's last test, which lasts longer than a session, would "
             f"measure it; to run it alone, use {test}."
         )
     return f"A test longer than a session measures it: {test}."

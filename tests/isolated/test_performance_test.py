@@ -1925,7 +1925,7 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
     [
         (
             True,
-            "The confirmation test, which lasts longer than a session, would "
+            "The search's last test, which lasts longer than a session, would "
             "measure it; to run it alone, use --n-bots 104 --arrival-minutes 13 "
             "--duration-minutes 26.",
         ),
