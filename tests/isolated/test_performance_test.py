@@ -2226,20 +2226,30 @@ def _remote_app(respond, isolated=True):
     return remote
 
 
-def test_a_remote_reset_restores_only_the_apps_database_in_its_container(caplog):
+@pytest.mark.parametrize(
+    "prefill, restore_fails", [(None, False), (None, True), (5, False)]
+)
+def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
+    prefill, restore_fails, caplog
+):
     from psynet.perf_ssh import DatabaseReset
 
     in_use = [(1, 'ERROR:  55006: database "my-app" is being accessed\n')]
     answers = _answers({**_DISK, "pg_tables": "participant\n", "count(*)": "3\n"})
+    restores = []
 
     def respond(cmd):
         if 'DROP DATABASE IF EXISTS "my-app"' in cmd and in_use:
             return in_use.pop()
+        if 'CREATE DATABASE "my-app" TEMPLATE' in cmd:
+            restores.append(cmd)
+            if restore_fails and len(restores) == 2:
+                return (1, "ERROR:  53100: could not extend file: No space left\n")
         return answers(cmd)
 
     remote = _remote_app(respond)
     remote.stop, remote.start = Mock(), Mock()
-    reset = DatabaseReset(remote)
+    reset = DatabaseReset(remote, prefill)
     with caplog.at_level("INFO"):
         reset()
         reset()
@@ -2249,17 +2259,29 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(caplog)
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
     snapshot = reset.snapshot
     assert snapshot.startswith("my-app_snapshot_")
+    baseline = reset._copies[0]
+    assert baseline.startswith("my-app_baseline_") == bool(prefill)
+    original = baseline if prefill else snapshot
     assert re.findall(r"(?:CREATE|DROP) DATABASE [^']*", " ".join(sql)) == [
+        *([f'CREATE DATABASE "{baseline}" TEMPLATE "my-app"'] if prefill else []),
         f'CREATE DATABASE "{snapshot}" TEMPLATE "my-app"',
         'DROP DATABASE IF EXISTS "my-app"',
         'DROP DATABASE IF EXISTS "my-app"',
         f'CREATE DATABASE "my-app" TEMPLATE "{snapshot}"',
-        f'DROP DATABASE IF EXISTS "{snapshot}"',
+        'DROP DATABASE IF EXISTS "my-app"',
+        f'CREATE DATABASE "my-app" TEMPLATE "{original}"',
+        *(
+            []
+            if restore_fails
+            else [f'DROP DATABASE IF EXISTS "{c}"' for c in reset._copies]
+        ),
     ]
     assert any("redis-cli --scan --pattern" in c for c in remote.executor.commands)
     assert reset.snapshot_rows == {"participant": 3}
-    assert remote.stop.call_count == remote.start.call_count == 2
-    assert "already held 3 participants when the snapshot was taken" in caplog.text
+    assert remote.stop.call_count == 3 + bool(prefill)
+    assert remote.start.call_count == remote.stop.call_count - restore_fails
+    assert ("already held 3 participants" in caplog.text) == (not prefill)
+    assert ("Could not restore the database my-app" in caplog.text) == restore_fails
 
 
 def test_remote_output_leaves_out_stderr_unless_the_command_fails():

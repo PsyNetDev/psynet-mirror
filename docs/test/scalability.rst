@@ -669,16 +669,20 @@ on to the old database. It then recreates the database from the snapshot
 with ``psql`` inside the app's PostgreSQL container, empties the app's async
 job queues, and starts again only the containers it stopped, waiting until
 the web server answers and the workers have registered with RQ. That takes
-a few seconds per gigabyte of data on top of restarting the app. At the end
-it drops the snapshot, and prints a ``dropdb`` command if that fails. Files
-that the bots uploaded or generated stay in the asset storage, because only
-the database rows that refer to them are reset.
+a few seconds per gigabyte of data on top of restarting the app. At the end,
+even after a failed reset or when you interrupt the run, it restores the
+database in the same way to how the run found it, so that every run starts
+from the same data, and then drops the snapshot, printing a ``dropdb``
+command if that fails. If the restore fails, PsyNet keeps the snapshot and
+prints the commands that restore the database from it by hand. Files that
+the bots uploaded or generated stay in the asset storage, because only the
+database rows that refer to them are reset.
 
 The snapshot holds whatever the database held when the run started. If it
-already held participants, for example from an earlier run, PsyNet warns
-that every test starts from that data. To start from an empty database,
-destroy the app with ``psynet destroy ssh``; the next ``psynet
-performance-test ssh`` deploys it again.
+already held participants, for example from manual testing or a run that
+couldn't restore it, PsyNet warns that every test starts from that data. To
+start from an empty database, destroy the app with ``psynet destroy ssh``;
+the next ``psynet performance-test ssh`` deploys it again.
 
 If a worker still hasn't registered 180 s after the restart, the reset
 fails, and the error names the worker containers and gives the ``docker
@@ -710,11 +714,11 @@ so before one PsyNet checks, inside the PostgreSQL container, that the disk
 holding PostgreSQL's data has at least twice the database's size free, and
 refuses to reset if it can't check.
 
-If a run is killed before it drops its snapshot, the snapshot stays. With
+If a run is killed before it drops its copies, they stay. With
 Cloudflare ingress the app has its own PostgreSQL container, whose volume
 goes when you destroy the app. With classic ingress, apps share one
 PostgreSQL container, and ``psynet destroy ssh`` doesn't remove the
-``*_snapshot_*`` or ``psynet_prefill_*`` databases that interrupted runs or
+``*_snapshot_*``, ``*_baseline_*`` or ``psynet_prefill_*`` databases that interrupted runs or
 older PsyNet versions left there; drop them by hand with ``docker exec
 dallinger-postgresql-1 dropdb -U dallinger <name>``.
 
@@ -725,10 +729,13 @@ database before the first test:
 
     psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
-This implies ``--reset-database``. It runs 1,500 bots through the
+This implies ``--reset-database``. It first copies the database to a
+temporary ``<app>_baseline_<time>`` database, runs 1,500 bots through the
 experiment inside the web container, 50 at a time and without pauses, waits
 for their async jobs to finish, and then takes the snapshot, so every test
-starts with 1,500 participants' data. The bots use the same routes as
+starts with 1,500 participants' data. At the end it restores the database
+from the baseline copy, so the next run doesn't pre-fill on top of this
+one's participants, and drops both copies. The bots use the same routes as
 participants, so the data is what the experiment itself stores, but it
 takes time: at about 250 requests per participant, a few hundred requests
 per second fill 1,500 participants in about an hour, and every run

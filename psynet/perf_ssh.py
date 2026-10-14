@@ -29,7 +29,7 @@ Design constraints:
 - SQL runs through ``docker exec <postgres container> psql`` as the
   container's superuser (:class:`_PsqlCursor`), never through an SSH
   tunnel, so the database is never reached as if it were local.
-- Only the app's own database and the snapshot taken during the run are
+- Only the app's own database and the copies taken during the run are
   ever dropped. The database name comes from the web container's
   ``DATABASE_URL`` and must be the app name; the PostgreSQL container is
   the one Dallinger's export finds for the app.
@@ -520,7 +520,11 @@ class DatabaseReset:
     database if asked, waits for async jobs to finish, and takes the snapshot
     with ``CREATE DATABASE ... TEMPLATE``, a file-level copy that keeps
     sequences, indexes and table bloat. Every later call drops the database
-    and creates it again from the snapshot. :meth:`close` drops the snapshot.
+    and creates it again from the snapshot. :meth:`close` restores the
+    database to how the run found it, so that every run starts from the same
+    data, and drops the snapshot. When pre-filling, the first call also
+    copies the database before the pre-fill, and :meth:`close` restores that
+    copy.
 
     PostgreSQL only copies or drops a database that nobody is connected to,
     so each call stops the app's server processes (:meth:`RemoteApp.stop`),
@@ -563,6 +567,10 @@ class DatabaseReset:
         self.snapshot = None
         # Rows in each growing table of the snapshot, once taken.
         self.snapshot_rows = None
+        # Every copy, named before it is made, so that close() drops interrupted ones.
+        self._copies = []
+        # The complete copy of the database as the run found it.
+        self._original = None
 
     def __call__(self):
         """Take or restore the snapshot, with the app's server processes stopped meanwhile.
@@ -571,86 +579,128 @@ class DatabaseReset:
         fails, they stay stopped and the error propagates; the caller then
         calls :meth:`close` and :meth:`RemoteApp.start_stopped_services`.
         """
-        taking = self.snapshot is None
-        if taking:
-            waiting = self.remote.prepare(
-                prefill_participants=self._prefill_participants,
-                async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S,
-            )
-            if waiting:
-                raise RuntimeError(
-                    f"{waiting:,} async jobs had not finished after "
-                    f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so no snapshot was "
-                    "taken: their jobs would be lost at each reset. Check the "
-                    "experiment's async jobs in the server log."
-                )
-        logger.info("")
-        logger.info(
-            "Taking a snapshot of the database..."
-            if taking
-            else f"Resetting the database to {self.snapshot}..."
+        if self.snapshot is not None:
+            logger.info("")
+            logger.info(f"Resetting the database to {self.snapshot}...")
+            self._restore(self.snapshot)
+            return
+        if self._prefill_participants:
+            logger.info("")
+            logger.info("Copying the database before pre-filling it...")
+            self._original = self._take_copy("baseline")
+        waiting = self.remote.prepare(
+            prefill_participants=self._prefill_participants,
+            async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S,
         )
-        self.remote.stop()
-        if taking:
-            stamp = f"_snapshot_{datetime.datetime.now():%Y%m%d%H%M%S}"
-            # Named first, so that close() drops a copy that was interrupted.
-            self.snapshot = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
-            self._copy(self.database, self.snapshot)
-        else:
-            self._check_disk_space(self.snapshot)
-            self._run_when_unused(
-                self.database, f"DROP DATABASE IF EXISTS {_quote_ident(self.database)}"
+        if waiting:
+            raise RuntimeError(
+                f"{waiting:,} async jobs had not finished after "
+                f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so no snapshot was "
+                "taken: their jobs would be lost at each reset. Check the "
+                "experiment's async jobs in the server log."
             )
-            self._copy(self.snapshot, self.database)
-        self.remote.clear_job_queues()
-        self.remote.start()
-        if self.snapshot_rows is None:
-            from psynet.perf_test.measure import database_rows
+        logger.info("")
+        logger.info("Taking a snapshot of the database...")
+        self.snapshot = self._take_copy("snapshot")
+        self._original = self._original or self.snapshot
 
-            self.snapshot_rows = database_rows(self._cursor(self.database))
-            rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
-            logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
-            n_participants = self.snapshot_rows.get("participant", 0)
-            if not self._prefill_participants and n_participants:
-                logger.warning(
-                    warning(
-                        f"The database already held {n_participants:,} "
-                        "participants when the snapshot was taken, for example "
-                        "from an earlier run, so every test starts from that "
-                        "data rather than from a fresh database. To start "
-                        "fresh, destroy the app with 'psynet destroy ssh "
-                        f"--server {self.remote.server} --app {self.database}'; "
-                        "the next 'psynet performance-test ssh' deploys it again "
-                        "with an empty database."
-                    )
+        from psynet.perf_test.measure import database_rows
+
+        self.snapshot_rows = database_rows(self._cursor(self.database))
+        rows = ", ".join(f"{t} {n:,}" for t, n in self.snapshot_rows.items())
+        logger.info(f"Snapshot {self.snapshot}: {rows} rows.")
+        n_participants = self.snapshot_rows.get("participant", 0)
+        if not self._prefill_participants and n_participants:
+            logger.warning(
+                warning(
+                    f"The database already held {n_participants:,} "
+                    "participants when the snapshot was taken, for example "
+                    "from manual testing or a run that couldn't restore it, so "
+                    "every test starts from that data rather than from a fresh "
+                    "database. To start fresh, destroy the app with 'psynet "
+                    f"destroy ssh --server {self.remote.server} --app "
+                    f"{self.database}'; the next 'psynet performance-test ssh' "
+                    "deploys it again with an empty database."
                 )
+            )
 
     def close(self):
-        """Drop the snapshot, warning instead of raising if that fails.
+        """Restore the database to how the run found it, then drop the copies, warning instead of raising if that fails.
 
-        That way a test's own error is the one that propagates;
-        ``click.Abort`` and ``click.exceptions.Exit``, which are also
-        :class:`RuntimeError`, still propagate.
+        A copy is kept if the restore fails, so that the database can be
+        restored by hand. That way a test's own error is the one that
+        propagates; ``click.Abort``, ``click.exceptions.Exit`` and
+        interrupts still propagate after the warning.
         """
         import click
 
-        if self.snapshot is None:
-            return
-        try:
-            self._run_when_unused(
-                self.snapshot, f"DROP DATABASE IF EXISTS {_quote_ident(self.snapshot)}"
-            )
-        except (click.Abort, click.exceptions.Exit):
-            raise
-        except RuntimeError as e:
-            logger.warning(
-                warning(
-                    f"Could not drop the snapshot database {self.snapshot} ({e}). "
-                    f"Drop it on {self.remote.server} with: docker exec "
-                    f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
-                    f"{self.snapshot}'"
+        if self._original is not None:
+            logger.info("")
+            logger.info("Restoring the database to how it was before the run...")
+            try:
+                self._restore(self._original)
+            except BaseException as e:
+                logger.warning(
+                    warning(
+                        f"Could not restore the database {self.database} to how "
+                        f"it was before the run ({str(e) or type(e).__name__}), "
+                        "so the next run would start from this run's data. "
+                        f"{self._original} keeps the database as it was. To "
+                        f"restore it on {self.remote.server}, stop the app's "
+                        "server processes, run: docker exec "
+                        f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
+                        f'--if-exists {self.database} && createdb -U "$POSTGRES_USER" '
+                        f"-T {self._original} {self.database}', start them "
+                        f"again, and then drop {self._original} with dropdb."
+                    )
                 )
-            )
+                if not isinstance(e, RuntimeError) or isinstance(
+                    e, (click.Abort, click.exceptions.Exit)
+                ):
+                    raise
+                return
+        for copy in self._copies:
+            try:
+                self._run_when_unused(
+                    copy, f"DROP DATABASE IF EXISTS {_quote_ident(copy)}"
+                )
+            except (click.Abort, click.exceptions.Exit):
+                raise
+            except RuntimeError as e:
+                logger.warning(
+                    warning(
+                        f"Could not drop the database {copy} ({e}). "
+                        f"Drop it on {self.remote.server} with: docker exec "
+                        f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
+                        f"{copy}'"
+                    )
+                )
+
+    def _take_copy(self, kind):
+        """Copy the database to a new ``<app>_<kind>_<time>`` database with the server processes stopped, and return its name."""
+        stamp = f"_{kind}_{datetime.datetime.now():%Y%m%d%H%M%S}"
+        name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
+        self._copies.append(name)
+        self.remote.stop()
+        self._copy(self.database, name)
+        self.remote.clear_job_queues()
+        self.remote.start()
+        return name
+
+    def _restore(self, source):
+        """Recreate the database from database ``source`` with the server processes stopped.
+
+        They may already be stopped by a reset that failed.
+        """
+        if not self.remote._stopped:
+            self.remote.stop()
+        self._check_disk_space(source)
+        self._run_when_unused(
+            self.database, f"DROP DATABASE IF EXISTS {_quote_ident(self.database)}"
+        )
+        self._copy(source, self.database)
+        self.remote.clear_job_queues()
+        self.remote.start()
 
     def _cursor(self, database="postgres"):
         return _PsqlCursor(self.remote.executor, self.container, database)
