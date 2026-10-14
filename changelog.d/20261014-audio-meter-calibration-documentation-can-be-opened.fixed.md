@@ -1,1 +1,1 @@
-`AudioMeterControl(calibrate=True)` now shows its parameter documentation in a collapsible section below the sliders. It used to sit in a "Documentation" tab that could not be opened, because participant pages load no Bootstrap JavaScript.
+The "Sliders" and "Documentation" tabs of `AudioMeterControl(calibrate=True)` now switch. They relied on Bootstrap's JavaScript, which participant pages do not load, so the documentation tab could not be opened.

@@ -1073,38 +1073,59 @@
 {% macro audio_meter_calibrate(params) %}
     <style type="text/css">
         #audio-meter-documentation {
-            margin-top: 20px;
-        }
-        #audio-meter-documentation summary {
-            margin-bottom: 10px;
+            padding-top: 20px;
         }
     </style>
 
-    <div id="audio-meter-sliders">
-        {{ multi_slider(params.sliders) }}
+    <ul class="nav nav-tabs" id="audio-meter-calibrate-tabs">
+        <li class="nav-item">
+            <a href="#audio-meter-sliders" class="nav-link active" data-bs-toggle="tab">{{ pgettext("audio_meter_calibrate", "Sliders") }}</a>
+        </li>
+        <li class="nav-item">
+            <a href="#audio-meter-documentation" class="nav-link" data-bs-toggle="tab">{{ pgettext("audio_meter_calibrate", "Documentation") }}</a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <div id="audio-meter-sliders" class="tab-pane active">
+            {{ multi_slider(params.sliders) }}
+        </div>
+
+        <div id="audio-meter-documentation" class="tab-pane">
+            <p>
+                {{ pgettext("audio_meter_calibrate", "The <strong>decay</strong> parameters determine the amount of smoothing that happens to the signal, and have units of seconds.") }}
+                {{ pgettext("audio_meter_calibrate", "A high decay parameter means that the signal takes a long time to decay (i.e. high smoothing).") }}
+                {{ pgettext("audio_meter_calibrate", "There are three decay parameters: one for the displayed audio meter, one for the 'too-high' detector, and one for the 'too-low' detector.") }}
+
+            </p>
+            <p>
+                {{ pgettext("audio_meter_calibrate", "The <strong>threshold</strong> parameters determine the point at which the volume is determined to be 'too high' or 'too low'.") }}
+
+            </p>
+            <p>
+                {{ pgettext("audio_meter_calibrate", "The <strong>grace</strong> parameters determine how long the volume must be outside the respective threshold for a warning message to be triggered.") }}
+
+            </p>
+            <p>
+                {{ pgettext("audio_meter_calibrate", "The <strong>message duration</strong> parameters determine how long warning messages are displayed for.") }}
+
+            </p>
+        </div>
     </div>
 
-    {# Participant pages load no Bootstrap JavaScript, so Bootstrap tabs
-       cannot switch here; <details> needs none. #}
-    <details id="audio-meter-documentation">
-        <summary>{{ pgettext("audio_meter_calibrate", "Documentation") }}</summary>
-        <p>
-            {{ pgettext("audio_meter_calibrate", "The <strong>decay</strong> parameters determine the amount of smoothing that happens to the signal, and have units of seconds.") }}
-            {{ pgettext("audio_meter_calibrate", "A high decay parameter means that the signal takes a long time to decay (i.e. high smoothing).") }}
-            {{ pgettext("audio_meter_calibrate", "There are three decay parameters: one for the displayed audio meter, one for the 'too-high' detector, and one for the 'too-low' detector.") }}
-        </p>
-        <p>
-            {{ pgettext("audio_meter_calibrate", "The <strong>threshold</strong> parameters determine the point at which the volume is determined to be 'too high' or 'too low'.") }}
-        </p>
-        <p>
-            {{ pgettext("audio_meter_calibrate", "The <strong>grace</strong> parameters determine how long the volume must be outside the respective threshold for a warning message to be triggered.") }}
-        </p>
-        <p>
-            {{ pgettext("audio_meter_calibrate", "The <strong>message duration</strong> parameters determine how long warning messages are displayed for.") }}
-        </p>
-    </details>
-
     <script>
+        // Participant pages load no Bootstrap JavaScript, so switch the tabs here.
+        document.querySelectorAll("#audio-meter-calibrate-tabs .nav-link").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                event.preventDefault();
+                document.querySelectorAll("#audio-meter-calibrate-tabs .nav-link").forEach(function (other) {
+                    const isTarget = other === link;
+                    other.classList.toggle("active", isTarget);
+                    document.querySelector(other.getAttribute("href")).classList.toggle("active", isTarget);
+                });
+            });
+        });
+
         psynet.trial.onEvent("trialConstruct", function () {
             psynet.page.control.audioMeter.updateFromSliders();
             psynet.trial.setRepeatingTimer(function () {
