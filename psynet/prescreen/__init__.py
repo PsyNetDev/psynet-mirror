@@ -2057,12 +2057,7 @@ class BrowserCapabilityCheckPage(ModularPage):
 
 def _browser_capability_permission_intro(perm_caps):
     """InfoPage explaining an upcoming browser permission prompt."""
-    if perm_caps == {"microphone"}:
-        device = "microphone"
-    elif perm_caps == {"camera"}:
-        device = "camera"
-    else:
-        device = "microphone and camera"
+    device = " and ".join(sorted(perm_caps))
     return InfoPage(
         Markup(
             f"<p>This experiment needs to check that your {device} is working.</p>"
