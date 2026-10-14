@@ -17,6 +17,7 @@ from psynet.modular_page import (
     ColorPrompt,
     ImagePrompt,
     ModularPage,
+    NullControl,
     PushButtonControl,
     RadioButtonControl,
     TextControl,
@@ -2023,3 +2024,105 @@ class AudioForcedChoiceTest(StaticTrialMaker):
             )
             for i, stimulus in enumerate(stimuli)
         ]
+
+
+class BrowserCapabilityCheckPage(ModularPage):
+    """Spinner page that runs JS capability checks and submits pass/fail result."""
+
+    skip_beforeunload = True
+
+    def __init__(self, capabilities):
+        spinner = Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))
+
+        super().__init__(
+            label="browser_capability_check",
+            prompt=spinner,
+            control=NullControl(),
+            time_estimate=0.0,
+            show_next_button=False,
+            js_vars={"capabilities": sorted(capabilities)},
+            js_page_modules=["/static/scripts/browser-capability-check.js"],
+        )
+
+    def get_bot_response(self, experiment, bot, page=None, prompt=None):
+        from psynet.bot import BotResponse
+
+        return BotResponse(answer={"passed": True}, metadata=self.metadata())
+
+
+def _browser_capability_permission_intro(perm_caps):
+    """InfoPage explaining an upcoming browser permission prompt."""
+    if perm_caps == {"microphone"}:
+        device = "microphone"
+    elif perm_caps == {"camera"}:
+        device = "camera"
+    else:
+        device = "microphone and camera"
+    return InfoPage(
+        Markup(
+            f"<p>This experiment needs to check that your {device} is working.</p>"
+            f"<p>Your browser will ask for permission to access your {device}. "
+            "Please click <strong>Allow</strong> when prompted.</p>"
+        ),
+        time_estimate=5.0,
+    )
+
+
+class BrowserCapabilityCheck(Module):
+    """
+    Prescreener that tests the participant's browser against declared capability
+    requirements and terminates with :class:`~psynet.page.UnsuccessfulEndPage`
+    if any check fails.  Place near the start of the timeline.
+
+    Parameters
+    ----------
+    label : str
+    capabilities : iterable[str] | None
+        Capability tokens to test.  ``None`` (default) resolves to
+        ``Experiment.browser_capabilities`` at runtime.
+    """
+
+    def __init__(self, label="browser_capability_check", capabilities=None):
+        from psynet.experiment import BROWSER_CAPABILITY_TOKENS, PERMISSION_CAPABILITY_TOKENS
+
+        if capabilities is not None:
+            capabilities = frozenset(capabilities)
+            unknown = capabilities - BROWSER_CAPABILITY_TOKENS
+            if unknown:
+                raise ValueError(
+                    f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
+                    f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
+                )
+
+        self.capabilities = capabilities
+
+        def _make_pages(experiment, participant):
+            caps = (
+                self.capabilities
+                if self.capabilities is not None
+                else frozenset(experiment.browser_capabilities)
+            )
+            if not caps:
+                return []
+            perm_caps = caps & PERMISSION_CAPABILITY_TOKENS
+            pages = []
+            if perm_caps:
+                pages.append(_browser_capability_permission_intro(perm_caps))
+            pages.append(BrowserCapabilityCheckPage(caps))
+            return pages
+
+        elts = join(
+            PageMaker(_make_pages, time_estimate=0.0),
+            conditional(
+                f"{label}_fail",
+                lambda exp, p: isinstance(p.answer, dict)
+                and not p.answer.get("passed", True),
+                UnsuccessfulEndPage(failure_tags=["browser_capability_check"]),
+            ),
+        )
+        super().__init__(label, elts)
