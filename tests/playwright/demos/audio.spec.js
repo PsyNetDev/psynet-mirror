@@ -439,7 +439,8 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       secondCheckpointEventBaseline
     );
 
-    // Section 17: validate calibrated meter variants expose expected slider controls.
+    // Section 17: validate calibrated meter variants expose expected slider controls
+    // and that the calibration documentation expands.
     await expectPromptContains(
       experimentPage,
       "default meter parameters are designed to work well for music playback"
@@ -449,6 +450,11 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       .locator("#audio-meter-sliders .slider-range")
       .count();
     expect(audioMeterCalibrationSliderCount).toBeGreaterThanOrEqual(9);
+    const calibrationDocs = experimentPage.locator("#audio-meter-documentation");
+    const decayDocs = calibrationDocs.getByText("units of seconds");
+    await expect(decayDocs).toBeHidden();
+    await calibrationDocs.locator("summary").click();
+    await expect(decayDocs).toBeVisible();
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
     await expectPromptContains(experimentPage, "TappingAudioMeterControl class");

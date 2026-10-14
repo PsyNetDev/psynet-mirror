@@ -1,0 +1,1 @@
+`AudioMeterControl(calibrate=True)` now shows its parameter documentation in a collapsible section below the sliders. It used to sit in a "Documentation" tab that could not be opened, because participant pages load no Bootstrap JavaScript.
