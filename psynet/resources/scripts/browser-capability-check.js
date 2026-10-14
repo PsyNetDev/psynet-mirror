@@ -1,5 +1,5 @@
 export async function activate({vars, psynet}) {
-    const capabilities = vars["capabilities"] || [];
+    const capabilities = vars["capabilities"] ?? [];
     const result = await runChecks(capabilities);
     // nextPage() requires pageReady=true, which is set by the framework after
     // activate() returns — so calling it directly or via setTimeout(0) fires too
