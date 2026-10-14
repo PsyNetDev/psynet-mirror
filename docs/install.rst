@@ -14,7 +14,8 @@ You will install:
 - Git, for version control;
 - `Docker <https://www.docker.com/>`_, which runs the database and cache
   that PsyNet uses on your computer;
-- Google Chrome, the browser PsyNet is tested with;
+- Google Chrome, recommended for local development and testing (participants
+  can also use Edge, Firefox, and Safari);
 - the PostgreSQL client library (libpq), which PsyNet's database driver is
   built against;
 - the Heroku command-line tool, which ``psynet test local`` currently uses to
@@ -66,7 +67,7 @@ Choose your operating system:
 
       Open a new terminal so that ``uv`` is on your ``PATH``.
 
-      Install Google Chrome:
+      Install Google Chrome (recommended for local development):
 
       .. code-block:: bash
 
