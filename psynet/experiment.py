@@ -616,9 +616,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
-        Forces the user to use a Chromium-based browser (Chrome, Edge, Brave, Opera).
-        If another browser is used, it will give instructions on how to install Google Chrome.
+        *Deprecated.* Forces the user to use a Chromium-based browser (Chrome, Edge, Brave,
+        Opera). If another browser is used, participants see instructions to install Chrome.
         Default: ``False``.
+
+        Note: when used with Lucid recruitment, the Lucid qualification (QuestionID 1035)
+        gates on the Chrome brand only, so Edge/Brave/Opera participants are excluded at
+        the recruitment stage even though PsyNet would admit them. This mismatch cannot be
+        resolved until Lucid exposes Chromium-based precodes. Prefer ``browser_capabilities``
+        for feature requirements; leave this unset to admit all modern browsers.
 
     leave_comments_on_every_page : ``bool``
         Allows the user to leave comments on every page.
@@ -2540,6 +2546,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+
+        if config.get("force_google_chrome", None) is not None:
+            import warnings
+
+            warnings.warn(
+                "force_google_chrome is deprecated and will be removed in a future release. "
+                "It still works, but consider migrating: use browser_capabilities for "
+                "feature-specific requirements (e.g. microphone, screen_capture), or leave "
+                "force_google_chrome unset to admit all modern browsers via the css_has check.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         cls.check_browser_capabilities()
 
     @classmethod

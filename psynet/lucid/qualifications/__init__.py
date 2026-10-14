@@ -49,7 +49,11 @@ def create_lucid_recruitment_config(
     allow_mobile_devices : bool, optional
         Defaults to the ``allow_mobile_devices`` config value.
     force_google_chrome : bool, optional
-        Defaults to the ``force_google_chrome`` config value.
+        Defaults to the ``force_google_chrome`` config value. Deprecated; see
+        ``force_google_chrome`` in the experiment config docs. Note that the Lucid
+        qualification (QuestionID 1035) gates on Chrome brand only — Edge, Brave, and
+        Opera participants are excluded at the recruitment stage even though PsyNet's
+        entry check admits them.
     unique_ip : bool
         Require a unique IP address per participant.
     unique_pid : bool
