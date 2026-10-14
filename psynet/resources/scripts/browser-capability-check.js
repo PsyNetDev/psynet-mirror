@@ -1,10 +1,13 @@
 export async function activate({vars, psynet}) {
     const capabilities = vars["capabilities"] || [];
     const result = await runChecks(capabilities);
-    // Defer until after finalizePageReady() sets pageReady=true; calling
-    // nextPage() inside activate() would be blocked because pageReady is
-    // still false while the framework awaits the activate promise.
-    setTimeout(() => psynet.nextPage(result), 0);
+    // Wait for pageReady via the timelinePageReady event, then defer nextPage
+    // one more macrotask so nextPagePending=false has been set. A plain
+    // setTimeout(0) fires before finalizePageReady() completes because
+    // finalizePageReady itself starts with await setTimeout(0) internally.
+    window.addEventListener("timelinePageReady", () => {
+        setTimeout(() => psynet.nextPage(result), 0);
+    }, {once: true});
 }
 
 async function runChecks(capabilities) {
