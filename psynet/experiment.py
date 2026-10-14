@@ -2563,6 +2563,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def check_browser_capabilities(cls):
+        if isinstance(cls.browser_capabilities, str):
+            raise ValueError(
+                "browser_capabilities must be a set of tokens, not a string. "
+                f"Did you mean: browser_capabilities = {{{cls.browser_capabilities!r}}}"
+            )
         unknown = frozenset(cls.browser_capabilities) - BROWSER_CAPABILITY_TOKENS
         if unknown:
             raise ValueError(

@@ -2094,6 +2094,11 @@ class BrowserCapabilityCheck(Module):
         )
 
         if capabilities is not None:
+            if isinstance(capabilities, str):
+                raise ValueError(
+                    "capabilities must be a set of tokens, not a string. "
+                    f"Did you mean: capabilities={{{capabilities!r}}}"
+                )
             capabilities = frozenset(capabilities)
             unknown = capabilities - BROWSER_CAPABILITY_TOKENS
             if unknown:
