@@ -1,0 +1,71 @@
+const path = require("path");
+const { test, expect } = require("./fixtures");
+const { startExperiment, stopExperiment } = require("./psynetHarness");
+
+const CHECK_TIMEOUT_MS = 30000;
+const EXPERIMENT_DIR = "tests/playwright/experiments/entry_check";
+
+// Helper: start server, navigate to ad URL, run check, stop server.
+async function withAdPage(page, options, fn) {
+  const { proc, urlPromise } = startExperiment(path.resolve(EXPERIMENT_DIR), options);
+  try {
+    const adUrl = await urlPromise;
+    await page.goto(adUrl);
+    await fn(page);
+  } finally {
+    await stopExperiment(proc);
+  }
+}
+
+test(
+  "css_has: compatibility warning shown when CSS :has is not supported",
+  { tag: "@both" },
+  async ({ page, context }) => {
+    // Override CSS.supports so that :has selector support appears missing.
+    // This validates the renderBrowserWarning() path and the JS syntax fix.
+    await context.addInitScript(() => {
+      const _orig = CSS.supports.bind(CSS);
+      CSS.supports = (...args) => {
+        if (args.length === 1 && /has/.test(args[0])) return false;
+        return _orig(...args);
+      };
+    });
+
+    await withAdPage(page, {}, async (adPage) => {
+      await expect(adPage.locator("#browser-compatibility-modal")).toBeVisible({
+        timeout: CHECK_TIMEOUT_MS,
+      });
+    });
+  }
+);
+
+test(
+  "Chromium: no compatibility warning with default config",
+  { tag: "@both" },
+  async ({ page }) => {
+    await withAdPage(page, {}, async (adPage) => {
+      // Begin button visible = browser check passed.
+      await expect(
+        adPage.locator("#begin-button, button.btn-primary")
+      ).toBeVisible({ timeout: CHECK_TIMEOUT_MS });
+      await expect(adPage.locator("#browser-compatibility-modal")).toBeHidden();
+    });
+  }
+);
+
+test(
+  "Chromium: admitted without warning when force_google_chrome=True",
+  { tag: "@both" },
+  async ({ page }) => {
+    await withAdPage(
+      page,
+      { env: { force_google_chrome: "true" } },
+      async (adPage) => {
+        await expect(
+          adPage.locator("#begin-button, button.btn-primary")
+        ).toBeVisible({ timeout: CHECK_TIMEOUT_MS });
+        await expect(adPage.locator("#browser-compatibility-modal")).toBeHidden();
+      }
+    );
+  }
+);
