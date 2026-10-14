@@ -396,7 +396,6 @@ def test_browser_warning_does_not_depend_on_page_logo_markup():
                 allow_mobile_devices=False,
                 force_google_chrome=True,
                 force_incognito_mode=False,
-                min_browser_version="80.0",
             ),
         )
 
@@ -1022,7 +1021,7 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
 # browser-detect.html entry-check bug guards
 # ---------------------------------------------------------------------------
 
-def _render_browser_detect(*, force_google_chrome=True, allow_mobile_devices=True, lucid=False):
+def _render_browser_detect(*, force_google_chrome=False, allow_mobile_devices=True, lucid=False):
     from flask import Flask, render_template_string
 
     from psynet.graphics import PsyNetLogo
@@ -1044,7 +1043,6 @@ def _render_browser_detect(*, force_google_chrome=True, allow_mobile_devices=Tru
                 allow_mobile_devices=allow_mobile_devices,
                 force_google_chrome=force_google_chrome,
                 force_incognito_mode=False,
-                min_browser_version="105.0",
             ),
         )
 

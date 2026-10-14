@@ -540,10 +540,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     In addition to the config variables in Dallinger, PsyNet adds the following:
 
-    min_browser_version : `str`
-        The minimum version of Chrome a participant needs to take a study.
-        Default: `105.0`.
-
     wage_per_hour : `float`
         The payment in currency the participant gets per hour. Default: `9.0`.
 
@@ -620,9 +616,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Default: ``'[]'``.
 
     force_google_chrome : ``bool``
-        Forces the user to use the Google Chrome browser. If another browser is used, it will give detailed instructions
-        on how to install Google Chrome.
-        Default: ``True``.
+        Forces the user to use a Chromium-based browser (Chrome, Edge, Brave, Opera).
+        If another browser is used, it will give instructions on how to install Google Chrome.
+        Default: ``False``.
 
     leave_comments_on_every_page : ``bool``
         Allows the user to leave comments on every page.
@@ -2177,7 +2173,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "docker_volumes": "${HOME}/psynet-data/assets:/psynet-data/assets",
             "duration": 100000000.0,
             "experimenter_name": cls.get_username(),
-            "force_google_chrome": True,
+            "force_google_chrome": False,
             "notifier": "logger",
             "leave_comments_on_every_page": False,
             "force_incognito_mode": False,
@@ -2190,9 +2186,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "loglevel": 1,
             "loglevel_worker": 1,
             "min_reward_for_paid_early_exit": 0.20,
-            # Chrome 105 is the first release with CSS :has(), which the default
-            # participant theme uses for selected-option styling.
-            "min_browser_version": "105.0",
             "prolific_is_custom_screening": False,
             "prolific_enable_return_for_bonus": True,
             "prolific_pay_unsuccessful": True,
@@ -4184,7 +4177,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("lucid_recruitment_config", str)
         config.register("lucid_sha1_hashing_key", str, sensitive=True)
         config.register("min_reward_for_paid_early_exit", float)
-        config.register("min_browser_version", str)
         config.register("show_early_exit_button", bool)
         config.register("show_footer", bool)
         config.register("show_progress_bar", bool)
