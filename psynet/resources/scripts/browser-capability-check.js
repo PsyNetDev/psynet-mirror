@@ -1,7 +1,10 @@
 export async function activate({vars, psynet}) {
     const capabilities = vars["capabilities"] || [];
     const result = await runChecks(capabilities);
-    psynet.nextPage(result);
+    // Defer until after finalizePageReady() sets pageReady=true; calling
+    // nextPage() inside activate() would be blocked because pageReady is
+    // still false while the framework awaits the activate promise.
+    setTimeout(() => psynet.nextPage(result), 0);
 }
 
 async function runChecks(capabilities) {
