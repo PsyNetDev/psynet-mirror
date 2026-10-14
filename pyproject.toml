@@ -56,10 +56,12 @@ dependencies = [
 experiment = [
     "babel",
     # TODO: Replace this Git pin with a released dallinger[docker] version once
-    # Dallinger#10065 (worker_processes) and #10070 (preset FLASK_SECRET_KEY)
-    # are on PyPI. The SHA is the tip of the psynet-perf-stack-integration
-    # branch, which is Dallinger master plus those two PRs.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@ce207f93a33767c1a0a9f223bf47b218a916c8bb",
+    # Dallinger#10065 (worker_processes), #10070 (preset FLASK_SECRET_KEY),
+    # #10086 (worker_startup_timeout) and #10087 (no croniter at worker
+    # start-up) are on PyPI. The SHA is the tip of the
+    # psynet-perf-integration-2 branch, which is Dallinger master plus those
+    # four PRs.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@a27acc4d1495147cab44f4117fd307381f4e6fb9",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
