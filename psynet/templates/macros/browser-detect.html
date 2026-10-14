@@ -438,6 +438,10 @@
             }).catch((err) => {
                 console.warn("detectIncognito failed:", err);
                 browser.isIncognito = null;
+                if (browser.forceIncognitoMode) {
+                    renderBrowserWarning();
+                    return;
+                }
                 runBrowserCheck();
             });
             return true;
