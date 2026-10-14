@@ -1,1 +1,0 @@
-When a `psynet performance-test ssh --reset-database` reset fails partway through a run, PsyNet now stops the run but still prints the summary and writes the JSON for the completed tests, records the error as `reset_error`, and warns when the snapshot already held participants from an earlier run.

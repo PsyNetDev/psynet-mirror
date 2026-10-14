@@ -1,1 +1,0 @@
-`psynet performance-test` now reports bots whose run raised an error as failed, even when the server recorded their participants as approved, and counts bots that failed before reaching the server as started. With `--existing`, it explains when no server is registered or answering instead of showing a traceback.

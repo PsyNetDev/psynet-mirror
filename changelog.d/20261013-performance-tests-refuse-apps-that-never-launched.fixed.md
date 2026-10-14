@@ -1,1 +1,0 @@
-``psynet performance-test ssh`` now refuses a performance-test app whose deploy never finished launching the experiment, for example because Dallinger's launch request timed out while a new Cloudflare tunnel came up. Before, a later run with the same ``--app`` tested the unlaunched app; now it explains how to destroy the app and deploy it again.

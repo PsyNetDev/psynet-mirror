@@ -5619,8 +5619,10 @@ def performance_test__docker_ssh(
     the suite: it runs each test in the web container. With
     --reset-database or --prefill-participants, between tests it stops the
     app's server processes, restores the app's database from a snapshot in
-    the app's PostgreSQL, and starts them again; the snapshot is dropped at
-    the end of the run. Without them, the tests use the database as it is.
+    the app's PostgreSQL, and starts them again. At the end of the run it
+    restores the database to how the run found it and drops the snapshot,
+    and fails if it can't restore it. Without them, the tests use the
+    database as it is.
 
     Be sure the app is configured to allow a large quantity of bots. If the
     app is in use during the performance test, results may not be reliable.

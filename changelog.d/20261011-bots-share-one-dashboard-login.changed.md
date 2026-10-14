@@ -1,1 +1,0 @@
-Bots running in threads, as in ``psynet performance-test`` and parallel ``psynet test``, now share one dashboard login per process instead of each thread logging in, and checking a dashboard login no longer parses the page unless it shows an error. This leaves more of the test process's CPU for the bots.

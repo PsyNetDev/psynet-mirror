@@ -1,1 +1,0 @@
-Performance test summaries warn, without failing the test, when the low-priority async job backlog grows during the steady state, and when fewer async worker processes were running than `worker_processes` configures.

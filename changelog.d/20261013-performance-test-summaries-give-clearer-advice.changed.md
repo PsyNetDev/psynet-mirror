@@ -1,1 +1,0 @@
-Performance test summaries give clearer advice: they name only the limits a test exceeded, add a busy-chains column, explain how bot error counts relate to the outcomes, word worker advice after a confirmed cap as how to go above it, and no longer warn about slow bot start-up with `--arrival-minutes`.

@@ -1,1 +1,0 @@
-Pressing Ctrl-C in `psynet test ssh` or `psynet performance-test ssh` now also stops the test on the server, instead of leaving its bots running there. `psynet performance-test ssh` no longer prints the paths of the bot log and results inside the app's container as if they were on your computer; it prints where it saved them.
