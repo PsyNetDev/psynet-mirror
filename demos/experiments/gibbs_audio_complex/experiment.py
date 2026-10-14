@@ -103,6 +103,8 @@ class CustomTrialMaker(AudioGibbsTrialMaker):
     response_timeout_sec = 1e9
     # Launch synthesizes every start node at once, so on a 2-vCPU server the
     # first chain can take over a minute to become available.
+    # TODO - framework change in PsyNet to prevent participants from being recruited
+    # before the initial assets are all generated
     max_time_waiting_for_trial = 120
 
 
