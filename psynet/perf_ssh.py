@@ -637,9 +637,10 @@ class DatabaseReset:
 
         Raises
         ------
-        RuntimeError
-            If the restore failed. The warning before it names the copy,
-            which is kept, and says how to recover.
+        BaseException
+            The restore's error, including an interruption, after the other
+            copies are dropped. The warning before it names the copy that
+            the restore read from, which is kept, and says how to recover.
         """
         import click
 
@@ -652,10 +653,6 @@ class DatabaseReset:
                 self._restore(self._original, start=False)
             except BaseException as e:
                 self._warn_restore_failed(e)
-                if not isinstance(e, RuntimeError) or isinstance(
-                    e, (click.Abort, click.exceptions.Exit)
-                ):
-                    raise
                 kept, restore_error = self._original, e
         for copy in self._copies:
             if copy == kept:

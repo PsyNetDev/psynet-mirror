@@ -31,14 +31,6 @@ from psynet.audit.model import (
     CompletenessItem,
     screenshot_caption,
 )
-from psynet.perf_test import (
-    CapacityLimits,
-    PerformanceTestResult,
-    capacity_advice,
-    capacity_failures,
-    format_capacity_summary,
-    queue_wait_p95,
-)
 
 UrlTransform = Callable[[str], str]
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -840,6 +832,15 @@ def render_performance_result(
 
     Set ``standalone`` when the result is its own top-level audit section.
     """
+    # psynet.perf_test needs rich, which only the ``experiment`` extra installs.
+    from psynet.perf_test import (
+        CapacityLimits,
+        PerformanceTestResult,
+        capacity_advice,
+        capacity_failures,
+        format_capacity_summary,
+        queue_wait_p95,
+    )
 
     if evidence.performance_file is None:
         return "<p>No performance test result was found.</p>" if standalone else ""

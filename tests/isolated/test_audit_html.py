@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 from psynet.audit.constants import MAX_AUDIT_NOTEBOOK_BYTES
 from psynet.audit.html import (
@@ -63,7 +65,7 @@ def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
     assert "<td>No: p95 response time 3000 ms</td>" in html
     assert "Largest passing test: 8 bots at once. At 16, " in html
     assert ">Notes<" not in html
-    assert "psynet performance-test ssh" in html
+    assert "performance-test ssh" in html and "debug ssh" not in html
     assert "--n-bots auto" in html
     assert "--n-bots auto" not in performance(capacity_search=True)
 
@@ -593,3 +595,12 @@ def test_render_notebook_output_rejects_invalid_png_payload() -> None:
     assert "notebook-image" not in non_png
     assert "data:image/png;base64," not in non_png
     assert empty == ""
+
+
+def test_audit_html_imports_without_rich() -> None:
+    code = (
+        "import sys; sys.modules['rich'] = None; "
+        "import psynet.audit.html; "
+        "assert 'psynet.perf_test' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

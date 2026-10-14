@@ -1572,10 +1572,10 @@ def capacity_advice(capacity_search=False):
     """
     advice = [
         "Local results only show how the experiment copes on this computer. "
-        "For numbers that apply to your study, launch the experiment on its "
-        "deployment server (psynet debug ssh) and run psynet performance-test "
-        "ssh there; the server's CPU, memory and worker settings decide how "
-        "many participants it can handle.",
+        "For numbers that apply to your study, run on its deployment server "
+        "with 'performance-test ssh', which deploys its own app there for the "
+        "tests; the server's CPU, memory and worker settings decide how many "
+        "participants it can handle.",
         "Bots fetch pages and submit answers without a browser, so the results "
         "leave out the static files, media and JavaScript requests that "
         "participants' browsers make.",

@@ -4870,7 +4870,14 @@ def _run_performance_test_with_existing_server(
             _write_json_results(
                 json_output,
                 metadata=_collect_run_metadata(exp.label),
-                options={},
+                options=_performance_json_options(
+                    tester,
+                    _performance_limits(
+                        suite_options.get("max_p95_ms"),
+                        suite_options.get("max_queue_p95_s"),
+                    ),
+                    capacity_search=False,
+                ),
                 all_results=[result],
             )
         return [result]
@@ -4888,7 +4895,7 @@ def _run_performance_suite(
     max_p95_ms=None,
     max_queue_p95_s=None,
     database_reset=None,
-    prefill_participants=None,
+    ssh_options=None,
     quiet=False,
     cleanup=None,
 ):
@@ -4912,8 +4919,8 @@ def _run_performance_suite(
         The options of the same names.
     database_reset : psynet.perf_ssh.DatabaseReset, optional
         Resets the database before each test; closed at the end.
-    prefill_participants : int, optional
-        The ``--prefill-participants`` option, for the JSON.
+    ssh_options : dict, optional
+        The options that only ``performance-test ssh`` has, for the JSON.
     quiet : bool
         Whether to leave out where the JSON was written.
     cleanup : callable, optional
@@ -4926,26 +4933,13 @@ def _run_performance_suite(
         If a reset stopped the run early, the final restore of the database
         failed or ``cleanup`` failed, once the results are saved.
     """
-    from psynet.perf_test import CapacityLimits, PerformanceSuite
+    from psynet.perf_test import PerformanceSuite
 
     find_capacity = n_bots == "auto"
-    limits = CapacityLimits.from_options(
-        max_p95_s=None if max_p95_ms is None else max_p95_ms / 1000,
-        max_queue_p95_s=max_queue_p95_s,
-    )
+    limits = _performance_limits(max_p95_ms, max_queue_p95_s)
     options = {
-        "capacity_search": find_capacity,
-        "max_p95_s": limits.max_p95_s,
-        "max_queue_p95_s": limits.max_queue_p95_s,
-        "duration_minutes": tester.duration_minutes,
-        "estimated_duration_minutes": tester.estimated_duration_minutes,
-        "session_minutes": tester.session_minutes,
-        "stagger_interval_s": tester.stagger_interval_s,
-        "arrival_minutes": tester.arrival_minutes,
-        "time_factor": tester.time_factor,
-        "bot_processes": tester.bot_processes,
-        "reset_database": database_reset is not None,
-        "prefill_participants": prefill_participants,
+        **_performance_json_options(tester, limits, capacity_search=find_capacity),
+        **(ssh_options or {}),
     }
     if find_capacity:
         options["confirm"] = not no_confirm
@@ -4987,6 +4981,8 @@ def _run_performance_suite(
             try:
                 try:
                     database_reset.close()
+                except (click.Abort, click.exceptions.Exit):
+                    raise
                 except Exception as e:
                     # close() has already warned how to restore it by hand.
                     restore_error = e
@@ -5002,6 +4998,46 @@ def _run_performance_suite(
                     cleanup_error = e
     _raise_reset_error(suite, cleanup_error, restore_error)
     return all_results
+
+
+def _performance_limits(max_p95_ms=None, max_queue_p95_s=None):
+    """Return the :class:`~psynet.perf_test.CapacityLimits` of the ``--max-p95-ms`` and ``--max-queue-p95-s`` options."""
+    from psynet.perf_test import CapacityLimits
+
+    return CapacityLimits.from_options(
+        max_p95_s=None if max_p95_ms is None else max_p95_ms / 1000,
+        max_queue_p95_s=max_queue_p95_s,
+    )
+
+
+def _performance_json_options(tester, limits, *, capacity_search):
+    """Return the options of a performance test run that ``--json-output`` records.
+
+    Parameters
+    ----------
+    tester : PerformanceTester or RemotePerformanceTester
+        Runs each test.
+    limits : CapacityLimits
+        The limits that the tests are judged by.
+    capacity_search : bool
+        Whether the run is a capacity search (``--n-bots auto``).
+
+    Returns
+    -------
+    dict
+    """
+    return {
+        "capacity_search": capacity_search,
+        "max_p95_s": limits.max_p95_s,
+        "max_queue_p95_s": limits.max_queue_p95_s,
+        "duration_minutes": tester.duration_minutes,
+        "estimated_duration_minutes": tester.estimated_duration_minutes,
+        "session_minutes": tester.session_minutes,
+        "stagger_interval_s": tester.stagger_interval_s,
+        "arrival_minutes": tester.arrival_minutes,
+        "time_factor": tester.time_factor,
+        "bot_processes": tester.bot_processes,
+    }
 
 
 def _raise_reset_error(suite, cleanup_error=None, restore_error=None):
@@ -5111,9 +5147,7 @@ def _write_suite_json(
         "finished_at": (
             datetime.datetime.now().isoformat(timespec="seconds") if finished else None
         ),
-        # The snapshot every test started from, and the rows in each of its
-        # growing tables.
-        "snapshot": database_reset.snapshot if database_reset else None,
+        # The rows in each growing table of the snapshot every test started from.
         "snapshot_rows": database_reset.snapshot_rows if database_reset else None,
         "reset_error": suite.reset_error,
     }
@@ -5782,7 +5816,10 @@ def _run_ssh_performance_test(
             database_reset=(
                 _ssh_database_reset(remote, prefill_participants) if reset else None
             ),
-            prefill_participants=prefill_participants,
+            ssh_options={
+                "reset_database": reset,
+                "prefill_participants": prefill_participants,
+            },
             cleanup=remote.start_stopped_services,
             **suite_options,
         )

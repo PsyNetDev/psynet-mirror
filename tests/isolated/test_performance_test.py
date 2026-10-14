@@ -2292,6 +2292,26 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
         assert "psynet destroy ssh --server server --app my-app" in caplog.text
 
 
+def test_an_interrupted_final_restore_still_drops_the_other_copies():
+    from psynet.perf_ssh import DatabaseReset
+
+    def respond(cmd):
+        if 'CREATE DATABASE "my-app" TEMPLATE "my-app_baseline_' in cmd:
+            raise KeyboardInterrupt
+        return _answers({**_DISK, "pg_tables": "participant\n", "count(*)": "0\n"})(cmd)
+
+    remote = _remote_app(respond)
+    remote.stop, remote.start = Mock(), Mock()
+    reset = DatabaseReset(remote, prefill_participants=5)
+    reset()
+    with pytest.raises(KeyboardInterrupt):
+        reset.close()
+
+    sql = " ".join(c for c in remote.executor.commands if " psql " in c)
+    dropped = re.findall(r'DROP DATABASE IF EXISTS "(my-app_[^"]*)"', sql)
+    assert dropped == [reset.snapshot]
+
+
 @pytest.mark.parametrize(
     "error, ours",
     [

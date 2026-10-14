@@ -247,6 +247,20 @@ analyses of trials without feedback (see :ref:`async_job_priority`), so these
 never fail a test; the summary reports their queue wait when it exceeds the
 limit.
 
+An :meth:`~psynet.trial.main.Trial.async_post_trial` job is low priority
+unless PsyNet can tell that the participant waits for it (see
+:ref:`async_job_priority`). If participants do wait for it in another way,
+for example through your own :func:`~psynet.page.wait_while` condition
+or a page that shows the job's result, the test doesn't judge that wait, and
+workers only run the job once both the high-priority queue and Dallinger's
+``default`` queue are empty. Set ``async_post_trial_priority = "high"`` on
+the trial class then, so that the job runs first and its queue wait counts
+against the limit.
+
+Only the response-time and queue limits have options. The others are fixed,
+including the 1% limit on bots that got fewer trials because every chain was
+busy.
+
 Wait timeouts are participants failed when a :func:`~psynet.page.wait_while`,
 a barrier or a ``while_loop`` with ``max_loop_time`` timed out, together with
 members of a sync group that then fell below its minimum size. Real
@@ -720,9 +734,9 @@ If a run is killed before it drops its copies, they stay. With
 Cloudflare ingress the app has its own PostgreSQL container, whose volume
 goes when you destroy the app. With classic ingress, apps share one
 PostgreSQL container, and ``psynet destroy ssh`` doesn't remove the
-``*_snapshot_*``, ``*_baseline_*`` or ``psynet_prefill_*`` databases that interrupted runs or
-older PsyNet versions left there; drop them by hand with ``docker exec
-dallinger-postgresql-1 dropdb -U dallinger <name>``.
+``*_snapshot_*`` or ``*_baseline_*`` databases that interrupted runs left
+there; drop them by hand with ``docker exec dallinger-postgresql-1 sh -c
+'dropdb -U "$POSTGRES_USER" <name>'``.
 
 To test with the amount of data the study will reach, pre-fill the
 database before the first test:

@@ -4878,6 +4878,53 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
     assert Experiment.is_complete(idle) is False
 
 
+def _run_existing_server_test(options, tmp_path):
+    """Run ``performance-test local --existing`` with ``options`` against a mocked server, tester and suite."""
+    from psynet.command_line import _run_performance_test_with_existing_server
+
+    experiment = Mock(
+        authenticated_session=Mock(),
+        base_url="http://localhost",
+        label="test",
+        test_n_bots=3,
+        test_duration_minutes=2.0,
+        test_parallel_stagger_interval_s=0.5,
+        test_time_factor=2.5,
+        estimated_duration_in_minutes=4.0,
+    )
+    suite = Mock(reset_error=None, before_test=None)
+    suite.tester.remote_metadata = None
+    suite.run.return_value = []
+    suite.find_capacity.return_value = []
+
+    with (
+        patch("logging.getLogger", return_value=Mock(handlers=[])),
+        patch("psynet.command_line.load_runtime_server_config") as load_config,
+        patch("psynet.command_line._check_existing_server_answers"),
+        patch("psynet.command_line._check_no_real_participants"),
+        patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.perf_test.PerformanceTester") as performance_tester,
+        patch("psynet.perf_test.PerformanceSuite", return_value=suite) as suite_class,
+        patch("psynet.command_line.tempfile.NamedTemporaryFile"),
+        patch("psynet.command_line._write_json_results") as write_json,
+    ):
+        _run_performance_test_with_existing_server(**options)
+    return experiment, suite, load_config, performance_tester, suite_class, write_json
+
+
+@pytest.mark.parametrize("test_label", [None, "1/1"], ids=["suite", "one-test"])
+def test_local_json_records_the_run_options_but_not_ssh_ones(test_label, tmp_path):
+    *_, write_json = _run_existing_server_test(
+        dict(n_bots=[3], test_label=test_label, max_p95_ms=800, json_output="r.json"),
+        tmp_path,
+    )
+
+    options = write_json.call_args.kwargs["options"]
+    assert options["max_p95_s"] == 0.8 and options["capacity_search"] is False
+    assert not {"reset_database", "prefill_participants"} & set(options)
+
+
 @pytest.mark.parametrize(
     "options,expected",
     [
@@ -4942,35 +4989,11 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
     By default a test lasts 1.5 sessions of the experiment's estimated 4
     minutes, and a capacity search's tests one session.
     """
-    from psynet.command_line import _run_performance_test_with_existing_server
     from psynet.perf_test import CapacityLimits
 
-    experiment = Mock(
-        authenticated_session=Mock(),
-        base_url="http://localhost",
-        label="test",
-        test_n_bots=3,
-        test_duration_minutes=2.0,
-        test_parallel_stagger_interval_s=0.5,
-        test_time_factor=2.5,
-        estimated_duration_in_minutes=4.0,
+    experiment, suite, load_config, performance_tester, suite_class, _ = (
+        _run_existing_server_test(options, tmp_path)
     )
-    suite = Mock(reset_error=None)
-    suite.run.return_value = []
-    suite.find_capacity.return_value = []
-
-    with (
-        patch("logging.getLogger", return_value=Mock(handlers=[])),
-        patch("psynet.command_line.load_runtime_server_config") as load_config,
-        patch("psynet.command_line._check_existing_server_answers"),
-        patch("psynet.command_line._check_no_real_participants"),
-        patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
-        patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch("psynet.perf_test.PerformanceTester") as performance_tester,
-        patch("psynet.perf_test.PerformanceSuite", return_value=suite) as suite_class,
-        patch("psynet.command_line.tempfile.NamedTemporaryFile"),
-    ):
-        _run_performance_test_with_existing_server(**options)
 
     # --existing needs the running server's dashboard credentials.
     load_config.assert_called_once_with()
