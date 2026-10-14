@@ -199,6 +199,8 @@ BROWSER_CAPABILITY_TOKENS = frozenset(
     }
 )
 
+PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
+
 
 @dataclass
 class ResponseResult:
@@ -3981,6 +3983,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     resources.files("psynet")
                     / "resources/scripts/execute-front-end-js.js",
                     "/static/scripts/execute-front-end-js.js",
+                ),
+                (
+                    resources.files("psynet")
+                    / "resources/scripts/browser-capability-check.js",
+                    "/static/scripts/browser-capability-check.js",
                 ),
                 (
                     resources.files("psynet") / "resources/scripts/jspsych-page.js",
