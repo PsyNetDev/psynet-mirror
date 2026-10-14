@@ -175,6 +175,7 @@
             if (browser.forceGoogleChrome && warningMsg === "") {
                 if (!browser.isChrome) {
                     warningMsg = "{{ pgettext("browser_compatibility", "You need to use Google Chrome to take part in the experiment.")  | replace('"',"'")|safe }} {{ pgettext("browser_compatibility", "You are using")  | replace('"',"'")|safe }} " + browser.name + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
+                }
             }
 
             if (browser.forceIncognitoMode) {
