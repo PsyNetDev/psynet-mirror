@@ -65,17 +65,20 @@ format-aware recording ticket.
   something like `require_chromium`; deferred to a cleanup ticket.
 - **`browser-support.rst` doc page** (per-browser capability table). Not
   added; deferred.
-- **Playwright spec execution against a live server.** `entry_check.spec.js`
-  and `browser_capability_check.spec.js` are written and pass syntax/tag
-  checks but have not been run end-to-end (requires Docker/Redis/Heroku stack).
+- **`entry_check.spec.js` end-to-end execution.** Not yet run against a live
+  server; deferred.
 
 ---
 
 ## CI failures found and fixed during review
 
-**`browser_capability_check.spec.js` both tests failed** (pass test: `#capability-check-passed` never visible; fail test: "This page could not be loaded" alert, page stuck on "Working...").
+**`browser_capability_check.spec.js` both tests failed** — three bugs found and fixed:
 
-Root cause: `psynet.nextPage()` guards on `psynet.pageReady === true` and `nextPagePending === false`. `finalizePageReady()` begins with `await new Promise(r => setTimeout(r, 0))` — a macrotask — so a `setTimeout(0)` scheduled inside `activate()` fires **before** `pageReady` becomes true. Fixed in `browser-capability-check.js` by listening for the `timelinePageReady` event (dispatched by `setPageReady(true)` inside `finalizePageReady`) and then deferring `nextPage` one further macrotask via `setTimeout(0)`, ensuring `nextPagePending = false` has also been set by the time `nextPage` runs.
+**1. `nextPage` timing** (both tests): `psynet.nextPage()` guards on `pageReady === true` and `nextPagePending === false`. `finalizePageReady()` begins with `await new Promise(r => setTimeout(r, 0))` — a macrotask — so a `setTimeout(0)` scheduled inside `activate()` fires before `pageReady` becomes true. Fixed in `browser-capability-check.js` by listening for the `timelinePageReady` event (dispatched by `setPageReady(true)` inside `finalizePageReady`) and deferring `nextPage` one further macrotask via `setTimeout(0)`, ensuring both guards have cleared.
+
+**2. `conditional` lambda wrong parameter names** (pass test — server 500): `call_function` in `utils.py` dispatches kwargs by name. The lambda used `exp, p` but `call_function_with_context` passes `experiment=` and `participant=`. Neither matched, so the function was called with zero arguments. Fixed by renaming to `lambda participant: ...`.
+
+**3. `media.initAudioContext()` threw when AudioContext unavailable** (fail test): `trial.init()` → `media.init()` → `initAudioContext()` was called unconditionally during page activation, throwing `"No AudioContext available"` before the capability check could call `nextPage({passed: false})`. This also means real participants without AudioContext would see "This page could not be loaded" instead of being routed to `UnsuccessfulEndPage`. Fixed by having `initAudioContext` log a warning and return instead of throwing, and guarding the two call sites (`audioContext?.state`, `audioContext?.currentTime ?? 0`).
 
 ---
 
