@@ -2084,7 +2084,6 @@ class BrowserCapabilityCheck(Module):
 
     def __init__(self, label="browser_capability_check", capabilities=None):
         from psynet.experiment import (
-            BROWSER_CAPABILITY_TOKENS,
             PERMISSION_CAPABILITY_TOKENS,
             validate_browser_capabilities,
         )
