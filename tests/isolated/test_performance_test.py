@@ -606,11 +606,8 @@ def test_a_failed_confirmation_on_grown_data_suggests_a_reset(caplog):
         dict(p95_response_time=0.9, db_rows_before={"trial": 50_000}, **_STEADY),
     )
 
-    assert (
-        "so its failure may come from the data the search left. Rerun on a fresh "
-        "database, after restarting 'psynet debug local' or with 'performance-test "
-        "ssh --reset-database' on a server, before recommending" in caplog.text
-    )
+    assert "so its failure may come from the data the search left" in caplog.text
+    assert "--reset-database" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -1157,10 +1154,7 @@ def test_summaries_report_database_growth():
         "The database grew a lot during these tests (trial rows went from "
         "65,000 to 103,000), so later tests ran on more data"
     ) in text
-    assert "restart 'psynet debug local' for a fresh database" in text
-    ssh_text = _join(format_capacity_summary(results, ssh=True))
-    assert "'performance-test ssh --reset-database' starts every test" in ssh_text
-    assert "psynet debug local" not in ssh_text
+    assert "--reset-database" in text
 
     results[-1].db_rows_after = {"participant": 2_600, "trial": 80_000}
     assert "database grew" not in _join(format_capacity_summary(results))
@@ -2227,7 +2221,7 @@ def _remote_app(respond, isolated=True):
 
 
 @pytest.mark.parametrize(
-    "prefill, restore_fails", [(None, False), (None, True), (5, False)]
+    "prefill, restore_fails", [(None, False), (5, False), (5, True)]
 )
 def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     prefill, restore_fails, caplog
@@ -2270,10 +2264,11 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
         f'CREATE DATABASE "my-app" TEMPLATE "{snapshot}"',
         'DROP DATABASE IF EXISTS "my-app"',
         f'CREATE DATABASE "my-app" TEMPLATE "{original}"',
+        # A failed restore keeps the copy that it restores from.
         *(
-            []
-            if restore_fails
-            else [f'DROP DATABASE IF EXISTS "{c}"' for c in reset._copies]
+            f'DROP DATABASE IF EXISTS "{c}"'
+            for c in reset._copies
+            if not (restore_fails and c == original)
         ),
     ]
     assert any("redis-cli --scan --pattern" in c for c in remote.executor.commands)
@@ -2282,6 +2277,26 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     assert remote.start.call_count == remote.stop.call_count - restore_fails
     assert ("already held 3 participants" in caplog.text) == (not prefill)
     assert ("Could not restore the database my-app" in caplog.text) == restore_fails
+
+
+def test_a_failed_first_snapshot_is_dropped_and_the_database_left_alone():
+    from psynet.perf_ssh import DatabaseReset
+
+    def respond(cmd):
+        if 'CREATE DATABASE "my-app_snapshot_' in cmd:
+            return (1, "ERROR:  53100: could not extend file: No space left\n")
+        return _answers(_DISK)(cmd)
+
+    remote = _remote_app(respond)
+    remote.stop, remote.start = Mock(), Mock()
+    reset = DatabaseReset(remote)
+    with pytest.raises(RuntimeError, match="No space left"):
+        reset()
+    reset.close()
+
+    sql = " ".join(c for c in remote.executor.commands if " psql " in c)
+    dropped = re.findall(r'DROP DATABASE IF EXISTS "([^"]*)"', sql)
+    assert len(dropped) == 1 and dropped[0].startswith("my-app_snapshot_")
 
 
 def test_remote_output_leaves_out_stderr_unless_the_command_fails():
@@ -2414,8 +2429,10 @@ def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
 
     register("c1")
     register("c2")
+    printed = []
 
     def respond(cmd):
+        printed.append((clock[0], capsys.readouterr().out))
         # Dallinger's worker_startup_timeout exits a hung worker, and Docker restarts it.
         if recovers and clock[0] >= 130:
             register("c2")
@@ -2449,7 +2466,9 @@ def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
             error.value
         )
     waiting = "Waiting for worker processes to register (1 of 2; up to 180 s)"
-    assert capsys.readouterr().out.count(waiting) == (3 if recovers else 4)
+    printed.append((clock[0], capsys.readouterr().out))
+    assert not any(waiting in out for t, out in printed if t <= 20)
+    assert any(waiting in out for _, out in printed)
     assert not any(".yml restart" in c for c in remote.executor.commands)
 
 

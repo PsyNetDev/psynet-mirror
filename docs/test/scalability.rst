@@ -298,9 +298,9 @@ Without ``--reset-database`` (see :ref:`performance_testing_reset`), the
 validation test runs on the data that the search tests left. If it fails
 after starting with much more data than the largest passing test, the
 summary says that its failure may come from the data, and suggests
-rerunning on a fresh database (after restarting ``psynet debug local``, or
-with ``performance-test ssh --reset-database``) before recommending a
-lower number.
+rerunning on a server with ``performance-test ssh --reset-database``, so
+that every test starts from the same data, before recommending a lower
+number.
 
 The summary names the limit that a failing test exceeded. If the queue limit
 is what failed the next count, the summary says how many worker processes
@@ -379,8 +379,8 @@ the bots took more than a quarter of the test, unless ``--arrival-minutes``
 spread them out on purpose or a validation test passed.
 
 With ``--json-output``, the file records the run's options and, for each
-test, every measure in the report; the ``PerformanceTestResult`` dataclass in
-``psynet/perf_test/results.py`` describes the fields. ``confirmation`` marks
+test, every measure in the report; :ref:`performance_testing_saving_results`
+lists the fields. ``confirmation`` marks
 the validation test, and the options record ``confirmation_skipped`` with
 the reason it didn't run. If resetting the database failed, ``reset_error``
 gives the error (see :ref:`performance_testing_reset`). The file is
@@ -521,9 +521,8 @@ every test adds the data its bots create, and a capacity search, whose bot
 counts don't run in increasing order, compares counts at different sizes.
 The summary warns when the database grew by more than half during the
 tests (and by at least 10,000 rows; with ``--reset-database``, during any
-one test). After a local run it suggests restarting ``psynet debug local``
-for a fresh database, and after ``performance-test ssh`` it suggests
-``--reset-database``.
+one test), and suggests running on a server with ``performance-test ssh
+--reset-database`` to start every test from the same data.
 
 To read the numbers:
 
@@ -788,6 +787,8 @@ starts its bot processes again, adding a few seconds per test. Each bot
 holds its own PostgreSQL connection whichever process it runs in, and each
 extra process adds at most one more.
 
+.. _performance_testing_saving_results:
+
 Saving results
 --------------
 
@@ -801,6 +802,13 @@ using the same limits as the capacity search, and reminds readers that
 participant numbers for a study must come from ``psynet performance-test
 ssh`` on the deployment server, with ``--n-bots auto`` to find the largest
 number it handles.
+
+In the ``--json-output`` file, each test's entry has these fields:
+
+.. autoclass:: psynet.perf_test.results.PerformanceTestResult
+    :members:
+    :member-order: bysource
+    :exclude-members: from_dict, steady_state_s
 
 A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a

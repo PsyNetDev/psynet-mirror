@@ -363,9 +363,6 @@ def _join_threads(threads, timeout_s):
 class PerformanceTester:
     """Run single performance tests against a server; see :class:`~psynet.perf_test.suite.PerformanceSuite`."""
 
-    #: Whether the tests run on an SSH server rather than ``psynet debug local``.
-    ssh = False
-
     def __init__(
         self,
         authenticated_session,

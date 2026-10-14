@@ -302,7 +302,6 @@ class PerformanceSuite:
             label=self.label,
             elapsed_s=time.monotonic() - started,
             confirmation_planned=confirmation_planned,
-            ssh=self.tester.ssh,
         ):
             logger.info(line)
         if self.reset_error:

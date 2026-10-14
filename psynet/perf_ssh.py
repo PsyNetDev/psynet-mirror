@@ -341,11 +341,14 @@ class RemoteApp:
                 raise RuntimeError(
                     self._not_ready_message(healthy, registered, workers)
                 )
-            if registered < self._n_workers and waited >= next_progress_s:
+            if waited >= next_progress_s:
+                waiting_for = (
+                    f"worker processes to register ({registered} of {self._n_workers}; "
+                    if registered < self._n_workers
+                    else "the web server to answer ("
+                )
                 print(
-                    "  Waiting for worker processes to register "
-                    f"({registered} of {self._n_workers}; up to "
-                    f"{_SERVER_READY_TIMEOUT_S} s)..."
+                    f"  Waiting for {waiting_for}up to {_SERVER_READY_TIMEOUT_S} s)..."
                 )
                 next_progress_s = waited + 45
             time.sleep(2)
@@ -627,13 +630,14 @@ class DatabaseReset:
     def close(self):
         """Restore the database to how the run found it, then drop the copies, warning instead of raising if that fails.
 
-        A copy is kept if the restore fails, so that the database can be
-        restored by hand. That way a test's own error is the one that
-        propagates; ``click.Abort``, ``click.exceptions.Exit`` and
-        interrupts still propagate after the warning.
+        That way a test's own error is the one that propagates;
+        ``click.Abort``, ``click.exceptions.Exit`` and interrupts still
+        propagate after the warning. If the restore fails, the copy it
+        restores from is kept, so that the database can be restored by hand.
         """
         import click
 
+        kept = None
         if self._original is not None:
             logger.info("")
             logger.info("Restoring the database to how it was before the run...")
@@ -658,8 +662,10 @@ class DatabaseReset:
                     e, (click.Abort, click.exceptions.Exit)
                 ):
                     raise
-                return
+                kept = self._original
         for copy in self._copies:
+            if copy == kept:
+                continue
             try:
                 self._run_when_unused(
                     copy, f"DROP DATABASE IF EXISTS {_quote_ident(copy)}"
@@ -850,8 +856,6 @@ class RemotePerformanceTester:
     estimated_duration_minutes, arrival_minutes : float, optional
         As for :class:`~psynet.perf_test.PerformanceTester`.
     """
-
-    ssh = True
 
     def __init__(
         self,

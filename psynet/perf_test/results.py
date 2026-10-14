@@ -142,7 +142,9 @@ class PerformanceTestResult:
     a default, for :meth:`from_dict`.
     """
 
+    #: Bots that the test ran.
     n_bots: int = 0
+    #: Planned length of the test's measurement window.
     duration_minutes: float | None = None
     #: Minutes over which the bots arrived, or None if they started --stagger
     #: seconds apart.
@@ -152,20 +154,26 @@ class PerformanceTestResult:
     session_minutes: float | None = None
     #: Whether this is the confirmation test that ends a capacity search.
     confirmation: bool = False
+    #: Seconds that the measurement window actually lasted.
     actual_duration: float | None = None
+    #: Whether the server stopped answering during the test.
     server_stopped: bool = False
     #: Why a bot process stopped during the test, if one did.
     bot_process_failure: str | None = None
     #: Numbers of bot processes that didn't report after the test.
     unreported_bot_processes: list[int] = field(default_factory=list)
+    #: Processes that ran the bots.
     bot_processes: int = 1
+    #: Bot slots that started; at most n_bots.
     slots_started: int | None = None
     #: Most bots that were taking part at the same moment.
     peak_running: int | None = None
     #: Seconds from the test start until the last bot slot started.
     ramp_up_s: float | None = None
-    #: Of the busiest process running bots; see runtime._LoadMonitor.
+    #: 95th-percentile wake-up lag of the busiest process running bots; see
+    #: runtime._LoadMonitor.
     tester_lag_p95_s: float | None = None
+    #: Bots that the test tried to start, in all slots.
     total_bots_started: int = 0
     #: Bots whose participant ended approved or submitted and was not failed.
     bots_succeeded: int = 0
@@ -183,18 +191,27 @@ class PerformanceTestResult:
     db_rows_before: dict[str, int] = field(default_factory=dict)
     #: The same rows after the bots stopped.
     db_rows_after: dict[str, int] = field(default_factory=dict)
+    #: HTTP requests that the bots made.
     total_requests: int = 0
     #: Requests to /timeline and /response, which the response times cover.
     key_requests: int = 0
+    #: Requests per second over the measurement window.
     requests_per_sec: float | None = None
+    #: Errors that bots raised.
     bot_errors: int = 0
     #: Number of bot errors of each kind, most common first.
     bot_error_kinds: dict[str, int] = field(default_factory=dict)
+    #: Median response time of the key requests.
     median_response_time: float | None = None
+    #: 95th-percentile response time of the key requests.
     p95_response_time: float | None = None
+    #: 95th-percentile response time of each key endpoint.
     endpoint_p95: dict[str, float] = field(default_factory=dict)
+    #: Slowest response time of the key requests.
     max_response_time: float | None = None
+    #: Mean time that a bot ran, including bots that the test's end stopped.
     avg_bot_duration: float | None = None
+    #: Requests that failed, not counting busy_responses or stale responses.
     request_errors: int = 0
     #: HTTP 409 and 503 responses; see measure._split_failed_requests.
     busy_responses: int = 0
@@ -203,8 +220,9 @@ class PerformanceTestResult:
     median_wait_page_time: float | None = None
     #: Bots that median_wait_page_time covers.
     n_wait_page_samples: int | None = None
+    #: Mean time that a bot that succeeded took the experiment.
     avg_succeeded_duration: float | None = None
-    #: Of all async jobs that started.
+    #: Median queue wait of all async jobs that started.
     q_delay_median: float | None = None
     #: For "high" and "low" priority async jobs, if any: how many started,
     #: their p95 queue wait, and the backlog still queued at the end and how
@@ -236,10 +254,11 @@ class PerformanceTestResult:
     #: Seconds from the test start until the first bot completed the
     #: experiment, where the steady state begins.
     first_completion_s: float | None = None
-    #: Metrics before first_completion_s (see measure.phase_stats), empty
-    #: unless the steady state lasted at least MIN_STEADY_STATE_S.
+    #: Metrics before first_completion_s (see measure.phase_stats). Empty,
+    #: like steady_state_phase, if the steady state lasted less than
+    #: MIN_STEADY_STATE_S.
     startup_phase: dict = field(default_factory=dict)
-    #: The same metrics from first_completion_s on, empty as startup_phase is.
+    #: The same metrics from first_completion_s to the end of the test.
     steady_state_phase: dict = field(default_factory=dict)
 
     @property
