@@ -164,6 +164,8 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
+# Must be loaded with -p, before Dallinger connects; see psynet/isolated_environment.py.
+addopts = "-p psynet.pytest_environment"
 norecursedirs = [
     "tests/experiments",
     "tests/isolated",

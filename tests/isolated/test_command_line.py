@@ -10,7 +10,7 @@ import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import click
 import pandas as pd
@@ -3823,6 +3823,45 @@ def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
     os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
 
 
+def test_isolated_tests_check_the_experiment_before_creating_services(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import _rerun_in_isolated_test_environment
+
+    monkeypatch.setattr(
+        "psynet.command_line._check_experiment_directory",
+        Mock(side_effect=click.ClickException("run psynet setup")),
+    )
+    start, ensure = Mock(), Mock()
+    monkeypatch.setattr("psynet.isolated_environment.IsolatedEnvironment.start", start)
+    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
+    with working_directory(tmp_path):
+        with pytest.raises(click.ClickException, match="run psynet setup"):
+            _rerun_in_isolated_test_environment()
+    start.assert_not_called()
+    ensure.assert_not_called()
+
+
+def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch):
+    from psynet.command_line import _rerun_in_isolated_test_environment
+
+    monkeypatch.setattr("psynet.command_line._check_experiment_directory", Mock())
+    monkeypatch.setattr("psynet.services.ensure_local_services", Mock())
+    environment = MagicMock(env={})
+    environment.__enter__.return_value = environment
+    monkeypatch.setattr(
+        "psynet.isolated_environment.IsolatedEnvironment.start",
+        Mock(return_value=environment),
+    )
+    monkeypatch.setattr(sys, "orig_argv", ["/framework/Python", "-m", "psynet", "test"])
+    popen = Mock(**{"return_value.wait.return_value": 0})
+    monkeypatch.setattr("subprocess.Popen", popen)
+    with working_directory(tmp_path), pytest.raises(SystemExit, match="0"):
+        _rerun_in_isolated_test_environment()
+
+    assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
+
+
 def test_pre_launch_checks_directory_before_redis():
     """Directory guidance must run before Redis I/O when Redis is unavailable."""
     from psynet.command_line import _pre_launch
@@ -4906,3 +4945,38 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+    from psynet.command_line import _run_performance_test_with_new_server
+
+    with (
+        patch(
+            "psynet.isolated_environment.check_no_debug_server",
+            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
+        ),
+        patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
+        pytest.raises(click.ClickException, match="PID 7"),
+    ):
+        _run_performance_test_with_new_server("2", 0, 1, 1, False)
+    start.assert_not_called()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_performance_tests_get_their_own_services_unless_existing(
+    monkeypatch, existing
+):
+    from psynet.command_line import performance_test__local
+
+    rerun = Mock(side_effect=SystemExit(0))
+    monkeypatch.setattr(
+        "psynet.command_line._rerun_in_isolated_test_environment", rerun
+    )
+    monkeypatch.setattr("psynet.isolated_environment.should_isolate", lambda: True)
+    monkeypatch.setattr("psynet.command_line._run_performance_test_local", Mock())
+    try:
+        performance_test__local.callback(existing=existing)
+    except SystemExit:
+        pass
+
+    assert rerun.called is not existing
