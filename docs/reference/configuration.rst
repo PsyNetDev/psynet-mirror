@@ -480,14 +480,56 @@ Allowed browsers and devices
     ``False``, they are asked to switch to a computer.
     Default: ``True``.
 
+``browser_capabilities`` *set* |psynet-icon| — *class attribute*
+    Declares the browser features your experiment requires. Participants whose
+    browsers lack a listed capability are screened out when you add
+    :class:`~psynet.prescreen.BrowserCapabilityCheck` to your timeline.
+
+    Valid tokens:
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 75
+
+       * - Token
+         - What is tested
+       * - ``microphone``
+         - Microphone access via ``getUserMedia`` (triggers a permission prompt)
+       * - ``camera``
+         - Camera access via ``getUserMedia`` (triggers a permission prompt)
+       * - ``screen_capture``
+         - ``navigator.mediaDevices.getDisplayMedia`` is present
+       * - ``video_recording``
+         - ``MediaRecorder`` is available and supports at least one video format
+       * - ``audio_playback``
+         - ``AudioContext`` is available
+
+    Example::
+
+        class MyExperiment(PsyNet):
+            browser_capabilities = {"microphone", "video_recording"}
+
+    PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
+    Firefox 121+, Safari 15.4+); you do not need to add a token for that.
+
+    Default: ``frozenset()`` (no additional requirements beyond the CSS check).
+
 ``force_google_chrome`` *bool* |psynet-icon|
-    Forces the user to use the Google Chrome browser. If another browser is used, it will give detailed instructions on how to install Google Chrome.
-    Default: ``True``.
+    *Deprecated.* Forces the user to use a Chromium-based browser (Chrome,
+    Edge, Brave, or Opera). If an incompatible browser is used, the participant
+    sees instructions to install Google Chrome.
+    Default: ``False``.
 
-    .. note::
+    Setting this emits a :class:`DeprecationWarning` at startup. For most
+    use cases :attr:`browser_capabilities` is the better alternative — it
+    screens for the specific browser features your experiment actually needs.
+    Leave ``force_google_chrome`` unset to admit all modern browsers (Chrome,
+    Edge, Firefox, Safari) that pass the CSS ``:has()`` check.
 
-        PsyNet only officially supports Google Chrome.
-
+    If you use Lucid recruitment with this setting enabled, note that the
+    Lucid qualification (QuestionID 1035) gates on the Chrome brand only, so
+    Edge, Brave, and Opera participants are excluded at the recruitment stage
+    even though PsyNet would admit them at the browser-check stage.
 
 ``leave_comments_on_every_page`` *bool* |psynet-icon|
     Adds a comment box for the experimenter, which is shown on the "Help" modal. This feature is particularly useful for lab or field experiments, where the experimenter can leave comments on every page of the experiment. This is an opt-in feature, and is not enabled by default.
@@ -500,15 +542,6 @@ Allowed browsers and devices
     Furthermore it does not enable addons which can interfere with the experiment. If the user is not using
     incognito mode, it will give detailed instructions on how to open the experiment in incognito mode.
     Default: ``False``.
-
-``min_browser_version`` *str* |psynet-icon|
-    The minimum version of Chrome a participant needs to take a study.
-    Default: ``105.0``.
-
-    Chrome 105 (August 2022) is the first release supporting CSS ``:has()``, which the
-    default participant theme uses to style selected response options. Lowering this
-    value is supported, but participants on older browsers will not see selected
-    options highlighted.
 
 Recruiters
 ~~~~~~~~~~
