@@ -246,6 +246,21 @@ BROWSER_CAPABILITY_TOKENS = frozenset(
 PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
 
 
+def validate_browser_capabilities(capabilities):
+    """Raise ValueError if capabilities is not a valid set of browser capability tokens."""
+    if isinstance(capabilities, str):
+        raise ValueError(
+            "browser_capabilities must be a set of tokens, not a string. "
+            f"Did you mean: {{{capabilities!r}}}"
+        )
+    unknown = frozenset(capabilities) - BROWSER_CAPABILITY_TOKENS
+    if unknown:
+        raise ValueError(
+            f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
+            f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
+        )
+
+
 @dataclass
 class ResponseResult:
     """Carry response state from the write phase to HTTP rendering."""
@@ -2722,17 +2737,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def check_browser_capabilities(cls):
-        if isinstance(cls.browser_capabilities, str):
-            raise ValueError(
-                "browser_capabilities must be a set of tokens, not a string. "
-                f"Did you mean: browser_capabilities = {{{cls.browser_capabilities!r}}}"
-            )
-        unknown = frozenset(cls.browser_capabilities) - BROWSER_CAPABILITY_TOKENS
-        if unknown:
-            raise ValueError(
-                f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
-                f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
-            )
+        validate_browser_capabilities(cls.browser_capabilities)
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):

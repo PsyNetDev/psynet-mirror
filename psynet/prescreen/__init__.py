@@ -2091,21 +2091,12 @@ class BrowserCapabilityCheck(Module):
         from psynet.experiment import (
             BROWSER_CAPABILITY_TOKENS,
             PERMISSION_CAPABILITY_TOKENS,
+            validate_browser_capabilities,
         )
 
         if capabilities is not None:
-            if isinstance(capabilities, str):
-                raise ValueError(
-                    "capabilities must be a set of tokens, not a string. "
-                    f"Did you mean: capabilities={{{capabilities!r}}}"
-                )
+            validate_browser_capabilities(capabilities)
             capabilities = frozenset(capabilities)
-            unknown = capabilities - BROWSER_CAPABILITY_TOKENS
-            if unknown:
-                raise ValueError(
-                    f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
-                    f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
-                )
 
         self.capabilities = capabilities
 
