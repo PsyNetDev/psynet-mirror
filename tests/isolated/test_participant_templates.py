@@ -1021,7 +1021,10 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
 # browser-detect.html entry-check bug guards
 # ---------------------------------------------------------------------------
 
-def _render_browser_detect(*, force_google_chrome=False, allow_mobile_devices=True, lucid=False):
+
+def _render_browser_detect(
+    *, force_google_chrome=False, allow_mobile_devices=True, lucid=False
+):
     from flask import Flask, render_template_string
 
     from psynet.graphics import PsyNetLogo
@@ -1052,7 +1055,7 @@ def test_browser_detect_handles_detectIncognito_rejection():
     rejection is unhandled, browser.isValidated stays undefined, and Firefox
     slips through force_google_chrome=True."""
     html = _render_browser_detect()
-    after_then = html[html.index("detectIncognito().then("):]
+    after_then = html[html.index("detectIncognito().then(") :]
     assert ".catch(" in after_then, (
         "detectIncognito() promise has no .catch — an unhandled rejection leaves "
         "browser.isValidated undefined and admits any browser silently."
@@ -1064,7 +1067,7 @@ def test_browser_detect_accepts_chromium_based_browsers():
     based), not only the exact 'Chrome' string returned by detectIncognito."""
     html = _render_browser_detect()
     validate_start = html.index("browser.validate = function")
-    validate_fn = html[validate_start: html.index("return browser;")]
+    validate_fn = html[validate_start : html.index("return browser;")]
     assert '"Edge"' in validate_fn, (
         "isChrome only matches exact 'Chrome' from detectIncognito; "
         "Chromium-based browsers (Edge, Brave, Opera) are incorrectly rejected."
@@ -1079,7 +1082,6 @@ def test_browser_detect_identifies_ipad_os_as_mobile():
         "isMobile check uses only a UA regex; iPadOS 13+ reports macOS UA "
         "and is not detected as mobile."
     )
-
 
 
 def test_ad_and_consent_do_not_call_terminate_participant():
@@ -1113,7 +1115,7 @@ def test_browser_detect_requires_css_has_unconditionally():
 
 
 def test_browser_capabilities_accepts_valid_tokens():
-    from psynet.experiment import BROWSER_CAPABILITY_TOKENS, Experiment
+    from psynet.experiment import Experiment
 
     class Exp(Experiment):
         browser_capabilities = {"microphone", "camera"}

@@ -40,9 +40,7 @@ def test_browser_capability_check_page_has_module():
     from psynet.prescreen import BrowserCapabilityCheckPage
 
     page = BrowserCapabilityCheckPage({"screen_capture"})
-    assert any(
-        "browser-capability-check.js" in m for m in page.js_page_modules
-    )
+    assert any("browser-capability-check.js" in m for m in page.js_page_modules)
 
 
 def test_browser_capability_check_page_no_next_button():
