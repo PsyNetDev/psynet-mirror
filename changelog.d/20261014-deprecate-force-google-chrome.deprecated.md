@@ -1,0 +1,1 @@
+Deprecated `force_google_chrome`; use `browser_capabilities` instead. Also flipped the default to `False` (most experiments don't need Chromium-only behaviour), widened semantics to include all Chromium-based browsers (Edge, Brave, Opera), and removed `min_browser_version` (the `css_has` feature-detect provides an equivalent floor).

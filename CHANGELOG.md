@@ -1,28 +1,5 @@
 # CHANGELOG
 
-## [13.4.0] Unreleased
-
-### Added
-
-- Added `browser_capabilities` class attribute to `Experiment` for declaring browser capability requirements. Supported tokens: `audio_playback`, `video_recording`, `screen_capture`, `microphone`, `camera`.
-- Added `BrowserCapabilityCheck` prescreener that tests the participant's browser against declared capabilities and routes to `UnsuccessfulEndPage` if any check fails. Permission-requiring capabilities (`microphone`, `camera`) show a dedicated intro page before requesting access.
-- Added Playwright end-to-end tests for the browser capability prescreener.
-
-### Changed
-
-- Flipped `force_google_chrome` default to `False`; `browser_capabilities` + `BrowserCapabilityCheck` supersede it for most use cases. Authors who need Chromium-only behaviour set it explicitly.
-- Widened `force_google_chrome` semantics to include all Chromium-based browsers (Edge, Brave, Opera), not just Chrome.
-- Deprecated `force_google_chrome` with a migration note pointing to `browser_capabilities`.
-
-### Removed
-
-- Removed `min_browser_version` config; the `css_has` feature-detect provides an equivalent and more principled browser floor.
-
-### Fixed
-
-- Fixed `force_google_chrome` deprecation warning firing unconditionally instead of only when the setting was explicitly enabled.
-- Fixed `force_incognito_mode=True` incorrectly passing all participants on browsers where incognito detection is unsupported (e.g. Firefox); unknown incognito status is now treated as a failed check.
-
 ## [13.3.0](https://gitlab.com/PsyNetDev/PsyNet/-/releases/v13.3.0) Release - 2026-07-07
 
 ### Added
