@@ -5579,7 +5579,8 @@ def performance_test__prepare_reset(
                 f"Warning: the database already has {n_existing:,} participants, "
                 "for example from earlier tests; the pre-fill adds to them, and "
                 "the snapshot keeps them all. To pre-fill an empty database, "
-                "destroy the app; the next 'performance-test ssh' deploys it again."
+                "destroy the app, then run this command again: it deploys the "
+                "app with an empty database and pre-fills it before any test."
             )
         with open(bot_log or os.devnull, "a") as bot_log_file:
             try:

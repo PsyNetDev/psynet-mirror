@@ -698,7 +698,10 @@ The snapshot holds whatever the database held when the run started. If it
 already held participants, for example from manual testing or a run that
 couldn't restore it, PsyNet warns that every test starts from that data. To
 start from an empty database, destroy the app with ``psynet destroy ssh``;
-the next ``psynet performance-test ssh`` deploys it again.
+the next ``psynet performance-test ssh`` deploys it again. Give that next
+run ``--reset-database`` or ``--prefill-participants``, which implies it,
+because tests run without a reset leave their bots' participants in the
+database.
 
 If a worker still hasn't registered 180 s after the restart, the reset
 fails, and the error names the worker containers and gives the ``docker
