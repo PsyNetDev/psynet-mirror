@@ -95,6 +95,7 @@ _HEALTH_PROBE = (
 _ASYNC_DRAIN_TIMEOUT_S = 3600
 _IN_USE_ATTEMPTS = 10
 _OBJECT_IN_USE = "55006"
+_DUPLICATE_DATABASE = "42P04"
 _MAX_NAME_LENGTH = 63
 _SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1", "dallinger"})
 _SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
@@ -628,41 +629,34 @@ class DatabaseReset:
             )
 
     def close(self):
-        """Restore the database to how the run found it, then drop the copies, warning instead of raising if that fails.
+        """Restore the database to how the run found it, then drop the copies.
 
-        That way a test's own error is the one that propagates;
-        ``click.Abort``, ``click.exceptions.Exit`` and interrupts still
-        propagate after the warning. If the restore fails, the copy it
-        restores from is kept, so that the database can be restored by hand.
+        The app's server processes stay stopped afterwards, for
+        :meth:`RemoteApp.start_stopped_services` to start. A copy that can't
+        be dropped only causes a warning.
+
+        Raises
+        ------
+        RuntimeError
+            If the restore failed. The warning before it says how to restore
+            the database by hand from the copy, which is kept.
         """
         import click
 
         kept = None
+        restore_error = None
         if self._original is not None:
             logger.info("")
             logger.info("Restoring the database to how it was before the run...")
             try:
-                self._restore(self._original)
+                self._restore(self._original, start=False)
             except BaseException as e:
-                logger.warning(
-                    warning(
-                        f"Could not restore the database {self.database} to how "
-                        f"it was before the run ({str(e) or type(e).__name__}), "
-                        "so the next run would start from this run's data. "
-                        f"{self._original} keeps the database as it was. To "
-                        f"restore it on {self.remote.server}, stop the app's "
-                        "server processes, run: docker exec "
-                        f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
-                        f'--if-exists {self.database} && createdb -U "$POSTGRES_USER" '
-                        f"-T {self._original} {self.database}', start them "
-                        f"again, and then drop {self._original} with dropdb."
-                    )
-                )
+                self._warn_restore_failed(e)
                 if not isinstance(e, RuntimeError) or isinstance(
                     e, (click.Abort, click.exceptions.Exit)
                 ):
                     raise
-                kept = self._original
+                kept, restore_error = self._original, e
         for copy in self._copies:
             if copy == kept:
                 continue
@@ -675,28 +669,68 @@ class DatabaseReset:
             except RuntimeError as e:
                 logger.warning(
                     warning(
-                        f"Could not drop the database {copy} ({e}). "
-                        f"Drop it on {self.remote.server} with: docker exec "
-                        f'{self.container} sh -c \'dropdb -U "$POSTGRES_USER" '
-                        f"{copy}'"
+                        f"Could not drop the database {copy} ({e}). Drop it on "
+                        f"{self.remote.server} with: {self._dropdb(copy)}"
                     )
                 )
+        if restore_error is not None:
+            raise restore_error
+
+    def _warn_restore_failed(self, error):
+        """Warn that the database couldn't be restored from the original copy, with the commands that restore it by hand."""
+        compose = f"cd ~/dallinger/{shlex.quote(self.database)} && docker compose"
+        services = " ".join(map(shlex.quote, self.remote._stopped))
+        recreate_sh = (
+            f'dropdb -U "$POSTGRES_USER" --if-exists {self.database} && '
+            f'createdb -U "$POSTGRES_USER" -T {self._original} {self.database}'
+        )
+        logger.warning(
+            warning(
+                f"Could not restore the database {self.database} to how it was "
+                f"before the run ({str(error) or type(error).__name__}), so the "
+                f"next run would start from this run's data. {self._original} "
+                f"keeps the database as it was. To restore it, run on "
+                f"{self.remote.server}:"
+            )
+        )
+        recreate = f"docker exec {self.container} sh -c {shlex.quote(recreate_sh)}"
+        commands = (
+            [f"{compose} stop {services}", recreate, f"{compose} start {services}"]
+            if services
+            else [recreate]
+        )
+        for command in [*commands, self._dropdb(self._original)]:
+            # Printed as is, so that each command can be copied whole.
+            logger.warning(f"    {command}")
+
+    def _dropdb(self, database):
+        """Return the server command that drops ``database``."""
+        return f"docker exec {self.container} sh -c " + shlex.quote(
+            f'dropdb -U "$POSTGRES_USER" {database}'
+        )
 
     def _take_copy(self, kind):
         """Copy the database to a new ``<app>_<kind>_<time>`` database with the server processes stopped, and return its name."""
-        stamp = f"_{kind}_{datetime.datetime.now():%Y%m%d%H%M%S}"
+        stamp = f"_{kind}_{datetime.datetime.now():%Y%m%d%H%M%S%f}"
         name = self.database[: _MAX_NAME_LENGTH - len(stamp)] + stamp
+        # Recorded before copying, so that close() drops an interrupted copy.
         self._copies.append(name)
         self.remote.stop()
-        self._copy(self.database, name)
+        try:
+            self._copy(self.database, name)
+        except RemoteSqlError as e:
+            if e.pgcode == _DUPLICATE_DATABASE:
+                self._copies.remove(name)
+            raise
         self.remote.clear_job_queues()
         self.remote.start()
         return name
 
-    def _restore(self, source):
+    def _restore(self, source, start=True):
         """Recreate the database from database ``source`` with the server processes stopped.
 
-        They may already be stopped by a reset that failed.
+        They may already be stopped by a reset that failed. They start
+        again afterwards if ``start``.
         """
         if not self.remote._stopped:
             self.remote.stop()
@@ -706,7 +740,8 @@ class DatabaseReset:
         )
         self._copy(source, self.database)
         self.remote.clear_job_queues()
-        self.remote.start()
+        if start:
+            self.remote.start()
 
     def _cursor(self, database="postgres"):
         return _PsqlCursor(self.remote.executor, self.container, database)

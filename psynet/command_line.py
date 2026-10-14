@@ -4923,8 +4923,8 @@ def _run_performance_suite(
     Raises
     ------
     click.ClickException
-        If a reset stopped the run early, or ``cleanup`` failed, once the
-        results are saved.
+        If a reset stopped the run early, the final restore of the database
+        failed or ``cleanup`` failed, once the results are saved.
     """
     from psynet.perf_test import CapacityLimits, PerformanceSuite
 
@@ -4970,7 +4970,7 @@ def _run_performance_suite(
         label=label,
         after_test=save_json,
     )
-    cleanup_error = None
+    restore_error = cleanup_error = None
     try:
         if find_capacity:
             all_results = suite.find_capacity(
@@ -4981,32 +4981,41 @@ def _run_performance_suite(
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
+        # Errors are reported with the reset's error, or after an error that
+        # is already propagating.
         if database_reset is not None:
             try:
                 try:
                     database_reset.close()
-                finally:
+                except Exception as e:
+                    # close() has already warned how to restore it by hand.
+                    restore_error = e
+            finally:
+                try:
                     if cleanup is not None:
                         cleanup()
-            except Exception as e:
-                # Reported with the reset's error, or after an error that
-                # is already propagating.
-                logger.warning(
-                    "Starting the app's server processes again failed: "
-                    f"{str(e) or type(e).__name__}"
-                )
-                cleanup_error = e
-    _raise_reset_error(suite, cleanup_error)
+                except Exception as e:
+                    logger.warning(
+                        "Starting the app's server processes again failed: "
+                        f"{str(e) or type(e).__name__}"
+                    )
+                    cleanup_error = e
+    _raise_reset_error(suite, cleanup_error, restore_error)
     return all_results
 
 
-def _raise_reset_error(suite, cleanup_error=None):
-    """Fail the command if a database reset stopped ``suite`` early or ``cleanup_error`` ended it, once its results are saved."""
+def _raise_reset_error(suite, cleanup_error=None, restore_error=None):
+    """Fail the command if a database reset stopped ``suite`` early, the final restore failed or ``cleanup_error`` ended it, once its results are saved."""
     problems = []
     if suite.reset_error:
         problems.append(
             f"Resetting the database failed, so the run stopped early: "
             f"{suite.reset_error}"
+        )
+    if restore_error is not None:
+        problems.append(
+            "Restoring the database to how the run found it failed: "
+            f"{str(restore_error) or type(restore_error).__name__}"
         )
     if cleanup_error is not None:
         problems.append(

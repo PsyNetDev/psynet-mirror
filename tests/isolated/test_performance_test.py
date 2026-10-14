@@ -2221,7 +2221,7 @@ def _remote_app(respond, isolated=True):
 
 
 @pytest.mark.parametrize(
-    "prefill, restore_fails", [(None, False), (5, False), (5, True)]
+    "prefill, restore_fails", [(None, False), (None, True), (5, False), (5, True)]
 )
 def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     prefill, restore_fails, caplog
@@ -2242,12 +2242,17 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
         return answers(cmd)
 
     remote = _remote_app(respond)
-    remote.stop, remote.start = Mock(), Mock()
+    remote.stop = Mock(side_effect=lambda: setattr(remote, "_stopped", ["web"]))
+    remote.start = Mock(side_effect=lambda: setattr(remote, "_stopped", []))
     reset = DatabaseReset(remote, prefill)
     with caplog.at_level("INFO"):
         reset()
         reset()
-        reset.close()
+        if restore_fails:
+            with pytest.raises(RuntimeError, match="No space left"):
+                reset.close()
+        else:
+            reset.close()
 
     sql = [c for c in remote.executor.commands if " psql " in c]
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
@@ -2274,29 +2279,40 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     assert any("redis-cli --scan --pattern" in c for c in remote.executor.commands)
     assert reset.snapshot_rows == {"participant": 3}
     assert remote.stop.call_count == 3 + bool(prefill)
-    assert remote.start.call_count == remote.stop.call_count - restore_fails
+    # The caller's start_stopped_services starts them after close().
+    assert remote.start.call_count == remote.stop.call_count - 1
     assert ("already held 3 participants" in caplog.text) == (not prefill)
     assert ("Could not restore the database my-app" in caplog.text) == restore_fails
+    assert ("docker compose stop web" in caplog.text) == restore_fails
 
 
-def test_a_failed_first_snapshot_is_dropped_and_the_database_left_alone():
+@pytest.mark.parametrize(
+    "error, ours",
+    [
+        ("53100: could not extend file: No space left", True),
+        ('42P04: database "my-app_snapshot_1" already exists', False),
+    ],
+)
+def test_a_failed_first_snapshot_is_dropped_and_the_database_left_alone(error, ours):
     from psynet.perf_ssh import DatabaseReset
 
     def respond(cmd):
         if 'CREATE DATABASE "my-app_snapshot_' in cmd:
-            return (1, "ERROR:  53100: could not extend file: No space left\n")
+            return (1, f"ERROR:  {error}\n")
         return _answers(_DISK)(cmd)
 
     remote = _remote_app(respond)
     remote.stop, remote.start = Mock(), Mock()
     reset = DatabaseReset(remote)
-    with pytest.raises(RuntimeError, match="No space left"):
+    with pytest.raises(RuntimeError, match=error[7:]):
         reset()
     reset.close()
 
     sql = " ".join(c for c in remote.executor.commands if " psql " in c)
     dropped = re.findall(r'DROP DATABASE IF EXISTS "([^"]*)"', sql)
-    assert len(dropped) == 1 and dropped[0].startswith("my-app_snapshot_")
+    # A database of the same name that this run didn't create stays.
+    assert len(dropped) == ours
+    assert all(d.startswith("my-app_snapshot_") for d in dropped)
 
 
 def test_remote_output_leaves_out_stderr_unless_the_command_fails():
@@ -2398,7 +2414,7 @@ esac
 
 @pytest.mark.parametrize("recovers", [True, False])
 def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
-    recovers, tmp_path, monkeypatch, capsys
+    recovers, tmp_path, monkeypatch
 ):
     import shlex
     import subprocess
@@ -2430,12 +2446,16 @@ def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
     register("c1")
     register("c2")
     printed = []
+    monkeypatch.setattr(
+        perf_ssh, "print", lambda line: printed.append((clock[0], line)), raising=False
+    )
 
     def respond(cmd):
-        printed.append((clock[0], capsys.readouterr().out))
         # Dallinger's worker_startup_timeout exits a hung worker, and Docker restarts it.
         if recovers and clock[0] >= 130:
             register("c2")
+        if "exec -T web python -c" in cmd and clock[0] < 160:
+            return (1, "")
         if redis_command := re.search(r"exec -T redis (.*) ; }", cmd):
             return subprocess.run(
                 shlex.split(redis_command[1]), env=env, capture_output=True, text=True
@@ -2466,9 +2486,10 @@ def test_a_remote_restart_waits_for_workers_and_names_those_that_never_register(
             error.value
         )
     waiting = "Waiting for worker processes to register (1 of 2; up to 180 s)"
-    printed.append((clock[0], capsys.readouterr().out))
-    assert not any(waiting in out for t, out in printed if t <= 20)
-    assert any(waiting in out for _, out in printed)
+    assert all(t >= 20 for t, line in printed if waiting in line)
+    assert any(waiting in line for _, line in printed)
+    web = "Waiting for the web server to answer (up to 180 s)"
+    assert any(web in line for _, line in printed) == recovers
     assert not any(".yml restart" in c for c in remote.executor.commands)
 
 
@@ -2527,6 +2548,7 @@ def _remote_search(
     reset_side_effect=None,
     cleanup_error=None,
     interrupt_at_test=None,
+    restore_error=None,
     **options,
 ):
     """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
@@ -2550,7 +2572,12 @@ def _remote_search(
         patch(
             "psynet.command_line._ssh_database_reset",
             return_value=reset
-            and Mock(snapshot=None, snapshot_rows=None, side_effect=reset_side_effect),
+            and Mock(
+                snapshot=None,
+                snapshot_rows=None,
+                side_effect=reset_side_effect,
+                **{"close.side_effect": restore_error},
+            ),
         ),
         patch(
             "psynet.perf_ssh.RemoteApp.start_stopped_services",
@@ -2597,6 +2624,16 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
     assert data["finished_at"] and data["reset_error"] == reset_failure
     assert data["options"]["max_queue_p95_s"] == 8
     assert data["options"]["confirmation_skipped"] == "resetting the database failed"
+
+
+def test_a_failed_final_restore_fails_the_command(monkeypatch):
+    import click
+
+    with pytest.raises(click.ClickException) as error:
+        _remote_search(monkeypatch, reset=True, restore_error=RuntimeError("disk full"))
+    assert "Restoring the database to how the run found it failed: disk full" in (
+        error.value.message
+    )
 
 
 def test_an_interrupted_remote_search_keeps_the_finished_tests_json(

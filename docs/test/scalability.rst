@@ -672,8 +672,9 @@ a few seconds per gigabyte of data on top of restarting the app. At the end,
 even after a failed reset or when you interrupt the run, it restores the
 database in the same way to how the run found it, so that every run starts
 from the same data, and then drops the snapshot, printing a ``dropdb``
-command if that fails. If the restore fails, PsyNet keeps the snapshot and
-prints the commands that restore the database from it by hand. Files that
+command if that fails. If the restore fails, PsyNet keeps the copy it
+restores from, names it in a warning with the commands that restore the
+database from it by hand, and the command exits with an error. Files that
 the bots uploaded or generated stay in the asset storage, because only the
 database rows that refer to them are reset.
 
