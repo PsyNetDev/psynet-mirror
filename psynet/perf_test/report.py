@@ -467,6 +467,13 @@ def _database_row_lines(result):
     ]
 
 
+_LOCAL_CAVEAT = (
+    "Local results only show how the experiment copes on this computer. "
+    "For numbers that apply to your study, run on its deployment server "
+    "with 'performance-test ssh', which deploys its own app there for the "
+    "tests; the server's CPU, memory and worker settings decide how many "
+    "participants it can handle."
+)
 _NOT_MEASURED = (
     "Not measured: uploads over participants' own networks (bots upload from "
     "next to the server), media downloads and bandwidth, the front door (web "
@@ -766,6 +773,7 @@ def format_performance_summary(
     elapsed_s=None,
     terminal=None,
     confirmation_planned=False,
+    local=False,
 ):
     """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
 
@@ -787,6 +795,9 @@ def format_performance_summary(
     confirmation_planned : bool
         Whether the capacity search meant to end with a validation test, for
         advice when it didn't run.
+    local : bool
+        Whether the bots and the server ran on this computer, which a note
+        then says.
 
     Returns
     -------
@@ -818,8 +829,9 @@ def format_performance_summary(
             ),
             None,
         ]
+    notes = [_LOCAL_CAVEAT, _NOT_MEASURED] if local else [_NOT_MEASURED]
     tail += _capacity_renderables(
-        results, limits, time_factor, [_NOT_MEASURED], confirmation_planned
+        results, limits, time_factor, notes, confirmation_planned
     )
     tables = []
     for columns in _summary_columns(results, limits):
@@ -861,13 +873,16 @@ def _long_test_text(result, n, confirmation_planned):
     duration, arrival = confirmation_timing(
         result.session_minutes, result.duration_minutes or 0
     )
-    test = f"--n-bots {n} --arrival-minutes {arrival:g} --duration-minutes {duration:g}"
+    test = f"--n-bots {n}"
+    if arrival is not None:
+        test += f" --arrival-minutes {arrival:g}"
+    test += f" --duration-minutes {duration:g}"
     if confirmation_planned:
         return (
             "The validation test, which lasts longer than a session, would "
-            f"measure it; to run it alone, use {test}."
+            f"measure it; to run it alone, use {test} with your other options."
         )
-    return f"A test longer than a session measures it: {test}."
+    return f"A test longer than a session measures it: {test} with your other options."
 
 
 def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_planned):
@@ -893,10 +908,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_p
     confirmed = _confirmed(confirmation, limits)
     cap = confirmation.n_bots if confirmed else outcome.cap
     n = cap or measured.n_bots
-    burst = None
-    if queue_bound is not None and queue_bound is first_fail and capacity_result:
-        burst = (capacity_result.n_rq_workers, capacity_result.n_bots)
-    advice = recommend_workers(measured, n, burst)
+    advice = recommend_workers(measured, n)
     behind = workers_falling_behind(measured)
     ran_jobs = (measured.worker_load or {}).get("jobs")
     if not (queue_bound or behind or (ran_jobs and (cap or not advice.skipped))):
@@ -1047,8 +1059,8 @@ _BUSY_CHAINS_ADVICE = (
 _START_RATE_ADVICE = (
     "Bots that cannot start fast enough limit the test rather than the "
     "server, because the processes running the bots create each bot's "
-    "participant themselves. Bots that take longer, in a longer experiment or "
-    "with a larger --time-factor, give a better measure of the server."
+    "participant themselves. More processes, with --bot-processes, start bots "
+    "faster; if not all bots started, use a longer --duration-minutes."
 )
 _TESTER_LAG_ADVICE = (
     "A process running bots was so busy that its bots ran late and made "
@@ -1234,7 +1246,8 @@ def _recommendation(outcome, confirmation, limits):
         if confirmation.arrival_minutes:
             rerun += f" --arrival-minutes {confirmation.arrival_minutes:g}"
         text, style = (
-            f"try at most {retry:,} participants at once, and validate it with {rerun}.",
+            f"try at most {retry:,} participants at once, and validate it with "
+            f"{rerun} and your other options.",
             _UNCONFIRMED,
         )
     else:
@@ -1515,6 +1528,14 @@ def _capacity_test_notes(capacity_result, time_factor, validated=False):
             "These bots ran without pauses (--time-factor 0) and load the server "
             "far more than people do; use --time-factor 1 to size the number of participants."
         )
+    elif time_factor != 1:
+        lighter = "less" if time_factor > 1 else "more"
+        notes.append(
+            f"These bots paused {time_factor:g} times as long as participants "
+            f"(--time-factor {time_factor:g}), so each loads the server {lighter} "
+            "than a participant and the bot counts don't equal participants; use "
+            "--time-factor 1 to size the number of participants."
+        )
     return notes
 
 
@@ -1571,11 +1592,7 @@ def capacity_advice(capacity_search=False):
     list[str]
     """
     advice = [
-        "Local results only show how the experiment copes on this computer. "
-        "For numbers that apply to your study, run on its deployment server "
-        "with 'performance-test ssh', which deploys its own app there for the "
-        "tests; the server's CPU, memory and worker settings decide how many "
-        "participants it can handle.",
+        _LOCAL_CAVEAT,
         "Bots fetch pages and submit answers without a browser, so the results "
         "leave out the static files, media and JavaScript requests that "
         "participants' browsers make.",

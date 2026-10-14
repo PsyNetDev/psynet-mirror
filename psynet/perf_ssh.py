@@ -142,14 +142,18 @@ def run_with_status(executor, cmd):
     The output is the command's stdout, followed by its stderr only if it
     fails, so that warnings on stderr, such as Docker Compose's, can't
     corrupt output that is parsed, and errors still say what went wrong.
+    If the status never arrives, as when the SSH channel drops, the status
+    is 255, like ``ssh``'s own.
     """
     script = (
         f'err=$(mktemp) && {{ {cmd} ; }} 2>"$err"; status=$?; '
         '[ "$status" -eq 0 ] || cat "$err"; rm -f "$err"; '
         f"echo {_STATUS_MARKER}$status"
     )
-    output = executor.run(script, raise_=False)
-    output, _, status = (output or "").rpartition(_STATUS_MARKER)
+    output = executor.run(script, raise_=False) or ""
+    if _STATUS_MARKER not in output:
+        return 255, output
+    output, _, status = output.rpartition(_STATUS_MARKER)
     return int(status.strip() or 1), output
 
 
@@ -212,7 +216,7 @@ class RemoteApp:
 
         Raises
         ------
-        click.Abort
+        click.ClickException
             If the command fails.
         RuntimeError
             If its JSON can't be read back.
@@ -282,11 +286,12 @@ class RemoteApp:
         )
         return self.compose("exec", "-T", "web", "python", "-c", probe).strip()
 
-    def stop(self):
+    def stop(self, check=True):
         """Check that the database may be reset, then stop the app's running or restarting services that may use the database.
 
         Those are all except PostgreSQL, Redis and the front door's
-        services; :meth:`start` starts them again.
+        services; :meth:`start` starts them again. Without ``check``, it
+        skips the check, as when restoring a database that it already passed.
 
         Raises
         ------
@@ -294,7 +299,8 @@ class RemoteApp:
             If none of them runs: without services, ``docker compose stop``
             would stop every service, PostgreSQL and Redis included.
         """
-        self.prepare()
+        if check:
+            self.prepare()
         self._n_workers = int(self._redis("SCARD", "rq:workers") or 0)
         services = self._server_services()
         if not services:
@@ -589,20 +595,21 @@ class DatabaseReset:
             self._restore(self.snapshot)
             return
         if self._prefill_participants:
+            # The copy clears the job queues, which would orphan unfinished jobs.
+            self._check_no_async_jobs_waiting(
+                self.remote.prepare(async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S),
+                "the database was not copied before pre-filling it",
+            )
             logger.info("")
             logger.info("Copying the database before pre-filling it...")
             self._original = self._take_copy("baseline")
-        waiting = self.remote.prepare(
-            prefill_participants=self._prefill_participants,
-            async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S,
+        self._check_no_async_jobs_waiting(
+            self.remote.prepare(
+                prefill_participants=self._prefill_participants,
+                async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S,
+            ),
+            "no snapshot was taken",
         )
-        if waiting:
-            raise RuntimeError(
-                f"{waiting:,} async jobs had not finished after "
-                f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so no snapshot was "
-                "taken: their jobs would be lost at each reset. Check the "
-                "experiment's async jobs in the server log."
-            )
         logger.info("")
         logger.info("Taking a snapshot of the database...")
         self.snapshot = self._take_copy("snapshot")
@@ -626,6 +633,17 @@ class DatabaseReset:
                     f"{self.database}'; the next 'psynet performance-test ssh' "
                     "deploys it again with an empty database."
                 )
+            )
+
+    @staticmethod
+    def _check_no_async_jobs_waiting(waiting, consequence):
+        """Raise ``RuntimeError`` if ``waiting`` async jobs are still unfinished."""
+        if waiting:
+            raise RuntimeError(
+                f"{waiting:,} async jobs had not finished after "
+                f"{_ASYNC_DRAIN_TIMEOUT_S // 60} minutes, so {consequence}: "
+                "their jobs would be lost at each reset. Check the "
+                "experiment's async jobs in the server log."
             )
 
     def close(self):
@@ -715,7 +733,8 @@ class DatabaseReset:
         again afterwards if ``start``.
         """
         if not self.remote._stopped:
-            self.remote.stop()
+            # The final restore needn't pass the check again, which needs the web server.
+            self.remote.stop(check=start)
         self._check_disk_space(source)
         self._run_when_unused(
             self.database, f"DROP DATABASE IF EXISTS {_quote_ident(self.database)}"

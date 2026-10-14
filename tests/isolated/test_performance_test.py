@@ -1264,27 +1264,25 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
 
 # One worker keeps up with about 777 / 43 = 18 participants, so 3 with about 54.
 @pytest.mark.parametrize(
-    "result, n, burst, expected",
+    "result, n, expected",
     [
-        # The confirmed 96 kept 10 workers 55% busy, and 120 passed the search;
-        # 8 would do, but the advice keeps the current 10.
+        # The confirmed 96 kept 10 workers 55% busy; 8 would do, but the
+        # advice keeps the current 10.
         (
             _tapping_result(96, 10, 0.55),
             96,
-            (10, 120),
             dict(processes=10, demand=8, reason="current"),
         ),
         # Saturated: 60 × 43 / 777 / 0.7 = 4.7 is a minimum.
-        (_tapping_result(60, 3, 0.98), 60, None, dict(processes=5, reason="minimum")),
-        # 192 need 16, but 16 cores leave 14; unknown search workers give no burst.
+        (_tapping_result(60, 3, 0.98), 60, dict(processes=5, reason="minimum")),
+        # 192 need 16, but 16 cores leave 14.
         (
             _tapping_result(96, 10, 0.55),
             192,
-            (None, 120),
             dict(processes=14, demand=16, reason="cores"),
         ),
         # 1 worker 73% busy needs 0.73 / 0.7 = 1.04, so 2.
-        (_tapping_result(10, 1, 0.73), 10, None, dict(processes=2, reason="estimate")),
+        (_tapping_result(10, 1, 0.73), 10, dict(processes=2, reason="estimate")),
         # 2 workers that fell behind with half the load they could take get 3.
         (
             _tapping_result(
@@ -1295,35 +1293,31 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
                 steady_state_phase=_phase_backlog(95),
             ),
             60,
-            None,
             dict(processes=3, demand=2, reason="behind"),
         ),
         # 6 workers on 8 cores already use all the cores left.
         (
             _tapping_result(96, 6, 0.55, server_cores=8),
             96,
-            None,
             dict(processes=6, reason="current", all_cores=True),
         ),
         # 10 I/O jobs at once in each 20-slot process use 60% of its core.
         (
             _tapping_result(40, 2, 10, slots=20, cpu_share=0.6),
             40,
-            None,
             dict(processes=2, greenlets=20),
         ),
         (
             _tapping_result(96, 10, 0.55, worker_load={}, steady_state_phase=None),
             96,
-            None,
             dict(
                 skipped="the 96-bot test ran for less than 60 s after its first bot finished"
             ),
         ),
     ],
 )
-def test_recommend_workers(result, n, burst, expected):
-    advice = recommend_workers(result, n, burst)
+def test_recommend_workers(result, n, expected):
+    advice = recommend_workers(result, n)
 
     assert {key: getattr(advice, key) for key in expected} == expected
 
@@ -1600,12 +1594,12 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
             True,
             "The validation test, which lasts longer than a session, would "
             "measure it; to run it alone, use --n-bots 104 --arrival-minutes 13 "
-            "--duration-minutes 26.",
+            "--duration-minutes 26 with your other options.",
         ),
         (
             False,
             "A test longer than a session measures it: --n-bots 104 "
-            "--arrival-minutes 13 --duration-minutes 26.",
+            "--arrival-minutes 13 --duration-minutes 26 with your other options.",
         ),
     ],
 )
@@ -1629,6 +1623,13 @@ def test_worker_advice_without_a_steady_state_names_a_longer_test(planned, advic
         in text
     )
     assert "Raise worker_processes" not in text
+
+
+def test_long_test_advice_leaves_out_an_arrival_window_too_short_to_round():
+    from psynet.perf_test.report import _long_test_text
+
+    result = _base_result(session_minutes=0.04, duration_minutes=1)
+    assert "--arrival-minutes" not in _long_test_text(result, 10, False)
 
 
 def test_queue_advice_says_when_no_worker_processes_ran():
@@ -1834,10 +1835,18 @@ def test_capacity_verdicts(results, expected, absent):
         assert line not in text
 
 
-def test_capacity_summary_asks_for_pauses_when_bots_ran_without_them():
-    text = _join(format_capacity_summary([_bots(50)], time_factor=0))
-    assert "--time-factor 1" in text
+@pytest.mark.parametrize("time_factor", [0, 2])
+def test_capacity_summary_asks_for_realistic_pauses(time_factor):
+    text = _join(format_capacity_summary([_bots(50)], time_factor=time_factor))
+    assert "use --time-factor 1 to size the number of participants" in text
+    assert "--time-factor" not in _join(format_capacity_summary([_bots(50)]))
     assert format_capacity_summary([]) == []
+
+
+@pytest.mark.parametrize("local", [True, False])
+def test_only_a_local_summary_says_the_results_apply_to_this_computer(local):
+    text = _join(format_performance_summary([_bots(50)], local=local))
+    assert ("only show how the experiment copes on this computer" in text) == local
 
 
 @pytest.mark.parametrize(
@@ -2242,7 +2251,7 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
         return answers(cmd)
 
     remote = _remote_app(respond)
-    remote.stop = Mock(side_effect=lambda: setattr(remote, "_stopped", ["web"]))
+    remote.stop = Mock(side_effect=lambda **_: setattr(remote, "_stopped", ["web"]))
     remote.start = Mock(side_effect=lambda: setattr(remote, "_stopped", []))
     reset = DatabaseReset(remote, prefill)
     with caplog.at_level("INFO"):
@@ -2283,6 +2292,8 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     assert any("redis-cli --scan --pattern" in c for c in remote.executor.commands)
     assert reset.snapshot_rows == {"participant": 3}
     assert remote.stop.call_count == 3 + bool(prefill)
+    # The final restore doesn't need the web server for the safety check.
+    assert remote.stop.call_args.kwargs == {"check": False}
     # The caller's start_stopped_services starts them after close().
     assert remote.start.call_count == remote.stop.call_count - 1
     assert ("already held 3 participants" in caplog.text) == (not prefill)
@@ -2353,6 +2364,20 @@ def test_remote_output_leaves_out_stderr_unless_the_command_fails():
     assert run_with_status(executor, "echo '{}'; echo WARN >&2") == (0, "{}\n")
     status, output = run_with_status(executor, "cat /no/such/file && echo copied")
     assert status != 0 and "No such file" in output
+    executor.run.side_effect = lambda cmd, raise_: "partial output"
+    assert run_with_status(executor, "echo hi") == (255, "partial output")
+
+
+def test_a_prefilled_reset_refuses_to_copy_while_async_jobs_are_unfinished():
+    from psynet.perf_ssh import DatabaseReset
+
+    remote = _remote_app(_answers(_DISK))
+    remote.stop, remote.start = Mock(), Mock()
+    reset = DatabaseReset(remote, prefill_participants=5)
+    remote.prepare.return_value = 2
+    with pytest.raises(RuntimeError, match="2 async jobs had not finished"):
+        reset()
+    assert not any("CREATE DATABASE" in c for c in remote.executor.commands)
 
 
 @pytest.mark.parametrize("restart_fails", [False, True])

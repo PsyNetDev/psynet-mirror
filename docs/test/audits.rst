@@ -61,7 +61,7 @@ Sections
 
 **Performance test**
    Response times with many bots at once, and whether each tested number of
-   bots stayed within the response-time and queue-wait limits; see
+   bots stayed within the capacity limits; see
    :doc:`scalability`.
 
 **Data exports**

@@ -49,6 +49,7 @@ def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
         results = [
             {"n_bots": 8, "p95_response_time": 0.2},
             {"n_bots": 16, "p95_response_time": 3.0},
+            {"n_bots": 32, "p95_response_time": 0.2, "slots_started": 20},
         ]
         view = classify_audit_evidence(
             [
@@ -63,6 +64,7 @@ def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
     html = performance(capacity_search=False)
     assert "<td>Yes</td>" in html
     assert "<td>No: p95 response time 3000 ms</td>" in html
+    assert "<td>Untested: only 20 of 32 bots started" in html
     assert "Largest passing test: 8 bots at once. At 16, " in html
     assert ">Notes<" not in html
     assert "performance-test ssh" in html and "debug ssh" not in html

@@ -1389,7 +1389,7 @@ def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys)
     # gets lost if we stop reading as soon as the exit status is available.
     assert "1 passed" in output
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(click.ClickException, match="exit code 1: boom"):
         run_remote_experiment_command(
             _executor_for(_FakeChannel(1, output=b"boom\n")),
             "my-app",
@@ -4815,6 +4815,18 @@ def test_performance_log_directory_works_without_a_user_name(tmp_path, monkeypat
     assert directory.is_dir()
 
 
+def test_performance_log_directory_avoids_a_folder_others_may_write(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import _performance_log_directory
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    shared = _performance_log_directory()
+    shared.chmod(0o777)
+    directory = _performance_log_directory()
+    assert directory != shared and directory.is_dir()
+
+
 def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
     from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
 
@@ -5009,6 +5021,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         before_test=None,
         label=experiment.label,
         after_test=ANY,
+        local=True,
     )
     searching = options.get("n_bots") == "auto"
     assert (suite.find_capacity.called, suite.run.called) == (

@@ -409,8 +409,11 @@ they can only start new bots at a limited rate, which depends on the
 experiment, the computer and ``--bot-processes``. The most bots they can
 keep taking part at once
 is roughly that start rate multiplied by how long each bot takes to finish
-the experiment. A longer experiment, or a larger ``--time-factor``, keeps
-more bots taking part at once. A test in which fewer than 90% of the
+the experiment. A longer experiment keeps more bots taking part at once,
+and so do more ``--bot-processes``, which start bots faster. A larger
+``--time-factor`` would too, but it makes each bot lighter than a
+participant, so the bot counts no longer equal participants; the summary
+notes this whenever ``--time-factor`` isn't 1. A test in which fewer than 90% of the
 requested bots were ever taking part at the same time counts as exceeding
 the limits. Bots that fail because PostgreSQL ran out of connections count
 against the bot error limit too, but they also point to the test: the bots
@@ -427,8 +430,11 @@ limits.
 
 Test the experiment at the length participants will take it. When bots
 finish within seconds, the test mostly measures how quickly bots are
-created and replaced rather than a realistic load, so avoid testing
-shortened versions of an experiment. Unless ``performance-test ssh
+created and replaced rather than a realistic load, so don't judge capacity
+from a version of the experiment that bots finish within seconds. An
+abridged copy that skips light pages but keeps the heavy ones can help a
+capacity search of a long experiment reach those pages; then confirm the
+recommended number with a long test of the full experiment. Unless ``performance-test ssh
 --reset-database`` resets the database, later tests in a sweep run against
 more data than earlier ones (see :ref:`performance_testing_database_size`).
 
@@ -482,9 +488,7 @@ section shows how busy the worker processes were. The estimate keeps the
 workers about 70% busy at the recommended number of participants. If each
 job's CPU time is at least half its run time, the jobs are CPU-heavy: the
 summary suggests ``worker_greenlets_per_process = 1`` and sizes one process
-for each running job. When the queue limit failed the search's next count,
-it also scales the search's workers to the participants arriving together.
-It suggests at least the processes the test had, one more if they fell
+for each running job. It suggests at least the processes the test had, one more if they fell
 behind (more than 85% busy, or a growing low-priority backlog), and at most
 the cores where the test ran less two for the web server and database.
 Workers at least 95% busy couldn't show the full demand, so the estimate is
@@ -560,8 +564,10 @@ pilot with ``psynet export``, add ``performance_test_app = true`` to
 --app my-experiment-perf --archive export.zip`` (see
 :doc:`/deploy/reference/deploy_from_archive`), remove the line from
 ``config.txt`` again, and run ``psynet performance-test ssh --app
-my-experiment-perf`` (see :ref:`performance_testing_server_app`). Every test
-then starts with at least the pilot's data.
+my-experiment-perf --force`` (see :ref:`performance_testing_server_app`).
+``--force`` is needed because bots didn't create the pilot's participants,
+so the test would otherwise refuse the app in case they are real. Every
+test then starts with at least the pilot's data.
 
 .. _performance_testing_server:
 

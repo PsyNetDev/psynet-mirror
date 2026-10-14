@@ -73,12 +73,22 @@ class PerformanceSuite:
     after_test : callable, optional
         Called with the list of results so far after each test, for example
         to save them.
+    local : bool
+        Whether the bots and the server run on this computer, which the
+        summary then says.
     """
 
     def __init__(
-        self, tester, limits=None, before_test=None, label=None, after_test=None
+        self,
+        tester,
+        limits=None,
+        before_test=None,
+        label=None,
+        after_test=None,
+        local=False,
     ):
         self.tester = tester
+        self.local = local
         self.limits = limits or CapacityLimits()
         self.before_test = before_test
         self.label = label
@@ -302,6 +312,7 @@ class PerformanceSuite:
             label=self.label,
             elapsed_s=time.monotonic() - started,
             confirmation_planned=confirmation_planned,
+            local=self.local,
         ):
             logger.info(line)
         if self.reset_error:

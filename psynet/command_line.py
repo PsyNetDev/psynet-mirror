@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -4205,8 +4206,8 @@ def run_remote_experiment_command(executor, app, cmd):
     Dallinger's ``Executor.run_and_echo`` also watches local stdin so that the user
     can quit by pressing ``q``; that makes it exit immediately when stdin is closed
     or not a terminal, which silently truncates long-running remote tests. This
-    helper only reads the remote channel, and raises ``click.Abort`` if the remote
-    command fails.
+    helper only reads the remote channel, and raises ``click.ClickException`` if
+    the remote command fails.
 
     Output is read to end-of-file rather than until the remote exit status is
     available. The exit status arrives before the last of the output, so polling
@@ -4236,7 +4237,7 @@ def run_remote_experiment_command(executor, app, cmd):
         channel.close()
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
-        raise click.Abort(_remote_failure_summary(status, recent))
+        raise click.ClickException(_remote_failure_summary(status, recent))
     return status
 
 
@@ -4731,7 +4732,9 @@ def _performance_log_directory():
     """Return this user's folder for performance-test logs, pruning old logs.
 
     Each run writes a server log and a bot log; only the newest
-    ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
+    ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept. If the shared temporary
+    folder already holds that folder but another user owns it or may write
+    to it, a new private folder is used instead.
     """
     try:
         user = getpass.getuser()
@@ -4740,6 +4743,16 @@ def _performance_log_directory():
         user = str(os.getuid())
     directory = Path(tempfile.gettempdir()) / f"psynet-performance-logs-{user}"
     directory.mkdir(mode=0o700, exist_ok=True)
+    info = directory.lstat()
+    if (
+        directory.is_symlink()
+        or info.st_uid != os.getuid()
+        or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    ):
+        logger.warning(
+            f"{directory} isn't private to this user, so the logs go to a new folder."
+        )
+        return Path(tempfile.mkdtemp(prefix="psynet-performance-logs-"))
     for prefix in ("psynet_server_", "psynet_bots_"):
         logs = []
         for path in directory.glob(f"{prefix}*.log"):
@@ -4963,6 +4976,7 @@ def _run_performance_suite(
         before_test=database_reset,
         label=label,
         after_test=save_json,
+        local=ssh_options is None,
     )
     restore_error = cleanup_error = None
     try:
@@ -5516,7 +5530,7 @@ def _require_performance_test_app(server, app):
     )
     try:
         info = remote.run_psynet("performance-test app-info")
-    except (click.Abort, RuntimeError) as e:
+    except (click.ClickException, RuntimeError) as e:
         raise click.ClickException(
             f"Could not check whether {app} on {server} is a performance-test app "
             f"({str(e) or 'see the output above'}). {advice}"

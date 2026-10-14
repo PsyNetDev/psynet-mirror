@@ -771,7 +771,10 @@ class PerformanceTester:
 
             if current_time >= next_server_check:
                 next_server_check = current_time + _SERVER_CHECK_INTERVAL_S
-                if not server_is_reachable(self.base_url, self.authenticated_session):
+                # Briefly, as bots don't start while it waits.
+                if not server_is_reachable(
+                    self.base_url, self.authenticated_session, timeout_s=2
+                ):
                     self._clear_realtime_status()
                     logger.warning(
                         warning(
@@ -1209,12 +1212,12 @@ def _run_bot_process(index, commands, events, settings):
             bot_log.close()
 
 
-def server_is_reachable(url, session=None):
-    """Return whether a server accepts connections at ``url``."""
+def server_is_reachable(url, session=None, timeout_s=10):
+    """Return whether a server accepts connections at ``url``, counting a timeout after ``timeout_s`` as reachable."""
     import requests
 
     try:
-        (session or requests).head(url, timeout=10)
+        (session or requests).head(url, timeout=timeout_s)
     except requests.Timeout:
         # Includes ConnectTimeout: a full connection backlog under load
         # still means the server is up.

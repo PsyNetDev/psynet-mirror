@@ -410,7 +410,11 @@ def describe_bot_errors(result):
 
 
 def quantile(sorted_values, q):
-    """Return the value at quantile ``q`` of ``sorted_values``, or ``None`` if empty."""
+    """Return the value at quantile ``q`` of ``sorted_values``, or ``None`` if empty.
+
+    It is the upper nearest-rank value, without interpolation, so with few
+    values it errs towards the slower end.
+    """
     if not sorted_values:
         return None
     return sorted_values[min(int(len(sorted_values) * q), len(sorted_values) - 1)]
@@ -658,11 +662,10 @@ def describe_test(result):
     return f"the {result.n_bots:,}-bot {'validation test' if result.confirmation else 'test'}"
 
 
-def recommend_workers(result, n_participants, burst=None):
+def recommend_workers(result, n_participants):
     """Estimate the async worker processes that ``n_participants`` taking part at once need.
 
-    The demand is ``max(U × W × n_participants / N / u, W_b × n_participants / N_b)``,
-    with ``U`` and the greenlets from :func:`_worker_demand` and ``u``
+    The demand is ``U × W × n_participants / N / u``, with ``U`` and the greenlets from :func:`_worker_demand` and ``u``
     :data:`TARGET_WORKER_UTILIZATION`. For saturated single-slot workers the
     first term is the minimum ``n_participants × D / (S × u)``, with ``D``
     the worker time per participant who completed and ``S`` the session
@@ -676,9 +679,6 @@ def recommend_workers(result, n_participants, burst=None):
         A test with ``W`` workers and ``N`` bots, measured in its steady state.
     n_participants : int
         The participants at once to size the workers for.
-    burst : tuple of (int, int), optional
-        ``(W_b, N_b)``: the workers of the capacity search and the capacity
-        they handled, when high-priority queue waits set it.
 
     Returns
     -------
@@ -713,11 +713,7 @@ def recommend_workers(result, n_participants, burst=None):
         used = n_participants * per_participant_s / session_s
     else:
         used = per_process * workers * n_participants / result.n_bots
-    steady_state = _round_up(used / TARGET_WORKER_UTILIZATION)
-    burst_n = (
-        _round_up(burst[0] * n_participants / burst[1]) if burst and all(burst) else 0
-    )
-    demand = max(steady_state, burst_n)
+    demand = _round_up(used / TARGET_WORKER_UTILIZATION)
     floor = workers + bool(workers_falling_behind(result))
     cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
     processes = min(max(demand, floor), cores_left)
@@ -726,7 +722,7 @@ def recommend_workers(result, n_participants, burst=None):
     elif processes == workers:
         reason = "current"
     elif processes == demand:
-        reason = "minimum" if saturated and processes == steady_state else "estimate"
+        reason = "minimum" if saturated else "estimate"
     else:
         reason = "behind"
     if reason != "minimum":

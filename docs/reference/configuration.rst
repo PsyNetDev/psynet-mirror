@@ -833,6 +833,10 @@ Web server
     so set this to ``1`` for CPU-heavy async jobs and raise
     ``worker_processes`` instead. Default: ``20``.
 
+Dallinger still accepts ``worker_multiplier`` and ``docker_worker_cpu_shares``
+but deprecates them: set ``web_processes`` to a number instead of
+``worker_multiplier``, and ``docker_worker_cpu_shares`` has no effect.
+
 ``web_processes`` *str* |dlgr-icon|
     The number of gunicorn web processes to start. The default, ``auto``,
     starts ``round(1.5 * multiprocessing.cpu_count()) + 1``. Replaces the

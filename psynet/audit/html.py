@@ -837,10 +837,10 @@ def render_performance_result(
         CapacityLimits,
         PerformanceTestResult,
         capacity_advice,
-        capacity_failures,
         format_capacity_summary,
         queue_wait_p95,
     )
+    from psynet.perf_test.results import capacity_failure_causes
 
     if evidence.performance_file is None:
         return "<p>No performance test result was found.</p>" if standalone else ""
@@ -867,8 +867,14 @@ def render_performance_result(
     for row in evidence.performance_results:
         result = PerformanceTestResult.from_dict(row)
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
-        failures = capacity_failures(result, limits)
-        verdict = f"No: {', '.join(failures)}" if failures else "Yes"
+        causes = capacity_failure_causes(result, limits)
+        failures = ", ".join(reason for reason, _ in causes)
+        if not causes:
+            verdict = "Yes"
+        elif any(server_limit for _, server_limit in causes):
+            verdict = f"No: {failures}"
+        else:
+            verdict = f"Untested: {failures}"
         target = str(row.get("n_bots", "")) + (
             " (validation test)" if result.confirmation else ""
         )
