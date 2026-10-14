@@ -14,7 +14,10 @@ export async function activate({vars, psynet}) {
 async function runChecks(capabilities) {
     for (const cap of capabilities) {
         const check = CAPABILITY_CHECKS[cap];
-        if (!check) continue;
+        if (!check) {
+            console.warn(`browser-capability-check: no JS check for token "${cap}"; skipping`);
+            continue;
+        }
         const passed = await check();
         if (!passed) {
             return {passed: false, missing: cap};
