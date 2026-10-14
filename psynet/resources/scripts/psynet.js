@@ -1820,7 +1820,7 @@
       };
 
       trial.getGlobalTime = function () {
-        return psynet.media.audioContext.currentTime;
+        return psynet.media.audioContext?.currentTime ?? 0;
       };
 
       trial.listEvents = function () {
@@ -2237,9 +2237,11 @@
       if ("webkitAudioContext" in window) context = new webkitAudioContext();
       if ("AudioContext" in window) context = new AudioContext();
       if (!context) {
-        throw Error(
-          "ERROR: No AudioContext available. Try Chrome, Safari or Firefox Nightly.",
+        psynet.log.warn(
+          "No AudioContext available; audio playback is disabled. " +
+            "The browser_capabilities check should detect and route this participant out.",
         );
+        return;
       }
       if (context.state == "suspended") {
         context.resume();
@@ -2264,7 +2266,7 @@
     psynet.media.init = async function () {
       psynet.media.initAudioContext();
 
-      if (psynet.media.audioContext.state == "suspended") {
+      if (psynet.media.audioContext?.state == "suspended") {
         psynet.log.info(
           "Audio context is suspended, and can only be resumed " +
             "after a user interaction. Waiting for the participant to click 'Resume'.",

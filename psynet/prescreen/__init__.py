@@ -2123,8 +2123,9 @@ class BrowserCapabilityCheck(Module):
             PageMaker(_make_pages, time_estimate=0.0),
             conditional(
                 f"{label}_fail",
-                lambda exp, p: (
-                    isinstance(p.answer, dict) and not p.answer.get("passed", True)
+                lambda participant: (
+                    isinstance(participant.answer, dict)
+                    and not participant.answer.get("passed", True)
                 ),
                 UnsuccessfulEndPage(failure_tags=["browser_capability_check"]),
             ),
