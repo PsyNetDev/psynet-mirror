@@ -675,8 +675,8 @@ from the same data, and then drops the snapshot, printing a ``dropdb``
 command if that fails. If the restore fails, the command exits with an
 error and PsyNet keeps the copy it restores from, naming it in a warning.
 The app is one that ``performance-test ssh`` deployed for its tests, so the
-simplest recovery is to destroy it with ``psynet destroy ssh`` and run the
-test again. Files that
+way to recover is to destroy it with ``psynet destroy ssh`` and run the
+same ``psynet performance-test ssh`` command again. Files that
 the bots uploaded or generated stay in the asset storage, because only the
 database rows that refer to them are reset.
 

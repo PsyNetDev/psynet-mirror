@@ -678,21 +678,19 @@ class DatabaseReset:
             raise restore_error
 
     def _warn_restore_failed(self, error):
-        """Warn that the database couldn't be restored from the original copy, and how to recover."""
+        """Warn that the database couldn't be restored from the original copy, and how to recover by redeploying the app."""
         logger.warning(
             warning(
                 f"Could not restore the database {self.database} to how it was "
                 f"before the run ({str(error) or type(error).__name__}), so the "
                 f"next run would start from this run's data. {self._original} "
-                "keeps the database as the run found it. The simplest recovery "
-                "is to destroy the app with 'psynet destroy ssh --server "
-                f"{self.remote.server} --app {self.database}' and run 'psynet "
-                "performance-test ssh' again, which deploys it afresh. To "
-                f"restore it by hand instead, recreate {self.database} from "
-                f"{self._original} with 'createdb -T' while the app's server "
-                "processes are stopped and its RQ job keys are cleared. With "
-                f"classic ingress, destroying the app leaves {self._original} in "
-                "the shared PostgreSQL container; drop it with dropdb."
+                "keeps the database as the run found it. To recover, destroy the "
+                f"app with 'psynet destroy ssh --server {self.remote.server} --app "
+                f"{self.database}' and run the same 'psynet performance-test ssh' "
+                "command again, which deploys it afresh. With classic ingress, "
+                f"destroying the app leaves {self._original} in the shared "
+                f"PostgreSQL container; drop it with: docker exec {self.container} "
+                f"sh -c 'dropdb -U \"$POSTGRES_USER\" {self._original}'"
             )
         )
 

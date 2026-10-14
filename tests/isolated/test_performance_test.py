@@ -2256,6 +2256,10 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
 
     sql = [c for c in remote.executor.commands if " psql " in c]
     assert sql and all("docker exec" in c and "my-app_postgresql" in c for c in sql)
+    english = (
+        "-e 'PGOPTIONS=-cclient_min_messages=warning -clc_messages=C' -e LC_MESSAGES=C"
+    )
+    assert all(english in c for c in sql)
     snapshot = reset.snapshot
     assert snapshot.startswith("my-app_snapshot_")
     baseline = reset._copies[0]
