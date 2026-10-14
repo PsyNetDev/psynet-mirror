@@ -100,6 +100,8 @@ TEST_EXPERIMENT_TREE_PREFIXES = (
 # Stock configs and READMEs are gitignored; add new customs with ``git add -f``.
 TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/experiments/async_processes/config.txt",
+    "tests/playwright/experiments/browser_capability_check/config.txt",
+    "tests/playwright/experiments/entry_check/config.txt",
     "tests/playwright/experiments/adversarial_lifecycle/config.txt",
     "tests/playwright/experiments/broken_page_dependency/config.txt",
     "tests/playwright/experiments/broken_page_module/config.txt",
