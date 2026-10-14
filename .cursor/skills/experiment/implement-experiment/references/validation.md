@@ -31,7 +31,8 @@ Do not treat a green bot run as evidence that pages fit the window.
 ## Performance evidence
 
 When the work needs performance evidence, run this sustained load test after
-functional checks pass. Do not rely on experiment defaults such as
+functional checks pass. If the experiment runs async jobs, first measure their
+CPU use with `plan-server-resources/SKILL.md`. Do not rely on experiment defaults such as
 `test_n_bots = 1`. Use the audit-scoped route so results land in the packet
 immediately. From the experiment root:
 

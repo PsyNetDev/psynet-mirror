@@ -123,7 +123,7 @@ class TestExp(object):
             elif bot.participant_id == 3:
                 next_page(driver, "next-button")
 
-                # The third participant triggers an error in a worker asynchronous process'
+                # The third participant triggers an error in a worker async job
                 click_finish_button(driver)
 
                 with log_pexpect_errors(debug_server_process):
@@ -145,12 +145,12 @@ class TestExp(object):
                 assert error.message == "Error code 48473"
                 assert error.traceback
                 assert error.participant_id == 3
-                assert error.process_id == 1
+                assert error.async_job_id == 1
 
             elif bot.participant_id == 4:
                 next_page(driver, "next-button")
 
-                # The third participant triggers an error in a worker asynchronous process'
+                # The third participant triggers an error in a worker async job
                 click_finish_button(driver)
 
                 with log_pexpect_errors(debug_server_process):
@@ -172,7 +172,7 @@ class TestExp(object):
                 assert error.message == "Error code 73722"
                 assert error.traceback
                 assert error.participant_id == 4
-                assert error.process_id == 2
+                assert error.async_job_id == 2
 
             # The built-in Dallinger.complete_experiment doesn't work because it mistakenly
             # uses a GET request instead of a POST request

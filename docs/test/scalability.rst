@@ -9,6 +9,35 @@ experiment and reports response times, throughput and queue delays.
 
 Run it once :doc:`back-end tests <backend>` pass.
 
+Measuring async job CPU
+-----------------------
+
+At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
+async job used, grouped by where the job runs, label and
+:ref:`priority <async_job_priority>`:
+
+.. code-block:: text
+
+    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
+      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
+
+``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
+in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
+jobs, such as asset deposits, which run in a thread of the process that
+enqueued them, usually the web process; they skip the worker queues, so
+their priority is ``-``. A CPU-heavy worker job keeps a CPU core busy while
+it runs, so as load grows it needs more worker processes
+(``num_dynos_worker``) and a server with a core for each. A CPU-heavy web
+job slows the web process instead, and more worker processes do not help
+it. An I/O-bound job mostly waits, for example on an API call, and does not
+need more cores. If no async jobs finished, PsyNet logs
+``No async jobs finished.`` instead. Per-job values are in the ``cpu_time``
+column of ``database/async_job.csv`` in the export; see
+:class:`~psynet.async_job.AsyncJob` for how it is measured. The
+:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
+worker estimate. Confirm the estimate with a performance test.
+
 Running a test
 --------------
 
@@ -97,7 +126,7 @@ that the slowest participants experience. The report also shows:
 - **Bot runtimes** and **trials per bot**.
 - **Request metrics**: total requests, errors and throughput.
 - **Wait page times**, for synchronized experiments.
-- **Async process times**: for experiments with asynchronous processes, such
+- **Async job times**: for experiments with async jobs, such
   as audio analysis, both the execution time and the time spent waiting in
   the queue. A high queue share, highlighted in yellow or red, means more
   worker processes are needed.

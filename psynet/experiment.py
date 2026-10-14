@@ -1644,6 +1644,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             raise ValueError(f"Invalid test mode: {self.test_mode}")
 
         self._report_request_statistics()
+        self._report_async_job_cpu_time()
 
     def _check_static_spa_contracts(self):
         """Fail fast on static timeline pages that are not SPA-compatible.
@@ -1696,6 +1697,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "mean_duration": mean_duration,
             "total_requests": total_requests,
         }
+
+    def _report_async_job_cpu_time(self):
+        """Log the CPU and wall time of the async jobs that ran.
+
+        Rows are grouped by where the jobs ran, label and priority.
+        """
+        from .async_job import _format_cpu_time_summary
+
+        response = self.authenticated_session.get(self.base_url + "/async_job_cpu_time")
+        response.raise_for_status()
+        logger.info(_format_cpu_time_summary(response.json()))
+
+    @experiment_route("/async_job_cpu_time", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_cpu_time(cls):
+        from .async_job import _get_cpu_time_summary
+
+        return _get_cpu_time_summary()
 
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
@@ -5972,7 +5993,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Roll back the failed work, save the error's record, then notify.
 
         ``kwargs`` are the ORM objects the error concerns (``participant``,
-        ``trial``, ``process``, ...). They and their parents are recorded by
+        ``trial``, ``async_job``, ...). They and their parents are recorded by
         ID; objects that were never saved, and values that are not ORM
         objects, are ignored. Because this rolls back and commits the
         session, call it from code that owns the transaction, not from
@@ -6011,7 +6032,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if value is not None:
                 parents[key] = value
         types = [
-            "process",
+            "async_job",
             "asset",
             "response",
             "trial",
@@ -6142,35 +6163,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text = f"An {cls.notifier.url(error_txt, url)} occurred:"
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
-
-    # @classmethod
-    # def serialize_error_context(
-    #     cls,
-    #     participant=None,
-    #     response=None,
-    #     trial=None,
-    #     node=None,
-    #     network=None,
-    #     process=None,
-    #     asset=None,
-    # ):
-    #     context = {}
-    #     if participant:
-    #         context["participant_id"] = participant.id
-    #         context["worker_id"] = participant.worker_id
-    #     if response:
-    #         context["response_id"] = response.id
-    #     if trial:
-    #         context["trial_id"] = trial.id
-    #     if node:
-    #         context["node_id"] = node.id
-    #     if network:
-    #         context["network_id"] = network.id
-    #     if process:
-    #         context["process_id"] = process.id
-    #     if asset:
-    #         context["asset_id"] = asset.id
-    #     return context
 
     class UniqueIdError(PermissionError):
         def __init__(self, expected, provided, participant):
