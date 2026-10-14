@@ -2283,7 +2283,9 @@ def test_a_remote_reset_restores_only_the_apps_database_in_its_container(
     assert remote.start.call_count == remote.stop.call_count - 1
     assert ("already held 3 participants" in caplog.text) == (not prefill)
     assert ("Could not restore the database my-app" in caplog.text) == restore_fails
-    assert ("docker compose stop web" in caplog.text) == restore_fails
+    if restore_fails:
+        assert f"{original} keeps the database as the run found it" in caplog.text
+        assert "psynet destroy ssh --server server --app my-app" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -2304,7 +2306,7 @@ def test_a_failed_first_snapshot_is_dropped_and_the_database_left_alone(error, o
     remote = _remote_app(respond)
     remote.stop, remote.start = Mock(), Mock()
     reset = DatabaseReset(remote)
-    with pytest.raises(RuntimeError, match=error[7:]):
+    with pytest.raises(RuntimeError, match="No space left|already exists"):
         reset()
     reset.close()
 
@@ -2549,6 +2551,7 @@ def _remote_search(
     cleanup_error=None,
     interrupt_at_test=None,
     restore_error=None,
+    start_stopped_services=None,
     **options,
 ):
     """Run a mocked SSH capacity search of a 12-minute study; return its remote commands and results."""
@@ -2581,7 +2584,7 @@ def _remote_search(
         ),
         patch(
             "psynet.perf_ssh.RemoteApp.start_stopped_services",
-            side_effect=cleanup_error,
+            start_stopped_services or Mock(side_effect=cleanup_error),
         ),
     ):
         results = _run_ssh_performance_test(
@@ -2629,11 +2632,18 @@ def test_a_failed_remote_reset_writes_the_json_then_fails(
 def test_a_failed_final_restore_fails_the_command(monkeypatch):
     import click
 
+    start_stopped_services = Mock()
     with pytest.raises(click.ClickException) as error:
-        _remote_search(monkeypatch, reset=True, restore_error=RuntimeError("disk full"))
+        _remote_search(
+            monkeypatch,
+            reset=True,
+            restore_error=RuntimeError("disk full"),
+            start_stopped_services=start_stopped_services,
+        )
     assert "Restoring the database to how the run found it failed: disk full" in (
         error.value.message
     )
+    start_stopped_services.assert_called_once()
 
 
 def test_an_interrupted_remote_search_keeps_the_finished_tests_json(

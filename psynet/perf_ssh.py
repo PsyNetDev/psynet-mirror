@@ -638,8 +638,8 @@ class DatabaseReset:
         Raises
         ------
         RuntimeError
-            If the restore failed. The warning before it says how to restore
-            the database by hand from the copy, which is kept.
+            If the restore failed. The warning before it names the copy,
+            which is kept, and says how to recover.
         """
         import click
 
@@ -670,43 +670,30 @@ class DatabaseReset:
                 logger.warning(
                     warning(
                         f"Could not drop the database {copy} ({e}). Drop it on "
-                        f"{self.remote.server} with: {self._dropdb(copy)}"
+                        f"{self.remote.server} with: docker exec {self.container} "
+                        f"sh -c 'dropdb -U \"$POSTGRES_USER\" {copy}'"
                     )
                 )
         if restore_error is not None:
             raise restore_error
 
     def _warn_restore_failed(self, error):
-        """Warn that the database couldn't be restored from the original copy, with the commands that restore it by hand."""
-        compose = f"cd ~/dallinger/{shlex.quote(self.database)} && docker compose"
-        services = " ".join(map(shlex.quote, self.remote._stopped))
-        recreate_sh = (
-            f'dropdb -U "$POSTGRES_USER" --if-exists {self.database} && '
-            f'createdb -U "$POSTGRES_USER" -T {self._original} {self.database}'
-        )
+        """Warn that the database couldn't be restored from the original copy, and how to recover."""
         logger.warning(
             warning(
                 f"Could not restore the database {self.database} to how it was "
                 f"before the run ({str(error) or type(error).__name__}), so the "
                 f"next run would start from this run's data. {self._original} "
-                f"keeps the database as it was. To restore it, run on "
-                f"{self.remote.server}:"
+                "keeps the database as the run found it. The simplest recovery "
+                "is to destroy the app with 'psynet destroy ssh --server "
+                f"{self.remote.server} --app {self.database}' and run 'psynet "
+                "performance-test ssh' again, which deploys it afresh. To "
+                f"restore it by hand instead, recreate {self.database} from "
+                f"{self._original} with 'createdb -T' while the app's server "
+                "processes are stopped and its RQ job keys are cleared. With "
+                f"classic ingress, destroying the app leaves {self._original} in "
+                "the shared PostgreSQL container; drop it with dropdb."
             )
-        )
-        recreate = f"docker exec {self.container} sh -c {shlex.quote(recreate_sh)}"
-        commands = (
-            [f"{compose} stop {services}", recreate, f"{compose} start {services}"]
-            if services
-            else [recreate]
-        )
-        for command in [*commands, self._dropdb(self._original)]:
-            # Printed as is, so that each command can be copied whole.
-            logger.warning(f"    {command}")
-
-    def _dropdb(self, database):
-        """Return the server command that drops ``database``."""
-        return f"docker exec {self.container} sh -c " + shlex.quote(
-            f'dropdb -U "$POSTGRES_USER" {database}'
         )
 
     def _take_copy(self, kind):
@@ -816,8 +803,10 @@ class _PsqlCursor:
 
     def execute(self, statement):
         psql = shlex.quote('PGUSER="$POSTGRES_USER" exec psql "$@"')
+        # English messages, so that _SQLSTATE finds the error code.
+        options = shlex.quote("PGOPTIONS=-cclient_min_messages=warning -clc_messages=C")
         cmd = (
-            "docker exec -e PGOPTIONS=-cclient_min_messages=warning "
+            f"docker exec -e {options} -e LC_MESSAGES=C "
             f"{shlex.quote(self._container)} sh -c {psql} psql "
             "-X -q -t --csv -v ON_ERROR_STOP=1 -v VERBOSITY=verbose "
             f"-d {shlex.quote(self._database)} -c {shlex.quote(statement)}"
