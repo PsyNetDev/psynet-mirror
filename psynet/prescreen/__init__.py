@@ -2031,7 +2031,7 @@ class BrowserCapabilityCheckPage(ModularPage):
 
     skip_beforeunload = True
 
-    def __init__(self, capabilities):
+    def __init__(self, capabilities, label="browser_capability_check"):
         spinner = Markup(
             '<div class="psynet-activity" role="status">'
             '<span class="spinner-border" aria-hidden="true"></span>'
@@ -2040,7 +2040,7 @@ class BrowserCapabilityCheckPage(ModularPage):
         ).format(_p("status", "Working..."))
 
         super().__init__(
-            label="browser_capability_check",
+            label=label,
             prompt=spinner,
             control=NullControl(),
             time_estimate=0.0,
@@ -2116,7 +2116,7 @@ class BrowserCapabilityCheck(Module):
             pages = []
             if perm_caps:
                 pages.append(_browser_capability_permission_intro(perm_caps))
-            pages.append(BrowserCapabilityCheckPage(caps))
+            pages.append(BrowserCapabilityCheckPage(caps, label=label))
             return pages
 
         elts = join(
@@ -2127,7 +2127,7 @@ class BrowserCapabilityCheck(Module):
                     isinstance(participant.answer, dict)
                     and not participant.answer.get("passed", True)
                 ),
-                UnsuccessfulEndPage(failure_tags=["browser_capability_check"]),
+                UnsuccessfulEndPage(failure_tags=[label]),
             ),
         )
         super().__init__(label, elts)
