@@ -111,6 +111,8 @@ def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     assert "scripts/survey-jquery/" not in template
     # A second jQuery from Dallinger's libs block would drop head-loaded plugins.
     assert "{% block jquery %}{% endblock %}" in template
+    head_block = template.split("{% block head %}")[1].split("{% endblock %}")[0]
+    assert "scripts/jquery-4.0.0.min.js" in head_block
     assert "psynetHeadJQuery" not in template
 
 
