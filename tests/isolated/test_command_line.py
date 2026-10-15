@@ -807,6 +807,31 @@ def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
 #         )
 
 
+def test_db_command_passes_the_location_through(monkeypatch):
+    from contextlib import contextmanager
+
+    from psynet.command_line import psynet
+
+    seen = []
+
+    @contextmanager
+    def fake_get_db_uri(location, app=None, server=None):
+        seen.append((location, app, server))
+        yield "postgresql://u:p@127.0.0.1:5/db"
+
+    monkeypatch.setattr("psynet.command_line.get_db_uri", fake_get_db_uri)
+
+    result = CliRunner().invoke(psynet, ["db", "ssh", "--app", "a", "--server", "s"])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [("ssh", "a", "s")]
+    assert "postgresql://u:p@127.0.0.1:5/db" in result.output
+
+    result = CliRunner().invoke(psynet, ["db", "mars"])
+    assert result.exit_code != 0
+    assert "Invalid location mars" in result.output
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
