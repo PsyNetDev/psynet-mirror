@@ -274,6 +274,16 @@ set the recommendation, because fewer participants at once keep chains free;
 prescreens, are part of the design: the summary reports them but they don't
 count against the limits.
 
+In a group experiment (see :doc:`/code/multiplayer/synchronization`), the
+test itself can cause wait timeouts. A new bot starts only when another
+finishes, so if the number of bots isn't a multiple of the group size, the
+bots left over wait at the grouper until a running group finishes, and with
+a ``max_wait_time`` shorter than that they time out. Test multiples of the
+group size, or, for ``--n-bots auto``, whose counts you don't choose, give
+the copy of the experiment that you test a ``max_wait_time`` longer than a
+session. For the same reason the test doesn't show how many participants a
+given recruitment rate loses while they wait for a group.
+
 The limits apply to the whole test, start-up included, because a real study
 also has a start-up burst: recruiters often release many places at once when
 a study opens. When the smallest failing count exceeded the response-time,

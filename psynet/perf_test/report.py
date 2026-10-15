@@ -1045,7 +1045,11 @@ _WAIT_ADVICE = (
     "Participants waited too long and the experiment failed them. Design "
     "experiments to avoid this, for example with a longer max_wait_time or "
     "enough participants to fill groups and chains; at high bot counts it can "
-    "also mean the server is too slow."
+    "also mean the server is too slow. In a group experiment the test itself "
+    "can cause it: a new bot starts only when another finishes, so if the "
+    "number of bots isn't a multiple of the group size, the bots left over "
+    "wait until a running group finishes. Test multiples of the group size, "
+    "or a longer max_wait_time."
 )
 _BUSY_CHAINS_ADVICE = (
     "Participants got fewer trials because every chain they could join was "
