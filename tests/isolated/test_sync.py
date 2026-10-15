@@ -721,6 +721,30 @@ def test_grouper_leftover_waiter_joins_an_open_group(
     assert len(leftover.sync_group.participants) == 3
 
 
+@pytest.mark.parametrize("accepts_top_ups", [True, False])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_does_not_join_a_group_without_active_members(
+    in_experiment_directory, db_session, accepts_top_ups
+):
+    """A group whose members all left stays open (top-ups) or closes; neither is joined."""
+    exp = get_experiment()
+    (member,), group = _sync_group_of(exp, db_session, 1, group_type="quorum")
+    group.accepts_top_ups = accepts_top_ups
+    member.fail("left")
+    (newcomer,) = _working_participants(exp, 1)
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+
+    assert grouper.choose_who_to_release([newcomer]) == []
+    assert newcomer.sync_group is None
+
+
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

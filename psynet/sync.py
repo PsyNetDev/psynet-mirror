@@ -1825,18 +1825,27 @@ class SimpleGrouper(Grouper):
         arrivals that was not a multiple of ``initial_group_size``, join here
         once a group opens.
         """
-        joined = []
+        if not self.join_existing_groups:
+            return super().choose_who_to_release(waiting_participants)
+        joined, still_waiting = [], []
         for participant in waiting_participants:
             self._join_existing_groups(participant)
             if self.group_type in participant.active_sync_groups:
                 joined.append(participant)
-        still_waiting = [p for p in waiting_participants if p not in joined]
+            else:
+                still_waiting.append(participant)
         return joined + super().choose_who_to_release(still_waiting)
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
-        return super().would_release(waiting_participants) or any(
-            self._find_group_to_join(p) is not None for p in waiting_participants
+        if super().would_release(waiting_participants):
+            return True
+        if not self.join_existing_groups:
+            return False
+        # Without a join_criterion, every waiter would join the same group.
+        candidates = (
+            waiting_participants if self.join_criterion else waiting_participants[:1]
         )
+        return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         return len(participants) >= self.batch_size

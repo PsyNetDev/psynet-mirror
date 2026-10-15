@@ -3527,6 +3527,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
             if Experiment._pending_redirect_replaces_open_page(participant):
+                if page_uuid != participant.page_uuid:
+                    Experiment._settle_stale_hold(participant, page_uuid)
                 self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
@@ -3718,6 +3720,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant, settle the old hold if needed and skip any later holds
         that are already clear, instead of treating it as a multi-tab mismatch.
         """
+        if not self._settle_stale_hold(participant, submitted_page_uuid):
+            return None
+        return self._advance_past_ready_holds(participant, current_page)
+
+    @staticmethod
+    def _settle_stale_hold(participant, submitted_page_uuid):
+        """Settle the hold a catch-up submit came from, if needed.
+
+        Returns
+        -------
+        bool
+            Whether ``submitted_page_uuid`` is a catch-up from one of this
+            participant's holds rather than a stale tab.
+        """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
@@ -3725,10 +3741,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             submitted_page_uuid,
         )
         if record is None:
-            return None
+            return False
         if record.resumed_at is None:
             record.settle(participant)
-        return self._advance_past_ready_holds(participant, current_page)
+        return True
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
@@ -5616,12 +5632,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
         """
         participant = Bot.query.get(participant_id)
+        if participant.pending_redirect is not None or participant.elt_id[1:] == [-1]:
+            # get_current_page will move the cursor, so take the row lock. Routine
+            # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
+            participant = (
+                Bot.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
         experiment = get_experiment()
 
-        status = {
-            "status": participant.status,
-            "page_uuid": participant.page_uuid,
-        }
+        status = {"status": participant.status}
 
         if participant.status == "working":
             current_page = participant.get_current_page()
@@ -5640,6 +5661,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             }
         else:
             bot_response = None
+        status["page_uuid"] = participant.page_uuid
 
         with tempfile.TemporaryDirectory() as tempdir:
             # status.json (a JSON file summarising the participant's status)
