@@ -385,6 +385,27 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
     assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
 
 
+def test_a_test_that_raises_still_prints_the_summary_of_the_earlier_tests(caplog):
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
+    error = RuntimeError("exit code 1: OperationalError: server closed\nTraceback")
+    results = [_base_result(n_bots=10), _base_result(n_bots=20), error]
+
+    with (
+        caplog.at_level("INFO"),
+        patch.object(tester, "run_test", side_effect=results),
+        patch.object(tester, "pause_between_tests"),
+        patch("psynet.perf_test.runtime.raise_open_file_limit"),
+        pytest.raises(RuntimeError, match="server closed"),
+    ):
+        PerformanceSuite(tester).run([10, 20, 40])
+
+    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert (
+        "The run stopped early: test 3 failed (exit code 1: OperationalError: "
+        "server closed). The summary above covers the 2 tests that completed."
+    ) in caplog.text
+
+
 def test_a_failed_first_reset_stops_the_suite_without_results():
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://x")
     before_test = Mock(side_effect=RuntimeError("snapshot failed"))

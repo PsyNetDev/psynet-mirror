@@ -19,7 +19,7 @@ from rich.text import Text
 from psynet.perf_test.report import (
     format_performance_summary,
     format_text,
-    reset_error_lines,
+    stopped_early_lines,
     warning,
 )
 from psynet.perf_test.results import (
@@ -260,7 +260,8 @@ class PerformanceSuite:
         ``next_test`` returns the next test's bot count, length and arrival
         window in minutes, and whether it is the confirmation test, and the
         suite records them in the test's result. Stops early if a
-        test ends early, then prints the summary. ``max_bots`` is the most
+        test ends early, then prints the summary. If a test raises, prints
+        the summary of the tests before it and re-raises. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
         ``confirmation_planned`` says a capacity search meant to end with a
         confirmation test.
@@ -290,9 +291,17 @@ class PerformanceSuite:
                     title = f"TEST {len(all_results) + 1}" + (
                         f"/{n_tests}" if n_tests else ""
                     )
-                result = self.tester.run_test(
-                    title, n_bots, bot_log_file, duration_minutes, arrival_minutes
-                )
+                try:
+                    result = self.tester.run_test(
+                        title, n_bots, bot_log_file, duration_minutes, arrival_minutes
+                    )
+                except Exception as e:
+                    if all_results:
+                        self._log_summary(all_results, started, confirmation_planned)
+                        error = (str(e).strip().splitlines() or [type(e).__name__])[0]
+                        for line in stopped_early_lines(error[:300], len(all_results)):
+                            logger.info(line)
+                    raise
                 result.duration_minutes = duration_minutes
                 result.arrival_minutes = arrival_minutes
                 result.session_minutes = self.tester.session_minutes
@@ -305,6 +314,18 @@ class PerformanceSuite:
         if not all_results:
             # No test ran, as when the first reset failed; the caller reports it.
             return all_results
+        self._log_summary(all_results, started, confirmation_planned)
+        if self.reset_error:
+            for line in stopped_early_lines(
+                self.reset_error,
+                len(all_results),
+                step="resetting the database before",
+            ):
+                logger.info(line)
+        return all_results
+
+    def _log_summary(self, all_results, started, confirmation_planned):
+        """Log the summary of ``all_results``, the tests that completed."""
         for line in format_performance_summary(
             all_results,
             self.limits,
@@ -315,10 +336,6 @@ class PerformanceSuite:
             local=self.local,
         ):
             logger.info(line)
-        if self.reset_error:
-            for line in reset_error_lines(self.reset_error, len(all_results)):
-                logger.info(line)
-        return all_results
 
     def _print_suite_header(self, bots_description, search=False):
         tester = self.tester

@@ -1543,18 +1543,21 @@ def _capacity_test_notes(capacity_result, time_factor, validated=False):
     return notes
 
 
-def reset_error_lines(reset_error, n_completed, terminal=None):
-    """Explain that resetting the database failed after ``n_completed`` tests and stopped the run.
+def stopped_early_lines(error, n_completed, step="", terminal=None):
+    """Explain that the next test, or ``step`` before it, failed with ``error`` and stopped the run.
 
-    ``terminal`` is as for :func:`format_performance_summary`.
+    ``step`` reads before "test N", such as "resetting the database before";
+    without it the test itself failed. ``terminal`` is as for
+    :func:`format_performance_summary`.
 
     Returns list[str].
     """
+    step = f"{step} " if step else ""
     return format_text(
         Text(
-            f"The run stopped early: resetting the database before test "
-            f"{n_completed + 1} failed ({reset_error.rstrip('.')}). The summary "
-            f"above covers the {plural(n_completed, 'test')} that completed.",
+            f"The run stopped early: {step}test {n_completed + 1} failed "
+            f"({error.rstrip('.')}). The summary above covers the "
+            f"{plural(n_completed, 'test')} that completed.",
             style=_ALERT,
         ),
         None,
