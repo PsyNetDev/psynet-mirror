@@ -91,6 +91,19 @@ replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
 Author-owned external templates should contain only markup. Embedded
 ``<script type="module">`` tags are not supported.
 
+PsyNet now serves jQuery 4.0.0 and jQuery UI 1.14.1. Search your JavaScript
+for jQuery utilities that jQuery 4 removed, such as ``$.trim``,
+``$.isArray``, ``$.isFunction``, ``$.parseJSON``, ``$.type``,
+``$.isNumeric`` and ``$.now``. Replace them with native JavaScript, for
+example ``text.trim()``, ``Array.isArray(value)`` and ``JSON.parse(text)``.
+``.css()`` also no longer adds ``px`` to bare numbers for most properties
+(sizes, margins, padding, border widths and positions still get it), so pass
+other values with units, for example ``"16px"``. Replace links to
+``/static/scripts/jquery-3.7.1.min.js`` with ``jquery-4.0.0.min.js``; timeline
+pages already load jQuery, so they don't need their own link. Upgrade bundled
+jQuery plugins to versions that support jQuery 4. See the
+`jQuery 4.0 upgrade guide <https://jquery.com/upgrade-guide/4.0/>`_.
+
 4. Migrate load-once libraries
 ------------------------------
 
