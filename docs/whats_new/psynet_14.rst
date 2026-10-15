@@ -37,6 +37,11 @@ elements, check how those controls look.
 set ``allow_mobile_devices = false`` to keep a study desktop-only. The oldest
 supported browser is now Chrome 105.
 
+**jQuery 4.** Timeline pages now load jQuery 4.0.0, and PsyNet serves jQuery UI
+1.14.1. Custom JavaScript that uses utilities jQuery 4 removed, such as
+``$.trim`` or ``$.isArray``, must switch to native JavaScript. See
+:doc:`upgrading_to_psynet_14` (step 3).
+
 **Leaving and errors.** The **Leave** button now explains what leaving means
 for the participant's payment on each recruiter, and error pages are shorter
 and consistent. The related names changed to ``early_exit``, for example
