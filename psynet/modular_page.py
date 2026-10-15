@@ -673,6 +673,12 @@ class Control(JavaScriptContributor):
 
     bot_response :
         Defines how bots respond to this page.
+        The default, :class:`~psynet.utils.NoArgumentProvided`, uses the control's
+        :meth:`get_bot_response` method. Leave ``bot_response`` unset to use that
+        method. Passing ``bot_response=None`` instead supplies an explicit
+        formatted answer of ``None``, bypassing both :meth:`get_bot_response`
+        and :meth:`format_answer`.
+
         Can be a single value, in which case this is interpreted as the participant's (formatted) answer.
         Alternatively, it can be an instance of class ``BotResponse``, which can accept more detailed
         information, for example:
