@@ -20,6 +20,15 @@ def test_browser_capability_check_all_tokens():
     BrowserCapabilityCheck(capabilities=BROWSER_CAPABILITY_TOKENS)
 
 
+def test_browser_capability_check_generator_input():
+    from psynet.prescreen import BrowserCapabilityCheck
+
+    # Generator is consumed by frozenset() before validation; capabilities must
+    # not be silently dropped if a generator is passed.
+    check = BrowserCapabilityCheck(capabilities=(x for x in ["microphone"]))
+    assert check.capabilities == frozenset({"microphone"})
+
+
 def test_browser_capability_check_rejects_unknown_token():
     from psynet.prescreen import BrowserCapabilityCheck
 

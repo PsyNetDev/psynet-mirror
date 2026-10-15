@@ -2089,8 +2089,8 @@ class BrowserCapabilityCheck(Module):
         )
 
         if capabilities is not None:
-            validate_browser_capabilities(capabilities)
             capabilities = frozenset(capabilities)
+            validate_browser_capabilities(capabilities)
 
         self.capabilities = capabilities
 
