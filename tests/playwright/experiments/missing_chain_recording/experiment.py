@@ -110,6 +110,7 @@ class Exp(psynet.experiment.Experiment):
             max_nodes_per_chain=2,
             chains_per_participant=2,
             trials_per_node=1,
+            recruit_mode="n_participants",
             target_n_participants=1,
             check_performance_at_end=True,
             propagate_failure=False,
