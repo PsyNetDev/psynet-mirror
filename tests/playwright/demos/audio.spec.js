@@ -456,10 +456,10 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       .locator("#audio-meter-documentation")
       .getByText("units of seconds");
     await expect(decayDocs).toBeHidden();
-    await calibrationTabs.getByRole("link", { name: "Documentation" }).click();
+    await calibrationTabs.getByRole("tab", { name: "Documentation" }).click();
     await expect(decayDocs).toBeVisible();
     await expect(calibrationSliders).toBeHidden();
-    await calibrationTabs.getByRole("link", { name: "Sliders" }).click();
+    await calibrationTabs.getByRole("tab", { name: "Sliders" }).click();
     await expect(calibrationSliders).toBeVisible();
     await expect(decayDocs).toBeHidden();
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);

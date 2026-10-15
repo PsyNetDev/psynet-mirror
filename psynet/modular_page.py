@@ -2418,6 +2418,12 @@ class AudioMeterControl(Control):
         )
         events["submitEnable"].add_trigger("audioMeterMinimalTime")
 
+    def get_js_dependencies(self):
+        """Load Bootstrap's JavaScript for the calibration tabs."""
+        if self.calibrate:
+            return ["/static/scripts/bootstrap.bundle.min.js"]
+        return []
+
     def get_bot_response(self, experiment, bot, page, prompt):
         return None
 
