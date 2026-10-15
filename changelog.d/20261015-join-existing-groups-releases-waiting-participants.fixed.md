@@ -1,0 +1,1 @@
+Fixed `SimpleGrouper(join_existing_groups=True)` leaving participants waiting until they timed out when a burst of arrivals was not a multiple of `initial_group_size`: participants already waiting now join an open group as soon as one exists. Closed groups and groups with no active members are no longer joined.

@@ -67,7 +67,7 @@ from psynet.sync import (
     check_sync_groups,
     pending_arrival_notice_for,
 )
-from psynet.timeline import Page, Timeline
+from psynet.timeline import Page, PageMaker, Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -692,6 +692,66 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
     assert first.sync_group is not None
     assert second.sync_group.id == first.sync_group.id
     assert len(first.sync_group.participants) == 2
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_leftover_waiter_joins_an_open_group(
+    in_experiment_directory, db_session
+):
+    """A waiter left over from a burst joins the group formed without them."""
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+    participants = _working_participants(exp, 3)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    leftover = next(p for p in participants if p.sync_group is None)
+
+    check_barriers()
+
+    db_session.refresh(leftover)
+    assert grouper.can_participant_exit(leftover)
+    assert len(leftover.sync_group.participants) == 3
+
+
+@pytest.mark.parametrize("request_kind", ["response", "timeline"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_partner_leaving_sends_participant_to_unsuccessful_end(
+    in_experiment_directory, db_session, request_kind
+):
+    """The open page is not rebuilt after the partner leaves and the group closes."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        PageMaker(
+            lambda participant: InfoPage(f"Group {participant.sync_group.id}"),
+            time_estimate=1,
+        ),
+    )
+    try:
+        (stayer, leaver), _ = _pair_sync_group(exp, db_session)
+        assert _json_timeline(exp, stayer).status_code == 200
+        leaver.fail("returned the study")
+        db_session.commit()
+        assert stayer.failed
+
+        if request_kind == "response":
+            result = _process_response(exp, stayer, stayer.page_uuid)
+            assert result.payload["submission"] == "approved"
+        else:
+            assert _json_timeline(exp, stayer).status_code == 200
+        assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
 
 
 def test_sync_group_dashboard_waiting_barrier_indexes():

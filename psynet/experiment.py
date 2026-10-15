@@ -3526,6 +3526,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if Experiment._pending_redirect_replaces_open_page(participant):
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page),
+                    page=page,
+                )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3624,6 +3633,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    @staticmethod
+    def _pending_redirect_replaces_open_page(participant):
+        """Return whether a queued redirect should replace the open page unbuilt.
+
+        ``Participant.fail()`` queues ``pending_redirect`` when it runs outside
+        this participant's request, for example when a partner leaves and
+        their sync group closes. The open page belongs to the abandoned flow,
+        and its page maker may read state that ``fail()`` removed, so it is
+        neither rebuilt nor scored. Timeline holds are still rebuilt, because
+        leaving one settles its wait record.
+        """
+        if getattr(participant, "pending_redirect", None) is None:
+            return False
+        from .timeline_hold import TimelineHoldRecord
+
+        on_hold = db.session.query(
+            TimelineHoldRecord.query.filter_by(
+                participant_id=participant.id, page_uuid=participant.page_uuid
+            ).exists()
+        ).scalar()
+        return not on_hold
+
     def _hold_resume_must_settle(self, participant, event):
         """Return whether a release by failure, redirect, or timeout must take the locked path.
 
@@ -3653,6 +3684,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
+        if Experiment._pending_redirect_replaces_open_page(participant):
+            return None
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
             event
@@ -6206,7 +6239,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
-        if participant.elt_id[1:] == [-1]:
+        replace_open_page = cls._pending_redirect_replaces_open_page(participant)
+        if participant.elt_id[1:] == [-1] or replace_open_page:
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)

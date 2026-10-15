@@ -37,8 +37,10 @@ current page, under a waiting indicator, until their group is formed.
 ``join_existing_groups`` (default: ``False``)
     If ``True``, an arriving participant first joins an existing group that
     is below ``max_group_size``, preferring the smallest and then the oldest
-    group. Such groups accept *top-ups*: when a member drops out, barriers
-    wait for a replacement instead of dissolving the group.
+    group. Participants already waiting at the grouper join such a group as
+    soon as one opens. Closed groups and groups with no active members are
+    not joined. Such groups accept *top-ups*: when a member drops out,
+    barriers wait for a replacement instead of dissolving the group.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
