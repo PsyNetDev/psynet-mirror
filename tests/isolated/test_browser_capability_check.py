@@ -37,23 +37,57 @@ def test_browser_capability_check_rejects_unknown_token():
 
 
 def test_empty_capabilities_conditional_is_noop():
-    from unittest.mock import MagicMock
-
-    from psynet.timeline import StartSwitch
     from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker, StartSwitch
 
     check = BrowserCapabilityCheck(capabilities=frozenset())
-    start_switch = next(e for e in check.elts if isinstance(e, StartSwitch))
 
-    participant = MagicMock()
-    participant.answer = {"passed": False}
-    experiment = MagicMock()
-    experiment.browser_capabilities = frozenset()
+    # The conditional is built inside _make_pages, so when caps are empty
+    # _make_pages returns [] and no StartSwitch ever appears in the timeline.
+    # The only top-level elt should be the PageMaker itself.
+    assert not any(isinstance(e, StartSwitch) for e in check.elts)
+    assert any(isinstance(e, PageMaker) for e in check.elts)
 
-    # When capabilities are empty the condition must be False,
-    # regardless of a preceding page's answer matching the fail shape.
-    result = start_switch.function(experiment=experiment, participant=participant)
-    assert not result
+
+def test_browser_capability_check_rejects_string_capabilities():
+    from psynet.prescreen import BrowserCapabilityCheck
+
+    with pytest.raises(ValueError, match="not a string"):
+        BrowserCapabilityCheck(capabilities="microphone")
+
+
+def test_browser_capability_check_label_propagates():
+    from unittest.mock import MagicMock
+
+    from psynet.page import UnsuccessfulEndPage
+    from psynet.timeline import PageMaker
+    from psynet.prescreen import BrowserCapabilityCheck, BrowserCapabilityCheckPage
+
+    check = BrowserCapabilityCheck(label="my_check", capabilities={"audio_playback"})
+    assert check.id == "my_check"
+
+    page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
+    resolved = page_maker.resolve(MagicMock(), MagicMock(), position=[0])
+
+    cap_page = next(e for e in resolved if isinstance(e, BrowserCapabilityCheckPage))
+    assert cap_page.label == "my_check"
+
+    end_page = next(e for e in resolved if isinstance(e, UnsuccessfulEndPage))
+    assert end_page.failure_tags == ["my_check"]
+
+
+def test_permission_capability_includes_intro_page():
+    from unittest.mock import MagicMock
+
+    from psynet.page import InfoPage
+    from psynet.timeline import PageMaker
+    from psynet.prescreen import BrowserCapabilityCheck
+
+    check = BrowserCapabilityCheck(capabilities={"microphone"})
+    page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
+    resolved = page_maker.resolve(MagicMock(), MagicMock(), position=[0])
+
+    assert any(isinstance(e, InfoPage) for e in resolved)
 
 
 def test_browser_capability_check_page_js_vars():

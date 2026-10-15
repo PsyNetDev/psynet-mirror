@@ -2089,6 +2089,11 @@ class BrowserCapabilityCheck(Module):
         )
 
         if capabilities is not None:
+            if isinstance(capabilities, str):
+                raise ValueError(
+                    "capabilities must be a set of tokens, not a string. "
+                    f"Did you mean: capabilities={{{capabilities!r}}}"
+                )
             capabilities = frozenset(capabilities)
             validate_browser_capabilities(capabilities)
 
@@ -2107,22 +2112,17 @@ class BrowserCapabilityCheck(Module):
             if perm_caps:
                 pages.append(_browser_capability_permission_intro(perm_caps))
             pages.append(BrowserCapabilityCheckPage(caps, label=label))
+            pages.extend(
+                conditional(
+                    f"{label}_fail",
+                    lambda participant: (
+                        isinstance(participant.answer, dict)
+                        and not participant.answer.get("passed", True)
+                    ),
+                    UnsuccessfulEndPage(failure_tags=[label]),
+                )
+            )
             return pages
 
-        elts = join(
-            PageMaker(_make_pages, time_estimate=0.0),
-            conditional(
-                f"{label}_fail",
-                lambda participant, experiment: (
-                    bool(
-                        self.capabilities
-                        if self.capabilities is not None
-                        else experiment.browser_capabilities
-                    )
-                    and isinstance(participant.answer, dict)
-                    and not participant.answer.get("passed", True)
-                ),
-                UnsuccessfulEndPage(failure_tags=[label]),
-            ),
-        )
+        elts = PageMaker(_make_pages, time_estimate=0.0)
         super().__init__(label, elts)
