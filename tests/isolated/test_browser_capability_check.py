@@ -36,6 +36,26 @@ def test_browser_capability_check_rejects_unknown_token():
         BrowserCapabilityCheck(capabilities={"not_a_real_capability"})
 
 
+def test_empty_capabilities_conditional_is_noop():
+    from unittest.mock import MagicMock
+
+    from psynet.timeline import StartSwitch
+    from psynet.prescreen import BrowserCapabilityCheck
+
+    check = BrowserCapabilityCheck(capabilities=frozenset())
+    start_switch = next(e for e in check.elts if isinstance(e, StartSwitch))
+
+    participant = MagicMock()
+    participant.answer = {"passed": False}
+    experiment = MagicMock()
+    experiment.browser_capabilities = frozenset()
+
+    # When capabilities are empty the condition must be False,
+    # regardless of a preceding page's answer matching the fail shape.
+    result = start_switch.function(experiment=experiment, participant=participant)
+    assert not result
+
+
 def test_browser_capability_check_page_js_vars():
     from psynet.prescreen import BrowserCapabilityCheckPage
 
