@@ -1,6 +1,6 @@
 $(document).ready(function() {
   $('.chart.spending').append(
-    '<div class="progress spending" style="cursor: pointer;" title="Click to toggle spending limits control" data-html="true">' +
+    '<div class="progress spending" style="cursor: pointer;" title="Click to toggle spending limits control">' +
       '<div class="progress-bar spending" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">' +
         '<span class="show spending">···</span>' +
       '</div>' +
@@ -8,7 +8,7 @@ $(document).ready(function() {
   );
   $.each(timelineModules["modules"], function() {
     $('.chart.modules').append(
-      '<div class="progress modules" id="' + this['id'] + '" data-module-id="' + this['id'] + '" data-html="true">' +
+      '<div class="progress modules" id="' + this['id'] + '" data-module-id="' + this['id'] + '" data-bs-html="true">' +
         '<div class="progress-bar ' + this['id'] + '" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">' +
           '<span class="show ' + this['id'] + '">' + this['id'] + '</span>' +
         '</div>' +

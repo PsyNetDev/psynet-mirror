@@ -10,7 +10,7 @@ const path = require("path");
 const { test, expect } = require("./fixtures");
 
 const JQUERY_JS = fs.readFileSync(
-  path.resolve("psynet/resources/libraries/jQuery/jquery-3.7.1.min.js"),
+  path.resolve("psynet/resources/libraries/jQuery/jquery-4.0.0.min.js"),
   "utf8"
 );
 const THEME_CSS = fs.readFileSync(
