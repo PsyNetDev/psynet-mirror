@@ -60,8 +60,8 @@ def test_browser_capability_check_label_propagates():
     from unittest.mock import MagicMock
 
     from psynet.page import UnsuccessfulEndPage
-    from psynet.timeline import PageMaker
     from psynet.prescreen import BrowserCapabilityCheck, BrowserCapabilityCheckPage
+    from psynet.timeline import PageMaker
 
     check = BrowserCapabilityCheck(label="my_check", capabilities={"audio_playback"})
     assert check.id == "my_check"
@@ -80,8 +80,8 @@ def test_permission_capability_includes_intro_page():
     from unittest.mock import MagicMock
 
     from psynet.page import InfoPage
-    from psynet.timeline import PageMaker
     from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker
 
     check = BrowserCapabilityCheck(capabilities={"microphone"})
     page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
