@@ -21,6 +21,23 @@ partners without waiting for the poller. The last participant to arrive
 skips the wait indicator and continues to the next page. If a partner's wait row is locked,
 the regular 0.5-second barrier check completes the release instead.
 
+The barrier poller
+------------------
+
+The clock process runs :func:`~psynet.sync.check_barriers` every
+0.5 seconds as a backstop: for a release whose request-side check was
+deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
+pages don't check the barrier), and for waiters who have left. A waiter whose
+browser is still open also checks their own visit on each hold poll.
+
+Each sweep first applies ``max_wait_time`` to waiters whose hold deadline has
+passed, since nobody else would: their own request normally does it. It then
+checks waiting visits, those that are new or changed (waiters or sync group)
+since this process last checked them first, then the rest, least recently
+checked first. Each of the two steps stops starting new work after
+0.2 seconds, so with thousands of waiters a sweep stays within its interval
+and the remaining visits are reached by later sweeps.
+
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
 :meth:`~psynet.sync.Barrier.check_waiting_participants`,
