@@ -3285,17 +3285,20 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     assert _barrier_link_released(first_id, barrier_id) is False
 
 
+@pytest.mark.parametrize("action", ["fail", "kick"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_check_barriers_fails_waiters_past_their_deadline(
-    in_experiment_directory, db_session
+def test_check_barriers_times_out_waiters_past_their_deadline(
+    in_experiment_directory, db_session, action
 ):
-    """A waiter who left is failed at their deadline, with the usual knock-on."""
+    """A waiter who left is timed out at their deadline, with the usual knock-on."""
     exp = get_experiment()
     overdue, partner = _pair_sync_group(exp, db_session)[0]
     patient, _ = _pair_sync_group(exp, db_session)[0]
-    barrier = GroupBarrier(id_="abandoned", group_type="main", max_wait_time=300)
+    barrier = GroupBarrier(
+        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+    )
     for participant in (overdue, patient):
         _arrive_at_group_barrier(exp, barrier, participant)
     db.session.commit()
@@ -3309,7 +3312,11 @@ def test_check_barriers_fails_waiters_past_their_deadline(
 
     db.session.expire_all()
     overdue, partner, patient = (Participant.query.get(i) for i in ids)
-    assert overdue.failed and "fail_on_timeout" in overdue.failure_tags
+    if action == "fail":
+        assert overdue.failed and "fail_on_timeout" in overdue.failure_tags
+    else:
+        assert not overdue.failed and not overdue.active_sync_groups
+    assert _barrier_link_released(overdue.id, barrier.id)
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False

@@ -52,8 +52,8 @@ this module. That loop:
 
 - Applies ``max_wait_time`` to waiters whose hold deadline has passed. Their
   own request normally does this, so waiters who left would otherwise stay.
-- Finds waiting barrier instances, and checks new or changed ones first and
-  the rest least recently checked first, within a per-sweep time budget.
+- Finds waiting barrier instances and checks them least recently checked
+  first, new or changed ones with a head start, within a per-sweep time budget.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
   connection, leaving definition and instance metadata available to arrival
   requests. That extra transaction stays open until this poller's
@@ -179,6 +179,9 @@ _MAX_BARRIER_WALK_PASSES = 32
 # The 0.5 s poller stops starting overdue timeouts, and separately visit
 # checks, once each step has run this long; the rest wait for later sweeps.
 _POLLER_SWEEP_BUDGET_SECONDS = 0.2
+
+# How much sooner a new or changed visit is re-checked than an unchanged one.
+_POLLER_CHANGE_HEAD_START_SECONDS = 5.0
 
 # Poller-process memory: instance id -> (fingerprint, monotonic check time).
 _poller_checked_visits = {}
@@ -2426,12 +2429,17 @@ def _overdue_waiter_ids():
 
 
 def _time_out_overdue_links(participant):
-    """Apply the barrier's max-wait timeout to each overdue hold of one waiter."""
+    """Apply the barrier's max-wait timeout to the waiter's current overdue hold.
+
+    Like the request path, only the hold on the participant's current page
+    times out.
+    """
     now = timenow()
     for link in list(participant.active_barriers.values()):
         record = link.timeline_hold
         if (
             record is None
+            or record.page_uuid != participant.page_uuid
             or record.released_at is not None
             or record.deadline_at is None
             or record.deadline_at > now
@@ -2723,12 +2731,16 @@ def _run_pending_barrier_checks(instance_ids, *, wait=True):
 
 
 def _process_barrier_instance(instance_id, *, retry=False):
-    """Try one barrier visit and report whether waiter contention deferred it."""
+    """Try one barrier visit and report whether contention deferred it.
+
+    Contention is another request holding the visit claim, or a locked
+    waiter. The poller then retries rather than treating the visit as checked.
+    """
     barrier_id = None
     try:
         with _hold_barrier_instance_claim(instance_id, wait=False) as claimed:
             if not claimed:
-                return False
+                return True
             instance = BarrierInstance.query.get(instance_id)
             barrier_id = None if instance is None else instance.barrier_id
             if not _check_and_skip_held_instance(instance_id):
@@ -2758,16 +2770,21 @@ def _process_barrier_instance(instance_id, *, retry=False):
 def _visits_due(waiting, sweep_ends):
     """Yield waiting visits in check order until ``sweep_ends``, at least one.
 
-    Visits that are new to this process, or whose fingerprint changed since
-    it last checked them, come first. Unchanged visits follow, least
-    recently checked first.
+    Least recently checked visits come first. Visits that are new to this
+    process, or whose fingerprint changed since it last checked them, get a
+    head start of ``_POLLER_CHANGE_HEAD_START_SECONDS``, so they are checked
+    promptly without starving unchanged visits whose release depends on time.
     """
+    now = time.monotonic()
 
     def priority(instance_id):
         last = _poller_checked_visits.get(instance_id)
-        if last is None or last[0] != waiting[instance_id]:
-            return (0, 0.0, instance_id)
-        return (1, last[1], instance_id)
+        if last is None:
+            return (now - _POLLER_CHANGE_HEAD_START_SECONDS, instance_id)
+        fingerprint, checked_at = last
+        if fingerprint != waiting[instance_id]:
+            checked_at -= _POLLER_CHANGE_HEAD_START_SECONDS
+        return (checked_at, instance_id)
 
     for index, instance_id in enumerate(sorted(waiting, key=priority)):
         if index and time.monotonic() >= sweep_ends:
@@ -2785,10 +2802,12 @@ def check_barriers():
     publishes unpublished until that walk returns. Each visit still commits
     before the next check so a locked waiter cannot poison sibling checks.
 
-    Each sweep first times out overdue waiters, then checks visits, new or
-    changed ones first. Each of the two steps stops starting new work after
+    Each sweep first times out overdue waiters, then checks visits, least
+    recently checked first, with new or changed ones given a head start. Each
+    of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
-    keep the poller busy; the rest wait for later sweeps. Live waiters still
+    keep the poller busy; the rest wait for later sweeps. One item can still
+    overrun the budget while it waits for a row lock. Live waiters still
     check their own visit on each hold poll.
     """
     seen = set()

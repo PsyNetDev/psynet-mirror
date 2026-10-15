@@ -30,13 +30,15 @@ deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
 pages don't check the barrier), and for waiters who have left. A waiter whose
 browser is still open also checks their own visit on each hold poll.
 
-Each sweep first applies ``max_wait_time`` to waiters whose hold deadline has
-passed, since nobody else would: their own request normally does it. It then
-checks waiting visits, those that are new or changed (waiters or sync group)
-since this process last checked them first, then the rest, least recently
-checked first. Each of the two steps stops starting new work after
-0.2 seconds, so with thousands of waiters a sweep stays within its interval
-and the remaining visits are reached by later sweeps.
+Each sweep first applies ``max_wait_time`` to waiters at the default wait
+indicator whose deadline has passed, since nobody else would: their own
+request normally does it. It then checks waiting visits, least recently
+checked first, with a 5-second head start for visits that are new or whose
+waiters or sync group changed since this process last checked them. Each of
+the two steps stops starting new work after 0.2 seconds, so with thousands
+of waiters a sweep normally stays within its interval and later sweeps reach
+the remaining visits. One timeout or check can still overrun while it waits
+for a row lock.
 
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
