@@ -46,6 +46,7 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
+    SyncGroup,
     _advance_released_hold_waiters_after_commit,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
@@ -136,6 +137,11 @@ class RecordingBarrier(Barrier):
 class ReleaseAllBarrier(Barrier):
     def choose_who_to_release(self, waiting_participants):
         return waiting_participants
+
+
+class SpecErrorBarrier(Barrier):
+    def choose_who_to_release(self, waiting_participants):
+        raise BarrierSpecError("broken")
 
 
 class BlockingReleaseBarrier(ReleaseAllBarrier):
@@ -3162,6 +3168,61 @@ def test_check_instance_does_not_reactivate_ungrouped_when_another_pool_is_activ
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_leftover_check_defers_to_an_arrival_creating_the_pool(
+    in_experiment_directory, db_session
+):
+    """Reactivating a leftover must not race an arrival that is opening the pool."""
+    exp = get_experiment()
+    first = new_participant(exp)
+    first.status = "working"
+    db.session.commit()
+    grouper = SimpleGrouper(group_type="race_ungrouped", initial_group_size=3)
+    _arrive_at_group_barrier(exp, grouper, first)
+    db.session.commit()
+    leftover = BarrierInstance.query.filter_by(barrier_id=grouper.id).one()
+    leftover.active = False
+    db.session.commit()
+    leftover_id, spec, behavior_hash = (
+        leftover.id,
+        leftover.spec,
+        leftover.behavior_hash,
+    )
+    newer_id = str(uuid.uuid4())
+
+    with db.engine.connect() as arrival, arrival.begin() as arrival_txn:
+        # What ``BarrierInstance.for_arrival`` does before it opens a new pool.
+        arrival.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": grouper.id},
+        )
+        arrival.execute(
+            BarrierInstance.__table__.insert().values(
+                id=newer_id,
+                type=sa_inspect(BarrierInstance).polymorphic_identity,
+                barrier_id=grouper.id,
+                active=True,
+                spec=spec,
+                behavior_hash=behavior_hash,
+            )
+        )
+        _set_transaction_lock_timeout(1)
+        leftover = BarrierInstance.query.get(leftover_id)
+        assert _check_claimed_barrier_instance(leftover, already_claimed=True) is False
+        db.session.commit()
+        arrival_txn.commit()
+
+    leftover = BarrierInstance.query.get(leftover_id)
+    assert leftover.active is False
+    assert _check_claimed_barrier_instance(leftover, already_claimed=True) is True
+    db.session.commit()
+    first = Participant.query.get(first.id)
+    assert BarrierInstance.query.get(leftover_id).active is False
+    assert first.active_barriers[grouper.id].barrier_instance_id == newer_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_leftover_ungrouped_waiter_joins_the_active_pool_and_can_proceed(
     in_experiment_directory, db_session
 ):
@@ -3229,6 +3290,189 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     instance = BarrierInstance.query.get(instance_id)
     assert instance.active is True
     assert _barrier_link_released(first_id, barrier_id) is False
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_times_out_waiters_past_their_deadline(
+    in_experiment_directory, db_session, action
+):
+    """A waiter who left is timed out at their deadline, with the usual knock-on."""
+    exp = get_experiment()
+    overdue, partner = _pair_sync_group(exp, db_session)[0]
+    patient, _ = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(
+        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+    )
+    for participant in (overdue, patient):
+        _arrive_at_group_barrier(exp, barrier, participant)
+    db.session.commit()
+    TimelineHoldRecord.query.filter_by(participant_id=overdue.id).update(
+        {"deadline_at": timenow() - timedelta(seconds=1)}
+    )
+    db.session.commit()
+    ids = overdue.id, partner.id, patient.id
+
+    check_barriers()
+
+    db.session.expire_all()
+    overdue, partner, patient = (Participant.query.get(i) for i in ids)
+    if action == "fail":
+        assert overdue.failed and "fail_on_timeout" in overdue.failure_tags
+    else:
+        assert not overdue.failed and not overdue.active_sync_groups
+    assert _barrier_link_released(overdue.id, barrier.id)
+    assert partner.failure_tags == ["sync group below minimum size"]
+    assert not patient.failed
+    assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_dissolution_leaves_a_busy_member_to_the_poller(
+    in_experiment_directory, db_session
+):
+    """A partner busy in their own request is failed by the next poll, not waited for."""
+    exp = get_experiment()
+    leaving, busy = _pair_sync_group(exp, db_session)[0]
+    busy_id, group_id = busy.id, busy.sync_group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leaving.fail("left")
+        db.session.commit()
+    assert not Participant.query.get(busy_id).failed
+
+    check_barriers()
+
+    db.session.expire_all()
+    assert Participant.query.get(busy_id).failure_tags == [
+        "sync group below minimum size"
+    ]
+    assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_two_members_failing_at_once_do_not_deadlock(
+    in_experiment_directory, db_session
+):
+    """Each holds their own row, as their requests do, then fails at the same time."""
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 3)
+    ids, group_id = [p.id for p in members], group.id
+    db.session.remove()
+    both_locked = threading.Barrier(2)
+    errors = []
+
+    def fail_self(participant_id):
+        try:
+            _set_transaction_lock_timeout(5)
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            both_locked.wait(5)
+            participant.fail("timeout")
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    threads = [threading.Thread(target=fail_self, args=(i,)) for i in ids[1:]]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(15)
+    check_barriers()
+
+    assert errors == []
+    db.session.expire_all()
+    tags = [Participant.query.get(i).failure_tags for i in ids]
+    assert tags[0] == ["sync group below minimum size"]
+    assert all("timeout" in t for t in tags[1:])
+    assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_session):
+    """Re-electing a leader skips a member whose own request holds their row."""
+    exp = get_experiment()
+    (leader, busy, free), group = _sync_group_of(exp, db_session, 3)
+    group.min_group_size = 1
+    db.session.commit()
+    busy_id, free_id, group_id = busy.id, free.id, group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leader.fail("left")
+        db.session.commit()
+
+    assert SyncGroup.query.get(group_id).leader_id == free_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_does_not_let_a_failing_visit_starve_others(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A visit whose check keeps failing queues behind the other visits."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    for barrier in (SpecErrorBarrier(id_="broken"), ReleaseAllBarrier(id_="healthy")):
+        participant = new_participant(exp)
+        participant.status = "working"
+        db.session.commit()
+        _arrive_at_group_barrier(exp, barrier, participant)
+        db.session.commit()
+    healthy_id = participant.id
+
+    for _ in range(2):
+        check_barriers()
+    assert _barrier_link_released(healthy_id, "healthy")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_spreads_idle_visits_over_sweeps(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Past its time budget a sweep stops; later sweeps reach the other visits."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    waiters = []
+    for i in range(3):
+        participant = new_participant(exp)
+        participant.status = "working"
+        db.session.commit()
+        _arrive_at_group_barrier(exp, ReleaseAllBarrier(id_=f"idle_{i}"), participant)
+        db.session.commit()
+        waiters.append((participant.id, f"idle_{i}"))
+
+    released = []
+    for _ in waiters:
+        check_barriers()
+        released.append(sum(_barrier_link_released(*waiter) for waiter in waiters))
+    assert released == [1, 2, 3]
 
 
 def _arrival_hold_messages(publications, participant_id):
