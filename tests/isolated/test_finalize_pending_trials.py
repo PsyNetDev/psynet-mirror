@@ -932,3 +932,107 @@ def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participan
             text("SELECT id FROM participant WHERE id = :id FOR KEY SHARE NOWAIT"),
             {"id": participant_id},
         )
+
+
+class AnalyzedRecordingTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+
+    def async_post_trial(self):
+        pass
+
+    def queue_async_post_trial(self):
+        # The test trial maker is not on the timeline; record the request only.
+        self.async_post_trial_requested = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("failure", ["exception", "database_error"])
+@pytest.mark.parametrize("failing_attempts", [1, 2])
+def test_deposit_callback_failure_in_a_worker_rolls_back_and_retries(
+    db_session, participant, monkeypatch, tmp_path, failure, failing_attempts
+):
+    """A failing hook's changes are discarded and the hook is retried; only a
+    persistent failure fails the trial, so analysis is never skipped."""
+    import io
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from psynet.asset import LocalStorage
+    from psynet.async_job import AsyncJob, WorkerAsyncJob
+    from psynet.media_upload import (
+        _DEPOSIT_CALLBACK_ATTEMPTS,
+        _process_recording,
+        _receive_recording,
+    )
+    from psynet.trial.record import Recording
+
+    deployment = {
+        "deployment_id": "test-deployment",
+        "is_local_deployment": True,
+        "is_ssh_deployment": False,
+    }
+    monkeypatch.setattr("psynet.deployment_info.read", deployment.__getitem__)
+    monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    exp = get_experiment()
+    network = _create_network(_chain_trial_maker(), exp)
+    trial = AnalyzedRecordingTrial(
+        experiment=exp,
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    db.session.add(trial)
+    db.session.flush()
+    asset, receipt = _reserve_trial_recording(trial, tmp_path / "assets")
+    payload = (
+        Path(__file__).resolve().parents[2]
+        / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
+    ).read_bytes()
+    asset.upload_max_bytes = len(payload)
+    recording_id, trial_id = asset.id, trial.id
+    db.session.commit()
+    _receive_recording(
+        recording_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+    )
+
+    after_deposit = Recording.after_deposit
+    calls = []
+
+    def flaky_after_deposit(self):
+        calls.append(self.id)
+        if len(calls) > failing_attempts:
+            return after_deposit(self)
+        self.trial.answer = "changed by a failing hook"
+        db.session.flush()
+        if failure == "database_error":
+            db.session.execute(text("SELECT * FROM missing_table"))
+        raise RuntimeError("intentional deposit callback failure")
+
+    monkeypatch.setattr(Recording, "after_deposit", flaky_after_deposit)
+    job = WorkerAsyncJob(_process_recording, arguments={"recording_id": recording_id})
+    db.session.add(job)
+    db.session.flush()
+    job_id = job.id
+    db.session.commit()
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = db.session.get(AsyncJob, job_id, populate_existing=True)
+    assert (job.finished, job.failed) == (True, False)
+    recording = db.session.get(Recording, recording_id, populate_existing=True)
+    assert (recording.upload_status, recording.deposited) == ("deposited", True)
+    trial = db.session.get(Trial, trial_id, populate_existing=True)
+    assert trial.answer == 1
+    if failing_attempts < _DEPOSIT_CALLBACK_ATTEMPTS:
+        assert not trial.failed
+        assert trial.async_post_trial_requested
+    else:
+        assert trial.failed_reason == "after_deposit_error"
+        assert not trial.async_post_trial_requested

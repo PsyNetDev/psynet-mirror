@@ -69,6 +69,9 @@ _PROCESSING_JOB_TIMEOUT = 120
 # Seconds a client should wait before retrying while another upload of the
 # same recording is still being received.
 _RECEIPT_RETRY_AFTER = 5
+# Attempts at a recording's deposit callbacks before its trial fails. A second
+# attempt absorbs transient database errors such as lock timeouts.
+_DEPOSIT_CALLBACK_ATTEMPTS = 2
 
 
 def _upload_timeout(size_bytes):
@@ -546,53 +549,66 @@ def _resolve_unavailable(asset, reason, trial):
 def _run_deposit_callbacks(recording_id):
     """Run deposit callbacks once the deposit itself is committed.
 
-    A failing callback must not reclassify stored bytes as a storage failure.
-    The recording stays deposited and readable. Its trial fails instead, as
-    for a failing ``on_finalized``, so that waits release rather than
-    stalling on analysis that will never be requested.
+    A failing callback must not reclassify stored bytes as a storage failure:
+    the recording stays deposited and readable. Each attempt's changes are
+    rolled back on failure, and the callbacks are retried in a fresh
+    transaction. If every attempt fails, the trial fails, as for a failing
+    ``on_finalized``. Finalizing it instead would skip ``async_post_trial``,
+    which the callbacks queue, and waits would release without analysis.
     """
+    for attempt in range(1, _DEPOSIT_CALLBACK_ATTEMPTS + 1):
+        try:
+            trial_id = _call_deposit_callbacks(recording_id)
+        except Exception:
+            # In a worker, this runs inside the job's transaction, where a
+            # nested transaction() does not roll back on its own.
+            db.session.rollback()
+            logger.warning(
+                "Deposit callbacks failed for recording %s (attempt %s of %s); "
+                "the recording remains deposited.",
+                recording_id,
+                attempt,
+                _DEPOSIT_CALLBACK_ATTEMPTS,
+                exc_info=True,
+            )
+            continue
+        if trial_id is not None:
+            _recheck_trial_finalization(trial_id)
+        return
+    _fail_after_callback_error(recording_id)
+
+
+def _call_deposit_callbacks(recording_id):
+    """Lock the recording's owners and call ``after_deposit``; return its trial ID."""
     from .participant import Participant
     from .trial.main import Trial
 
-    trial_id = None
-    try:
-        with transaction():
-            identity = (
-                db.session.query(Recording.participant_id, Recording.trial_id)
-                .filter(Recording.id == recording_id)
+    with transaction():
+        identity = (
+            db.session.query(Recording.participant_id, Recording.trial_id)
+            .filter(Recording.id == recording_id)
+            .one()
+        )
+        if identity.participant_id is not None:
+            Participant.query.filter_by(id=identity.participant_id).with_for_update(
+                of=Participant
+            ).populate_existing().one()
+        trial = None
+        if identity.trial_id is not None:
+            trial = (
+                Trial.query.filter_by(id=identity.trial_id)
+                .with_for_update(of=Trial)
+                .populate_existing()
                 .one()
             )
-            trial_id = identity.trial_id
-            if identity.participant_id is not None:
-                Participant.query.filter_by(id=identity.participant_id).with_for_update(
-                    of=Participant
-                ).populate_existing().one()
-            trial = None
-            if identity.trial_id is not None:
-                trial = (
-                    Trial.query.filter_by(id=identity.trial_id)
-                    .with_for_update(of=Trial)
-                    .populate_existing()
-                    .one()
-                )
-            asset = Recording.query.filter_by(id=recording_id).populate_existing().one()
-            if (
-                asset.deposited
-                and asset.required_for_trial
-                and (trial is None or not trial.failed)
-            ):
-                asset.after_deposit()
-    except Exception:
-        logger.warning(
-            "Deposit callbacks failed for recording %s; the recording remains "
-            "deposited and its trial is failed.",
-            recording_id,
-            exc_info=True,
-        )
-        _fail_after_callback_error(recording_id)
-        return
-    if trial_id is not None:
-        _recheck_trial_finalization(trial_id)
+        asset = Recording.query.filter_by(id=recording_id).populate_existing().one()
+        if (
+            asset.deposited
+            and asset.required_for_trial
+            and (trial is None or not trial.failed)
+        ):
+            asset.after_deposit()
+    return identity.trial_id
 
 
 def _recheck_trial_finalization(trial_id):
@@ -610,6 +626,7 @@ def _recheck_trial_finalization(trial_id):
             _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
             Trial.recheck_finalization(trial_id)
     except Exception:
+        db.session.rollback()
         logger.warning(
             "Finalize re-check after a recording deposit failed for trial %s; "
             "leaving it to the finalize backstop.",
@@ -641,6 +658,7 @@ def _fail_after_callback_error(recording_id):
                 trial.fail(reason="after_deposit_error")
                 trial._wake_participant(reason="trial_failed")
     except Exception:
+        db.session.rollback()
         logger.warning(
             "Could not fail the trial of recording %s after a callback error.",
             recording_id,
@@ -659,6 +677,7 @@ def _process_recording(recording_id):
             output = _store_recording_bytes(path, storage)
             _complete_recording(recording_id, output=output)
         except Exception:
+            db.session.rollback()
             logger.warning(
                 "Processing recording %s failed.", recording_id, exc_info=True
             )
