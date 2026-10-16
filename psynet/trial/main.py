@@ -42,7 +42,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
-from ..async_job import WorkerAsyncJob, _deprecated_async_processes
+from ..async_job import WorkerAsyncJob, _deprecated_async_processes, check_priority
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
 from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
@@ -254,6 +254,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         jobs and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
         to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
         whose async jobs are still running and whose ``score`` is not yet set.
+
+    async_post_trial_priority : str or None
+        Priority of the :meth:`~psynet.trial.main.Trial.async_post_trial` job,
+        ``"high"`` or ``"low"``; see :class:`~psynet.async_job.WorkerAsyncJob`.
+        If ``None`` (default), it is ``"high"`` when a participant may wait for
+        the result, i.e. when the trial maker checks performance, when it is a
+        within-participant chain trial maker (``chain_type="within"``), whose
+        next trial waits for this one to be finalized, or when the trial
+        overrides :meth:`~psynet.trial.main.Trial.show_feedback` or
+        :meth:`~psynet.trial.main.Trial.gives_feedback` with
+        ``wait_for_feedback`` set; it is ``"low"`` otherwise.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -798,6 +809,30 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         # )
 
     run_async_post_trial = None
+    async_post_trial_priority = None
+
+    @classmethod
+    def _get_async_post_trial_priority(cls, trial_maker):
+        """Return the priority of this trial class's ``async_post_trial`` job.
+
+        See :attr:`async_post_trial_priority` for the rules.
+        """
+        if cls.async_post_trial_priority is not None:
+            check_priority(cls.async_post_trial_priority)
+            return cls.async_post_trial_priority
+        if trial_maker is not None and (
+            trial_maker.check_performance_at_end
+            or trial_maker.check_performance_every_trial
+            # The participant's next trial waits for this trial to finalize.
+            or getattr(trial_maker, "chain_type", None) == "within"
+        ):
+            return "high"
+        if cls.wait_for_feedback and (
+            cls.show_feedback is not Trial.show_feedback
+            or cls.gives_feedback is not Trial.gives_feedback
+        ):
+            return "high"
+        return "low"
 
     def async_post_trial(self):
         """
@@ -1080,6 +1115,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             timeout=self.trial_maker.async_timeout_sec,
             trial=self,
             unique=True,
+            priority=self._get_async_post_trial_priority(self.trial_maker),
         ).enqueue()
 
     def on_finalized(self):
@@ -1553,7 +1589,9 @@ class TrialMaker(Module):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async job times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -2741,7 +2779,9 @@ class NetworkTrialMaker(TrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async job times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -3177,6 +3217,8 @@ class NetworkTrialMaker(TrialMaker):
             label="post_grow_network",
             timeout=self.async_timeout_sec,
             network=network,
+            # Participants may wait for the network's next node.
+            priority="high",
         ).enqueue()
 
     @property
@@ -3689,6 +3731,8 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
             node=self,
             timeout=self.trial_maker.async_timeout_sec,
             unique=True,
+            # Participants may wait for this node to be deployed.
+            priority="high",
         ).enqueue()
         self.async_on_deploy_requested = True
 
