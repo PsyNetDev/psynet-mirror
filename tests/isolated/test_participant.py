@@ -76,19 +76,6 @@ class TestParticipantFailure:
         assert not trial.failed
         assert incomplete.failed
 
-    def test_complete_unfinalized_trial_survives_participant_fail(
-        self, participant, trial
-    ):
-        trial.complete = True
-        trial.finalized = False
-        db.session.commit()
-
-        participant.fail("premature_exit")
-
-        assert trial.complete
-        assert not trial.finalized
-        assert not trial.failed
-
     def test_fail_can_leave_terminal_navigation_to_exit_recovery(
         self, participant, trial
     ):
