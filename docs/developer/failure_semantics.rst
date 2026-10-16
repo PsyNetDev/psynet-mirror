@@ -61,10 +61,13 @@ notification or a dashboard action, the redirect is stored in
 
 The queued redirect is navigation only; it does not keep the current trial
 alive. By the time fail routines run, ``fail()`` has already failed the trial
-on screen. The participant's next POST is stored as a ``Response``, and
-``advance_page`` then applies the redirect before any other timeline logic,
-so ``_finalize_trial`` does not run for that trial. Code must not assume that
-an open page means its trial will complete.
+on screen. The participant's next ``POST /response`` or ``GET /timeline``
+applies the redirect without rebuilding the open page, because that page's
+code may read state that ``fail()`` removed, such as a closed sync group. The
+submitted answer is not stored, and ``_finalize_trial`` does not run for that
+trial. Timeline holds are the exception: they are rebuilt and resumed as
+usual so that their wait is settled. Code must not assume that an open page
+means its trial will complete.
 
 Sync groups
 ~~~~~~~~~~~

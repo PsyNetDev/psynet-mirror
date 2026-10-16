@@ -3526,6 +3526,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if Experiment._pending_redirect_replaces_open_page(participant):
+                if page_uuid != participant.page_uuid:
+                    Experiment._settle_stale_hold(participant, page_uuid)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page),
+                    page=page,
+                )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3624,6 +3635,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    @staticmethod
+    def _pending_redirect_replaces_open_page(participant):
+        """Return whether a queued redirect should replace the open page unbuilt.
+
+        ``Participant.fail()`` queues ``pending_redirect`` when it runs outside
+        this participant's request, for example when a partner leaves and
+        their sync group closes. The open page belongs to the abandoned flow,
+        and its page maker may read state that ``fail()`` removed, so it is
+        neither rebuilt nor scored. Timeline holds are still rebuilt, because
+        leaving one settles its wait record.
+        """
+        if getattr(participant, "pending_redirect", None) is None:
+            return False
+        from .timeline_hold import TimelineHoldRecord
+
+        on_hold = db.session.query(
+            TimelineHoldRecord.query.filter_by(
+                participant_id=participant.id, page_uuid=participant.page_uuid
+            ).exists()
+        ).scalar()
+        return not on_hold
+
     def _hold_resume_must_settle(self, participant, event):
         """Return whether a release by failure, redirect, or timeout must take the locked path.
 
@@ -3653,6 +3686,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
+        if Experiment._pending_redirect_replaces_open_page(participant):
+            return None
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
             event
@@ -3685,6 +3720,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant, settle the old hold if needed and skip any later holds
         that are already clear, instead of treating it as a multi-tab mismatch.
         """
+        if not self._settle_stale_hold(participant, submitted_page_uuid):
+            return None
+        return self._advance_past_ready_holds(participant, current_page)
+
+    @staticmethod
+    def _settle_stale_hold(participant, submitted_page_uuid):
+        """Settle the hold a catch-up submit came from, if needed.
+
+        Returns
+        -------
+        bool
+            Whether ``submitted_page_uuid`` is a catch-up from one of this
+            participant's holds rather than a stale tab.
+        """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
@@ -3692,10 +3741,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             submitted_page_uuid,
         )
         if record is None:
-            return None
+            return False
         if record.resumed_at is None:
             record.settle(participant)
-        return self._advance_past_ready_holds(participant, current_page)
+        return True
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
@@ -5583,12 +5632,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
         """
         participant = Bot.query.get(participant_id)
+        at_page_maker_start = participant.elt_id[1:] == [-1]
+        if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
+            # get_current_page will move the cursor, so take the row lock. Routine
+            # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
+            participant = (
+                Bot.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
         experiment = get_experiment()
 
-        status = {
-            "status": participant.status,
-            "page_uuid": participant.page_uuid,
-        }
+        status = {"status": participant.status}
 
         if participant.status == "working":
             current_page = participant.get_current_page()
@@ -5607,6 +5662,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             }
         else:
             bot_response = None
+        status["page_uuid"] = participant.page_uuid
 
         with tempfile.TemporaryDirectory() as tempdir:
             # status.json (a JSON file summarising the participant's status)
@@ -6206,7 +6262,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
-        if participant.elt_id[1:] == [-1]:
+        replace_open_page = cls._pending_redirect_replaces_open_page(participant)
+        if participant.elt_id[1:] == [-1] or replace_open_page:
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
