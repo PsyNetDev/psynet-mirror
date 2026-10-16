@@ -225,42 +225,60 @@ def test_recordings_keep_the_original_trial_when_completion_moves_the_cursor(
         (10, {"camera": "transport_unavailable"}, "transport_unavailable"),
     ],
 )
-def test_unavailable_recording_fails_only_its_trial_at_deadline(
+def test_unavailable_recording_fails_only_its_trial_immediately(
     submission, recording_trial, monkeypatch, size, unavailable, reason
 ):
-    from datetime import timedelta
-
-    from psynet import media_upload
-
+    """A source the browser reports unavailable fails its trial without waiting."""
     exp, participant, _, submit = submission
     monkeypatch.delenv("PASSTHROUGH_ERRORS")
     monkeypatch.setattr(type(exp), "report_error", lambda *args, **kwargs: None)
-    trial = recording_trial
-    participant_id, trial_id = participant.id, trial.id
+    participant_id, trial_id = participant.id, recording_trial.id
     result = submit({"camera": size, "screen": 10}, unavailable)
     assert result["submission"] == "approved"
     assert {slot["source"] for slot in result["recording_uploads"]} == {"screen"}
     camera = Recording.query.filter_by(local_key="video_camera").one()
     assert camera.upload_token_hash is None
-    assert not camera.deposited
-    assert camera.upload_context["unavailable_reason"] == reason
+    assert (camera.upload_status, camera.upload_failed_reason) == ("failed", reason)
     assert camera.upload_context["captured_size_bytes"] == size
-    assert not trial.failed and not participant.failed
-    camera_id = camera.id
-    deadline = camera.upload_deadline
     db.session.commit()
-    monkeypatch.setattr(
-        media_upload, "_utcnow", lambda: deadline - timedelta(seconds=1)
-    )
-    media_upload._expire_recordings()
-    assert not db.session.get(Trial, trial_id).failed
-    monkeypatch.setattr(
-        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
-    )
-    media_upload._expire_recordings()
-    assert db.session.get(Recording, camera_id).upload_failed_reason == reason
     assert db.session.get(Trial, trial_id)._recording_failed
     assert not db.session.get(Participant, participant_id).failed
+
+
+def test_legacy_video_answer_rejects_an_empty_recording(submission, tmp_path):
+    """A failed capture must not be stored as if it were a valid recording."""
+    from psynet.modular_page import Blob
+
+    exp, participant, page, _ = submission
+    page.control._async_upload = False
+    empty = tmp_path / "empty.webm"
+    empty.write_bytes(b"")
+    with pytest.raises(ValueError, match="recording is empty"):
+        exp.process_response(
+            participant_id=participant.id,
+            raw_answer=None,
+            blobs={"cameraRecording": Blob(empty), "screenRecording": Blob(empty)},
+            metadata={"time_taken": 5},
+            page_uuid=participant.page_uuid,
+            client_ip_address="127.0.0.1",
+        )
+    assert Recording.query.count() == 0
+
+
+def test_bots_declare_recordings_for_upload_after_acceptance(submission):
+    """Bots use the same answer and upload routes as browsers."""
+    from pathlib import Path
+
+    exp, _, page, _ = submission
+    video = (
+        Path(__file__).resolve().parents[2]
+        / "demos/features/video/example_video_recording.webm"
+    )
+    page.control.bot_response_media = {"camera": str(video), "screen": str(video)}
+    response = page.control.get_bot_response(exp, bot=None, page=page, prompt=None)
+    size = video.stat().st_size
+    assert response.metadata["recording_uploads"] == {"camera": size, "screen": size}
+    assert set(response.blobs) == {"cameraRecording", "screenRecording"}
 
 
 @pytest.mark.parametrize(
@@ -316,10 +334,14 @@ def test_lost_acceptance_replays_original_slots_without_advancing(
         media_upload._authorize(
             db.session.get(Recording, int(receipt["id"])), receipt["token"]
         )
-    monkeypatch.setattr(
-        media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
-    )
-    assert submit() == accepted
+    replay_time = deadline + timedelta(seconds=1)
+    monkeypatch.setattr(media_upload, "_utcnow", lambda: replay_time)
+    replayed = submit()
+    # Deadlines stay as issued; the replay's server time lets the browser
+    # compute how much of them remains.
+    assert replayed.pop("recording_upload_server_time") == replay_time.isoformat() + "Z"
+    accepted.pop("recording_upload_server_time")
+    assert replayed == accepted
     assert participant.page_uuid == successor
     assert completions == [True]
     assert Response.query.count() == 1

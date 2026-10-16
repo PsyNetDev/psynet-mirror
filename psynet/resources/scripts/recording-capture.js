@@ -163,16 +163,26 @@ export class RecordingClip {
     }
   }
 
+  /** Stop and wait briefly for the final chunk.
+   *
+   * If the browser never confirms the stop, keep the chunks captured so far:
+   * they cover the recording up to the last one-second slice. An empty result
+   * is still reported as a missing recording by every caller.
+   */
   async stopRecording() {
     this.stop();
     let timer;
     try {
       await Promise.race([this.done, new Promise(resolve => {
-        timer = setTimeout(() => { this.error = "capture_error"; resolve(); }, 3000);
+        timer = setTimeout(() => {
+          console.warn("The recorder did not confirm stopping; keeping the captured chunks.");
+          resolve();
+        }, 3000);
       })]);
     } finally { clearTimeout(timer); }
   }
 
+  /** Return the captured WebM, or an empty Blob when capture failed. */
   getBlob() {
     return this.error ? new Blob([]) : new Blob(this.chunks, {type:"video/webm"});
   }

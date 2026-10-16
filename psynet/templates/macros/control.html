@@ -1433,6 +1433,18 @@
         let videoPreviewPlayer = document.getElementById('video-control');
         let screenVideo = document.getElementById('screen-recording');
 
+        // The legacy path uploads the recording with the answer, and the server
+        // rejects an empty one. Explain the problem instead of submitting it.
+        // The asynchronous path reports it as unavailable and fails the trial.
+        psynet.page.control.reportLegacyCaptureFailure = function (blob) {
+            if (psynet.var.asynchronousVideoUploadSources || blob?.size > 0) return;
+            psynet.log.warn("The recording could not be captured.");
+            psynet.alert(
+                psynet.var.recordingLabels?.capture_failed ||
+                    "Your recording could not be captured. Please make sure your browser can access your camera or screen, then reload the page."
+            );
+        };
+
         let recordingSource = "{{ params.recording_source | lower }}";
         let recordingCamera = recordingSource == "camera" || recordingSource == "both";
         let recordingScreen = recordingSource == "screen" || recordingSource == "both";
@@ -1536,6 +1548,7 @@
                     await videoRecorder.stopRecording();
                     psynet.media.data["videoBlob"] = await videoRecorder.getBlob();
                     await videoRecorder.reset();
+                    psynet.page.control.reportLegacyCaptureFailure(psynet.media.data["videoBlob"]);
                 }
             });
 
@@ -1595,6 +1608,7 @@
                     await screenRecorder.stopRecording();
                     psynet.media.data["screenBlob"] = await screenRecorder.getBlob();
                     await screenRecorder.reset();
+                    psynet.page.control.reportLegacyCaptureFailure(psynet.media.data["screenBlob"]);
                 }
             });
 

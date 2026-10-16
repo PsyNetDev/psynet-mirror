@@ -10,6 +10,7 @@ completion hooks or navigation run; rejected answers must not create upload slot
 """
 
 import json
+import os
 import random
 import shutil
 import tempfile
@@ -3734,6 +3735,12 @@ def _recording_labels():
         "screen": _("Share screen"),
         "skip": _("Continue without recording"),
         "uploading": _("Uploading your recording, please keep this page open."),
+        "capture_failed": _(
+            "Your recording could not be captured. Please make sure your browser can access your camera or screen, then reload the page."
+        ),
+        "unconfirmed": _(
+            "We could not confirm that your answer was received. Please check your connection and press Next again."
+        ),
     }
 
 
@@ -3743,11 +3750,12 @@ class VideoRecordControl(RecordControl):
     for both screen and camera recording is ``.webm``.
 
     In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
-    before uploading video. Missing media fails its parent trial at the upload
-    deadline, without recapturing. For playback outside a trial, use
+    before uploading video, for bots too. A missing recording fails its parent
+    trial, without recapturing: immediately if the browser reports it unavailable,
+    otherwise at the upload deadline. For playback outside a trial, use
     :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
-    Legacy navigation, other storage backends, and bots retain their existing
-    answer-upload path.
+    Legacy navigation and other storage backends upload the recording with the
+    answer.
 
     Parameters
     ----------
@@ -3839,11 +3847,7 @@ class VideoRecordControl(RecordControl):
         )
 
     def format_answer(self, raw_answer, **kwargs):
-        from .bot import Bot
-
-        if self._uses_async_upload(kwargs["experiment"]) and not isinstance(
-            kwargs["participant"], Bot
-        ):
+        if self._uses_async_upload(kwargs["experiment"]):
             sizes = kwargs["metadata"].get("recording_uploads")
             if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
                 raise ValueError(
@@ -3904,10 +3908,17 @@ class VideoRecordControl(RecordControl):
 
         for source in self.recording_sources:
             blob_id = source + "Recording"
-            blob = blobs[blob_id]
+            blob = blobs.get(blob_id)
+            if blob is None:
+                raise ValueError(f"No {source} recording was received.")
 
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 blob.save(tmp_file.name)
+                # A failed capture uploads an empty file; never store it as
+                # if it were a valid recording.
+                if os.path.getsize(tmp_file.name) == 0:
+                    os.unlink(tmp_file.name)
+                    raise ValueError(f"The {source} recording is empty.")
 
                 from .trial.record import Recording
 
@@ -3962,7 +3973,11 @@ class VideoRecordControl(RecordControl):
 
     def _accept_recordings(self, response, participant, page_uuid):
         """Install final read references and capabilities only after acceptance."""
-        from .media_upload import _reserve_recording, _upload_timeout
+        from .media_upload import (
+            _reserve_recording,
+            _resolve_unavailable,
+            _upload_timeout,
+        )
         from .trial.record import Recording
 
         sizes = response._recording_sizes
@@ -3993,9 +4008,9 @@ class VideoRecordControl(RecordControl):
                 "unavailable_reason": reason,
             }
             if reason:
-                # Keep the normal deadline and trial policy, without granting a
-                # write capability for bytes the browser cannot retain/upload.
-                asset.upload_token_hash = None
+                # The browser already knows these bytes cannot be uploaded, so
+                # resolve now rather than waiting for the upload deadline.
+                _resolve_unavailable(asset, reason, participant.current_trial)
             summary[f"{source}_id"] = asset.id
             summary[f"{source}_url"] = asset.url
             if not reason:
@@ -4038,14 +4053,26 @@ class VideoRecordControl(RecordControl):
         events["trialFinish"].add_trigger("recordEnd")
 
     def get_bot_response(self, experiment, bot, page, prompt):
+        """Respond like a browser: on the asynchronous path, declare sizes now.
+
+        The bot driver then uploads each file to ``/media-upload`` after the
+        answer is accepted, so load tests exercise the same routes as
+        participants.
+        """
         from .bot import BotResponse
 
         files = self.get_bot_response_files(experiment, bot, page, prompt)
-
+        blobs = {f"{key}Recording": Blob(files[key]) for key in self.recording_sources}
+        if not self._uses_async_upload(experiment):
+            return BotResponse(raw_answer=None, blobs=blobs)
         return BotResponse(
             raw_answer=None,
-            blobs={
-                f"{key}Recording": Blob(files[key]) for key in self.recording_sources
+            blobs=blobs,
+            metadata={
+                "recording_uploads": {
+                    key: os.path.getsize(files[key]) for key in self.recording_sources
+                },
+                "recording_upload_unavailable": {},
             },
         )
 

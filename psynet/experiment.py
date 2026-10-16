@@ -3633,6 +3633,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         }
                     )
                 if recovered is not None:
+                    from .media_upload import _utcnow
+
+                    # Upload deadlines stay as originally issued; the current
+                    # server time lets the browser compute what remains of them.
+                    recovered["recording_upload_server_time"] = (
+                        _utcnow().isoformat() + "Z"
+                    )
                     page = self.timeline.get_current_elt(self, participant)
                     # Render the current successor through the normal read-only
                     # phase, without processing or advancing the answer again.

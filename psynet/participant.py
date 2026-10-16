@@ -247,6 +247,7 @@ def _is_psynet_stale_timeline_response(response):
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
 _BOT_TIMELINE_BUSY_ATTEMPTS = 5
+_BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 
 
 def _status_is_timeline_hold(status):
@@ -1537,6 +1538,12 @@ class ParticipantDriver:
         if "time_taken" not in submission_data["metadata"]:
             submission_data["metadata"]["time_taken"] = time_estimate
 
+        # Asynchronous recordings declare their sizes with the answer and are
+        # uploaded only after acceptance, as a browser does.
+        deferred_files = {}
+        if "recording_uploads" in submission_data["metadata"]:
+            deferred_files, response_files = response_files, {}
+
         with ExitStack() as stack:
             files = {}
             for key, path in response_files.items():
@@ -1564,12 +1571,34 @@ class ParticipantDriver:
             raise RuntimeError(
                 f"The participant's response was rejected: {resp_json.get('message')}"
             )
+        self._upload_recordings(resp_json.get("recording_uploads", []), deferred_files)
         # We've made some changes to the database, so we need to expire all objects
         # to ensure that the changes are reflected in our local session.
         db.session.expire_all()
 
         # Update our status to reflect the new state of the participant.
         self._fetch_status()
+
+    def _upload_recordings(self, uploads, files):
+        """Upload accepted recordings to ``/media-upload``, as a browser does.
+
+        A 429 means another delivery of the same recording is still being
+        received; wait as the server asks and try again.
+        """
+        for upload in uploads:
+            path = files[f"{upload['source']}Recording"]
+            with open(path, "rb") as file:
+                body = file.read()
+            for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
+                http_response = self.http_session.post(
+                    f"{self.experiment.base_url}{upload['url']}",
+                    data=body,
+                    headers={"Authorization": f"Bearer {upload['token']}"},
+                )
+                if http_response.status_code != 429:
+                    break
+                self._sleep(float(http_response.headers.get("Retry-After", 1)))
+            http_response.raise_for_status()
 
     def _report_stats(self, total_experiment_time: float):
         """

@@ -18,6 +18,7 @@ from werkzeug.serving import make_server
 from psynet.asset import LocalStorage
 from psynet.experiment import Experiment, get_experiment
 from psynet.media_upload import (
+    _PROCESSING_JOB_TIMEOUT,
     _expire_recordings,
     _process_recording,
     _receive_recording,
@@ -229,11 +230,12 @@ def test_simultaneous_receipt_is_rejected_without_reading(reservation, tmp_path)
         try:
             assert started.wait(timeout=5)
             second = io.BytesIO(b"second")
-            with pytest.raises(TooManyRequests):
+            with pytest.raises(TooManyRequests) as rejected:
                 _receive_recording(
                     recording_id, receipt["token"], second, directory=tmp_path
                 )
             assert second.tell() == 0
+            assert ("Retry-After", "5") in rejected.value.get_headers()
         finally:
             release.set()
         first.result(timeout=5)
@@ -471,6 +473,71 @@ def test_missing_upload_expires_without_a_browser_request(reservation):
     assert asset.upload_failed_reason == "upload_timeout"
 
 
+def test_queued_recording_outlasts_a_short_processing_window(
+    received_video, monkeypatch
+):
+    """Time spent waiting for a worker does not expire a received recording."""
+    import psynet.media_upload as uploads
+
+    recording_id, _ = received_video
+    received_at = db.session.get(Recording, recording_id).upload_received_at
+    monkeypatch.setattr(uploads, "_utcnow", lambda: received_at + timedelta(seconds=60))
+    uploads._expire_recordings()
+    _process_recording(recording_id)
+    assert db.session.get(Recording, recording_id).deposited
+
+
+def test_deposit_callback_failure_keeps_the_recording_deposited(
+    received_video, monkeypatch
+):
+    recording_id, payload = received_video
+
+    def fail_callback(self):
+        raise RuntimeError("Callback failed")
+
+    monkeypatch.setattr(Recording, "after_deposit", fail_callback)
+    _process_recording(recording_id)
+    asset = db.session.get(Recording, recording_id)
+    assert (asset.upload_status, asset.deposited) == ("deposited", True)
+    assert asset.upload_failed_reason is None
+    assert (
+        Path(asset.storage.get_file_system_path(asset.host_path)).read_bytes()
+        == payload
+    )
+
+
+def test_expiry_isolates_each_recording(reservation, monkeypatch):
+    import psynet.media_upload as uploads
+
+    asset, _ = reservation
+    response = db.session.get(Response, asset.upload_context["response_id"])
+    other, _ = _reserve_recording(
+        response=response,
+        parent=asset.participant,
+        page_uuid="original-page",
+        source="screen",
+        local_key="video_screen",
+        storage=asset.storage,
+        max_bytes=100,
+    )
+    asset.upload_deadline = other.upload_deadline = uploads._utcnow() - timedelta(
+        seconds=1
+    )
+    broken_id, other_id = asset.id, other.id
+    db.session.commit()
+    resolve = uploads._resolve_recording
+
+    def fail_one(recording_id, **kwargs):
+        if recording_id == broken_id:
+            raise RuntimeError("Broken recording")
+        return resolve(recording_id, **kwargs)
+
+    monkeypatch.setattr(uploads, "_resolve_recording", fail_one)
+    uploads._expire_recordings()
+    assert db.session.get(Recording, broken_id).upload_status == "pending"
+    assert db.session.get(Recording, other_id).upload_status == "expired"
+
+
 def test_late_deposit_cannot_revive_an_expired_recording(received_video, monkeypatch):
     import psynet.media_upload as uploads
 
@@ -524,6 +591,10 @@ def test_received_recording_is_queued_only_once(received_video, monkeypatch):
     assert db.session.get(Recording, recording_id).deposited
     job = db.session.get(WorkerAsyncJob, launched[0])
     assert job.finished and not job.pending and not job.failed
+    # A timed-out job must not fail the trial through the asset link: only the
+    # recording's own policy may do that.
+    assert job.asset_id is None and job.trial_id is None
+    assert job.timeout == _PROCESSING_JOB_TIMEOUT
 
 
 @pytest.mark.parametrize("retry", [False, True])

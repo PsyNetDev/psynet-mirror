@@ -8,8 +8,13 @@ file without holding database locks. It then locks only the recording row to
 publish complete receipt exactly once.
 
 Receipt is not deposit: a worker stores bytes before a short
-transaction publishes success. A poller expires overdue recordings even when
-the browser has closed. In-place LocalStorage video controls use this transport.
+transaction publishes success. The worker job has its own timeout, counted from
+when it starts; a separate bound from receipt covers queueing, so a busy queue
+cannot expire a recording that is merely waiting. The job is deliberately not
+linked to the asset or trial, because a timed-out job would otherwise fail the
+trial automatically, even for optional recordings. A poller expires overdue
+recordings even when the browser has closed. In-place LocalStorage video
+controls use this transport.
 Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
@@ -44,7 +49,7 @@ from werkzeug.exceptions import (
 
 from . import deployment_info
 from .asset import LocalStorage
-from .db import with_transaction
+from .db import transaction, with_transaction
 from .trial.record import Recording
 from .utils import (
     content_object_path,
@@ -55,6 +60,15 @@ from .utils import (
 )
 
 logger = get_logger()
+
+# Seconds from receipt until an unprocessed recording expires. This covers
+# waiting in the worker queue as well as the processing job itself.
+_PROCESSING_BOUND = 300
+# Seconds a processing job may run once a worker starts it.
+_PROCESSING_JOB_TIMEOUT = 120
+# Seconds a client should wait before retrying while another upload of the
+# same recording is still being received.
+_RECEIPT_RETRY_AFTER = 5
 
 
 def _upload_timeout(size_bytes):
@@ -149,7 +163,7 @@ def _reserve_recording(
     storage,
     upload_timeout=None,
     upload_size_bytes=None,
-    processing_timeout=20,
+    processing_timeout=_PROCESSING_BOUND,
     max_bytes=128 * 1024 * 1024,
     role="answer",
     required_for_trial=True,
@@ -258,7 +272,8 @@ def _receipt_lock(directory, recording_id):
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise TooManyRequests(
-                "This recording already has an active upload."
+                "This recording already has an active upload.",
+                retry_after=_RECEIPT_RETRY_AFTER,
             ) from None
         yield
     finally:
@@ -510,10 +525,127 @@ def _resolve_recording(recording_id, *, output=None, error=None):
         asset.storage.update_asset_metadata(asset)
         asset.upload_status = "deposited"
         asset.deposited = True
-        if asset.required_for_trial and (trial is None or not trial.failed):
-            asset.after_deposit()
     asset.input_path = None
     return input_path
+
+
+def _resolve_unavailable(asset, reason, trial):
+    """Resolve a source the browser reported as unavailable at acceptance.
+
+    No bytes can arrive, so waiting for the upload deadline would only delay the
+    outcome. Required recordings fail their trial immediately.
+    """
+    asset.upload_token_hash = None
+    asset.upload_status = "failed"
+    asset.upload_failed_reason = reason
+    asset.deposited = False
+    if asset.required_for_trial and trial is not None and not trial.failed:
+        trial.fail(reason=f"recording_{reason}")
+
+
+def _run_deposit_callbacks(recording_id):
+    """Run deposit callbacks once the deposit itself is committed.
+
+    A failing callback must not reclassify stored bytes as a storage failure.
+    The recording stays deposited and readable. Its trial fails instead, as
+    for a failing ``on_finalized``, so that waits release rather than
+    stalling on analysis that will never be requested.
+    """
+    from .participant import Participant
+    from .trial.main import Trial
+
+    trial_id = None
+    try:
+        with transaction():
+            identity = (
+                db.session.query(Recording.participant_id, Recording.trial_id)
+                .filter(Recording.id == recording_id)
+                .one()
+            )
+            trial_id = identity.trial_id
+            if identity.participant_id is not None:
+                Participant.query.filter_by(id=identity.participant_id).with_for_update(
+                    of=Participant
+                ).populate_existing().one()
+            trial = None
+            if identity.trial_id is not None:
+                trial = (
+                    Trial.query.filter_by(id=identity.trial_id)
+                    .with_for_update(of=Trial)
+                    .populate_existing()
+                    .one()
+                )
+            asset = Recording.query.filter_by(id=recording_id).populate_existing().one()
+            if (
+                asset.deposited
+                and asset.required_for_trial
+                and (trial is None or not trial.failed)
+            ):
+                asset.after_deposit()
+    except Exception:
+        logger.warning(
+            "Deposit callbacks failed for recording %s; the recording remains "
+            "deposited and its trial is failed.",
+            recording_id,
+            exc_info=True,
+        )
+        _fail_after_callback_error(recording_id)
+        return
+    if trial_id is not None:
+        _recheck_trial_finalization(trial_id)
+
+
+def _recheck_trial_finalization(trial_id):
+    """Finalize a trial the deposit unblocked, without waiting for the backstop.
+
+    The processing job is not linked to the trial, so the async job runner does
+    not perform its usual post-job re-check; do it here instead.
+    """
+    from .async_job import _RECHECK_LOCK_TIMEOUT_SECONDS
+    from .db import _set_transaction_lock_timeout
+    from .trial.main import Trial
+
+    try:
+        with transaction():
+            _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
+            Trial.recheck_finalization(trial_id)
+    except Exception:
+        logger.warning(
+            "Finalize re-check after a recording deposit failed for trial %s; "
+            "leaving it to the finalize backstop.",
+            trial_id,
+            exc_info=True,
+        )
+
+
+def _fail_after_callback_error(recording_id):
+    """Fail the trial of a recording whose deposit callbacks raised."""
+    from .trial.main import Trial
+
+    try:
+        with transaction():
+            trial_id = (
+                db.session.query(Recording.trial_id)
+                .filter(Recording.id == recording_id)
+                .scalar()
+            )
+            if trial_id is None:
+                return
+            trial = (
+                Trial.query.filter_by(id=trial_id)
+                .with_for_update(of=Trial)
+                .populate_existing()
+                .one()
+            )
+            if not trial.failed:
+                trial.fail(reason="after_deposit_error")
+                trial._wake_participant(reason="trial_failed")
+    except Exception:
+        logger.warning(
+            "Could not fail the trial of recording %s after a callback error.",
+            recording_id,
+            exc_info=True,
+        )
 
 
 def _process_recording(recording_id):
@@ -523,13 +655,18 @@ def _process_recording(recording_id):
         return
     path, storage = claimed
     try:
-        output = _store_recording_bytes(path, storage)
-        _complete_recording(recording_id, output=output)
-    except Exception:
-        logger.warning("Processing recording %s failed.", recording_id, exc_info=True)
-        _complete_recording(recording_id, error="processing_error")
+        try:
+            output = _store_recording_bytes(path, storage)
+            _complete_recording(recording_id, output=output)
+        except Exception:
+            logger.warning(
+                "Processing recording %s failed.", recording_id, exc_info=True
+            )
+            _complete_recording(recording_id, error="processing_error")
+            return
     finally:
         Path(path).unlink(missing_ok=True)
+    _run_deposit_callbacks(recording_id)
 
 
 def _clean_abandoned_receipts():
@@ -587,14 +724,31 @@ def _expire_participant_recordings(participant_id):
             Path(path).unlink(missing_ok=True)
 
 
-@with_transaction
 def _expire_recordings():
-    """Expire missing or stalled recordings independently of browser activity."""
-    for (recording_id,) in _due_recordings().all():
-        path = _complete_recording(recording_id)
+    """Expire missing or stalled recordings independently of browser activity.
+
+    Each recording is resolved in its own transaction, so one failure rolls
+    back only that recording and the others still expire.
+    """
+    with transaction():
+        recording_ids = [recording_id for (recording_id,) in _due_recordings().all()]
+    for recording_id in recording_ids:
+        try:
+            path = _complete_recording(recording_id)
+        except Exception:
+            logger.warning(
+                "Could not expire recording %s; skipping it.",
+                recording_id,
+                exc_info=True,
+            )
+            continue
         if path is not None:
             Path(path).unlink(missing_ok=True)
-    _clean_abandoned_receipts()
+    try:
+        with transaction():
+            _clean_abandoned_receipts()
+    except Exception:
+        logger.warning("Could not clean abandoned recording uploads.", exc_info=True)
 
 
 @with_transaction
@@ -611,12 +765,15 @@ def _queue_received_recordings():
     )
     for asset in recordings:
         asset.upload_status = "queued"
+        # Not linked to the asset: AsyncJob.failure_cascade would fail the
+        # asset's trial on a job timeout, even for optional recordings. The
+        # recording's own processing bound resolves a stuck job instead.
         WorkerAsyncJob(
             _process_recording,
             arguments={"recording_id": asset.id},
-            asset=asset,
             label="media_upload",
             unique=True,
+            timeout=_PROCESSING_JOB_TIMEOUT,
         ).enqueue()
 
 

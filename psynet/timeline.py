@@ -1877,6 +1877,20 @@ class Page(Elt):
 
         return resp
 
+    def _recording_capture_sources(self):
+        """List the camera/screen sources this page captures, whatever the upload path.
+
+        The browser releases shared capture streams that the next page does not
+        list, so the camera light and screen-sharing banner turn off after the
+        last recording page while consecutive recording pages reuse them.
+        """
+        from .modular_page import VideoRecordControl
+
+        control = getattr(self, "control", None)
+        if isinstance(control, VideoRecordControl):
+            return list(control.recording_sources)
+        return []
+
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
@@ -2075,6 +2089,7 @@ class Page(Elt):
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
+            "recordingCaptureSources": self._recording_capture_sources(),
         }
         control = getattr(self, "control", None)
         if isinstance(control, VideoRecordControl):

@@ -15,10 +15,12 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.window = originalWindow; });
 
+// null: network error; numbers: HTTP status (429 replies carry Retry-After: 0).
 for (const [name, statuses, expected] of [
   ["temporary failure", [503, 204], {status:"received"}],
   ["permanent rejection", [403], {status:"failed", reason:"http_error", httpStatus:403}],
-  ["network failures", [null, null, null], {status:"failed", reason:"attempts_exhausted"}],
+  ["repeated network failures until delivery", [null, null, null, null, 204], {status:"received"}],
+  ["active upload elsewhere (429) until delivery", [429, 429, 429, 429, 204], {status:"received"}],
 ]) {
   test(name, async t => {
     const request = upload("retry");
@@ -29,13 +31,20 @@ for (const [name, statuses, expected] of [
       assert.equal(options.headers.Authorization, "Bearer secret");
       const status = statuses[attempt++];
       if (status === null) throw new TypeError("Network unavailable");
-      return new Response(null, {status});
+      return new Response(null, {status, headers: status === 429 ? {"Retry-After": "0"} : {}});
     });
     assert.deepEqual(await queue.enqueue(request), expected);
     assert.equal(fetch.mock.callCount(), statuses.length);
     assert.equal(queue.pendingBytes, 0);
   });
 }
+
+test("retries stop only at the reservation deadline", async t => {
+  t.mock.method(globalThis, "fetch", async () => { throw new TypeError("Network unavailable"); });
+  const request = {...upload("offline"), deadline: performance.now() + 50};
+  assert.deepEqual(await queue.enqueue(request), {status:"failed", reason:"deadline"});
+  assert.equal(queue.pendingBytes, 0);
+});
 
 test("duplicate IDs preserve the original file", async t => {
   const request = upload("duplicate");

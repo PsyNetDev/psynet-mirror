@@ -1,0 +1,1 @@
+`while_loop` now applies `max_loop_time` only while its condition still holds: a loop whose condition is already false when it is next checked exits normally, even after the deadline, instead of timing out. This also affects synchronization barriers and other waits built on `while_loop`.

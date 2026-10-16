@@ -1371,6 +1371,7 @@
       // page state automatically. In inplace mode we must recreate that
       // lifecycle explicitly before we can mark the new page as ready.
       psynet.refreshTemplateData();
+      await psynet.releaseUnusedRecordingStreams();
       await psynet.rebuildTrial();
       await psynet.activateManagedPageJavascript();
       psynet.trialProgress = createTrialProgress();
@@ -3658,6 +3659,21 @@
       })).catch(error => { recordingCapture = null; throw error; });
       return recordingCapture;
     };
+    // Streams belong to the document so that consecutive recording pages reuse
+    // them without asking again. Release any the new page does not capture, so
+    // the camera light and screen-sharing banner turn off between recordings.
+    psynet.releaseUnusedRecordingStreams = async function () {
+      if (!recordingCapture) return;
+      const captured = new Set(psynet.var.recordingCaptureSources || []);
+      try {
+        const {devices} = await recordingCapture;
+        for (const source of [...devices.streams.keys()]) {
+          if (!captured.has(source)) devices.release(source);
+        }
+      } catch (error) {
+        psynet.log.warn(`Could not release recording streams: ${error.message}`);
+      }
+    };
     let recordingUploadQueue;
     let recordingUploadMessage;
     psynet.allowRecordingUnload = function () {
@@ -3687,6 +3703,33 @@
       return recordingUploadQueue;
     }
 
+    // A recording submission whose acceptance is still unknown (the reply was
+    // lost or unreadable). Until the server answers definitively, every resend
+    // on the same page uses this exact submission: the same JSON, recordings and
+    // recovery secret. The server can then replay its original acceptance, and
+    // the uploaded bytes match the reservation it issued.
+    let unconfirmedRecordingSubmission = null;
+    let recordingSubmissionToResend = function () {
+      if (unconfirmedRecordingSubmission?.pageUuid !== psynet.submissionPageUuid) {
+        unconfirmedRecordingSubmission = null;
+      }
+      return unconfirmedRecordingSubmission;
+    };
+
+    // The server may have accepted the answer, and an error page would lose its
+    // recordings. Let the participant resend the same submission instead, so the
+    // server can recover its original reply.
+    let offerRecordingResend = function (request) {
+      psynet.log.warn(
+        `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
+      );
+      psynet.alert(
+        psynet.var.recordingLabels?.unconfirmed ||
+          "We could not confirm that your answer was received. Please check your connection and press Next again.",
+      );
+      psynet.restoreSubmissionControlState();
+    };
+
     let submitGenericResponse = async function (
       rawAnswer,
       metadata,
@@ -3708,7 +3751,14 @@
 
       let capturedRecordings = {};
       const sources = options.timelineHoldResume ? null : psynet.var.asynchronousVideoUploadSources;
-      if (Array.isArray(sources)) {
+      const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
+      let json;
+      if (resend) {
+        psynet.log.info("Resending a recording submission whose acceptance is unconfirmed.");
+        capturedRecordings = resend.recordings;
+        json = resend.json;
+        blobs = {};
+      } else if (Array.isArray(sources)) {
         const sizes = {};
         for (const source of sources) {
           const blob = blobs?.[`${source}Recording`];
@@ -3729,12 +3779,15 @@
         }
         metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
         blobs = {};
-      }
-      if (Array.isArray(sources)) {
         const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), value => value.toString(16).padStart(2, "0")).join("");
         metadata = {...metadata, recording_recovery_secret:secret};
+        json = prepareJsonSubmission(rawAnswer, metadata, options);
+        unconfirmedRecordingSubmission = {
+          pageUuid: psynet.submissionPageUuid, json, recordings: capturedRecordings,
+        };
+      } else {
+        json = prepareJsonSubmission(rawAnswer, metadata, options);
       }
-      const json = prepareJsonSubmission(rawAnswer, metadata, options);
 
       var formData = new FormData();
       formData.append("json", json);
@@ -3780,6 +3833,12 @@
               if (request.status === 200) {
                 psynet.log.debug("Response was successfully received.");
                 const accepted = JSON.parse(request.response);
+                if (Array.isArray(sources)) {
+                  // The server answered definitively: an approval enqueues this
+                  // submission's recordings below, and a rejection lets the next
+                  // attempt send a corrected answer with a new snapshot.
+                  unconfirmedRecordingSubmission = null;
+                }
                 if (accepted.submission === "approved" && Array.isArray(sources)) {
                   const serverTime = Date.parse(accepted.recording_upload_server_time);
                   for (const upload of accepted.recording_uploads || []) {
@@ -3811,6 +3870,8 @@
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
+              } else if (Array.isArray(sources)) {
+                offerRecordingResend(request);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
@@ -3820,6 +3881,10 @@
                 psynet.log.warn(error.stack || String(error));
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
+              } else if (Array.isArray(sources) && unconfirmedRecordingSubmission) {
+                // The reply could not be read, so acceptance is still unknown.
+                psynet.log.warn(error.stack || String(error));
+                offerRecordingResend(request);
               } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {

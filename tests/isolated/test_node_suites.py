@@ -4,19 +4,18 @@ from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parents[2]
+SUITES = sorted((ROOT / "tests" / "javascript").glob("*.test.mjs"))
 
-@pytest.mark.parametrize(
-    "suite",
-    ["chatroom-history-merge", "timeline-hold-overlay", "media-upload-queue"],
-)
+
+@pytest.mark.parametrize("suite", SUITES, ids=lambda path: path.name)
 def test_node_suite(suite):
-    """Include browser-independent Node suites in the isolated CI job."""
-    root = Path(__file__).resolve().parents[2]
+    """Include every browser-independent Node suite in the isolated CI job."""
     node = shutil.which("node")
     assert node, "node is required to run the JavaScript tests"
     result = subprocess.run(
-        [node, "--test", f"tests/javascript/{suite}.test.mjs"],
-        cwd=root,
+        [node, "--test", str(suite.relative_to(ROOT))],
+        cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,

@@ -1,0 +1,1 @@
+Added support for a callable `max_wait_time` in `wait_while` and `max_loop_time` in `while_loop`. The callable receives `participant` and/or `experiment` and is evaluated once, when the wait starts, so a time limit can depend on the participant's state.

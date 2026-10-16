@@ -62,9 +62,14 @@ class FinalizeBackstopNode(ChainNode):
 )
 @pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("still_waiting", [False, True])
-def test_runtime_wait_budget_is_fixed_and_only_times_out_active_waits(
+def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
     db_session, participant, monkeypatch, still_waiting
 ):
+    """A callable ``max_loop_time`` is evaluated once, on entering the loop.
+
+    Past that budget, ``while_loop`` times out only if its condition still
+    holds; a condition that cleared after the deadline exits normally.
+    """
     from datetime import datetime, timedelta
     from types import SimpleNamespace
 
@@ -135,7 +140,10 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     trial = _add_complete_unfinalized_trial(network.head, participant)
     participant.current_trial = trial
     asset, _ = _reserve_trial_recording(trial, tmp_path)
-    assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == 100
+    # The ordinary 20 s, the 60 s upload allowance, then the processing bound.
+    assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == (
+        20 + 60 + uploads._PROCESSING_BOUND
+    )
     assert uploads._recording_wait_timeout(participant.id + 100) == 20
     assert (
         uploads._recording_wait_timeout(participant.id, trial_id=trial.id + 100) == 20

@@ -16,7 +16,9 @@ from psynet.timeline import PageMaker, Timeline
 from psynet.timeline_hold import _ConditionHoldPage
 
 
-@pytest.mark.parametrize("outcome", ["expired", "deposited", "stalled", "legacy"])
+@pytest.mark.parametrize(
+    "outcome", ["expired", "deposited", "queued", "stalled", "legacy"]
+)
 def test_recording_wait_preserves_participant(reservation, monkeypatch, outcome):
     asset, _ = reservation
     participant = asset.participant
@@ -59,6 +61,23 @@ def test_recording_wait_preserves_participant(reservation, monkeypatch, outcome)
     elif outcome == "deposited":
         asset.deposited = True
         asset.upload_status = "deposited"
+    elif outcome == "queued":
+        # Received just before the upload deadline, then still waiting for a
+        # worker well beyond a short processing window: keep waiting.
+        asset.upload_status = "queued"
+        asset.upload_received_at = deadline - timedelta(seconds=1)
+        asset.upload_processing_deadline = asset.upload_received_at + timedelta(
+            seconds=media_upload._PROCESSING_BOUND
+        )
+        now = deadline + timedelta(seconds=60)
+        _process_response(
+            exp, participant, participant.page_uuid, timeline_hold_resume=True
+        )
+        assert isinstance(
+            timeline.get_current_elt(exp, participant), _ConditionHoldPage
+        )
+        asset.deposited = True
+        asset.upload_status = "deposited"
     elif outcome == "legacy":
         now += timedelta(seconds=21)
     else:
@@ -67,7 +86,7 @@ def test_recording_wait_preserves_participant(reservation, monkeypatch, outcome)
         exp, participant, participant.page_uuid, timeline_hold_resume=True
     )
     assert timeline.get_current_elt(exp, participant).content == (
-        "Playback" if outcome == "deposited" else "Unavailable"
+        "Playback" if outcome in {"deposited", "queued"} else "Unavailable"
     )
     assert not participant.failed
     assert participant.assets["video"].upload_deadline == deadline

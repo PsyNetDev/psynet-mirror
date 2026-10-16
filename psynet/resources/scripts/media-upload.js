@@ -7,6 +7,12 @@
  * server deadline to performance.now(); queueing and retries never extend it.
  * Server-side expiry remains authoritative, including after document loss.
  *
+ * Failed deliveries are retried until the reservation deadline, never against a
+ * fixed attempt count: brief connection losses are common on mobile networks.
+ * Network errors and server errors back off exponentially; a 429 means another
+ * delivery of the same recording is still being received, so it waits for the
+ * server's Retry-After without counting as a failure.
+ *
  * A "received" result means complete server receipt, not deposit.
  * Failures are returned to the caller; this module neither fails trials nor
  * recaptures media. Pending jobs warn on manual unload; document navigation
@@ -17,15 +23,15 @@ export class MediaUploadQueue {
     concurrency = 2,
     maxBytes = 256 * 1024 * 1024,
     maxPending = 32,
-    maxAttempts = 3,
-    retryDelay = 500
+    retryDelay = 500,
+    maxRetryDelay = 10000
   } = {}) {
-    for (const value of [concurrency, maxBytes, maxPending, maxAttempts, retryDelay]) {
+    for (const value of [concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay]) {
       if (!Number.isSafeInteger(value) || value <= 0) {
         throw new TypeError("Upload queue limits must be positive integers.");
       }
     }
-    this._limits = { concurrency, maxBytes, maxPending, maxAttempts, retryDelay };
+    this._limits = { concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay };
     this._jobs = new Map();
     this._active = 0;
     this._pendingBytes = 0;
@@ -104,7 +110,7 @@ export class MediaUploadQueue {
         this._jobs.size >= this._limits.maxPending) {
       return Promise.resolve({ status: "failed", reason: "queue_full" });
     }
-    const job = { id, url: target.href, token, deadline, blob, attempts: 0, active: false, done: false };
+    const job = { id, url: target.href, token, deadline, blob, attempts: 0, failures: 0, active: false, done: false };
     const result = new Promise((resolve) => { job.resolve = resolve; });
     this._jobs.set(id, job);
     window.addEventListener("beforeunload", this._beforeUnload);
@@ -149,7 +155,9 @@ export class MediaUploadQueue {
         this._finish(job, { status: "failed", reason: "deadline" });
       } else if (response.ok) {
         this._finish(job, { status: "received" });
-      } else if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+      } else if (response.status === 429) {
+        this._retry(job, retryAfterMilliseconds(response.headers.get("Retry-After")));
+      } else if ([408, 500, 502, 503, 504].includes(response.status)) {
         this._retry(job);
       } else {
         this._finish(job, { status: "failed", reason: "http_error", httpStatus: response.status });
@@ -174,17 +182,26 @@ export class MediaUploadQueue {
     }
   }
 
-  _retry(job) {
-    if (performance.now() >= job.deadline) {
+  /** Wait before resending, bounded by the reservation deadline.
+   *
+   * A server-provided wait (429 Retry-After) is honoured as given and does not
+   * count as a failure; other failures double the delay up to maxRetryDelay.
+   */
+  _retry(job, serverDelay = null) {
+    const remaining = job.deadline - performance.now();
+    if (remaining <= 0) {
       this._finish(job, { status: "failed", reason: "deadline" });
-    } else if (job.attempts >= this._limits.maxAttempts) {
-      this._finish(job, { status: "failed", reason: "attempts_exhausted" });
-    } else {
-      job.retryTimer = setTimeout(() => {
-        job.retryTimer = null;
-        this._pump();
-      }, this._limits.retryDelay);
+      return;
     }
+    let delay = serverDelay;
+    if (delay === null) {
+      job.failures += 1;
+      delay = Math.min(this._limits.maxRetryDelay, this._limits.retryDelay * 2 ** (job.failures - 1));
+    }
+    job.retryTimer = setTimeout(() => {
+      job.retryTimer = null;
+      this._pump();
+    }, Math.min(delay, remaining));
   }
 
   /** Resolve once and release retained bytes and credentials on every outcome. */
@@ -204,4 +221,13 @@ export class MediaUploadQueue {
       this._drains.splice(0).forEach(resolve => resolve());
     }
   }
+}
+
+/** Convert a Retry-After header (seconds or HTTP date) to milliseconds, or null. */
+function retryAfterMilliseconds(header) {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(header);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }

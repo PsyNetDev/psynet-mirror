@@ -44,6 +44,67 @@ test(`accepted video advances and plays deposited bytes (lost acceptance: ${lost
 
 }
 
+test("manual resend after lost replies recovers the original upload slot @inplace-only", async ({ page, context }) => {
+  // Every automatic attempt loses its reply. The participant is asked to press
+  // Next again; that resend reuses the same submission and recovery secret, so
+  // the server replays its original acceptance instead of rejecting a new one.
+  test.setTimeout(120000);
+  const secrets = [];
+  let firstUploadId = null;
+  await context.route("**/response", async route => {
+    const body = route.request().postData() || "";
+    const secret = body.match(/"recording_recovery_secret":\s*"([0-9a-f]+)"/)?.[1];
+    if (!secret) return route.continue();
+    secrets.push(secret);
+    const reply = await route.fetch();
+    const accepted = await reply.json();
+    expect(accepted.submission).toBe("approved");
+    firstUploadId ??= accepted.recording_uploads[0].id;
+    if (secrets.length <= 3) return route.abort("failed");
+    return route.fulfill({response: reply});
+  });
+  let held;
+  await context.route("**/media-upload/*", route => { held = route; });
+  await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
+    await prepareRecordingFixture(experimentPage);
+    await experimentPage.locator("#next-button").click();
+    await expect(experimentPage.locator("#alert-modal")).toBeVisible({ timeout: 30000 });
+    expect(secrets).toHaveLength(3);
+    await experimentPage.locator("#alert-button").click();
+    await waitForNextEnabled(experimentPage, 30000);
+    await experimentPage.locator("#next-button").click();
+    await expect(experimentPage.locator("#main-body")).toContainText("Independent page reached.");
+    expect(new Set(secrets).size).toBe(1);
+    await expect.poll(() => Boolean(held)).toBe(true);
+    expect(new URL(held.request().url()).pathname).toBe(`/media-upload/${firstUploadId}`);
+    expect(held.request().postDataBuffer().length).toBeGreaterThan(0);
+    await held.continue();
+  });
+});
+
+test("camera stream is kept on its recording page and released afterwards @inplace-only", async ({ page, context }) => {
+  test.setTimeout(120000);
+  await context.route("**/media-upload/*", route => route.continue());
+  await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
+    await prepareRecordingFixture(experimentPage);
+    // The recording page declares its camera, so a release pass keeps it.
+    expect(await experimentPage.evaluate(async () => {
+      const {devices} = await psynet.getRecordingCapture();
+      const stream = devices.streams.get("camera");
+      window.recordedCameraTrack = stream.getVideoTracks()[0];
+      await psynet.releaseUnusedRecordingStreams();
+      return devices.streams.get("camera") === stream && window.recordedCameraTrack.readyState === "live";
+    })).toBe(true);
+    await experimentPage.locator("#next-button").click();
+    await expect(experimentPage.locator("#main-body")).toContainText("Independent page reached.");
+    // The next page records nothing, so the camera is released.
+    await expect.poll(() => experimentPage.evaluate(async () => {
+      const {devices} = await psynet.getRecordingCapture();
+      return !devices.streams.has("camera") && window.recordedCameraTrack.readyState === "ended";
+    })).toBe(true);
+  });
+});
+
 test("upload module failure preserves submission and independent navigation @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);
   await context.route("**/static/scripts/media-upload.js", route => route.abort("failed"));
