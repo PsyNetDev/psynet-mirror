@@ -673,8 +673,16 @@ class Control(JavaScriptContributor):
 
     bot_response :
         Defines how bots respond to this page.
-        Can be a single value, in which case this is interpreted as the participant's (formatted) answer.
-        Alternatively, it can be an instance of class ``BotResponse``, which can accept more detailed
+        If left unset (the default, :class:`~psynet.utils.NoArgumentProvided`),
+        bots answer through the control's :meth:`get_bot_response` method.
+
+        Can be a single value, in which case this is interpreted as the participant's (formatted) answer
+        and saved without passing through :meth:`format_answer`.
+        ``None`` is such a value: ``bot_response=None`` makes bots submit an answer of ``None``
+        instead of calling :meth:`get_bot_response`.
+        Can also be a function that returns the response, called each time a bot reaches the page;
+        see :doc:`/test/backend` for the arguments it can take.
+        Alternatively, it can be an instance of class :class:`~psynet.bot.BotResponse`, which can accept more detailed
         information, for example:
 
         raw_answer :
@@ -4079,6 +4087,12 @@ class SurveyJSControl(Control):
         if raw_answer is None:
             return None
         return json.loads(raw_answer)
+
+    def get_js_dependencies(self):
+        """Load the SurveyJS library only on pages that contain a survey."""
+        return super().get_js_dependencies() + [
+            "/static/scripts/survey-jquery/survey.jquery.min.js"
+        ]
 
     def get_css(self):
         css = super().get_css()

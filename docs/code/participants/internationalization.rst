@@ -127,14 +127,14 @@ Translators
 PsyNet translates with OpenAI ChatGPT (``chat_gpt``).
 
 ``psynet translate`` only sends strings that have no translation yet. It
-batches them by source file, at most 30 strings per request. ChatGPT also
+groups them by source file, at most 30 strings per request. ChatGPT also
 receives, for disambiguation:
 
-- the context of each string (see :ref:`Contexts <i18n_contexts>`);
-- existing translations from the same file, so that new translations use
-  consistent terminology;
+- the context of each string (see :ref:`i18n_contexts`);
+- the existing translations from the same file, so that new translations use
+  the same terms;
 - the file's source code, or for large files the lines around each string;
-- the script the language should be written in, from CLDR (e.g. Ol Chiki for
+- the script to write the language in, from CLDR (for example Ol Chiki for
   Santali), except where PsyNet's catalogs use another script (Arabic for
   Kurdish, Latin for Serbian).
 
@@ -178,7 +178,7 @@ When you run ``psynet translate`` again:
 
 To get a new machine translation for a string, delete its translation in
 Poedit and run ``psynet translate`` again. ``psynet translate --force``
-retranslates everything, discarding translations you have already checked.
+retranslates everything and discards the translations you have checked.
 
 PsyNet keeps no backup of the translations, so commit the experiment's
 ``locales`` directory to Git regularly.

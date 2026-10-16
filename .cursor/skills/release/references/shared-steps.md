@@ -60,8 +60,9 @@ useful, then point clearly at any upgrade path (docs and/or
 migration manuals.
 
 Skip this step only for patch-only releases with nothing meaningful to say
-there. Commit What's new changes with the other release-preparation commits
-or as their own commit on the release branch.
+there. A major release always updates What's new. Commit What's new changes
+with the other release-preparation commits or as their own commit on the
+release branch.
 
 ### Update package translations
 

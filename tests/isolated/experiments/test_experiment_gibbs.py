@@ -3,8 +3,8 @@ import time
 import pytest
 from selenium.webdriver.common.by import By
 
+from psynet.async_job import AsyncJob
 from psynet.participant import Participant
-from psynet.process import AsyncProcess
 from psynet.pytest_psynet import (
     assert_text,
     bot_class,
@@ -47,23 +47,21 @@ class TestExp:
             trials.sort(key=lambda t: t.id)
             assert trials[0].finalized
 
-            async_processes = AsyncProcess.query.all()
-            assert len(async_processes) > 0
+            async_jobs = AsyncJob.query.all()
+            assert len(async_jobs) > 0
 
-            for p in async_processes:
+            for p in async_jobs:
                 assert p.finished
 
-            post_trial_processes = [
-                p for p in async_processes if p.label == "post_trial"
-            ]
-            for p in post_trial_processes:
+            post_trial_jobs = [p for p in async_jobs if p.label == "post_trial"]
+            for p in post_trial_jobs:
                 assert p.trial is not None
                 assert p.trial_maker_id == "gibbs_demo"
 
-            post_grow_network_processes = [
-                p for p in async_processes if p.label == "post_grow_network"
+            post_grow_network_jobs = [
+                p for p in async_jobs if p.label == "post_grow_network"
             ]
-            for p in post_grow_network_processes:
+            for p in post_grow_network_jobs:
                 assert p.trial is None
                 assert p.network is not None
                 assert p.trial_maker_id == "gibbs_demo"

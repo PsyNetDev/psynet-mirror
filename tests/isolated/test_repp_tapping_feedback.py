@@ -11,7 +11,7 @@ def _feedback(**trial):
 
 
 def test_tapping_feedback_handles_trials_failed_before_analysis():
-    assert _feedback(failed=True, failed_reason="fail_async_processes") is None
+    assert _feedback(failed=True, failed_reason="async_post_trial_failed") is None
 
     rejected = _feedback(
         failed=True,

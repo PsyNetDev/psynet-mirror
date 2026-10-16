@@ -4,7 +4,7 @@ Upgrading to PsyNet 14
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, changed defaults, setup and
-deployment files, participant failure, groups, assets and exports. Work
+deployment files, participant failure, groups, assets, async jobs and exports. Work
 through the steps in order; each lists what to search for. Frontend patterns
 and full examples are in :doc:`/code/pages/custom_front_ends`.
 
@@ -90,6 +90,19 @@ Framework macros may still embed classic ``<script>`` tags, which PsyNet
 replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
 Author-owned external templates should contain only markup. Embedded
 ``<script type="module">`` tags are not supported.
+
+PsyNet now serves jQuery 4.0.0 and jQuery UI 1.14.1. Search your JavaScript
+for jQuery utilities that jQuery 4 removed, such as ``$.trim``,
+``$.isArray``, ``$.isFunction``, ``$.parseJSON``, ``$.type``,
+``$.isNumeric`` and ``$.now``. Replace them with native JavaScript, for
+example ``text.trim()``, ``Array.isArray(value)`` and ``JSON.parse(text)``.
+``.css()`` also no longer adds ``px`` to bare numbers for most properties
+(sizes, margins, padding, border widths and positions still get it), so pass
+other values with units, for example ``"16px"``. Replace links to
+``/static/scripts/jquery-3.7.1.min.js`` with ``jquery-4.0.0.min.js``; timeline
+pages already load jQuery, so they don't need their own link. Upgrade bundled
+jQuery plugins to versions that support jQuery 4. See the
+`jQuery 4.0 upgrade guide <https://jquery.com/upgrade-guide/4.0/>`_.
 
 4. Migrate load-once libraries
 ------------------------------
@@ -496,7 +509,41 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
 
-19. Exports and analysis scripts
+19. Async jobs
+--------------
+
+Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
+``LocalAsyncProcess``, ``async_processes`` and ``process_id``.
+
+* Async processes are now called async jobs, and live in
+  ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
+  ``LocalAsyncJob``.
+* Creating a job no longer runs it. Call ``.enqueue()``, which launches the
+  job once the transaction commits::
+
+      from psynet.async_job import WorkerAsyncJob
+
+      WorkerAsyncJob(function=analyse, arguments={"trial": trial}).enqueue()
+
+  PsyNet logs a warning when a job is created but never enqueued.
+* The old names still work but warn. ``WorkerAsyncProcess(...)`` and
+  ``LocalAsyncProcess(...)`` create and enqueue the job, and
+  ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of
+  ``WorkerAsyncProcess`` or ``LocalAsyncProcess`` becomes a subclass of the
+  new class, so call ``.enqueue()`` on its jobs.
+* ``async_processes`` on participants, trials, nodes, networks, responses
+  and assets is now ``async_jobs``.
+* An override of ``Experiment.handle_error`` that reads ``process=`` should
+  read ``async_job=``; ``ErrorRecord.process_id`` is now ``async_job_id``.
+* In exports, ``database/process.csv`` is now ``database/async_job.csv``,
+  and its ``type`` column holds names such as
+  ``psynet.async_job.WorkerAsyncJob``. ``error.csv`` has ``async_job_id``
+  instead of ``process_id``, and ``participant.csv`` has
+  ``awaited_async_code_block_job_id``.
+
+See :doc:`/reference/api/async_job`.
+
+20. Exports and analysis scripts
 --------------------------------
 
 Search scripts and notes for ``--assets all``, ``--legacy``,
@@ -524,7 +571,7 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
 
 See :doc:`/data/what_an_export_contains`.
 
-20. Validate
+21. Validate
 ------------
 
 From a complete experiment directory. At minimum you typically need:

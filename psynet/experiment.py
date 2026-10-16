@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -14,7 +15,7 @@ import zipfile
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache, cached_property, partial
+from functools import cache, partial
 from importlib import resources
 from os.path import abspath, dirname, exists
 from os.path import join as join_path
@@ -54,6 +55,7 @@ from dallinger.utils import classproperty
 from dallinger.utils import get_base_url as dallinger_get_base_url
 from dallinger.version import __version__ as dallinger_version
 from flask import (
+    current_app,
     flash,
     has_request_context,
     jsonify,
@@ -70,10 +72,10 @@ from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
-from psynet.perf_test import run_parallel_test
 from psynet.utils import (
     format_bytes,
     get_config,
@@ -84,6 +86,7 @@ from psynet.utils import (
 from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
@@ -171,6 +174,7 @@ from .utils import (
     get_logger,
     get_translator,
     is_in_repo_experiment,
+    keep_alive_session,
     loading_experiment_classes,
     log_time_taken,
     render_template_with_translations,
@@ -633,6 +637,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
         Default: ``True``.
 
+    performance_test_app : ``bool``
+        Marks an SSH app as one that ``psynet performance-test ssh`` may load,
+        reset and pre-fill, which means that its data is disposable.
+        ``performance-test ssh`` sets it when it deploys an app for its tests,
+        and refuses to run on apps without it. Setting it yourself declares
+        that the app's data may be deleted.
+        Default: ``False``.
+
 
 
     Parameters
@@ -716,7 +728,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "in your Experiment class. For example, you might write: label = 'GSP experiment with faces'"
             )
 
-        self.database_checks = []
+        self.database_checks = [
+            DatabaseCheck("async_job_timeouts", AsyncJob.check_timeouts)
+        ]
         self.participant_fail_routines = []
         self.recruitment_criteria = []
         self._websocket_message_handlers = {}
@@ -743,9 +757,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         self.process_timeline()
 
-    @cached_property
+    @property
     def authenticated_session(self):
-        return get_authenticated_session(self.base_url)
+        """Return a dashboard-authenticated session for the current thread.
+
+        ``requests.Session`` is not thread-safe, so each thread keeps its own
+        session. The process logs in once per server and every thread's
+        session reuses that login's cookies, so bots running in threads don't
+        each log in.
+        """
+        return _thread_dashboard_session(self.base_url)
 
     @classmethod
     def get_index_html(cls):
@@ -1634,7 +1655,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if self.test_mode == "serial" or self.test_n_bots == 1:
             self._test_experiment_serial()
         elif self.test_mode == "parallel":
-            run_parallel_test(
+            _run_parallel_test(
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
@@ -1644,6 +1665,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             raise ValueError(f"Invalid test mode: {self.test_mode}")
 
         self._report_request_statistics()
+        self._report_async_job_cpu_time()
 
     def _check_static_spa_contracts(self):
         """Fail fast on static timeline pages that are not SPA-compatible.
@@ -1697,6 +1719,59 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "total_requests": total_requests,
         }
 
+    def _report_async_job_cpu_time(self):
+        """Log the CPU and wall time of the async jobs that ran.
+
+        Rows are grouped by where the jobs ran, label and priority.
+        """
+        from .async_job import _format_cpu_time_summary
+
+        response = self.authenticated_session.get(self.base_url + "/async_job_cpu_time")
+        response.raise_for_status()
+        logger.info(_format_cpu_time_summary(response.json()))
+
+    @experiment_route("/async_job_cpu_time", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_cpu_time(cls):
+        from .async_job import _get_cpu_time_summary
+
+        return _get_cpu_time_summary()
+
+    @experiment_route("/async_job_status", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_status(cls):
+        """Report the async jobs still pending, for ``psynet destroy`` and ``psynet export``."""
+        from .async_job import _get_pending_job_summary
+
+        return _get_pending_job_summary()
+
+    def reason_to_stay_awake(self):
+        """Keep a docker-ssh app awake while async jobs are pending.
+
+        Idle hibernation stops the workers and the web process, so pending
+        :class:`~psynet.async_job.WorkerAsyncJob` and
+        :class:`~psynet.async_job.LocalAsyncJob` jobs would not finish.
+
+        Returns
+        -------
+        str or None
+            A short reason for the deploy logs, or ``None`` to allow sleep.
+        """
+        parent = getattr(super(), "reason_to_stay_awake", None)
+        reason = parent() if parent else None
+        if reason:
+            return reason
+        from .async_job import _describe_pending_jobs, _get_pending_job_summary
+
+        summary = _get_pending_job_summary()
+        return (
+            _describe_pending_jobs(summary, precise=False) if summary["total"] else None
+        )
+
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
 
@@ -1711,8 +1786,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
-        Defines the logic for testing the experiment in a serial process
-        (i.e. not running bots in parallel processes).
+        Defines the logic for testing the experiment serially
+        (i.e. not running bots in parallel).
         This is useful for testing specific experiment logic,
         but less useful for load-testing.
 
@@ -2195,6 +2270,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "legacy_js_var_globals": "warn",
             "needs_internet_access": True,
             "check_participant_opened_devtools": False,
+            "performance_test_app": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,
             "window_height": 768,
@@ -3526,6 +3602,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if Experiment._pending_redirect_replaces_open_page(participant):
+                if page_uuid != participant.page_uuid:
+                    Experiment._settle_stale_hold(participant, page_uuid)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page),
+                    page=page,
+                )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3624,6 +3711,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    @staticmethod
+    def _pending_redirect_replaces_open_page(participant):
+        """Return whether a queued redirect should replace the open page unbuilt.
+
+        ``Participant.fail()`` queues ``pending_redirect`` when it runs outside
+        this participant's request, for example when a partner leaves and
+        their sync group closes. The open page belongs to the abandoned flow,
+        and its page maker may read state that ``fail()`` removed, so it is
+        neither rebuilt nor scored. Timeline holds are still rebuilt, because
+        leaving one settles its wait record.
+        """
+        if getattr(participant, "pending_redirect", None) is None:
+            return False
+        from .timeline_hold import TimelineHoldRecord
+
+        on_hold = db.session.query(
+            TimelineHoldRecord.query.filter_by(
+                participant_id=participant.id, page_uuid=participant.page_uuid
+            ).exists()
+        ).scalar()
+        return not on_hold
+
     def _hold_resume_must_settle(self, participant, event):
         """Return whether a release by failure, redirect, or timeout must take the locked path.
 
@@ -3653,6 +3762,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
+        if Experiment._pending_redirect_replaces_open_page(participant):
+            return None
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
             event
@@ -3685,6 +3796,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant, settle the old hold if needed and skip any later holds
         that are already clear, instead of treating it as a multi-tab mismatch.
         """
+        if not self._settle_stale_hold(participant, submitted_page_uuid):
+            return None
+        return self._advance_past_ready_holds(participant, current_page)
+
+    @staticmethod
+    def _settle_stale_hold(participant, submitted_page_uuid):
+        """Settle the hold a catch-up submit came from, if needed.
+
+        Returns
+        -------
+        bool
+            Whether ``submitted_page_uuid`` is a catch-up from one of this
+            participant's holds rather than a stale tab.
+        """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
@@ -3692,10 +3817,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             submitted_page_uuid,
         )
         if record is None:
-            return None
+            return False
         if record.resumed_at is None:
             record.settle(participant)
-        return self._advance_past_ready_holds(participant, current_page)
+        return True
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
@@ -4004,8 +4129,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
-                    / "resources/libraries/jQuery/jquery-3.7.1.min.js",
-                    "/static/scripts/jquery-3.7.1.min.js",
+                    / "resources/libraries/jQuery/jquery-4.0.0.min.js",
+                    "/static/scripts/jquery-4.0.0.min.js",
                 ),
                 (
                     resources.files("psynet")
@@ -4141,6 +4266,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if "docker_ssh_monitoring_path" not in config.types:
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
+        config.register("performance_test_app", bool)
+        config.register("performance_test_code_key", str)
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
@@ -5574,22 +5701,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @with_transaction
     def route_participant_status(cls, participant_id):
         """
-        This route provides a .zip file containing useful information about the
-        participant's current status. This information is used by automated tests
-        to verify what is being displayed on the current page and what response
-        should be submitted by the bot.
+        Describe the participant's current status for automated tests.
 
-        The zip file contains:
-        - status.json: a JSON file summarising the participant's status
-        - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
+        Bots use this to check what the current page shows and what response
+        to submit. The response is the status as JSON, unless the bot's
+        response to the page includes files. In that case it is a zip file
+        containing:
+
+        - status.json: the status
+        - bot_response_files/: the files that the participant would upload as
+          a response to the page
         """
         participant = Bot.query.get(participant_id)
+        at_page_maker_start = participant.elt_id[1:] == [-1]
+        if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
+            # get_current_page will move the cursor, so take the row lock. Routine
+            # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
+            participant = (
+                Bot.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
         experiment = get_experiment()
 
-        status = {
-            "status": participant.status,
-            "page_uuid": participant.page_uuid,
-        }
+        status = {"status": participant.status}
 
         if participant.status == "working":
             current_page = participant.get_current_page()
@@ -5603,40 +5738,53 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "label": current_page.label,
                 "text": current_page.plain_text,
                 "time_estimate": current_page.time_estimate,
+                "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
                 "bot_response": bot_response.__json__(),
             }
+            if _is_timeline_hold(current_page):
+                status["page"]["check_interval"] = current_page.check_interval
         else:
             bot_response = None
+        status["page_uuid"] = participant.page_uuid
+
+        if not (bot_response and bot_response.blobs):
+            return jsonify(status)
 
         with tempfile.TemporaryDirectory() as tempdir:
-            # status.json (a JSON file summarising the participant's status)
-            status_path = os.path.join(tempdir, "status.json")
-            with open(status_path, "w") as f:
-                json.dump(status, f)
-
-            # bot_response_files/... (the files that the participant would upload as a response to the page)
-            files_dir = os.path.join(tempdir, "bot_response_files")
-            os.makedirs(files_dir, exist_ok=True)
-            if bot_response:
-                for key, blob in bot_response.blobs.items():
-                    src_path = blob.file
-                    dst_path = os.path.join(files_dir, key)
-                    shutil.copyfile(src_path, dst_path)
-
-            # status.zip (a zip file containing the status.json and the bot_response_files)
             zip_path = os.path.join(tempdir, "status.zip")
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(status_path, "status.json")
-
-                if bot_response:
-                    for filename in bot_response.blobs:
-                        zf.write(
-                            os.path.join(files_dir, filename),
-                            os.path.join("bot_response_files", filename),
-                        )
-
+                zf.writestr("status.json", current_app.json.dumps(status))
+                for key, blob in bot_response.blobs.items():
+                    zf.write(blob.file, f"bot_response_files/{key}")
             return send_file(zip_path, mimetype="application/zip")
+
+    @classmethod
+    def _error_trial_context(cls, participant):
+        """Return the trial, node and network for an error report.
+
+        The participant can be detached from the session after a rollback,
+        in which case its current trial cannot be loaded. The error is then
+        reported without trial context rather than failing again.
+        """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
+        try:
+            trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
+        except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
+            logger.warning(
+                "Could not load the current trial for participant %s while "
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
+            )
+        return context
 
     @classmethod
     def fail_participant_on_error(cls, participant, error):
@@ -5809,17 +5957,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled_error = cls.handle_error(
                 err,
                 participant=participant,
-                trial=participant.current_trial,
-                node=(
-                    participant.current_trial.node
-                    if participant.current_trial
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if participant.current_trial
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
             cls._prepare_tracked_fatal_recovery(handled_error, err)
             error_page = handled_error.error_page()
@@ -5973,7 +6111,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Roll back the failed work, save the error's record, then notify.
 
         ``kwargs`` are the ORM objects the error concerns (``participant``,
-        ``trial``, ``process``, ...). They and their parents are recorded by
+        ``trial``, ``async_job``, ...). They and their parents are recorded by
         ID; objects that were never saved, and values that are not ORM
         objects, are ignored. Because this rolls back and commits the
         session, call it from code that owns the transaction, not from
@@ -6012,7 +6150,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if value is not None:
                 parents[key] = value
         types = [
-            "process",
+            "async_job",
             "asset",
             "response",
             "trial",
@@ -6144,35 +6282,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
-    # @classmethod
-    # def serialize_error_context(
-    #     cls,
-    #     participant=None,
-    #     response=None,
-    #     trial=None,
-    #     node=None,
-    #     network=None,
-    #     process=None,
-    #     asset=None,
-    # ):
-    #     context = {}
-    #     if participant:
-    #         context["participant_id"] = participant.id
-    #         context["worker_id"] = participant.worker_id
-    #     if response:
-    #         context["response_id"] = response.id
-    #     if trial:
-    #         context["trial_id"] = trial.id
-    #     if node:
-    #         context["node_id"] = node.id
-    #     if network:
-    #         context["network_id"] = network.id
-    #     if process:
-    #         context["process_id"] = process.id
-    #     if asset:
-    #         context["asset_id"] = asset.id
-    #     return context
-
     class UniqueIdError(PermissionError):
         def __init__(self, expected, provided, participant):
             self.participant = participant
@@ -6207,7 +6316,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
-        if participant.elt_id[1:] == [-1]:
+        replace_open_page = cls._pending_redirect_replaces_open_page(participant)
+        if participant.elt_id[1:] == [-1] or replace_open_page:
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
@@ -6760,10 +6870,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 total_ms=clock.elapsed_ms(),
             )
 
-        exp = get_experiment()
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        # Read the whole body before any SQL, so a slow upload does not hold
+        # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+
+        exp = get_experiment()
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
 
         participant_id = get_arg_from_dict(json_data, "participant_id")
         page_uuid = get_arg_from_dict(json_data, "page_uuid")
@@ -7010,17 +7123,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(
@@ -7168,12 +7271,29 @@ Experiment.UnsuccessfulEndLogic = UnsuccessfulEndLogic
 Experiment.RejectedConsentLogic = RejectedConsentLogic
 
 
-def handle_shutdown_signal(*args, **kwargs):
+def handle_shutdown_signal(signum, frame):
+    """Shut down on SIGINT or SIGTERM.
+
+    Dallinger's server processes (``dallinger_heroku_web``, ``_worker`` and
+    ``_clock``) exit with status 0, and the clock first records that the
+    experiment went offline. Other processes, such as ``psynet`` commands,
+    bots and tests, raise :class:`KeyboardInterrupt` on SIGINT and
+    ``SystemExit(128 + signum)`` on SIGTERM, so that their cleanup runs and
+    they exit with a failure status.
+
+    This is installed when the module is imported, so it replaces handlers
+    installed before then, such as those of gunicorn's workers, and is
+    replaced by those installed later, such as those of RQ's ``work()``.
+    """
     process_name = os.path.basename(sys.argv[0])
     if process_name.endswith("clock"):
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
-    sys.exit(0)
+    if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):
+        sys.exit(0)
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
 
 
 signal.signal(signal.SIGTERM, handle_shutdown_signal)
@@ -7254,6 +7374,70 @@ def get_experiment() -> Experiment:
     Returns an initialized instance of the experiment class.
     """
     return import_local_experiment()["class"]()
+
+
+def _run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
+    """Run ``n_bots`` bots at once, each in its own thread, then check them.
+
+    This backs ``psynet test`` with ``test_mode = "parallel"``. The first bot
+    error is re-raised once every bot has finished.
+    """
+    logger.info(f"Testing experiment with {n_bots} parallel bots...")
+    experiment = get_experiment()
+    errors = []
+
+    def run_bot():
+        try:
+            experiment.run_bot(BotDriver(), time_factor=time_factor)
+        # pytest.fail() and pytest.skip() raise BaseException subclasses.
+        except BaseException as err:
+            logger.exception("Bot failed.")
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    threads = []
+    for i in range(n_bots):
+        if i > 0:
+            time.sleep(stagger_interval_s)
+        thread = threading.Thread(
+            target=run_bot, name=f"psynet-bot-{i + 1}", daemon=True
+        )
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
+
+    with transaction():
+        check_bots(Bot.query.all())
+
+
+@cache
+def _dashboard_login_cookies(base_url):
+    """Log in to the dashboard at ``base_url`` and return the login's cookies.
+
+    Cached with :func:`functools.cache` so that
+    :func:`~psynet.utils.clear_all_caches` forgets logins to servers that tests
+    have since replaced at the same URL.
+    """
+    return get_authenticated_session(base_url).cookies
+
+
+_dashboard_sessions = threading.local()
+
+
+def _thread_dashboard_session(base_url):
+    """Return this thread's dashboard session for ``base_url``, sharing one login."""
+    cookies = _dashboard_login_cookies(base_url)
+    sessions = vars(_dashboard_sessions).setdefault("by_url", {})
+    login, session = sessions.get(base_url, (None, None))
+    if login is not cookies:
+        session = keep_alive_session()
+        session.cookies.update(cookies)
+        sessions[base_url] = (cookies, session)
+    return session
 
 
 @cache
