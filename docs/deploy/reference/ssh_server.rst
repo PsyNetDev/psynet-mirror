@@ -182,7 +182,8 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it.
+name is deployed, which replaces it. It asks you to confirm first; add
+``--yes`` to skip the confirmation in scripts.
 
 Updating a running app
 ----------------------

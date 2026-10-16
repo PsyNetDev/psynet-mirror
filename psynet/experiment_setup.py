@@ -219,8 +219,11 @@ def _ensure_constraints_up_to_date(ctx):
         )
 
 
-def _scaffold_experiment(ctx, *, skip_constraints):
+def _scaffold_experiment(ctx, *, skip_constraints, psynet_requirement=None):
     """Scaffold an experiment and optionally prepare its constraints.
+
+    ``psynet_requirement`` is recorded in a newly created ``requirements.txt``
+    instead of the default requirement.
 
     In-repo experiments (demos and test experiments) keep bare ``psynet``
     requirements and omit constraints by design, so pinning and constraint
@@ -241,7 +244,7 @@ def _scaffold_experiment(ctx, *, skip_constraints):
         except ValueError as exc:
             raise click.UsageError(str(exc)) from exc
 
-    scaffold_experiment_directory()
+    scaffold_experiment_directory(psynet_requirement=psynet_requirement)
     if not skip_constraints:
         try:
             pin_unpinned_psynet_requirement()
@@ -888,7 +891,7 @@ def setup_experiment(
             editable_source,
             psynet_source,
         )
-        _scaffold_experiment(ctx, skip_constraints=True)
+        _scaffold_experiment(ctx, skip_constraints=True, psynet_requirement=requirement)
         set_psynet_requirement(requirement)
         _ensure_constraints_up_to_date(ctx)
 
