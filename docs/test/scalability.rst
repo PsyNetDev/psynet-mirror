@@ -335,7 +335,9 @@ debug ssh``.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
 The app's config is marked with ``performance_test_app = true``. When the
-experiment's files change, the next run updates the app in place and keeps
+experiment's files, the PsyNet or Dallinger version, or, with
+``--use-local-dallinger``, the files of the local Dallinger checkout
+change, the next run updates the app in place and keeps
 its database; destroy the app if the change needs a fresh launch. The app
 stays on the server between runs, and the command prints how to destroy it:
 

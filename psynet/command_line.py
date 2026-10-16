@@ -1960,6 +1960,13 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
             )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
+    source = _local_dallinger_source()
+    os.environ["DALLINGER_SOURCE"] = source
+    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+def _local_dallinger_source():
+    """Return the Dallinger checkout that ``--use-local-dallinger`` bakes into the image."""
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
     if not source:
         from dallinger.utils import get_editable_dallinger_path
@@ -1975,8 +1982,7 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
-    os.environ["DALLINGER_SOURCE"] = source
-    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+    return source
 
 
 def _reject_leftover_local_image_files():
@@ -2577,7 +2583,11 @@ def _debug_ssh(
 
             config_options = {
                 "performance_test_app": "true",
-                "performance_test_code_key": experiment_code_key(),
+                "performance_test_code_key": experiment_code_key(
+                    dallinger_source=os.environ["DALLINGER_SOURCE"]
+                    if use_local_dallinger
+                    else None
+                ),
             }
 
         with _local_image_packages(local_packages):
@@ -6028,12 +6038,13 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
         _stop_server(server_info)
 
 
-def _current_code_key():
+def _current_code_key(use_local_dallinger=False):
     """Return the experiment's code key, or ``None`` without a deploy.toml."""
     from psynet.perf_ssh import experiment_code_key
 
+    source = _local_dallinger_source() if use_local_dallinger else None
     try:
-        return experiment_code_key()
+        return experiment_code_key(dallinger_source=source)
     except ValueError:
         return None
 
@@ -6306,7 +6317,9 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         )
     else:
         info = _require_performance_test_app(server, app)
-        current_key = _current_code_key()
+        current_key = _current_code_key(
+            deploy_options.get("use_local_dallinger", False)
+        )
         if current_key is not None and current_key == info["performance_test_code_key"]:
             print(f"Using {app} on {server}, deployed for performance tests.")
         else:

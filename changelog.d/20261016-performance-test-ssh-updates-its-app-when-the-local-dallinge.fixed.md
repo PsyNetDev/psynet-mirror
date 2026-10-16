@@ -1,0 +1,1 @@
+``psynet performance-test ssh --use-local-dallinger`` now updates its app when the local Dallinger checkout changes, or when the option is switched on or off, instead of reusing an app built from older Dallinger code.

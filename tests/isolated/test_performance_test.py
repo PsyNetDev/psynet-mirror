@@ -2138,6 +2138,33 @@ def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
     assert experiment_code_key() != key
 
 
+def test_experiment_code_key_follows_the_local_dallinger_checkout(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    from psynet.perf_ssh import experiment_code_key
+
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "deploy.toml").write_text(
+        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
+    )
+    monkeypatch.chdir(experiment)
+    checkout = tmp_path / "Dallinger"
+    checkout.mkdir()
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    (checkout / "bots.py").write_text("A = 1\n")
+
+    keys = [experiment_code_key(), experiment_code_key(dallinger_source=str(checkout))]
+    (checkout / "bots.py").write_text("A = 2\n")
+    keys.append(experiment_code_key(dallinger_source=str(checkout)))
+    (checkout / "new_module.py").write_text("")
+    keys.append(experiment_code_key(dallinger_source=str(checkout)))
+
+    assert len(set(keys)) == 4
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
