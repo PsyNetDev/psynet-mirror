@@ -28,6 +28,7 @@ from dallinger.command_line.docker_ssh import (
     CONFIGURED_HOSTS,
     option_server,
     remote_postgres,
+    resolve_server_option,
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
@@ -44,6 +45,8 @@ from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
     check_installed_dallinger_version_is_recommended,
+    is_release_version_specifier,
+    specified_version,
 )
 
 from . import deployment_info
@@ -401,13 +404,6 @@ def db_connection(location, app=None, server=None):
             connection.close()
 
 
-def prompt_for_ssh_server():
-    click.echo(
-        "Choose one of the configured servers (add one with `dallinger docker-ssh servers add`):"
-    )
-    return click.Choice(CONFIGURED_HOSTS.keys())
-
-
 @contextmanager
 def get_db_uri(location, app=None, server=None):
     match location:
@@ -420,8 +416,9 @@ def get_db_uri(location, app=None, server=None):
         case "ssh":
             if app is None:
                 raise click.UsageError("Missing parameter: --app")
-            if server is None:
-                server = prompt_for_ssh_server()
+            server = resolve_server_option(
+                click.get_current_context(silent=True), None, server
+            )
             server_info = CONFIGURED_HOSTS[server]
             with remote_postgres(server_info, app) as db_uri:
                 yield db_uri
@@ -874,6 +871,8 @@ def run_pre_auto_reload_checks():
 
     from dallinger.utils import develop_target_path
 
+    from .experiment_scaffold import get_editable_psynet_source
+
     _develop_path = str(develop_target_path(config))
     if "." in _develop_path:
         raise ValueError(
@@ -883,7 +882,7 @@ def run_pre_auto_reload_checks():
             "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
-    if is_editable("psynet"):
+    if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())
         root_basename = os.path.basename(root_dir)
         if root_basename == "psynet" and root_dir in os.getcwd():
@@ -1348,6 +1347,8 @@ def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
+    if not local_:
+        confirm_deploying_development_psynet()
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -1608,6 +1609,7 @@ def deploy__heroku(ctx, app, archive, docker):
     """
     if docker:
         _deploy__docker_heroku(ctx, app, archive)
+        return
 
     try:
         from dallinger.command_line import deploy as dallinger_deploy
@@ -2147,7 +2149,13 @@ def debug__docker_heroku(ctx, app, archive):
                 "This shouldn't be hard to fix..."
             )
         _pre_launch(
-            ctx, mode="sandbox", archive=archive, local_=False, docker=True, app=app
+            ctx,
+            mode="sandbox",
+            archive=archive,
+            local_=False,
+            docker=True,
+            heroku=True,
+            app=app,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -2271,6 +2279,9 @@ def install_autocomplete():
 #######################
 def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
+    from dallinger.utils import get_editable_dallinger_path
+
+    from .experiment_scaffold import get_editable_source
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -2332,7 +2343,12 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    if is_editable("dallinger"):
+    # Dallinger 12.4 and older only detect legacy .egg-link editable installs.
+    dallinger_is_editable = (
+        get_editable_source("dallinger") is not None
+        or get_editable_dallinger_path() is not None
+    )
+    if dallinger_is_editable:
         _prepare(
             dallinger_version,
             "Dallinger",
@@ -2340,7 +2356,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
             capture_output,
         )
 
-    if is_editable("dallinger"):
+    if dallinger_is_editable:
         text = "Installing base packages and development requirements..."
         install_command = "pip install --editable '.[data]'"
     else:
@@ -2351,7 +2367,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
         text=text,
         color="green",
     ) as spinner:
-        if is_editable("dallinger"):
+        if dallinger_is_editable:
             subprocess.run(
                 ["pip3 install -r dev-requirements.txt"],
                 shell=True,
@@ -2471,14 +2487,6 @@ def get_version(project_name):
         .decode("utf-8")
         .strip()
     )
-
-
-def is_editable(project):
-    for path_item in sys.path:
-        egg_link = os.path.join(path_item, project + ".egg-link")
-        if os.path.isfile(egg_link):
-            return True
-    return False
 
 
 ############
@@ -2751,6 +2759,39 @@ def check_psynet_requirement_is_unambiguous():
 
         if not valid:
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
+
+
+def confirm_deploying_development_psynet():
+    """Ask before a live remote deployment installs a development PsyNet.
+
+    Release pins (``14.0.0``, ``14.0.0rc1`` or the tag ``v14.0.0``) pass
+    silently. A commit, an alpha, or an entry accepted only because
+    ``SKIP_CHECK_PSYNET_VERSION_REQUIREMENT`` is set is a development version.
+    Setting that variable replaces the question with a warning.
+
+    Raises
+    ------
+    click.Abort
+        If the user declines to deploy a development version.
+    """
+    requirement = get_psynet_requirement()
+    if requirement and is_release_version_specifier(specified_version(requirement)):
+        return
+
+    message = (
+        "requirements.txt installs a development version of PsyNet, not a release:\n"
+        f"  {requirement or '(no PsyNet entry)'}\n"
+        "Live experiments should normally pin a PsyNet release, for example "
+        "psynet[experiment]==<version>."
+    )
+    if os.environ.get("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"):
+        click.echo(f"Warning: {message}", err=True)
+        return
+    if not user_confirms(
+        f"{message}\nDeploy it anyway? (Set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1 "
+        "to skip this question.)"
+    ):
+        raise click.Abort
 
 
 def check_psynet_requirement_includes_experiment_extra():
@@ -3704,10 +3745,11 @@ def _destroy(
     ask_for_confirmation=True,
 ):
     """Destroy a single app."""
+    target = app or "the app"
+    if server:
+        target += f" from {server}"
     confirmed = (
-        user_confirms(
-            "Would you like to delete the app from the web server?", default=True
-        )
+        user_confirms(f"Would you like to delete {target}?", default=True)
         if ask_for_confirmation
         else True
     )
@@ -3798,8 +3840,14 @@ def _dallinger_hibernation_command(name):
 @click.option("--app", default=None, help="Experiment id")
 @click.argument("apps", required=False, nargs=-1)
 @option_server
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip the confirmation prompt.",
+)
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server):
+def destroy__docker_ssh(ctx, app, apps, server, yes):
     """
     Destroy the experiment on a remote server via SSH.
     """
@@ -3816,13 +3864,14 @@ def destroy__docker_ssh(ctx, app, apps, server):
             destroy,
             app=app,
             server=server,
+            ask_for_confirmation=not yes,
         )
     if len(apps) > 0:
         assert app is None, "You cannot provide both --app and a list of apps."
         confirmation = f"""
             Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
             """
-        if click.confirm(confirmation, abort=True):
+        if yes or click.confirm(confirmation, abort=True):
             failed = []
             for app in apps:
                 try:
@@ -4730,7 +4779,6 @@ def _run_performance_test_with_new_server(
 @_test_options["performance_stagger"]
 @_test_options["performance_time_factor"]
 @_test_options["duration_minutes"]
-@_test_options["performance_json_output"]
 @click.pass_context
 def performance_test__docker_ssh(
     ctx,
@@ -4740,7 +4788,6 @@ def performance_test__docker_ssh(
     stagger=None,
     time_factor=None,
     duration_minutes=None,
-    json_output=None,
 ):
     """
     Runs performance tests on the remote server. Assumes that the app has
@@ -4753,15 +4800,8 @@ def performance_test__docker_ssh(
     If the app is in use during the performance test, results may not be
     reliable.
 
-    Note: --json-output is not yet supported for remote SSH execution. For
-    JSON output, run ``psynet performance-test local --json-output`` instead.
+    For JSON output, run ``psynet performance-test local --json-output``.
     """
-    if json_output:
-        raise click.UsageError(
-            "--json-output is not yet implemented for SSH mode. "
-            "Use 'psynet performance-test local --json-output' instead.",
-        )
-
     from dallinger.command_line.docker_ssh import Executor
 
     cmd = _build_ssh_performance_test_cmd(
