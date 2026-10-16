@@ -745,6 +745,69 @@ def test_grouper_does_not_join_a_group_without_active_members(
     assert newcomer.sync_group is None
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_simultaneous_joins_do_not_overfill_a_group(
+    in_experiment_directory, db_session
+):
+    """Two participants racing for a group's last place cannot both get it."""
+    exp = get_experiment()
+    _members, group = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    group.accepts_top_ups = True
+    group.max_group_size = 3
+    first, second = _working_participants(exp, 2)
+    group_id, joiner_ids = group.id, (first.id, second.id)
+    db.session.commit()
+    db.session.remove()
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=3,
+        join_existing_groups=True,
+    )
+    first_joined, first_may_commit = threading.Event(), threading.Event()
+    errors = []
+
+    def join(participant_id, joined=None, may_commit=None):
+        try:
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            grouper.choose_who_to_release([participant])
+            db.session.flush()
+            if joined is not None:
+                joined.set()
+                assert may_commit.wait(5)
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    racers = [
+        threading.Thread(
+            target=join, args=(joiner_ids[0], first_joined, first_may_commit)
+        ),
+        threading.Thread(target=join, args=(joiner_ids[1],)),
+    ]
+    racers[0].start()
+    assert first_joined.wait(5)
+    racers[1].start()
+    time.sleep(0.5)
+    first_may_commit.set()
+    for racer in racers:
+        racer.join(10)
+
+    assert errors == []
+    group = SimpleSyncGroup.query.get(group_id)
+    assert len(group.participants) == 3
+    assert group.n_active_participants == 3
+
+
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
