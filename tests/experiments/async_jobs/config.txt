@@ -1,6 +1,6 @@
 [Config]
-title = Async process performance test
-description = Test experiment for benchmarking async process queue delay.
+title = Async job performance test
+description = Test experiment for benchmarking async job queue delay.
 contact_email_on_error = test@example.com
 organization_name = PsyNet
 

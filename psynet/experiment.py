@@ -70,6 +70,7 @@ from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -5694,6 +5695,33 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return send_file(zip_path, mimetype="application/zip")
 
     @classmethod
+    def _error_trial_context(cls, participant):
+        """Return the trial, node and network for an error report.
+
+        The participant can be detached from the session after a rollback,
+        in which case its current trial cannot be loaded. The error is then
+        reported without trial context rather than failing again.
+        """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
+        try:
+            trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
+        except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
+            logger.warning(
+                "Could not load the current trial for participant %s while "
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
+            )
+        return context
+
+    @classmethod
     def fail_participant_on_error(cls, participant, error):
         """Record the exception type without choosing the session outcome.
 
@@ -5864,17 +5892,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled_error = cls.handle_error(
                 err,
                 participant=participant,
-                trial=participant.current_trial,
-                node=(
-                    participant.current_trial.node
-                    if participant.current_trial
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if participant.current_trial
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
             cls._prepare_tracked_fatal_recovery(handled_error, err)
             error_page = handled_error.error_page()
@@ -6028,7 +6046,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Roll back the failed work, save the error's record, then notify.
 
         ``kwargs`` are the ORM objects the error concerns (``participant``,
-        ``trial``, ``process``, ...). They and their parents are recorded by
+        ``trial``, ``async_job``, ...). They and their parents are recorded by
         ID; objects that were never saved, and values that are not ORM
         objects, are ignored. Because this rolls back and commits the
         session, call it from code that owns the transaction, not from
@@ -6067,7 +6085,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if value is not None:
                 parents[key] = value
         types = [
-            "process",
+            "async_job",
             "asset",
             "response",
             "trial",
@@ -6198,35 +6216,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text = f"An {cls.notifier.url(error_txt, url)} occurred:"
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
-
-    # @classmethod
-    # def serialize_error_context(
-    #     cls,
-    #     participant=None,
-    #     response=None,
-    #     trial=None,
-    #     node=None,
-    #     network=None,
-    #     process=None,
-    #     asset=None,
-    # ):
-    #     context = {}
-    #     if participant:
-    #         context["participant_id"] = participant.id
-    #         context["worker_id"] = participant.worker_id
-    #     if response:
-    #         context["response_id"] = response.id
-    #     if trial:
-    #         context["trial_id"] = trial.id
-    #     if node:
-    #         context["node_id"] = node.id
-    #     if network:
-    #         context["network_id"] = network.id
-    #     if process:
-    #         context["process_id"] = process.id
-    #     if asset:
-    #         context["asset_id"] = asset.id
-    #     return context
 
     class UniqueIdError(PermissionError):
         def __init__(self, expected, provided, participant):
@@ -6816,10 +6805,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 total_ms=clock.elapsed_ms(),
             )
 
-        exp = get_experiment()
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        # Read the whole body before any SQL, so a slow upload does not hold
+        # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+
+        exp = get_experiment()
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
 
         participant_id = get_arg_from_dict(json_data, "participant_id")
         page_uuid = get_arg_from_dict(json_data, "page_uuid")
@@ -7066,17 +7058,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(

@@ -12,13 +12,13 @@ from typing import List, Union
 from markupsafe import Markup
 
 import psynet.experiment
+from psynet.async_job import WorkerAsyncJob
 from psynet.bot import Bot
 from psynet.db import with_transaction
 from psynet.error import ErrorRecord
 from psynet.experiment import scheduled_task
 from psynet.modular_page import Prompt, SliderControl
 from psynet.page import InfoPage, ModularPage
-from psynet.process import WorkerAsyncProcess
 from psynet.timeline import Timeline
 from psynet.trial.gibbs import GibbsNetwork, GibbsNode, GibbsTrial, GibbsTrialMaker
 from psynet.utils import get_logger
@@ -223,12 +223,12 @@ class Exp(psynet.experiment.Experiment):
         if is_experiment_launched():
             trials = CustomTrial.query.with_for_update().populate_existing().all()
             for t in trials:
-                WorkerAsyncProcess(
+                WorkerAsyncJob(
                     function=t.expensive_computation,
                     arguments={
                         "seed": random.randint(0, 10),
                     },
-                )
+                ).enqueue()
 
     def test_check_bot(self, bot: Bot, **kwargs):
         trials = bot.all_trials
@@ -238,8 +238,8 @@ class Exp(psynet.experiment.Experiment):
         assert not trials[1].failed
 
         assert trials[2].failed
-        # call_async_post_trial fails the trial before the process cascade, so the
-        # durable reason is async_post_trial_failed (not the outer process message).
+        # call_async_post_trial fails the trial before the async job cascade, so the
+        # durable reason is async_post_trial_failed (not the outer async job message).
         assert trials[2].failed_reason.startswith("async_post_trial_failed")
         assert trials[2].async_post_trial_failed
 
@@ -250,16 +250,16 @@ class Exp(psynet.experiment.Experiment):
     def test_experiment(self):
         super().test_experiment()
 
-        expensive_computations = WorkerAsyncProcess.query.filter_by(
+        expensive_computations = WorkerAsyncJob.query.filter_by(
             label="expensive_computation"
         ).all()
         assert len(expensive_computations) > 0
 
-        for _process in expensive_computations:
-            assert not _process.failed
+        for job in expensive_computations:
+            assert not job.failed
 
-        # These typically happen in AsyncProcess.call_function; the Redis job fails to find any database row
-        # corresponding to the process to be run.
+        # These typically happen in AsyncJob.call_function; the Redis job fails to find any database row
+        # corresponding to the async job to be run.
         n_no_result_found_errors = ErrorRecord.query.filter_by(
             kind="NoResultFound"
         ).count()

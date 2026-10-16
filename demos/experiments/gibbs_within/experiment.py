@@ -166,7 +166,7 @@ trial_maker = CustomTrialMaker(
     recruit_mode="n_participants",
     target_n_participants=1,
     n_repeat_trials=0,
-    wait_for_networks=True,  # wait for asynchronous processes to complete before continuing to the next trial
+    wait_for_networks=True,  # wait for async jobs to complete before continuing to the next trial
 )
 
 

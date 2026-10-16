@@ -15,6 +15,7 @@ from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
 
+from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
     barrier_from_spec_json,
@@ -33,7 +34,6 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
-from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.serialize import SerializedCallable
 from psynet.sqlalchemy_profiling import assert_query_count
@@ -108,7 +108,7 @@ def get_random_id():
     return str(uuid.uuid4())
 
 
-def async_process_noop():
+def async_job_noop():
     return None
 
 
@@ -6164,11 +6164,10 @@ def test_deleted_orm_callback_receiver_is_rejected(in_experiment_directory, db_s
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_async_process_events_wake_timeline_holds(
-    in_experiment_directory, db_session, monkeypatch
+def test_async_job_events_wake_timeline_holds(
+    in_experiment_directory, db_session, monkeypatch, caplog
 ):
     wakes = []
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     monkeypatch.setattr(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
@@ -6176,25 +6175,27 @@ def test_async_process_events_wake_timeline_holds(
 
     participant = new_participant(get_experiment())
     db_session.flush()
-    finished = LocalAsyncProcess(async_process_noop, participant=participant)
-    timed_out = WorkerAsyncProcess(
-        async_process_noop, participant=participant, timeout=30
-    )
-    cancelled = WorkerAsyncProcess(async_process_noop, participant=participant)
+    # Saved without enqueue() so that the test runs the jobs itself.
+    finished = LocalAsyncJob(async_job_noop, participant=participant)
+    timed_out = WorkerAsyncJob(async_job_noop, participant=participant, timeout=30)
+    cancelled = WorkerAsyncJob(async_job_noop, participant=participant)
+    db_session.add_all([finished, timed_out, cancelled])
     timed_out.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db_session.flush()
     finished_id = finished.id
     cancelled_id = cancelled.id
-    db_session.commit()
+    with caplog.at_level("WARNING", logger="psynet"):
+        db_session.commit()
+    assert caplog.text.count("never enqueued") == 3
 
-    LocalAsyncProcess.call_function(finished_id)
-    WorkerAsyncProcess.check_timeouts()
-    WorkerAsyncProcess.query.get(cancelled_id).cancel()
+    LocalAsyncJob.call_function(finished_id)
+    WorkerAsyncJob.check_timeouts()
+    WorkerAsyncJob.query.get(cancelled_id).cancel()
 
     assert wakes == [
-        "async_process_finished",
-        "async_process_timed_out",
-        "async_process_cancelled",
+        "async_job_finished",
+        "async_job_timed_out",
+        "async_job_cancelled",
     ]
 
 

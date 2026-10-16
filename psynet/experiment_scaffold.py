@@ -576,19 +576,26 @@ def commit_psynet_requirement(source: Path) -> str:
     return f"psynet[experiment]@{pip_base}@{commit}#egg=psynet"
 
 
-def _is_psynet_requirement_line(line: str) -> bool:
-    """Return whether a requirements.txt line is a PsyNet dependency entry.
+def is_requirement_line_for(line: str, package: str) -> bool:
+    """Return whether a requirements line is a dependency entry for ``package``.
 
-    Matches bare ``psynet``, ``psynet[experiment]``, and git-URL forms with
-    ``#egg=psynet`` or ``#egg=psynet[experiment]``.
+    Matches the bare name, extras, version specifiers, direct references
+    (``package @ <url>``), and URL forms with ``#egg=<package>`` (with or
+    without extras), such as editable checkout paths.
     """
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return False
+    name = re.escape(package)
     return bool(
-        re.match(r"(?i)^psynet(?:\s*$|\s*[@<>=!~\[])", stripped)
-        or re.search(r"(?i)#egg=psynet(?:\[[\w,]+\])?(?:\s|$)", stripped)
+        re.match(rf"(?i)^{name}(?:\s*$|\s*[@<>=!~\[])", stripped)
+        or re.search(rf"(?i)#egg={name}(?:\[[\w,]+\])?(?:\s|$)", stripped)
     )
+
+
+def _is_psynet_requirement_line(line: str) -> bool:
+    """Return whether a requirements.txt line is a PsyNet dependency entry."""
+    return is_requirement_line_for(line, "psynet")
 
 
 def requirement_includes_experiment_extra(requirement: str) -> bool:

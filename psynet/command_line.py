@@ -97,12 +97,50 @@ ensure_runtime()
 
 logger = get_logger()
 
+
+def _reject_ingress_without_dallinger_support(ctx, param, value):
+    """Reject ``--ingress cloudflare`` when Dallinger only supports classic ingress.
+
+    The value is not passed on, because such a Dallinger has no ingress option.
+    """
+    if value == "cloudflare":
+        raise click.UsageError(
+            "--ingress cloudflare needs a Dallinger version with Cloudflare "
+            "ingress support, which this Dallinger installation does not have. "
+            "Install Dallinger from its master branch, or use classic ingress."
+        )
+    return None
+
+
 try:
     from dallinger.command_line.docker_ssh import option_ingress
 except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+    option_ingress = click.option(
+        "--ingress",
+        type=click.Choice(["classic", "cloudflare"]),
+        default=None,
+        callback=_reject_ingress_without_dallinger_support,
+        help=(
+            "How participants reach the experiment. Cloudflare ingress needs a "
+            "newer Dallinger than the one installed."
+        ),
+    )
 
-    def option_ingress(func):
-        return func
+
+_LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
+_LOCAL_IMAGE_PINS = "local-image-pins.txt"
+
+
+def _use_local_psynet_option(func):
+    return click.option(
+        "--use-local-psynet",
+        is_flag=True,
+        default=False,
+        help=(
+            "Build the editable PsyNet checkout into the experiment image instead "
+            "of installing the PsyNet version in requirements.txt."
+        ),
+    )(func)
 
 
 def _use_local_dallinger_option(func):
@@ -111,9 +149,9 @@ def _use_local_dallinger_option(func):
         is_flag=True,
         default=False,
         help=(
-            "Bake the locally imported Dallinger source into the experiment "
-            "image instead of the Git pin. Required for canary deploys of "
-            "unreleased docker-ssh features."
+            "Build the locally imported Dallinger source into the experiment "
+            "image instead of installing the Dallinger version pinned in "
+            "requirements.txt or constraints.txt."
         ),
     )(func)
 
@@ -342,11 +380,13 @@ def _experiment_variables(connection, echo=False):
 
 
 def _validate_location(ctx, param, value):
+    """Click callback that accepts only the supported database locations."""
     allowed = ["local", "heroku", "ssh"]
     if value not in allowed:
         raise click.UsageError(
             f"Invalid location {value}; location must be one of: {', '.join(allowed)}"
         )
+    return value
 
 
 @psynet.command("experiment-variables")
@@ -1476,8 +1516,12 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    local_packages=(),
 ):
     from .experiment import get_experiment
+
+    if docker:
+        _reject_leftover_local_image_files()
 
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
@@ -1516,7 +1560,7 @@ def _pre_launch(
         if update:
             _check_ssh_update(server, app, mode)
 
-    run_pre_checks(mode, local_, heroku, docker, app)
+    run_pre_checks(mode, local_, heroku, docker, app, local_packages)
 
     if os.environ.get("DALLINGER_SOURCE"):
         os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1663,7 +1707,6 @@ def _deploy__docker_heroku(ctx, app, archive):
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
 @option_ingress
-@_use_local_dallinger_option
 @_option_ssh_update
 @click.pass_context
 def deploy__docker_ssh(
@@ -1673,15 +1716,18 @@ def deploy__docker_ssh(
     dns_host,
     server,
     ingress=None,
-    use_local_dallinger=False,
     update=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
+
+    The image always installs the PsyNet and Dallinger versions pinned in
+    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
+    ``--use-local-psynet`` or ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
-        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
             ctx,
@@ -1752,7 +1798,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         # Dallinger bakes DALLINGER_SOURCE whenever it is set.
         if os.environ.pop("DALLINGER_SOURCE", None):
             click.echo(
-                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+                "Ignoring DALLINGER_SOURCE; only "
+                "'psynet debug ssh --use-local-dallinger' bakes it."
             )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1773,6 +1820,131 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         )
     os.environ["DALLINGER_SOURCE"] = source
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+def _reject_leftover_local_image_files():
+    """Stop if the experiment directory holds local-build files from an earlier run.
+
+    The experiment Dockerfile installs a PsyNet wheel over the pinned version
+    and prefers ``local-image-pins.txt`` over the pins, so files left by an
+    interrupted ``psynet debug ssh --use-local-psynet`` or
+    ``--use-local-dallinger`` run would replace the pins, even in
+    ``psynet deploy``.
+    """
+    leftovers = sorted(p.name for p in Path.cwd().glob(_LOCAL_PSYNET_WHEEL_PATTERN))
+    if Path(_LOCAL_IMAGE_PINS).exists():
+        leftovers.append(_LOCAL_IMAGE_PINS)
+    if leftovers:
+        raise click.UsageError(
+            f"Remove {', '.join(leftovers)} from the experiment directory. "
+            "These files are left over from an interrupted 'psynet debug ssh' "
+            "with --use-local-psynet or --use-local-dallinger, and the image "
+            "would use them instead of the versions in requirements.txt."
+        )
+
+
+def _local_packages(use_local_psynet, use_local_dallinger):
+    """Return the names of the packages built into the image from local checkouts."""
+    return tuple(
+        package
+        for package, enabled in (
+            ("psynet", use_local_psynet),
+            ("dallinger", use_local_dallinger),
+        )
+        if enabled
+    )
+
+
+def _check_local_image_packages(local_packages):
+    """Stop before launching if ``local_packages`` cannot be built into the image.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts, from :func:`_local_packages`.
+    """
+    if not local_packages:
+        return
+    dockerfile = Path("Dockerfile")
+    if not dockerfile.is_file() or _LOCAL_IMAGE_PINS not in dockerfile.read_text():
+        raise click.UsageError(
+            "This experiment's Dockerfile does not install local PsyNet or "
+            "Dallinger builds. Run 'psynet scripts update' to refresh it."
+        )
+    if "psynet" in local_packages:
+        from .experiment_scaffold import get_editable_psynet_source
+
+        if get_editable_psynet_source() is None:
+            raise click.UsageError(
+                "--use-local-psynet needs an editable PsyNet checkout."
+            )
+
+
+@contextmanager
+def _local_image_packages(local_packages):
+    """Stage local PsyNet and Dallinger builds for the experiment image.
+
+    For ``"psynet"``, the editable PsyNet checkout is built into a wheel in the
+    experiment directory, so it is sent with the other experiment files, and
+    the experiment Dockerfile installs it over the pinned version. Dallinger
+    stages its own wheel when ``DALLINGER_SOURCE`` is set.
+
+    The pins without these packages are written to ``local-image-pins.txt``,
+    which the Dockerfile installs instead, because their pins may point at a
+    checkout that only exists on this machine. Staged files are removed
+    afterwards.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts and checked by
+        :func:`_check_local_image_packages`.
+    """
+    if not local_packages:
+        yield
+        return
+    staged = []
+    try:
+        if "psynet" in local_packages:
+            staged.append(_build_local_psynet_wheel())
+        staged.append(_write_local_image_pins(local_packages))
+        yield
+    finally:
+        for path in staged:
+            path.unlink(missing_ok=True)
+
+
+def _build_local_psynet_wheel():
+    """Build the editable PsyNet checkout into a wheel in the experiment directory."""
+    from dallinger.utils import build_and_place
+
+    from .experiment_scaffold import get_editable_psynet_source
+
+    source = get_editable_psynet_source()
+    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
+
+
+def _write_local_image_pins(local_packages):
+    """Write the image's pins without ``local_packages`` to ``local-image-pins.txt``.
+
+    Like the Dockerfile, this reads ``constraints.txt`` when present and
+    ``requirements.txt`` otherwise. In-repo experiments always read
+    ``requirements.txt``, because they ignore ``constraints.txt``.
+    """
+    from .experiment_scaffold import is_requirement_line_for
+
+    source = Path("constraints.txt")
+    if is_in_repo_experiment() or not source.is_file():
+        source = Path("requirements.txt")
+    kept = [
+        line
+        for line in source.read_text().splitlines(keepends=True)
+        if not any(is_requirement_line_for(line, p) for p in local_packages)
+    ]
+    target = Path.cwd() / _LOCAL_IMAGE_PINS
+    target.write_text("".join(kept))
+    return target
 
 
 def _awaken_ssh_app(server, app):
@@ -1988,7 +2160,9 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             )
 
 
-def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
+def run_pre_checks(
+    mode, local_, heroku=False, docker=False, app=None, local_packages=()
+):
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
@@ -2086,7 +2260,7 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
                 check_prolific_payment(exp, config)
 
         if mode == "sandbox":
-            run_pre_checks_sandbox()
+            run_pre_checks_sandbox(local_packages)
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
 
@@ -2103,10 +2277,19 @@ def _check_constraints_before_remote_deploy():
     _check_constraints()
 
 
-def run_pre_checks_sandbox():
-    check_psynet_requirement_is_unambiguous()
-    check_psynet_requirement_includes_experiment_extra()
-    check_core_dependency_versions_match_requirements()
+def run_pre_checks_sandbox(local_packages=()):
+    """Check the PsyNet and Dallinger pins before a debug deploy.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built into the image from local checkouts. Their pins do not
+        decide what runs, so they are not checked.
+    """
+    if "psynet" not in local_packages:
+        check_psynet_requirement_is_unambiguous()
+        check_psynet_requirement_includes_experiment_extra()
+    check_core_dependency_versions_match_requirements(skip=local_packages)
 
 
 @debug.command("heroku")
@@ -2167,6 +2350,7 @@ def debug__docker_heroku(ctx, app, archive):
     help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
 )
 @option_ingress
+@_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
 @click.pass_context
@@ -2177,6 +2361,7 @@ def debug__docker_ssh(
     server,
     dns_host,
     ingress=None,
+    use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
 ):
@@ -2188,6 +2373,8 @@ def debug__docker_ssh(
 
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        local_packages = _local_packages(use_local_psynet, use_local_dallinger)
+        _check_local_image_packages(local_packages)
 
         _pre_launch(
             ctx,
@@ -2199,18 +2386,20 @@ def debug__docker_ssh(
             server=server,
             app=app,
             update=update,
+            local_packages=local_packages,
         )
 
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        result = _invoke_docker_ssh_deploy(
-            ctx,
-            sandbox,
-            server=server,
-            dns_host=dns_host,
-            app=app,
-            ingress=ingress,
-            update=update,
-        )
+        with _local_image_packages(local_packages):
+            # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
+            result = _invoke_docker_ssh_deploy(
+                ctx,
+                sandbox,
+                server=server,
+                dns_host=dns_host,
+                app=app,
+                ingress=ingress,
+                update=update,
+            )
 
         _post_deploy(result)
     finally:
@@ -2857,6 +3046,14 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )
+    from .experiment_scaffold import get_editable_psynet_source
+
+    if get_editable_psynet_source() is not None:
+        parts.append(
+            "\n\nTo try your editable PsyNet checkout on a server without "
+            "pinning it, run 'psynet debug ssh --use-local-psynet'. "
+            "'psynet deploy' always needs a pin."
+        )
     parts.append(
         "\n\nExamples:\n"
         + "\n".join(examples)
@@ -3945,6 +4142,38 @@ _test_options["time_factor"] = click.option(
 )
 
 
+def _in_isolated_test_environment(func):
+    """Run a local test or performance-test command in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports. With ``--existing`` the command tests a live server,
+    so it runs in this process.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import (
+            READY_ENV_VAR,
+            shared_environment_warning,
+            should_isolate,
+        )
+
+        if not kwargs.get("existing"):
+            try:
+                isolate = should_isolate()
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            if isolate:
+                _rerun_in_isolated_test_environment()
+            warning = shared_environment_warning()
+            if warning:
+                log(warning)
+                os.environ[READY_ENV_VAR] = "1"
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @test.command("local")
 @_test_options["existing"]
 @_test_options["n_bots"]
@@ -3953,6 +4182,7 @@ _test_options["time_factor"] = click.option(
 @_test_options["stagger"]
 @_test_options["time_factor"]
 @_add_sql_profile_options
+@_in_isolated_test_environment
 @sql_profiled_command
 def test__local(
     existing=False,
@@ -3969,6 +4199,10 @@ def test__local(
 ):
     """
     Test the experiment locally.
+
+    The tests get a free port, a database and a Redis server of their own, so
+    they leave local debug servers alone. Set PSYNET_TEST_ENVIRONMENT=shared
+    to run them against the local ones instead, which resets them.
     """
     assert not (parallel and serial)
 
@@ -4018,6 +4252,61 @@ def test__local(
         # Use sys.exit() to ensure that the exit code is propagated to the shell.
         # This is helpful for CI pipelines, where we want to fail the build if the tests fail.
         sys.exit(exit_code)
+
+
+def _rerun_in_isolated_test_environment():
+    """Re-run this command in a child process with its own database, Redis and port.
+
+    Dallinger connected to the shared database when this module was imported,
+    so the switch needs a new process; see :mod:`psynet.isolated_environment`.
+    The child re-runs the whole original command line (for example
+    ``psynet test local --n-bots 4``) with this interpreter, and this process
+    then exits with its code. A second Ctrl+C kills the child.
+    """
+    from .isolated_environment import IsolatedEnvironment
+    from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
+
+    _check_no_debug_server_here()
+    # Before creating the database and Redis, so that an experiment that isn't
+    # set up fails without advice about services it won't use.
+    _check_experiment_directory("test")
+    ensure_local_services(assume_yes=False, strict=True)
+    try:
+        environment = IsolatedEnvironment.start()
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    exit_code = 130
+    with environment:
+        log(environment.describe())
+        # On macOS framework builds, sys.orig_argv[0] is the framework's own
+        # interpreter, which runs outside the virtual environment.
+        process = subprocess.Popen(
+            [sys.executable, *sys.orig_argv[1:]],
+            env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
+        )
+        interrupted = False
+        while True:
+            try:
+                exit_code = process.wait()
+                break
+            except KeyboardInterrupt:
+                # The child got the same Ctrl+C; let it stop its servers,
+                # unless the user presses Ctrl+C again.
+                if interrupted and process.poll() is None:
+                    process.kill()
+                interrupted = True
+    # A child killed by signal N reports -N; shells report 128 + N.
+    sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
+
+
+def _check_no_debug_server_here():
+    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
+    from .isolated_environment import check_no_debug_server
+
+    try:
+        check_no_debug_server(os.getcwd())
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
 
 
 def build_remote_experiment_command(app, cmd):
@@ -4322,6 +4611,7 @@ def performance_test(ctx):
 @_test_options["duration_minutes"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
+@_in_isolated_test_environment
 def performance_test__local(
     existing=False,
     n_bots=None,
@@ -4338,8 +4628,11 @@ def performance_test__local(
     to run sequential tests with different concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
 
-    By default, this command starts a new experiment server automatically.
-    Use --existing to connect to an already-running server instead.
+    By default, this command starts a new experiment server automatically,
+    with a free port, a database and a Redis server of its own, so it leaves
+    local debug servers alone (set PSYNET_TEST_ENVIRONMENT=shared to use the
+    local ones instead, which resets them). Use --existing to connect to an
+    already-running server instead.
 
     This command never updates an experiment audit. Use
     ``psynet audit performance-test`` to collect audit evidence.
@@ -4610,7 +4903,12 @@ def _start_local_server_and_wait_for_ready(
             for line in recent_output:
                 print(line, file=sys.stderr)
         log_file.close()
-        raise click.ClickException("Failed to start experiment server.")
+        from .isolated_environment import postgres_connection_limit_message
+
+        advice = postgres_connection_limit_message("\n".join(recent_output))
+        raise click.ClickException(
+            "Failed to start experiment server." + (f" {advice}" if advice else "")
+        )
 
 
 def _terminate_server_process(process):
@@ -4702,6 +5000,7 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
+    _check_no_debug_server_here()
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.
@@ -4859,6 +5158,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["duration_minutes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
+@_in_isolated_test_environment
 def audit_performance_test(
     existing=False,
     n_bots=None,
