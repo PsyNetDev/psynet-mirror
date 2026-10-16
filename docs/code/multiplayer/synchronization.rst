@@ -37,13 +37,19 @@ current page, under a waiting indicator, until their group is formed.
 ``join_existing_groups`` (default: ``False``)
     If ``True``, an arriving participant first joins an existing group that
     is below ``max_group_size``, preferring the smallest and then the oldest
-    group. Such groups accept *top-ups*: when a member drops out, barriers
-    wait for a replacement instead of dissolving the group.
+    group. Participants already waiting at the grouper join such a group on
+    the next barrier check after one has room. Closed groups and groups with
+    no active members are not joined. Groups formed with this option accept
+    *top-ups*: when a member drops out, barriers wait for a replacement
+    instead of dissolving the group.
 
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
     ``None`` means no limit. Setting it to anything else requires
-    ``join_existing_groups=True``.
+    ``join_existing_groups=True``. The limit holds when several participants
+    try to join at once: joins to one group take turns, and a participant
+    who finds a group busy tries the next suitable group, or waits at the
+    grouper and tries again shortly.
 
 ``join_criterion``
     A function of ``group`` and ``participant`` that returns whether the
@@ -205,7 +211,10 @@ Timeouts
     default. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
-    from the group so that they continue alone.
+    from the group so that they continue alone. With the default wait
+    indicator (no ``waiting_logic``), this also applies to a participant who
+    closed the page while waiting: the server applies the timeout shortly
+    after the deadline.
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
@@ -229,7 +238,9 @@ happens depends on whether the group accepts top-ups:
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_min_size=False``
   on the grouper to remove them from the group without failing them, so that
-  they continue alone.
+  they continue alone. A member who is in the middle of a request at that
+  moment (for example submitting a page) is handled by the background
+  barrier check within about a second instead, once that request finishes.
 
 The ``sync_quorum`` demo lets participants into part of the timeline only
 while at least three are present. Its grouper has no maximum size and accepts
