@@ -3645,6 +3645,20 @@ def test_scripts_update_overwrites_boilerplate():
             assert Path("Dockerfile").read_text()
 
 
+def test_scripts_update_bases_dockerfile_on_active_python(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "psynet.experiment_scaffold._current_python_major_minor", lambda: "3.12"
+    )
+
+    with working_directory(tmp_path):
+        Path("experiment.py").write_text("class Exp:\n    pass\n")
+        result = CliRunner().invoke(psynet, ["scripts", "update"])
+
+        assert result.exit_code == 0, result.output
+        assert Path(".python-version").read_text() == "3.12\n"
+        assert "FROM python:3.12-bookworm\n" in Path("Dockerfile").read_text()
+
+
 def test_scripts_update_reports_only_actual_changes(tmp_path):
     runner = CliRunner()
 
