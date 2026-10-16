@@ -178,7 +178,9 @@ def test_system_prompt_names_the_locale_script():
     assert "Ol Chiki script" in prompt
 
 
-def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
+def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False):
+    """Route ChatGptTranslator to a fake ``openai`` module and return its requests."""
+
     class BadRequestError(Exception):
         def __init__(self, param):
             self.param = param
@@ -187,7 +189,7 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
 
     def create(**kwargs):
         requests.append(kwargs)
-        if "temperature" in kwargs:
+        if reject_temperature and "temperature" in kwargs:
             raise BadRequestError(param="temperature")
         message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
         return SimpleNamespace(
@@ -203,12 +205,24 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
         SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=BadRequestError),
     )
     monkeypatch.setattr(translators, "_MODELS_WITHOUT_TEMPERATURE", set())
-    config = {
-        "openai_api_key": "key",
-        "openai_default_model": "gpt-6-luna",
-        "openai_default_temperature": "0",
-    }
+    config = {"openai_api_key": "key", "openai_default_model": "gpt-6-luna"}
+    if temperature is not None:
+        config["openai_default_temperature"] = temperature
     monkeypatch.setattr(translators, "get_config", lambda: config)
+    return requests
+
+
+@pytest.mark.parametrize("temperature, expected", [(None, "absent"), ("0", 0.0)])
+def test_temperature_is_sent_only_when_configured(monkeypatch, temperature, expected):
+    requests = _fake_chat_gpt(monkeypatch, temperature)
+
+    assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
+
+    assert requests[0].get("temperature", "absent") == expected
+
+
+def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
+    requests = _fake_chat_gpt(monkeypatch, "0", reject_temperature=True)
 
     for _ in range(2):
         assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]

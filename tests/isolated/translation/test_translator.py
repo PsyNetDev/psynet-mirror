@@ -8,10 +8,7 @@ To run these tests locally (requires API credentials):
 These tests require an OpenAI API key: set `openai_api_key` in .dallingerconfig.
 """
 
-import json
 import os
-import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -60,41 +57,6 @@ def test_translator(english, expected_french, experiment_directory):
         assert preprocess_translation(translation) == preprocess_translation(
             expected_french[i]
         )
-
-
-@pytest.mark.parametrize(
-    "temperature, expected", [(None, {}), ("0", {"temperature": 0.0})]
-)
-def test_chat_gpt_sends_temperature_only_when_configured(
-    monkeypatch, temperature, expected
-):
-    """Models such as gpt-6-luna reject a temperature, so it is optional."""
-    requests = []
-
-    def create(**kwargs):
-        requests.append(kwargs)
-        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=message, finish_reason="stop")]
-        )
-
-    config = {"openai_api_key": "key", "openai_default_model": "gpt-6-luna"}
-    if temperature is not None:
-        config["openai_default_temperature"] = temperature
-    monkeypatch.setattr("psynet.translation.translators.get_config", lambda: config)
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "openai",
-        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=Exception),
-    )
-
-    result = ChatGptTranslator().translate(["Hello"], "en", "fr")
-
-    assert result == ["Bonjour"]
-    assert {k: v for k, v in requests[0].items() if k == "temperature"} == expected
 
 
 @local_only
