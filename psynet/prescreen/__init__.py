@@ -21,7 +21,7 @@ from psynet.modular_page import (
     RadioButtonControl,
     TextControl,
 )
-from psynet.page import InfoPage, UnsuccessfulEndPage, wait_while
+from psynet.page import InfoPage, UnsuccessfulEndPage, wait_for_recording
 from psynet.timeline import (
     CodeBlock,
     Event,
@@ -237,6 +237,23 @@ class REPPVolumeCalibrationMarkers(REPPVolumeCalibration):
     @property
     def what_are_we_playing(self):
         return "We are playing a sound similar to the ones you will hear during the experiment."
+
+
+def _recording_unavailable_page():
+    """Shown instead of playback when the practice recording did not arrive."""
+    return InfoPage(
+        Markup(
+            """
+            <h3>We could not receive your recording</h3>
+            <hr>
+            Please make sure your laptop microphone is working and you are not
+            using any headphones or wireless devices.<br><br>
+            <b><b>To proceed, we need to be able to record your tapping.</b></b>
+            <hr>
+            """
+        ),
+        time_estimate=5,
+    )
 
 
 class REPPTappingCalibration(Module):
@@ -529,20 +546,19 @@ class FreeTappingRecordTest(StaticTrialMaker):
                     ],
                 ),
             ),
-            wait_while(
-                lambda participant: (
-                    not participant.assets["free_record_example"].deposited
-                ),
-                expected_wait=5,
-                log_message="Waiting for free_record_example to be deposited",
+            wait_for_recording(
+                lambda participant: participant.assets["free_record_example"]
             ),
             PageMaker(
-                lambda participant: ModularPage(
-                    "playback",
-                    AudioPrompt(
-                        participant.assets["free_record_example"],
-                        Markup(
-                            """
+                lambda participant: (
+                    _recording_unavailable_page()
+                    if not participant.assets["free_record_example"].deposited
+                    else ModularPage(
+                        "playback",
+                        AudioPrompt(
+                            participant.assets["free_record_example"],
+                            Markup(
+                                """
                         <h3>Can you hear your recording?</h3>
                         <hr>
                         If you do not hear your recording, please make sure
@@ -550,8 +566,9 @@ class FreeTappingRecordTest(StaticTrialMaker):
                         <b><b>To proceed, we need to be able to record your tapping.</b></b>
                         <hr>
                         """
+                            ),
                         ),
-                    ),
+                    )
                 ),
                 time_estimate=5,
             ),

@@ -281,6 +281,53 @@ def test_bots_declare_recordings_for_upload_after_acceptance(submission):
     assert set(response.blobs) == {"cameraRecording", "screenRecording"}
 
 
+@pytest.mark.parametrize("size, uploads", [(1000, 1), (8 * 1024**2, 0)])
+def test_audio_answers_upload_after_acceptance(submission, monkeypatch, size, uploads):
+    """Audio answers use the same deferred path as video, as WAV files."""
+    from pathlib import Path
+
+    from psynet.modular_page import AudioRecordControl
+
+    exp, participant, _, _ = submission
+    control = AudioRecordControl(duration=3)
+    page = ModularPage("audio", "Record", control, time_estimate=3)
+    timeline = Timeline(page, InfoPage("Continue", time_estimate=1))
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    db.session.commit()
+    # 4.5 s of headroom over 3 s at up to 192 kHz, 16-bit mono, plus the header.
+    assert control._recording_max_bytes() == 44 + 9.5 * 192_000 * 2
+    result = exp.process_response(
+        participant_id=participant.id,
+        raw_answer=None,
+        blobs={},
+        metadata={
+            "time_taken": 3,
+            "recording_uploads": {"audio": size},
+            "recording_upload_unavailable": {},
+        },
+        page_uuid=participant.page_uuid,
+        client_ip_address="127.0.0.1",
+    ).payload
+    assert result["submission"] == "approved"
+    assert len(result["recording_uploads"]) == uploads
+    recording = Recording.query.filter_by(local_key="audio").one()
+    assert (recording.extension, recording.upload_context["format"]) == (".wav", "wav")
+    assert participant.answer["asset_id"] == recording.id
+    assert participant.answer["url"] == recording.url
+    if not uploads:
+        assert recording.upload_failed_reason == "size_limit"
+
+    bot_file = (
+        Path(__file__).resolve().parents[2]
+        / "demos/features/video/example_audio_recording.wav"
+    )
+    control.bot_response_media = str(bot_file)
+    bot = control.get_bot_response(exp, bot=None, page=page, prompt=None)
+    assert bot.metadata["recording_uploads"] == {"audio": bot_file.stat().st_size}
+
+
 @pytest.mark.parametrize(
     "unavailable", [{"other": "queue_full"}, {"camera": {}}, {"camera": "unknown"}]
 )
