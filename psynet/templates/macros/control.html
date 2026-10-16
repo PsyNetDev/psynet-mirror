@@ -1437,7 +1437,7 @@
         // rejects an empty one. Explain the problem instead of submitting it.
         // The asynchronous path reports it as unavailable and fails the trial.
         psynet.page.control.reportLegacyCaptureFailure = function (blob) {
-            if (psynet.var.asynchronousVideoUploadSources || blob?.size > 0) return;
+            if (psynet.var.asynchronousUploadSources || blob?.size > 0) return;
             psynet.log.warn("The recording could not be captured.");
             psynet.alert(
                 psynet.var.recordingLabels?.capture_failed ||

@@ -3731,7 +3731,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     )
 
                 recording_uploads = []
-                if getattr(response, "_deferred_video_answer", False) is True:
+                if getattr(response, "_deferred_recording_answer", False) is True:
                     recording_uploads = event.control._accept_recordings(
                         response, participant, page_uuid
                     )
@@ -3745,7 +3745,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             payload = self._approved_payload(participant, page)
             recording_response_id = None
-            if getattr(response, "_deferred_video_answer", False) is True:
+            if getattr(response, "_deferred_recording_answer", False) is True:
                 from .media_upload import _utcnow
 
                 payload["recording_uploads"] = recording_uploads

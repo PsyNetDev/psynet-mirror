@@ -71,7 +71,8 @@ def get_timeline():
             ),
             control=AudioRecordControl(
                 duration=3.0,
-                bot_response_media="static/audio/clarinet.mp3",
+                # A WAV file, like the browser's own recordings.
+                bot_response_media="static/audio/bot_recording.wav",
             ),
             time_estimate=10.0,
             events={

@@ -460,6 +460,41 @@ def test_receiver_checks_header_across_short_reads(reservation, tmp_path, payloa
     assert not asset.deposited
 
 
+@pytest.mark.parametrize(
+    "payload, accepted",
+    [(b"RIFF\x10\x00\x00\x00WAVEfmt ", True), (b"\x1aE\xdf\xa3webm", False)],
+)
+def test_audio_reservation_expects_a_wav_file(reservation, tmp_path, payload, accepted):
+    """The server, not the client, decides which format a recording must have."""
+    asset, _ = reservation
+    response = db.session.get(Response, asset.upload_context["response_id"])
+    audio, receipt = _reserve_recording(
+        response=response,
+        parent=asset.participant,
+        page_uuid="original-page",
+        source="audio",
+        local_key="audio",
+        storage=asset.storage,
+        max_bytes=100,
+        media_format="wav",
+    )
+    assert audio.extension == ".wav"
+    audio_id = audio.id
+    db.session.commit()
+    if accepted:
+        _receive_recording(
+            audio_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+        )
+    else:
+        with pytest.raises(BadRequest, match="RIFF/WAVE"):
+            _receive_recording(
+                audio_id, receipt["token"], io.BytesIO(payload), directory=tmp_path
+            )
+    assert db.session.get(Recording, audio_id).upload_status == (
+        "received" if accepted else "pending"
+    )
+
+
 def test_missing_upload_expires_without_a_browser_request(reservation):
     asset, _ = reservation
     recording_id = asset.id

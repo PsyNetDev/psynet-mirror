@@ -2083,7 +2083,7 @@ class Page(Elt):
         # `partial_mode` is an internal render shape used for inplace
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
-        from .modular_page import VideoRecordControl
+        from .modular_page import RecordControl
 
         internal_js_vars = {
             "uniqueId": participant.unique_id,
@@ -2092,8 +2092,8 @@ class Page(Elt):
             "recordingCaptureSources": self._recording_capture_sources(),
         }
         control = getattr(self, "control", None)
-        if isinstance(control, VideoRecordControl):
-            internal_js_vars["asynchronousVideoUploadSources"] = (
+        if isinstance(control, RecordControl):
+            internal_js_vars["asynchronousUploadSources"] = (
                 control.recording_sources
                 if control._uses_async_upload(experiment)
                 else None

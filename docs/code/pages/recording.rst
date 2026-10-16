@@ -1,7 +1,9 @@
-Recording video and handling uploads
-====================================
+Recording video and audio, and handling uploads
+===============================================
 
-Answer recordings upload independently of page navigation. Wait for deposit and
+Answer recordings from :class:`~psynet.modular_page.VideoRecordControl` and
+:class:`~psynet.modular_page.AudioRecordControl` upload independently of page
+navigation. Wait for deposit and
 provide a fallback when a later page needs the recording.
 
 Waiting for a recording before playback
@@ -34,11 +36,12 @@ The helper stops waiting when the recording is available, fails, or reaches its
 waiting limit. Always provide a fallback for an undeposited recording. Legacy
 recordings without upload deadlines have a 20-second waiting limit.
 
-Video answer upload defaults
-----------------------------
+Answer upload defaults
+----------------------
 
-:class:`~psynet.modular_page.VideoRecordControl` submits answers independently of
-video uploads when using :class:`~psynet.asset.LocalStorage` and in-place timeline
+:class:`~psynet.modular_page.VideoRecordControl` and
+:class:`~psynet.modular_page.AudioRecordControl` submit answers independently of
+their recordings' uploads when using :class:`~psynet.asset.LocalStorage` and in-place timeline
 transitions (the default). Trial-dependent analysis and finalization wait for
 deposit. Non-trial playback should use the fallback pattern above.
 
@@ -98,16 +101,19 @@ The first answer screen recording displays a **Share screen** button before task
 startup. A full page reload requires a new permission decision. Skipping capture
 follows the missing-recording policy above.
 
-Uploads must begin with the WebM/EBML header. This rejects obvious non-media input;
-it does not decode the file or guarantee that the recording is playable.
+Video uploads must begin with a WebM/EBML header and audio uploads with a
+RIFF/WAVE header; the server decides which format each recording must have. This
+rejects obvious non-media input; it does not decode the file or guarantee that
+the recording is playable. Audio recordings are uncompressed WAV, so their size
+limit is derived from the control's ``duration`` and number of channels.
 
 Legacy upload path
 ------------------
 
 With ``inplace_timeline_transitions=false`` or storage other than
-:class:`~psynet.asset.LocalStorage`, answer videos still upload together with the
-answer. Both paths now share the same capture code, which changes the legacy path
-in a few ways:
+:class:`~psynet.asset.LocalStorage`, answer recordings still upload together with
+the answer. Audio capture is unchanged on this path. For video, both paths now
+share the same capture code, which changes the legacy path in a few ways:
 
 - Recordings are WebM only; there is no fallback to other browser formats.
 - If capture fails, the participant is told that the recording could not be
