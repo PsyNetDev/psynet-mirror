@@ -616,6 +616,32 @@ def test_local_jobs_time_out_after_an_hour():
     assert job.failed and not job.pending
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_check_timeouts_skips_a_job_that_cannot_be_failed(monkeypatch):
+    jobs = [LocalAsyncJob(do_nothing), LocalAsyncJob(do_nothing)]
+    for job in jobs:
+        job.time_enqueued = datetime.now() - timedelta(hours=2)
+        db.session.add(job)
+    db.session.commit()
+    broken_id, other_id = (job.id for job in jobs)
+
+    original_fail = AsyncJob.fail
+
+    def fail(self, reason=None):
+        if self.id == broken_id:
+            raise RuntimeError("the failure cascade raised")
+        original_fail(self, reason)
+
+    monkeypatch.setattr(AsyncJob, "fail", fail)
+    AsyncJob.check_timeouts()
+
+    assert AsyncJob.query.get(broken_id).pending
+    assert AsyncJob.query.get(other_id).failed
+
+
 def test_cpu_time_summary_flags_cpu_heavy_labels():
     from psynet.async_job import _format_cpu_time_summary
 

@@ -165,9 +165,10 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. It first asks the app for pending async
-jobs and does not destroy an app that has some unless you confirm or pass
-``--discard-pending-jobs``; see :doc:`/reference/api/async_job`.
+name is deployed, which replaces it. It first wakes the app if it is asleep
+and asks it for pending async jobs, and does not destroy an app that has
+some unless you confirm or pass ``--discard-pending-jobs``; see
+:doc:`/reference/api/async_job`.
 
 Updating a running app
 ----------------------
