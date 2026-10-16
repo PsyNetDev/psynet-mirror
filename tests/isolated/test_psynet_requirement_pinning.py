@@ -1,5 +1,6 @@
 """Tests for PsyNet requirement pinning helpers."""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -10,8 +11,23 @@ from psynet.experiment_scaffold import (
     _normalize_git_remote_to_pip_base,
     commit_psynet_requirement,
     editable_psynet_requirement,
+    get_editable_source,
     is_unambiguous_psynet_requirement,
 )
+
+
+@pytest.mark.parametrize("editable", [True, False])
+def test_get_editable_source_reads_direct_url_metadata(tmp_path, monkeypatch, editable):
+    """Editable installs by current pip and uv leave no ``.egg-link`` file."""
+    dist_info = tmp_path / "fakepkg-1.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text("Name: fakepkg\nVersion: 1.0\n")
+    (dist_info / "direct_url.json").write_text(
+        json.dumps({"url": tmp_path.as_uri(), "dir_info": {"editable": editable}})
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    assert get_editable_source("fakepkg") == (tmp_path.resolve() if editable else None)
 
 
 @pytest.mark.parametrize(

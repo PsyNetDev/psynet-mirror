@@ -38,7 +38,7 @@ class RockPaperScissorsTrialMaker(StaticTrialMaker):
 
 
 class RockPaperScissorsTrial(StaticTrial):
-    time_estimate = 5
+    time_estimate = 35
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):

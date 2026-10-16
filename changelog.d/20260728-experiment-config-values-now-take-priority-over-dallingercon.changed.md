@@ -1,1 +1,0 @@
-Values set in the `Experiment.config` dictionary now take priority over `~/.dallingerconfig`: they are only overridden by `config.txt` (which PsyNet forbids sharing keys with), environment variables, and runtime configuration writes.

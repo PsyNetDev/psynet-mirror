@@ -1,0 +1,1 @@
+Fixed a race at groupers and group barriers under heavy load that could fail a waiting participant, and with them their partner, with an `IntegrityError` on `ix_barrier_instance_active_ungrouped`. The barrier check now reopens a leftover waiting pool only while it holds the same lock that arriving participants take to open one, and otherwise leaves it for a later check.

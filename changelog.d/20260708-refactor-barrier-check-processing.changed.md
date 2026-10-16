@@ -1,1 +1,0 @@
-Changed barrier processing so `Barrier.check()` replaces `Barrier.process_potential_releases()` and `GroupBarrier.check_waiting_participants()` handles group-specific waiting-participant checks before release decisions.

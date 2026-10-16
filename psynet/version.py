@@ -4,7 +4,7 @@ import subprocess
 
 import click
 
-psynet_version = "13.4.0a0"
+psynet_version = "14.0.0rc3"
 
 # Specify Dallinger MAJOR.MINOR version to allow any patch in that series
 recommended_dallinger_major_minor = "12.4"
@@ -20,9 +20,14 @@ def _get_dallinger_version() -> str:
     return dallinger_version
 
 
-def check_core_dependency_versions_match_requirements():
+def check_core_dependency_versions_match_requirements(skip=()):
     """
     Check whether PsyNet and Dallinger versions match requirements.txt.
+
+    Parameters
+    ----------
+    skip : collection of str
+        Lowercase names of packages (``"psynet"``, ``"dallinger"``) not to check.
 
     Raises
     ------
@@ -50,6 +55,8 @@ def check_core_dependency_versions_match_requirements():
             )
 
             for package_name, version_infos in versions.items():
+                if package_name.lower() in skip:
+                    continue
                 status = version_infos["status"]
 
                 if status == "consistent":
@@ -112,19 +119,7 @@ def collect_core_dependency_version_info_from_requirements(file_content):
         if len(requirements) == 0:
             continue
 
-        requirement = requirements[0]
-
-        match = re.search(
-            f"/{package_name}(?:\\.git)?@([^#]+)(?:#egg={package_name})?",
-            requirement,
-            re.IGNORECASE,
-        )
-
-        # We either assume PsyNet is specified in the correct requirement syntax
-        # or as a standard requirement (e.g. 'psynet==10.0.0')
-        specified = (
-            match.group(1) if match is not None else re.split("==", requirement)[-1]
-        )
+        specified = specified_version(requirements[0])
 
         # In case just specified as the package name
         if specified == package_name.lower():
@@ -164,6 +159,21 @@ def collect_core_dependency_version_info_from_requirements(file_content):
             "skip_reason": skip_reason,
         }
     return versions
+
+
+def specified_version(requirement):
+    """Return the version, tag or commit that a requirement line pins.
+
+    Handles Git requirements (``...@git+https://host/repo@<ref>#egg=psynet``,
+    whatever the repository is called) and standard ones (``psynet==10.0.0``).
+    A bare package name is returned unchanged.
+    """
+    url = re.search(r"git\+\S+", requirement)
+    if url is not None:
+        path = url.group(0).split("#")[0].split("://", 1)[-1]
+        if "@" in path.split("/", 1)[-1]:
+            return path.rsplit("@", 1)[-1].strip()
+    return re.split("==", requirement)[-1].strip()
 
 
 def _commit_pin_matches(specified, installed):
@@ -253,11 +263,7 @@ def get_requirement_line_from_pip_freeze(name):
 
 def get_installed_commit_or_version_from_pip_freeze(package_name):
     """Return the installed commit hash or version from pip freeze output."""
-    line = get_requirement_line_from_pip_freeze(package_name)
-    match = re.search(f".*{package_name}(?:\\.git)?@([^#]*)", line, re.IGNORECASE)
-    if match is not None:
-        return match.group(1)
-    return line.split("==")[-1]
+    return specified_version(get_requirement_line_from_pip_freeze(package_name))
 
 
 def parse_version_triplet(x):

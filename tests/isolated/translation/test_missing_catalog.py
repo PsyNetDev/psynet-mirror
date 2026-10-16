@@ -6,10 +6,15 @@ import pytest
 from psynet.utils import TranslationNotFoundError, check_translation_is_available
 
 
-def _check_missing_entry(monkeypatch, namespace, *, live=False):
-    monkeypatch.setattr("psynet.experiment.in_deployment_package", lambda: live)
-    if live:
-        monkeypatch.setattr("psynet.deployment_info.read", lambda key: "live")
+def _check_missing_entry(monkeypatch, namespace, *, mode=None):
+    """Look up a missing catalog entry, as if running in deployment ``mode``.
+
+    ``mode=None`` means running outside a deployment package.
+    """
+    monkeypatch.setattr(
+        "psynet.experiment.in_deployment_package", lambda: mode is not None
+    )
+    monkeypatch.setattr("psynet.deployment_info.read", lambda key: mode)
     monkeypatch.setattr(
         "psynet.utils.REGISTERED_TRANSLATIONS",
         {namespace: {"de": []}},
@@ -22,15 +27,21 @@ def _check_missing_entry(monkeypatch, namespace, *, live=False):
     )
 
 
+@pytest.mark.parametrize("mode", [None, "debug"])
+def test_missing_package_entry_is_tolerated_in_debug(monkeypatch, mode):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    _check_missing_entry(monkeypatch, "psynet", mode=mode)
+
+
 def test_missing_package_entry_is_tolerated_in_feature_branch_tests(monkeypatch):
     monkeypatch.setenv("CI_COMMIT_REF_NAME", "cursor/test-translation-policy")
     _check_missing_entry(monkeypatch, "psynet")
 
 
-def test_missing_package_entry_raises_outside_pytest(monkeypatch):
+def test_missing_package_entry_raises_in_sandbox(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     with pytest.raises(TranslationNotFoundError):
-        _check_missing_entry(monkeypatch, "psynet")
+        _check_missing_entry(monkeypatch, "psynet", mode="sandbox")
 
 
 def test_missing_package_entry_raises_on_release_branch(monkeypatch):
@@ -53,7 +64,7 @@ def test_missing_entry_is_reported_but_tolerated_in_live_experiment(monkeypatch)
 
     experiment = Mock(report_error=report_error)
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
-    _check_missing_entry(monkeypatch, "experiment", live=True)
+    _check_missing_entry(monkeypatch, "experiment", mode="live")
     assert isinstance(captured["error"], TranslationNotFoundError)
     assert captured["exc_info"][0] is TranslationNotFoundError
     assert captured["exc_info"][1] is captured["error"]

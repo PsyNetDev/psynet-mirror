@@ -3,13 +3,15 @@ import uuid
 import pytest
 from dallinger import db
 from dallinger.models import Node
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import OperationalError
 
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
+from psynet.perf_test.measure import busy_early_finish_stats
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sqlalchemy_profiling import assert_query_count
+from psynet.sync import SimpleSyncGroup
 from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 from psynet.trial.create_and_rate import (
     CreateAndRateAssignmentPending,
@@ -450,6 +452,58 @@ def test_custom_priority_is_not_overridden_by_concurrent_selections(
         selection = trial_maker._select_trial_node(participant, exp)
         assert selection.value.id == preferred.id
         db.session.rollback()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_balanced_selection_ignores_failed_and_repeat_trials(db_session, participant):
+    exp = get_experiment()
+    trial_maker = static_trial_maker(
+        target_trials_per_node=None,
+        max_trials_per_participant=None,
+        node_order="balanced",
+    )
+    networks = networks_in_blocks(
+        trial_maker, participant, ["default"] * 2, network_class=StaticNetwork
+    )
+    least_used, other = (network.head for network in networks)
+    for node, n_viable in [(least_used, 1), (other, 2)]:
+        for _ in range(n_viable):
+            add_trial(GrowthQueryStaticTrial, node, new_participant())
+    add_trial(GrowthQueryStaticTrial, least_used, new_participant(), failed=True)
+    repeat = add_trial(GrowthQueryStaticTrial, least_used, new_participant())
+    repeat.is_repeat_trial = True
+    db.session.flush()
+
+    assert trial_maker._select_trial_node(participant, exp).value.id == least_used.id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_viable_trial_counts_use_index_only_scan(db_session, participant):
+    """Balanced selection counts trials per candidate node, so it must use an index."""
+    trial_maker = static_trial_maker(target_trials_per_node=None)
+    network = create_chain_network(
+        trial_maker, get_experiment(), network_class=StaticNetwork
+    )
+    add_trial(GrowthQueryStaticTrial, network.head, participant)
+    db.session.commit()
+    with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as con:
+        # Marks the trial pages all-visible, as autovacuum does in production.
+        con.execute(text("VACUUM ANALYZE trial"))
+
+    query = select(TrialNode.id, TrialNode.n_viable_trials)
+    sql = str(query.compile(db.engine, compile_kwargs={"literal_binds": True}))
+    for scan in ("seqscan", "bitmapscan"):
+        db.session.execute(text(f"SET LOCAL enable_{scan} = off"))
+    plan = "\n".join(db.session.execute(text(f"EXPLAIN {sql}")).scalars())
+    db.session.rollback()
+
+    assert "Index Only Scan using ix_trial_viable_node_id on trial" in plan, plan
 
 
 @pytest.mark.parametrize(
@@ -1127,24 +1181,103 @@ def networks_in_blocks(trial_maker, participant, blocks, network_class=ChainNetw
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-@pytest.mark.parametrize("wait_for_networks", [True, False])
-def test_busy_block_waits_or_finishes_early(db_session, participant, wait_for_networks):
+@pytest.mark.parametrize(
+    "case, ended_busy",
+    [
+        ("wait_for_networks", 0),
+        ("busy", 1),
+        ("full", 0),
+        # Busy only with its last trials, so it needs no more.
+        ("last_node", 0),
+        # Its last node still awaits an async process, so it needs trials.
+        ("last_node_awaiting_async", 1),
+        ("committed_to_chain", 0),
+        ("override_waits", 0),
+        # The only busy chain that still needs trials is one it can't join.
+        ("filter_rejects_growing", 0),
+    ],
+)
+def test_busy_block_waits_or_finishes_early(db_session, participant, case, ended_busy):
     trial_maker = chain_trial_maker(
         chains_per_experiment=2,
         max_trials_per_participant=None,
-        wait_for_networks=wait_for_networks,
+        wait_for_networks=case == "wait_for_networks",
     )
-    busy, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
-    add_trial(GrowthQueryTrial, busy.head, new_participant(), finalized=False)
+    blocks = ["A", "A", "B"] if case == "filter_rejects_growing" else ["A", "B"]
+    first, *rejected, free = networks_in_blocks(trial_maker, participant, blocks)
+    if case == "full":
+        first.full = True
+    else:
+        for network in [first, *rejected]:
+            add_trial(
+                GrowthQueryTrial, network.head, new_participant(), finalized=False
+            )
+    if case in ("last_node", "last_node_awaiting_async", "filter_rejects_growing"):
+        first.max_size = 1
+    if case == "last_node_awaiting_async":
+        first.head.async_on_deploy_requested = True
+    if rejected:
+        trial_maker.custom_chain_filter = lambda chains, p, e: [
+            chain for chain in chains if chain not in rejected
+        ]
+    if case == "committed_to_chain":
+        participant.module_state.current_chain_id = first.id
+    if case == "override_waits":
+        find_chains = trial_maker.find_chains
+        trial_maker.find_chains = lambda p, e: find_chains(p, e) or "wait"
 
     outcome = trial_maker._select_trial_node(participant, get_experiment())
 
-    if wait_for_networks:
+    if case in ("wait_for_networks", "committed_to_chain", "override_waits"):
         assert outcome == "wait"
         assert participant.module_state.block == "A"
     else:
         assert outcome.value is free.head
         assert participant.module_state.block == "B"
+    assert (participant.module_state.blocks_ended_busy or 0) == ended_busy
+    finishes = busy_early_finish_stats(after_participant_id=0)
+    if ended_busy:
+        assert finishes[trial_maker.id]["participants"] == 1
+        assert finishes[trial_maker.id]["median_trials"] == 0
+    else:
+        assert trial_maker.id not in finishes
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_busy_block_counts_once_for_every_sync_group_member(db_session, participant):
+    trial_maker = chain_trial_maker(
+        chains_per_experiment=2,
+        max_trials_per_participant=None,
+        sync_group_type="main",
+    )
+    first, free = networks_in_blocks(trial_maker, participant, ["A", "B"])
+    follower = new_participant()
+    initialize_trial_maker_state(trial_maker, follower)
+    follower.module_state.block_order = ["A", "B"]
+    follower.module_state.set_block_position(0)
+    group = SimpleSyncGroup(
+        group_type="main",
+        initial_group_size=2,
+        max_group_size=2,
+        min_group_size=1,
+        n_active_participants=2,
+        accepts_top_ups=False,
+    )
+    db_session.add(group)
+    for member in (participant, follower):
+        group.add_participant(member)
+    group.leader = participant
+    add_trial(GrowthQueryTrial, first.head, new_participant(), finalized=False)
+
+    outcome = trial_maker._select_trial_node(participant, get_experiment())
+
+    assert outcome.value is free.head
+    for member in (participant, follower):
+        assert member.module_state.block == "B"
+        assert member.module_state.blocks_ended_busy == 1
 
 
 @pytest.mark.parametrize(

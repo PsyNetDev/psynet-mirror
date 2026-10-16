@@ -11,6 +11,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     Prompt,
     PushButtonControl,
     RatingScale,
+    SurveyJSControl,
 )
 
 # from importlib import resources
@@ -401,6 +402,19 @@ def test_music_notation_prompt_uses_managed_javascript():
     assert page.js_vars["music_notation_prompt"] == {"content": "C D E F"}
 
 
+def test_only_survey_js_pages_load_survey_js():
+    survey_page = ModularPage(
+        "test",
+        Prompt("Survey"),
+        SurveyJSControl({"elements": [{"type": "text", "name": "q1"}]}),
+    )
+    button_page = ModularPage("test", Prompt("Buttons"), PushButtonControl(["A"]))
+
+    survey_js = "/static/scripts/survey-jquery/survey.jquery.min.js"
+    assert survey_page.js_dependencies == [survey_js]
+    assert survey_js not in button_page.js_dependencies
+
+
 def test_modular_page_text():
     page = ModularPage("test", Prompt("Hi!"))
     assert page.plain_text == "Hi!"
@@ -433,6 +447,17 @@ def test_modular_page_metadata():
     metadata = page.metadata()
     assert metadata["prompt"] == page.prompt.metadata
     assert metadata["control"] == page.control.metadata
+
+
+def test_unset_and_explicit_none_bot_responses():
+    unset = ModularPage("test", "Hi!", PushButtonControl(["Yes"]))
+    assert unset.call__get_bot_response(experiment=None, bot=None).raw_answer == "Yes"
+
+    explicit_none = ModularPage(
+        "test", "Hi!", PushButtonControl(["Yes"], bot_response=None)
+    )
+    response = explicit_none.call__get_bot_response(experiment=None, bot=None)
+    assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
 
 
 def test_modular_page_accepts_page_css_list():
