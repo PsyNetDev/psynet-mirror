@@ -16,6 +16,7 @@ from psynet.translation.translators import (
     Translator,
     _response_format,
     _script_name,
+    _validate_translations,
 )
 
 
@@ -69,6 +70,27 @@ def test_translation_that_drops_a_variable_is_retried():
 
     assert result == ["Hello {NAME}-fr"]
     assert translator.attempts == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "text, translation, valid",
+    [
+        ("<i>audiovisual</i> recordings", "<i>audiovisuelle</i> Aufnahmen", True),
+        ("<I>Agreement</I> of the <I>Data</I>", "<I>Datenvereinbarung</I>", True),
+        ("<i>audiovisual</i> recordings", "audiovisuelle Aufnahmen", False),
+        ("<i>audiovisual</i> recordings", "<em>audiovisuelle</em> Aufnahmen", False),
+        ("Hello", " ", False),
+    ],
+)
+def test_validation_rejects_lost_html_tags_and_empty_translations(
+    text, translation, valid
+):
+    try:
+        _validate_translations([text], [translation], "de")
+    except InvalidTranslationError:
+        assert not valid
+    else:
+        assert valid
 
 
 def test_translation_gives_up_after_retries():

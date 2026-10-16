@@ -1,5 +1,6 @@
 import json
 import os.path
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
@@ -239,18 +240,37 @@ class Translator:
         return translation
 
 
+def _html_tag_names(text: str) -> set[str]:
+    """The kinds of HTML tags in ``text``, e.g. ``{"i", "/i"}``, ignoring how often each occurs."""
+    return {name.lower() for name in re.findall(r"<(/?[A-Za-z][\w-]*)", text)}
+
+
 def _validate_translations(texts, translated_texts, target_lang):
-    """Reject replies that a retry might fix: wrong length or altered variables."""
+    """
+    Reject replies that a retry might fix: wrong length, empty translations,
+    altered variables, or HTML tags that were dropped or changed.
+
+    A translation may use a tag fewer times than its source, e.g. when two
+    italicized words become one compound word.
+    """
     if len(translated_texts) != len(texts):
         raise InvalidTranslationError(
             f"Number of translated texts for '{target_lang}' does not match number of input texts: {len(translated_texts)} != {len(texts)}."
         )
     for text, translation in zip(texts, translated_texts):
+        if text.strip() and not translation.strip():
+            raise InvalidTranslationError(
+                f"The '{target_lang}' translation of {text!r} is empty."
+            )
         if sorted(extract_variable_names(text)) != sorted(
             extract_variable_names(translation)
         ):
             raise InvalidTranslationError(
                 f"The '{target_lang}' translation of {text!r} does not keep its variables: {translation!r}"
+            )
+        if _html_tag_names(text) != _html_tag_names(translation):
+            raise InvalidTranslationError(
+                f"The '{target_lang}' translation of {text!r} does not keep its HTML tags: {translation!r}"
             )
 
 
