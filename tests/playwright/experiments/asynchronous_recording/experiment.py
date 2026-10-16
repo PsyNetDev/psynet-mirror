@@ -79,7 +79,10 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=3,
             save_answer="recorded_video",
         ),
-        InfoPage(
+        # Without this page, the participant waits for the upload right away.
+        None
+        if os.environ.get("PSYNET_TEST_RECORDING_DIRECT_WAIT") == "1"
+        else InfoPage(
             "Independent page reached.",
             time_estimate=1,
             requires_full_page_reload=os.environ.get("PSYNET_TEST_RECORDING_RELOAD")

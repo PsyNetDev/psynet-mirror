@@ -1,5 +1,6 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
+const { expectBlobPlays } = require("./psynetHarness");
 
 test("camera video survives changes in microphone requirements @both", async ({page}) => {
   await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
@@ -35,4 +36,25 @@ test("camera video survives changes in microphone requirements @both", async ({p
     }
   });
   expect(result).toEqual({sameVideo:true,silent:true,microphoneStopped:true,videoRequests:1,microphoneRequests:1});
+});
+
+test("a recording whose stop is never confirmed keeps playable chunks @both", async ({page}) => {
+  await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
+  await page.route("https://capture.test/recording-capture.js", route => route.fulfill({
+    contentType:"text/javascript",path:path.resolve("psynet/resources/scripts/recording-capture.js"),
+  }));
+  await page.goto("https://capture.test/");
+  await page.evaluate(async () => {
+    const {RecordingDevices, RecordingClip} = await import("/recording-capture.js");
+    const devices = new RecordingDevices();
+    const clip = new RecordingClip(await devices.acquire("camera"), {maxDuration:30});
+    clip.startRecording();
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    // The browser never confirms the stop, so the 3-second fallback applies.
+    clip.recorder.stop = () => {};
+    await clip.stopRecording();
+    window.salvaged = clip.getBlob();
+  });
+  expect(await page.evaluate(() => salvaged.size)).toBeGreaterThan(0);
+  await expectBlobPlays(page, "salvaged");
 });

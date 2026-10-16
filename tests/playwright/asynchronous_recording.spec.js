@@ -105,6 +105,36 @@ test("camera stream is kept on its recording page and released afterwards @inpla
   });
 });
 
+test("camera is released while waiting for the recording @inplace-only", async ({ page, context }) => {
+  test.setTimeout(120000);
+  let held;
+  await context.route("**/media-upload/*", route => { held = route; });
+  const previous = process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT;
+  process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT = "1";
+  try {
+    await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+      await prepareRecordingFixture(p);
+      await p.evaluate(async () => {
+        const {devices} = await psynet.getRecordingCapture();
+        window.recordedCameraTrack = devices.streams.get("camera").getVideoTracks()[0];
+      });
+      await p.locator("#next-button").click();
+      // The upload is held, so the next page waits for it.
+      await expect.poll(() => p.evaluate(() => psynet.timelineHold !== null)).toBe(true);
+      await expect.poll(() => p.evaluate(async () => {
+        const {devices} = await psynet.getRecordingCapture();
+        return !devices.streams.has("camera") && window.recordedCameraTrack.readyState === "ended";
+      })).toBe(true);
+      await expect.poll(() => Boolean(held)).toBe(true);
+      await held.continue();
+      await expect(p.locator("video#prompt")).toBeVisible({ timeout: 60000 });
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT;
+    else process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT = previous;
+  }
+});
+
 test("upload module failure preserves submission and independent navigation @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);
   await context.route("**/static/scripts/media-upload.js", route => route.abort("failed"));

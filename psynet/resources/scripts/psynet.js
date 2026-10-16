@@ -3350,6 +3350,8 @@
 
       let hold = response.page?.attributes?.timeline_hold;
       if (hold) {
+        // Nothing records while the participant waits.
+        await psynet.endPageRecording([]);
         psynet.updatePageForTimelineHold(response.page);
         psynet.nextPagePending = false;
         psynet.beginTimelineHold(hold);
@@ -3673,6 +3675,12 @@
       } catch (error) {
         psynet.log.warn(`Could not release recording streams: ${error.message}`);
       }
+    };
+    // Ordinary transitions release unused streams while rebuilding the page.
+    // Holds keep the page, so they do it here.
+    psynet.endPageRecording = async function (captureSources) {
+      psynet.var.recordingCaptureSources = captureSources;
+      await psynet.releaseUnusedRecordingStreams();
     };
     let recordingUploadQueue;
     let recordingUploadMessage;

@@ -1680,7 +1680,27 @@ async function submitRecordingFixture(page, options) {
   return {accepted, response};
 }
 
+/**
+ * Decode a captured Blob stored in window[name] and check that it plays.
+ * A nonempty Blob or a valid header does not show that a truncated recording
+ * is usable, so recordings cut short are checked this way.
+ */
+async function expectBlobPlays(page, name) {
+  await page.evaluate(name => {
+    const video = document.createElement("video");
+    video.id = name;
+    video.muted = true;
+    video.src = URL.createObjectURL(window[name]);
+    document.body.append(video);
+  }, name);
+  const video = page.locator(`video#${name}`);
+  await expect.poll(() => video.evaluate(element => element.readyState >= 2 && element.videoWidth > 0)).toBe(true);
+  await video.evaluate(element => element.play());
+  await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(0);
+}
+
 module.exports = {
+  expectBlobPlays,
   prepareRecordingFixture,
   submitRecordingFixture,
   advanceUntilFinish,
