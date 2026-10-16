@@ -6787,10 +6787,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 total_ms=clock.elapsed_ms(),
             )
 
-        exp = get_experiment()
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        # Read the whole body before any SQL, so a slow upload does not hold
+        # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+
+        exp = get_experiment()
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
 
         participant_id = get_arg_from_dict(json_data, "participant_id")
         page_uuid = get_arg_from_dict(json_data, "page_uuid")
