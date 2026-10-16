@@ -43,11 +43,14 @@ another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with its own database, Redis server and
 port, as described in "Run several experiments at once" in
 `code/project/running_and_debugging`.
-`psynet deploy` also uses and clears the local database and Redis, so don't
-run it while a local experiment is running. `psynet test local` and
-`psynet performance-test local` get their own database, Redis server and
-port, so they leave a running experiment alone, unless it serves the same
-directory, where they refuse to run.
+Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
+`psynet debug ssh` and `psynet debug heroku`) also clear the local database
+and Redis and stop local workers, so don't run them while a local experiment is
+running. When local data is in use they ask first, or refuse in a session
+without a terminal; don't pass `--yes` to get past that. `--update` leaves
+local data alone. `psynet test local` and `psynet performance-test local` get
+their own database, Redis server and port, so they leave a running experiment
+alone, unless it serves the same directory, where they refuse to run.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For

@@ -845,26 +845,118 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive, update=False):
-    """Stop leftover local debug workers, then reset the local database.
+def _reset_local_data(*, remote, assume_yes=False):
+    """Clear this computer's Redis and stop local servers before ``prepare``.
 
-    Every launch path runs ``prepare`` against this machine's Postgres, so
-    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
-    windows are left alone here so a remote deploy does not close the
-    author's browser. An ``--update`` prepares only the image.
+    Launches build the experiment's starting database with ``prepare`` on this
+    computer, which drops every table, so leftover ``dallinger_heroku_*``
+    backends must be stopped first. Chrome windows are left alone so a remote
+    launch does not close the author's browser.
+
+    Parameters
+    ----------
+    remote : bool
+        Whether the experiment will run elsewhere. Remote launches first say
+        what they reset, and ask before resetting data that is in use.
+    assume_yes : bool
+        Reset data that is in use without asking.
     """
+    if remote:
+        _confirm_local_data_reset(assume_yes)
+    redis_vars.clear()
     kill_psynet_worker_processes()
-    if update:
-        _prepare_image_for_update()
-    else:
-        ctx.invoke(prepare, archive=archive)
+
+
+def _confirm_local_data_reset(assume_yes):
+    """Describe the local reset, and ask first if the local data looks in use."""
+    from .data import _format_other_database_clients
+    from .db import list_other_database_clients
+    from .services import _is_interactive, _redis_url
+
+    database = _url_without_password(_current_database_url())
+    redis = _url_without_password(_redis_url())
+    click.echo(
+        "This launch builds the experiment's starting database on this computer. "
+        "To do so, it will:\n"
+        f"  - drop every table in the local database {database}\n"
+        f"  - delete every key in local Redis {redis}\n"
+        "  - stop the local PsyNet worker, clock and legacy web server processes "
+        "using that database\n"
+        "Other programs connected to the database or Redis, such as the web "
+        "server of a running psynet debug local, Docker containers or another "
+        "experiment, keep running and should be stopped or restarted."
+    )
+    in_use = []
+    n_workers = len(list_psynet_worker_processes())
+    if n_workers:
+        in_use.append(
+            f"{n_workers} local PsyNet server process(es) are using this database."
+        )
+    clients = list_other_database_clients()
+    if clients:
+        in_use.append(
+            "Other clients are connected to the local database: "
+            f"{_format_other_database_clients(clients)}."
+        )
+    n_redis_clients = _count_other_redis_clients()
+    if n_redis_clients is None:
+        in_use.append("Couldn't list the clients of local Redis, so it may be in use.")
+    elif n_redis_clients:
+        in_use.append(
+            f"{n_redis_clients} other client(s) are connected to local Redis."
+        )
+    if not in_use:
+        return
+    click.echo("\n".join(in_use))
+    if assume_yes:
+        return
+    if not _is_interactive():
+        raise click.ClickException(
+            "Refusing to reset local data in a non-interactive session. "
+            "Re-run with --yes to reset it anyway, or stop the local experiment, "
+            "or point DATABASE_URL and REDIS_URL at a scratch database."
+        )
+    click.confirm("Reset this local data and continue?", default=False, abort=True)
+
+
+def _count_other_redis_clients():
+    """Return the number of connections to local Redis from other programs.
+
+    Keys left behind by a stopped experiment don't count, so a launch after
+    ``psynet debug local`` has stopped doesn't ask. This process's pooled
+    connections are closed first, so only the connection running the query
+    belongs to it. Returns ``None`` if Redis refuses ``CLIENT LIST``, for
+    example because of an ACL or a renamed command.
+    """
+    from dallinger.db import redis_conn
+    from redis.exceptions import ResponseError
+
+    redis_conn.connection_pool.disconnect()
+    pipe = redis_conn.pipeline(transaction=False)
+    pipe.client_id()
+    pipe.client_list()
+    try:
+        own_id, clients = pipe.execute()
+    except ResponseError as error:
+        logger.warning("Couldn't list local Redis clients: %s", error)
+        return None
+    return sum(1 for client in clients if int(client["id"]) != own_id)
+
+
+def _url_without_password(url):
+    """Return ``url`` with any password removed, for display."""
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    host = parts.netloc.rpartition("@")[2]
+    netloc = f"{parts.username}@{host}" if parts.username else host
+    return parts._replace(netloc=netloc).geturl()
 
 
 def _prepare_image_for_update():
     """Prepare the image for ``--update``; the running app keeps its database."""
     from .experiment import get_experiment
 
-    redis_vars.clear()
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
     update_docker_tag()
@@ -1435,6 +1527,17 @@ _option_ssh_update = click.option(
     help="Rebuild a running app in place, keeping its database and skipping launch.",
 )
 
+_option_yes_reset_local_data = click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help=(
+        "Reset the local database and Redis without asking, even if they look "
+        "in use. Other prompts, such as starting local services, still ask."
+    ),
+)
+
 
 _SSH_COMMAND_FOR_MODE = {"sandbox": "psynet debug ssh", "live": "psynet deploy ssh"}
 
@@ -1518,6 +1621,7 @@ def _pre_launch(
     app=None,
     update=False,
     local_packages=(),
+    assume_yes=False,
 ):
     from .experiment import get_experiment
 
@@ -1534,9 +1638,8 @@ def _pre_launch(
     # helpers on this machine before any remote packaging, so local Postgres
     # and Redis are required here even when the experiment ultimately runs
     # elsewhere.
-    ensure_local_services(assume_yes=False, strict=True)
+    ensure_local_services(assume_yes=False, strict=True, remote_launch=not local_)
 
-    redis_vars.clear()
     deployment_info.init(
         redeploying_from_archive=archive is not None,
         mode=mode,
@@ -1563,6 +1666,10 @@ def _pre_launch(
 
     run_pre_checks(mode, local_, heroku, docker, app, local_packages)
 
+    # An --update only rebuilds the image, so it leaves local data alone.
+    if not update:
+        _reset_local_data(remote=not local_, assume_yes=assume_yes)
+
     if os.environ.get("DALLINGER_SOURCE"):
         os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     else:
@@ -1586,7 +1693,10 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive, update=update)
+    if update:
+        _prepare_image_for_update()
+    else:
+        ctx.invoke(prepare, archive=archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1646,13 +1756,14 @@ def deploy__local(ctx, docker, archive, legacy, no_browsers):
 @click.option("--app", callback=verify_id, required=True, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @click.option("--docker", is_flag=True, default=False, help="Deploy using Docker")
+@_option_yes_reset_local_data
 @click.pass_context
-def deploy__heroku(ctx, app, archive, docker):
+def deploy__heroku(ctx, app, archive, docker, assume_yes):
     """
     Deploy the experiment to Heroku.
     """
     if docker:
-        _deploy__docker_heroku(ctx, app, archive)
+        _deploy__docker_heroku(ctx, app, archive, assume_yes)
         return
 
     try:
@@ -1665,6 +1776,7 @@ def deploy__heroku(ctx, app, archive, docker):
             local_=False,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app, archive=None)
@@ -1674,7 +1786,7 @@ def deploy__heroku(ctx, app, archive, docker):
         reset_console()
 
 
-def _deploy__docker_heroku(ctx, app, archive):
+def _deploy__docker_heroku(ctx, app, archive, assume_yes=False):
     try:
         from dallinger.command_line.docker import deploy as dallinger_deploy
 
@@ -1692,6 +1804,7 @@ def _deploy__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app)
         _post_deploy(result)
@@ -1710,6 +1823,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 )
 @option_ingress
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def deploy__docker_ssh(
     ctx,
@@ -1719,6 +1833,7 @@ def deploy__docker_ssh(
     server,
     ingress=None,
     update=False,
+    assume_yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
@@ -1741,6 +1856,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            assume_yes=assume_yes,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -2211,8 +2327,6 @@ def run_pre_checks(
         check_dockerfile()
 
     if not local_:
-        init_db(drop_all=True)
-
         config = get_config()
         if not config.ready:
             config.load()
@@ -2300,19 +2414,26 @@ def run_pre_checks_sandbox(local_packages=()):
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@_option_yes_reset_local_data
 @click.pass_context
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, assume_yes):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
+        debug__docker_heroku(ctx, app, archive, assume_yes)
     else:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
         try:
             _pre_launch(
-                ctx, mode="sandbox", archive=archive, local_=False, heroku=True, app=app
+                ctx,
+                mode="sandbox",
+                archive=archive,
+                local_=False,
+                heroku=True,
+                app=app,
+                assume_yes=assume_yes,
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
@@ -2322,7 +2443,7 @@ def debug__heroku(ctx, app, docker, archive):
             reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
+def debug__docker_heroku(ctx, app, archive, assume_yes=False):
     from dallinger.command_line.docker import sandbox as dallinger_sandbox
 
     try:
@@ -2339,6 +2460,7 @@ def debug__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -2361,6 +2483,7 @@ def debug__docker_heroku(ctx, app, archive):
 @_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def debug__docker_ssh(
     ctx,
@@ -2372,6 +2495,7 @@ def debug__docker_ssh(
     use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    assume_yes=False,
 ):
     """
     Debug the experiment on a remote server via SSH.
@@ -2395,6 +2519,7 @@ def debug__docker_ssh(
             app=app,
             update=update,
             local_packages=local_packages,
+            assume_yes=assume_yes,
         )
 
         with _local_image_packages(local_packages):
