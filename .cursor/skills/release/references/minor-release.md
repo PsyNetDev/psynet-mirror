@@ -10,9 +10,9 @@ Example (minor): releasing `13.2.0` from `master` while `master` is at
 `13.3.0a0`.
 
 Example (major): last final tag `v13.3.0`, committed `*.breaking.md`
-fragments, releasing `14.0.0`. Branch `release-14.0`. After the
-release, bump `master` to `14.1.0a0`. What's new is required on a
-major (see [Update What's new](shared-steps.md#update-whats-new)).
+fragments, releasing `14.0.0` while `master` is at `14.0.0a0`. Branch
+`release-14.0`. After the release, bump `master` to `14.1.0a0`. What's
+new is required on a major (see [Update What's new](shared-steps.md#update-whats-new)).
 
 **Default to a release candidate first.** For major and minor releases,
 cut an RC (e.g. `13.2.0rc1` or `14.0.0rc1`) before the final version,

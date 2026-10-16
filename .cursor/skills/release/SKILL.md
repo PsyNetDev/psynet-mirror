@@ -53,8 +53,10 @@ Rules, in order:
 2. **Major** if that tree has any committed `*.breaking.md` fragments.
    Version is the next major of the last final tag (`v13.3.0` →
    `14.0.0`), branch `release-14.0`, first RC `14.0.0rc1`. Master's
-   current alpha (for example `13.4.0a0`) may still name the old
-   minor series; the bump commits change it.
+   alpha should already be `14.0.0a0`: the changelog MR check fails
+   while breaking fragments are pending and the alpha names an older
+   major. If it still says `13.4.0a0`, bump `master` to `14.0.0a0`
+   before creating the release branch.
 3. **Minor** otherwise, when releasing from `master`. Version matches
    the current alpha's `MAJOR.MINOR` (`13.4.0a0` → `13.4.0`), branch
    `release-13.4`, first RC `13.4.0rc1`.
@@ -68,7 +70,7 @@ breaking fragment names when proposing major:
 
 ```text
 Proposed: major 14.0.0 (branch release-14.0, first RC 14.0.0rc1)
-Reason: 7 committed breaking fragments since v13.3.0; master is 13.4.0a0.
+Reason: 7 committed breaking fragments since v13.3.0; master is 14.0.0a0.
 Override: /release minor would keep 13.4.0 despite Breaking Changes.
 ```
 
