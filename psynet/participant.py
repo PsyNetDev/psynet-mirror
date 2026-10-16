@@ -1047,7 +1047,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``unsuccessful_end``. They are also removed from active sync groups.
         If that drops a ``SimpleSyncGroup`` below its minimum size, remaining
         members are failed immediately when
-        ``fail_participants_below_min_size`` is True. See
+        ``fail_participants_below_min_size`` is True, except that a member
+        whose own request is in progress is failed by the barrier poller
+        within about a second. See
         :doc:`/code/trials/participant_and_trial_failure`.
 
         Parameters
