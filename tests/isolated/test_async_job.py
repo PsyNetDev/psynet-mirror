@@ -18,6 +18,7 @@ from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
 from psynet.trial.main import Trial
+from psynet.utils import get_authenticated_session
 
 
 def do_nothing():
@@ -100,14 +101,26 @@ class TestAsyncJobs2:
         assert abs(job.time_taken - 1) < 0.5
         assert job.cpu_time < 0.2
 
-    def test_cpu_bound_job_records_cpu_time(self):
+    def test_cpu_bound_job_records_cpu_time(self, launched_experiment):
         job = LocalAsyncJob(busy_for, {"seconds": 0.3}).enqueue()
         db.session.commit()
-        time.sleep(1)
-        db.session.commit()
+        for _ in range(50):
+            time.sleep(0.1)
+            db.session.commit()
+            if job.finished:
+                break
 
         assert job.finished
         assert 0.3 <= job.cpu_time <= job.time_taken
+
+        base_url = launched_experiment.base_url
+        response = get_authenticated_session(base_url).get(
+            base_url + "/async_job_cpu_time"
+        )
+        response.raise_for_status()
+        row = next(row for row in response.json() if row["label"] == "busy_for")
+        assert row["runs_in"] == "web"
+        assert row["mean_cpu"] >= 0.3
 
     def test_invalid_function(self):
         def local_function():

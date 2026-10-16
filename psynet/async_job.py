@@ -112,7 +112,7 @@ _deprecated_async_processes = property(
 
 
 def _warn_unenqueued(entries):
-    for job, label in entries:
+    for job, label in entries.values():
         identity = inspect(job).identity
         logger.warning(
             "Async job %s (label %r) was created but never enqueued, so it "
@@ -123,7 +123,7 @@ def _warn_unenqueued(entries):
 
 
 _unenqueued_jobs = _SessionQueue(
-    "unenqueued_async_jobs", list, on_commit=_warn_unenqueued
+    "unenqueued_async_jobs", dict, on_commit=_warn_unenqueued
 )
 
 
@@ -164,10 +164,12 @@ class AsyncJob(SQLBase, SQLMixin):
     cpu_time : float
         CPU seconds used by the job's thread while its function ran,
         measured with :func:`time.thread_time`. CPU used by other processes,
-        such as the database server, is not counted. In a gevent worker the
-        measurement also counts other greenlets that ran while this job
-        waited on I/O, so it is exact for jobs that run alone and an upper
-        bound when jobs overlap.
+        such as the database server, is not counted. Worker and web
+        processes run on gevent, so the measurement also counts other
+        greenlets that ran while this job waited on I/O: other jobs in a
+        worker, and page requests too for a :class:`LocalAsyncJob` in the
+        web process. It is exact for jobs that run alone and an upper bound
+        otherwise.
     """
 
     __tablename__ = "async_job"
@@ -282,7 +284,7 @@ class AsyncJob(SQLBase, SQLMixin):
             else:
                 self._unique_key = unique
 
-        _unenqueued_jobs.get().append((self, label))
+        _unenqueued_jobs.get()[id(self)] = (self, label)
 
     def enqueue(self):
         """Save the job and launch it once the current transaction commits.
@@ -307,8 +309,7 @@ class AsyncJob(SQLBase, SQLMixin):
         db.session.add(self)
         self.time_enqueued = datetime.datetime.now()
         _call_after_commit(partial(_launch_unless_cancelled, self.get_launch_spec()))
-        unenqueued = _unenqueued_jobs.get()
-        unenqueued[:] = [entry for entry in unenqueued if entry[0] is not self]
+        _unenqueued_jobs.get().pop(id(self), None)
         return self
 
     def get_launch_spec(self) -> dict:
