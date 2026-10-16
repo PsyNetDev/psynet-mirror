@@ -408,8 +408,7 @@ class DefaultTranslator(Translator):
         context: Optional[TranslationContext] = None,
     ):
         config = get_config()
-        default_translator = config.get("default_translator")
-        translator_class = get_descendent_class_by_name(Translator, default_translator)
+        translator_class = _translator_class(config.get("default_translator"))
         return translator_class().translate(texts, source_lang, target_lang, context)
 
 
@@ -426,8 +425,18 @@ class NullTranslator(Translator):
         return texts
 
 
+def _translator_class(name: str) -> type[Translator]:
+    """The translator class with this class name or nickname."""
+    if name == "google_translate":
+        raise ValueError(
+            "PsyNet no longer supports Google Translate. Remove "
+            "`default_translator = google_translate` from your config to use "
+            "ChatGPT (`chat_gpt`), the default."
+        )
+    return get_descendent_class_by_name(Translator, name)
+
+
 def get_translator_from_name(name: Optional[str] = None) -> Translator:
     if name is None:
         return DefaultTranslator()
-    translator_class = get_descendent_class_by_name(Translator, name)
-    return translator_class()
+    return _translator_class(name)()
