@@ -67,7 +67,7 @@ from psynet.sync import (
     check_sync_groups,
     pending_arrival_notice_for,
 )
-from psynet.timeline import Page, PageMaker, Timeline
+from psynet.timeline import Page, PageMaker, Response, Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -771,6 +771,7 @@ def test_partner_leaving_sends_participant_to_unsuccessful_end(
         if request_kind == "response":
             result = _process_response(exp, stayer, stayer.page_uuid)
             assert result.payload["submission"] == "approved"
+            assert Response.query.filter_by(participant_id=stayer.id).count() == 0
         else:
             assert _json_timeline(exp, stayer).status_code == 200
         assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"

@@ -1694,7 +1694,7 @@ class SimpleGrouper(Grouper):
         If set to ``True``, then before a new group is created, the Grouper will check if there are any existing
         groups that are under-quota (e.g. because some participants left the experiment early).
         If so, the arriving participant will be assigned to one of these groups instead.
-        Participants already waiting at the grouper join such a group as soon as one opens.
+        Participants already waiting at the grouper join such a group on the next barrier check.
         Closed groups and groups with no active members are not joined.
         This behavior can be further customized via the ``join_criterion`` argument.
 
@@ -1837,6 +1837,7 @@ class SimpleGrouper(Grouper):
         return joined + super().choose_who_to_release(still_waiting)
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check would form a group or let a waiter join one."""
         if super().would_release(waiting_participants):
             return True
         if not self.join_existing_groups:
