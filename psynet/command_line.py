@@ -343,6 +343,7 @@ def _experiment_variables(connection, echo=False):
 
 
 def _validate_location(ctx, param, value):
+    """Click callback that accepts only the supported database locations."""
     allowed = ["local", "heroku", "ssh"]
     if value not in allowed:
         raise click.UsageError(
