@@ -1817,12 +1817,21 @@ class SimpleGrouper(Grouper):
     def _find_group_to_join(self, participant: Participant):
         """Return the open group this participant may join, or ``None``.
 
+        Read-only and unlocked, so the release peek can use it. Joining goes
+        through :meth:`_claim_group_to_join`, which re-checks under a lock.
+        """
+        return next(self._groups_to_join(participant), None)
+
+    def _groups_to_join(self, participant: Participant):
+        """Yield open groups this participant may join, best first.
+
         Closed groups and groups whose members have all left are skipped:
         joining an empty group would start a group of one and bypass
-        ``batch_size``.
+        ``batch_size``. Uses the stored member counts, which a concurrent
+        join may have made stale.
         """
         if not self.join_existing_groups:
-            return None
+            return
 
         query = SimpleSyncGroup.query.filter(
             SimpleSyncGroup.group_type == self.group_type,
@@ -1840,15 +1849,50 @@ class SimpleGrouper(Grouper):
             SimpleSyncGroup.n_active_participants, SimpleSyncGroup.id
         )
 
-        for group in query:
+        for group in query.all():
             if self.join_criterion is None or self.join_criterion(
                 group=group, participant=participant
             ):
-                return group
+                yield group
+
+    def _claim_group_to_join(self, participant: Participant):
+        """Lock and return the best group with room for this participant.
+
+        Each candidate's row is locked ``FOR NO KEY UPDATE SKIP LOCKED``, and
+        its active members are re-counted under that lock, so two joiners
+        cannot both take a group's last place. A group another transaction
+        is changing is skipped rather than waited for; the participant can
+        try it again on a later barrier check. The joiner already holds its
+        own participant row (or, in a barrier check, the waiters' rows), so
+        this keeps the order participants before group without waiting on
+        the group.
+
+        Returns
+        -------
+        SimpleSyncGroup or None
+            The locked group, or ``None`` if no candidate is free and has room.
+        """
+        for candidate in self._groups_to_join(participant):
+            group = (
+                SimpleSyncGroup.query.filter_by(id=candidate.id)
+                .with_for_update(of=SimpleSyncGroup, key_share=True, skip_locked=True)
+                .populate_existing()
+                .first()
+            )
+            if group is None or not group.active:
+                continue
+            db.session.expire(group, ["participant_links"])
+            n_members = len(group.active_participants)
+            group.n_active_participants = n_members
+            if n_members == 0 or (
+                self.max_group_size is not None and n_members >= self.max_group_size
+            ):
+                continue
+            return group
         return None
 
     def _join_existing_groups(self, participant: Participant):
-        group = self._find_group_to_join(participant)
+        group = self._claim_group_to_join(participant)
         if group is not None:
             group.add_participant(participant)
             assert participant.active_sync_groups[self.group_type] == group
