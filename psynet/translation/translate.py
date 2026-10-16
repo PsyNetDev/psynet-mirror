@@ -194,14 +194,19 @@ def reuse_translations(po: polib.POFile, old_po: Optional[polib.POFile]) -> int:
     Copy every existing translation from ``old_po`` into ``po``, message by message.
 
     A message keeps its translation, including its fuzzy flag, for as long as its
-    text and context are unchanged. Returns the number of reused translations.
+    text and context are unchanged. A fuzzy translation that is still the
+    English text is usually a failed machine translation, so it is not reused
+    and gets translated again; once a reviewer clears its fuzzy flag, it is kept.
+    Returns the number of reused translations.
     """
     if old_po is None:
         return 0
     previous = {
         (entry.msgctxt, entry.msgid): entry
         for entry in old_po
-        if entry.msgstr and not entry.obsolete
+        if entry.msgstr
+        and not entry.obsolete
+        and not (entry.fuzzy and entry.msgstr == entry.msgid)
     }
     n_reused = 0
     for i, entry in enumerate(po):

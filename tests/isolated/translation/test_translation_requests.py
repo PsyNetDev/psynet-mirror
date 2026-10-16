@@ -142,9 +142,13 @@ def test_response_format_requires_exactly_one_translation_per_text():
     assert schema["additionalProperties"] is False
 
 
-def _entry(msgid, file, line, msgctxt=None, msgstr=""):
+def _entry(msgid, file, line, msgctxt=None, msgstr="", fuzzy=False):
     return polib.POEntry(
-        msgid=msgid, msgctxt=msgctxt, msgstr=msgstr, occurrences=[(file, str(line))]
+        msgid=msgid,
+        msgctxt=msgctxt,
+        msgstr=msgstr,
+        occurrences=[(file, str(line))],
+        flags=["fuzzy"] if fuzzy else [],
     )
 
 
@@ -159,20 +163,23 @@ def test_only_new_messages_are_sent_in_batches_per_file():
     old_po.append(_entry("Back", "consent.html", "", "navigation", "Retour"))
     old_po.append(_entry("I agree", "consent.html", "", "consent", "J'accepte"))
     old_po.append(_entry("Leave", "consent.html", "", "consent", "Leave"))
+    old_po.append(_entry("Stay", "consent.html", "", "consent", "Stay", fuzzy=True))
 
     po = polib.POFile()
     po.append(_entry("Back", "consent.html", 1, "navigation"))
     po.append(_entry("I agree", "consent.html", 2, "consent"))
     po.append(_entry("Leave", "consent.html", 3, "consent"))
-    po.append(_entry("I disagree", "consent.html", 4, "consent"))
-    po.append(_entry("Save", "recruiters.py", 5, "lucid"))
+    po.append(_entry("Stay", "consent.html", 4, "consent"))
+    po.append(_entry("I disagree", "consent.html", 5, "consent"))
+    po.append(_entry("Save", "recruiters.py", 6, "lucid"))
     for i in range(MAX_BATCH_SIZE + 1):
         po.append(_entry(f"Country {i}", "countries.py", i + 1, "country_name"))
 
+    # The reviewed English copy is kept; the fuzzy one is translated again.
     assert reuse_translations(po, old_po) == 3
     consent, recruiters, *countries = batch_untranslated(po)
 
-    assert [e.msgid for e in consent.entries] == ["I disagree"]
+    assert [e.msgid for e in consent.entries] == ["Stay", "I disagree"]
     assert consent.examples[0] == ("I agree", "J'accepte")
     assert ("Leave", "Leave") not in consent.examples
     assert recruiters.file == "recruiters.py"
@@ -180,6 +187,6 @@ def test_only_new_messages_are_sent_in_batches_per_file():
 
     translator = RecordingTranslator()
     consent.translate("en", "fr", False, translator)
-    assert translator.context.labels == ["consent"]
-    assert consent.entries[0].msgstr == "I disagree-fr"
-    assert consent.entries[0].fuzzy
+    assert translator.context.labels == ["consent", "consent"]
+    assert consent.entries[1].msgstr == "I disagree-fr"
+    assert consent.entries[1].fuzzy
