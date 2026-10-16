@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.page import InfoPage
 from psynet.timeline import CodeBlock, Timeline, while_loop

@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from psynet.command_line import psynet_browser_prefix
 from psynet.testing import chrome_driver
 
 
@@ -61,11 +62,11 @@ def chrome_paths(tmp_path, monkeypatch):
     log_path.write_text("chromedriver output", encoding="utf-8")
 
     def fake_mkdtemp(prefix):
-        assert prefix == "psynet-chrome-"
+        assert prefix == psynet_browser_prefix("chrome")
         return str(profile_path)
 
     def fake_mkstemp(prefix, suffix):
-        assert prefix == "psynet-chromedriver-"
+        assert prefix == psynet_browser_prefix("chromedriver")
         assert suffix == ".log"
         fd = os.open(log_path, os.O_RDWR | os.O_CREAT)
         return fd, str(log_path)
@@ -158,14 +159,14 @@ def test_create_chrome_driver_retries_until_success(tmp_path, monkeypatch):
     attempts = {"count": 0}
 
     def fake_mkdtemp(prefix):
-        assert prefix == "psynet-chrome-"
+        assert prefix == psynet_browser_prefix("chrome")
         profile_path = tmp_path / f"profile-{len(profile_paths)}"
         profile_path.mkdir()
         profile_paths.append(profile_path)
         return str(profile_path)
 
     def fake_mkstemp(prefix, suffix):
-        assert prefix == "psynet-chromedriver-"
+        assert prefix == psynet_browser_prefix("chromedriver")
         assert suffix == ".log"
         log_path = tmp_path / f"chromedriver-{len(log_paths)}.log"
         fd = os.open(log_path, os.O_RDWR | os.O_CREAT)
@@ -238,3 +239,39 @@ def test_create_chrome_driver_pins_chromedriver_in_ci(chrome_paths, monkeypatch)
     assert fake_webdriver.last_service.log_output == str(log_path)
 
     driver.quit()
+
+
+class _FakeProcess:
+    def __init__(self, name, cmdline):
+        self._name = name
+        self._cmdline = cmdline
+
+    def name(self):
+        return self._name
+
+    def cmdline(self):
+        return self._cmdline
+
+
+def test_browser_cleanup_only_matches_this_database(monkeypatch):
+    from psynet.command_line import is_chromedriver_process, is_psynet_chrome_process
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/other")
+    other_driver_log = f"--log-path=/tmp/{psynet_browser_prefix('chromedriver')}x.log"
+    other_profile = f"--user-data-dir=/tmp/{psynet_browser_prefix('chrome')}x"
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger@localhost/this_run")
+    own_driver_log = f"--log-path=/tmp/{psynet_browser_prefix('chromedriver')}x.log"
+    own_profile = f"--user-data-dir=/tmp/{psynet_browser_prefix('chrome')}x"
+
+    assert is_chromedriver_process(_FakeProcess("chromedriver", [own_driver_log]))
+    assert not is_chromedriver_process(_FakeProcess("chromedriver", [other_driver_log]))
+    assert is_psynet_chrome_process(_FakeProcess("chrome", [own_profile]))
+    assert not is_psynet_chrome_process(_FakeProcess("chrome", [other_profile]))
+
+    monkeypatch.setenv("base_port", "5000")
+    for url in ["http://127.0.0.1:5000/ad", "http://localhost:5000"]:
+        assert is_psynet_chrome_process(_FakeProcess("chrome", [url]))
+    assert not is_psynet_chrome_process(
+        _FakeProcess("chrome", ["http://localhost:50000/"])
+    )

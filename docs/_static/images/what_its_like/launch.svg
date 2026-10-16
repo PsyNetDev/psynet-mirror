@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" role="img" aria-label="A terminal command that puts the experiment live">
+  <rect x="0" y="0" width="400" height="260" rx="16" fill="#eef1f6"/>
+  <rect x="24" y="20" width="352" height="220" rx="12" fill="#1f2733"/>
+  <circle cx="44" cy="38" r="4" fill="#5c6b7f"/>
+  <circle cx="58" cy="38" r="4" fill="#5c6b7f"/>
+  <circle cx="72" cy="38" r="4" fill="#5c6b7f"/>
+
+  <!-- Prompt and one command -->
+  <path d="M46 78 l8 6 l-8 6" fill="none" stroke="#6fd3a5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="64" y="80" width="170" height="8" rx="4" fill="#ffffff" opacity="0.85"/>
+
+  <!-- Progress output -->
+  <rect x="46" y="110" width="210" height="6" rx="3" fill="#ffffff" opacity="0.3"/>
+  <rect x="46" y="126" width="180" height="6" rx="3" fill="#ffffff" opacity="0.3"/>
+  <rect x="46" y="142" width="196" height="6" rx="3" fill="#ffffff" opacity="0.3"/>
+
+  <!-- Live badge -->
+  <rect x="46" y="176" width="116" height="40" rx="20" fill="#2f7d5b"/>
+  <circle cx="72" cy="196" r="7" fill="#ffffff"/>
+  <rect x="88" y="192" width="54" height="8" rx="4" fill="#ffffff"/>
+</svg>

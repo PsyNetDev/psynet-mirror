@@ -349,3 +349,51 @@ def test_performance_test_ssh_rejects_json_output():
                 server="example",
                 json_output="results.json",
             )
+
+
+@pytest.mark.parametrize("args, expected", [([], None), (["--n-bots", "3"], "3")])
+def test_audit_simulate_passes_n_bots_to_test_local(
+    tmp_path, monkeypatch, args, expected
+):
+    from click.testing import CliRunner
+
+    from psynet.command_line import psynet
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("psynet.utils.experiment_available", lambda: True)
+    monkeypatch.setattr(
+        "psynet.utils.ensure_experiment_directory_name_does_not_conflict",
+        lambda: None,
+    )
+    calls = []
+    monkeypatch.setattr(
+        "psynet.command_line._run_simulate",
+        lambda ctx, n_bots=None: calls.append(n_bots),
+    )
+
+    result = CliRunner().invoke(
+        psynet, ["audit", "simulate", *args], catch_exceptions=False
+    )
+
+    assert result.exit_code == 0
+    assert calls == [expected]
+
+
+def test_run_simulate_forwards_n_bots(tmp_path, monkeypatch):
+    from psynet.audit.cli import init_audit
+    from psynet.command_line import _run_simulate, export__local, test__local
+
+    init_audit(tmp_path / "audit")
+    monkeypatch.chdir(tmp_path)
+    test_kwargs = []
+
+    class DummyCtx:
+        def invoke(self, cmd, **kwargs):
+            if cmd is test__local:
+                test_kwargs.append(kwargs)
+            if cmd is export__local:
+                _write_export_tree(Path(kwargs["path"]))
+
+    _run_simulate(DummyCtx(), n_bots="3")
+
+    assert test_kwargs == [{"n_bots": "3"}]

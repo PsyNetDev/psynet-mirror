@@ -6,6 +6,32 @@ Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
 
+## Source checkout setup
+
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+
+Demo directories contain only the authored experiment files; their unpinned
+`requirements.txt` files and missing constraints are intentional. Running
+`psynet debug local` or `psynet test local` in a bundled demo generates the
+ignored boilerplate. Pytest scaffolds demos temporarily via the
+`in_experiment_directory` fixture, which on teardown removes only paths that
+were absent when it started.
+
+If a user asks for the X demo, list the child directories of
+`demos/experiments`, `demos/features` and `demos/pipelines` to see which they mean.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md`.
+Experiment skills live under `.cursor/skills/experiment/`; repo meta skills
+live under `.cursor/skills/`. After editing skills, run
+`python scripts/validate_agent_skills.py` and refresh experiment copies with
+`psynet scripts update`. Then reread the result using the "After writing"
+section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
 ## Sandbox reminder
 
 When running PsyNet commands from Cursor, disable sandboxing by setting
@@ -118,6 +144,20 @@ GET https://gitlab.com/api/v4/projects/<project_id>/jobs/<job_id>/trace
 
 This is the preferred approach for agents when verifying CI status or logs.
 
+Merge requests stacked on another branch (target branch neither `master` nor
+a `release-` branch) run only the fast checks; the pytest, Playwright, `docs`
+and `asv_regression` jobs wait as manual jobs. Start them when a full run is
+useful, for example before asking for review of a risky stacked change, with
+the play button in the GitLab UI or through the API with `GITLAB_TOKEN`. Each
+shard is its own job, so play every shard of a job. `merge_test_results`
+can only be played after all pytest and Playwright shards have run; play it
+then for the combined test report. These jobs are allowed to fail, so check
+their own results rather than the pipeline status:
+
+```http
+POST https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/jobs/<job_id>/play
+```
+
 ## Playwright flakiness guardrails
 
 When adding or updating Playwright E2E tests, follow these rules to reduce CI flakiness:
@@ -168,7 +208,11 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - After each action, wait for the exact intended effect (expected text, expected control state, expected URL/page transition).
     - Prefer short bounded waits on deterministic invariants over long generic polls.
 
-12. **Assert playback/recording via the actual implementation path**:
+12. **Do not assert performance budgets**:
+ - CI load routinely doubles request and page times, so per-request or per-page duration limits flake.
+ - Log timings in failure messages, assert behaviour structurally, and keep at most a generous hang cap (e.g. 30 s) that fails a deadlock before the step timeout.
+
+13. **Assert playback/recording via the actual implementation path**:
     - For `AudioPrompt`, verify PsyNet sound-state/event transitions instead of DOM `<audio>` elements.
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
@@ -184,9 +228,6 @@ commands.
 If the user runs `/branch-review`, address any actionable findings before
 finalizing the merge request. If the user declines or the review is not run,
 record that explicitly in the merge request description.
-
-Just before merging the MR into its target, run `/reorganize-onto-target`.
-Follow `.cursor/skills/reorganize-onto-target/SKILL.md` (When to run).
 
 ## Merge request descriptions
 

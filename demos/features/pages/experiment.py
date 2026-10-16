@@ -1,5 +1,3 @@
-# pylint: disable=missing-class-docstring,missing-function-docstring
-
 import psynet.experiment
 from psynet.modular_page import (
     AudioPrompt,

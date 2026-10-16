@@ -57,8 +57,6 @@ The experimenter should check the following in the Prolific dashboard:
 This test is intended to be deployed and run with real participants.
 """
 
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import json
 import os
 import sys

@@ -3,7 +3,7 @@ import tempfile
 
 import dominate.tags as tags
 
-from ..asset import ExperimentAsset
+from ..asset import FileAsset
 from ..field import claim_var
 from ..utils import get_logger
 from .imitation_chain import (
@@ -16,11 +16,11 @@ from .imitation_chain import (
 logger = get_logger()
 
 
-class Recording(ExperimentAsset):
+class Recording(FileAsset):
     pass
 
 
-class RecordingAnalysisPlot(ExperimentAsset):
+class RecordingAnalysisPlot(FileAsset):
     pass
 
 
@@ -186,10 +186,10 @@ class MediaImitationChainNode(ImitationChainNode):
         logger.info("Synthesizing media for node %i...", self.id)
 
         with tempfile.NamedTemporaryFile() as temp_file:
-            from ..asset import ExperimentAsset
+            from ..asset import FileAsset
 
             self.synthesize_target(temp_file.name)
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="stimulus",
                 input_path=temp_file.name,
                 extension=self.media_extension,

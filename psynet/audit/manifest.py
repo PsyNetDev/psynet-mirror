@@ -22,6 +22,7 @@ from psynet.audit.content import (
     validate_present_artifact_file,
 )
 from psynet.audit.paths import relative_audit_path
+from psynet.version import psynet_version
 
 
 def count_blockers(manifest: dict[str, Any]) -> int:
@@ -257,7 +258,7 @@ def starter_audit_manifest() -> dict[str, object]:
         "updated_at": timestamp,
         "profile": DEFAULT_AUDIT_PROFILE,
         "extensions": [],
-        "experiment": {},
+        "experiment": {"psynet_version": psynet_version},
         "implementation": {
             "summary": PLACEHOLDER_IMPLEMENTATION_SUMMARY,
         },
@@ -268,6 +269,7 @@ def starter_audit_manifest() -> dict[str, object]:
         "sections": [
             starter_section("prompt", "Prompt", "markdown", path="PROMPT.md"),
             starter_section("plan", "Plan", "markdown", path="PLAN.md"),
+            starter_section("design_simulation", "Power analysis", "simulation"),
             starter_section(
                 "timeline",
                 "Implementation timeline",
@@ -288,7 +290,6 @@ def starter_audit_manifest() -> dict[str, object]:
             starter_section("monitor", "Monitor snapshot", "monitor"),
             starter_section("performance", "Performance test", "performance"),
             starter_section("data_exports", "Data exports", "data"),
-            starter_section("design_simulation", "Design simulation", "simulation"),
             starter_section("analysis", "Analysis", "analysis"),
             starter_section("files", "Additional files", "files"),
             starter_section("blockers", "Blockers", "blockers"),

@@ -22,8 +22,15 @@ class RedisVarStore:
         redis_conn.set(name, serialize(value))
 
     def clear(self):
-        for key in redis_conn.keys():
-            redis_conn.delete(key)
+        """Delete every key in the Redis database."""
+        batch = []
+        for key in redis_conn.scan_iter(count=1000):
+            batch.append(key)
+            if len(batch) == 1000:
+                redis_conn.delete(*batch)
+                batch = []
+        if batch:
+            redis_conn.delete(*batch)
 
 
 redis_vars = RedisVarStore()

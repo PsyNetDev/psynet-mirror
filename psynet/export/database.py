@@ -23,6 +23,7 @@ from psycopg2 import sql
 from sqlalchemy import Boolean
 from sqlalchemy import inspect as sa_inspect
 
+from psynet.db import blocking_psycopg
 from psynet.utils import get_logger, make_parents, sha256_file
 
 from .identifier_schema import validate_identifier_schema
@@ -155,7 +156,7 @@ def copy_database_to_csv_dir(
                 "COPY (SELECT {fields} FROM {table}) TO STDOUT WITH CSV HEADER"
             ).format(fields=fields, table=sql.Identifier(table))
             path = os.path.join(csv_dir, f"{table}.csv")
-            with open(path, "w", newline="") as handle:
+            with open(path, "w", newline="") as handle, blocking_psycopg():
                 cur.copy_expert(query, handle)
     finally:
         if _connection is None:
@@ -182,7 +183,7 @@ def write_identifier_sidecars(
         cur = conn.cursor()
         for key, (filename, query) in specs.items():
             path = os.path.join(export_path, filename)
-            with open(path, "w", newline="") as handle:
+            with open(path, "w", newline="") as handle, blocking_psycopg():
                 cur.copy_expert(query, handle)
             if key == "lucid_entrant_identifiers" and _count_csv_rows(path) == 0:
                 os.remove(path)
@@ -247,10 +248,15 @@ def _provenance_for_manifest() -> dict:
         "git_dirty": None,
     }
     try:
+        from psynet import deployment_info
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
-        provenance["deployment_id"] = experiment.deployment_id
+        # The database is authoritative; .deploy can be missing (local exports
+        # run after the server removed it) or left over from another run.
+        provenance["deployment_id"] = experiment.var.get("deployment_id", None)
+        if provenance["deployment_id"] is None and deployment_info.is_available():
+            provenance["deployment_id"] = experiment.deployment_id
         provenance["experiment_label"] = experiment.label
         provenance["git_commit_sha"] = experiment.var.get("git_commit_sha", None)
         provenance["git_dirty"] = experiment.var.get("git_dirty", None)

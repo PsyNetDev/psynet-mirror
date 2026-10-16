@@ -60,6 +60,66 @@ def update_dallinger_constraints(skip_compile_check):
     ci_module.update_dallinger_constraints_command(check_compile=not skip_compile_check)
 
 
+@ci.command("run-tests")
+@click.option(
+    "--scope",
+    type=click.Choice(["full", "isolated"]),
+    default="full",
+    show_default=True,
+    help="'full' runs demo directories and isolated tests; 'isolated' only the latter.",
+)
+@click.option("--node-total", type=int, default=1, show_default=True)
+@click.option("--node-index", type=int, default=1, show_default=True)
+@click.option(
+    "--slots",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Items to run at once, each with its own database, Redis and port.",
+)
+@click.option("--timeout", type=int, default=300, show_default=True)
+@click.option(
+    "--junit-dir", default=None, help="Write one JUnit XML file per item here."
+)
+@click.option("--python-version", default="3.13", show_default=True)
+@click.option(
+    "--durations-output",
+    default=None,
+    help="Write measured item durations here (input for update-test-durations).",
+)
+@click.option(
+    "--log-dir",
+    default="ci-test-logs",
+    show_default=True,
+    help="Directory for per-item pytest output.",
+)
+def run_tests(**kwargs):
+    """Run one shard of the CI test suite, optionally on parallel slots."""
+    from psynet.dev import ci_tests
+
+    raise SystemExit(ci_tests.run_tests_command(**kwargs))
+
+
+@ci.command("playwright-files")
+@click.option("--mode", type=click.Choice(["default", "legacy"]), required=True)
+@click.option("--node-total", type=int, default=1, show_default=True)
+@click.option("--node-index", type=int, default=1, show_default=True)
+def playwright_files(mode, node_total, node_index):
+    """Print the Playwright spec files for one duration-balanced CI shard."""
+    from psynet.dev import ci_tests
+
+    ci_tests.playwright_files_command(mode, node_total, node_index)
+
+
+@ci.command("update-test-durations")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+def update_test_durations(paths):
+    """Refresh ci/test_durations.json from run-tests and Playwright JUnit files."""
+    from psynet.dev import ci_tests
+
+    ci_tests.update_test_durations_command(paths)
+
+
 @dev.group("experiments")
 def experiments():
     """Manage canonical experiment templates from a PsyNet source checkout."""
@@ -166,6 +226,22 @@ def make_docs(
         ) from exc
 
 
+@docs.command("bundle")
+def bundle_docs():
+    """Build the plain-text docs that release wheels ship for `psynet docs`.
+
+    Run immediately before `python -m build` when releasing. Writes a
+    snapshot of the current docs, with the version and Git commit in its
+    VERSION file, to psynet/resources/docs_text/, which is gitignored but
+    packaged.
+    """
+    try:
+        path = docs_module.bundle_command()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Wrote text docs to {path}")
+
+
 @docs.command("linkcheck")
 @click.option(
     "--clean/--no-clean",
@@ -186,12 +262,22 @@ def make_docs(
     multiple=True,
     help="Extra option passed to Sphinx; repeat as needed.",
 )
-def linkcheck_docs(clean, jobs, sphinx_options):
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Fail on every broken link, including 403s, timeouts and network errors.",
+)
+def linkcheck_docs(clean, jobs, sphinx_options, strict):
     """Wrap Sphinx's linkcheck builder and summarize broken links.
 
     Runs the same Sphinx ``linkcheck`` builder as
     `psynet dev docs make linkcheck`, then prints broken links grouped
     by failure category.
+
+    By default only internal links, missing anchors, and pages not found
+    (404/410) fail the command; other failures usually come from the remote
+    site or the network and are only reported. Pass --strict to fail on
+    every broken link.
 
     Cleans docs/_build by default. For faster local reruns, pass
     --no-clean. Pass extra Sphinx flags with --sphinx-option.
@@ -201,6 +287,7 @@ def linkcheck_docs(clean, jobs, sphinx_options):
             clean=clean,
             jobs=jobs,
             sphinx_options=sphinx_options,
+            strict=strict,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc

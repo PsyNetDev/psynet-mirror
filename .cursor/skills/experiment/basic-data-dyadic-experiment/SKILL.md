@@ -5,8 +5,14 @@ description: Use this skill when a PsyNet experiment has two participants intera
 
 # Process dyadic experiment data
 
-The default clean layout is one row per experimental batch, dyad, round or node,
-and player.
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `data/basic_data` — `get_basic_data`; its "Group experiments" section covers the group tables, rounds, the player-round layout and a worked example
+- `data/analyzing_data` — joining group tables in an export
+- `data/what_an_export_contains` — raw export tables and identifier separation
+- `code/multiplayer/synchronization` — groups, barriers, regrouping and dropouts
 
 ## Prerequisites
 
@@ -20,60 +26,51 @@ and player.
 
 ## Workflow
 
-1. Reconstruct stable identifiers:
-   - experimental batch;
-   - dyad or group ID;
-   - network, node, trial, or session ID;
-   - round number;
-   - participant ID;
-   - player index, role, or side within the dyad;
-   - partner participant ID.
-2. Define the round state before flattening data. List the variables that
-   determine the state, such as shared resources, private resources, visible
-   signals, hidden attributes, current turn, previous actions, timers, and
-   cumulative outcomes.
-3. Extract each participant's action for each round. Include action values and
-   any analysis-relevant metadata such as submission time, acceptance time,
-   timeout status, validity, revision count, duplicate submission status, or
-   out-of-turn rejection.
-4. Extract scores at the right level:
-   - player-round score;
-   - partner score;
-   - dyad or group score;
-   - cumulative score;
-   - bonus-relevant score;
-   - score components when they are needed to audit the rule.
-5. Build the canonical player-round table with one row per batch, dyad, round,
-   and participant. Prefer explicit columns for commonly analyzed state and
-   action variables. Keep nested `state_json`, `action_json`, or raw event IDs
-   only when they remain useful for auditing.
-6. Ask the user for feedback, presenting them a small example dataset for review.
+1. Locate each identifier the analysis needs (batch, group, round, participant,
+   role or player index, partner) using "Group experiments" in
+   `data/basic_data`. If a per-round value exists only in participant
+   variables or browser state, change the experiment to save it on the trial
+   before any data are collected.
+2. Define the round state before flattening. List the variables that
+   determine it, such as shared and private resources, visible signals,
+   hidden attributes, current turn, previous actions, timers, and cumulative
+   outcomes.
+3. Extract each participant's action per round, with any analysis-relevant
+   metadata: submission time, timeout status, validity, revision count,
+   duplicate submissions, or out-of-turn rejections.
+4. Extract scores at each level the analysis uses: player-round, partner,
+   group, cumulative, and bonus-relevant scores, plus score components when
+   they are needed to audit the scoring rule.
+5. Build the player-round table in `get_basic_data`, starting from the
+   worked example in `data/basic_data`. Give roles and player order their own
+   columns. Keep nested JSON or raw event IDs only where they help auditing.
+6. Run the experiment with bots or simulated participants
+   (`simulate-participants/SKILL.md`), export it, and check the table against
+   the validation checklist below. Compare the clean actions and scores with
+   the values the simulated participants were given.
+7. Show the user a small extract of the table and ask whether columns should
+   be added or removed before finalizing the schema.
 
 ## Validation checklist
 
-- Each complete dyad-round has exactly two player rows.
-- Each participant has at most one clean row per dyad-round-player role.
-- Player order is stable across rounds, or role changes are explicitly recorded.
-- Partner fields are symmetric and point to the other participant in the dyad.
-- Round state can be reconstructed deterministically from the recorded sources.
-- Clean action and score values match the authoritative raw events or trial
-  answers.
+- Each complete group-round has one row per member (two for a dyad).
+- Each participant has at most one row per group and round.
+- Player order is stable across rounds, or role changes are recorded.
+- Partner fields are symmetric.
+- Round state can be reconstructed deterministically from the recorded
+  sources.
+- Clean actions and scores match the trial answers or authoritative server
+  events, and match the simulated participants' inputs.
 - Timeouts, invalid actions, dropouts, skipped rounds, failed trials, and
-  one-sided responses are represented according to a documented missingness
-  policy.
-- The clean table preserves enough IDs to trace any row back to the source
-  event, trial, node, or export row.
+  one-sided responses follow a documented missingness policy.
+- Every row keeps enough IDs to trace it back to its trial, node, or event.
 
 ## Common failures
 
-- Do not silently treat browser-local state as authoritative when server events
-  or accepted trial answers exist.
-- Do not collapse dyad-round data to one row per round when the requested
-  analysis needs one row per player.
-- Do not hide role assignment or player ordering inside column names that cannot
-  be compared across rounds.
-- Do not discard raw event IDs, trial IDs, or node IDs before the clean dataset
-  has passed audit checks.
-- Do not finalize the schema before showing the user a partial reconstruction
-  and asking whether irrelevant information should be removed or missing
-  variables should be added.
+- Treating browser-local state as authoritative when server events or
+  accepted trial answers exist.
+- Collapsing to one row per round when the analysis needs one row per player.
+- Encoding role or player order only in column names that cannot be compared
+  across rounds.
+- Discarding trial, node, or event IDs before the clean table has passed the
+  checks above.

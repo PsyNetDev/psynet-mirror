@@ -387,3 +387,18 @@ def test_error_trial_context_tolerates_detached_participant(caplog):
 
     assert context == {"trial": None, "node": None, "network": None}
     assert "detached" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+def test_initialize_bot_sees_bot_id(launched_experiment, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        type(launched_experiment),
+        "initialize_bot",
+        lambda self, bot: seen.append(bot.id),
+    )
+    bot = Bot()
+    assert bot.id is not None
+    assert seen == [bot.id]

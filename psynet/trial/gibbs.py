@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 import random
 from statistics import mean, median
 

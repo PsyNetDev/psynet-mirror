@@ -25,7 +25,6 @@ NODES = [
             "stimulus": asset(
                 synth_stimulus,
                 extension=".wav",
-                cache=True,
             )
         },
     )
