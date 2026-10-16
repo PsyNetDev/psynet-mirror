@@ -42,8 +42,23 @@ This writes a Git URL for the checkout's current commit, using its
 the checkout are not included. Setup also installs PsyNet from that commit,
 replacing the editable install, so rerun
 ``psynet setup --psynet-source editable`` to resume local development.
+A commit is not a release, so ``psynet deploy ssh`` and
+``psynet deploy heroku`` ask you to confirm before launching it.
 :ref:`dependencies_updating_psynet` shows the format for pinning a branch or
 tag by hand.
+
+To try the checkout on a server without pinning or pushing it, including
+uncommitted changes, launch a debug deployment that builds it into the
+image:
+
+.. code-block:: bash
+
+    psynet debug ssh --app my-test --use-local-psynet
+
+The experiment's ``Dockerfile`` must be recent enough to install the wheel;
+if PsyNet says it isn't, run ``psynet scripts update``. See
+:doc:`/deploy/reference/ssh_server` for details. ``psynet deploy`` does not
+offer this, so live deployments always use a pin.
 
 Use a local Dallinger
 ---------------------
@@ -64,6 +79,9 @@ To deploy with a Dallinger branch, push it and add a pin to
 ::
 
     dallinger@git+https://github.com/<your-username>/Dallinger@<branch-name>#egg=dallinger
+
+For a debug deployment, ``psynet debug ssh --use-local-dallinger`` builds the
+editable checkout into the image instead.
 
 Contribute a change
 -------------------

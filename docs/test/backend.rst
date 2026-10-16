@@ -50,7 +50,9 @@ maker, inside a trial maker), and, for a control's ``bot_response``,
 
 Custom pages and controls answer bots through ``get_bot_response``. A plain
 value, whether from ``bot_response`` or ``get_bot_response``, is saved as the
-final answer without passing through ``format_answer``. To send the bot's
+final answer without passing through ``format_answer``. ``None`` counts as a
+plain value: ``bot_response=None`` makes bots answer ``None``, so leave
+``bot_response`` unset to keep the default answer. To send the bot's
 answer through ``format_answer`` like a browser response, return
 :class:`~psynet.bot.BotResponse` with ``raw_answer``:
 
@@ -168,6 +170,8 @@ PsyNet finish the run:
 value. Find the page label and the answer format in the prescreener's source
 code or in the ``response`` table of a previous test run.
 
+.. _parallel_bot_tests:
+
 Several bots at once
 --------------------
 
@@ -185,8 +189,11 @@ experiment class, or pass options on the command line:
     psynet test local --n-bots 5 --parallel
 
 Parallel runs check that the experiment behaves correctly with several
-participants at once. To measure how the server performs under load, see
-:doc:`scalability`.
+participants at once. The bots run as threads in one process, so they share
+module-level state and the experiment instance, including its timeline: store
+per-bot traits on ``bot.var`` in ``initialize_bot`` rather than in globals or
+on ``self``, and avoid calling ``random.seed()`` from experiment code. To
+measure how the server performs under load, see :doc:`scalability`.
 
 Testing on a remote server
 --------------------------

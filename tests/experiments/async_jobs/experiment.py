@@ -12,7 +12,7 @@ def async_work(participant):
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Async process performance test"
+    label = "Async job performance test"
     test_n_bots = 2
 
     timeline = Timeline(

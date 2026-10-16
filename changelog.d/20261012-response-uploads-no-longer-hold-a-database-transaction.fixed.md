@@ -1,0 +1,1 @@
+Fixed `POST /response` holding a database connection idle in transaction while a participant's recording or file upload was still arriving; the request body is now read before the first database query, so slow uplinks no longer tie up the connection pool.

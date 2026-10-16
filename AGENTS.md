@@ -46,19 +46,29 @@ If a change is needed in Dallinger, make it there and submit a PR .
 
 ### Dallinger repo instructions
 
-Cloud Agents push to a Dallinger fork at `DALLINGER_FORK_URL` using the PAT `DALLINGER_GH_TOKEN`.
+Cloud Agents use the PAT `DALLINGER_GH_TOKEN` and a Dallinger fork at `DALLINGER_FORK_URL`.
+When the token can push to `Dallinger/Dallinger`, push feature branches there instead of to
+the fork: CI on PRs from a fork runs without the repository's secrets, so tests that call
+live services (such as the Prolific tests) fail.
 If these environment variables are not present, tell the user to follow these user instructions:
 
 #### User instructions
 
-1. Create a fine-grained GitHub PAT via the GitHub website.
-   - Scope it to the agent's fork of Dallinger only, with the following permissions:
-      - Contents: Read and write
-      - Pull requests: Read and write
-   - Set an expiry of 1 year or less (required for interacting with Dallinger organization).
+1. Create a fine-grained GitHub PAT via the GitHub website, with these permissions and
+   an expiry of 1 year or less (required for interacting with Dallinger organization):
+   - Contents: Read and write
+   - Pull requests: Read and write
+   - Workflows: Read and write, only if agents may change `.github/workflows/`
+
+   A fine-grained PAT has a single resource owner, so choose one of:
+   - If you have write access to `Dallinger/Dallinger` (preferred): resource owner
+     `Dallinger`, repository `Dallinger/Dallinger` only. An organization owner may need
+     to approve the token; until then, pushes to `Dallinger/Dallinger` are refused.
+   - Otherwise: resource owner your account, repository your Dallinger fork only.
 2. Save this token as a Cloud Agent secret named `DALLINGER_GH_TOKEN` via the Cursor website.
 3. Create a Dallinger fork on the GitHub website (e.g., `https://github.com/<your-username>/Dallinger`).
 4. Save the fork URL as a Cloud Agent secret named `DALLINGER_FORK_URL` via the Cursor website.
+   Agents clone the fork even when the token is owned by `Dallinger`, so both secrets are needed.
 
 #### Cloud Agent instructions
 
@@ -90,16 +100,26 @@ development headers (e.g. `libpq-dev`) and retry.
 
 Make changes and commit locally.
 
-Push: `git push -u origin <branch-name>`
+Push to the main repository: `git push -u upstream <branch-name>`.
+If GitHub refuses it with a permission error (HTTP 403), the token cannot write there,
+so push to the fork instead: `git push -u origin <branch-name>`. Other push failures,
+such as network errors, are not a reason to fall back to the fork. If the fork also
+refuses the push, stop and tell the user: the token is still waiting for organization
+approval or cannot write to either repository.
 
-Open a PR to upstream: `gh pr create --base master --head <your-username>:<branch-name>`
+Open a PR to upstream, writing the description to a file first:
+
+- branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
+- branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
 If your PsyNet PR depends on this new unmerged change to Dallinger,
-specify your fork in `pyproject.toml` (use a literal URL; environment
-variables are not expanded in `pyproject.toml`):
+specify the repository that holds the branch in `pyproject.toml` (use a
+literal URL; environment variables are not expanded in `pyproject.toml`):
 
 ```toml
 # In [project].dependencies
+"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<branch-name>",
+# or, for a branch on the fork:
 "dallinger[docker] @ git+https://github.com/<your-username>/Dallinger.git@<branch-name>",
 ```
 
@@ -107,16 +127,20 @@ Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via
 `gh auth login --with-token` above or by setting `GH_TOKEN` in the command).
 
-1. List recent runs:
-   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
-2. View logs for a specific run:
-   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
-3. If the run is against upstream, use the canonical repo:
-   - `gh run list --repo https://github.com/Dallinger/Dallinger --limit 10`
+1. PR checks run on the canonical repo, including for PRs from a fork:
+   - `gh pr checks <pr-number> --repo https://github.com/Dallinger/Dallinger`
+2. Runs for a branch pushed to the main repository:
+   - `gh run list --repo https://github.com/Dallinger/Dallinger --branch <branch-name> --limit 10`
+3. View logs for a specific run:
    - `gh run view <run-id> --repo https://github.com/Dallinger/Dallinger --log-failed`
+4. Runs triggered by pushing to the fork run on the fork:
+   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
+   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
 
 Local agents use a similar approach, but `~/Dallinger` should be created already by the user,
-and it may be a clone of the original repository, not a fork.
+and it may be a clone of the original repository, not a fork. In that case `origin` is
+`Dallinger/Dallinger`: skip adding an `upstream` remote, sync with `origin/master`, push with
+`git push -u origin <branch-name>` and use the main-repository form of `gh pr create`.
 
 ## CI status checks (GitLab)
 
@@ -325,9 +349,9 @@ When you make changes to the PsyNet codebase:
    `psynet/locales` (`.po` / `.pot` files). Refresh them on the release
    branch with `psynet translate`, where `test_psynet_translations_up_to_date`
    runs. Until then a missing PsyNet catalog entry falls back to English with
-   a warning during test runs; `psynet debug` and experiment-owned catalogs
-   still raise. Tests that pin translated PsyNet copy should use
-   `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
+   a warning during test runs and `psynet debug local`; sandbox deployments,
+   release-branch CI and experiment-owned catalogs still raise. Tests that
+   pin translated PsyNet copy should use `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
    `psynet.pytest_psynet`.
 
 4. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.

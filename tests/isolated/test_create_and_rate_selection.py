@@ -29,6 +29,9 @@ class _Parent:
     def _filter_eligible_candidates(self, chains, participant, experiment):
         return chains
 
+    def _note_candidates_busy(self, participant):
+        self.busy_notes.append(participant)
+
 
 class CreateAndRateSelectionHarness(CreateAndRateTrialMakerMixin, _Parent):
     def __init__(
@@ -47,6 +50,7 @@ class CreateAndRateSelectionHarness(CreateAndRateTrialMakerMixin, _Parent):
         self.rater_class = "rater"
         self.wait_for_networks = wait_for_networks
         self.phase_batch_calls = 0
+        self.busy_notes = []
 
     def get_creation_phases(self, nodes):
         self.phase_batch_calls += 1
@@ -330,7 +334,8 @@ def test_create_and_rate_finishes_block_when_only_pending_chains_remain_without_
         wait_for_networks=False,
     )
 
-    assert maker.find_chains(participant=None, experiment=None) == []
+    assert maker.find_chains(participant="p", experiment=None) == []
+    assert maker.busy_notes == ["p"]
 
 
 def test_create_and_rate_returns_assignable_chains():

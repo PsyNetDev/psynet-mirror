@@ -986,8 +986,6 @@ async function assertWaiterReleasedWithLastArriver(
   // concurrent last-arrival GET /timeline can overlap every waiter hold-resume
   // POST without starving a waiter Redis subscribe. A short HTTP 503 is NOWAIT
   // when a POST hits the same participant row as that participant's GET.
-  // unexpectedBlockingRequests still fails a busy retry that lasts 500ms
-  // or more.
   if (isInplaceTimelineModeEnabled()) {
     expect(
       laterTimeline.length,

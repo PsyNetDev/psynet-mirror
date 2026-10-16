@@ -1,4 +1,5 @@
 import json
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -166,8 +167,8 @@ def test_render_page_requests_html_timeline(monkeypatch):
         response.raise_for_status = lambda: None
         return response
 
-    monkeypatch.setattr("psynet.participant.requests.get", fake_get)
     driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.__dict__["_http_session"] = SimpleNamespace(get=fake_get)
     driver.experiment = SimpleNamespace(base_url="http://psynet.test")
     driver.participant_unique_id = "abc"
     driver._render_page()
@@ -203,7 +204,7 @@ def test_submit_response_retries_once_when_the_page_uuid_rotated(monkeypatch):
         driver.response_files = {}
         driver.status_time_fetched = 0
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -237,7 +238,7 @@ def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
         driver.response_files = {}
         driver.status_time_fetched = 0
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", fake_fetch)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -261,7 +262,7 @@ def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
         posted.append(json.loads(data["json"]))
         return _driver_http_response({"submission": "approved"})
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", lambda: None)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
 
@@ -293,7 +294,7 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
             )
         return _driver_http_response({"submission": "approved"})
 
-    monkeypatch.setattr("psynet.participant.requests.post", fake_post)
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
     monkeypatch.setattr(driver, "_fetch_status", lambda: None)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
@@ -303,22 +304,62 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
     assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
 
 
-def test_take_page_pauses_when_still_on_timeline_hold(monkeypatch):
-    """Hold polling must not busy-loop ordinary Next against last-arrival."""
-    from psynet.participant import _TIMELINE_HOLD_POLL_SECONDS
-
+@pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])
+def test_take_page_polls_timeline_hold_at_check_interval(
+    monkeypatch, time_factor, poll
+):
+    """Paced bots spend the page's time, then poll a hold every ``check_interval``."""
     driver = ParticipantDriver.__new__(ParticipantDriver)
-    driver.status = _driver_page_status("hold-a")
+    driver.status = _driver_page_status("page-a")
     driver.status["status"] = "working"
-    driver.status["page"]["is_timeline_hold"] = True
+    hold = _driver_page_status("hold-a")
+    hold["status"] = "working"
+    hold["page"].update(is_timeline_hold=True, time_estimate=3.0, check_interval=0.5)
     driver.response_files = {}
     sleeps = []
-    monkeypatch.setattr(driver, "_simulate_page_time", lambda *a, **k: None)
-    monkeypatch.setattr(driver, "_submit_response", lambda *a, **k: None)
-    monkeypatch.setattr(driver, "_render_page", lambda: None)
-    monkeypatch.setattr(driver, "refresh_status", lambda: None)
+
+    def submit(*args, **kwargs):
+        driver.status = hold
+        driver.status_time_fetched = time.monotonic()
+
+    monkeypatch.setattr(driver, "_submit_response", submit)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: sleeps.append(s))
+    driver.status_time_fetched = time.monotonic()
 
-    driver.take_page()
+    for _ in range(3):
+        driver.take_page(render_pages=False, time_factor=time_factor)
 
-    assert sleeps == [_TIMELINE_HOLD_POLL_SECONDS]
+    assert sleeps == pytest.approx([time_factor, poll, poll, poll], abs=0.05)
+
+
+def test_page_min_duration_follows_the_submit_enable_triggers():
+    from psynet.modular_page import AudioMeterControl, AudioRecordControl
+    from psynet.page import InfoPage
+
+    record = AudioRecordControl(duration=4, bot_response_media="x.wav")
+    assert InfoPage("Hi", time_estimate=1).min_duration == 0
+    assert ModularPage("rec", "Sing", record, time_estimate=5).min_duration == 4
+    meter = AudioMeterControl(min_time=2.5)
+    assert ModularPage("meter", "Adjust", meter, time_estimate=5).min_duration == 2.5
+
+
+@pytest.mark.parametrize(
+    "time_factor, min_duration, expected_sleep",
+    [(0, 5.0, 0), (1, 0.0, 2.0), (1, 5.0, 5.0), (3, 5.0, 6.0)],
+)
+def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
+    monkeypatch, time_factor, min_duration, expected_sleep
+):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.status = _driver_page_status("page-a")
+    driver.status["status"] = "working"
+    driver.status["page"].update(time_estimate=2.0, min_duration=min_duration)
+    driver.response_files = {}
+    sleeps = []
+    monkeypatch.setattr(driver, "_submit_response", lambda *args, **kwargs: None)
+    monkeypatch.setattr("psynet.participant.time.sleep", sleeps.append)
+    driver.status_time_fetched = time.monotonic()
+
+    driver.take_page(render_pages=False, time_factor=time_factor)
+
+    assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
