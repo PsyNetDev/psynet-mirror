@@ -3708,7 +3708,9 @@ def _destroy(
     ask_for_confirmation=True,
 ):
     """Destroy a single app."""
-    target = f"{app} from {server}" if server else app
+    target = app or "the app"
+    if server:
+        target += f" from {server}"
     confirmed = (
         user_confirms(f"Would you like to delete {target}?", default=True)
         if ask_for_confirmation
