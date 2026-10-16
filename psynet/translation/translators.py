@@ -22,7 +22,9 @@ SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
 ISO_LOCALE_CODES = {"od": "or"}
 
 # At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
-# one word in a low-resource script, so retries sample more freely.
+# one word in a low-resource script, so retries sample more freely. Without a
+# configured temperature the model's default (1 for OpenAI) already varies
+# replies between retries.
 RETRY_TEMPERATURE = 0.7
 
 # Models such as gpt-6-luna reject any temperature but their own default. A
