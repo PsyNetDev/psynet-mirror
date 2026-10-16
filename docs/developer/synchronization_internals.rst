@@ -40,6 +40,25 @@ of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
+Sync group lock order
+--------------------
+
+Every participant request locks its own participant row first, and may then
+change its sync group, for example when that participant fails or leaves. So
+code holding a sync group row must never wait for *another* participant's
+row:
+
+- Failing or removing other members (group dissolution, between-barrier
+  timeouts) locks their rows with ``SKIP LOCKED``. A member whose own request
+  holds their row is left out, the group is marked ``dissolving``, and the
+  barrier poller finishes the dissolution once that request commits.
+- Re-electing a leader picks only a member whose row is free, because the
+  foreign-key check on ``leader_id`` locks the new leader's row.
+- Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
+
+Two members failing at the same moment therefore no longer deadlock: each
+fails itself and whoever else is free, and the poller completes the rest.
+
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
 :meth:`~psynet.sync.Barrier.check_waiting_participants`,
