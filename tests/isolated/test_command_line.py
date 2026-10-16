@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,7 @@ import click
 import pandas as pd
 import psutil
 import pytest
+import requests
 from click.testing import CliRunner
 
 from psynet.command_line import (
@@ -5085,12 +5087,30 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["async_job_stats"][0]["max"] is None
 
 
-def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
+def _invoke_destroy_ssh(
+    monkeypatch,
+    destroy_app,
+    apps=(),
+    app=None,
+    pending=None,
+    discard_pending_jobs=False,
+    confirm=lambda *args, **kwargs: True,
+    events=None,
+):
     from psynet.command_line import destroy__docker_ssh
 
+    events = [] if events is None else events
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
-    monkeypatch.setattr(click, "confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        "psynet.command_line._awaken_ssh_app",
+        lambda server, app: events.append(("awaken", app)),
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._fetch_ssh_pending_async_jobs",
+        lambda app, server: events.append(("check", app)) or pending,
+    )
+    monkeypatch.setattr(click, "confirm", confirm)
 
     @click.command()
     @click.pass_context
@@ -5101,6 +5121,7 @@ def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):
             apps=apps,
             server="test-server",
             yes=False,
+            discard_pending_jobs=discard_pending_jobs,
         )
 
     return CliRunner().invoke(parent)
@@ -5156,6 +5177,10 @@ def _patch_dallinger_destroy_ssh(monkeypatch):
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
+    monkeypatch.setattr("psynet.command_line._awaken_ssh_app", lambda server, app: None)
+    monkeypatch.setattr(
+        "psynet.command_line._fetch_ssh_pending_async_jobs", lambda app, server: None
+    )
     return destroyed
 
 
@@ -5181,6 +5206,150 @@ def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, exp
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *app_args, yes_flag])
     assert result.exit_code == 0, result.output
     assert destroyed == [(app, "musix") for app in expected]
+
+
+_PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
+
+
+def _recording_destroy():
+    destroyed = []
+
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        destroyed.append(app)
+
+    return fake_destroy, destroyed
+
+
+@pytest.mark.parametrize("target", [{"app": "busy"}, {"apps": ("busy",)}])
+def test_destroy_ssh_refuses_apps_with_pending_jobs(monkeypatch, target):
+    fake_destroy, destroyed = _recording_destroy()
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, pending=_PENDING, **target)
+
+    assert destroyed == [], result.output
+    assert result.exit_code == 1, result.output
+    assert (
+        "busy: 2 async jobs are still pending (2 low priority); "
+        "the oldest was enqueued 10 minutes ago." in result.output
+    )
+    assert "Wait for them to finish, then run `psynet export ssh` again" in (
+        result.output
+    )
+    assert "Pass --discard-pending-jobs to destroy it anyway." in result.output
+
+
+def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
+    def decline(*args, **kwargs):
+        decline.calls.append(kwargs)
+        return False
+
+    decline.calls = []
+    events = []
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+    fake_destroy, destroyed = _recording_destroy()
+    result = _invoke_destroy_ssh(
+        monkeypatch,
+        fake_destroy,
+        app="busy",
+        pending=_PENDING,
+        confirm=decline,
+        events=events,
+    )
+
+    assert destroyed == [], result.output
+    assert result.exit_code == 1, result.output
+    assert events == [("awaken", "busy"), ("check", "busy")]
+    assert "Destroy the app anyway?" in result.output
+    assert decline.calls == [{"default": False}]
+
+
+@pytest.mark.parametrize(
+    "pending, discard, message",
+    [
+        (_PENDING, True, "2 async jobs are still pending (2 low priority)"),
+        (None, False, ""),
+        ({**_PENDING, "total": 0}, False, ""),
+    ],
+)
+def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
+    monkeypatch, pending, discard, message
+):
+    fake_destroy, destroyed = _recording_destroy()
+    result = _invoke_destroy_ssh(
+        monkeypatch,
+        fake_destroy,
+        apps=("done",),
+        pending=pending,
+        discard_pending_jobs=discard,
+    )
+
+    assert destroyed == ["done"], result.output
+    assert result.exit_code == 0, result.output
+    assert message in result.output
+
+
+@pytest.mark.parametrize(
+    "response, reason",
+    [
+        (types.SimpleNamespace(status_code=404), "a PsyNet version without this check"),
+        (types.SimpleNamespace(status_code=503), "the app is unavailable"),
+        (requests.ConnectionError("refused"), "could not reach the app (refused)"),
+    ],
+)
+def test_pending_job_check_is_skipped_with_a_warning(
+    monkeypatch, capsys, response, reason
+):
+    from psynet.command_line import _fetch_pending_async_jobs
+    from psynet.export.client import DashboardEndpoint
+
+    def fake_get(url, **kwargs):
+        assert url == "https://app.example.org/async_job_status"
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    endpoint = DashboardEndpoint("https://app.example.org", ("admin", "pw"))
+
+    assert _fetch_pending_async_jobs(endpoint) is None
+    output = capsys.readouterr().out
+    assert "WARNING: Skipped the check for pending async jobs" in output
+    assert reason in output
+
+
+def test_local_pending_job_check_is_skipped_if_the_database_fails(monkeypatch, capsys):
+    from sqlalchemy.exc import ProgrammingError
+
+    import psynet.async_job
+    from psynet.command_line import _get_local_pending_async_jobs
+
+    def fail():
+        raise ProgrammingError("SELECT", {}, Exception("no table async_job"))
+
+    monkeypatch.setattr(psynet.async_job, "_get_pending_job_summary", fail)
+
+    assert _get_local_pending_async_jobs() is None
+    assert (
+        "WARNING: Skipped the check for pending async jobs: "
+        "could not query the database (no table async_job)."
+    ) in capsys.readouterr().out
+
+
+def test_export_warns_about_pending_jobs(capsys):
+    from psynet.command_line import _warn_export_misses_pending_jobs
+
+    _warn_export_misses_pending_jobs(None)
+    _warn_export_misses_pending_jobs({**_PENDING, "total": 0})
+    assert capsys.readouterr().out == ""
+
+    _warn_export_misses_pending_jobs(_PENDING)
+    assert (
+        "WARNING: 2 async jobs are still pending (2 low priority); the oldest was "
+        "enqueued 10 minutes ago. This export will not include their results; "
+        "export again once they have finished." in capsys.readouterr().out
+    )
 
 
 def test_destroy_ssh_requires_an_app_name(monkeypatch):
