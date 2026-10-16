@@ -7,6 +7,7 @@ import pytest
 from dallinger import db
 from dallinger.utils import attach_json_logger
 
+from psynet.async_job import WorkerAsyncJob
 from psynet.error import ErrorRecord
 from psynet.exit import (
     EarlyExitConfirmation,
@@ -18,7 +19,6 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment
-from psynet.process import WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.recruiters import DevLucidRecruiter
 
@@ -802,14 +802,14 @@ def test_handle_error_rollback_and_record(db_session, launched_experiment, trial
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_handle_error_async_process(db_session, launched_experiment, trial):
-    process = WorkerAsyncProcess(function=task, trial=trial)
+def test_handle_error_async_job(db_session, launched_experiment, trial):
+    job = WorkerAsyncJob(function=task, trial=trial).enqueue()
     db.session.commit()
 
     time.sleep(1)
 
-    assert process.failed
+    assert job.failed
 
     error_record = ErrorRecord.query.one()
-    assert error_record.process_id == process.id
+    assert error_record.async_job_id == job.id
     assert error_record.trial_id == trial.id

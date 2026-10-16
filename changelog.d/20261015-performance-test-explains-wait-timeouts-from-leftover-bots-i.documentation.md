@@ -1,0 +1,1 @@
+The performance-test guide and the summary's note on wait timeouts explain that, in a group experiment, a bot count that isn't a multiple of the group size leaves bots waiting at the grouper, and how to avoid it.

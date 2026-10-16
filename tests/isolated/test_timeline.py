@@ -523,11 +523,13 @@ def test_check_barriers_stops_after_max_passes(monkeypatch):
 
     def _waiting():
         n["i"] += 1
-        return [f"inst-{n['i']}"]
+        return {f"inst-{n['i']}": None}
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
     monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+    monkeypatch.setattr("psynet.sync._time_out_overdue_waiters", lambda *a: None)
+    monkeypatch.setattr("psynet.sync._finish_dissolving_groups", lambda: None)
 
     with pytest.raises(RuntimeError, match="poller sweep did not settle"):
         check_barriers()
@@ -544,12 +546,14 @@ def test_check_barriers_settles_on_the_last_allowed_pass(monkeypatch):
     def _waiting():
         n["i"] += 1
         if n["i"] <= 3:
-            return [f"inst-{n['i']}"]
-        return []
+            return {f"inst-{n['i']}": None}
+        return {}
 
     monkeypatch.setattr("psynet.sync._MAX_BARRIER_WALK_PASSES", 3)
     monkeypatch.setattr("psynet.sync._waiting_barrier_instance_ids", _waiting)
     monkeypatch.setattr("psynet.sync._process_barrier_instance", lambda *a, **k: False)
+    monkeypatch.setattr("psynet.sync._time_out_overdue_waiters", lambda *a: None)
+    monkeypatch.setattr("psynet.sync._finish_dissolving_groups", lambda: None)
 
     check_barriers()
     assert n["i"] == 4
@@ -1863,65 +1867,73 @@ def _other_async_target(participant):
     return None
 
 
-def _make_participant(stale_process=None):
+def _make_participant(stale_job=None):
     participant = MagicMock()
     participant.id = 42
-    participant.awaited_async_code_block_process = stale_process
+    participant.awaited_async_code_block_job = stale_job
     return participant
 
 
-def test_async_code_block_initiate__no_stale_process():
+def _new_job():
+    job = MagicMock(name="new_job")
+    job.enqueue.return_value = job
+    return job
+
+
+def test_async_code_block_initiate__no_stale_job():
     block = AsyncCodeBlock(_async_target, wait=False)
     code_block = MagicMock(id=["main", 3])
-    participant = _make_participant(stale_process=None)
-    new_process = MagicMock(name="new_process")
+    participant = _make_participant(stale_job=None)
+    new_job = _new_job()
 
-    with patch("psynet.process.WorkerAsyncProcess", return_value=new_process) as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob", return_value=new_job) as ctor:
         block.initiate(participant, code_block=code_block)
 
     ctor.assert_called_once()
+    new_job.enqueue.assert_called_once()
     assert ctor.call_args.kwargs["arguments"]["code_block_id"] == ["main", 3]
-    assert participant.awaited_async_code_block_process is new_process
+    assert participant.awaited_async_code_block_job is new_job
 
 
 def test_async_code_block_initiate__stores_generated_code_block_id_from_timeline():
     timeline = Timeline(AsyncCodeBlock(_async_target, wait=False))
     code_block = timeline.elts["main"][0]
-    participant = _make_participant(stale_process=None)
-    new_process = MagicMock(name="new_process")
+    participant = _make_participant(stale_job=None)
+    new_job = _new_job()
 
     assert isinstance(code_block, CodeBlock)
     assert code_block.id == ["main", 0]
 
-    with patch("psynet.process.WorkerAsyncProcess", return_value=new_process) as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob", return_value=new_job) as ctor:
         code_block.consume(MagicMock(), participant)
 
     ctor.assert_called_once()
+    new_job.enqueue.assert_called_once()
     assert ctor.call_args.kwargs["arguments"]["code_block_id"] == code_block.id
-    assert participant.awaited_async_code_block_process is new_process
+    assert participant.awaited_async_code_block_job is new_job
 
 
-def test_async_code_block_initiate__raises_when_previous_process_still_pending():
+def test_async_code_block_initiate__raises_when_previous_job_still_pending():
     block = AsyncCodeBlock(_async_target, wait=False)
     code_block = MagicMock(id=["main", 3])
-    stale = MagicMock(name="stale_process")
+    stale = MagicMock(name="stale_job")
     stale.pending = True
     stale.failed = False
     stale.finished = False
-    participant = _make_participant(stale_process=stale)
+    participant = _make_participant(stale_job=stale)
 
-    with patch("psynet.process.WorkerAsyncProcess") as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob") as ctor:
         with pytest.raises(RuntimeError, match="already has an async code block"):
             block.initiate(participant, code_block=code_block)
 
     ctor.assert_not_called()
-    assert participant.awaited_async_code_block_process is stale
+    assert participant.awaited_async_code_block_job is stale
 
 
-def test_async_code_block_initiate__waits_for_pending_process_when_waiting(caplog):
+def test_async_code_block_initiate__waits_for_pending_job_when_waiting(caplog):
     block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
     code_block = MagicMock(id=["main", 3])
-    stale = MagicMock(name="stale_process")
+    stale = MagicMock(name="stale_job")
     stale.id = 99
     stale.pending = True
     stale.failed = False
@@ -1930,26 +1942,23 @@ def test_async_code_block_initiate__waits_for_pending_process_when_waiting(caplo
         "function": _async_target,
         "code_block_id": ["main", 3],
     }
-    participant = _make_participant(stale_process=stale)
+    participant = _make_participant(stale_job=stale)
 
-    with patch("psynet.process.WorkerAsyncProcess") as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob") as ctor:
         with caplog.at_level("WARNING"):
             block.initiate(participant, code_block=code_block)
 
     ctor.assert_not_called()
-    assert participant.awaited_async_code_block_process is stale
+    assert participant.awaited_async_code_block_job is stale
     assert any(
-        "waiting for the existing process" in record.message
-        for record in caplog.records
-    ), (
-        f"Expected a duplicate-process warning, got: {[r.message for r in caplog.records]}"
-    )
+        "waiting for the existing job" in record.message for record in caplog.records
+    ), f"Expected a duplicate-job warning, got: {[r.message for r in caplog.records]}"
 
 
-def test_async_code_block_initiate__raises_for_different_pending_waited_process():
+def test_async_code_block_initiate__raises_for_different_pending_waited_job():
     block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
     code_block = MagicMock(id=["main", 3])
-    stale = MagicMock(name="stale_process")
+    stale = MagicMock(name="stale_job")
     stale.pending = True
     stale.failed = False
     stale.finished = False
@@ -1957,20 +1966,20 @@ def test_async_code_block_initiate__raises_for_different_pending_waited_process(
         "function": _other_async_target,
         "code_block_id": ["main", 3],
     }
-    participant = _make_participant(stale_process=stale)
+    participant = _make_participant(stale_job=stale)
 
-    with patch("psynet.process.WorkerAsyncProcess") as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob") as ctor:
         with pytest.raises(RuntimeError, match="already has an async code block"):
             block.initiate(participant, code_block=code_block)
 
     ctor.assert_not_called()
-    assert participant.awaited_async_code_block_process is stale
+    assert participant.awaited_async_code_block_job is stale
 
 
-def test_async_code_block_initiate__raises_for_same_function_different_waited_process():
+def test_async_code_block_initiate__raises_for_same_function_different_waited_job():
     block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
     code_block = MagicMock(id=["main", 3])
-    stale = MagicMock(name="stale_process")
+    stale = MagicMock(name="stale_job")
     stale.pending = True
     stale.failed = False
     stale.finished = False
@@ -1978,14 +1987,14 @@ def test_async_code_block_initiate__raises_for_same_function_different_waited_pr
         "function": _async_target,
         "code_block_id": ["main", 4],
     }
-    participant = _make_participant(stale_process=stale)
+    participant = _make_participant(stale_job=stale)
 
-    with patch("psynet.process.WorkerAsyncProcess") as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob") as ctor:
         with pytest.raises(RuntimeError, match="already has an async code block"):
             block.initiate(participant, code_block=code_block)
 
     ctor.assert_not_called()
-    assert participant.awaited_async_code_block_process is stale
+    assert participant.awaited_async_code_block_job is stale
 
 
 @pytest.mark.parametrize(
@@ -1996,21 +2005,22 @@ def test_async_code_block_initiate__raises_for_same_function_different_waited_pr
     ],
     ids=["finished", "failed"],
 )
-def test_async_code_block_initiate__clears_stale_finished_or_failed_process(
+def test_async_code_block_initiate__clears_stale_finished_or_failed_job(
     stale_state, caplog
 ):
     block = AsyncCodeBlock(_async_target, wait=False)
     code_block = MagicMock(id=["main", 3])
-    stale = MagicMock(name="stale_process", id=99, **stale_state)
-    participant = _make_participant(stale_process=stale)
-    new_process = MagicMock(name="new_process")
+    stale = MagicMock(name="stale_job", id=99, **stale_state)
+    participant = _make_participant(stale_job=stale)
+    new_job = _new_job()
 
-    with patch("psynet.process.WorkerAsyncProcess", return_value=new_process) as ctor:
+    with patch("psynet.async_job.WorkerAsyncJob", return_value=new_job) as ctor:
         with caplog.at_level("WARNING"):
             block.initiate(participant, code_block=code_block)
 
     ctor.assert_called_once()
-    assert participant.awaited_async_code_block_process is new_process
+    new_job.enqueue.assert_called_once()
+    assert participant.awaited_async_code_block_job is new_job
     assert any("stale reference" in record.message for record in caplog.records), (
         f"Expected a stale-reference warning, got: {[r.message for r in caplog.records]}"
     )
