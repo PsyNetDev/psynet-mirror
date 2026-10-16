@@ -3,15 +3,14 @@ import importlib
 import io
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import types
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import click
 import pandas as pd
@@ -722,7 +721,7 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
             "bot": False,
             "proxy": None,
             "no_browsers": True,
-            "exp_config": {"threads": "4"},
+            "exp_config": {"web_processes": "4"},
         }
     ]
 
@@ -784,7 +783,7 @@ def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
 
     _debug_legacy(_Ctx(), archive=None, no_browsers=True)
 
-    assert calls[0]["exp_config"] == {"threads": "5"}
+    assert calls[0]["exp_config"] == {"web_processes": "5"}
 
 
 @pytest.mark.parametrize("raw", ["0", "-1", "two"])
@@ -1244,11 +1243,218 @@ class _FakeChannel:
     def recv_exit_status(self):
         return self.exit_status
 
+    def close(self):
+        pass
+
 
 def _executor_for(channel):
     executor = Mock()
     executor.client.get_transport.return_value.open_session.return_value = channel
     return executor
+
+
+def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_path):
+    from psynet.perf_ssh import RemoteApp
+
+    channel = _FakeChannel(0, b"TEST 1: Running with 2 concurrent bots\n")
+    executor = _executor_for(channel)
+    reads = iter(["bot 1 failed\n", '{"results": []}'])
+    executor.run.side_effect = lambda cmd, raise_: (
+        next(reads) + "__psynet_exit_status=0"
+    )
+    bot_log = tmp_path / "bots.log"
+
+    with open(bot_log, "a") as bot_log_file:
+        remote = RemoteApp(executor, "my-app", "server", bot_log_file=bot_log_file)
+        assert remote.run_psynet("performance-test local --existing", bot_log=True) == {
+            "results": []
+        }
+
+    assert "--json-output /tmp/psynet_perf_" in channel.command
+    assert "--bot-log /tmp/psynet_bots_" in channel.command
+    assert bot_log.read_text() == "bot 1 failed\n"
+
+
+def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
+    from psynet.command_line import performance_test
+
+    with patch("psynet.command_line._ssh_executor") as executor:
+        result = CliRunner().invoke(
+            performance_test.commands["ssh"], ["--app", "x;touch /tmp/pwned"]
+        )
+    assert result.exit_code == 2
+    assert "invalid characters" in result.output
+    executor.assert_not_called()
+
+
+def _invoke_performance_test_ssh(args, *, apps, app_info, code_key="new"):
+    """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``."""
+    from types import SimpleNamespace
+
+    from psynet.command_line import performance_test
+
+    with (
+        patch(
+            "dallinger.command_line.docker_ssh.get_configured_hosts",
+            return_value={"server": {}},
+        ),
+        patch(
+            "dallinger.command_line.docker_ssh.get_apps",
+            return_value=[SimpleNamespace(name=app) for app in apps],
+        ),
+        patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._awaken_ssh_app"),
+        patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
+        patch("psynet.command_line._current_code_key", return_value=code_key),
+        patch("psynet.command_line._debug_ssh") as deploy,
+        patch("psynet.command_line._run_ssh_performance_test") as run,
+    ):
+        result = CliRunner().invoke(
+            performance_test.commands["ssh"], ["--app", "my-app", *args]
+        )
+    return result, deploy, run
+
+
+_MARKED = {
+    "performance_test_app": True,
+    "performance_test_code_key": "old",
+    "experiment": {"label": "Test"},
+}
+
+
+@pytest.mark.parametrize(
+    "args, apps, code_key, deployed",
+    [
+        ([], [], "new", {}),
+        (["--yes"], [], "new", {"assume_yes": True}),
+        ([], ["my-app"], "old", None),
+        ([], ["my-app"], "new", {"update": True}),
+    ],
+    ids=[
+        "deploys-a-missing-app",
+        "passes-yes-to-the-deploy",
+        "reuses-an-unchanged-app",
+        "updates-a-changed-app",
+    ],
+)
+def test_performance_test_ssh_manages_its_own_app(args, apps, code_key, deployed):
+    result, deploy, run = _invoke_performance_test_ssh(
+        args, apps=apps, app_info=_MARKED, code_key=code_key
+    )
+
+    assert result.exit_code == 0, result.output
+    if deployed is None:
+        deploy.assert_not_called()
+    else:
+        assert deploy.call_args.kwargs == {
+            "app": "my-app",
+            "server": "server",
+            "performance_test_app": True,
+            "dns_host": None,
+            "ingress": None,
+            "use_local_dallinger": False,
+            "assume_yes": False,
+            **deployed,
+        }
+    assert run.call_args.args[2] == {"label": "Test"}
+    assert "psynet destroy ssh --server server --app my-app" in result.output
+
+
+@pytest.mark.parametrize("args", [[], ["--reset-database"]])
+def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
+    result, deploy, run = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info={"performance_test_app": False}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't deploy it" in result.output
+    assert "Choose another --app name" in result.output
+    deploy.assert_not_called()
+    run.assert_not_called()
+
+
+def test_performance_test_ssh_refuses_apps_that_never_launched():
+    result, deploy, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info={**_MARKED, "launched": False}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't finish launching" in result.output
+    assert "psynet destroy ssh --server server --app my-app" in result.output
+    deploy.assert_not_called()
+    run.assert_not_called()
+
+
+def test_performance_test_ssh_needs_the_apps_experiment_to_load():
+    app_info = {k: v for k, v in _MARKED.items() if k != "experiment"}
+    result, _, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info=app_info, code_key="old"
+    )
+
+    assert result.exit_code == 1
+    assert "Could not load the experiment in my-app" in result.output
+    run.assert_not_called()
+
+
+def test_performance_test_deploys_mark_the_app_and_record_its_code_key():
+    from psynet.command_line import _debug_ssh
+
+    ctx = Mock()
+    with (
+        patch("psynet.command_line._configure_dallinger_image_source"),
+        patch("psynet.command_line._pre_launch") as pre_launch,
+        patch("psynet.command_line._post_deploy"),
+        patch("psynet.command_line._cleanup_exp_directory"),
+        patch("psynet.perf_ssh.experiment_code_key", return_value="abc"),
+    ):
+        _debug_ssh(
+            ctx,
+            app="my-app",
+            server="server",
+            dns_host=None,
+            update=True,
+            performance_test_app=True,
+        )
+
+    assert ctx.invoke.call_args.kwargs["config_options"] == {
+        "performance_test_app": "true",
+        "performance_test_code_key": "abc",
+    }
+    assert pre_launch.call_args.kwargs["confirm_update"] is False
+
+
+def test_live_deployments_refuse_performance_test_apps():
+    from psynet.command_line import _pre_launch
+
+    with (
+        patch.dict(os.environ),
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.services.ensure_local_services"),
+        patch("psynet.command_line.redis_vars"),
+        patch("psynet.command_line.deployment_info") as info,
+        patch("psynet.command_line.run_pre_checks"),
+        patch("psynet.experiment.get_experiment"),
+        patch(
+            "psynet.command_line.get_config",
+            return_value={"performance_test_app": True},
+        ),
+        pytest.raises(click.UsageError, match="performance_test_app"),
+    ):
+        _pre_launch(Mock(), mode="live", archive=None, local_=True)
+    info.write.assert_not_called()
+
+
+def test_remote_experiment_command_closes_the_channel_when_interrupted():
+    from psynet.command_line import run_remote_experiment_command
+
+    channel = MagicMock()
+    stream = channel.makefile.return_value
+    stream.__enter__.return_value = stream
+    stream.readline.side_effect = KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        run_remote_experiment_command(_executor_for(channel), "my-app", "psynet")
+    stream.__exit__.assert_called_once()
+    channel.close.assert_called_once()
 
 
 def test_remote_experiment_commands_disable_tty_allocation():
@@ -1261,7 +1467,29 @@ def test_remote_experiment_commands_disable_tty_allocation():
     )
 
 
+def _run_in_container_shell(cmd):
+    """Run ``cmd`` as the web container would, with a pipe standing in for SSH."""
+    from psynet.command_line import _stop_when_disconnected
+
+    return subprocess.Popen(
+        _stop_when_disconnected(cmd), shell=True, stdin=subprocess.PIPE
+    )
+
+
+def test_remote_experiment_command_reports_the_exit_status():
+    process = _run_in_container_shell("exit 3")
+    assert process.wait(timeout=10) == 3
+    process.stdin.close()
+
+
+def test_remote_experiment_command_stops_when_the_ssh_session_ends():
+    process = _run_in_container_shell("sleep 60")
+    process.stdin.close()
+    assert process.wait(timeout=10) != 0
+
+
 def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys):
+    from psynet import command_line
     from psynet.command_line import run_remote_experiment_command
 
     channel = _FakeChannel(0, output=b"running bots\n" + b"=== 1 passed ===\n")
@@ -1271,8 +1499,9 @@ def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys)
         )
         == 0
     )
-    assert channel.command.startswith(
-        "cd ~/dallinger/my-app && docker compose exec -T web"
+    assert channel.command == (
+        "cd ~/dallinger/my-app && docker compose exec -T web "
+        + command_line._stop_when_disconnected("psynet test local")
     )
     output = capsys.readouterr().out
     assert "running bots" in output
@@ -1280,7 +1509,7 @@ def test_remote_experiment_command_echoes_all_output_and_reports_failure(capsys)
     # gets lost if we stop reading as soon as the exit status is available.
     assert "1 passed" in output
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(click.ClickException, match="exit code 1: boom"):
         run_remote_experiment_command(
             _executor_for(_FakeChannel(1, output=b"boom\n")),
             "my-app",
@@ -3203,7 +3432,7 @@ def test_test_local_prepares_bundled_demo_via_directory_check(tmp_path, monkeypa
 
 
 def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
-    """--existing talks to a live server and must not require local scaffold/git."""
+    """--existing talks to a live server: no local scaffold/git, but its config."""
     (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
     mock_exp = Mock()
     runner = CliRunner()
@@ -3213,12 +3442,15 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
         patch(
             "psynet.command_line._check_experiment_directory"
         ) as mock_check_directory,
+        patch("psynet.command_line.load_runtime_server_config") as load_runtime_config,
+        patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
     ):
         result = runner.invoke(psynet, ["test", "local", "--existing"])
 
     assert result.exit_code == 0, result.output
     mock_check_directory.assert_not_called()
+    load_runtime_config.assert_called_once_with()
     mock_exp.test_experiment.assert_called_once_with()
 
 
@@ -4120,7 +4352,15 @@ def test_create_sql_profile_run_dir_without_custom_parent():
     assert Path(profile_dir).name.startswith("psynet-sql-profile-")
 
 
-def test_start_local_server_uses_debug_local_subprocess():
+@pytest.fixture
+def performance_logs_in_tmp(tmp_path, monkeypatch):
+    """Keep server logs from these tests out of the real performance-log folder."""
+    monkeypatch.setattr(
+        "psynet.command_line._performance_log_directory", lambda: tmp_path
+    )
+
+
+def test_start_local_server_uses_debug_local_subprocess(performance_logs_in_tmp):
     from psynet.command_line import _start_local_server_and_wait_for_ready, _stop_server
 
     process = Mock()
@@ -4146,7 +4386,7 @@ def test_start_local_server_uses_debug_local_subprocess():
     _stop_server(server_info)
 
 
-def test_start_local_server_uses_exact_command_args():
+def test_start_local_server_uses_exact_command_args(performance_logs_in_tmp):
     from psynet.command_line import _start_local_server_and_wait_for_ready, _stop_server
 
     process = Mock()
@@ -4175,7 +4415,7 @@ def test_start_local_server_uses_exact_command_args():
     ],
 )
 def test_start_local_server_reports_the_correct_failure(
-    capsys, exception_name, expected_message
+    capsys, exception_name, expected_message, performance_logs_in_tmp
 ):
     from psynet.command_line import (
         _start_local_server_and_wait_for_ready,
@@ -4624,16 +4864,16 @@ def test_terminate_server_process_escalates_when_sendcontrol_raises_oserror():
 
 
 def test_load_runtime_server_config_loads_generated_config():
-    from psynet.command_line import _load_runtime_server_config
+    from psynet.utils import load_runtime_server_config
 
     config = Mock()
     config.ready = True
 
     with patch(
-        "psynet.command_line.redis_vars.get",
+        "psynet.redis.redis_vars.get",
         return_value="/tmp/dallinger_develop/exp",
     ):
-        _load_runtime_server_config(config)
+        load_runtime_server_config(config)
 
     config.load.assert_not_called()
     config.load_from_file.assert_called_once_with(
@@ -4641,10 +4881,25 @@ def test_load_runtime_server_config_loads_generated_config():
     )
 
 
+def test_load_runtime_server_config_keeps_a_deployed_servers_environment(tmp_path):
+    from psynet.utils import load_runtime_server_config
+
+    config = Mock()
+    config.ready = True
+
+    with (
+        patch("psynet.redis.redis_vars.get", return_value=str(tmp_path)),
+        patch("dallinger.config.experiment_directory", return_value=str(tmp_path)),
+    ):
+        load_runtime_server_config(config)
+
+    config.load_from_file.assert_not_called()
+
+
 def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missing(
     tmp_path, monkeypatch
 ):
-    from psynet.command_line import _load_runtime_server_config
+    from psynet.utils import load_runtime_server_config
 
     deployment_id = "timeline-demo__mode=debug__launch=test"
     launch_info_dir = tmp_path / "psynet-data" / "launch-data" / deployment_id
@@ -4663,8 +4918,8 @@ def test_load_runtime_server_config_loads_launch_info_when_runtime_dir_is_missin
     config.ready = True
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    with patch("psynet.command_line.redis_vars.get", return_value=None):
-        _load_runtime_server_config(config, deployment_id=deployment_id)
+    with patch("psynet.redis.redis_vars.get", return_value=None):
+        load_runtime_server_config(config, deployment_id=deployment_id)
 
     config.load.assert_not_called()
     config.load_from_file.assert_not_called()
@@ -4796,7 +5051,7 @@ def test_anonymize_export_kwarg_warns_when_used(capsys):
     assert "have no effect" in warning
 
 
-def test_run_performance_test_with_new_server_loads_runtime_server_config():
+def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     from psynet.command_line import _run_performance_test_with_new_server
 
     process = Mock()
@@ -4811,20 +5066,115 @@ def test_run_performance_test_with_new_server_loads_runtime_server_config():
             "psynet.command_line._start_local_server_and_wait_for_ready",
             return_value=server_info,
         ) as start_server,
-        patch("psynet.command_line._load_runtime_server_config") as load_runtime_config,
         patch("psynet.command_line._run_performance_test_with_existing_server"),
         patch("psynet.command_line._stop_server"),
     ):
-        _run_performance_test_with_new_server(
-            n_bots="2", stagger=0.1, time_factor=1.0, duration_minutes=0.5, debug=False
-        )
+        _run_performance_test_with_new_server(n_bots=[2], stagger=0.1)
 
     start_server.assert_called_once_with(
         ["debug", "local", "--legacy", "--no-browsers"],
         debug=False,
         extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
-    load_runtime_config.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "option, value",
+    [
+        ("duration_minutes", "0"),
+        ("duration_minutes", "-1"),
+        ("performance_time_factor", "-1"),
+        ("performance_stagger", "-0.5"),
+        ("performance_max_p95_ms", "0"),
+        ("performance_max_queue_p95_s", "-1"),
+    ],
+)
+def test_performance_test_options_reject_out_of_range_values(option, value):
+    from psynet.command_line import _test_options
+
+    @click.command()
+    @_test_options[option]
+    def command(**kwargs):
+        pass
+
+    result = CliRunner().invoke(command, [command.params[0].opts[0], value])
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+
+
+def test_performance_log_directory_works_without_a_user_name(tmp_path, monkeypatch):
+    from psynet.command_line import _performance_log_directory
+
+    def no_user_name():
+        raise OSError("No username set in the environment")
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    monkeypatch.setattr("psynet.command_line.getpass.getuser", no_user_name)
+
+    directory = _performance_log_directory()
+    assert directory == tmp_path / f"psynet-performance-logs-{os.getuid()}"
+    assert directory.is_dir()
+
+
+def test_performance_log_directory_avoids_a_folder_others_may_write(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import _performance_log_directory
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    shared = _performance_log_directory()
+    shared.chmod(0o777)
+    directory = _performance_log_directory()
+    assert directory != shared and directory.is_dir()
+
+
+def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
+    from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
+
+    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    directory = _performance_log_directory()
+    server_logs = []
+    for i in range(_KEPT_PERFORMANCE_LOGS + 5):
+        path = directory / f"psynet_server_{i}.log"
+        path.touch()
+        os.utime(path, (i, i))
+        server_logs.append(path)
+    bot_log = directory / "psynet_bots_0.log"
+    bot_log.touch()
+
+    assert _performance_log_directory() == directory
+    remaining = sorted(directory.glob("psynet_server_*.log"), key=os.path.getmtime)
+    # Leaves room for the log the caller is about to create.
+    assert remaining == server_logs[-(_KEPT_PERFORMANCE_LOGS - 1) :]
+    assert bot_log.exists()
+
+
+def test_bot_processes_option_accepts_auto_or_a_positive_count():
+    from psynet.command_line import _test_options
+
+    @click.command()
+    @_test_options["performance_bot_processes"]
+    def command(bot_processes):
+        click.echo(repr(bot_processes))
+
+    for value, expected in [(" Auto", "'auto'"), ("4", "4")]:
+        result = CliRunner().invoke(command, ["--bot-processes", value])
+        assert result.output.strip() == expected
+    assert CliRunner().invoke(command, []).output.strip() == "'auto'"
+    for invalid in ["0", "two"]:
+        result = CliRunner().invoke(command, ["--bot-processes", invalid])
+        assert result.exit_code == 2
+
+
+def test_performance_test_bot_counts():
+    from psynet.command_line import _validate_performance_n_bots
+
+    assert _validate_performance_n_bots(None, None, None) is None
+    assert _validate_performance_n_bots(None, None, " AUTO ") == "auto"
+    assert _validate_performance_n_bots(None, None, "5, 10") == [5, 10]
+    for invalid in ["10,many", "", " ", "0", "-1", "0,10"]:
+        with pytest.raises(click.BadParameter, match="whole numbers"):
+            _validate_performance_n_bots(None, None, invalid)
 
 
 def test_experiment_never_completes_during_performance_test(monkeypatch):
@@ -4841,7 +5191,8 @@ def test_experiment_never_completes_during_performance_test(monkeypatch):
     assert Experiment.is_complete(idle) is False
 
 
-def test_performance_test_preserves_explicit_zero_options():
+def _run_existing_server_test(options, tmp_path):
+    """Run ``performance-test local --existing`` with ``options`` against a mocked server, tester and suite."""
     from psynet.command_line import _run_performance_test_with_existing_server
 
     experiment = Mock(
@@ -4852,179 +5203,176 @@ def test_performance_test_preserves_explicit_zero_options():
         test_duration_minutes=2.0,
         test_parallel_stagger_interval_s=0.5,
         test_time_factor=2.5,
+        estimated_duration_in_minutes=4.0,
     )
-    tester = Mock()
-    tester.run.return_value = []
-    bot_log_file = Mock(name="/tmp/psynet_bots_test.log")
+    suite = Mock(reset_error=None, before_test=None)
+    suite.tester.remote_metadata = None
+    suite.run.return_value = []
+    suite.find_capacity.return_value = []
 
     with (
         patch("logging.getLogger", return_value=Mock(handlers=[])),
+        patch("psynet.command_line.load_runtime_server_config") as load_config,
+        patch("psynet.command_line._check_existing_server_answers"),
+        patch("psynet.command_line._check_no_real_participants"),
+        patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
         patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch(
-            "psynet.perf_test.PerformanceTester", return_value=tester
-        ) as performance_tester,
-        patch(
-            "psynet.command_line.tempfile.NamedTemporaryFile",
-            return_value=bot_log_file,
-        ),
+        patch("psynet.perf_test.PerformanceTester") as performance_tester,
+        patch("psynet.perf_test.PerformanceSuite", return_value=suite) as suite_class,
+        patch("psynet.command_line.tempfile.NamedTemporaryFile"),
+        patch("psynet.command_line._write_json_results") as write_json,
     ):
-        _run_performance_test_with_existing_server(
-            n_bots="1",
-            stagger=0,
-            time_factor=0,
-            duration_minutes=0,
-            debug=False,
-        )
+        _run_performance_test_with_existing_server(**options)
+    return experiment, suite, load_config, performance_tester, suite_class, write_json
 
+
+@pytest.mark.parametrize("test_label", [None, "1/1"], ids=["suite", "one-test"])
+def test_local_json_records_the_run_options_but_not_ssh_ones(test_label, tmp_path):
+    *_, write_json = _run_existing_server_test(
+        dict(n_bots=[3], test_label=test_label, max_p95_ms=800, json_output="r.json"),
+        tmp_path,
+    )
+
+    options = write_json.call_args.kwargs["options"]
+    assert options["max_p95_s"] == 0.8 and options["capacity_search"] is False
+    assert not {"reset_database", "prefill_participants"} & set(options)
+
+
+@pytest.mark.parametrize(
+    "options,expected",
+    [
+        (
+            dict(stagger=0, time_factor=0, duration_minutes=0, bot_processes=3),
+            dict(
+                duration_minutes=0,
+                stagger_interval_s=0.0,
+                time_factor=0,
+                bot_processes=3,
+            ),
+        ),
+        (
+            {},
+            dict(
+                duration_minutes=6,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+            ),
+        ),
+        (
+            dict(n_bots="auto", time_factor=0),
+            dict(
+                duration_minutes=2.0,
+                stagger_interval_s=0.5,
+                time_factor=0,
+                bot_processes="auto",
+            ),
+        ),
+        (
+            dict(n_bots="auto"),
+            dict(
+                duration_minutes=4,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+            ),
+        ),
+        (
+            dict(arrival_minutes=1.5),
+            dict(
+                duration_minutes=7.5,
+                stagger_interval_s=0.5,
+                time_factor=1.0,
+                bot_processes="auto",
+                arrival_minutes=1.5,
+            ),
+        ),
+    ],
+    ids=[
+        "explicit-zeros",
+        "defaults",
+        "capacity-search-without-pauses",
+        "capacity-search-tests-last-a-session",
+        "arrivals-lengthen-the-default",
+    ],
+)
+def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
+    """Explicit zeros are kept; omitted options use the experiment's defaults.
+
+    By default a test lasts 1.5 sessions of the experiment's estimated 4
+    minutes, and a capacity search's tests one session.
+    """
+    from psynet.perf_test import CapacityLimits
+
+    experiment, suite, load_config, performance_tester, suite_class, _ = (
+        _run_existing_server_test(options, tmp_path)
+    )
+
+    # --existing needs the running server's dashboard credentials.
+    load_config.assert_called_once_with()
     performance_tester.assert_called_once_with(
         authenticated_session=experiment.authenticated_session,
         base_url=experiment.base_url,
-        n_bots=experiment.test_n_bots,
-        duration_minutes=0,
-        stagger_interval_s=0.0,
-        time_factor=0,
+        estimated_duration_minutes=4.0,
+        **{"arrival_minutes": None, **expected},
     )
-
-
-def test_performance_test_uses_defaults_when_options_omitted():
-    from psynet.command_line import _run_performance_test_with_existing_server
-
-    experiment = Mock(
-        authenticated_session=Mock(),
-        base_url="http://localhost",
-        label="test",
-        test_n_bots=3,
-        test_duration_minutes=2.0,
-        test_parallel_stagger_interval_s=0.5,
-        test_time_factor=2.5,
+    suite_class.assert_called_once_with(
+        performance_tester.return_value,
+        limits=CapacityLimits(),
+        before_test=None,
+        label=experiment.label,
+        after_test=ANY,
+        local=True,
     )
-    tester = Mock()
-    tester.run.return_value = []
-    bot_log_file = Mock(name="/tmp/psynet_bots_test.log")
-
-    with (
-        patch("logging.getLogger", return_value=Mock(handlers=[])),
-        patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch(
-            "psynet.perf_test.PerformanceTester", return_value=tester
-        ) as performance_tester,
-        patch(
-            "psynet.command_line.tempfile.NamedTemporaryFile",
-            return_value=bot_log_file,
-        ),
-    ):
-        _run_performance_test_with_existing_server(
-            n_bots=None,
-            stagger=None,
-            time_factor=None,
-            duration_minutes=None,
-            debug=False,
-        )
-
-    performance_tester.assert_called_once_with(
-        authenticated_session=experiment.authenticated_session,
-        base_url=experiment.base_url,
-        n_bots=experiment.test_n_bots,
-        duration_minutes=2.0,
-        stagger_interval_s=0.5,
-        time_factor=1.0,
-    )
-
-
-def test_ssh_performance_test_command_forwards_zero_valued_options():
-    from psynet.command_line import _build_ssh_performance_test_cmd
-
-    assert _build_ssh_performance_test_cmd(
-        n_bots="5",
-        stagger=0,
-        time_factor=0,
-        duration_minutes=0,
-    ) == (
-        "psynet performance-test local --existing "
-        "--n-bots 5 --stagger 0 --time-factor 0 --duration-minutes 0"
-    )
-
-
-def test_ssh_performance_test_command_omits_unspecified_options():
-    from psynet.command_line import _build_ssh_performance_test_cmd
-
-    assert (
-        _build_ssh_performance_test_cmd(
-            n_bots=None,
-            stagger=None,
-            time_factor=None,
-            duration_minutes=None,
-        )
-        == "psynet performance-test local --existing"
+    searching = options.get("n_bots") == "auto"
+    assert (suite.find_capacity.called, suite.run.called) == (
+        searching,
+        not searching,
     )
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    "options, message",
     [
-        (None, None),
-        (True, True),
-        (False, False),
-        (42, 42),
-        ("hello", "hello"),
-        (3.14, 3.14),
-        (0.0, 0.0),
-        (float("nan"), None),
-        (float("inf"), None),
-        (float("-inf"), None),
-        (Decimal("1.5"), 1.5),
-        (datetime(2025, 5, 7, 12, 30, 45), "2025-05-07T12:30:45"),
-        (date(2025, 5, 7), "2025-05-07"),
-        ((1, 2, 3), [1, 2, 3]),
+        (dict(arrival_minutes=1, stagger=2), "use one"),
+        (dict(arrival_minutes=2, duration_minutes=2), "shorter than --duration"),
+        (dict(n_bots="auto", arrival_minutes=10), "can't be used with --n-bots auto"),
     ],
 )
-def test_to_json_safe_scalars_and_simple_collections(value, expected):
-    from psynet.perf_test import _to_json_safe
+def test_arrival_minutes_rejects_conflicting_options(options, message):
+    from psynet.command_line import _run_performance_test_local
 
-    assert _to_json_safe(value) == expected
-
-
-def test_to_json_safe_decimal_returns_float_type():
-    # `Decimal == float` compares by value; pin the type explicitly.
-    from psynet.perf_test import _to_json_safe
-
-    assert isinstance(_to_json_safe(Decimal("1.5")), float)
+    with pytest.raises(click.UsageError, match=message):
+        _run_performance_test_local(
+            existing=True, json_output=None, debug=False, **options
+        )
 
 
-def test_to_json_safe_set_and_frozenset_are_sorted_lists():
-    # Output must be deterministic so repeated runs produce identical JSON
-    # (otherwise git diffs of stored results are noisy).
-    from psynet.perf_test import _to_json_safe
+def test_performance_test_flags_keep_zeros_and_omit_unset_options():
+    from psynet.perf_ssh import _performance_test_flags
 
-    assert _to_json_safe({3, 1, 2}) == [1, 2, 3]
-    assert _to_json_safe(frozenset({"b", "a", "c"})) == ["a", "b", "c"]
+    assert _performance_test_flags(
+        n_bots=[5, 10],
+        stagger=0,
+        time_factor=0,
+        duration_minutes=1.5,
+        max_p95_ms=None,
+        test_label="1/2",
+        force=True,
+        debug=False,
+    ) == (
+        " --n-bots 5,10 --stagger 0 --time-factor 0 --duration-minutes 1.5 "
+        "--test-label 1/2 --force"
+    )
+    assert _performance_test_flags(n_bots=None, stagger=None) == ""
 
 
-def test_to_json_safe_mixed_type_set_falls_back_to_unsorted_list():
-    # Heterogeneous sets aren't sortable across types; the helper must still
-    # return a list rather than raising.
-    from psynet.perf_test import _to_json_safe
+def test_experiment_url_can_be_overridden_for_one_process(monkeypatch):
+    from psynet.utils import get_experiment_url
 
-    result = _to_json_safe({1, "a", None})
-    assert isinstance(result, list)
-    assert set(result) == {1, "a", None}
+    monkeypatch.setenv("PSYNET_EXPERIMENT_URL", "http://localhost:5000")
 
-
-def test_to_json_safe_recurses_through_nested_dict_and_list():
-    from psynet.perf_test import _to_json_safe
-
-    nested = {
-        "rows": [
-            {"value": Decimal("0.5"), "missing": float("nan")},
-            {"value": Decimal("0.75"), "missing": None},
-        ],
-    }
-    assert _to_json_safe(nested) == {
-        "rows": [
-            {"value": 0.5, "missing": None},
-            {"value": 0.75, "missing": None},
-        ],
-    }
+    assert get_experiment_url() == "http://localhost:5000"
 
 
 def test_collect_run_metadata_includes_environment_fields():
@@ -5036,8 +5384,9 @@ def test_collect_run_metadata_includes_environment_fields():
         assert isinstance(metadata[key], str) and metadata[key]
 
 
-def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
+def test_write_json_results_emits_expected_schema(tmp_path):
     from psynet.command_line import _write_json_results
+    from psynet.perf_test import PerformanceTestResult
 
     json_output = str(tmp_path / "results.json")
     metadata = {
@@ -5054,16 +5403,14 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
         "duration_minutes": 1.5,
         "stagger_interval_s": 0.1,
         "time_factor": 1.0,
+        "bot_log": Path("bots.log"),
     }
+    low_backlog = {"jobs": 3, "q_delay_p95": 9.0, "backlog": 2, "oldest_queued_s": 12.0}
     all_results = [
-        {
-            "n_bots": 1,
-            "avg_latency": Decimal("0.5"),
-            "nan_value": float("nan"),
-            "inf_value": float("inf"),
-            "async_job_stats": [{"avg": Decimal("0.001"), "max": float("nan")}],
-        },
-        {"n_bots": 2, "avg_latency": Decimal("0.6")},
+        PerformanceTestResult(
+            n_bots=1, p95_response_time=0.5, queue_waits={"low": low_backlog}
+        ),
+        PerformanceTestResult(n_bots=2),
     ]
 
     _write_json_results(
@@ -5076,15 +5423,11 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert payload["schema_version"] == 1
     for key, expected in metadata.items():
         assert payload[key] == expected
-    assert payload["options"] == options
-    assert len(payload["results"]) == 2
-
-    first = payload["results"][0]
-    assert first["avg_latency"] == 0.5
-    assert first["nan_value"] is None
-    assert first["inf_value"] is None
-    assert first["async_job_stats"][0]["avg"] == 0.001
-    assert first["async_job_stats"][0]["max"] is None
+    assert payload["options"] == {**options, "bot_log": "bots.log"}
+    assert [r["n_bots"] for r in payload["results"]] == [1, 2]
+    assert payload["results"][0]["p95_response_time"] == 0.5
+    assert payload["results"][1]["p95_response_time"] is None
+    assert payload["results"][0]["queue_waits"] == {"low": low_backlog}
 
 
 def _invoke_destroy_ssh(
@@ -5467,6 +5810,33 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="needs POSIX signals")
+@pytest.mark.parametrize("signum, status", [("SIGINT", 1), ("SIGTERM", 143)])
+def test_a_signalled_command_that_imports_the_experiment_fails(signum, status):
+    import signal
+
+    script = (
+        "import time, click\n"
+        "@click.command()\n"
+        "def main():\n"
+        "    import psynet.experiment\n"
+        "    print('ready', flush=True)\n"
+        "    time.sleep(60)\n"
+        "main()\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdout.readline() == "ready\n"
+    process.send_signal(getattr(signal, signum))
+    output = process.communicate(timeout=30)[0]
+    assert process.returncode == status
+    assert ("Aborted!" in output) == (signum == "SIGINT")
+
+
 def test_prolific_listing_warnings():
     from psynet.command_line import prolific_listing_warnings
 
@@ -5520,6 +5890,24 @@ def test_db_ssh_without_a_terminal_asks_for_server(monkeypatch):
     assert "Configured servers: musix, rr-pc02" in result.output
 
 
+def test_performance_test_existing_explains_a_missing_server():
+    import requests
+
+    from psynet.command_line import _check_existing_server_answers
+
+    with patch("psynet.command_line.redis_vars.get", return_value=None):
+        with pytest.raises(click.ClickException, match="No experiment server has"):
+            _check_existing_server_answers()
+    with socket.socket() as unused:
+        unused.bind(("127.0.0.1", 0))
+        url = f"http://127.0.0.1:{unused.getsockname()[1]}"
+    with patch("psynet.command_line.redis_vars.get", return_value=url):
+        with pytest.raises(click.ClickException, match=f"No server answers at {url}"):
+            _check_existing_server_answers()
+        with patch("requests.head", side_effect=requests.Timeout):
+            _check_existing_server_answers()
+
+
 def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
     from psynet.command_line import _run_performance_test_with_new_server
 
@@ -5531,7 +5919,7 @@ def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
         patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
         pytest.raises(click.ClickException, match="PID 7"),
     ):
-        _run_performance_test_with_new_server("2", 0, 1, 1, False)
+        _run_performance_test_with_new_server(n_bots=[2])
     start.assert_not_called()
 
 

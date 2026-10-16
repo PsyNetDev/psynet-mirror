@@ -227,6 +227,21 @@ Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
 and ``sync_group_timeout_between_barriers_action``.
 
+Choose ``max_wait_time`` at the grouper together with how quickly you
+recruit, because a participant is failed if too few others arrive while
+they wait. To lose fewer than 1 in 20, expect at least 1.3 times the group
+size to arrive within one ``max_wait_time``. For groups of three, that is
+about 12 participants a minute with the default 20 seconds, or 2 a minute
+with ``max_wait_time=120``. In one test with groups of three and about 3
+arrivals a minute, the grouper failed 45% of participants with a 20-second
+wait and none with 120 seconds. When recruitment stops, up to one fewer than
+the group size are left without a group and are failed.
+
+At later barriers, ``max_wait_time`` needs to cover how much longer some
+members take over the previous page than others. A member who times out
+there can take the group below ``min_group_size``, with the consequences
+described under *Groups below minimum size* below.
+
 Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 

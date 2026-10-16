@@ -55,7 +55,11 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    "dallinger[docker]>=12.4.0,<13",
+    # TODO: Replace this Git pin with a released dallinger[docker] version once
+    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout) and
+    # #10087 (no croniter at worker start-up) are on PyPI. The SHA is a commit
+    # on Dallinger master that includes them.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@406f3c147354477fc11d1247403b65577c7a349f",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
@@ -72,6 +76,7 @@ experiment = [
     "pytest-mock",
     "pytest-timeout",
     "python-gettext",
+    "rich>=13",
     "rpdb",
     "slack_sdk",  # For Slack notifications
     "tabulate",

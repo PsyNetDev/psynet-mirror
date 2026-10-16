@@ -42,6 +42,7 @@ from .utils import (
     call_function_with_context,
     get_config,
     get_logger,
+    keep_alive_session,
     organize_by_key,
 )
 
@@ -1186,6 +1187,10 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     return query.one()
 
 
+class DriverStopped(Exception):
+    """Raised by a :class:`ParticipantDriver` whose ``stop_event`` has been set."""
+
+
 class ParticipantDriver:
     """
     Driver class for automating participant actions in an experiment.
@@ -1219,7 +1224,16 @@ class ParticipantDriver:
         The ID of the participant to automate
         (i.e. corresponding to the ``id`` column in the Participant table).
         If not provided, a new bot participant is created.
+
+    Attributes
+    ----------
+    stop_event : threading.Event or None
+        If set while the driver is taking pages, the next page raises
+        :class:`DriverStopped`. Load tests use this to end bots that run in
+        threads.
     """
+
+    stop_event = None
 
     def __init__(
         self,
@@ -1296,9 +1310,26 @@ class ParticipantDriver:
         Run the participant through the entire experiment.
         """
         start_time = time.monotonic()
-        self.run_to_completion(render_pages, time_factor)
+        try:
+            self.run_to_completion(render_pages, time_factor)
+        finally:
+            session = self.__dict__.pop("_http_session", None)
+            if session is not None:
+                session.close()
         total_experiment_time = time.monotonic() - start_time
         self._report_stats(total_experiment_time)
+
+    @property
+    def http_session(self):
+        """Return this participant's own ``requests.Session``, as a browser tab would keep.
+
+        Reusing connections keeps bots cheap under load; opening a new HTTPS
+        connection for every request can make the bots, not the server, the
+        bottleneck of a performance test.
+        """
+        if "_http_session" not in self.__dict__:
+            self.__dict__["_http_session"] = keep_alive_session(retry_posts=True)
+        return self.__dict__["_http_session"]
 
     def take_page(
         self,
@@ -1330,7 +1361,10 @@ class ParticipantDriver:
             )
         assert self.status is not None
 
-        self._simulate_page_time(time_factor)
+        if not _status_is_timeline_hold(self.status):
+            # Holds are paced by the poll sleep below, as browsers poll from
+            # arrival; their time_estimate is expected_wait, not a poll gap.
+            self._simulate_page_time(time_factor)
         self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
@@ -1339,8 +1373,12 @@ class ParticipantDriver:
         if _status_is_timeline_hold(self.status):
             # Ordinary Next on an unready hold takes FOR UPDATE and busy-loops
             # parallel bots. Hold-resume already skipped the row lock; pause
-            # so last-arrival can skip this waiter.
-            time.sleep(_TIMELINE_HOLD_POLL_SECONDS)
+            # so last-arrival can skip this waiter. Paced bots poll like a
+            # browser's safety poll, so performance tests see realistic load.
+            poll_seconds = _TIMELINE_HOLD_POLL_SECONDS
+            if time_factor > 0:
+                poll_seconds = self.status["page"].get("check_interval", poll_seconds)
+            self._sleep(poll_seconds)
 
         return self.is_working
 
@@ -1353,11 +1391,6 @@ class ParticipantDriver:
         Fetch the participant's current status and any associated response files,
         and store them in the participant driver's attributes
         (self.status and self.response_files).
-
-        Parameters
-        ----------
-        directory : str
-            Path to a directory for extracting files.
         """
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
@@ -1366,24 +1399,23 @@ class ParticipantDriver:
         )
 
         self.response_files = {}
+        shutil.rmtree(
+            os.path.join(self.directory, "bot_response_files"), ignore_errors=True
+        )
 
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-            # Load the status.
-            with zf.open("status.json") as f:
-                self.status = json.load(f)
-
-            # Clean up any old response files.
-            try:
-                shutil.rmtree(os.path.join(self.directory, "bot_response_files"))
-            except FileNotFoundError:
-                pass
-
-            # Extract the new response files.
-            for name in zf.namelist():
-                if name.startswith("bot_response_files/") and not name.endswith("/"):
-                    zf.extract(name, self.directory)
-                    key = name.replace("bot_response_files/", "", 1)
-                    self.response_files[key] = os.path.join(self.directory, name)
+        if response.headers.get("Content-Type", "").startswith("application/json"):
+            self.status = response.json()
+        else:
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                with zf.open("status.json") as f:
+                    self.status = json.load(f)
+                for name in zf.namelist():
+                    if name.startswith("bot_response_files/") and not name.endswith(
+                        "/"
+                    ):
+                        zf.extract(name, self.directory)
+                        key = name.replace("bot_response_files/", "", 1)
+                        self.response_files[key] = os.path.join(self.directory, name)
 
         self.status_time_fetched = time.monotonic()
 
@@ -1395,7 +1427,7 @@ class ParticipantDriver:
         redirects to the live page, which ``requests`` follows.
         """
         _retry_busy_http(
-            lambda: requests.get(
+            lambda: self.http_session.get(
                 f"{self.experiment.base_url}/timeline",
                 params={"unique_id": self.participant_unique_id},
             ),
@@ -1408,19 +1440,26 @@ class ParticipantDriver:
 
         Parameters
         ----------
-        page_time_started : float
-            The time the page started (from time.monotonic()).
-        status : dict
-            The status dictionary for the participant.
         time_factor : float
-            Factor to multiply the simulated page time by.
+            Factor to multiply the page's ``time_estimate`` by. Above 0 the
+            bot also stays at least the page's ``min_duration`` (see
+            :attr:`psynet.timeline.Page.min_duration`), as a participant must.
         """
-        time_estimate = self.status["page"]["time_estimate"]
-        simulated_page_time = time_estimate * time_factor
+        page = self.status["page"]
+        simulated_page_time = page["time_estimate"] * time_factor
+        if time_factor > 0:
+            simulated_page_time = max(
+                simulated_page_time, page.get("min_duration") or 0.0
+            )
         wake_time = self.status_time_fetched + simulated_page_time
-        remaining_sleep_duration = wake_time - time.monotonic()
-        if remaining_sleep_duration > 0:
-            time.sleep(remaining_sleep_duration)
+        self._sleep(max(wake_time - time.monotonic(), 0))
+
+    def _sleep(self, seconds):
+        """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""
+        if self.stop_event is None:
+            time.sleep(seconds)
+        elif self.stop_event.wait(seconds):
+            raise DriverStopped()
 
     def _retry_submit_after_page_advanced(self, status, response, already_retried):
         """Retry once when last-arrival already rotated this driver's page uuid.
@@ -1509,7 +1548,7 @@ class ParticipantDriver:
                     file_obj = file_tuple[1]
                     if hasattr(file_obj, "seek"):
                         file_obj.seek(0)
-                return requests.post(
+                return self.http_session.post(
                     f"{self.experiment.base_url}/response",
                     data={"json": json.dumps(submission_data)},
                     files=files,

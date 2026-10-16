@@ -656,6 +656,7 @@ def maybe_enable_sqlalchemy_profiling(
     min_duration_ms = float(options.get("min_ms", 0.0))
     top_n = int(options.get("top_n", 20))
     capture_stack = _parse_bool(options.get("stack", "0"))
+    stack_depth = int(options.get("stack_depth", 6))
     normalize_sql = _parse_bool(options.get("normalize", "1"))
     max_statement_chars = options.get("max_statement_chars")
     if max_statement_chars is not None:
@@ -663,6 +664,7 @@ def maybe_enable_sqlalchemy_profiling(
     profiler = SQLAlchemyQueryProfiler(
         engine,
         capture_stack=capture_stack,
+        stack_depth=stack_depth,
         min_duration_ms=min_duration_ms,
         normalize_sql=normalize_sql,
         max_statement_chars=max_statement_chars,
