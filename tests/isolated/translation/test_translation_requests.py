@@ -24,6 +24,7 @@ from psynet.translation.translators import (
     _response_format,
     _script_name,
     _validate_translations,
+    get_translator_from_name,
     source_context_for_prompt,
 )
 
@@ -213,6 +214,11 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
         assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
 
     assert ["temperature" in request for request in requests] == [True, False, False]
+
+
+def test_removed_google_translator_has_a_clear_error():
+    with pytest.raises(ValueError, match="no longer supports Google Translate"):
+        get_translator_from_name("google_translate")
 
 
 def test_response_format_requires_exactly_one_translation_per_text():
