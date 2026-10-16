@@ -224,7 +224,28 @@ class TranslationBatch:
 
     file: Optional[str]
     entries: List[polib.POEntry]
-    examples: List[tuple[str, str]]
+    file_entries: List[polib.POEntry]
+    """All messages from the same file, including those of other batches."""
+
+    @property
+    def examples(self) -> List[tuple[str, str]]:
+        """
+        Translated messages from the same file, preferring those that share a
+        gettext context with the batch.
+
+        These are read when the batch is sent, so they include the translations
+        of earlier batches from the same file.
+        """
+        labels = {entry.msgctxt for entry in self.entries}
+        # A translation identical to its source is usually an English fallback;
+        # as an example it would invite the model to leave text untranslated.
+        translated = [
+            entry
+            for entry in self.file_entries
+            if entry.msgstr and entry.msgstr != entry.msgid
+        ]
+        translated.sort(key=lambda entry: entry.msgctxt not in labels)
+        return [(e.msgid, e.msgstr) for e in translated[:MAX_EXAMPLES]]
 
     def translate(self, source_lang, target_lang, continue_on_error, translator):
         texts = [entry.msgid for entry in self.entries]
@@ -258,9 +279,9 @@ def batch_untranslated(po: polib.POFile) -> List[TranslationBatch]:
     Group untranslated messages by source file, in source order.
 
     Each file is split into batches of at most ``MAX_BATCH_SIZE`` messages.
-    Translated messages from the same file are attached as examples, preferring
-    those that share a gettext context with the batch, so new translations stay
-    consistent with existing ones.
+    Each batch is sent with translated messages from the same file as examples
+    (see :attr:`TranslationBatch.examples`), so new translations stay consistent
+    with existing ones and with each other.
     """
     files = {}
     for entry in po:
@@ -270,20 +291,12 @@ def batch_untranslated(po: polib.POFile) -> List[TranslationBatch]:
     for file, entries in files.items():
         entries.sort(key=lambda entry: _line_number(entry) or 0)
         untranslated = [entry for entry in entries if not entry.msgstr]
-        # A translation identical to its source is usually an English fallback;
-        # as an example it would invite the model to leave text untranslated.
-        translated = [
-            entry for entry in entries if entry.msgstr and entry.msgstr != entry.msgid
-        ]
         for i in range(0, len(untranslated), MAX_BATCH_SIZE):
-            batch_entries = untranslated[i : i + MAX_BATCH_SIZE]
-            labels = {entry.msgctxt for entry in batch_entries}
-            examples = sorted(translated, key=lambda entry: entry.msgctxt not in labels)
             batches.append(
                 TranslationBatch(
                     file=file,
-                    entries=batch_entries,
-                    examples=[(e.msgid, e.msgstr) for e in examples[:MAX_EXAMPLES]],
+                    entries=untranslated[i : i + MAX_BATCH_SIZE],
+                    file_entries=entries,
                 )
             )
     return batches

@@ -190,3 +190,7 @@ def test_only_new_messages_are_sent_in_batches_per_file():
     assert translator.context.labels == ["consent", "consent"]
     assert consent.entries[1].msgstr == "I disagree-fr"
     assert consent.entries[1].fuzzy
+
+    assert countries[1].examples == []
+    countries[0].translate("en", "fr", False, translator)
+    assert ("Country 0", "Country 0-fr") in countries[1].examples
