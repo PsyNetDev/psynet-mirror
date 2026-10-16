@@ -1918,6 +1918,8 @@ class Page(Elt):
         control = getattr(self, "control", None)
         if isinstance(control, VideoRecordControl):
             return list(control.recording_sources)
+        if self.background_recording is not None:
+            return list(self.background_recording.sources)
         return []
 
     def _accept_response(self, resp, experiment, participant):

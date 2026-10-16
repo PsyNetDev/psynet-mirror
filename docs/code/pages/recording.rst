@@ -40,10 +40,12 @@ step before the task starts. Participants can continue without recording; option
 pages do not request skipped or denied sources again. Later required pages offer
 another permission decision when their source is unavailable. Audio is
 off by default. Screen audio availability depends on the browser and shared source.
+If the experiment uses PsyNet's audiovisual consent module, a page with background
+recording placed before it is rejected when the experiment starts.
 
-By default, capture stops after 120 seconds or at 16 MiB per source. Exceeding
-the size limit discards that clip; reaching the duration limit retains the
-captured portion. Missing optional clips do not fail the trial or block analysis.
+By default, capture stops after 120 seconds or at 16 MiB per source. Reaching
+either limit keeps the part captured so far. Missing optional clips never fail
+the trial, block analysis, or hold any page.
 See :class:`~psynet.modular_page.VideoRecordConfig` for configuration options.
 
 Background recordings require :class:`~psynet.asset.LocalStorage` and in-place
@@ -77,15 +79,18 @@ a trial to count as valid. Set this on a page returned by the trial's
 The answer is saved immediately and its analysis can proceed, but the trial cannot
 finalize until all required clips are deposited. Independent pages can advance.
 
-Missing clips fail only their parent trial at the upload deadline, with no
-recording retry. This includes denied or skipped capture. Existing performance
-and payment policies still apply. Required recording on a page without a parent
-trial raises an error.
-With ``source="both"``, both clips are required.
+Because feedback waits for the trial to be finalized (so that its score is set),
+a pending required clip also holds the feedback page until the clip is deposited
+or fails. This wait is bounded by the clip's upload deadline plus the 5-minute
+storage bound; in practice clips usually arrive within seconds. Optional clips
+never hold feedback.
 
-Required background pages run ``on_complete`` after successful validation and
-asset reservation, so completion hooks see the pending requirement. Optional
-pages retain ordinary answer-saving and completion-hook behavior.
+A missing clip fails only its parent trial, with no recording retry; existing
+performance and payment policies still apply. If capture was denied, skipped,
+or otherwise unavailable when the answer was submitted, the trial fails
+immediately; otherwise it fails if the clip has not arrived by its upload
+deadline. Required recording on a page without a parent trial raises an error.
+With ``source="both"``, both clips are required.
 
 Bots skip background capture and bypass the required-media condition for timeline
 testing. A passing bot run does not validate recording availability; use browser
@@ -102,8 +107,7 @@ For a runnable example, use ``demos/features/background_recording``:
     psynet debug local
 
 Compare optional and required trials with camera permission enabled and denied.
-Answers should advance in both cases; a missing required clip fails its trial at
-the deadline. Inspect the results under **Monitor → Recordings**.
+Answers should advance in both cases; a missing required clip fails its trial. Inspect the results under **Monitor → Recordings**.
 
 
 Waiting for a recording before playback

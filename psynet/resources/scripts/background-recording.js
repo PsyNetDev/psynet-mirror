@@ -9,6 +9,7 @@ export class BackgroundRecorder {
     this.devices = devices;
     this.streams = devices.streams;
     this.decisions = new Map();
+    this.granted = new Set();
     this.clips = {};
   }
 
@@ -17,7 +18,7 @@ export class BackgroundRecorder {
     this.config = config;
     this.unavailable = {};
     this.outcomes = {};
-    this.result = null;
+    this.indicator = null;
     if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("video/webm")) {
       for (const source of config.sources) this.unavailable[source] = "unsupported";
       return;
@@ -26,18 +27,26 @@ export class BackgroundRecorder {
       for (const source of config.sources) this.unavailable[source] = "queue_full";
       return;
     }
-    const needed = config.sources.filter(source => {
-      if (this.devices.reusable(source, config.audio)) return false;
+    const needed = [];
+    for (const source of config.sources) {
+      if (this.devices.reusable(source, config.audio)) continue;
       if (!this.devices.reusable(source, false)) this.devices.release(source);
       if (config.required) this.decisions.delete(source);
-      return !this.decisions.has(source);
-    });
+      if (this.decisions.has(source)) continue;
+      // Streams are released after pages that do not record. Camera access needs
+      // no click once granted, so reacquire it silently; screen sharing always
+      // needs the dialog.
+      if (source === "camera" && this.granted.has(source)) {
+        try {
+          await this.devices.acquire(source, {audio:config.audio, lowResolution:true});
+          continue;
+        } catch (error) {
+          console.warn("Could not reacquire the camera", error);
+        }
+      }
+      needed.push(source);
+    }
     if (needed.length) await this.askPermission(needed);
-    this.indicator = document.createElement("div");
-    this.indicator.id = "background-recording-status";
-    this.indicator.setAttribute("role", "status");
-    this.indicator.style.cssText = "position:fixed;bottom:12px;right:12px;padding:8px;background:#fff;border:1px solid #777;z-index:1000";
-    document.body.append(this.indicator);
     // Divide remaining queue space across sources before recording starts. This
     // bounds capture in addition to retained uploads; chunks arrive each second.
     let remaining = this.queue.availableBytes;
@@ -60,7 +69,7 @@ export class BackgroundRecorder {
             if (current.error) this.unavailable[source] = current.error;
             if (current.outcome) this.outcomes[source] = current.outcome;
             if (current.outcome === "source_ended") this.decisions.set(source, "source_ended");
-            this.indicator.dataset.bytes = String(Object.values(this.clips).reduce((sum, item) => sum + item.size, 0));
+            if (this.indicator) this.indicator.dataset.bytes = String(Object.values(this.clips).reduce((sum, item) => sum + item.size, 0));
             this.updateIndicator();
           },
         });
@@ -71,6 +80,14 @@ export class BackgroundRecorder {
         console.warn("Could not start background recording", source, error);
         this.unavailable[source] = "capture_error";
       }
+    }
+    // Show the status chip only when something is actually being recorded.
+    if (Object.values(this.clips).some(clip => clip.getState() === "recording")) {
+      this.indicator = document.createElement("div");
+      this.indicator.id = "background-recording-status";
+      this.indicator.setAttribute("role", "status");
+      this.indicator.style.cssText = "position:fixed;bottom:12px;right:12px;padding:8px;background:#fff;border:1px solid #777;z-index:1000";
+      document.body.append(this.indicator);
     }
     this.updateIndicator();
   }
@@ -104,6 +121,7 @@ export class BackgroundRecorder {
             await this.devices.acquire(source, {audio:this.config.audio, lowResolution:true});
             if (finished) { this.devices.release(source); return; }
             this.decisions.delete(source);
+            this.granted.add(source);
           } catch (error) {
             if (!finished) this.decisions.set(source,"permission_denied");
             console.warn("Background capture permission unavailable",source,error.name);
@@ -124,27 +142,39 @@ export class BackgroundRecorder {
     if (this.indicator) this.indicator.textContent = Object.values(this.clips).some(clip => clip.getState() === "recording") ? this.config.labels.recording : this.config.labels.stopped;
   }
 
+  /** Snapshot every clip for a submission without stopping the recording.
+   *
+   * If the submission is rejected, recording continues and the next submission
+   * takes a fresh, longer snapshot. A submission whose reply was lost is resent
+   * with its original snapshot instead (see psynet.js). The page's clips stop
+   * when the next page discards them.
+   */
   async finish() {
-    if (this.result) return this.result;
     const recordings = {};
     for (const [source, clip] of Object.entries(this.clips)) {
-      await clip.stopRecording();
+      await clip.flush();
+      // A recorder that has not produced data yet (an answer within its first
+      // moments) only delivers it on stopping.
+      if (!clip.size && clip.getState() === "recording") await clip.stopRecording();
       if (clip.error) this.unavailable[source] = clip.error;
       if (clip.outcome) this.outcomes[source] = clip.outcome;
       recordings[source] = this.unavailable[source] ? new Blob([]) : clip.getBlob();
-      clip.chunks = [];
     }
     const sizes = Object.fromEntries(this.config.sources.map(source => [source,recordings[source]?.size || 0]));
     const prepared = this.queue.prepare(recordings,this.config.max_bytes);
     // More specific capture outcomes take precedence over an empty-blob result.
-    this.result = {recordings:prepared.recordings,sizes,unavailable:{...prepared.unavailable,...this.unavailable},outcomes:this.outcomes};
-    return this.result;
+    return {
+      recordings:prepared.recordings,
+      sizes,
+      unavailable:{...prepared.unavailable,...this.unavailable},
+      outcomes:{...this.outcomes},
+    };
   }
 
   async discard() {
     for (const clip of Object.values(this.clips)) clip.reset();
     this.clips = {};
-    this.result = null;
     this.indicator?.remove();
+    this.indicator = null;
   }
 }

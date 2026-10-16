@@ -123,13 +123,18 @@ export class RecordingClip {
       });
       this.done = new Promise(resolve => { this.resolve = resolve; });
       this.recorder.ondataavailable = event => {
-        if (this.error) return;
-        if (this.size + event.data.size > this.maxBytes) {
-          this.error = "size_limit";
-          this.chunks = [];
-          this.stop();
-        } else { this.chunks.push(event.data); this.size += event.data.size; }
-        this.onChange(this);
+        const flushed = this.flushed;
+        this.flushed = null;
+        // After the size limit, ignore later chunks: a gap would corrupt the file.
+        if (!this.error && this.outcome !== "size_limit") {
+          if (this.size + event.data.size > this.maxBytes) {
+            // Keep what was captured, as for the duration limit.
+            this.outcome = "size_limit";
+            this.stop();
+          } else { this.chunks.push(event.data); this.size += event.data.size; }
+          this.onChange(this);
+        }
+        flushed?.();
       };
       this.recorder.onstop = () => { this.detach(); this.resolve(); this.onChange(this); };
       this.recorder.onerror = () => { this.error = "capture_error"; this.chunks = []; this.stop(); };
@@ -161,6 +166,27 @@ export class RecordingClip {
       this.error = "capture_error";
       this.resolve?.();
     }
+  }
+
+  /** Collect everything recorded so far without stopping the recording.
+   *
+   * requestData() delivers the data through a later dataavailable event, so
+   * wait for it (briefly) before reading the chunks.
+   */
+  async flush() {
+    if (this.recorder?.state !== "recording") return;
+    const delivered = new Promise(resolve => { this.flushed = resolve; });
+    try {
+      this.recorder.requestData();
+    } catch (error) {
+      console.warn("Could not collect recorded data", error);
+      this.flushed = null;
+      return;
+    }
+    let timer;
+    try {
+      await Promise.race([delivered, new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
+    } finally { clearTimeout(timer); this.flushed = null; }
   }
 
   /** Stop and wait briefly for the final chunk.
@@ -198,6 +224,8 @@ export class RecordingClip {
       this.recorder.onerror = null;
     }
     this.resolve?.();
+    this.flushed?.();
+    this.flushed = null;
     this.recorder = null;
     this.chunks = [];
     this.size = 0;
