@@ -94,7 +94,7 @@ source .venv/bin/activate
 psynet debug local
 ```
 
-Provision:
+Provision (choose `num_dynos_worker` with `plan-server-resources/SKILL.md`):
 
 ```bash
 dallinger ec2 provision \

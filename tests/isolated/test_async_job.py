@@ -14,6 +14,7 @@ import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are re
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.utils import get_authenticated_session
 
 
 def do_nothing():
@@ -26,6 +27,12 @@ def sleep_for_1s():
 
 def failing_function():
     assert False, "This is an intentional error thrown for testing purposes."
+
+
+def busy_for(seconds):
+    end = time.thread_time() + seconds
+    while time.thread_time() < end:
+        pass
 
 
 @pytest.mark.parametrize(
@@ -88,6 +95,28 @@ class TestAsyncJobs2:
                 assert p.finished
 
         assert abs(job.time_taken - 1) < 0.5
+        assert job.cpu_time < 0.2
+
+    def test_cpu_bound_job_records_cpu_time(self, launched_experiment):
+        job = LocalAsyncJob(busy_for, {"seconds": 0.3}).enqueue()
+        db.session.commit()
+        for _ in range(50):
+            time.sleep(0.1)
+            db.session.commit()
+            if job.finished:
+                break
+
+        assert job.finished
+        assert 0.3 <= job.cpu_time <= job.time_taken
+
+        base_url = launched_experiment.base_url
+        response = get_authenticated_session(base_url).get(
+            base_url + "/async_job_cpu_time"
+        )
+        response.raise_for_status()
+        row = next(row for row in response.json() if row["label"] == "busy_for")
+        assert row["runs_in"] == "web"
+        assert row["mean_cpu"] >= 0.3
 
     def test_invalid_function(self):
         def local_function():
@@ -371,3 +400,63 @@ def test_enqueue_starts_timeout_and_enforces_unique():
     with pytest.raises(IntegrityError):
         duplicate.enqueue()
     db.session.rollback()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_cpu_time_summary_says_where_jobs_run():
+    from psynet.async_job import _get_cpu_time_summary
+
+    for cls, cpu_time in [(LocalAsyncJob, 0.1), (WorkerAsyncJob, 0.3)]:
+        job = cls(do_nothing, label="summary_test")
+        job.finished, job.cpu_time, job.time_taken = True, cpu_time, 0.5
+        db.session.add(job)
+
+    summary = _get_cpu_time_summary()
+    db.session.rollback()
+    rows = [row for row in summary if row["label"] == "summary_test"]
+    assert [(row["runs_in"], row["mean_cpu"]) for row in rows] == [
+        ("web", 0.1),
+        ("worker", 0.3),
+    ]
+
+
+def test_cpu_time_summary_flags_cpu_heavy_labels():
+    from psynet.async_job import _format_cpu_time_summary
+
+    summary = _format_cpu_time_summary(
+        [
+            {
+                "runs_in": "worker",
+                "label": "analyse",
+                "count": 3,
+                "mean_cpu": 0.8,
+                "max_cpu": 1.2,
+                "mean_wall": 1.0,
+            },
+            {
+                "runs_in": "web",
+                "label": "upload",
+                "count": 5,
+                "mean_cpu": 0.01,
+                "max_cpu": 0.02,
+                "mean_wall": 0.5,
+            },
+        ]
+    )
+    rows = {line.split()[1]: line.split() for line in summary.splitlines()[2:]}
+    assert rows["analyse"] == [
+        "worker",
+        "analyse",
+        "3",
+        "0.800",
+        "1.200",
+        "1.000",
+        "yes",
+    ]
+    assert rows["upload"][0] == "web"
+    assert rows["upload"][-1] == "no"
+
+    assert _format_cpu_time_summary([]) == "No async jobs finished."
