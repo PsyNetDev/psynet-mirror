@@ -1986,7 +1986,6 @@ class TrialMaker(Module):
 
     def check_timeout(self):
         self.check_old_trials()
-        WorkerAsyncJob.check_timeouts()
 
     def selected_recruit_criterion(self, experiment):
         if self.recruit_mode not in self.recruit_criteria:
