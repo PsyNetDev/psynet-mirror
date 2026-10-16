@@ -81,6 +81,8 @@ class TestParticipantFailure:
     ):
         trial.complete = True
         trial.finalized = False
+        # Keeps the experiment's finalize backstop from finalizing the trial.
+        trial.async_post_trial_requested = True
         db.session.commit()
 
         participant.fail("premature_exit")
