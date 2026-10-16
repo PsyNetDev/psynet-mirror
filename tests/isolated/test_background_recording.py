@@ -223,13 +223,13 @@ def test_rejected_background_answer_creates_no_assets(
         ).payload
 
     assert submit()["submission"] == "rejected"
-    assert completions == ([] if required else [True])
-    assert participant.answer == (original_answer if required else "Yes")
+    assert completions == []
+    assert participant.answer == original_answer
     assert Recording.query.count() == 0
     assert participant.page_uuid == original_page
     monkeypatch.setattr(page, "validate", validate)
     assert len(submit()["recording_uploads"]) == 2
-    assert completions == ([True] if required else [True, True])
+    assert completions == [True]
     assert participant.answer == "Yes"
 
 
