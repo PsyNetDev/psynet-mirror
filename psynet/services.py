@@ -439,6 +439,10 @@ def start_local_services_via_docker() -> None:
             "-v",
             "dallinger_postgres:/var/lib/postgresql/data",
             "postgres:12",
+            # Matches Dallinger's Docker PostgreSQL: JIT slows experiments' short queries.
+            "postgres",
+            "-c",
+            "jit=off",
         ],
     )
 
