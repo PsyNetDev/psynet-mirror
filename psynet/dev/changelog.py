@@ -12,6 +12,10 @@ Workflow summary:
   changelog section.
 - Stable releases also fold matching beta/RC sections into the final release
   section.
+- While breaking fragments are pending, `psynet_version` must already name a
+  higher major version than the last stable release in `CHANGELOG.md` (for
+  example `14.0.0a0` after `13.3.0`). The alpha docs label and git installs of
+  `master` take their version from there.
 """
 
 import re
@@ -21,6 +25,8 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+
+from psynet.version import psynet_version
 
 FRAGMENTS_DIR = Path("changelog.d")
 CHANGELOG_PATH = Path("CHANGELOG.md")
@@ -93,6 +99,10 @@ def new_command(category: str, description: str) -> int:
 
     path.write_text(f"{description.strip()}\n", encoding="utf-8")
     print(path)
+    if category == "breaking":
+        problem = breaking_version_problem()
+        if problem:
+            print(f"Warning: {problem}")
     return 0
 
 
@@ -158,8 +168,56 @@ def check_mr_command(base: str, head: str) -> int:
         )
 
     load_fragments()
+    problem = breaking_version_problem()
+    if problem:
+        raise ValueError(problem)
     print("Changelog MR check passed.")
     return 0
+
+
+def breaking_version_problem() -> str | None:
+    """Explain why `psynet_version` is too low for pending breaking fragments, if it is."""
+    breaking = [
+        path for path in list_fragment_paths() if path.name.endswith(".breaking.md")
+    ]
+    last_stable = _last_stable_version()
+    if not breaking or last_stable is None:
+        return None
+    last_major = _major_version(last_stable)
+    if _major_version(psynet_version) > last_major:
+        return None
+    return (
+        f"{FRAGMENTS_DIR} has {len(breaking)} breaking fragment(s), so the next "
+        f"release is {last_major + 1}.0.0, but psynet_version is {psynet_version} "
+        f"(last stable release: {last_stable}). Set the version in "
+        f"psynet/version.py and pyproject.toml to {last_major + 1}.0.0a0."
+    )
+
+
+def _last_stable_version() -> str | None:
+    """Return the highest stable release version in `CHANGELOG.md`, if any."""
+    if not CHANGELOG_PATH.exists():
+        return None
+    changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
+    stable = [
+        match.group("version")
+        for match in RELEASE_HEADING_RE.finditer(changelog)
+        if classify_release(match.group("version")) == "Release"
+    ]
+    if not stable:
+        return None
+    return max(stable, key=_release_key)
+
+
+def _major_version(version: str) -> int:
+    return _release_key(version)[0]
+
+
+def _release_key(version: str) -> tuple[int, ...]:
+    match = re.match(r"^(\d+(?:\.\d+)*)", version)
+    if match is None:
+        raise ValueError(f"Cannot parse version {version!r}.")
+    return tuple(int(part) for part in match.group(1).split("."))
 
 
 # Fragment loading and rendering helpers

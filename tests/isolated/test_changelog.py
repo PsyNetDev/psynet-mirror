@@ -316,6 +316,40 @@ def test_check_mr_command_allows_changelog_with_only_releases(changelog, monkeyp
     assert changelog.check_mr_command("base", "head") == 0
 
 
+@pytest.mark.parametrize(
+    ("version", "passes"),
+    [("13.2.0a0", False), ("13.1.2", False), ("14.0.0a0", True), ("14.0.0rc1", True)],
+)
+def test_check_mr_command_requires_major_bump_for_breaking_fragments(
+    changelog, monkeypatch, version, passes
+):
+    fragment = changelog.FRAGMENTS_DIR / "20260516-drop-api.breaking.md"
+    fragment.write_text("Removed the old API.\n", encoding="utf-8")
+    monkeypatch.setattr(changelog, "psynet_version", version)
+    monkeypatch.setattr(
+        changelog,
+        "changed_files",
+        lambda _base, _head: [f"changelog.d/{fragment.name}"],
+    )
+
+    if passes:
+        assert changelog.check_mr_command("base", "head") == 0
+    else:
+        with pytest.raises(ValueError, match=r"Set the version .* to 14\.0\.0a0"):
+            changelog.check_mr_command("base", "head")
+
+
+def test_new_breaking_fragment_warns_when_version_is_not_a_major_bump(
+    changelog, monkeypatch, capsys
+):
+    monkeypatch.setattr(changelog, "psynet_version", "13.2.0a0")
+
+    assert changelog.new_command("breaking", "Drop the old API") == 0
+
+    assert "Warning:" in capsys.readouterr().out
+    assert list(changelog.FRAGMENTS_DIR.glob("*.breaking.md"))
+
+
 def test_check_mr_command_rejects_changelog_edit_even_with_fragment(
     changelog, monkeypatch
 ):
