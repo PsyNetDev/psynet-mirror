@@ -1405,7 +1405,7 @@ def test_performance_test_ssh_manages_its_own_app(args, before, deployed):
         ([], None, None, "deploy", False, None),
         ([], None, "files", "deploy", True, None),
         ([], "files", "files", "deploy", False, "Leaving"),
-        ([], None, "run-2", "deploy", False, None),
+        ([], None, "run-2", "deploy", False, "Leaving"),
         ([], None, "run-1", "deploy", True, None),
         ([], None, "run-1", "run", True, None),
         ([], "run-0", "run-0", "deploy", False, "Leaving"),
@@ -1443,6 +1443,40 @@ def test_performance_test_ssh_only_destroys_what_this_run_left(
     assert destroy.called == destroyed
     for text in ("Leaving", "is kept"):
         assert (text in result.output) == (text == message)
+
+
+@pytest.mark.parametrize("interrupted", ["run", "check"])
+def test_performance_test_ssh_cleans_up_after_ctrl_c(interrupted):
+    result, _, _, destroy = _invoke_performance_test_ssh(
+        [],
+        run_error=KeyboardInterrupt() if interrupted == "run" else None,
+        check_error=KeyboardInterrupt() if interrupted == "check" else None,
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted!" in result.output
+    assert destroy.called == (interrupted == "run")
+
+
+def test_performance_test_ssh_recognises_its_deploy_in_the_compose_file():
+    from dallinger.command_line.docker_ssh import get_docker_compose_yml
+
+    from psynet.command_line import _deploy_id_marker
+
+    compose = get_docker_compose_yml(
+        {
+            "num_dynos_worker": "1",
+            "docker_worker_cpu_shares": "1024",
+            "clock_on": False,
+            "docker_volumes": "",
+            "performance_test_deploy_id": "run-1",
+        },
+        "my-app",
+        "image:latest",
+        "classic",
+    )
+
+    assert _deploy_id_marker("run-1") in compose
 
 
 def test_performance_test_ssh_destroys_nothing_if_it_cannot_check():

@@ -299,7 +299,9 @@ during it point to a query to profile.
 To test with real data, for example from a pilot, deploy a performance-test
 app from its export (see :doc:`/deploy/reference/deploy_from_archive`) with
 ``performance_test_app = true`` in ``config.txt``, and run
-``performance-test ssh`` on it with ``--force``. To test it more than once,
+``performance-test ssh`` on it with ``--force`` from the experiment's
+directory; the command updates the app's code from that directory, keeping
+the pilot's database. To test it more than once,
 add ``--keep-app``, without which the run destroys the app at the end, and
 ``--reset-database``, without which each run adds its bots' data to the
 pilot's.
@@ -340,10 +342,12 @@ On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
 The app's config is marked with ``performance_test_app = true``. At the end
 of the run, even one that fails or that you interrupt, the command destroys
-the app. Each deploy or update records a new ID in the app's
-``docker-compose.yml``, and the command only destroys the app if it still
-records this run's ID, so it leaves alone an app that someone else deployed
-or that replaced it during the run. To keep the app, for example to look at its dashboard and logs, pass
+the app. That includes an existing performance-test app with the same
+``--app``, such as one kept by an earlier run, which the command first
+updates from this directory. Each deploy or update records a new ID in the
+app's ``docker-compose.yml``, and the command only destroys the app if it
+still records this run's ID, so it leaves alone an app that replaced it
+during the run or a failed deploy that never got that far. To keep the app, for example to look at its dashboard and logs, pass
 ``--keep-app``; the command then prints how to destroy it when you're done:
 
 .. code-block:: bash

@@ -495,8 +495,8 @@ class DatabaseReset:
     and creates it again from the snapshot. :meth:`close` drops the snapshot
     and, with ``restore_at_end``, first restores the database to how the run
     found it, so that the next run on a kept app starts from the same data.
-    When pre-filling, the first call also copies the database before the
-    pre-fill, which is what :meth:`close` restores then.
+    When pre-filling with ``restore_at_end``, the first call also copies the
+    database before the pre-fill, which is what :meth:`close` restores then.
 
     PostgreSQL only copies or drops a database that nobody is connected to,
     so each call stops the app's server processes (:meth:`RemoteApp.stop`),
@@ -560,7 +560,7 @@ class DatabaseReset:
             logger.info(f"Resetting the database to {self.snapshot}...")
             self._restore(self.snapshot)
             return
-        if self._prefill_participants:
+        if self._prefill_participants and self._restore_at_end:
             # The copy clears the job queues, which would orphan unfinished jobs.
             self._check_no_async_jobs_waiting(
                 self.remote.prepare(async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S),

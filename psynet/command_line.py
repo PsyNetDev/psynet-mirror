@@ -6284,12 +6284,17 @@ def performance_test__docker_ssh(
 
 def _ssh_app_files_exist(server, app):
     """Return whether ``~/dallinger/<app>`` exists on ``server``."""
-    return _ssh_test(server, f"test -e ~/dallinger/{shlex.quote(app)}")
+    return _ssh_test(_ssh_executor(server), f"test -e ~/dallinger/{shlex.quote(app)}")
 
 
-def _ssh_test(server, command):
-    """Return whether shell ``command`` succeeds on ``server``."""
-    return bool(_ssh_executor(server).run(f"{command} && echo Yes", raise_=False))
+def _ssh_test(executor, command):
+    """Return whether shell ``command`` succeeds through the SSH ``executor``."""
+    return bool(executor.run(f"{command} && echo Yes", raise_=False))
+
+
+def _deploy_id_marker(deploy_id):
+    """Return the line that a deploy with ``deploy_id`` writes into the app's compose file."""
+    return f'performance_test_deploy_id: "{deploy_id}"'
 
 
 def _is_this_runs_app(server, app, deploy_id, had_files):
@@ -6301,14 +6306,15 @@ def _is_this_runs_app(server, app, deploy_id, had_files):
     that weren't there before the run (``had_files``), such as a Cloudflare
     tunnel, are this run's too.
     """
+    executor = _ssh_executor(server)
     directory = f"~/dallinger/{shlex.quote(app)}"
-    marker = shlex.quote(f'performance_test_deploy_id: "{deploy_id}"')
-    if _ssh_test(server, f"grep -qF {marker} {directory}/docker-compose.yml"):
+    marker = shlex.quote(_deploy_id_marker(deploy_id))
+    if _ssh_test(executor, f"grep -qF {marker} {directory}/docker-compose.yml"):
         return True
     return (
         not had_files
-        and not _ssh_test(server, f"test -e {directory}/docker-compose.yml")
-        and _ssh_test(server, f"test -e {directory}")
+        and not _ssh_test(executor, f"test -e {directory}/docker-compose.yml")
+        and _ssh_test(executor, f"test -e {directory}")
     )
 
 
@@ -6326,8 +6332,12 @@ def _clean_up_performance_test_app(ctx, server, app, deploy_id, *, had_files, ke
             raise
         return
     if not ours:
-        if had_files:
-            print(f"Leaving {app} on {server}: this run didn't deploy or update it.")
+        if had_files or _ssh_app_files_exist(server, app):
+            print(
+                f"Leaving {app} on {server}: it isn't what this run deployed. "
+                "If nobody else is using it, destroy it with:\n"
+                f"    psynet destroy ssh --server {server} --app {app}"
+            )
     elif keep_app:
         print(
             f"{app} is kept on {server}. Destroy it when you're done with:\n"
