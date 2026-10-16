@@ -1074,15 +1074,15 @@ function requestTimingDetail(record, fallbackMs) {
 }
 
 function unexpectedBlockingRequests(records, maxDurationMs, options = {}) {
-  // A busy 503 that waited for a row lock lasts the 5 s
-  // timeline_lock_timeout_seconds; a NOWAIT one is fast but slows under CI load.
+  // A busy 503 that waited for a row lock spends timeline_lock_timeout_seconds
+  // (default 5 s) in the handler; a NOWAIT one is fast but slows under CI load.
   const busyMs = options.busyMs ?? 4000;
   return records.filter((record) => {
     const handlerMs = requestHandlerMs(record);
     if (handlerMs >= maxDurationMs) {
       return true;
     }
-    return Boolean(record.busy) && (record.durationMs ?? 0) >= busyMs;
+    return Boolean(record.busy) && handlerMs >= busyMs;
   });
 }
 

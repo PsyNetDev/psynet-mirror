@@ -315,10 +315,12 @@ count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
-the in-request retry waits 250ms; if that is still busy, one delayed
-``queued hold wake`` runs. The suite still fails a busy retry that lasts
-4 s or more, because it waited for the row lock (``timeline_lock_timeout_seconds``,
-5 s) instead of using ``NOWAIT``; a shorter cap fails under CI load. An in-page probe that counts hold wakes or schedule calls must
+the browser retries once after 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. The suite fails a busy 503 whose handler time
+(Server-Timing ``app``) is 4 s or more: that request waited for a row lock
+for ``timeline_lock_timeout_seconds`` (default 5 s) instead of using
+``NOWAIT``. A shorter cap fails fast busy 503s slowed by CI load. An in-page
+probe that counts hold wakes or schedule calls must
 swallow ``psynet.resumeTimelineHold`` and call
 ``window.__settleTimelineHoldResume`` before installing its counters. The helper
 waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a
