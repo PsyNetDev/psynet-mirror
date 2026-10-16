@@ -31,8 +31,6 @@ from psynet.translation.translators import (
 class CountingTranslator(Translator):
     """A translator that records its calls instead of contacting a provider."""
 
-    use_codebook = False
-
     def __init__(self, failures=0, drop_variables=0):
         self.failures = failures
         self.drop_variables = drop_variables

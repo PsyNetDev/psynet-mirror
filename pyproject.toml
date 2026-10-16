@@ -93,7 +93,6 @@ dev = [
     "asv",
     "beautifulsoup4",
     "citeproc-py",
-    "google-cloud-translate",
     "myst-parser",
     "openai",
     "pre-commit",

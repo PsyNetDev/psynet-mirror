@@ -4144,6 +4144,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
+        # No longer used; still registered so that config files that set them load.
         config.register("google_translate_json_path", str, sensitive=True)
         config.register("google_translate_project_id", str, sensitive=True)
         config.register("initial_recruitment_size", int)

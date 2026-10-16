@@ -46,7 +46,6 @@ class TranslationContext:
 
 class Translator:
     nickname = None
-    use_codebook = True
 
     def translate(
         self,
@@ -76,31 +75,18 @@ class Translator:
         List[str]
             The translated texts
         """
-        if self.use_codebook:
-            codebooks = [self._get_codebook(text) for text in texts]
-            encoded_texts = [
-                self._encode(text, codebook) for text, codebook in zip(texts, codebooks)
-            ]
-            translated_encoded_texts = self._translate_texts(
-                encoded_texts, source_lang, target_lang, context, attempt=0
-            )
-            translated_texts = [
-                self._decode(text, codebook)
-                for text, codebook in zip(translated_encoded_texts, codebooks)
-            ]
-        else:
-            for i in range(n_retries):
-                try:
-                    translated_texts = self._translate_texts(
-                        texts, source_lang, target_lang, context, attempt=i
-                    )
-                    _validate_translations(texts, translated_texts, target_lang)
-                    break
-                except Exception as e:
-                    if i == n_retries - 1:
-                        raise e
-                    else:
-                        print(f"Retrying translation ({i + 1}/{n_retries})... {e}")
+        for i in range(n_retries):
+            try:
+                translated_texts = self._translate_texts(
+                    texts, source_lang, target_lang, context, attempt=i
+                )
+                _validate_translations(texts, translated_texts, target_lang)
+                break
+            except Exception as e:
+                if i == n_retries - 1:
+                    raise e
+                else:
+                    print(f"Retrying translation ({i + 1}/{n_retries})... {e}")
 
         return [self.fix_translation(text) for text in translated_texts]
 
@@ -135,101 +121,6 @@ class Translator:
             The translated texts
         """
         raise NotImplementedError
-
-    @classmethod
-    def _get_codebook(cls, text: str) -> List[tuple[str, str]]:
-        """Get codebook mapping text patterns to encoded placeholders.
-
-        Parameters
-        ----------
-        text : str
-            Input text to analyze for patterns that need encoding
-
-        Returns
-        -------
-        list of tuple
-            List of (original_text, encoded_placeholder) pairs
-        """
-        import re
-
-        def process_pattern(
-            pattern: str, text: str, codebook: list, counter: int
-        ) -> tuple[str, int]:
-            """Process a regex pattern and update codebook.
-
-            Returns
-            -------
-            tuple[str, int]
-                Updated text and counter
-            """
-            matches = list(re.finditer(pattern, text))
-            for match in matches:
-                original = match.group(0)
-                encoded = f"■{counter}■"
-                codebook.append((original, encoded))
-                text = text.replace(original, encoded)
-                counter += 1
-            return text, counter
-
-        patterns = [
-            r"\{\{[^}]+\}\}",  # Jinja variables
-            r"\{[^}]+\}",  # Simple variables
-            r"<[^/>][^>]*>",  # Opening HTML tags with optional attributes
-            r"</[^>]+>",  # Closing HTML tags
-        ]
-
-        codebook = []
-        counter = 0
-        working_text = text
-
-        for pattern in patterns:
-            working_text, counter = process_pattern(
-                pattern, working_text, codebook, counter
-            )
-
-        return codebook
-
-    @classmethod
-    def _encode(cls, text: str, codebook: List[tuple[str, str]]) -> str:
-        """Encode text by replacing patterns with placeholders.
-
-        Parameters
-        ----------
-        text : str
-            Text to encode
-        codebook : list of tuple
-            List of (original_text, encoded_placeholder) pairs
-
-        Returns
-        -------
-        str
-            Encoded text with patterns replaced by placeholders
-        """
-        result = text
-        for original, encoded in codebook:
-            result = result.replace(original, encoded)
-        return result
-
-    @classmethod
-    def _decode(cls, text: str, codebook: List[tuple[str, str]]) -> str:
-        """Decode text by replacing placeholders with original patterns.
-
-        Parameters
-        ----------
-        text : str
-            Text to decode
-        codebook : list of tuple
-            List of (original_text, encoded_placeholder) pairs
-
-        Returns
-        -------
-        str
-            Decoded text with placeholders replaced by original patterns
-        """
-        result = text
-        for original, encoded in codebook:
-            result = result.replace(encoded, original)
-        return result
 
     @classmethod
     def fix_translation(cls, translation: str) -> str:
@@ -290,59 +181,8 @@ class CredentialsError(TranslationError):
     pass
 
 
-class UnsupportedLanguageError(TranslationError):
-    pass
-
-
 class InvalidTranslationError(TranslationError):
     pass
-
-
-class GoogleTranslator(Translator):
-    nickname = "google_translate"
-
-    def _translate_texts(
-        self,
-        texts: List[str],
-        source_lang: str,
-        target_lang: str,
-        context: Optional[TranslationContext] = None,
-        attempt: int = 0,
-    ):
-        from google.cloud import translate_v3
-
-        config = get_config()
-        google_translate_json_path = config.get("google_translate_json_path", None)
-        if google_translate_json_path is None:
-            raise CredentialsError(
-                "Please provide a Google Cloud Translate API key in your .dallingerconfig file under `google_translate_json_path`"
-            )
-
-        google_translate_json_path = os.path.expanduser(google_translate_json_path)
-
-        with open(google_translate_json_path, "r") as f:
-            auth_dict = json.load(f)
-
-        client = translate_v3.TranslationServiceClient.from_service_account_json(
-            google_translate_json_path
-        )
-        parent = f"projects/{auth_dict['project_id']}/locations/global"
-        try:
-            response = client.translate_text(
-                contents=texts,
-                target_language_code=target_lang,
-                parent=parent,
-                mime_type="text/html",
-                source_language_code=source_lang,
-            )
-        except Exception as e:
-            if e.args[0] == "Target language is invalid.":
-                raise UnsupportedLanguageError(f"Invalid language code: {target_lang}")
-            else:
-                raise e
-
-        # Display the translation for each input text provided
-        return [translation.translated_text for translation in response.translations]
 
 
 def source_context_for_prompt(
@@ -425,7 +265,6 @@ def _response_format(ids: List[str]) -> dict:
 
 class ChatGptTranslator(Translator):
     nickname = "chat_gpt"
-    use_codebook = False
 
     def get_system_prompt(
         self,
@@ -576,7 +415,6 @@ class DefaultTranslator(Translator):
 
 class NullTranslator(Translator):
     nickname = "null"
-    use_codebook = False
 
     def translate(
         self,
