@@ -131,6 +131,15 @@ processes, about one core for each. One worker process keeps up with about
 at once; :ref:`performance_testing_async_workers` explains how to estimate
 this and how to set ``worker_processes``.
 
+In experiments where participants wait for each other (see
+:doc:`/code/multiplayer/synchronization`), each barrier adds requests, so
+capacity depends on how often participants reach one. On the same server,
+the ``rock_paper_scissors`` demo, whose pairs choose a move, wait for each
+other and then chat for 30 seconds, served about 560 participants at once.
+The same game in groups of eight served about 400. The ``create_rate_sync``
+demo, whose groups of three pass a barrier after every five-second page,
+served about 140.
+
 The server is a small part of a study's cost. 100 participants at once, paid
 £9 an hour, cost about £900 an hour, while an ``m7i.4xlarge`` that can serve
 several times as many costs under $1 an hour. A server that is too small
