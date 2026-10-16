@@ -28,7 +28,7 @@ PsyNet also fails trials itself:
   stays failed and the participant is not failed;
 - when the participant fails or leaves before completing the trial;
 - when background work for the trial raises an error: ``async_post_trial``
-  (``failed_reason="async_post_trial_failed"``), an asynchronous process that
+  (``failed_reason="async_post_trial_failed"``), an async job that
   fails or times out, such as an asset deposit, or ``on_finalized`` when PsyNet
   finalizes the trial in the background
   (``failed_reason="finalize_backstop_error"``). Errors raised by this work

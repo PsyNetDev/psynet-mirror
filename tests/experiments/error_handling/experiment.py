@@ -1,7 +1,7 @@
 import psynet.experiment
+from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.process import LocalAsyncProcess, WorkerAsyncProcess
 from psynet.timeline import CodeBlock, Timeline, switch
 from psynet.utils import get_logger
 
@@ -30,23 +30,23 @@ def worker_function(error_code):
     raise AssertionError(f"Error code {error_code}")
 
 
-def worker_async_process_error(error_code):
+def worker_async_job_error(error_code):
     return CodeBlock(
-        lambda participant: WorkerAsyncProcess(
+        lambda participant: WorkerAsyncJob(
             worker_function,
             arguments={"error_code": error_code},
             participant=participant,
-        )
+        ).enqueue()
     )
 
 
-def local_async_process_error(error_code):
+def local_async_job_error(error_code):
     return CodeBlock(
-        lambda participant: LocalAsyncProcess(
+        lambda participant: LocalAsyncJob(
             worker_function,
             arguments={"error_code": error_code},
             participant=participant,
-        )
+        ).enqueue()
     )
 
 
@@ -65,8 +65,8 @@ class Exp(psynet.experiment.Experiment):
             {
                 0: ErrorOnSubmitResponse(38574, "Lorem ipsum", time_estimate=5),
                 1: ErrorOnGetPage(82626, "Lorem ipsum", time_estimate=5),
-                2: worker_async_process_error(48473),
-                3: local_async_process_error(73722),
+                2: worker_async_job_error(48473),
+                3: local_async_job_error(73722),
             },
         ),
     )
