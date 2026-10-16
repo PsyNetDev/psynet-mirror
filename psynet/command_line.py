@@ -6213,10 +6213,9 @@ def performance_test__docker_ssh(
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
     a performance-test app, whose data is disposable. Later runs update it
     in place from this directory before testing, keeping its database. They
-    refuse apps that this
-    command didn't deploy, or whose deploy didn't finish launching the
-    experiment. The app is kept after the run; destroy it with
-    ``psynet destroy ssh``.
+    refuse apps that this command didn't deploy, or whose deploy didn't
+    finish launching the experiment. The app is kept after the run; destroy
+    it with ``psynet destroy ssh``.
 
     The bots run inside the app's web container, while this computer runs
     the suite: it runs each test in the web container. With

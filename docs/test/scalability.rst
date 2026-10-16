@@ -339,8 +339,9 @@ On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
 The app's config is marked with ``performance_test_app = true``. Every
 later run updates the app in place from the current directory before
-testing, so it always tests your current code, and keeps its database;
-destroy the app if you want a fresh launch. The app stays on the server
+testing, so it always tests your current code, and keeps its database.
+An update doesn't deposit new assets, so destroy the app if you add assets
+or want a fresh launch. The app stays on the server
 after each run, so that you can look at its dashboard and logs, and the
 command prints how to destroy it when you're done:
 
