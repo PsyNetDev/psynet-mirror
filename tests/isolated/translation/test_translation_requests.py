@@ -169,7 +169,7 @@ def test_system_prompt_includes_existing_translations():
 
 def test_system_prompt_names_the_locale_script():
     assert _script_name("sat") == "Ol Chiki"
-    assert _script_name("od") is None
+    assert _script_name("od") == "Odia"
     assert _script_name("sr") == "Latin"
 
     prompt = ChatGptTranslator().get_system_prompt(

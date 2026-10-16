@@ -18,6 +18,9 @@ SOURCE_SNIPPET_RADIUS_LINES = 8
 # CLDR's default (Latin for Kurdish, Cyrillic for Serbian).
 SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
 
+# PsyNet locale codes that are not ISO 639 codes, which CLDR needs.
+ISO_LOCALE_CODES = {"od": "or"}
+
 # At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
 # one word in a low-resource script, so retries sample more freely.
 RETRY_TEMPERATURE = 0.7
@@ -396,6 +399,7 @@ def _script_name(locale: str) -> Optional[str]:
 
     if locale in SCRIPT_OVERRIDES:
         return SCRIPT_OVERRIDES[locale]
+    locale = ISO_LOCALE_CODES.get(locale, locale)
     parts = get_global("likely_subtags").get(locale, "").split("_")
     if len(parts) < 3:
         return None
