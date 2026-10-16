@@ -867,7 +867,7 @@ def test_recording_failure_prevents_same_participant_reassignment(
 
     eligible = maker.find_chains(participant, exp)
     if reason == "recording_upload_timeout":
-        assert eligible == "exit"
+        assert eligible == []
     else:
         assert [chain.id for chain in eligible] == [network.id]
 

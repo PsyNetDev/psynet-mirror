@@ -56,14 +56,12 @@ def test_upload_spool_uses_private_shared_deployment_directory(monkeypatch, ssh)
 @pytest.fixture
 def reservation(db_session, tmp_path, monkeypatch):
     """Reserve a recording as part of a committed, accepted page response."""
-    monkeypatch.setattr(
-        "psynet.deployment_info.read_all",
-        lambda: {
-            "deployment_id": "test-deployment",
-            "is_local_deployment": True,
-            "is_ssh_deployment": False,
-        },
-    )
+    deployment = {
+        "deployment_id": "test-deployment",
+        "is_local_deployment": True,
+        "is_ssh_deployment": False,
+    }
+    monkeypatch.setattr("psynet.deployment_info.read", deployment.__getitem__)
     participant = Participant(
         experiment=get_experiment(),
         recruiter_id="hotair",

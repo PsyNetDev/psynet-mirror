@@ -130,13 +130,14 @@ def test_invalid_source_manifest_cannot_reserve_recordings(submission, sizes):
 def test_final_references_are_saved_once_in_accumulators_and_variables(submission):
     _, participant, page, submit = submission
     page.save_answer = "saved_recording"
-    participant.answer_accumulators = [{}]
+    participant.answer = {}
+    participant.answer_accumulation_depth = 1
     db.session.commit()
     assert submit()["submission"] == "approved"
     db.session.commit()
     db.session.expire_all()
     response = Response.query.filter_by(participant_id=participant.id).one()
-    assert participant.answer_accumulators == [{"video": response.answer}]
+    assert participant.answer == {"video": response.answer}
     assert participant.var.saved_recording == response.answer
     assert response.answer["camera_id"] is not None
 
