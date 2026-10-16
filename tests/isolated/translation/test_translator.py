@@ -65,28 +65,31 @@ def test_translator_with_file_path():
     translator = ChatGptTranslator()
     os.chdir(path_to_test_experiment("translation"))
 
+    texts = [
+        "Hello, welcome to my experiment!",
+        "What is your name?",
+        "Hello, {NAME}!",
+        "What is your favorite pet?",
+        "dog",
+        "cat",
+        "fish",
+        "hamster",
+        "bird",
+        "snake",
+        "Great, I like {PET} too!",
+    ]
     translations = translator.translate(
-        texts=[
-            "Hello, welcome to my experiment!",
-            "What is your name?",
-            "Hello, {NAME}!",
-            "What is your favorite pet?",
-            "dog",
-            "cat",
-            "fish",
-            "hamster",
-            "bird",
-            "snake",
-            "Great, I like {PET} too!",
-        ],
+        texts=texts,
         source_lang="en",
         target_lang="fr",
         context=TranslationContext(file_path="experiment.py"),
     )
 
     # Sentences have several valid translations, so only the single words are
-    # pinned; the sentences must keep their variables.
+    # pinned; the sentences must be translated and keep their variables.
     assert len(translations) == 11
+    for i in [0, 1, 2, 3, 10]:
+        assert translations[i] != texts[i]
     assert [preprocess_translation(t) for t in translations[4:10]] == [
         "chien",
         "chat",
