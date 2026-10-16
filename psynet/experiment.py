@@ -4267,7 +4267,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("performance_test_app", bool)
-        config.register("performance_test_code_key", str)
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)

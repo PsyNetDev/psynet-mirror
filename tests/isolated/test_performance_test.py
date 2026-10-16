@@ -2131,20 +2131,6 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     assert "\x1b[" not in _join(narrow) and "\u2026" not in _join(narrow)
 
 
-def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
-    from psynet.perf_ssh import experiment_code_key
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "deploy.toml").write_text(
-        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
-    )
-    (tmp_path / "experiment.py").write_text("")
-    (tmp_path / "config.txt").write_text("[Config]\n")
-    key = experiment_code_key()
-    (tmp_path / "config.txt").write_text("[Config]\n# A comment\n")
-    assert experiment_code_key() != key
-
-
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
