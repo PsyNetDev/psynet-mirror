@@ -59,6 +59,13 @@ def _join(lines):
     return "\n".join(lines)
 
 
+def test_perf_test_priorities_match_async_job_priorities():
+    from psynet import async_job
+    from psynet.perf_test import results
+
+    assert results.PRIORITIES == async_job.PRIORITIES
+
+
 def test_random_stagger_is_bounded_relative_to_configured_interval():
     tester = PerformanceTester(
         authenticated_session=Mock(),
