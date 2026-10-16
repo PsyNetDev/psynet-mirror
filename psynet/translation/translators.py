@@ -22,6 +22,11 @@ SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
 # one word in a low-resource script, so retries sample more freely.
 RETRY_TEMPERATURE = 0.7
 
+# Models such as gpt-6-luna reject any temperature but their own default. A
+# model is added here when the API rejects its temperature, so later requests
+# leave the temperature out.
+_MODELS_WITHOUT_TEMPERATURE: set[str] = set()
+
 
 @dataclass
 class TranslationContext:
@@ -469,7 +474,7 @@ class ChatGptTranslator(Translator):
         context: Optional[TranslationContext] = None,
         attempt: int = 0,
     ):
-        from openai import OpenAI
+        from openai import BadRequestError, OpenAI
 
         language_dict = get_language_dict("en")
         assert source_lang in language_dict, (
@@ -498,8 +503,7 @@ class ChatGptTranslator(Translator):
             id_: {"text": text, "label": label} if label else {"text": text}
             for id_, text, label in zip(ids, texts, labels)
         }
-        client = OpenAI(api_key=openai_api_key)
-        response = client.chat.completions.create(
+        request = dict(
             model=openai_default_model,
             messages=[
                 {
@@ -516,7 +520,6 @@ class ChatGptTranslator(Translator):
                     "content": json.dumps(items, ensure_ascii=False),
                 },
             ],
-            temperature=temperature,
             response_format=_response_format(ids),
             # Generous even for scripts that need several tokens per character,
             # plus room for reasoning models' hidden reasoning, which counts
@@ -526,6 +529,17 @@ class ChatGptTranslator(Translator):
                 32_000, 8_000 + 5 * sum(len(text) for text in texts)
             ),
         )
+        if openai_default_model not in _MODELS_WITHOUT_TEMPERATURE:
+            request["temperature"] = temperature
+        client = OpenAI(api_key=openai_api_key)
+        try:
+            response = client.chat.completions.create(**request)
+        except BadRequestError as e:
+            if "temperature" not in request or e.param != "temperature":
+                raise
+            _MODELS_WITHOUT_TEMPERATURE.add(openai_default_model)
+            del request["temperature"]
+            response = client.chat.completions.create(**request)
         choice = response.choices[0]
         if choice.message.refusal:
             raise InvalidTranslationError(

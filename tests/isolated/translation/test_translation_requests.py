@@ -1,8 +1,13 @@
 """Tests for what is sent to the translator, how often, and in which batches."""
 
+import json
+import sys
+from types import SimpleNamespace
+
 import polib
 import pytest
 
+from psynet.translation import translators
 from psynet.translation.translate import (
     MAX_BATCH_SIZE,
     batch_untranslated,
@@ -170,6 +175,44 @@ def test_system_prompt_names_the_locale_script():
     )
 
     assert "Ol Chiki script" in prompt
+
+
+def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
+    class BadRequestError(Exception):
+        def __init__(self, param):
+            self.param = param
+
+    requests = []
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        if "temperature" in kwargs:
+            raise BadRequestError(param="temperature")
+        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=BadRequestError),
+    )
+    monkeypatch.setattr(translators, "_MODELS_WITHOUT_TEMPERATURE", set())
+    config = {
+        "openai_api_key": "key",
+        "openai_default_model": "gpt-6-luna",
+        "openai_default_temperature": "0",
+    }
+    monkeypatch.setattr(translators, "get_config", lambda: config)
+
+    for _ in range(2):
+        assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
+
+    assert ["temperature" in request for request in requests] == [True, False, False]
 
 
 def test_response_format_requires_exactly_one_translation_per_text():
