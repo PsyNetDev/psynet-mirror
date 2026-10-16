@@ -46,7 +46,10 @@ current page, under a waiting indicator, until their group is formed.
 ``max_group_size`` (default: ``initial_group_size``)
     The largest size a group can reach through ``join_existing_groups``;
     ``None`` means no limit. Setting it to anything else requires
-    ``join_existing_groups=True``.
+    ``join_existing_groups=True``. The limit holds when several participants
+    try to join at once: joins to one group take turns, and a participant
+    who finds a group busy tries the next suitable group, or waits at the
+    grouper and tries again shortly.
 
 ``join_criterion``
     A function of ``group`` and ``participant`` that returns whether the

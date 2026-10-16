@@ -751,6 +751,121 @@ def test_grouper_does_not_join_a_group_without_active_members(
     assert newcomer.sync_group is None
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_simultaneous_joins_do_not_overfill_a_group(
+    in_experiment_directory, db_session
+):
+    """Two participants racing for a group's last place cannot both get it."""
+    exp = get_experiment()
+    _members, group = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    group.accepts_top_ups = True
+    group.max_group_size = 3
+    first, second = _working_participants(exp, 2)
+    group_id, joiner_ids = group.id, (first.id, second.id)
+    db.session.commit()
+    db.session.remove()
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=3,
+        join_existing_groups=True,
+    )
+    first_joined, first_may_commit = threading.Event(), threading.Event()
+    errors, second_pid = [], []
+
+    def join(participant_id, joined=None, may_commit=None):
+        try:
+            if joined is None:
+                second_pid.append(
+                    db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+                )
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            grouper.choose_who_to_release([participant])
+            db.session.flush()
+            if joined is not None:
+                joined.set()
+                assert may_commit.wait(60)
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    racers = [
+        threading.Thread(
+            target=join, args=(joiner_ids[0], first_joined, first_may_commit)
+        ),
+        threading.Thread(target=join, args=(joiner_ids[1],)),
+    ]
+    racers[0].start()
+    assert first_joined.wait(30)
+    racers[1].start()
+    # Commit the first join only once the second has finished or is blocked on it.
+    deadline = time.monotonic() + 30
+    while racers[1].is_alive() and time.monotonic() < deadline:
+        if (
+            second_pid
+            and db.session.execute(
+                text(
+                    "SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :p"
+                ),
+                {"p": second_pid[0]},
+            ).scalar()
+        ):
+            break
+        db.session.rollback()
+        time.sleep(0.05)
+    first_may_commit.set()
+    for racer in racers:
+        racer.join(30)
+
+    assert not any(racer.is_alive() for racer in racers)
+    assert errors == []
+    group = SimpleSyncGroup.query.get(group_id)
+    assert len(group.participants) == 3
+    assert group.n_active_participants == 3
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_join_skips_a_group_that_another_request_is_changing(
+    in_experiment_directory, db_session
+):
+    """A joiner takes the next open group instead of waiting for a busy one."""
+    exp = get_experiment()
+    groups = [
+        _sync_group_of(exp, db_session, 2, group_type="top_up")[1] for _ in range(2)
+    ]
+    for group in groups:
+        group.accepts_top_ups = True
+        group.max_group_size = 3
+    (joiner,) = _working_participants(exp, 1)
+    db.session.commit()
+    busy, free = groups
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=3,
+        join_existing_groups=True,
+    )
+
+    with db.engine.connect() as other, other.begin():
+        other.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR UPDATE"), {"id": busy.id}
+        )
+        _set_transaction_lock_timeout(1)
+        assert grouper.choose_who_to_release([joiner]) == [joiner]
+        assert joiner.active_sync_groups["top_up"].id == free.id
+
+
 @pytest.mark.parametrize("request_kind", ["response", "timeline"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
