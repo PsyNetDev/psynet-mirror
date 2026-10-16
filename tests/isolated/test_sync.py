@@ -139,6 +139,11 @@ class ReleaseAllBarrier(Barrier):
         return waiting_participants
 
 
+class SpecErrorBarrier(Barrier):
+    def choose_who_to_release(self, waiting_participants):
+        raise BarrierSpecError("broken")
+
+
 class BlockingReleaseBarrier(ReleaseAllBarrier):
     def check_waiting_participants(self, waiting_participants):
         two_poller_checks.append(self.id)
@@ -3397,6 +3402,51 @@ def test_two_members_failing_at_once_do_not_deadlock(
     assert tags[0] == ["sync group below minimum size"]
     assert all("timeout" in t for t in tags[1:])
     assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_session):
+    """Re-electing a leader skips a member whose own request holds their row."""
+    exp = get_experiment()
+    (leader, busy, free), group = _sync_group_of(exp, db_session, 3)
+    group.min_group_size = 1
+    db.session.commit()
+    busy_id, free_id, group_id = busy.id, free.id, group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leader.fail("left")
+        db.session.commit()
+
+    assert SyncGroup.query.get(group_id).leader_id == free_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_does_not_let_a_failing_visit_starve_others(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A visit whose check keeps failing queues behind the other visits."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    for barrier in (SpecErrorBarrier(id_="broken"), ReleaseAllBarrier(id_="healthy")):
+        participant = new_participant(exp)
+        participant.status = "working"
+        db.session.commit()
+        _arrive_at_group_barrier(exp, barrier, participant)
+        db.session.commit()
+    healthy_id = participant.id
+
+    for _ in range(2):
+        check_barriers()
+    assert _barrier_link_released(healthy_id, "healthy")
 
 
 @pytest.mark.parametrize(
