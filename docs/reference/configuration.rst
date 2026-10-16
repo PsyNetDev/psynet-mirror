@@ -900,9 +900,10 @@ Internationalization
 
 ``openai_default_temperature`` *str* |psynet-icon|
     The temperature setting for OpenAI translations. Default: not set, so the
-    model's own default is used. Some models, including ``gpt-6-luna``,
-    reject any temperature other than 1; for those, PsyNet leaves this
-    setting out. Set it for models that accept it, such as ``gpt-4o``.
+    model's own default is used. Do not set it when using ``gpt-6-luna``,
+    which only accepts its own default; if it is set, PsyNet prints that the
+    model rejected it and leaves it out. Set it for models that accept it,
+    such as ``gpt-4o``.
 
 ``supported_locales`` *list* |psynet-icon|
     Locales (ISO language codes) that the experiment is translated into, e.g.,
