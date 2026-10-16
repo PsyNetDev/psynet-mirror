@@ -1,7 +1,9 @@
 # This Dockerfile is used both to specify a functional development environment
 # (e.g. on GitHub Codespaces) and a deployment image.
 
-FROM python:3.13-bookworm
+# Must match .python-version, which constraints.txt is compiled for.
+# `psynet scripts update` sets both to the active Python version.
+FROM python:{python_major_minor}-bookworm
 
 RUN pip install uv
 
