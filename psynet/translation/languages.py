@@ -1,6 +1,6 @@
 psynet_supported_locales = [
     "af",  # Afrikaans
-    "am",  # Amharic; ChatGPT failed -> Google Translate
+    "am",  # Amharic
     "ar",  # Arabic
     "as",  # Assamese
     "az",  # Azerbaijani
@@ -31,7 +31,7 @@ psynet_supported_locales = [
     "km",  # Khmer
     "kn",  # Kannada
     "ko",  # Korean
-    "kok",  # Konkani; ChatGPT failed -> Google Translate
+    "kok",  # Konkani
     # "ks",  # Kashmiri; no vocabulary test available
     "ku",  # Kurdish
     "lb",  # Luxembourgish; no vocabulary test available
@@ -55,7 +55,7 @@ psynet_supported_locales = [
     "ro",  # Romanian
     "ru",  # Russian
     "sa",  # Sanskrit
-    "sat",  # Santali; ChatGPT failed -> Google Translate
+    "sat",  # Santali
     "si",  # Sinhala
     "sk",  # Slovak
     "sd",  # Sindhi
