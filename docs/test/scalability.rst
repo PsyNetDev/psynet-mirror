@@ -48,7 +48,10 @@ From the experiment directory:
     psynet performance-test local
 
 This starts a local server, keeps ``Experiment.test_n_bots`` bots (default 1)
-active for one minute, prints a report, and shuts the server down. For a heavier load,
+active for one minute, prints a report, and shuts the server down. Like
+``psynet test local``, the server gets a free port, a database and a Redis
+server of its own, so local debug servers keep running (see
+:doc:`/developer/running_tests`). For a heavier load,
 ask for more bots and a longer run:
 
 .. code-block:: bash
@@ -61,6 +64,14 @@ one test per value and prints a summary comparing them:
 .. code-block:: bash
 
     psynet performance-test local --n-bots "5,10,20,40"
+
+Every bot and server process holds PostgreSQL connections, and all local
+experiments and test sessions share one PostgreSQL server, whose
+``max_connections`` is 100 by default. A run with a few hundred bots, or
+several runs at once, can exceed it: PostgreSQL then refuses connections with
+"sorry, too many clients already". Run fewer bots at once, stop other local
+experiments, or raise ``max_connections`` (see
+:doc:`/developer/running_tests`).
 
 To use a server that is already running (for example from ``psynet debug
 local``), add ``--existing``. A ``psynet debug local --legacy`` server stops

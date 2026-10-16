@@ -339,16 +339,17 @@ def test_audit_performance_test_writes_canonical_output_and_marks_present(
     assert "Marked performance_result present" in result.output
 
 
-def test_performance_test_ssh_rejects_json_output():
+def test_performance_test_ssh_has_no_json_output_option():
+    from click.testing import CliRunner
+
     from psynet.command_line import performance_test__docker_ssh
 
-    with click.Context(performance_test__docker_ssh):
-        with pytest.raises(click.UsageError, match="not yet implemented for SSH mode"):
-            performance_test__docker_ssh.callback(
-                app="example",
-                server="example",
-                json_output="results.json",
-            )
+    result = CliRunner().invoke(
+        performance_test__docker_ssh, ["--json-output", "results.json"]
+    )
+
+    assert result.exit_code == 2
+    assert "No such option '--json-output'" in result.output
 
 
 @pytest.mark.parametrize("args, expected", [([], None), (["--n-bots", "3"], "3")])

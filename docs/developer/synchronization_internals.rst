@@ -21,6 +21,53 @@ partners without waiting for the poller. The last participant to arrive
 skips the wait indicator and continues to the next page. If a partner's wait row is locked,
 the regular 0.5-second barrier check completes the release instead.
 
+The barrier poller
+------------------
+
+The clock process runs :func:`~psynet.sync.check_barriers` every
+0.5 seconds as a backstop: for a release whose request-side check was
+deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
+pages don't check the barrier), and for waiters who have left. A waiter whose
+browser is still open also checks their own visit on each hold poll.
+
+Each sweep first applies ``max_wait_time`` to waiters at the default wait
+indicator whose deadline has passed, since nobody else would: their own
+request normally does it. It then checks waiting visits, least recently
+checked first, with a 5-second head start for visits that are new or whose
+waiters or sync group changed since this process last checked them. A visit
+whose check is deferred or fails is retried at most once in the same sweep and
+then queued like a checked one, and a waiter whose timeout fails goes behind the
+other overdue waiters, so a broken item cannot hold up the rest. Each of
+the two steps stops starting new work after 0.2 seconds, so with thousands
+of waiters a sweep normally stays within its interval and later sweeps reach
+the remaining visits. One timeout or check can still overrun while it waits
+for a row lock.
+
+Sync group lock order
+---------------------
+
+Every participant request locks its own participant row first, and may then
+change its sync group, for example when that participant fails or leaves. So
+code holding a sync group row must never wait for *another* participant's
+row:
+
+- Group dissolution locks the other members' rows with ``SKIP LOCKED``. A
+  member whose own request holds their row is left out, the group is marked
+  ``dissolving``, and the barrier poller finishes the dissolution once that
+  request commits.
+- A between-barrier timeout with ``"fail"`` also skips busy late members;
+  they are still late at the barrier's next check. Kicking only changes the
+  group's links, so it does not lock the member's row.
+- Re-electing a leader picks only a member whose row is free, because the
+  foreign-key check on ``leader_id`` locks the new leader's row.
+- Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
+
+Two members failing at the same moment therefore do not deadlock: each
+fails itself and whoever else is free, and the poller completes the rest.
+The rule does not order rows of *different* sync groups, so participants in
+several groups at once, failing together, can still deadlock, in which case
+PostgreSQL aborts one of the transactions.
+
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override
 :meth:`~psynet.sync.Barrier.check_waiting_participants`,

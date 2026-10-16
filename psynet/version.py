@@ -20,9 +20,14 @@ def _get_dallinger_version() -> str:
     return dallinger_version
 
 
-def check_core_dependency_versions_match_requirements():
+def check_core_dependency_versions_match_requirements(skip=()):
     """
     Check whether PsyNet and Dallinger versions match requirements.txt.
+
+    Parameters
+    ----------
+    skip : collection of str
+        Lowercase names of packages (``"psynet"``, ``"dallinger"``) not to check.
 
     Raises
     ------
@@ -50,6 +55,8 @@ def check_core_dependency_versions_match_requirements():
             )
 
             for package_name, version_infos in versions.items():
+                if package_name.lower() in skip:
+                    continue
                 status = version_infos["status"]
 
                 if status == "consistent":
