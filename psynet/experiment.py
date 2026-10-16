@@ -70,6 +70,7 @@ from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -5694,6 +5695,33 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return send_file(zip_path, mimetype="application/zip")
 
     @classmethod
+    def _error_trial_context(cls, participant):
+        """Return the trial, node and network for an error report.
+
+        The participant can be detached from the session after a rollback,
+        in which case its current trial cannot be loaded. The error is then
+        reported without trial context rather than failing again.
+        """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
+        try:
+            trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
+        except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
+            logger.warning(
+                "Could not load the current trial for participant %s while "
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
+            )
+        return context
+
+    @classmethod
     def fail_participant_on_error(cls, participant, error):
         """Record the exception type without choosing the session outcome.
 
@@ -5864,17 +5892,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled_error = cls.handle_error(
                 err,
                 participant=participant,
-                trial=participant.current_trial,
-                node=(
-                    participant.current_trial.node
-                    if participant.current_trial
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if participant.current_trial
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
             cls._prepare_tracked_fatal_recovery(handled_error, err)
             error_page = handled_error.error_page()
@@ -7040,17 +7058,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(
