@@ -1,5 +1,4 @@
 import json
-import math
 import os.path
 import re
 from collections import Counter
@@ -160,8 +159,6 @@ class Translator:
                     ]
                 _validate_translations(texts, translated_texts, target_lang)
                 break
-            except _InvalidConfigurationError:
-                raise
             except Exception as e:
                 if i == n_retries - 1:
                     raise e
@@ -318,10 +315,6 @@ class InvalidTranslationError(TranslationError):
     pass
 
 
-class _InvalidConfigurationError(ValueError):
-    pass
-
-
 def source_context_for_prompt(
     file_path: str,
     line_numbers: Sequence[Optional[int]] = (),
@@ -395,21 +388,6 @@ def _max_completion_tokens(model: str) -> int:
     if "gpt-4o" in model.lower():
         return GPT_4O_MAX_COMPLETION_TOKENS
     return DEFAULT_MAX_COMPLETION_TOKENS
-
-
-def _configured_temperature(value) -> float:
-    """Parse and validate ``openai_default_temperature``."""
-    try:
-        temperature = float(value)
-    except (TypeError, ValueError) as error:
-        raise _InvalidConfigurationError(
-            "openai_default_temperature must be a number from 0 to 2."
-        ) from error
-    if not math.isfinite(temperature) or not 0 <= temperature <= 2:
-        raise _InvalidConfigurationError(
-            "openai_default_temperature must be a number from 0 to 2."
-        )
-    return temperature
 
 
 def _script_name(locale: str) -> Optional[str]:
@@ -527,8 +505,6 @@ class ChatGptTranslator(Translator):
         # Models such as gpt-6-luna reject any temperature but their own, so a
         # temperature is only sent when one is configured.
         temperature = config.get("openai_default_temperature", None)
-        if temperature is not None:
-            temperature = _configured_temperature(temperature)
         openai_default_model = config.get("openai_default_model")
 
         ids = [str(i) for i in range(1, len(texts) + 1)]
@@ -568,6 +544,7 @@ class ChatGptTranslator(Translator):
             temperature is not None
             and openai_default_model not in _MODELS_WITHOUT_TEMPERATURE
         ):
+            temperature = float(temperature)
             if attempt > 0:
                 temperature = max(temperature, RETRY_TEMPERATURE)
             request["temperature"] = temperature
