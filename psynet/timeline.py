@@ -293,6 +293,25 @@ class Trigger(dict):
         super().__init__(triggering_event=triggering_event, delay=float(delay))
 
 
+def _earliest_event_time(events, event_id, visiting=frozenset()):
+    """Return the earliest time, in seconds after the page loads, at which ``event_id`` can fire.
+
+    Unknown events, events without triggers (fired by JavaScript) and cycles
+    count as immediate.
+    """
+    event = events.get(event_id)
+    if event is None or event_id in visiting:
+        return 0.0
+    visiting = visiting | {event_id}
+    times = [
+        _earliest_event_time(events, trigger["triggering_event"], visiting)
+        + (trigger.get("delay") or 0.0)
+        for trigger in event.get("is_triggered_by") or []
+    ]
+    combine = min if event.get("trigger_condition") == "any" else max
+    return combine(times, default=0.0) + (event.get("delay") or 0.0)
+
+
 def get_template(name):
     assert isinstance(name, str)
     path_all_templates = resources.files(templates)
@@ -1724,6 +1743,19 @@ class Page(Elt):
             "trialStop": Event(is_triggered_by=None),  # only called at premature end
             "trialStopped": Event(is_triggered_by="trialStop"),
         }
+
+    @property
+    def min_duration(self):
+        """Return the shortest time, in seconds, before a participant can submit this page.
+
+        This is the earliest time at which the page's ``submitEnable`` event can
+        fire, following the delays of its triggers (see :class:`Event`), for
+        example a recording's duration or an audio meter's ``min_time``.
+        Events that only the page's JavaScript fires, such as the end of a
+        media prompt, count as immediate, so this is a lower bound. Bots that
+        simulate page times (``time_factor`` above 0) never submit sooner.
+        """
+        return _earliest_event_time(self.events, "submitEnable")
 
     def __json__(self, participant):
         return {

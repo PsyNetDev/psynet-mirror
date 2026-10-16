@@ -5,7 +5,7 @@ import pytest
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
-from psynet.sync import _BarrierHoldPage
+from psynet.sync import GroupBarrier, _BarrierHoldPage
 from psynet.timeline import (
     AsyncCodeBlock,
     StartFixProgress,
@@ -342,6 +342,18 @@ def test_hold_released_before_deadline_does_not_time_out():
 
     assert hold.participant_timed_out(participant)
     record.released_at = deadline - timedelta(seconds=5)
+    assert not hold.participant_timed_out(participant)
+
+
+def test_barrier_release_after_deadline_does_not_time_out():
+    """A waiter released just after its deadline, e.g. into a new group, still resumes."""
+    hold = GroupBarrier(id_="test", group_type="main", max_wait_time=2).waiting_logic
+    deadline = datetime.now() - timedelta(seconds=1)
+    record = TimelineHoldRecord(page_uuid="hold", deadline_at=deadline)
+    participant = SimpleNamespace(page_uuid="hold", _timeline_hold_record=record)
+
+    assert hold.participant_timed_out(participant)
+    record.released_at = deadline + timedelta(seconds=0.5)
     assert not hold.participant_timed_out(participant)
 
 

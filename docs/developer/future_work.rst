@@ -334,6 +334,37 @@ Details for the implementation:
   so no new dependency is needed. Keep the flag opt-in, because it adds a
   second or two per page.
 
+Browser participants in performance tests
+-----------------------------------------
+
+Date
+++++
+
+2026-10-10
+
+Problem
++++++++
+
+``psynet performance-test`` bots use plain HTTP requests, so they skip
+everything a browser adds: static files and media, requests to custom
+routes from page JavaScript, and websockets at timeline holds and in live
+multi-participant pages. Experiments that lean on these can pass a
+performance test and still overload the server. Writing a Python websocket
+client for the bots would cover only part of the gap and would duplicate
+``psynet.js``.
+
+Idea
+++++
+
+Let a performance test mix a few real browsers with the bots, for example
+``--n-browsers 5``. Each browser runs a Playwright participant flow, such as
+the experiment's ``tests/participant-flow.spec.js`` or a generic walk that
+uses the bot responses, against the same server while the bots supply the
+bulk of the load. The report would show browser and bot response times
+separately. Headless Chrome needs a few hundred MB of memory per page, so
+browsers stay a small share of the load; if the Playwright harness later
+covers every experiment, it could replace the HTTP bots altogether.
+
 Section dropdowns in the documentation header
 ---------------------------------------------
 

@@ -1,0 +1,1 @@
+When a test in a `psynet performance-test` run crashes, for example because the server's database stopped answering under load, the command now prints the summary of the tests that completed before it, and says which test stopped the run, instead of failing with only the error.

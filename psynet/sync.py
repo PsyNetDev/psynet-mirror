@@ -629,6 +629,19 @@ class _BarrierHoldPage(_TimelineHoldPage):
         """Release failed participants anywhere, because barriers never release them."""
         return participant.failed
 
+    def participant_timed_out(self, participant):
+        """Return whether the deadline passed before the barrier released the participant.
+
+        A release counts even if it came after the deadline: the barrier
+        released the participant together with others, for example into a
+        new sync group, and failing them now would also fail the rest of
+        that group.
+        """
+        record = self.get_hold_record(participant)
+        if record is not None and record.released_at is not None:
+            return False
+        return super().participant_timed_out(participant)
+
     def participant_can_resume(self, experiment, participant):
         """Return whether the barrier released this participant.
 

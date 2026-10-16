@@ -25,7 +25,7 @@ class CreateRateTrialMaker(StaticTrialMaker):
 
 
 class CreateRateTrial(StaticTrial):
-    time_estimate = 5
+    time_estimate = 15
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):

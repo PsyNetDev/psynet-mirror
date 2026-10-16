@@ -48,22 +48,26 @@ For per-job values, export the data (`psynet export local`) and read the
 A **CPU-heavy** job, such as audio analysis or model fitting, keeps a CPU core
 busy while it runs. A worker process uses one core, so CPU-heavy `worker`
 jobs queue behind each other unless there are more worker processes. Set the
-number of worker processes with `num_dynos_worker` in `config.txt`; on an SSH
-deployment each one is a separate worker container. Estimate the cores the
-worker jobs keep busy at peak:
+number of worker processes with `worker_processes` in `config.txt`, and for
+CPU-heavy jobs set `worker_greenlets_per_process = 1`; on an SSH deployment
+each worker process is a separate worker container. Before a performance
+test, make a first estimate of `worker_processes`, aiming for workers 70%
+busy. The performance test summary uses the same formula when the workers
+were busy the whole time:
 
 ```text
-CPU seconds per participant = sum of (Count × Mean CPU) over CPU-heavy worker rows / number of bots
-busy cores at peak          = CPU seconds per participant × participants starting per second
+worker seconds per participant = sum of (Count × Mean wall) over worker rows / number of bots
+worker_processes               = participants at once × worker seconds per participant / (session seconds × 0.7)
 ```
 
-For example, 2 bots that ran 6 `analyse_audio` worker jobs averaging 1.5 CPU
-seconds need 4.5 CPU seconds per participant. With 40 participants starting
-per minute, 4.5 × 40 / 60 = 3 cores are busy, so leave headroom with
-`num_dynos_worker = 4` on a server with a core for each worker plus one for
-the web process.
+For example, 2 bots that ran 6 `analyse_audio` worker jobs averaging 1.5
+seconds need 4.5 worker seconds per participant. With 100 participants at
+once in a 10-minute session, 100 × 4.5 / (600 × 0.7) = 1.1, so start with
+`worker_processes = 2`, on a server with a core for each worker plus two for
+the web server and database. Use Mean wall rather than Mean CPU: a worker
+running one job at a time is busy for the job's whole run time.
 
-Do not count `web` rows toward `num_dynos_worker`: more workers do not help
+Do not count `web` rows toward `worker_processes`: more workers do not help
 them. A CPU-heavy `web` row competes with page requests in the web process,
 so expect slower responses in the performance test; if they are too slow,
 make the job cheaper or move its work into a `WorkerAsyncJob`.
@@ -96,5 +100,8 @@ and confirm with the performance test.
 Run `psynet performance-test local` at the expected peak load, as described
 in `test/scalability`, then on the real server with
 `psynet performance-test ssh`. In the "Async job times" section, a high queue
-share means jobs wait for a free worker: add worker processes, or make the
-CPU-heavy jobs cheaper.
+share means jobs wait for a free worker, and the report says how busy the
+worker processes were in the steady state. The capacity summary's
+"Recommended settings" paragraph then estimates `worker_processes` for the cap from the
+measured utilization, the start-up burst and the server's cores, as
+described under "Async workers" in `test/scalability`.

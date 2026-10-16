@@ -103,9 +103,14 @@ def shared_environment_warning(environ=None):
     )
 
 
+def _in_ci(environ=None):
+    """Return whether ``CI`` is set, so the services are the CI job's own."""
+    environ = os.environ if environ is None else environ
+    return environ.get("CI", "").lower() not in ("", "0", "false")
+
+
 def _is_configured(environ):
-    in_ci = environ.get("CI", "").lower() not in ("", "0", "false")
-    return bool(environ.get(READY_ENV_VAR)) or in_ci
+    return bool(environ.get(READY_ENV_VAR)) or _in_ci(environ)
 
 
 def check_no_debug_server(directory):
@@ -311,7 +316,7 @@ class IsolatedEnvironment:
     def close(self):
         """Stop or empty the session's Redis and drop its database."""
         if self._redis_process is not None:
-            stop_process(self._redis_process)
+            _stop_process(self._redis_process)
             self._redis_process = None
         elif self._port_lock is not None:
             _flush_redis_database(self.env["REDIS_URL"])
@@ -357,14 +362,24 @@ def _drop_database(cursor, name):
     """Drop database ``name`` if it exists, after terminating its connections."""
     from psycopg2 import sql
 
-    # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-    # `psynet services ensure` starts PostgreSQL 12.
+    _terminate_connections(cursor, name)
+    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+
+
+def _terminate_connections(cursor, name):
+    """Terminate the other client connections to database ``name``.
+
+    ``DROP DATABASE ... WITH (FORCE)`` would do this, but needs PostgreSQL 13,
+    and ``psynet services ensure`` starts PostgreSQL 12. Autovacuum workers
+    are left alone: only a superuser may terminate them, and ``CREATE
+    DATABASE`` and ``DROP DATABASE`` stop them anyway.
+    """
     cursor.execute(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-        "WHERE datname = %s AND pid <> pg_backend_pid()",
+        "WHERE datname = %s AND pid <> pg_backend_pid() "
+        "AND backend_type = 'client backend'",
         (name,),
     )
-    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
 def _drop_session_database(session_database_url):
@@ -433,11 +448,11 @@ def start_redis_server(port):
             time.sleep(0.1)
         raise RuntimeError(f"Redis on port {port} did not start.")
     except BaseException:
-        stop_process(process)
+        _stop_process(process)
         raise
 
 
-def stop_process(process):
+def _stop_process(process):
     """Terminate ``process``, killing it if it hasn't exited after 10 seconds."""
     process.terminate()
     try:
