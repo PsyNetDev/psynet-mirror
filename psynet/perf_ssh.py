@@ -492,11 +492,11 @@ class DatabaseReset:
     database if asked, waits for async jobs to finish, and takes the snapshot
     with ``CREATE DATABASE ... TEMPLATE``, a file-level copy that keeps
     sequences, indexes and table bloat. Every later call drops the database
-    and creates it again from the snapshot. :meth:`close` restores the
-    database to how the run found it, so that every run starts from the same
-    data, and drops the snapshot. When pre-filling, the first call also
-    copies the database before the pre-fill, and :meth:`close` restores that
-    copy.
+    and creates it again from the snapshot. :meth:`close` drops the snapshot
+    and, with ``restore_at_end``, first restores the database to how the run
+    found it, so that every run starts from the same data. When pre-filling,
+    the first call also copies the database before the pre-fill, and
+    :meth:`close` restores that copy.
 
     PostgreSQL only copies or drops a database that nobody is connected to,
     so each call stops the app's server processes (:meth:`RemoteApp.stop`),
@@ -592,7 +592,8 @@ class DatabaseReset:
                 warning(
                     f"The database already held {n_participants:,} "
                     "participants when the snapshot was taken, for example "
-                    "from manual testing or a run that couldn't restore it, so "
+                    "from earlier tests on an app kept with --keep-app, manual "
+                    "testing or a run that couldn't restore it, so "
                     "every test starts from that data rather than from a fresh "
                     "database. To start fresh, destroy the app with 'psynet "
                     f"destroy ssh --server {self.remote.server} --app "
@@ -613,7 +614,7 @@ class DatabaseReset:
             )
 
     def close(self):
-        """Restore the database to how the run found it, unless ``restore_at_end`` is false, then drop the copies.
+        """Restore the database to how the run found it if ``restore_at_end``, then drop the copies.
 
         The app's server processes stay stopped afterwards, for
         :meth:`RemoteApp.start_stopped_services` to start. A copy that can't

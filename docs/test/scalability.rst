@@ -299,7 +299,10 @@ during it point to a query to profile.
 To test with real data, for example from a pilot, deploy a performance-test
 app from its export (see :doc:`/deploy/reference/deploy_from_archive`) with
 ``performance_test_app = true`` in ``config.txt``, and run
-``performance-test ssh`` on it with ``--force``.
+``performance-test ssh`` on it with ``--force``. To test it more than once,
+add ``--keep-app``, without which the run destroys the app at the end, and
+``--reset-database``, without which each run adds its bots' data to the
+pilot's.
 
 .. _performance_testing_server:
 
@@ -367,12 +370,11 @@ database instead:
 
 PsyNet snapshots the database before the first test and restores it before
 each later one, restarting the app's containers other than PostgreSQL,
-Redis and the front door. At the end it drops the snapshot and, with
-``--keep-app``, restores the database to how the run found it; without
-``--keep-app``, the app is destroyed anyway. If a restore fails, the command exits
-with an error, keeps the copy and names it; destroy the app and run again
-to recover. Each copy needs free disk space of twice the database's size,
-which PsyNet checks first. Uploaded files stay in the asset storage. With
+Redis and the front door. At the end it drops the snapshot. With
+``--keep-app``, it first restores the database to how the run found it; if
+that fails, the command exits with an error, keeps the copy and names it;
+destroy the app and run again to recover. Each copy needs free disk space
+of twice the database's size, which PsyNet checks first. Uploaded files stay in the asset storage. With
 classic ingress, apps share one PostgreSQL server, so a run that is killed
 can leave ``*_snapshot_*`` or ``*_baseline_*`` databases that ``psynet
 destroy ssh`` doesn't remove; drop them with ``docker exec
@@ -386,8 +388,9 @@ To test with the amount of data the study will reach, pre-fill the database:
 
 This implies ``--reset-database``. Bots fill 1,500 participants' data
 through the experiment's own routes before the snapshot. The pre-filled
-data doesn't outlast the run, even with ``--keep-app``, so each run pre-fills again. That takes time: about
-an hour for 1,500 participants at a few hundred requests a second.
+data doesn't outlast the run, even with ``--keep-app``, so each run
+pre-fills again. That takes time: about an hour for 1,500 participants at a
+few hundred requests a second.
 
 .. _performance_testing_bot_processes:
 

@@ -206,8 +206,9 @@ mode, then call ``psynet test ssh`` (experimental):
     psynet debug ssh --app my-experiment
     psynet test ssh --app my-experiment --n-bots 5 --parallel
 
-Like ``psynet performance-test ssh``, it uses the server's existing database;
-see :ref:`performance_testing_server` for what that means for repeated runs.
+It uses the app's existing database, so each run adds its bots' data to
+that of earlier runs. ``psynet performance-test ssh`` instead deploys its own
+app (see :ref:`performance_testing_server`).
 
 Limitations
 -----------
