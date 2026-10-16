@@ -1,0 +1,1 @@
+`psynet debug ssh` and `psynet deploy ssh` now always list `--ingress`. With a Dallinger version that lacks Cloudflare ingress, such as 12.4, `--ingress cloudflare` stops with an explanation instead of the option being missing from the command, and `--ingress classic` is accepted.
