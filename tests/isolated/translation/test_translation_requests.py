@@ -12,12 +12,14 @@ from psynet.translation.translate import (
     MAX_BATCH_SIZE,
     batch_untranslated,
     reuse_translations,
+    translate_po,
 )
 from psynet.translation.translators import (
     MAX_SOURCE_CONTEXT_CHARS,
     ChatGptTranslator,
     InvalidTranslationError,
     TranslationContext,
+    TranslationError,
     Translator,
     _response_format,
     _script_name,
@@ -230,6 +232,29 @@ def _entry(msgid, file, line, msgctxt=None, msgstr="", fuzzy=False):
         occurrences=[(file, str(line))],
         flags=["fuzzy"] if fuzzy else [],
     )
+
+
+def test_finished_batches_are_saved_when_a_later_batch_fails(tmp_path):
+    class FailingTranslator(Translator):
+        def translate(self, texts, source_lang, target_lang, context=None):
+            if context.file_path == "b.py":
+                raise TranslationError("provider outage")
+            return [f"{text}-{target_lang}" for text in texts]
+
+    pot = polib.POFile()
+    pot.append(_entry("Hello", "a.py", 1))
+    pot.append(_entry("Goodbye", "b.py", 1))
+    pot_path = tmp_path / "experiment.pot"
+    pot.save(str(pot_path))
+    po_path = tmp_path / "experiment.po"
+
+    with pytest.raises(TranslationError):
+        translate_po(
+            str(pot_path), str(po_path), "en", "fr", False, FailingTranslator()
+        )
+
+    saved = {entry.msgid: entry.msgstr for entry in polib.pofile(str(po_path))}
+    assert saved == {"Hello": "Hello-fr", "Goodbye": ""}
 
 
 class RecordingTranslator(Translator):

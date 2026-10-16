@@ -1,3 +1,4 @@
+import copy
 import os
 import time
 from dataclasses import dataclass
@@ -325,18 +326,17 @@ def translate_po(
         old_po = polib.pofile(po_path) if os.path.exists(po_path) else None
         po = initialize_po(pot_path, po_path, target_lang)
         reuse_translations(po, old_po)
+        _save_po(po, po_path)
         batches = batch_untranslated(po)
 
         total_entries = sum(len(batch.entries) for batch in batches)
         for i, batch in enumerate(batches):
             spinner.text = f"{bold_language}: Translating batch {1 + i}/{len(batches)} ({batch.file}, {len(batch.entries)} of {total_entries} entries)."
             batch.translate(source_lang, target_lang, continue_on_error, translator)
+            # Saving after every batch keeps finished batches if the run stops early;
+            # the next run only sends what is still untranslated.
+            _save_po(po, po_path)
 
-        # Line numbers are only needed for sorting and prompts; they are not saved.
-        po = sort_po(po)
-        po = remove_line_numbers(po)
-
-        po.save(po_path)
         try:
             check_translations(locales=[target_lang], recreate_pot=False)
             # TODO TranslationCheckError
@@ -356,6 +356,12 @@ def translate_po(
             spinner.text = f"{bold_language}: No new text found to translate."
             spinner.ok("⚠️")
         return True
+
+
+def _save_po(po: polib.POFile, po_path: str):
+    """Save ``po`` sorted and without line numbers, leaving ``po`` itself unchanged."""
+    # Line numbers are only needed for sorting and prompts; they are not saved.
+    remove_line_numbers(sort_po(copy.deepcopy(po))).save(po_path)
 
 
 def initialize_po(pot_path, po_path, output_lang):
