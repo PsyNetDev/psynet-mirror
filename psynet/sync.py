@@ -189,6 +189,9 @@ _POLLER_CHANGE_HEAD_START_SECONDS = 5.0
 # Poller-process memory: instance id -> (fingerprint, monotonic check time).
 _poller_checked_visits = {}
 
+# Poller-process memory: overdue waiters whose last timeout attempt raised.
+_poller_failed_timeouts = set()
+
 
 def _barrier_walk_budget():
     """Yield True for each allowed work unit, then False to observe the result.
@@ -1728,7 +1731,7 @@ class SimpleGrouper(Grouper):
         If set to ``True``, then before a new group is created, the Grouper will check if there are any existing
         groups that are under-quota (e.g. because some participants left the experiment early).
         If so, the arriving participant will be assigned to one of these groups instead.
-        Participants already waiting at the grouper join such a group as soon as one opens.
+        Participants already waiting at the grouper join such a group on the next barrier check.
         Closed groups and groups with no active members are not joined.
         This behavior can be further customized via the ``join_criterion`` argument.
 
@@ -1916,6 +1919,7 @@ class SimpleGrouper(Grouper):
         return joined + super().choose_who_to_release(still_waiting)
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check would form a group or let a waiter join one."""
         if super().would_release(waiting_participants):
             return True
         if not self.join_existing_groups:
@@ -2034,17 +2038,19 @@ class SyncGroup(SQLBase, SQLMixin):
 
         Setting ``leader_id`` makes PostgreSQL lock the new leader's row for
         its foreign-key check, so only a member whose row is free (or already
-        held by this transaction) is chosen. If every remaining member is
-        busy in their own request, the old leader stays until the next call,
-        for example the group's next barrier release.
+        held by this transaction) is chosen, and only that member's row is
+        locked. If every remaining member is busy in their own request, the
+        old leader stays until the next call, for example the group's next
+        barrier release.
         """
         active_participants = sorted(self.active_participants, key=lambda p: p.id)
         if len(active_participants) == 0:
             self.leader = None
         elif self.leader not in active_participants:
-            free = _lock_free_participants(active_participants)
-            if free:
-                self.leader = free[0]
+            for participant in active_participants:
+                if _lock_free_participants([participant]):
+                    self.leader = participant
+                    break
 
     @property
     def active_followers(self):
@@ -2516,7 +2522,7 @@ def _waiting_barrier_instance_ids():
 
 
 def _overdue_waiter_ids():
-    """Return working waiters whose barrier hold deadline has passed."""
+    """Return working waiters whose current barrier hold deadline has passed."""
     with Session(bind=db.engine) as session:
         return [
             participant_id
@@ -2533,6 +2539,7 @@ def _overdue_waiter_ids():
                     ~ParticipantLinkBarrier.released,
                     ~Participant.failed,
                     Participant.status == "working",
+                    TimelineHoldRecord.page_uuid == Participant.page_uuid,
                     TimelineHoldRecord.released_at.is_(None),
                     TimelineHoldRecord.deadline_at <= timenow(),
                 )
@@ -2575,12 +2582,18 @@ def _time_out_overdue_waiters(sweep_ends):
     forever. Waiters are timed out earliest deadline first, each in their
     own transaction, until ``sweep_ends`` (at least one per sweep). A
     waiter whose own request holds their row is left to that request.
+    Waiters whose timeout raised an error go last, so they cannot use up
+    every sweep's budget.
     """
     from .experiment import get_experiment
 
     overdue_ids = _overdue_waiter_ids()
+    _poller_failed_timeouts.intersection_update(overdue_ids)
     if not overdue_ids:
         return
+    overdue_ids.sort(
+        key=lambda participant_id: participant_id in _poller_failed_timeouts
+    )
     experiment = get_experiment()
     for index, participant_id in enumerate(overdue_ids):
         if index and time.monotonic() >= sweep_ends:
@@ -2605,6 +2618,7 @@ def _time_out_overdue_waiters(sweep_ends):
                     "Overdue waiter %s is busy in another request.", participant_id
                 )
                 continue
+            _poller_failed_timeouts.add(participant_id)
             logger.exception("Failed to time out overdue waiter %s.", participant_id)
 
 
@@ -2851,7 +2865,9 @@ def _process_barrier_instance(instance_id, *, retry=False):
     """Try one barrier visit and report whether contention deferred it.
 
     Contention is another request holding the visit claim, or a locked
-    waiter. The poller then retries rather than treating the visit as checked.
+    waiter. Author ``on_release`` and spec errors are reported the same way.
+    The poller retries once in the same sweep, then queues the visit like a
+    checked one.
     """
     barrier_id = None
     try:
@@ -2888,8 +2904,10 @@ def _finish_dissolving_groups():
     """Remove or fail members that a group dissolution had to skip.
 
     Each group is handled in its own transaction. A group another request
-    holds, and members still busy, are left for the next sweep. Nothing here
-    waits for a lock.
+    holds, and members still busy, are left for the next sweep. Group and
+    member rows are taken without waiting; other lock waits while failing a
+    member, for example on their trials, are bounded by
+    ``timeline_lock_timeout_seconds``.
     """
     with Session(bind=db.engine) as session:
         group_ids = [
@@ -2900,6 +2918,9 @@ def _finish_dissolving_groups():
         ]
     for group_id in group_ids:
         try:
+            _set_transaction_lock_timeout(
+                get_config().get("timeline_lock_timeout_seconds")
+            )
             group = (
                 SyncGroup.query.filter_by(id=group_id)
                 .with_for_update(of=SyncGroup, key_share=True, skip_locked=True)
@@ -2993,8 +3014,10 @@ def check_barriers():
                 else:
                     _remember_poller_check(instance_id, waiting[instance_id])
             for instance_id in deferred_ids:
-                if not _process_barrier_instance(instance_id, retry=True):
-                    _remember_poller_check(instance_id, waiting[instance_id])
+                # Even if still deferred: a visit whose check keeps failing
+                # must not stay ahead of every other visit.
+                _process_barrier_instance(instance_id, retry=True)
+                _remember_poller_check(instance_id, waiting[instance_id])
 
 
 def _remember_poller_check(instance_id, fingerprint):

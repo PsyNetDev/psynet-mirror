@@ -34,24 +34,30 @@ Each sweep first applies ``max_wait_time`` to waiters at the default wait
 indicator whose deadline has passed, since nobody else would: their own
 request normally does it. It then checks waiting visits, least recently
 checked first, with a 5-second head start for visits that are new or whose
-waiters or sync group changed since this process last checked them. Each of
+waiters or sync group changed since this process last checked them. A visit
+whose check is deferred or fails is retried at most once in the same sweep and
+then queued like a checked one, and a waiter whose timeout fails goes behind the
+other overdue waiters, so a broken item cannot hold up the rest. Each of
 the two steps stops starting new work after 0.2 seconds, so with thousands
 of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits
 for a row lock.
 
 Sync group lock order
---------------------
+---------------------
 
 Every participant request locks its own participant row first, and may then
 change its sync group, for example when that participant fails or leaves. So
 code holding a sync group row must never wait for *another* participant's
 row:
 
-- Failing or removing other members (group dissolution, between-barrier
-  timeouts) locks their rows with ``SKIP LOCKED``. A member whose own request
-  holds their row is left out, the group is marked ``dissolving``, and the
-  barrier poller finishes the dissolution once that request commits.
+- Group dissolution locks the other members' rows with ``SKIP LOCKED``. A
+  member whose own request holds their row is left out, the group is marked
+  ``dissolving``, and the barrier poller finishes the dissolution once that
+  request commits.
+- A between-barrier timeout with ``"fail"`` also skips busy late members;
+  they are still late at the barrier's next check. Kicking only changes the
+  group's links, so it does not lock the member's row.
 - Re-electing a leader picks only a member whose row is free, because the
   foreign-key check on ``leader_id`` locks the new leader's row.
 - Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
@@ -59,8 +65,11 @@ row:
   with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
   group is skipped for the next candidate.
 
-Two members failing at the same moment therefore no longer deadlock: each
+Two members failing at the same moment therefore do not deadlock: each
 fails itself and whoever else is free, and the poller completes the rest.
+The rule does not order rows of *different* sync groups, so participants in
+several groups at once, failing together, can still deadlock, in which case
+PostgreSQL aborts one of the transactions.
 
 Barrier evaluation and participant locking belong to the framework and are
 not extension points. Custom barriers override

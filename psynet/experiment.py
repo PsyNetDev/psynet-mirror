@@ -5632,7 +5632,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
         """
         participant = Bot.query.get(participant_id)
-        if participant.pending_redirect is not None or participant.elt_id[1:] == [-1]:
+        at_page_maker_start = participant.elt_id[1:] == [-1]
+        if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
             # get_current_page will move the cursor, so take the row lock. Routine
             # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
             participant = (
