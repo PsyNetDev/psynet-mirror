@@ -8,7 +8,7 @@ To run these tests locally (requires API credentials):
 These tests require an OpenAI API key: set `openai_api_key` in .dallingerconfig.
 """
 
-import os
+import re
 
 import pytest
 
@@ -60,10 +60,10 @@ def test_translator(english, expected_french, experiment_directory):
 
 
 @local_only
-def test_translator_with_file_path():
+def test_translator_with_file_path(monkeypatch):
     """Test that translators properly handle file paths."""
     translator = ChatGptTranslator()
-    os.chdir(path_to_test_experiment("translation"))
+    monkeypatch.chdir(path_to_test_experiment("translation"))
 
     texts = [
         "Hello, welcome to my experiment!",
@@ -88,8 +88,17 @@ def test_translator_with_file_path():
     # Sentences have several valid translations, so only the single words are
     # pinned; the sentences must be translated and keep their variables.
     assert len(translations) == 11
-    for i in [0, 1, 2, 3, 10]:
-        assert translations[i] != texts[i]
+    english_words = {
+        0: ["welcome", "experiment"],
+        1: ["what", "your", "name"],
+        2: ["hello"],
+        3: ["what", "your", "favorite", "pet"],
+        10: ["great", "like", "too"],
+    }
+    for index, words in english_words.items():
+        translation = preprocess_translation(translations[index])
+        assert translation != preprocess_translation(texts[index])
+        assert not any(re.search(rf"\b{word}\b", translation) for word in words)
     assert [preprocess_translation(t) for t in translations[4:10]] == [
         "chien",
         "chat",

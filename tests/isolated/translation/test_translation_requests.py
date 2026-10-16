@@ -306,6 +306,19 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
     assert "openai_default_temperature is ignored" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("temperature", ["-0.1", "2.1", "nan", "inf", "not-a-number"])
+def test_invalid_temperature_is_rejected(monkeypatch, capsys, temperature):
+    requests = _fake_chat_gpt(monkeypatch, temperature)
+
+    with pytest.raises(
+        ValueError, match="openai_default_temperature must be a number from 0 to 2"
+    ):
+        ChatGptTranslator().translate(["Hello"], "en", "fr")
+
+    assert requests == []
+    assert "Retrying" not in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("model", ["gpt-4o", "chatgpt-4o-latest", "ft:gpt-4o-custom"])
 def test_gpt_4o_request_stays_within_its_completion_token_limit(monkeypatch, model):
     requests = []
