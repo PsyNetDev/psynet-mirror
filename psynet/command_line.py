@@ -6212,6 +6212,7 @@ def performance_test__prepare_reset(
     much data. Implies --reset-database.""",
 )
 @_test_options["performance_force"]
+@_option_yes_reset_local_data
 @click.pass_context
 def performance_test__docker_ssh(
     ctx,
@@ -6220,6 +6221,7 @@ def performance_test__docker_ssh(
     dns_host=None,
     ingress=None,
     use_local_dallinger=False,
+    assume_yes=False,
     json_output=None,
     reset_database=False,
     prefill_participants=None,
@@ -6257,6 +6259,7 @@ def performance_test__docker_ssh(
         dns_host=dns_host,
         ingress=ingress,
         use_local_dallinger=use_local_dallinger,
+        assume_yes=assume_yes,
     )
     try:
         _run_ssh_performance_test(

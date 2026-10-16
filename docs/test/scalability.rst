@@ -330,7 +330,8 @@ Performance tests fill the database with bots and may reset it, so they
 only run on apps that ``performance-test ssh`` deployed for them. If the
 server has no app named ``--app``, the command first deploys the experiment
 under that name in debug mode, taking the same ``--server``, ``--dns-host``,
-``--ingress`` and ``--use-local-dallinger`` options as ``psynet debug ssh``.
+``--ingress``, ``--use-local-dallinger`` and ``--yes`` options as ``psynet
+debug ssh``.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
 The app's config is marked with ``performance_test_app = true``. When the

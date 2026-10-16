@@ -1323,17 +1323,23 @@ _MARKED = {
 
 
 @pytest.mark.parametrize(
-    "apps, code_key, deployed",
+    "args, apps, code_key, deployed",
     [
-        ([], "new", {}),
-        (["my-app"], "old", None),
-        (["my-app"], "new", {"update": True}),
+        ([], [], "new", {}),
+        (["--yes"], [], "new", {"assume_yes": True}),
+        ([], ["my-app"], "old", None),
+        ([], ["my-app"], "new", {"update": True}),
     ],
-    ids=["deploys-a-missing-app", "reuses-an-unchanged-app", "updates-a-changed-app"],
+    ids=[
+        "deploys-a-missing-app",
+        "passes-yes-to-the-deploy",
+        "reuses-an-unchanged-app",
+        "updates-a-changed-app",
+    ],
 )
-def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
+def test_performance_test_ssh_manages_its_own_app(args, apps, code_key, deployed):
     result, deploy, run = _invoke_performance_test_ssh(
-        [], apps=apps, app_info=_MARKED, code_key=code_key
+        args, apps=apps, app_info=_MARKED, code_key=code_key
     )
 
     assert result.exit_code == 0, result.output
@@ -1347,6 +1353,7 @@ def test_performance_test_ssh_manages_its_own_app(apps, code_key, deployed):
             "dns_host": None,
             "ingress": None,
             "use_local_dallinger": False,
+            "assume_yes": False,
             **deployed,
         }
     assert run.call_args.args[2] == {"label": "Test"}
