@@ -3423,6 +3423,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
         local=False,
         server=server,
         docker_ssh=True,
+        pending_jobs=_fetch_ssh_pending_async_jobs(app, server),
         **kwargs,
     )
 
@@ -3443,6 +3444,7 @@ def export_(
     password=None,
     transfer="auto",
     allow_project_mismatch=False,
+    pending_jobs=None,
     **kwargs,
 ):
     """
@@ -3483,6 +3485,10 @@ def export_(
     because for remote experiments it opens an SSH tunnel to the experiment
     database. Server-built exports do not need them: they take the experiment's
     identity from an authenticated preflight instead.
+
+    ``pending_jobs`` is a remote app's async job summary, taken before the
+    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
     _warn_deprecated_export_options(
@@ -3528,7 +3534,7 @@ def export_(
     shutil.rmtree(staging, ignore_errors=True)
     try:
         if local:
-            _build_local_export(str(staging), assets)
+            pending_jobs = _build_local_export(str(staging), assets)
         else:
             _fetch_remote_export(
                 experiment_class,
@@ -3551,14 +3557,49 @@ def export_(
         raise
 
     log(f"Export complete. You can find your results at: {published}")
+    _warn_export_misses_pending_jobs(pending_jobs)
 
 
 def _build_local_export(export_path, assets):
-    """Build an export directly from the local deployment's database."""
+    """Build an export directly from the local deployment's database.
+
+    Returns
+    -------
+    dict or None
+        The pending async job summary taken before the export; see
+        :func:`_get_local_pending_async_jobs`.
+    """
     from .export.service import build_export_tree
 
+    pending_jobs = _get_local_pending_async_jobs()
     log(f"Building export in {export_path}")
     build_export_tree(export_path, assets=assets, local=True)
+    return pending_jobs
+
+
+def _get_local_pending_async_jobs():
+    """Summarize the local database's pending async jobs.
+
+    Returns
+    -------
+    dict or None
+        The summary from :func:`psynet.async_job._get_pending_job_summary`,
+        or ``None`` after printing a warning if the database could not be
+        queried.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    from .async_job import _get_pending_job_summary
+
+    try:
+        return _get_pending_job_summary()
+    except DBAPIError as exc:
+        db.session.rollback()
+        log(
+            "WARNING: Skipped the check for pending async jobs: "
+            f"could not query the database ({exc.orig})."
+        )
+        return None
 
 
 def _normalize_public_origin(value):
@@ -3634,14 +3675,21 @@ def _ssh_dashboard_endpoint(app, server, config):
 
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
-    fallback when that note is missing.
+    fallback when that note is missing. The note's dashboard credentials take
+    precedence over the local config, which may lack them, for example when
+    ``psynet destroy ssh`` runs outside the experiment directory.
+
+    Raises
+    ------
+    KeyError
+        If neither the note nor the config has dashboard credentials.
     """
     from .export.client import DashboardEndpoint
 
     record = _latest_launch_record(app, server)
     origin = None
-    user = config.get("dashboard_user")
-    password = config.get("dashboard_password")
+    user = config.get("dashboard_user", None)
+    password = config.get("dashboard_password", None)
     if record:
         origin = _normalize_public_origin(record.get("public_origin"))
         record_user = record.get("dashboard_user")
@@ -3649,11 +3697,79 @@ def _ssh_dashboard_endpoint(app, server, config):
         if record_user and record_password:
             user = record_user
             password = record_password
+    if not (user and password):
+        raise KeyError("dashboard_user and dashboard_password")
     if origin is None:
         origin = _remote_public_origin(app, server)
     if origin is None:
         origin = get_experiment_url(app, server)
     return DashboardEndpoint(base_url=origin, auth=(user, password))
+
+
+def _fetch_pending_async_jobs(endpoint):
+    """Ask a deployed app which async jobs are still pending.
+
+    Parameters
+    ----------
+    endpoint : psynet.export.client.DashboardEndpoint
+        The app's address and dashboard credentials.
+
+    Returns
+    -------
+    dict or None
+        The app's ``/async_job_status`` summary (see
+        :func:`psynet.async_job._get_pending_job_summary`), or ``None`` after
+        printing a warning if the app could not be checked.
+    """
+    import requests
+
+    try:
+        response = requests.get(
+            endpoint.url("async_job_status"), auth=endpoint.auth, timeout=30
+        )
+    except requests.RequestException as exc:
+        reason = f"could not reach the app ({exc})"
+    else:
+        if response.status_code == 404:
+            reason = "the app runs a PsyNet version without this check"
+        elif response.status_code == 503:
+            reason = "the app is unavailable (503 Service Unavailable)"
+        elif response.status_code != 200:
+            reason = f"the app returned {response.status_code} {response.reason}"
+        else:
+            try:
+                return response.json()
+            except ValueError:
+                reason = "the app's reply was not JSON; check the dashboard credentials"
+    log(f"WARNING: Skipped the check for pending async jobs: {reason}.")
+    return None
+
+
+def _fetch_ssh_pending_async_jobs(app, server):
+    """Run :func:`_fetch_pending_async_jobs` for a docker-ssh app."""
+    config = get_config()
+    try:
+        if not config.ready:
+            config.load()
+        endpoint = _ssh_dashboard_endpoint(app, server, config)
+    except (KeyError, RuntimeError) as exc:
+        log(
+            "WARNING: Skipped the check for pending async jobs: "
+            f"could not find the dashboard credentials ({exc})."
+        )
+        return None
+    return _fetch_pending_async_jobs(endpoint)
+
+
+def _warn_export_misses_pending_jobs(summary):
+    """Warn that an export lacks the results of pending async jobs."""
+    if summary and summary["total"]:
+        from .async_job import _describe_pending_jobs
+
+        log(
+            f"WARNING: {_describe_pending_jobs(summary)}. This export will not "
+            "include their results; export again once they have finished."
+        )
 
 
 def _fetch_remote_export(
@@ -4059,17 +4175,80 @@ def user_confirms(question, default=False):
     return click.confirm("", default=default)
 
 
+def _stdin_is_interactive():
+    """Return whether stdin is a terminal, so the user can answer a prompt."""
+    return sys.stdin.isatty()
+
+
+def _confirm_destroy_with_pending_jobs(
+    app, summary, ask_for_confirmation, discard_pending_jobs=False
+):
+    """Report an app's pending async jobs and decide whether to destroy it.
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    summary : dict or None
+        The output of :func:`_fetch_pending_async_jobs`; ``None`` means the
+        check was skipped, which allows the destroy.
+    ask_for_confirmation : bool
+        Whether the user may be asked. When ``False`` (batch mode, or a
+        future ``--yes``), or when stdin is not a terminal, an app with
+        pending jobs is not destroyed.
+    discard_pending_jobs : bool
+        Destroy the app even if jobs are pending, after reporting them.
+
+    Returns
+    -------
+    bool
+        Whether the app may be destroyed.
+    """
+    if not summary or not summary["total"]:
+        return True
+    from .async_job import _describe_pending_jobs
+
+    if discard_pending_jobs:
+        log(
+            f"WARNING: {app}: {_describe_pending_jobs(summary)}. Discarding them "
+            "because --discard-pending-jobs was passed."
+        )
+        return True
+    log(
+        f"WARNING: {app}: {_describe_pending_jobs(summary)}. Destroying the app "
+        "now loses their results. Wait for them to finish, then run "
+        "`psynet export ssh` again before destroying the app."
+    )
+    if ask_for_confirmation and _stdin_is_interactive():
+        return user_confirms("Destroy the app anyway?", default=False)
+    log(f"Not destroying {app}. Pass --discard-pending-jobs to destroy it anyway.")
+    return False
+
+
 def _destroy(
     ctx,
     f_destroy,
     app,
     server=None,
     ask_for_confirmation=True,
+    discard_pending_jobs=False,
 ):
-    """Destroy a single app."""
+    """Destroy a single app.
+
+    For docker-ssh apps (``server`` given), first wake the app and check for
+    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`.
+    """
     target = app or "the app"
     if server:
         target += f" from {server}"
+        _awaken_ssh_app(server, app)
+        if not _confirm_destroy_with_pending_jobs(
+            app,
+            _fetch_ssh_pending_async_jobs(app, server),
+            ask_for_confirmation,
+            discard_pending_jobs,
+        ):
+            return False
     confirmed = (
         user_confirms(f"Would you like to delete {target}?", default=True)
         if ask_for_confirmation
@@ -4168,10 +4347,22 @@ def _dallinger_hibernation_command(name):
     is_flag=True,
     help="Skip the confirmation prompt.",
 )
+@click.option(
+    "--discard-pending-jobs",
+    is_flag=True,
+    default=False,
+    help=(
+        "Destroy apps even if they still have pending async jobs, "
+        "losing those jobs' results."
+    ),
+)
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server, yes):
+def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     """
     Destroy the experiment on a remote server via SSH.
+
+    Apps with pending async jobs are not destroyed unless you confirm
+    interactively or pass --discard-pending-jobs; --yes does not skip that.
     """
     from dallinger.command_line.docker_ssh import destroy
 
@@ -4181,13 +4372,15 @@ def destroy__docker_ssh(ctx, app, apps, server, yes):
     if app:
         assert len(apps) == 0, "You cannot provide both --app and a list of apps."
         click.echo(f"Consider using the batch syntax: {example_usage}")
-        _destroy(
+        if not _destroy(
             ctx,
             destroy,
             app=app,
             server=server,
             ask_for_confirmation=not yes,
-        )
+            discard_pending_jobs=discard_pending_jobs,
+        ):
+            raise click.Abort()
     if len(apps) > 0:
         assert app is None, "You cannot provide both --app and a list of apps."
         confirmation = f"""
@@ -4203,6 +4396,7 @@ def destroy__docker_ssh(ctx, app, apps, server, yes):
                         app=app,
                         server=server,
                         ask_for_confirmation=False,
+                        discard_pending_jobs=discard_pending_jobs,
                     ):
                         failed.append(app)
                 except click.Abort:

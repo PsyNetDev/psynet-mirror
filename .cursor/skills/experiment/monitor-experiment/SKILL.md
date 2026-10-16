@@ -72,6 +72,8 @@ Check operational health:
 - trial, module, and network tables grow coherently;
 - assets are not missing from the deployed environment;
 - resource usage or queue behavior is not obviously stalled;
+- after the last participant, the async job backlog drains: `psynet export
+  ssh` warns while jobs are pending, so export-and-handoff waits for it;
 - no known paid resources are left running beyond the approved scope.
 
 Check data integrity:
