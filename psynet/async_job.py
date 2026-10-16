@@ -18,6 +18,9 @@ network, response, asset) through the ``async_jobs`` relationships on those
 models. When a job fails, :attr:`AsyncJob.failure_cascade` fails its trial
 and node, and the error is recorded as an :class:`~psynet.error.ErrorRecord`
 pointing at the job.
+
+A :class:`WorkerAsyncJob` has a priority, ``"high"`` or ``"low"``, naming the
+RQ queue it is enqueued on; workers take jobs from the ``high`` queue first.
 """
 
 import datetime
@@ -30,11 +33,10 @@ from functools import partial
 import dallinger.db
 from dallinger import db
 from dallinger.db import redis_conn
-from dallinger.utils import classproperty
 from redis.exceptions import RedisError
 from rq import Queue
 from rq.exceptions import InvalidJobOperation, NoSuchJobError
-from rq.job import Job
+from rq.job import Job, JobStatus
 from sqlalchemy import (
     Boolean,
     Column,
@@ -43,8 +45,10 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    and_,
     func,
     inspect,
+    or_,
 )
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import deferred, relationship
@@ -65,6 +69,17 @@ from .utils import get_logger
 logger = get_logger()
 
 _RECHECK_LOCK_TIMEOUT_SECONDS = 5
+
+PRIORITIES = ("high", "low")
+
+
+def check_priority(priority):
+    """Raise ``ValueError`` unless ``priority`` is one of :data:`PRIORITIES`."""
+    if priority not in PRIORITIES:
+        raise ValueError(
+            f"Invalid async job priority {priority!r}; expected one of {PRIORITIES}."
+        )
+
 
 _running_async_job = ContextVar("psynet_running_async_job", default=False)
 
@@ -136,6 +151,9 @@ class AsyncJob(SQLBase, SQLMixin):
         If ``True``, enqueueing fails with an ``IntegrityError`` when a job
         with the same label, function and arguments already exists. A dict
         is used as the uniqueness key instead.
+    priority : str, optional
+        ``"high"`` or ``"low"``; see :class:`WorkerAsyncJob`. It is stored
+        on a :class:`LocalAsyncJob` too, but has no effect there.
 
     Attributes
     ----------
@@ -167,6 +185,7 @@ class AsyncJob(SQLBase, SQLMixin):
     time_taken = Column(Float)
     queue_delay = Column(Float)
     cpu_time = Column(Float)
+    priority = Column(String)
     _unique_key = Column(PythonDict, unique=True)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -207,7 +226,12 @@ class AsyncJob(SQLBase, SQLMixin):
         asset=None,
         label=None,
         unique=False,
+        priority=None,
     ):
+        if priority is not None:
+            check_priority(priority)
+        self.priority = priority
+
         if label is None:
             label = function.__name__
 
@@ -337,10 +361,6 @@ class AsyncJob(SQLBase, SQLMixin):
     def launch(cls, spec: dict):
         raise NotImplementedError
 
-    @classproperty
-    def redis_queue(cls):
-        return Queue("default", connection=redis_conn)
-
     @classmethod
     def call_function_with_logger(cls, async_job_id):
         cls.call_function(async_job_id)
@@ -389,15 +409,19 @@ class AsyncJob(SQLBase, SQLMixin):
             experiment = get_experiment()
 
             job = cls.get_async_job(async_job_id)
-            if getattr(job, "cancelled", False):
-                logger.info("Async job %s was cancelled; skipping.", async_job_id)
+            if job.failed:
+                logger.info(
+                    "Async job %s has already failed or was cancelled; skipping.",
+                    async_job_id,
+                )
+                job.pending = False
                 return
             function = job.function
 
             arguments = cls.preprocess_args(job.arguments)
 
             timer = time.monotonic()
-            job.time_started = datetime.datetime.now()
+            job.log_time_started()
             if job.time_enqueued:
                 job.queue_delay = (job.time_started - job.time_enqueued).total_seconds()
             db.session.commit()
@@ -423,7 +447,9 @@ class AsyncJob(SQLBase, SQLMixin):
                 # We need to re-fetch the job because handle_error has done a rollback
                 job = cls.get_async_job(async_job_id)
                 job.pending = False
-                job.fail(f"Exception in async job: {repr(err)}")
+                # The clock may have failed the job for timing out meanwhile.
+                if not job.failed:
+                    job.fail(f"Exception in async job: {repr(err)}")
 
         finally:
             if job is not None and job.participant_id is not None:
@@ -493,10 +519,16 @@ def _launch_unless_cancelled(spec):
         spec["class"].launch(spec)
     except Exception:
         logger.exception("Could not launch async job %s.", spec["id"])
+        if issubclass(spec["class"], WorkerAsyncJob):
+            consequence = (
+                "so it stays pending until the clock fails it as lost, "
+                "about an hour after it was enqueued."
+            )
+        else:
+            consequence = "so it stays pending and will not run."
         _send_alert(
             f"Async job {spec['id']} ({spec['class'].__name__}) was "
-            "saved but could not be launched, "
-            "so it stays pending until its timeout, if any."
+            f"saved but could not be launched, {consequence}"
         )
 
 
@@ -506,17 +538,26 @@ _CPU_HEAVY_RATIO = 0.5
 def _get_cpu_time_summary():
     """Return CPU and wall times of finished async jobs.
 
-    Jobs are grouped by where they run and by label. ``runs_in`` is
+    Jobs are grouped by where they run, label and priority. ``runs_in`` is
     ``"worker"`` for :class:`WorkerAsyncJob` and ``"web"`` for
     :class:`LocalAsyncJob`, which runs in a thread of the process that
-    enqueued it, usually the web process.
+    enqueued it, usually the web process, and has no priority.
     """
-    keys = ["runs_in", "label", "count", "mean_cpu", "max_cpu", "mean_wall"]
+    keys = [
+        "runs_in",
+        "label",
+        "priority",
+        "count",
+        "mean_cpu",
+        "max_cpu",
+        "mean_wall",
+    ]
     summary = []
     for cls, runs_in in [(LocalAsyncJob, "web"), (WorkerAsyncJob, "worker")]:
         rows = (
             db.session.query(
                 cls.label,
+                cls.priority,
                 func.count(cls.id),
                 func.avg(cls.cpu_time),
                 func.max(cls.cpu_time),
@@ -527,8 +568,8 @@ def _get_cpu_time_summary():
                 cls.cpu_time != None,  # noqa: E711
                 cls.time_taken != None,  # noqa: E711
             )
-            .group_by(cls.label)
-            .order_by(cls.label)
+            .group_by(cls.label, cls.priority)
+            .order_by(cls.label, cls.priority)
             .all()
         )
         summary += [dict(zip(keys, (runs_in, *row))) for row in rows]
@@ -541,18 +582,29 @@ def _format_cpu_time_summary(rows):
     A row counts as CPU-heavy when its mean CPU time is at least
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
     each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
-    column says whether that core is in a worker or the web process.
+    column says whether that core is in a worker or the web process. Web
+    jobs have no priority and show ``-``.
     """
     if not rows:
         return "No async jobs finished."
-    header = ["Runs in", "Label", "Count", "Mean CPU (s)", "Max CPU (s)"]
-    table = [header + ["Mean wall (s)", "CPU-heavy"]]
+    header = [
+        "Runs in",
+        "Label",
+        "Priority",
+        "Count",
+        "Mean CPU (s)",
+        "Max CPU (s)",
+        "Mean wall (s)",
+        "CPU-heavy",
+    ]
+    table = [header]
     for row in rows:
         cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
         table.append(
             [
                 row["runs_in"],
                 row["label"],
+                row["priority"] or "-",
                 str(row["count"]),
                 f"{row['mean_cpu']:.3f}",
                 f"{row['max_cpu']:.3f}",
@@ -566,8 +618,8 @@ def _format_cpu_time_summary(rows):
         "of mean wall time):"
     ]
     for line in table:
-        cells = [cell.ljust(width) for cell, width in zip(line[:2], widths[:2])]
-        cells += [cell.rjust(width) for cell, width in zip(line[2:], widths[2:])]
+        cells = [cell.ljust(width) for cell, width in zip(line[:3], widths[:3])]
+        cells += [cell.rjust(width) for cell, width in zip(line[3:], widths[3:])]
         lines.append("  " + "  ".join(cells))
     return "\n".join(lines)
 
@@ -592,6 +644,9 @@ class LocalAsyncJob(AsyncJob):
         finally:
             db.session.commit()
             db.session.close()
+
+
+_RQ_LOST_STATUSES = {JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED}
 
 
 def _rq_job_id(async_job_id):
@@ -626,8 +681,30 @@ class WorkerAsyncJob(AsyncJob):
     Parameters
     ----------
     timeout : float, optional
-        Seconds after which the job fails if it has not finished.
+        Seconds after which the job fails if it has not finished, counted
+        from when a worker starts running it. Time spent waiting in the
+        queue does not count. A job that has not started within
+        :attr:`max_queue_wait_sec` (1 hour) of being enqueued is failed only
+        if RQ lost it.
+    priority : str, default ``"high"``
+        The RQ queue the job runs on, ``"high"`` or ``"low"``. Workers take
+        jobs from the ``high`` queue before the ``low`` queue, but do not
+        interrupt a running job: a high-priority job still waits for a free
+        worker if every worker is busy.
+
+    Attributes
+    ----------
+    max_queue_wait_sec : int
+        Seconds after being enqueued (default 3600, i.e. 1 hour) after which
+        :meth:`check_timeouts` fails a job that has not started, if RQ lost
+        it: RQ no longer has the job, for example because its launch failed
+        or Redis restarted, or RQ failed, stopped or cancelled it. A job
+        still waiting in RQ is a genuine backlog and keeps waiting, and a job
+        RQ reports as finished is left alone. A lost job is failed rather
+        than re-run.
     """
+
+    max_queue_wait_sec = 3600
 
     timeout = Column(Float)
     timeout_scheduled_for = Column(DateTime)
@@ -636,6 +713,7 @@ class WorkerAsyncJob(AsyncJob):
     def get_launch_spec(self) -> dict:
         spec = super().get_launch_spec()
         spec["timeout"] = self.timeout
+        spec["priority"] = self.priority
         return spec
 
     def __init__(
@@ -651,7 +729,9 @@ class WorkerAsyncJob(AsyncJob):
         label=None,
         unique=False,
         timeout=None,
+        priority="high",
     ):
+        check_priority(priority)
         self.timeout = timeout
         super().__init__(
             function,
@@ -664,33 +744,25 @@ class WorkerAsyncJob(AsyncJob):
             asset=asset,
             label=label,
             unique=unique,
+            priority=priority,
         )
 
-    def enqueue(self):
-        """Enqueue the job as in :meth:`AsyncJob.enqueue` and start its timeout.
-
-        Returns
-        -------
-        WorkerAsyncJob
-            The job itself.
-
-        Raises
-        ------
-        RuntimeError
-            If the job has already been enqueued.
-        sqlalchemy.exc.IntegrityError
-            If the job was created with ``unique`` and a matching job exists.
-        """
-        super().enqueue()
+    def log_time_started(self):
+        """Record the start time and start the timeout, if any."""
+        super().log_time_started()
         if self.timeout:
-            self.timeout_scheduled_for = self.time_enqueued + datetime.timedelta(
+            self.timeout_scheduled_for = self.time_started + datetime.timedelta(
                 seconds=self.timeout
             )
-        return self
+
+    @classmethod
+    def get_redis_queue(cls, priority):
+        """Return the RQ queue for jobs of the given priority."""
+        return Queue(priority, connection=redis_conn)
 
     @classmethod
     def launch(cls, spec: dict):
-        cls.redis_queue.enqueue_call(
+        cls.get_redis_queue(spec["priority"]).enqueue_call(
             func=cls.call_function_with_logger,
             args=(),
             kwargs=dict(async_job_id=spec["id"]),
@@ -699,25 +771,102 @@ class WorkerAsyncJob(AsyncJob):
         )
 
     @classmethod
-    def check_timeouts(cls):
-        jobs = cls.query.filter(
+    def _is_lost_before_start(cls, async_job_id):
+        """Return whether RQ lost a job that has not started.
+
+        A job is lost if RQ no longer has it, or if RQ failed, stopped or
+        cancelled it. A job RQ reports as finished was run by a worker, and
+        any other status, including ``created``, which RQ only sets while
+        enqueueing, means RQ may still run it.
+
+        Returns
+        -------
+        bool
+            ``True`` if RQ has no record of the job or failed, stopped or
+            cancelled it. ``False`` if RQ may still run it, or, with a
+            warning, if Redis cannot be reached.
+        """
+        try:
+            status = Job(_rq_job_id(async_job_id), connection=redis_conn).get_status()
+        except InvalidJobOperation:
+            return True
+        except RedisError:
+            logger.warning(
+                "Could not check whether RQ still holds async job %s; not failing it.",
+                async_job_id,
+                exc_info=True,
+            )
+            return False
+        return status in _RQ_LOST_STATUSES
+
+    @classmethod
+    def _is_overdue(cls, now):
+        """Return a filter for pending jobs that timed out or never started."""
+        start_deadline = now - datetime.timedelta(seconds=cls.max_queue_wait_sec)
+        return and_(
             cls.pending,
             ~cls.failed,
-            cls.timeout != None,  # noqa -- this is special SQLAlchemy syntax
-            cls.timeout_scheduled_for < datetime.datetime.now(),
-        ).all()
-        for job in jobs:
-            job.fail(
-                "Async job timed out",
-            )
-            if job.participant_id is not None:
-                from psynet.timeline_hold import _queue_timeline_hold_wake
+            ~cls.finished,
+            or_(
+                cls.timeout_scheduled_for < now,
+                and_(
+                    cls.time_started == None,  # noqa: E711
+                    cls.time_enqueued < start_deadline,
+                ),
+            ),
+        )
 
-                _queue_timeline_hold_wake(
-                    job.participant_id,
-                    reason="async_job_timed_out",
-                )
+    @classmethod
+    def check_timeouts(cls):
+        """Fail jobs that have timed out or were lost before starting.
+
+        A job times out once it has run for longer than its ``timeout``. A job
+        that has not started :attr:`max_queue_wait_sec` after being enqueued
+        is failed if RQ lost it (see :meth:`_is_lost_before_start`);
+        otherwise it keeps waiting. Failed jobs are no longer pending.
+        """
+        now = datetime.datetime.now()
+        job_ids = [
+            job_id
+            for (job_id,) in db.session.query(cls.id).filter(cls._is_overdue(now))
+        ]
+        for job_id in job_ids:
+            cls._fail_if_overdue(job_id, now)
             db.session.commit()
+
+    @classmethod
+    def _fail_if_overdue(cls, async_job_id, now):
+        """Lock a job and fail it if it is still overdue at time ``now``.
+
+        Re-checking under the lock skips a job that a worker started or
+        finished since :meth:`check_timeouts` selected it.
+        """
+        job = (
+            cls.query.filter(cls.id == async_job_id, cls._is_overdue(now))
+            .with_for_update(of=AsyncJob)
+            .populate_existing()
+            .one_or_none()
+        )
+        if job is None:
+            return
+        if job.time_started is not None:
+            job.fail("Async job timed out")
+        elif cls._is_lost_before_start(job.id):
+            job.fail(
+                f"Async job did not start within {cls.max_queue_wait_sec} s "
+                "of being enqueued and RQ no longer has it queued; "
+                "it was probably lost"
+            )
+        else:
+            return
+        job.pending = False
+        if job.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(
+                job.participant_id,
+                reason="async_job_timed_out",
+            )
 
     @property
     def redis_job_id(self):
