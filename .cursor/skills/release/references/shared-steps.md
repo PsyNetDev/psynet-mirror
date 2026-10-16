@@ -73,8 +73,7 @@ can pass:
 psynet translate
 ```
 
-This requires translator credentials in ``~/.dallingerconfig``
-(``openai_api_key`` or ``google_translate_json_path``). Then:
+This requires ``openai_api_key`` in ``~/.dallingerconfig``. Then:
 
 ```bash
 CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translations.py::test_psynet_translations_up_to_date

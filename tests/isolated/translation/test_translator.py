@@ -5,14 +5,7 @@ To run these tests locally (requires API credentials):
 
     pytest tests/isolated/translation/test_translator.py -v
 
-These tests require either:
-- OpenAI API key (for ChatGptTranslator) - set `openai_api_key` in .dallingerconfig
-- Google Cloud Translate API key (for GoogleTranslator) - set `google_translate_json_path` in .dallingerconfig
-
-If only OpenAI credentials are available, run ChatGPT tests only:
-
-    pytest tests/isolated/translation/test_translator.py -k "ChatGpt" -v
-
+These tests require an OpenAI API key: set `openai_api_key` in .dallingerconfig.
 """
 
 import json
@@ -26,7 +19,6 @@ from psynet.experiment import import_local_experiment
 from psynet.pytest_psynet import local_only, path_to_test_experiment
 from psynet.translation.translators import (
     ChatGptTranslator,
-    GoogleTranslator,
     TranslationContext,
 )
 
@@ -36,33 +28,30 @@ TEST_TRANSLATIONS = [
         ['<div class="alert alert-primary" role="alert">Hello</div>'],
         ['<div class="alert alert-primary" role="alert">Bonjour</div>'],
     ),
-    (["Goodbye ■0■!"], ["Au revoir ■0■!"]),  # The variable {NAME} gets encoded as ■0■
+    (["Goodbye {NAME}!"], ["Au revoir {NAME}!"]),
     (["Thank you"], ["Merci"]),
 ]
 
 
-@local_only  # We don't run this in the CI because it requires an API keys for the autotranslators
+@local_only  # We don't run this in the CI because it requires an OpenAI API key
 @pytest.mark.usefixtures("in_experiment_directory")
-@pytest.mark.parametrize("translator_class", [GoogleTranslator, ChatGptTranslator])
 @pytest.mark.parametrize("english,expected_french", TEST_TRANSLATIONS)
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("translation")], indirect=True
 )
-def test_translator(translator_class, english, expected_french, experiment_directory):
+def test_translator(english, expected_french, experiment_directory):
     """
-    Test that translators correctly handle basic English to French translations.
+    Test that ChatGPT correctly handles basic English to French translations.
 
     Parameters
     ----------
-    translator_class : class
-        The translator class to test
     english : list
         Input English texts
     expected_french : list
         Expected French translation
     """
     import_local_experiment()
-    translator = translator_class()
+    translator = ChatGptTranslator()
     assert len(english) == len(expected_french)
     result = translator.translate(texts=english, source_lang="en", target_lang="fr")
 
@@ -97,7 +86,9 @@ def test_chat_gpt_sends_temperature_only_when_configured(
         chat=SimpleNamespace(completions=SimpleNamespace(create=create))
     )
     monkeypatch.setitem(
-        sys.modules, "openai", SimpleNamespace(OpenAI=lambda api_key: client)
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=Exception),
     )
 
     result = ChatGptTranslator().translate(["Hello"], "en", "fr")
@@ -116,7 +107,7 @@ def test_translator_with_file_path():
         texts=[
             "Hello, welcome to my experiment!",
             "What is your name?",
-            "Hello, {NAME}!",  # ChatGptTranslator uses use_codebook=False, so variables are not encoded
+            "Hello, {NAME}!",
             "What is your favorite pet?",
             "dog",
             "cat",
@@ -124,7 +115,7 @@ def test_translator_with_file_path():
             "hamster",
             "bird",
             "snake",
-            "Great, I like {PET} too!",  # ChatGptTranslator uses use_codebook=False, so variables are not encoded
+            "Great, I like {PET} too!",
         ],
         source_lang="en",
         target_lang="fr",
@@ -169,7 +160,7 @@ def preprocess_translation(text: str) -> str:
 @local_only
 def test_invalid_language():
     """Test that translators properly handle invalid language codes."""
-    translator = GoogleTranslator()
+    translator = ChatGptTranslator()
 
     # TODO - raise a more specific exception here
     with pytest.raises(Exception):

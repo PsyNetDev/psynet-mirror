@@ -5320,7 +5320,13 @@ def locales(codes_only):
 @psynet.command("translate")
 @click.argument("locales", nargs=-1)
 @click.option(
-    "--force", is_flag=True, help="Force retranslation of existing translations"
+    "--force",
+    is_flag=True,
+    help=(
+        "Delete each locale's catalog and retranslate everything, including "
+        "translations you have reviewed. Without --force, only untranslated "
+        "texts are sent."
+    ),
 )
 @click.option(
     "--skip-pot",
@@ -5353,7 +5359,7 @@ def translate(locales, force, skip_pot, continue_on_error, translator):
     languages :
         The target languages, specified as space-separated language codes
     force : bool
-        If True, force retranslation of existing translations
+        If True, delete each locale's catalog and retranslate everything, including reviewed translations
     skip_pot : bool
         If True, skip the generation of the translation template (.pot file); useful for checking failed translations
         since recreating the template takes some time, but the translation did not change.
