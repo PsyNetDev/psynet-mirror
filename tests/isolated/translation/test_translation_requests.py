@@ -178,7 +178,13 @@ def test_system_prompt_names_the_locale_script():
     assert "Ol Chiki script" in prompt
 
 
-def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False, replies=()):
+def _fake_chat_gpt(
+    monkeypatch,
+    temperature,
+    reject_temperature=False,
+    replies=(),
+    model="gpt-6-luna",
+):
     """Route ChatGptTranslator to a fake ``openai`` module and return its requests.
 
     The fake answers with ``replies`` in turn, then with "Bonjour".
@@ -210,7 +216,7 @@ def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False, replies=(
         SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=BadRequestError),
     )
     monkeypatch.setattr(translators, "_MODELS_WITHOUT_TEMPERATURE", set())
-    config = {"openai_api_key": "key", "openai_default_model": "gpt-6-luna"}
+    config = {"openai_api_key": "key", "openai_default_model": model}
     if temperature is not None:
         config["openai_default_temperature"] = temperature
     monkeypatch.setattr(translators, "get_config", lambda: config)
@@ -240,29 +246,7 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
 
 
 def test_gpt_4o_reply_limit_stays_within_what_it_accepts(monkeypatch):
-    requests = []
-
-    def create(**kwargs):
-        requests.append(kwargs)
-        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=message, finish_reason="stop")]
-        )
-
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "openai",
-        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=Exception),
-    )
-    config = {
-        "openai_api_key": "key",
-        "openai_default_model": "gpt-4o",
-        "openai_default_temperature": "0",
-    }
-    monkeypatch.setattr(translators, "get_config", lambda: config)
+    requests = _fake_chat_gpt(monkeypatch, "0", model="gpt-4o")
 
     ChatGptTranslator().translate(["a" * 5_000], "en", "fr")
 
