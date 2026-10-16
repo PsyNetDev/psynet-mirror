@@ -1,1 +1,0 @@
-The `gibbs_audio_complex` demo now lets participants wait up to 2 minutes for their first trial while it synthesizes the start stimuli, instead of failing them after 60 seconds. This fixes intermittent failures of the demo's test on small CI runners.
