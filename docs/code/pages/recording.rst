@@ -53,6 +53,10 @@ timeline transitions. These settings are checked at startup for static pages and
 when generated pages are rendered. Background recording supports
 ordinary pages, :class:`~psynet.page.JsPsychPage`, and browser-hosted
 :class:`~psynet.page.UnityPage`. Pages sharing a ``session_id`` each get their own clip.
+If an answer is rejected, recording continues, so the clip submitted with the
+corrected answer also covers the time before the rejection.
+An answer rejected within the first second of recording keeps only what is
+recorded after the rejection.
 
 Consent pages and answer-recording controls cannot also record background video.
 Unity IDE debug mode and custom renderers that bypass the PsyNet page lifecycle
@@ -194,8 +198,9 @@ Camera and screen access
 ------------------------
 
 Consecutive recording pages reuse the camera and screen streams without asking
-again. Once a page that does not record is shown, PsyNet releases them, so the
-camera light and screen-sharing banner turn off. A later recording page turns the
+again. Once a page that does not record is shown, including a waiting page or a
+page in the same ``session_id``, recording stops and PsyNet releases the streams,
+so the camera light and screen-sharing banner turn off. A later recording page turns the
 camera back on without asking again when access was already granted; screen
 sharing is always requested anew. Clips with audio disabled stop and remove cached audio
 tracks, even when the camera was previously used with audio.

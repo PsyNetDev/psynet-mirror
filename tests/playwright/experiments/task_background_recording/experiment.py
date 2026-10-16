@@ -1,5 +1,6 @@
 """Real task lifecycle coverage with a lightweight Unity engine stand-in."""
 
+import datetime
 from pathlib import Path
 
 from dallinger.experiment import experiment_route
@@ -7,8 +8,8 @@ from flask import abort, jsonify, send_file
 
 import psynet.experiment
 from psynet.db import with_transaction
-from psynet.page import InfoPage, JsPsychPage, UnityPage
-from psynet.timeline import Timeline
+from psynet.page import InfoPage, JsPsychPage, UnityPage, wait_while
+from psynet.timeline import CodeBlock, Timeline
 from psynet.trial.record import Recording
 
 
@@ -45,6 +46,20 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=1,
             background_recording="camera",
         ),
+        # A hold after a recorded page must stop recording and turn the camera off.
+        CodeBlock(
+            lambda participant: participant.var.set(
+                "hold_start", datetime.datetime.now()
+            )
+        ),
+        wait_while(
+            lambda participant: (
+                (datetime.datetime.now() - participant.var.hold_start).total_seconds()
+                <= 4
+            ),
+            expected_wait=4,
+            check_interval=0.5,
+        ),
         UnityPage(
             "Second task",
             "/static/unity",
@@ -52,6 +67,14 @@ class Exp(psynet.experiment.Experiment):
             "shared",
             time_estimate=1,
             background_recording="camera",
+        ),
+        # Same session without recording: the camera must turn off.
+        UnityPage(
+            "Third task",
+            "/static/unity",
+            {"step": 3},
+            "shared",
+            time_estimate=1,
         ),
         JsPsychPage(
             "keyboard_task",
