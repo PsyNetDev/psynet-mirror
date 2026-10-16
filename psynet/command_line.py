@@ -342,11 +342,13 @@ def _experiment_variables(connection, echo=False):
 
 
 def _validate_location(ctx, param, value):
+    """Click callback that accepts only the supported database locations."""
     allowed = ["local", "heroku", "ssh"]
     if value not in allowed:
         raise click.UsageError(
             f"Invalid location {value}; location must be one of: {', '.join(allowed)}"
         )
+    return value
 
 
 @psynet.command("experiment-variables")
