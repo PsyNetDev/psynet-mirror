@@ -347,7 +347,8 @@ the app. That includes an existing performance-test app with the same
 updates from this directory. Each deploy or update records a new ID in the
 app's ``docker-compose.yml``, and the command only destroys the app if it
 still records this run's ID, so it leaves alone an app that replaced it
-during the run or a failed deploy that never got that far. To keep the app, for example to look at its dashboard and logs, pass
+during the run, or an existing app whose update failed before recording
+this run's ID. To keep the app, for example to look at its dashboard and logs, pass
 ``--keep-app``; the command then prints how to destroy it when you're done:
 
 .. code-block:: bash

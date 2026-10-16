@@ -6322,6 +6322,7 @@ def _clean_up_performance_test_app(ctx, server, app, deploy_id, *, had_files, ke
     """Destroy, or with ``keep_app`` keep, what this run left of ``app`` on ``server``."""
     try:
         ours = _is_this_runs_app(server, app, deploy_id, had_files)
+        left = ours or had_files or _ssh_app_files_exist(server, app)
     except BaseException as e:
         logger.warning("Could not check what this run left of %s: %r", app, e)
         print(
@@ -6332,7 +6333,7 @@ def _clean_up_performance_test_app(ctx, server, app, deploy_id, *, had_files, ke
             raise
         return
     if not ours:
-        if had_files or _ssh_app_files_exist(server, app):
+        if left:
             print(
                 f"Leaving {app} on {server}: it isn't what this run deployed. "
                 "If nobody else is using it, destroy it with:\n"

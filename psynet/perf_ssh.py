@@ -545,7 +545,7 @@ class DatabaseReset:
         self.snapshot_rows = None
         # Every copy, named before it is made, so that close() drops interrupted ones.
         self._copies = []
-        # The complete copy of the database as the run found it.
+        # With restore_at_end, the complete copy of the database as the run found it.
         self._original = None
 
     def __call__(self):
@@ -579,7 +579,8 @@ class DatabaseReset:
         logger.info("")
         logger.info("Taking a snapshot of the database...")
         self.snapshot = self._take_copy("snapshot")
-        self._original = self._original or self.snapshot
+        if self._restore_at_end:
+            self._original = self._original or self.snapshot
 
         from psynet.perf_test.measure import database_rows
 
