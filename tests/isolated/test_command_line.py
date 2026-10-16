@@ -4753,7 +4753,7 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
             "avg_latency": Decimal("0.5"),
             "nan_value": float("nan"),
             "inf_value": float("inf"),
-            "process_stats": [{"avg": Decimal("0.001"), "max": float("nan")}],
+            "async_job_stats": [{"avg": Decimal("0.001"), "max": float("nan")}],
         },
         {"n_bots": 2, "avg_latency": Decimal("0.6")},
     ]
@@ -4775,8 +4775,8 @@ def test_write_json_results_emits_expected_schema_with_coerced_values(tmp_path):
     assert first["avg_latency"] == 0.5
     assert first["nan_value"] is None
     assert first["inf_value"] is None
-    assert first["process_stats"][0]["avg"] == 0.001
-    assert first["process_stats"][0]["max"] is None
+    assert first["async_job_stats"][0]["avg"] == 0.001
+    assert first["async_job_stats"][0]["max"] is None
 
 
 def _invoke_destroy_ssh(monkeypatch, destroy_app, apps=(), app=None):

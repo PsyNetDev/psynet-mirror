@@ -54,7 +54,7 @@ def _export_table_order(inspector=None) -> list[str]:
         "lucid_status",
         "request",
         "error",
-        "process",
+        "async_job",
     ]
     ordered = [name for name in preferred if name in names]
     ordered.extend(name for name in names if name not in ordered)

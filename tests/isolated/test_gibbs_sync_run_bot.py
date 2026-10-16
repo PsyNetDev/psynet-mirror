@@ -1,10 +1,10 @@
 import pytest
 from dallinger import db
 
+from psynet.async_job import WorkerAsyncJob
 from psynet.bot import Bot, BotDriver
 from psynet.error import ErrorRecord
 from psynet.experiment import Experiment
-from psynet.process import WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.utils import wait_until
 
@@ -16,7 +16,7 @@ def run_bot():
 
 def run_bot_group(experiment: Experiment):
     for _ in range(3):
-        WorkerAsyncProcess(function=experiment.run_bot)
+        WorkerAsyncJob(function=experiment.run_bot).enqueue()
         db.session.commit()
 
     wait_until(

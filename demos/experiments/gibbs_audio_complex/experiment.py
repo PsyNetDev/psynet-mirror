@@ -101,6 +101,9 @@ class CustomNode(AudioGibbsNode):
 
 class CustomTrialMaker(AudioGibbsTrialMaker):
     response_timeout_sec = 1e9
+    # Synthesising the start nodes' stimuli can take over a minute on a busy
+    # server, and the first participants wait for it.
+    max_time_waiting_for_trial = 300
 
 
 trial_maker = CustomTrialMaker(

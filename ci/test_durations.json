@@ -92,7 +92,7 @@
  "demos/pipelines/tapping": 41.3,
  "demos/pipelines/timed_push_buttons": 29.4,
  "tests/experiments/artifact_storage": 30.5,
- "tests/experiments/async_processes": 28.3,
+ "tests/experiments/async_jobs": 28.3,
  "tests/experiments/async_pruning": 29.7,
  "tests/experiments/consents": 35.3,
  "tests/experiments/cue_static": 28.0,
