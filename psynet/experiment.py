@@ -1645,6 +1645,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             raise ValueError(f"Invalid test mode: {self.test_mode}")
 
         self._report_request_statistics()
+        self._report_async_job_cpu_time()
 
     def _check_static_spa_contracts(self):
         """Fail fast on static timeline pages that are not SPA-compatible.
@@ -1697,6 +1698,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "mean_duration": mean_duration,
             "total_requests": total_requests,
         }
+
+    def _report_async_job_cpu_time(self):
+        """Log the CPU and wall time of the async jobs that ran, by where they ran and label."""
+        from .async_job import _format_cpu_time_summary
+
+        response = self.authenticated_session.get(self.base_url + "/async_job_cpu_time")
+        response.raise_for_status()
+        logger.info(_format_cpu_time_summary(response.json()))
+
+    @experiment_route("/async_job_cpu_time", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_cpu_time(cls):
+        from .async_job import _get_cpu_time_summary
+
+        return _get_cpu_time_summary()
 
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
