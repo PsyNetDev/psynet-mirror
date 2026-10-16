@@ -178,20 +178,25 @@ def test_system_prompt_names_the_locale_script():
     assert "Ol Chiki script" in prompt
 
 
-def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False):
-    """Route ChatGptTranslator to a fake ``openai`` module and return its requests."""
+def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False, replies=()):
+    """Route ChatGptTranslator to a fake ``openai`` module and return its requests.
+
+    The fake answers with ``replies`` in turn, then with "Bonjour".
+    """
 
     class BadRequestError(Exception):
         def __init__(self, param):
             self.param = param
 
     requests = []
+    replies = list(replies)
 
     def create(**kwargs):
         requests.append(kwargs)
         if reject_temperature and "temperature" in kwargs:
             raise BadRequestError(param="temperature")
-        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
+        reply = replies.pop(0) if replies else "Bonjour"
+        message = SimpleNamespace(content=json.dumps({"1": reply}), refusal=None)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=message, finish_reason="stop")]
         )
@@ -212,13 +217,16 @@ def _fake_chat_gpt(monkeypatch, temperature, reject_temperature=False):
     return requests
 
 
-@pytest.mark.parametrize("temperature, expected", [(None, "absent"), ("0", 0.0)])
+@pytest.mark.parametrize(
+    "temperature, expected", [(None, ["absent", "absent"]), ("0", [0.0, 0.7])]
+)
 def test_temperature_is_sent_only_when_configured(monkeypatch, temperature, expected):
-    requests = _fake_chat_gpt(monkeypatch, temperature)
+    """The first reply is empty, so the request is retried."""
+    requests = _fake_chat_gpt(monkeypatch, temperature, replies=[""])
 
     assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
 
-    assert requests[0].get("temperature", "absent") == expected
+    assert [request.get("temperature", "absent") for request in requests] == expected
 
 
 def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
