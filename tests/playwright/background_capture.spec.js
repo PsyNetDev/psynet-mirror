@@ -1,5 +1,6 @@
 const path = require("path");
 const { test, expect } = require("./fixtures");
+const { expectBlobPlays } = require("./psynetHarness");
 const captureLabels = {
   optional:"Optional capture", required:"Required capture", answer:"Record this answer",
   camera:"Enable camera", screen:"Share screen", skip:"Continue without recording",
@@ -47,12 +48,14 @@ test.describe("Optional background capture lifecycle @both", () => {
     await expect.poll(() => page.evaluate(() => capture.outcomes.camera), {timeout:20000}).toBe("size_limit");
     const result = await page.evaluate(async () => {
       const result = await capture.finish();
+      window.limited = result.recordings.camera;
       return {size:result.recordings.camera?.size || 0,unavailable:result.unavailable,outcome:result.outcomes.camera};
     });
     expect(result.outcome).toBe("size_limit");
     expect(result.unavailable).toEqual({});
     expect(result.size).toBeGreaterThan(0);
     expect(result.size).toBeLessThanOrEqual(limit);
+    await expectBlobPlays(page, "limited");
   });
 
   test("submitting does not stop recording, so a later submission includes more", async ({page}) => {
@@ -60,10 +63,42 @@ test.describe("Optional background capture lifecycle @both", () => {
     await page.getByRole("button",{name:"Enable camera",exact:true}).click();
     await page.evaluate(() => started);
     await expect.poll(() => page.evaluate(() => capture.clips.camera.size)).toBeGreaterThan(0);
-    const first = await page.evaluate(async () => (await capture.finish()).recordings.camera.size);
+    const first = await page.evaluate(async () => {
+      window.snapshot = (await capture.finish()).recordings.camera;
+      return snapshot.size;
+    });
     expect(first).toBeGreaterThan(0);
     expect(await page.evaluate(() => capture.clips.camera.getState())).toBe("recording");
+    // A snapshot of a recording still in progress plays on its own.
+    await expectBlobPlays(page, "snapshot");
     await expect.poll(async () => page.evaluate(async () => (await capture.finish()).recordings.camera.size)).toBeGreaterThan(first);
+  });
+
+  test("a rejected early submission keeps recording for the next one", async ({page}) => {
+    await page.evaluate(() => {window.started = capture.begin({...config,max_duration:30});});
+    await page.getByRole("button",{name:"Enable camera",exact:true}).click();
+    await page.evaluate(() => started);
+    // Without flushed data, as on an answer within the first second, the
+    // snapshot has to stop the clip.
+    const early = await page.evaluate(async () => {
+      capture.clips.camera.flush = async () => {};
+      const result = await capture.finish();
+      return {size:result.recordings.camera?.size || 0,state:capture.clips.camera.getState()};
+    });
+    expect(early.state).not.toBe("recording");
+    await page.evaluate(() => capture.resume());
+    expect(await page.evaluate(() => capture.clips.camera.getState())).toBe("recording");
+    await expect(page.locator("#background-recording-status")).toHaveText("Recording");
+    await expect.poll(() => page.evaluate(() => capture.clips.camera.size)).toBeGreaterThan(0);
+    const next = await page.evaluate(async () => {
+      const result = await capture.finish();
+      window.resumed = result.recordings.camera;
+      return {size:result.recordings.camera.size,state:capture.clips.camera.getState(),unavailable:result.unavailable};
+    });
+    expect(next.size).toBeGreaterThan(0);
+    expect(next.state).toBe("recording");
+    expect(next.unavailable).toEqual({});
+    await expectBlobPlays(page, "resumed");
   });
 
   test("skipping capture avoids another permission prompt", async ({page}) => {

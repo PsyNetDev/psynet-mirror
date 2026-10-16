@@ -16,14 +16,36 @@ for (const capture of [true, false]) {
       const captured = async () => {
         if (capture) await expect.poll(() => p.locator("#background-recording-status").getAttribute("data-bytes").then(Number)).toBeGreaterThan(0);
       };
+      // Remember this document's camera track to check that it is released.
+      const keepCameraTrack = () => p.evaluate(async () => {
+        const {devices} = await psynet.getRecordingCapture();
+        window.cameraTrack = devices.streams.get("camera")?.getVideoTracks()[0] || null;
+      });
+      const cameraReleased = () => p.evaluate(async () => {
+        const {devices} = await psynet.getRecordingCapture();
+        return !devices.streams.has("camera") && (!window.cameraTrack || window.cameraTrack.readyState === "ended");
+      });
       await decide();
-      for (const step of [1, 2]) {
+      for (const step of [1, 2, 3]) {
         const button = p.getByRole("button", {name: `Complete Unity step ${step}`, exact: true});
-        await expect(button).toBeVisible();
+        await expect(button).toBeVisible({timeout: 30000});
         await expect(p.locator("#background-recording-permission")).toHaveCount(0);
         await expect.poll(() => p.evaluate(() => psynet.nextPagePending)).toBe(false);
-        await captured();
+        if (step < 3) {
+          await captured();
+          await keepCameraTrack();
+        } else {
+          // A same-session page without recording stops it and turns the camera off.
+          await expect.poll(cameraReleased).toBe(true);
+          await expect(p.locator("#background-recording-status")).toHaveCount(0);
+        }
         await button.click();
+        if (step === 1) {
+          // Recording stops and the camera turns off while the participant waits.
+          await expect.poll(() => p.evaluate(() => psynet.timelineHold !== null)).toBe(true);
+          await expect.poll(cameraReleased).toBe(true);
+          await expect(p.locator("#background-recording-status")).toHaveCount(0);
+        }
       }
       // jsPsych owns a new document and must await a new capture decision.
       await expect(p.locator("#background-recording-permission")).toBeVisible();

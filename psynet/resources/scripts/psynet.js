@@ -3374,6 +3374,8 @@
         psynet.pageLoadTime = new Date();
         psynet.var.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
+        psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
+        await psynet.releaseUnusedRecordingStreams();
         await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
         psynet.restoreSubmissionControlState();
@@ -3583,6 +3585,8 @@
         return await psynet.handleApprovedResponse(response);
       }
       if (response.submission === "rejected") {
+        // Keep recording for the corrected answer.
+        await backgroundRecorder?.resume();
         return await psynet.handleRejectedResponse(
           response,
           onRejection,
@@ -3679,9 +3683,10 @@
         psynet.log.warn(`Could not release recording streams: ${error.message}`);
       }
     };
-    // Ordinary transitions release unused streams while rebuilding the page.
-    // Holds keep the page, so they do it here.
+    // Ordinary transitions stop the page's background clips and release streams
+    // while rebuilding the page. Holds keep the page, so they do it here.
     psynet.endPageRecording = async function (captureSources) {
+      await backgroundRecorder?.discard();
       psynet.var.recordingCaptureSources = captureSources;
       await psynet.releaseUnusedRecordingStreams();
     };

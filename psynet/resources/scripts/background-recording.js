@@ -18,6 +18,8 @@ export class BackgroundRecorder {
     this.config = config;
     this.unavailable = {};
     this.outcomes = {};
+    this.limits = {};
+    this.stoppedForSnapshot = new Set();
     this.indicator = null;
     if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("video/webm")) {
       for (const source of config.sources) this.unavailable[source] = "unsupported";
@@ -61,25 +63,8 @@ export class BackgroundRecorder {
       if (limit <= 0 || slots <= 0) { this.unavailable[source] = "queue_full"; continue; }
       remaining -= limit;
       slots -= 1;
-      try {
-        const captureStream = await this.devices.acquire(source, {audio:config.audio, lowResolution:true});
-        const clip = new RecordingClip(captureStream, {
-          maxBytes:limit, maxDuration:config.max_duration, lowBitrate:true,
-          onChange: current => {
-            if (current.error) this.unavailable[source] = current.error;
-            if (current.outcome) this.outcomes[source] = current.outcome;
-            if (current.outcome === "source_ended") this.decisions.set(source, "source_ended");
-            if (this.indicator) this.indicator.dataset.bytes = String(Object.values(this.clips).reduce((sum, item) => sum + item.size, 0));
-            this.updateIndicator();
-          },
-        });
-        this.clips[source] = clip;
-        clip.startRecording();
-        if (clip.error) this.unavailable[source] = clip.error;
-      } catch (error) {
-        console.warn("Could not start background recording", source, error);
-        this.unavailable[source] = "capture_error";
-      }
+      this.limits[source] = limit;
+      await this.startClip(source);
     }
     // Show the status chip only when something is actually being recorded.
     if (Object.values(this.clips).some(clip => clip.getState() === "recording")) {
@@ -90,6 +75,29 @@ export class BackgroundRecorder {
       document.body.append(this.indicator);
     }
     this.updateIndicator();
+  }
+
+  async startClip(source) {
+    try {
+      const captureStream = await this.devices.acquire(source, {audio:this.config.audio, lowResolution:true});
+      const clip = new RecordingClip(captureStream, {
+        maxBytes:this.limits[source], maxDuration:this.config.max_duration, lowBitrate:true,
+        onChange: current => {
+          if (this.clips[source] !== clip) return;
+          if (current.error) this.unavailable[source] = current.error;
+          if (current.outcome) this.outcomes[source] = current.outcome;
+          if (current.outcome === "source_ended") this.decisions.set(source, "source_ended");
+          if (this.indicator) this.indicator.dataset.bytes = String(Object.values(this.clips).reduce((sum, item) => sum + item.size, 0));
+          this.updateIndicator();
+        },
+      });
+      this.clips[source] = clip;
+      clip.startRecording();
+      if (clip.error) this.unavailable[source] = clip.error;
+    } catch (error) {
+      console.warn("Could not start background recording", source, error);
+      this.unavailable[source] = "capture_error";
+    }
   }
 
   askPermission(sources) {
@@ -145,9 +153,10 @@ export class BackgroundRecorder {
   /** Snapshot every clip for a submission without stopping the recording.
    *
    * If the submission is rejected, recording continues and the next submission
-   * takes a fresh, longer snapshot. A submission whose reply was lost is resent
-   * with its original snapshot instead (see psynet.js). The page's clips stop
-   * when the next page discards them.
+   * takes a fresh, longer snapshot (see resume() for a clip that had to stop).
+   * A submission whose reply was lost is resent with its original snapshot
+   * instead (see psynet.js). The page's clips stop when the next page discards
+   * them.
    */
   async finish() {
     const recordings = {};
@@ -155,7 +164,10 @@ export class BackgroundRecorder {
       await clip.flush();
       // A recorder that has not produced data yet (an answer within its first
       // moments) only delivers it on stopping.
-      if (!clip.size && clip.getState() === "recording") await clip.stopRecording();
+      if (!clip.size && clip.getState() === "recording") {
+        await clip.stopRecording();
+        this.stoppedForSnapshot.add(source);
+      }
       if (clip.error) this.unavailable[source] = clip.error;
       if (clip.outcome) this.outcomes[source] = clip.outcome;
       recordings[source] = this.unavailable[source] ? new Blob([]) : clip.getBlob();
@@ -169,6 +181,23 @@ export class BackgroundRecorder {
       unavailable:{...prepared.unavailable,...this.unavailable},
       outcomes:{...this.outcomes},
     };
+  }
+
+  /** Restart clips that a rejected submission's snapshot had to stop.
+   *
+   * The next submission then still records the rest of the page; the moments
+   * captured before the rejected snapshot are not kept.
+   */
+  async resume() {
+    for (const source of this.stoppedForSnapshot) {
+      if (!this.devices.reusable(source, this.config.audio)) continue;
+      this.clips[source].reset();
+      delete this.outcomes[source];
+      delete this.unavailable[source];
+      await this.startClip(source);
+    }
+    this.stoppedForSnapshot.clear();
+    this.updateIndicator();
   }
 
   async discard() {
