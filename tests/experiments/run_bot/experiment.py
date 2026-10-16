@@ -27,8 +27,8 @@ class Exp(psynet.experiment.Experiment):
             "Please speak your name into the microphone.",
             AudioRecordControl(
                 duration=5.0,
-                bot_response_media=lambda bot: generate_text_file(
-                    f"This is a recording from {bot.id}!"
+                bot_response_media=lambda bot: generate_media_file(
+                    "wav", f"This is a recording from {bot.id}!"
                 ),
             ),
             time_estimate=5,
@@ -42,11 +42,11 @@ class Exp(psynet.experiment.Experiment):
                 show_preview=True,
                 controls=True,
                 bot_response_media=lambda bot: {
-                    "camera": generate_text_file(
-                        f"This is a camera recording from bot {bot.id}."
+                    "camera": generate_media_file(
+                        "webm", f"This is a camera recording from bot {bot.id}."
                     ),
-                    "screen": generate_text_file(
-                        f"This is a screen recording from bot {bot.id}."
+                    "screen": generate_media_file(
+                        "webm", f"This is a screen recording from bot {bot.id}."
                     ),
                 },
             ),
@@ -55,19 +55,27 @@ class Exp(psynet.experiment.Experiment):
     )
 
 
-def generate_text_file(text: str):
+# Uploads are checked for a media header, not decoded, so a header followed by
+# text lets the test identify each bot's file.
+MEDIA_HEADERS = {
+    "wav": b"RIFF\x00\x00\x00\x00WAVE",
+    "webm": b"\x1a\x45\xdf\xa3",
+}
+
+
+def generate_media_file(media_format: str, text: str):
     """
-    Generates a simple text file to test that the bot can upload files.
+    Generates a small file with a valid media header to test bot uploads.
 
     Returns
     -------
     str
-        Path to the generated text file.
+        Path to the generated file.
     """
     with tempfile.NamedTemporaryFile(
-        suffix=".txt", delete=False, mode="w", encoding="utf-8"
+        suffix=f".{media_format}", delete=False, mode="wb"
     ) as tmpfile:
-        tmpfile.write(text)
+        tmpfile.write(MEDIA_HEADERS[media_format] + text.encode())
         file_path = tmpfile.name
 
     return file_path
