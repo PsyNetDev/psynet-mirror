@@ -50,7 +50,9 @@ maker, inside a trial maker), and, for a control's ``bot_response``,
 
 Custom pages and controls answer bots through ``get_bot_response``. A plain
 value, whether from ``bot_response`` or ``get_bot_response``, is saved as the
-final answer without passing through ``format_answer``. To send the bot's
+final answer without passing through ``format_answer``. ``None`` counts as a
+plain value: ``bot_response=None`` makes bots answer ``None``, so leave
+``bot_response`` unset to keep the default answer. To send the bot's
 answer through ``format_answer`` like a browser response, return
 :class:`~psynet.bot.BotResponse` with ``raw_answer``:
 
