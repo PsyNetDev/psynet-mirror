@@ -1073,15 +1073,11 @@ function requestTimingDetail(record, fallbackMs) {
   return extra ? `${wallLabel} ${extra}` : wallLabel;
 }
 
-function unexpectedBlockingRequests(records, maxDurationMs, options = {}) {
-  const busyMs = options.busyMs ?? 500;
-  return records.filter((record) => {
-    const handlerMs = requestHandlerMs(record);
-    if (handlerMs >= maxDurationMs) {
-      return true;
-    }
-    return Boolean(record.busy) && (record.durationMs ?? 0) >= busyMs;
-  });
+function unexpectedBlockingRequests(records, maxDurationMs) {
+  // Busy 503s are judged by the same hang cap as other requests. That
+  // hold-resume uses NOWAIT is pinned by
+  // test_process_response_ready_hold_resume_locks_with_nowait.
+  return records.filter((record) => requestHandlerMs(record) >= maxDurationMs);
 }
 
 async function enterTimelineAfterGateway(page, timeout = 120000) {
