@@ -1339,9 +1339,12 @@ class Page(Elt):
         or by calling `psynet.trial.registerEvent("trialPrepare")` in JS).
 
     bot_response
-        Optional function to call when this page is consumed by a bot.
-        This will override any ``bot_response`` function specified in the class's
-        ``bot_response`` method.
+        Optional fixed answer, function, or :class:`~psynet.bot.BotResponse` defining how bots
+        respond to this page, in the same forms as for :class:`~psynet.modular_page.Control`.
+        If set, it overrides the page's :meth:`~psynet.timeline.Page.get_bot_response` method
+        (and, on a :class:`~psynet.modular_page.ModularPage`, the control's bot response).
+        ``bot_response=None`` makes bots submit an answer of ``None``;
+        leave it unset to use the default bot response.
 
     validate
         Optional validation function to use for the participant's response.

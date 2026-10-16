@@ -1694,6 +1694,8 @@ class SimpleGrouper(Grouper):
         If set to ``True``, then before a new group is created, the Grouper will check if there are any existing
         groups that are under-quota (e.g. because some participants left the experiment early).
         If so, the arriving participant will be assigned to one of these groups instead.
+        Participants already waiting at the grouper join such a group on the next barrier check.
+        Closed groups and groups with no active members are not joined.
         This behavior can be further customized via the ``join_criterion`` argument.
 
     join_criterion
@@ -1774,16 +1776,20 @@ class SimpleGrouper(Grouper):
             ),
         )
 
-    def _join_existing_groups(self, participant: Participant):
-        # The current logic is flawed, in that participants end up joining groups that are no longer active.
-        # It's difficult to figure out a good general-purpose solution here that works well for all possible applications.
-        # I think we should disable this behaviour for now, and wait until we experience some real-world use cases,
-        # which can inform the future API.
+    def _find_group_to_join(self, participant: Participant):
+        """Return the open group this participant may join, or ``None``.
+
+        Closed groups and groups whose members have all left are skipped:
+        joining an empty group would start a group of one and bypass
+        ``batch_size``.
+        """
         if not self.join_existing_groups:
-            return
+            return None
 
         query = SimpleSyncGroup.query.filter(
-            SimpleSyncGroup.group_type == self.group_type
+            SimpleSyncGroup.group_type == self.group_type,
+            SimpleSyncGroup.active.is_(True),
+            SimpleSyncGroup.n_active_participants > 0,
         )
 
         if self.max_group_size is not None:
@@ -1796,22 +1802,51 @@ class SimpleGrouper(Grouper):
             SimpleSyncGroup.n_active_participants, SimpleSyncGroup.id
         )
 
-        groups = query.all()
+        for group in query:
+            if self.join_criterion is None or self.join_criterion(
+                group=group, participant=participant
+            ):
+                return group
+        return None
 
-        # Only keep groups that satisfy the joining criterion (if provided)
-        groups = [
-            g
-            for g in groups
-            if self.join_criterion is None
-            or self.join_criterion(group=g, participant=participant)
-        ]
-
-        if len(groups) > 0:
-            group = groups[0]
+    def _join_existing_groups(self, participant: Participant):
+        group = self._find_group_to_join(participant)
+        if group is not None:
             group.add_participant(participant)
             assert participant.active_sync_groups[self.group_type] == group
             group.check_numbers()
             group.check_leader()
+
+    def choose_who_to_release(self, waiting_participants: List[Participant]):
+        """Release waiters who can join an open group, then group the rest.
+
+        Participants who arrive while a group is open join it before reaching
+        the barrier. Those already waiting, such as leftovers from a burst of
+        arrivals that was not a multiple of ``initial_group_size``, join here
+        once a group opens.
+        """
+        if not self.join_existing_groups:
+            return super().choose_who_to_release(waiting_participants)
+        joined, still_waiting = [], []
+        for participant in waiting_participants:
+            self._join_existing_groups(participant)
+            if self.group_type in participant.active_sync_groups:
+                joined.append(participant)
+            else:
+                still_waiting.append(participant)
+        return joined + super().choose_who_to_release(still_waiting)
+
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        """Return whether a check would form a group or let a waiter join one."""
+        if super().would_release(waiting_participants):
+            return True
+        if not self.join_existing_groups:
+            return False
+        # Without a join_criterion, every waiter would join the same group.
+        candidates = (
+            waiting_participants if self.join_criterion else waiting_participants[:1]
+        )
+        return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         return len(participants) >= self.batch_size
@@ -1900,9 +1935,9 @@ class SyncGroup(SQLBase, SQLMixin):
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link)."""
         _forget_active_sync_group(participant)
-        self.participant_links.append(
-            ParticipantLinkSyncGroup(participant=participant, active=True)
-        )
+        # Setting ``sync_group`` also appends to ``participant_links``, and lets
+        # ``participant.active_sync_groups`` see the group before a flush.
+        ParticipantLinkSyncGroup(participant=participant, sync_group=self, active=True)
 
     @property
     def active_participants(self) -> List[Participant]:
