@@ -2452,6 +2452,7 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
             "server",
             _EXPERIMENT,
             reset=True,
+            keep_app=True,
             n_bots=[2],
             force=False,
             json_output="results.json",
@@ -2673,7 +2674,7 @@ def _remote_search(
             {**_EXPERIMENT, "estimated_duration_minutes": 12},
             reset=reset,
             n_bots="auto",
-            **options,
+            **{"keep_app": True, **options},
         )
     return [c.args[0] for c in run.call_args_list], results
 

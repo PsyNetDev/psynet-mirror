@@ -334,12 +334,16 @@ only run on apps that ``performance-test ssh`` deployed for them. If the
 server has no app named ``--app``, the command first deploys the experiment
 under that name in debug mode, taking the same ``--server``, ``--dns-host``,
 ``--ingress``, ``--use-local-dallinger`` and ``--yes`` options as ``psynet
-debug ssh``.
+debug ssh``. Like ``psynet debug ssh``, that first deploy resets your local
+debug database.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
 The app's config is marked with ``performance_test_app = true``. At the end
 of the run, even one that fails or that you interrupt, the command destroys
-the app. To keep it, for example to look at its dashboard and logs, pass
+the app. Each deploy or update records a new ID in the app's
+``docker-compose.yml``, and the command only destroys the app if it still
+records this run's ID, so it leaves alone an app that someone else deployed
+or that replaced it during the run. To keep the app, for example to look at its dashboard and logs, pass
 ``--keep-app``; the command then prints how to destroy it when you're done:
 
 .. code-block:: bash

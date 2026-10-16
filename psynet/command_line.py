@@ -6026,12 +6026,9 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
 
 
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app, and the ID of its last deploy."""
+    """Return whether the running experiment is a performance-test app."""
     config = load_runtime_server_config()
-    return {
-        "performance_test_app": bool(config.get("performance_test_app", False)),
-        "performance_test_deploy_id": config.get("performance_test_deploy_id", None),
-    }
+    return {"performance_test_app": bool(config.get("performance_test_app", False))}
 
 
 @performance_test.command("app-info", hidden=True)
@@ -6065,15 +6062,6 @@ def performance_test__app_info(json_output):
         json.dump(info, f)
 
 
-def _remote_performance_test_app_info(server, app):
-    """Return what ``performance-test app-info`` reports in the web container of ``app`` on ``server``."""
-    from psynet.perf_ssh import RemoteApp
-
-    _awaken_ssh_app(server, app)
-    remote = RemoteApp(_ssh_executor(server), app, server)
-    return remote.run_psynet("performance-test app-info")
-
-
 def _require_performance_test_app(server, app):
     """Return the :func:`_performance_test_app_info` of ``app`` on ``server``.
 
@@ -6087,13 +6075,17 @@ def _require_performance_test_app(server, app):
         finished launching the experiment, or that can't be checked. Apps
         whose PsyNet predates the launch check count as launched.
     """
+    from psynet.perf_ssh import RemoteApp
+
+    _awaken_ssh_app(server, app)
+    remote = RemoteApp(_ssh_executor(server), app, server)
     advice = (
         "Performance tests only run on apps that 'psynet performance-test ssh' "
         "deployed for them, whose data is disposable. Choose another --app name, "
         "and 'performance-test ssh' deploys a new app under that name."
     )
     try:
-        info = _remote_performance_test_app_info(server, app)
+        info = remote.run_psynet("performance-test app-info")
     except (click.ClickException, RuntimeError) as e:
         raise click.ClickException(
             f"Could not check whether {app} on {server} is a performance-test app "
@@ -6237,8 +6229,9 @@ def performance_test__docker_ssh(
     one, kept by an earlier run with --keep-app, this updates it in place,
     keeping its database. It refuses apps that this command didn't deploy,
     or whose deploy didn't finish launching the experiment. At the end of
-    the run, even one that fails or is interrupted, it destroys the app,
-    unless --keep-app is given.
+    the run, even one that fails or is interrupted, it destroys what this
+    run deployed or updated, unless --keep-app is given: an app counts as
+    this run's only if its compose file records this run's deploy ID.
 
     The bots run inside the app's web container, while this computer runs
     the suite: it runs each test in the web container. With
@@ -6260,9 +6253,7 @@ def performance_test__docker_ssh(
         # Before the try, so that an app this command didn't deploy is never destroyed.
         _require_performance_test_app(server, app)
     deploy_id = uuid.uuid4().hex
-    # Files left by someone else's failed deploy are never destroyed.
-    had_files = exists or _ssh_app_files_exist(server, app)
-    deployed = exists
+    had_files = _ssh_app_files_exist(server, app)
     try:
         experiment = _prepare_performance_test_app(
             ctx,
@@ -6275,7 +6266,6 @@ def performance_test__docker_ssh(
             use_local_dallinger=use_local_dallinger,
             assume_yes=assume_yes,
         )
-        deployed = True
         _run_ssh_performance_test(
             app,
             server,
@@ -6287,50 +6277,64 @@ def performance_test__docker_ssh(
             **options,
         )
     finally:
-        if deployed or _failed_deploy_left_app(server, app, deploy_id, had_files):
-            if keep_app:
-                print(
-                    f"{app} is kept on {server}. Destroy it when you're done with:\n"
-                    f"    psynet destroy ssh --server {server} --app {app}"
-                )
-            else:
-                _destroy_performance_test_app(ctx, server, app)
+        _clean_up_performance_test_app(
+            ctx, server, app, deploy_id, had_files=had_files, keep_app=keep_app
+        )
 
 
 def _ssh_app_files_exist(server, app):
     """Return whether ``~/dallinger/<app>`` exists on ``server``."""
-    return bool(
-        _ssh_executor(server).run(
-            f"test -e ~/dallinger/{shlex.quote(app)} && echo Yes", raise_=False
-        )
-    )
+    return _ssh_test(server, f"test -e ~/dallinger/{shlex.quote(app)}")
 
 
-def _failed_deploy_left_app(server, app, deploy_id, had_files):
-    """Return whether the failed first deploy ``deploy_id`` of ``app`` left anything of its own on ``server``.
+def _ssh_test(server, command):
+    """Return whether shell ``command`` succeeds on ``server``."""
+    return bool(_ssh_executor(server).run(f"{command} && echo Yes", raise_=False))
 
-    A listed app is this deploy's only if its config records ``deploy_id``:
-    the deploy may have failed because another app of that name appeared,
-    even one that another ``performance-test ssh`` deployed. An app that
-    isn't listed may still have left files, such as a Cloudflare tunnel, if
-    ``had_files`` says there were none before.
+
+def _is_this_runs_app(server, app, deploy_id, had_files):
+    """Return whether ``app`` on ``server`` is what this run's deploy ``deploy_id`` left.
+
+    It is if its compose file records ``deploy_id``, which an update of an
+    existing app writes too, so an app that replaced it during the run is
+    never this run's. Without a compose file, files under ``~/dallinger/<app>``
+    that weren't there before the run (``had_files``), such as a Cloudflare
+    tunnel, are this run's too.
     """
-    from dallinger.command_line.docker_ssh import get_apps
-
-    try:
-        if app not in {entry.name for entry in get_apps(server)}:
-            return not had_files and _ssh_app_files_exist(server, app)
-        info = _remote_performance_test_app_info(server, app)
-        if info.get("performance_test_deploy_id") == deploy_id:
-            return True
-    except Exception as e:
-        logger.warning("Could not check what the failed deploy of %s left: %r", app, e)
-    print(
-        f"Not destroying {app} on {server}: could not confirm that this run "
-        "deployed it. If it did, destroy it with:\n"
-        f"    psynet destroy ssh --server {server} --app {app}"
+    directory = f"~/dallinger/{shlex.quote(app)}"
+    marker = shlex.quote(f'performance_test_deploy_id: "{deploy_id}"')
+    if _ssh_test(server, f"grep -qF {marker} {directory}/docker-compose.yml"):
+        return True
+    return (
+        not had_files
+        and not _ssh_test(server, f"test -e {directory}/docker-compose.yml")
+        and _ssh_test(server, f"test -e {directory}")
     )
-    return False
+
+
+def _clean_up_performance_test_app(ctx, server, app, deploy_id, *, had_files, keep_app):
+    """Destroy, or with ``keep_app`` keep, what this run left of ``app`` on ``server``."""
+    try:
+        ours = _is_this_runs_app(server, app, deploy_id, had_files)
+    except BaseException as e:
+        logger.warning("Could not check what this run left of %s: %r", app, e)
+        print(
+            f"Could not check whether {app} on {server} is this run's. If it is, "
+            f"destroy it with:\n    psynet destroy ssh --server {server} --app {app}"
+        )
+        if not isinstance(e, Exception):
+            raise
+        return
+    if not ours:
+        if had_files:
+            print(f"Leaving {app} on {server}: this run didn't deploy or update it.")
+    elif keep_app:
+        print(
+            f"{app} is kept on {server}. Destroy it when you're done with:\n"
+            f"    psynet destroy ssh --server {server} --app {app}"
+        )
+    else:
+        _destroy_performance_test_app(ctx, server, app)
 
 
 def _prepare_performance_test_app(
@@ -6397,7 +6401,7 @@ def _run_ssh_performance_test(
     *,
     reset=False,
     prefill_participants=None,
-    keep_app=True,
+    keep_app,
     n_bots=None,
     stagger=None,
     time_factor=1.0,

@@ -494,9 +494,9 @@ class DatabaseReset:
     sequences, indexes and table bloat. Every later call drops the database
     and creates it again from the snapshot. :meth:`close` drops the snapshot
     and, with ``restore_at_end``, first restores the database to how the run
-    found it, so that every run starts from the same data. When pre-filling,
-    the first call also copies the database before the pre-fill, and
-    :meth:`close` restores that copy.
+    found it, so that the next run on a kept app starts from the same data.
+    When pre-filling, the first call also copies the database before the
+    pre-fill, which is what :meth:`close` restores then.
 
     PostgreSQL only copies or drops a database that nobody is connected to,
     so each call stops the app's server processes (:meth:`RemoteApp.stop`),
