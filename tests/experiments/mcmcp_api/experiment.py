@@ -148,7 +148,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_experiment(self):
         super().test_experiment()
-        time.sleep(1)  # Wait for any async processes to complete
+        time.sleep(1)  # Wait for any async jobs to complete
         nodes = CustomNode.query.all()
         assert len(nodes) > 0
         for n in nodes:

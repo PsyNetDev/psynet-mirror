@@ -317,17 +317,17 @@ class PerformanceTester:
         from dallinger import db
         from sqlalchemy import func
 
+        from psynet.async_job import AsyncJob
         from psynet.experiment import Request
         from psynet.participant import Participant
-        from psynet.process import AsyncProcess
 
         max_request_id = db.session.query(func.max(Request.id)).scalar() or 0
-        max_process_id = db.session.query(func.max(AsyncProcess.id)).scalar() or 0
+        max_async_job_id = db.session.query(func.max(AsyncJob.id)).scalar() or 0
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
         return {
             "max_request_id": max_request_id,
-            "max_process_id": max_process_id,
+            "max_async_job_id": max_async_job_id,
             "max_participant_id": max_participant_id,
         }
 
@@ -714,9 +714,9 @@ class PerformanceTester:
         from dallinger import db
         from sqlalchemy import case, func
 
+        from psynet.async_job import AsyncJob
         from psynet.bot import Bot
         from psynet.experiment import Request
-        from psynet.process import AsyncProcess
 
         requests_during_test = (
             db.session.query(func.count(Request.id))
@@ -754,46 +754,46 @@ class PerformanceTester:
             .scalar()
         )
 
-        # Async process duration stats, grouped by (trial_maker_id, label).
-        process_stats_rows = (
+        # Async job duration stats, grouped by (trial_maker_id, label).
+        async_job_stats_rows = (
             db.session.query(
-                AsyncProcess.trial_maker_id,
-                AsyncProcess.label,
-                func.count(AsyncProcess.id).label("count"),
-                func.avg(AsyncProcess.time_taken).label("avg"),
+                AsyncJob.trial_maker_id,
+                AsyncJob.label,
+                func.count(AsyncJob.id).label("count"),
+                func.avg(AsyncJob.time_taken).label("avg"),
                 func.percentile_cont(0.5)
-                .within_group(AsyncProcess.time_taken)
+                .within_group(AsyncJob.time_taken)
                 .label("median"),
                 func.percentile_cont(0.95)
-                .within_group(AsyncProcess.time_taken)
+                .within_group(AsyncJob.time_taken)
                 .label("p95"),
-                func.max(AsyncProcess.time_taken).label("max"),
-                func.avg(AsyncProcess.queue_delay).label("q_avg"),
+                func.max(AsyncJob.time_taken).label("max"),
+                func.avg(AsyncJob.queue_delay).label("q_avg"),
                 func.percentile_cont(0.5)
-                .within_group(AsyncProcess.queue_delay)
+                .within_group(AsyncJob.queue_delay)
                 .label("q_median"),
                 func.percentile_cont(0.95)
-                .within_group(AsyncProcess.queue_delay)
+                .within_group(AsyncJob.queue_delay)
                 .label("q_p95"),
                 func.avg(
                     case(
                         (
-                            (AsyncProcess.queue_delay + AsyncProcess.time_taken) > 0,
-                            AsyncProcess.queue_delay
-                            / (AsyncProcess.queue_delay + AsyncProcess.time_taken),
+                            (AsyncJob.queue_delay + AsyncJob.time_taken) > 0,
+                            AsyncJob.queue_delay
+                            / (AsyncJob.queue_delay + AsyncJob.time_taken),
                         ),
                         else_=None,
                     )
                 ).label("q_share"),
             )
             .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
+                AsyncJob.id > initial_state["max_async_job_id"],
+                AsyncJob.finished == True,  # noqa: E712
             )
-            .group_by(AsyncProcess.trial_maker_id, AsyncProcess.label)
+            .group_by(AsyncJob.trial_maker_id, AsyncJob.label)
             .all()
         )
-        process_stats = [
+        async_job_stats = [
             {
                 "trial_maker_id": row.trial_maker_id or "",
                 "label": row.label or "",
@@ -807,27 +807,27 @@ class PerformanceTester:
                 "q_p95": row.q_p95,
                 "q_share": row.q_share,
             }
-            for row in process_stats_rows
+            for row in async_job_stats_rows
         ]
 
         q_delay_median = (
             db.session.query(
-                func.percentile_cont(0.5).within_group(AsyncProcess.queue_delay)
+                func.percentile_cont(0.5).within_group(AsyncJob.queue_delay)
             )
             .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
+                AsyncJob.id > initial_state["max_async_job_id"],
+                AsyncJob.finished == True,  # noqa: E712
             )
             .scalar()
         )
 
         q_delay_p95 = (
             db.session.query(
-                func.percentile_cont(0.95).within_group(AsyncProcess.queue_delay)
+                func.percentile_cont(0.95).within_group(AsyncJob.queue_delay)
             )
             .filter(
-                AsyncProcess.id > initial_state["max_process_id"],
-                AsyncProcess.finished == True,  # noqa: E712
+                AsyncJob.id > initial_state["max_async_job_id"],
+                AsyncJob.finished == True,  # noqa: E712
             )
             .scalar()
         )
@@ -977,7 +977,7 @@ class PerformanceTester:
             "avg_incomplete_duration": avg_incomplete_duration,
             "q_delay_median": q_delay_median,
             "q_delay_p95": q_delay_p95,
-            "process_stats": process_stats,
+            "async_job_stats": async_job_stats,
             "min_trial_count": min_trial_count,
             "median_trial_count": median_trial_count,
             "max_trial_count": max_trial_count,
@@ -1179,18 +1179,18 @@ def format_test_results(result):
     _table_lines(trial_rows, headers=[], colalign=("left", "right"))
     lines.append("")
 
-    # ASYNC PROCESS TIMES
-    if result.get("process_stats"):
-        n_procs = sum(ps["count"] for ps in result["process_stats"])
+    # ASYNC JOB TIMES
+    if result.get("async_job_stats"):
+        n_async_jobs = sum(ps["count"] for ps in result["async_job_stats"])
         n_workers = result.get("n_rq_workers")
         worker_info = f" via {n_workers} workers" if n_workers else ""
-        _section(f"ASYNC PROCESS TIMES ({n_procs} completed{worker_info})")
+        _section(f"ASYNC JOB TIMES ({n_async_jobs} completed{worker_info})")
         lines.append("  Avg/Med/P95/Max — statistics on actual execution time")
         lines.append(
             "  Q Avg/Q Med/Q P95 — statistics on queue delay (time waiting in RQ queue)"
         )
         lines.append(
-            "  Q Share — avg of per-process queue_delay / (queue_delay + exec_time),"
+            "  Q Share — avg of per-job queue_delay / (queue_delay + exec_time),"
         )
         lines.append(
             "    i.e. avg percentage of total time spent queuing rather than executing"
@@ -1213,7 +1213,7 @@ def format_test_results(result):
                 return warning(text)
             return text
 
-        proc_rows = [
+        async_job_rows = [
             [
                 ps["trial_maker_id"],
                 ps["label"],
@@ -1227,10 +1227,10 @@ def format_test_results(result):
                 _fmt(ps["q_p95"]),
                 _color_q_share(ps["q_share"], ps["q_p95"]),
             ]
-            for ps in result["process_stats"]
+            for ps in result["async_job_stats"]
         ]
         _table_lines(
-            proc_rows,
+            async_job_rows,
             headers=[
                 "Trial Maker",
                 "Label",
@@ -1263,8 +1263,8 @@ def format_test_results(result):
     else:
         n_workers = result.get("n_rq_workers")
         worker_info = f", {n_workers} workers" if n_workers else ""
-        _section(f"ASYNC PROCESS TIMES{worker_info}")
-        lines.append("  No completed async processes.")
+        _section(f"ASYNC JOB TIMES{worker_info}")
+        lines.append("  No completed async jobs.")
         lines.append("")
 
     return lines
@@ -1336,7 +1336,7 @@ def format_performance_summary(results):
     lines.append(
         "  Resp Med — median HTTP response time for key endpoints (/timeline, /response)"
     )
-    lines.append("  Q Med all — median queue delay across all async processes")
+    lines.append("  Q Med all — median queue delay across all async jobs")
     lines.append(
         "  vs base — ratio to the first (lowest bot-count) row, if multiple counts are run"
     )

@@ -42,6 +42,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
+from ..async_job import WorkerAsyncJob, _deprecated_async_processes
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
 from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
@@ -50,7 +51,6 @@ from ..error import (  # noqa  # Importing the error module is important to ensu
 from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
-from ..process import WorkerAsyncProcess
 from ..sync import GroupBarrier, SyncGroup
 from ..timeline import (
     CodeBlock,
@@ -214,7 +214,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     finalized : bool
         Whether the trial has been finalized. This is a stronger condition than ``complete``;
-        in particular, a trial is only marked as finalized once its async processes
+        in particular, a trial is only marked as finalized once its async jobs
         have completed (if it has any).
         One day we might extend this to include arbitrary conditions,
         for example waiting for another user to evaluate that trial, or similar.
@@ -227,9 +227,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     parent_trial_id : int
         If the trial is a repeat trial, this attribute corresponds to the ID
         of the trial from which that repeat trial was cloned.
-
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
 
     propagate_failure : bool
         Whether failure of a trial should be propagated to other
@@ -253,10 +250,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     wait_for_feedback : bool
         By default, feedback waits until the trial is finalized or failed, so that
-        :meth:`~psynet.trial.main.Trial.show_feedback` sees the results of asynchronous
-        processes and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
+        :meth:`~psynet.trial.main.Trial.show_feedback` sees the results of async
+        jobs and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
         to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
-        whose asynchronous processes are still running and whose ``score`` is not yet set.
+        whose async jobs are still running and whose ``score`` is not yet set.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -426,7 +423,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     )
     response = relationship("psynet.timeline.Response")
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetTrial",
@@ -652,7 +650,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def score_answer(self, answer, definition):
         """
         Scores the participant's answer. At the point that this method is called,
-        any pending asynchronous processes should already have been completed.
+        any pending async jobs should already have been completed.
 
         Parameters
         ----------
@@ -824,21 +822,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             # before the method was called. However, we do need to record that the method failed,
             # so we set the async_post_trial_failed flag to True.
             # Also fail the trial here so it cannot sit complete-but-unfinalizable if the
-            # surrounding process failure cascade is skipped (finalize requires async success).
+            # surrounding async job failure cascade is skipped (finalize requires async success).
             db.session.rollback()
             self.async_post_trial_failed = True
             self.fail(reason="async_post_trial_failed")
             db.session.commit()
             raise
         # The worker re-checks finalization after committing (see
-        # psynet.process._in_async_process).
+        # psynet.async_job._in_async_job).
         self.async_post_trial_complete = True
-
-    def fail_async_processes(self, reason):
-        for process in list(self.async_processes):
-            if not process.failed:
-                process.fail(reason)
-        self.fail(reason="fail_async_processes")
 
     def new_repeat_trial(self, experiment, repeat_trial_index, n_repeat_trials):
         repeat_trial = self.__class__(
@@ -945,7 +937,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         stays locked if it was free), and trials without a participant are
         never returned. The participant lock is ``FOR NO KEY UPDATE``: it
         still excludes requests, but lets other transactions insert rows
-        that reference the participant (async processes, assets), which
+        that reference the participant (async jobs, assets), which
         would otherwise wait on it while holding the trial.
 
         Locks IDs first, then loads full polymorphic ``Trial`` objects by
@@ -1050,7 +1042,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def _wake_participant(self, *, reason):
         """Wake the participant's held page after the background finalizes or fails this trial.
 
-        The asset-deposit and async-process wakes are sent before that
+        The asset-deposit and async-job wakes are sent before that
         happens, so without this wake a page held for the trial (for example
         waiting for feedback) waits for its next poll.
         """
@@ -1082,13 +1074,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     def queue_async_post_trial(self):
         self.async_post_trial_requested = True
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             self.call_async_post_trial,
             label="post_trial",
             timeout=self.trial_maker.async_timeout_sec,
             trial=self,
             unique=True,
-        )
+        ).enqueue()
 
     def on_finalized(self):
         self.score = self.score_answer(answer=self.answer, definition=self.definition)
@@ -1561,7 +1553,7 @@ class TrialMaker(Module):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long until an async job times out, in seconds (default = 300).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -1581,7 +1573,7 @@ class TrialMaker(Module):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
 
     sync_group_type
@@ -1956,7 +1948,7 @@ class TrialMaker(Module):
 
     def check_timeout(self):
         self.check_old_trials()
-        WorkerAsyncProcess.check_timeouts()
+        WorkerAsyncJob.check_timeouts()
 
     def selected_recruit_criterion(self, experiment):
         if self.recruit_mode not in self.recruit_criteria:
@@ -2626,9 +2618,9 @@ class NetworkTrialMaker(TrialMaker):
     or to postprocess trials submitted to a given node.
     There is some sophisticated logic to make sure that a
     participant is not assigned to a :class:`~dallinger.models.Node` object
-    if that object is still waiting for an asynchronous process,
+    if that object is still waiting for an async job,
     and likewise a trial won't contribute to a growing network if
-    it is still pending the outcome of an asynchronous process.
+    it is still pending the outcome of an async job.
 
     Experiment authors should use the public hooks on concrete classes such as
     :class:`~psynet.trial.static.StaticTrialMaker` and
@@ -2701,7 +2693,7 @@ class NetworkTrialMaker(TrialMaker):
 
     wait_for_networks
         If ``True``, then the participant will be made to wait if there are
-        still more networks to participate in, but these networks are pending asynchronous processes.
+        still more networks to participate in, but these networks are pending async jobs.
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
@@ -2749,7 +2741,7 @@ class NetworkTrialMaker(TrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long until an async job times out, in seconds (default = 300).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -2767,7 +2759,7 @@ class NetworkTrialMaker(TrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
 
     performance_threshold : float (default = -1.0)
@@ -3180,12 +3172,12 @@ class NetworkTrialMaker(TrialMaker):
             self.queue_async_post_grow_network(network)
 
     def queue_async_post_grow_network(self, network):
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             network.call_async_post_grow_network,
             label="post_grow_network",
             timeout=self.async_timeout_sec,
             network=network,
-        )
+        ).enqueue()
 
     @property
     def network_query(self):
@@ -3450,7 +3442,8 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
             "The .trials attribute has been removed, please use .all_trials, .alive_trials, or .failed_trials instead."
         )
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetNetwork",
@@ -3574,7 +3567,8 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         )
 
     module_state = relationship("ModuleState")
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetNode",
@@ -3690,12 +3684,12 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         self.on_deploy_complete = True
 
     def queue_async_on_deploy(self):
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             function=self.call_async_on_deploy,
             node=self,
             timeout=self.trial_maker.async_timeout_sec,
             unique=True,
-        )
+        ).enqueue()
         self.async_on_deploy_requested = True
 
     def call_async_on_deploy(self):

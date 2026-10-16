@@ -45,6 +45,7 @@ from .experiment import get_experiment, import_local_experiment
 from .experiment_scaffold import (
     scaffold_missing_files,
 )
+from .isolated_environment import check_no_debug_server
 from .modular_page import ModularPage, PushButtonControl
 from .redis import redis_vars
 from .test_helpers.mock_s3 import (
@@ -441,6 +442,7 @@ def in_experiment_directory(experiment_directory):
         experiment_directory_lock(experiment_directory),
         working_directory(experiment_directory),
     ):
+        check_no_debug_server(experiment_directory)
         try:
             with scaffold_missing_files():
                 # In-repo demos/tests use PsyNet's shared development .venv, so

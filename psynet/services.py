@@ -39,6 +39,9 @@ _REDIS_CONTAINER = "dallinger_redis"
 _POSTGRES_CONTAINER = "dallinger_postgres"
 _READY_WAIT_SECONDS = 30
 _READY_POLL_INTERVAL_SECONDS = 0.5
+#: Set for a command that a parent process re-runs after checking the services
+#: it points the command at, so that the command doesn't check them again.
+SERVICES_CHECKED_ENV_VAR = "_PSYNET_LOCAL_SERVICES_CHECKED"
 
 
 @dataclass(frozen=True)
@@ -479,6 +482,11 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
     strict :
         If True, raise when services remain unavailable after any start attempt.
     """
+    from .isolated_environment import READY_ENV_VAR
+
+    # Only within an isolated session, so a stray export can't hide stopped services.
+    if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
+        return True
     click.echo("Checking local PostgreSQL and Redis...")
     checks = check_local_services()
     all_ok = report_service_checks(checks)

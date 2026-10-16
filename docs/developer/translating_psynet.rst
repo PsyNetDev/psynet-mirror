@@ -15,9 +15,10 @@ Package catalogs are refreshed on the release branch with ``psynet translate``,
 which also runs ``psynet.translation.check.check_translations``. Until then, a
 missing PsyNet catalog entry behaves as follows:
 
-- Under ``psynet debug`` and in tests on release branches, it raises an error.
-- In tests on other branches, PsyNet shows the English source text and logs a
-  warning.
+- In CI jobs on release branches, and in sandbox deployments such as
+  ``psynet debug ssh``, it raises an error.
+- Otherwise, in tests and under ``psynet debug local``, PsyNet shows the
+  English source text and logs a warning.
 - In live experiments, PsyNet reports the error and shows the English text.
 
 Tests that pin translated PsyNet copy should therefore run only on release

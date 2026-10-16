@@ -236,9 +236,7 @@ def test_async_code_block_calls_on_timeout_unless_its_function_finished(
     participant = SimpleNamespace(
         failed=True,
         module_state=None,
-        awaited_async_code_block_process=SimpleNamespace(
-            finished=finished, failed=failed
-        ),
+        awaited_async_code_block_job=SimpleNamespace(finished=finished, failed=failed),
     )
 
     hold.apply_timeout(participant)
