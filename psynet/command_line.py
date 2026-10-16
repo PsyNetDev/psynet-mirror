@@ -1953,10 +1953,10 @@ def _reject_leftover_local_image_files():
         leftovers.append(_LOCAL_IMAGE_PINS)
     if leftovers:
         raise click.UsageError(
-            f"Remove {', '.join(leftovers)} from the experiment directory. It is "
-            "left over from an interrupted 'psynet debug ssh' with "
-            "--use-local-psynet or --use-local-dallinger, and the image would "
-            "use it instead of the versions in requirements.txt."
+            f"Remove {', '.join(leftovers)} from the experiment directory. "
+            "These files are left over from an interrupted 'psynet debug ssh' "
+            "with --use-local-psynet or --use-local-dallinger, and the image "
+            "would use them instead of the versions in requirements.txt."
         )
 
 
@@ -1970,6 +1970,31 @@ def _local_packages(use_local_psynet, use_local_dallinger):
         )
         if enabled
     )
+
+
+def _check_local_image_packages(local_packages):
+    """Stop before launching if ``local_packages`` cannot be built into the image.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts, from :func:`_local_packages`.
+    """
+    if not local_packages:
+        return
+    dockerfile = Path("Dockerfile")
+    if not dockerfile.is_file() or _LOCAL_IMAGE_PINS not in dockerfile.read_text():
+        raise click.UsageError(
+            "This experiment's Dockerfile does not install local PsyNet or "
+            "Dallinger builds. Run 'psynet scripts update' to refresh it."
+        )
+    if "psynet" in local_packages:
+        from .experiment_scaffold import get_editable_psynet_source
+
+        if get_editable_psynet_source() is None:
+            raise click.UsageError(
+                "--use-local-psynet needs an editable PsyNet checkout."
+            )
 
 
 @contextmanager
@@ -1989,16 +2014,12 @@ def _local_image_packages(local_packages):
     Parameters
     ----------
     local_packages : tuple of str
-        Packages built from local checkouts, from :func:`_local_packages`.
+        Packages built from local checkouts and checked by
+        :func:`_check_local_image_packages`.
     """
     if not local_packages:
         yield
         return
-    if _LOCAL_IMAGE_PINS not in Path("Dockerfile").read_text():
-        raise click.UsageError(
-            "This experiment's Dockerfile does not install local PsyNet or "
-            "Dallinger builds. Run 'psynet scripts update' to refresh it."
-        )
     staged = []
     try:
         if "psynet" in local_packages:
@@ -2017,8 +2038,6 @@ def _build_local_psynet_wheel():
     from .experiment_scaffold import get_editable_psynet_source
 
     source = get_editable_psynet_source()
-    if source is None:
-        raise click.UsageError("--use-local-psynet needs an editable PsyNet checkout.")
     click.echo(f"Baking local PsyNet from {source} into the experiment image.")
     return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
 
@@ -2027,12 +2046,13 @@ def _write_local_image_pins(local_packages):
     """Write the image's pins without ``local_packages`` to ``local-image-pins.txt``.
 
     Like the Dockerfile, this reads ``constraints.txt`` when present and
-    ``requirements.txt`` otherwise.
+    ``requirements.txt`` otherwise. In-repo experiments always read
+    ``requirements.txt``, because they ignore ``constraints.txt``.
     """
     from .experiment_scaffold import is_requirement_line_for
 
     source = Path("constraints.txt")
-    if not source.is_file():
+    if is_in_repo_experiment() or not source.is_file():
         source = Path("requirements.txt")
     kept = [
         line
@@ -2484,6 +2504,7 @@ def debug__docker_ssh(
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
+        _check_local_image_packages(local_packages)
 
         _pre_launch(
             ctx,
