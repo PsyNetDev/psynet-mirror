@@ -316,10 +316,10 @@ overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
 the browser retries once after 250ms; if that is still busy, one delayed
-``queued hold wake`` runs. The suite fails a busy 503 whose handler time
-(Server-Timing ``app``) is 4 s or more: that request waited for a row lock
-for ``timeline_lock_timeout_seconds`` (default 5 s) instead of using
-``NOWAIT``. A shorter cap fails fast busy 503s slowed by CI load. An in-page
+``queued hold wake`` runs. Playwright judges a busy 503 only by the same hang
+cap as other requests, because its duration varies with CI load; the
+unit test ``test_process_response_ready_hold_resume_locks_with_nowait``
+checks that hold-resume uses ``NOWAIT``. An in-page
 probe that counts hold wakes or schedule calls must
 swallow ``psynet.resumeTimelineHold`` and call
 ``window.__settleTimelineHoldResume`` before installing its counters. The helper

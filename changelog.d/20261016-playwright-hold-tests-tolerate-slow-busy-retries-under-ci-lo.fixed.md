@@ -1,1 +1,1 @@
-The Playwright hold tests no longer fail when a fast busy HTTP 503 is slowed by CI load; they still fail a busy request that waited for the participant's row lock.
+The Playwright hold tests no longer fail when a busy HTTP 503 is slowed by CI load; a unit test checks that hold-resume requests use `NOWAIT` instead.
