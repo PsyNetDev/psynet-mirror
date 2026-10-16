@@ -17,6 +17,7 @@ from psynet.translation.translators import (
     _response_format,
     _script_name,
     _validate_translations,
+    source_context_for_prompt,
 )
 
 
@@ -129,6 +130,20 @@ def test_system_prompt_quotes_only_nearby_lines_of_a_large_file(tmp_path):
     assert '_p("lucid", "Save")' in prompt
     assert "Lines 992-1008:" in prompt
     assert len(prompt) < 2_000
+
+
+def test_oversized_source_blocks_are_cut_not_dropped(tmp_path):
+    source = tmp_path / "recruiters.py"
+    lines = ["#" * 2_000] * 2_000
+    lines[999] = '_p("lucid", "Save")'
+    lines[1_499] = '_p("lucid", "Cancel")'
+    source.write_text("\n".join(lines), encoding="utf-8")
+
+    context = source_context_for_prompt(str(source), [1_000, 1_500])
+
+    assert '_p("lucid", "Save")' in context
+    assert '_p("lucid", "Cancel")' in context
+    assert len(context) <= MAX_SOURCE_CONTEXT_CHARS + 2
 
 
 def test_system_prompt_asks_to_translate_ui_labels():

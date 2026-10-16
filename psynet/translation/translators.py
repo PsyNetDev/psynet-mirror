@@ -345,7 +345,9 @@ def source_context_for_prompt(
 
     Small files are returned whole, because they usually are the page the
     texts appear on. For larger files, only the lines around each text are
-    returned, within the same character budget.
+    returned, within the same character budget. Each block of lines gets an
+    equal share of what is left of the budget, so every text gets some context;
+    a block longer than its share keeps its middle, where the text is.
     """
     with open(file_path, "r", encoding="utf-8") as f:
         source = f.read()
@@ -364,12 +366,15 @@ def source_context_for_prompt(
 
     blocks = []
     budget = MAX_SOURCE_CONTEXT_CHARS
-    for start, end in windows:
-        block = f"Lines {start}-{end}:\n" + "\n".join(lines[start - 1 : end])
-        if len(block) > budget:
-            break
-        blocks.append(block)
-        budget -= len(block)
+    for i, (start, end) in enumerate(windows):
+        share = budget // (len(windows) - i)
+        header = f"Lines {start}-{end}:\n"
+        body = "\n".join(lines[start - 1 : end])
+        excess = len(header) + len(body) - share
+        if excess > 0:
+            body = body[excess // 2 : len(body) - (excess - excess // 2)]
+        blocks.append(header + body)
+        budget -= len(blocks[-1])
     return "\n\n".join(blocks)
 
 
