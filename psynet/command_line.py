@@ -6232,8 +6232,8 @@ def performance_test__docker_ssh(
     --reset-database or --prefill-participants, between tests it stops the
     app's server processes, restores the app's database from a snapshot in
     the app's PostgreSQL, and starts them again. At the end of the run it
-    restores the database to how the run found it and drops the snapshot,
-    and fails if it can't restore it. Without them, the tests use the
+    drops the snapshot and, with --keep-app, restores the database to how
+    the run found it, failing if it can't. Without them, the tests use the
     database as it is.
 
     Be sure the app is configured to allow a large quantity of bots. If the
@@ -6263,6 +6263,7 @@ def performance_test__docker_ssh(
             experiment,
             reset=reset_database or bool(prefill_participants),
             prefill_participants=prefill_participants,
+            restore_at_end=keep_app,
             json_output=json_output,
             **options,
         )
@@ -6336,6 +6337,7 @@ def _run_ssh_performance_test(
     *,
     reset=False,
     prefill_participants=None,
+    restore_at_end=True,
     n_bots=None,
     stagger=None,
     time_factor=1.0,
@@ -6350,7 +6352,8 @@ def _run_ssh_performance_test(
     ``experiment`` holds the experiment's test defaults (see
     :func:`_prepare_performance_test_app`). With ``reset``, the database is
     reset before each test, after ``prefill_participants`` bots have run
-    through the experiment. Default test lengths are those of
+    through the experiment, and with ``restore_at_end``, restored at the
+    end to how the run found it. Default test lengths are those of
     ``performance-test local``, and ``suite_options`` those of
     :func:`_run_performance_suite`.
     """
@@ -6400,7 +6403,9 @@ def _run_ssh_performance_test(
             label=f"{app} on {server}",
             metadata={"experiment_label": experiment["label"]},
             database_reset=(
-                _ssh_database_reset(remote, prefill_participants) if reset else None
+                _ssh_database_reset(remote, prefill_participants, restore_at_end)
+                if reset
+                else None
             ),
             ssh_options={
                 "reset_database": reset,
@@ -6411,7 +6416,7 @@ def _run_ssh_performance_test(
         )
 
 
-def _ssh_database_reset(remote, prefill_participants):
+def _ssh_database_reset(remote, prefill_participants, restore_at_end):
     """Return the :class:`~psynet.perf_ssh.DatabaseReset` of the SSH app.
 
     Raises
@@ -6422,7 +6427,7 @@ def _ssh_database_reset(remote, prefill_participants):
     from psynet.perf_ssh import DatabaseReset
 
     try:
-        database_reset = DatabaseReset(remote, prefill_participants)
+        database_reset = DatabaseReset(remote, prefill_participants, restore_at_end)
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     print(

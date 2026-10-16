@@ -367,8 +367,9 @@ database instead:
 
 PsyNet snapshots the database before the first test and restores it before
 each later one, restarting the app's containers other than PostgreSQL,
-Redis and the front door. At the end it restores the database to how the
-run found it and drops the snapshot. If a restore fails, the command exits
+Redis and the front door. At the end it drops the snapshot and, with
+``--keep-app``, restores the database to how the run found it; without
+``--keep-app``, the app is destroyed anyway. If a restore fails, the command exits
 with an error, keeps the copy and names it; destroy the app and run again
 to recover. Each copy needs free disk space of twice the database's size,
 which PsyNet checks first. Uploaded files stay in the asset storage. With
@@ -384,8 +385,8 @@ To test with the amount of data the study will reach, pre-fill the database:
     psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
 This implies ``--reset-database``. Bots fill 1,500 participants' data
-through the experiment's own routes before the snapshot, and the database
-is restored afterwards, so each run pre-fills again. That takes time: about
+through the experiment's own routes before the snapshot. The pre-filled
+data doesn't outlast the run, even with ``--keep-app``, so each run pre-fills again. That takes time: about
 an hour for 1,500 participants at a few hundred requests a second.
 
 .. _performance_testing_bot_processes:

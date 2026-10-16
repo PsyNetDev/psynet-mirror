@@ -514,6 +514,9 @@ class DatabaseReset:
     prefill_participants : int, optional
         Bots to run through the experiment before the snapshot is taken, so
         that every test starts with their data.
+    restore_at_end : bool
+        Whether :meth:`close` restores the database. Not needed when the app
+        is destroyed after the run.
 
     Raises
     ------
@@ -522,8 +525,9 @@ class DatabaseReset:
         container's database isn't the app's own.
     """
 
-    def __init__(self, remote, prefill_participants=None):
+    def __init__(self, remote, prefill_participants=None, restore_at_end=True):
         self.remote = remote
+        self._restore_at_end = restore_at_end
         self.database = remote.app
         # The first check that the database may be reset, before anything changes.
         remote.prepare()
@@ -609,7 +613,7 @@ class DatabaseReset:
             )
 
     def close(self):
-        """Restore the database to how the run found it, then drop the copies.
+        """Restore the database to how the run found it, unless ``restore_at_end`` is false, then drop the copies.
 
         The app's server processes stay stopped afterwards, for
         :meth:`RemoteApp.start_stopped_services` to start. A copy that can't
@@ -626,7 +630,7 @@ class DatabaseReset:
 
         kept = None
         restore_error = None
-        if self._original is not None:
+        if self._original is not None and self._restore_at_end:
             logger.info("")
             logger.info("Restoring the database to how it was before the run...")
             try:

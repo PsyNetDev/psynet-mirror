@@ -2337,6 +2337,23 @@ def test_an_interrupted_final_restore_still_drops_the_other_copies():
     assert dropped == [reset.snapshot]
 
 
+def test_a_reset_without_restore_at_end_only_drops_its_copies():
+    from psynet.perf_ssh import DatabaseReset
+
+    remote = _remote_app(
+        _answers({**_DISK, "pg_tables": "participant\n", "count(*)": "0\n"})
+    )
+    remote.stop, remote.start = Mock(), Mock()
+    reset = DatabaseReset(remote, prefill_participants=5, restore_at_end=False)
+    reset()
+    reset.close()
+
+    sql = " ".join(c for c in remote.executor.commands if " psql " in c)
+    assert 'CREATE DATABASE "my-app" TEMPLATE' not in sql
+    dropped = re.findall(r'DROP DATABASE IF EXISTS "(my-app_[^"]*)"', sql)
+    assert dropped == reset._copies and len(dropped) == 2
+
+
 @pytest.mark.parametrize(
     "error, ours",
     [

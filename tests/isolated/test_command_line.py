@@ -1352,6 +1352,7 @@ def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
         **deployed,
     }
     assert run.call_args.args[2] == {"label": "Test"}
+    assert run.call_args.kwargs["restore_at_end"] == ("--keep-app" in args)
     if "--keep-app" in args:
         destroy.assert_not_called()
         assert "psynet destroy ssh --server server --app my-app" in result.output
