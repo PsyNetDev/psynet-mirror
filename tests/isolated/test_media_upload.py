@@ -508,22 +508,22 @@ def test_storage_failure_leaves_recording_unavailable(received_video, monkeypatc
 
 
 def test_received_recording_is_queued_only_once(received_video, monkeypatch):
+    from psynet.async_job import WorkerAsyncJob
     from psynet.media_upload import _queue_received_recordings
-    from psynet.process import WorkerAsyncProcess
 
     recording_id, _ = received_video
     launched = []
     monkeypatch.setattr(
-        WorkerAsyncProcess, "launch", lambda spec: launched.append(spec["id"])
+        WorkerAsyncJob, "launch", lambda spec: launched.append(spec["id"])
     )
     _queue_received_recordings()
     _queue_received_recordings()
     assert len(launched) == 1
     assert db.session.get(Recording, recording_id).upload_status == "queued"
-    WorkerAsyncProcess.call_function(launched[0])
+    WorkerAsyncJob.call_function(launched[0])
     assert db.session.get(Recording, recording_id).deposited
-    process = db.session.get(WorkerAsyncProcess, launched[0])
-    assert process.finished and not process.pending and not process.failed
+    job = db.session.get(WorkerAsyncJob, launched[0])
+    assert job.finished and not job.pending and not job.failed
 
 
 @pytest.mark.parametrize("retry", [False, True])

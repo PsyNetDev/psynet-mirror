@@ -600,7 +600,7 @@ def _expire_recordings():
 @with_transaction
 def _queue_received_recordings():
     """Schedule processing on workers, which mount the LocalStorage volume."""
-    from .process import WorkerAsyncProcess
+    from .async_job import WorkerAsyncJob
 
     recordings = (
         Recording.query.filter_by(upload_status="received")
@@ -611,13 +611,13 @@ def _queue_received_recordings():
     )
     for asset in recordings:
         asset.upload_status = "queued"
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             _process_recording,
             arguments={"recording_id": asset.id},
             asset=asset,
             label="media_upload",
             unique=True,
-        )
+        ).enqueue()
 
 
 def _recovery_digest(secret):
