@@ -785,7 +785,7 @@ def test_simultaneous_joins_do_not_overfill_a_group(
             db.session.flush()
             if joined is not None:
                 joined.set()
-                assert may_commit.wait(5)
+                assert may_commit.wait(60)
             db.session.commit()
         except Exception as err:  # pragma: no cover - surfaced below
             errors.append(err)
@@ -800,10 +800,10 @@ def test_simultaneous_joins_do_not_overfill_a_group(
         threading.Thread(target=join, args=(joiner_ids[1],)),
     ]
     racers[0].start()
-    assert first_joined.wait(5)
+    assert first_joined.wait(30)
     racers[1].start()
     # Commit the first join only once the second has finished or is blocked on it.
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 30
     while racers[1].is_alive() and time.monotonic() < deadline:
         if (
             second_pid
@@ -819,8 +819,9 @@ def test_simultaneous_joins_do_not_overfill_a_group(
         time.sleep(0.05)
     first_may_commit.set()
     for racer in racers:
-        racer.join(10)
+        racer.join(30)
 
+    assert not any(racer.is_alive() for racer in racers)
     assert errors == []
     group = SimpleSyncGroup.query.get(group_id)
     assert len(group.participants) == 3

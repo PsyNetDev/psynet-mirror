@@ -1880,10 +1880,10 @@ class SimpleGrouper(Grouper):
                 continue
             db.session.expire(group, ["participant_links"])
             n_members = len(group.active_participants)
-            if n_members == 0:
-                continue
-            if self.max_group_size is not None and n_members >= self.max_group_size:
-                group.n_active_participants = n_members
+            group.n_active_participants = n_members
+            if n_members == 0 or (
+                self.max_group_size is not None and n_members >= self.max_group_size
+            ):
                 continue
             return group
         return None
