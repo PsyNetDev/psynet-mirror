@@ -242,6 +242,12 @@ or current block. ``target_trials_per_node`` only decides when
 ineligible. Planned orders (see :ref:`trial_order`) load the block's nodes
 once, when the participant enters the block.
 
+Balancing counts each eligible node's trials for every selection. An index
+keeps this cheap, but the cost still grows slowly with the trials collected:
+in local tests with 300 nodes it took about 15 ms at 200,000 trials and
+50 ms at a million. If one trial maker will collect far more trials than
+that, ``node_order="random"``, which counts nothing, stays fast.
+
 ``custom_node_filter``, ``select_node`` and ``find_nodes`` run in Python, so
 overriding them makes PsyNet load every eligible node for every trial. With a
 few hundred nodes that is fine. With thousands it slows each response, and
