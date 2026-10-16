@@ -316,7 +316,7 @@ def connection_limit_kind(error):
 
 
 # Async job priorities, as in psynet.async_job, which this module doesn't
-# import so that it doesn't need a database.
+# import so that it doesn't need a database. A test keeps the two in step.
 PRIORITIES = ("high", "low")
 
 
