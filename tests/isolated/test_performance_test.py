@@ -2131,54 +2131,6 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     assert "\x1b[" not in _join(narrow) and "\u2026" not in _join(narrow)
 
 
-def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
-    from psynet.perf_ssh import experiment_code_key
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "deploy.toml").write_text(
-        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
-    )
-    (tmp_path / "experiment.py").write_text("")
-    (tmp_path / "config.txt").write_text("[Config]\n")
-    key = experiment_code_key()
-    (tmp_path / "config.txt").write_text("[Config]\n# A comment\n")
-    assert experiment_code_key() != key
-
-
-@pytest.mark.parametrize("git", [True, False], ids=["git", "not-git"])
-def test_experiment_code_key_follows_the_local_dallinger_checkout(
-    tmp_path, monkeypatch, git
-):
-    import subprocess
-
-    from psynet.perf_ssh import experiment_code_key
-
-    experiment = tmp_path / "experiment"
-    experiment.mkdir()
-    (experiment / "deploy.toml").write_text(
-        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
-    )
-    monkeypatch.chdir(experiment)
-    checkout = tmp_path / "Dallinger"
-    checkout.mkdir()
-    generated = checkout / ("build" if git else "__pycache__")
-    if git:
-        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
-        (checkout / ".gitignore").write_text("build/\n")
-    (checkout / "bots.py").write_text("A = 1\n")
-
-    keys = [experiment_code_key(), experiment_code_key(dallinger_source=str(checkout))]
-    (checkout / "bots.py").write_text("A = 2\n")
-    keys.append(experiment_code_key(dallinger_source=str(checkout)))
-    (checkout / "new_module.py").write_text("")
-    keys.append(experiment_code_key(dallinger_source=str(checkout)))
-    generated.mkdir()
-    (generated / "output").write_text("")
-
-    assert len(set(keys)) == 4
-    assert experiment_code_key(dallinger_source=str(checkout)) == keys[-1]
-
-
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )

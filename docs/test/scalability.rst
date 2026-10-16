@@ -334,17 +334,17 @@ under that name in debug mode, taking the same ``--server``, ``--dns-host``,
 debug ssh``.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
-The app's config is marked with ``performance_test_app = true``. The next
-run updates the app in place, keeping its database, when the experiment's
-files or the PsyNet or Dallinger version change. With
-``--use-local-dallinger``, it also updates the app when a file in the local
-Dallinger checkout changes, or when you switch the option on or off.
-Destroy the app if the change needs a fresh launch. The app
-stays on the server between runs, and the command prints how to destroy it:
+The app's config is marked with ``performance_test_app = true``. At the end
+of the run, even one that fails or that you interrupt, the command destroys
+the app. To keep it, for example to look at its dashboard and logs, pass
+``--keep-app``; the command then prints how to destroy it when you're done:
 
 .. code-block:: bash
 
     psynet destroy ssh --server my-server --app my-experiment-perf
+
+A later run with the same ``--app`` updates a kept app in place, keeping its
+database; destroy the app first if you want a fresh launch.
 
 Runs refuse apps without the mark, such as ones deployed with ``psynet debug
 ssh``, and live deployments refuse the mark. They also refuse a database

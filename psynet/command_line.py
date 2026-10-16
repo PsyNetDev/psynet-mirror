@@ -1960,13 +1960,6 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
             )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
-    source = _local_dallinger_source()
-    os.environ["DALLINGER_SOURCE"] = source
-    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
-
-
-def _local_dallinger_source():
-    """Return the absolute path of the Dallinger checkout that ``--use-local-dallinger`` bakes into the image."""
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
     if not source:
         from dallinger.utils import get_editable_dallinger_path
@@ -1982,7 +1975,8 @@ def _local_dallinger_source():
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
-    return str(Path(source).expanduser().resolve())
+    os.environ["DALLINGER_SOURCE"] = source
+    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
 
 
 def _reject_leftover_local_image_files():
@@ -2550,10 +2544,7 @@ def _debug_ssh(
 
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment sets
-    ``performance_test_app`` and records the experiment's code key in
-    ``performance_test_code_key`` (see
-    :func:`psynet.perf_ssh.experiment_code_key`), and an update isn't
-    confirmed first.
+    ``performance_test_app``, and an update isn't confirmed first.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2579,16 +2570,7 @@ def _debug_ssh(
         )
         config_options = {}
         if performance_test_app:
-            from .perf_ssh import experiment_code_key
-
-            config_options = {
-                "performance_test_app": "true",
-                "performance_test_code_key": experiment_code_key(
-                    dallinger_source=os.environ["DALLINGER_SOURCE"]
-                    if use_local_dallinger
-                    else None
-                ),
-            }
+            config_options = {"performance_test_app": "true"}
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -6038,24 +6020,10 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
         _stop_server(server_info)
 
 
-def _current_code_key(use_local_dallinger=False):
-    """Return the experiment's code key, or ``None`` without a deploy.toml."""
-    from psynet.perf_ssh import experiment_code_key
-
-    source = _local_dallinger_source() if use_local_dallinger else None
-    try:
-        return experiment_code_key(dallinger_source=source)
-    except ValueError:
-        return None
-
-
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app, and its recorded code key."""
+    """Return whether the running experiment is a performance-test app."""
     config = load_runtime_server_config()
-    return {
-        "performance_test_app": bool(config.get("performance_test_app", False)),
-        "performance_test_code_key": config.get("performance_test_code_key", None),
-    }
+    return {"performance_test_app": bool(config.get("performance_test_app", False))}
 
 
 @performance_test.command("app-info", hidden=True)
@@ -6222,6 +6190,14 @@ def performance_test__prepare_reset(
     50 at a time and without pauses, so that every test starts with that
     much data. Implies --reset-database.""",
 )
+@click.option(
+    "--keep-app",
+    is_flag=True,
+    help="""
+    Keep the app on the server after the run, for example to inspect its
+    dashboard and logs, instead of destroying it. A later run with the same
+    --app updates it in place and keeps its database.""",
+)
 @_test_options["performance_force"]
 @_option_yes_reset_local_data
 @click.pass_context
@@ -6236,6 +6212,7 @@ def performance_test__docker_ssh(
     json_output=None,
     reset_database=False,
     prefill_participants=None,
+    keep_app=False,
     **options,
 ):
     """
@@ -6243,12 +6220,12 @@ def performance_test__docker_ssh(
 
     If the server has no app named --app, this deploys one from this
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
-    a performance-test app, whose data is disposable. Later runs reuse it,
-    updating it first if the experiment's files, PsyNet or Dallinger have
-    changed; the update keeps its database. They refuse apps that this
-    command didn't deploy, or whose deploy didn't finish launching the
-    experiment. The app is kept after the run; destroy it with
-    ``psynet destroy ssh``.
+    a performance-test app, whose data is disposable. If the server has
+    one, kept by an earlier run with --keep-app, this updates it in place,
+    keeping its database. It refuses apps that this command didn't deploy,
+    or whose deploy didn't finish launching the experiment. At the end of
+    the run, even one that fails or is interrupted, it destroys the app,
+    unless --keep-app is given.
 
     The bots run inside the app's web container, while this computer runs
     the suite: it runs each test in the web container. With
@@ -6262,17 +6239,24 @@ def performance_test__docker_ssh(
     Be sure the app is configured to allow a large quantity of bots. If the
     app is in use during the performance test, results may not be reliable.
     """
+    from dallinger.command_line.docker_ssh import get_apps
+
     _check_arrival_options(**options)
-    experiment = _prepare_performance_test_app(
-        ctx,
-        app,
-        server=server,
-        dns_host=dns_host,
-        ingress=ingress,
-        use_local_dallinger=use_local_dallinger,
-        assume_yes=assume_yes,
-    )
+    exists = app in {entry.name for entry in get_apps(server)}
+    if exists:
+        # Before the try, so that an app this command didn't deploy is never destroyed.
+        _require_performance_test_app(server, app)
     try:
+        experiment = _prepare_performance_test_app(
+            ctx,
+            app,
+            server=server,
+            update=exists,
+            dns_host=dns_host,
+            ingress=ingress,
+            use_local_dallinger=use_local_dallinger,
+            assume_yes=assume_yes,
+        )
         _run_ssh_performance_test(
             app,
             server,
@@ -6283,14 +6267,17 @@ def performance_test__docker_ssh(
             **options,
         )
     finally:
-        print(
-            f"{app} is kept for later performance tests. Destroy it with:\n"
-            f"    psynet destroy ssh --server {server} --app {app}"
-        )
+        if keep_app:
+            print(
+                f"{app} is kept on {server}. Destroy it when you're done with:\n"
+                f"    psynet destroy ssh --server {server} --app {app}"
+            )
+        else:
+            _destroy_performance_test_app(ctx, server, app)
 
 
-def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
-    """Deploy ``app`` for performance tests, or update it if the experiment has changed since.
+def _prepare_performance_test_app(ctx, app, *, server, update, **deploy_options):
+    """Deploy ``app`` for performance tests, or with ``update``, update it in place.
 
     ``deploy_options`` are the options of ``psynet debug ssh`` (see
     :func:`_debug_ssh`).
@@ -6304,47 +6291,42 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     Raises
     ------
     click.ClickException
-        If the app exists but ``performance-test ssh`` didn't deploy it, or
-        its experiment can't be loaded.
+        If the experiment can't be loaded in the app.
     """
-    from dallinger.command_line.docker_ssh import get_apps
-
-    info = None
-    if app not in {entry.name for entry in get_apps(server)}:
-        print(f"▶ Deploying {app} on {server} for performance tests...")
-        _debug_ssh(
-            ctx, app=app, server=server, performance_test_app=True, **deploy_options
-        )
+    if update:
+        print(f"▶ Updating {app} on {server}, keeping its database...")
     else:
-        info = _require_performance_test_app(server, app)
-        current_key = _current_code_key(
-            deploy_options.get("use_local_dallinger", False)
-        )
-        if current_key is not None and current_key == info["performance_test_code_key"]:
-            print(f"Using {app} on {server}, deployed for performance tests.")
-        else:
-            print(
-                f"▶ Updating {app} on {server}: the experiment's files, PsyNet or "
-                "Dallinger have changed since it was deployed. The update keeps its "
-                "database."
-            )
-            _debug_ssh(
-                ctx,
-                app=app,
-                server=server,
-                update=True,
-                performance_test_app=True,
-                **deploy_options,
-            )
-            info = None
-    if info is None:
-        info = _require_performance_test_app(server, app)
+        print(f"▶ Deploying {app} on {server} for performance tests...")
+    _debug_ssh(
+        ctx,
+        app=app,
+        server=server,
+        update=update,
+        performance_test_app=True,
+        **deploy_options,
+    )
+    info = _require_performance_test_app(server, app)
     if "experiment" not in info:
         raise click.ClickException(
             f"Could not load the experiment in {app}'s web container; see the "
             "output above."
         )
     return info["experiment"]
+
+
+def _destroy_performance_test_app(ctx, server, app):
+    """Destroy ``app``, which ``performance-test ssh`` deployed, warning if that fails."""
+    from dallinger.command_line.docker_ssh import destroy
+
+    print(f"▶ Destroying {app} on {server}; pass --keep-app to keep it...")
+    try:
+        ctx.invoke(destroy, app=app, server=server)
+    except Exception as e:
+        logger.warning("Could not destroy %s on %s: %r", app, server, e)
+        print(
+            f"Could not destroy {app}; see the output above. Destroy it with:\n"
+            f"    psynet destroy ssh --server {server} --app {app}"
+        )
 
 
 def _run_ssh_performance_test(
