@@ -434,6 +434,34 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
         assert not job.finished and not job.pending
 
 
+def time_out_own_job_then_raise():
+    job = WorkerAsyncJob.query.filter_by(label="times_out_while_running").one()
+    job.fail("Async job timed out")
+    db.session.commit()
+    raise RuntimeError("Interrupted by the timeout.")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_job_failing_after_the_clock_timed_it_out_keeps_the_timeout(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    job = WorkerAsyncJob(
+        time_out_own_job_then_raise, label="times_out_while_running"
+    ).enqueue()
+    db.session.commit()
+    job_id = job.id
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = WorkerAsyncJob.query.get(job_id)
+    assert job.failed_reason == "Async job timed out" and not job.pending
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )

@@ -446,7 +446,9 @@ class AsyncJob(SQLBase, SQLMixin):
                 # We need to re-fetch the job because handle_error has done a rollback
                 job = cls.get_async_job(async_job_id)
                 job.pending = False
-                job.fail(f"Exception in async job: {repr(err)}")
+                # The clock may have failed the job for timing out meanwhile.
+                if not job.failed:
+                    job.fail(f"Exception in async job: {repr(err)}")
 
         finally:
             if job is not None and job.participant_id is not None:
