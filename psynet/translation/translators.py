@@ -1,7 +1,9 @@
 import json
 import os.path
 import re
+from collections import Counter
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import List, Optional, Sequence
 
 from psynet.utils import get_config, get_descendent_class_by_name, get_language_dict
@@ -13,6 +15,40 @@ from .check import extract_variable_names
 # for that file, so beyond this size only the lines around each text are quoted.
 MAX_SOURCE_CONTEXT_CHARS = 20_000
 SOURCE_SNIPPET_RADIUS_LINES = 8
+DEFAULT_MAX_COMPLETION_TOKENS = 32_000
+GPT_4O_MAX_COMPLETION_TOKENS = 16_000
+
+_PROTECTED_TEXT_PATTERN = re.compile(
+    r"""\{\{[^}]+\}\}|\{[^}]+\}|<(?:"[^"]*"|'[^']*'|[^'">])*>"""
+)
+_VOID_HTML_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+}
+_HTML_TAGS = _VOID_HTML_TAGS | set(
+    """
+    a abbr address article aside audio b bdi bdo blockquote body button canvas
+    caption cite code colgroup data datalist dd del details dfn dialog div dl dt
+    em fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header
+    hgroup html i iframe ins kbd label legend li main map mark math menu meter
+    nav noscript object ol optgroup option output p picture pre progress q rp rt
+    ruby s samp script search section select slot small span strong style sub
+    summary sup svg table tbody td template textarea tfoot th thead time title tr
+    u ul var video
+    """.split()
+)
 
 # PsyNet's catalogs for these locales are written in a different script than
 # CLDR's default (Latin for Kurdish, Cyrillic for Serbian).
@@ -31,6 +67,25 @@ RETRY_TEMPERATURE = 0.7
 _MODELS_WITHOUT_TEMPERATURE: set[str] = set()
 
 
+def _encode_protected_text(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """Replace variables and HTML tags with stable translator placeholders."""
+    codebook = []
+
+    def replace(match):
+        placeholder = f"■{len(codebook)}■"
+        codebook.append((match.group(0), placeholder))
+        return placeholder
+
+    return _PROTECTED_TEXT_PATTERN.sub(replace, text), codebook
+
+
+def _decode_protected_text(text: str, codebook: Sequence[tuple[str, str]]) -> str:
+    """Restore variables and HTML tags replaced by translator placeholders."""
+    for original, placeholder in codebook:
+        text = text.replace(placeholder, original)
+    return text
+
+
 @dataclass
 class TranslationContext:
     """Where a batch of texts comes from, for translators that can use it."""
@@ -42,10 +97,15 @@ class TranslationContext:
     """The source line of each text, in the same order as the texts."""
     examples: Sequence[tuple[str, str]] = ()
     """Already translated ``(source, translation)`` pairs from the same place."""
+    source_texts: Sequence[str] = ()
+    """The source texts, used to keep their occurrences when source code is cropped."""
 
 
 class Translator:
     nickname = None
+    # Kept for compatibility with custom translators. ChatGPT receives the raw
+    # markup because its prompt and response validation handle it directly.
+    use_codebook = True
 
     def translate(
         self,
@@ -75,11 +135,26 @@ class Translator:
         List[str]
             The translated texts
         """
+        if self.use_codebook:
+            encoded = [_encode_protected_text(text) for text in texts]
+            request_texts = [text for text, _ in encoded]
+            codebooks = [codebook for _, codebook in encoded]
+        else:
+            request_texts = texts
+            codebooks = None
+
         for i in range(n_retries):
             try:
                 translated_texts = self._translate_texts(
-                    texts, source_lang, target_lang, context, attempt=i
+                    request_texts, source_lang, target_lang, context, attempt=i
                 )
+                if len(translated_texts) != len(texts):
+                    _validate_translations(texts, translated_texts, target_lang)
+                if codebooks is not None:
+                    translated_texts = [
+                        _decode_protected_text(text, codebook)
+                        for text, codebook in zip(translated_texts, codebooks)
+                    ]
                 _validate_translations(texts, translated_texts, target_lang)
                 break
             except Exception as e:
@@ -139,9 +214,51 @@ class Translator:
         return translation
 
 
-def _html_tag_names(text: str) -> set[str]:
-    """The kinds of HTML tags in ``text``, e.g. ``{"i", "/i"}``, ignoring how often each occurs."""
-    return {name.lower() for name in re.findall(r"<(/?[A-Za-z][\w-]*)", text)}
+HtmlTag = tuple[str, str, tuple[tuple[str, Optional[str]], ...]]
+
+
+class _HtmlTagParser(HTMLParser):
+    """Collect normalized HTML tags while ignoring ordinary angle brackets."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags: list[HtmlTag] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in _HTML_TAGS:
+            return
+        kind = "self" if tag in _VOID_HTML_TAGS else "open"
+        self.tags.append((kind, tag, tuple(attrs)))
+
+    def handle_startendtag(self, tag, attrs):
+        if tag not in _HTML_TAGS:
+            return
+        self.tags.append(("self", tag, tuple(attrs)))
+
+    def handle_endtag(self, tag):
+        if tag not in _HTML_TAGS:
+            return
+        self.tags.append(("close", tag, ()))
+
+
+def _html_tags(text: str) -> list[HtmlTag]:
+    """Return normalized ``(kind, name, attributes)`` tuples for HTML tags."""
+    parser = _HtmlTagParser()
+    parser.feed(text)
+    parser.close()
+    return parser.tags
+
+
+def _html_tags_are_balanced(tags: Sequence[HtmlTag]) -> bool:
+    """Return whether opening and closing tags are properly nested."""
+    stack = []
+    for kind, name, _ in tags:
+        if kind == "open":
+            stack.append(name)
+        elif kind == "close":
+            if not stack or stack.pop() != name:
+                return False
+    return not stack
 
 
 def _validate_translations(texts, translated_texts, target_lang):
@@ -167,7 +284,18 @@ def _validate_translations(texts, translated_texts, target_lang):
             raise InvalidTranslationError(
                 f"The '{target_lang}' translation of {text!r} does not keep its variables: {translation!r}"
             )
-        if _html_tag_names(text) != _html_tag_names(translation):
+        source_tags = Counter(_html_tags(text))
+        translation_tag_list = _html_tags(translation)
+        translation_tags = Counter(translation_tag_list)
+        same_tag_kinds = source_tags.keys() == translation_tags.keys()
+        no_extra_tags = all(
+            count <= source_tags[tag] for tag, count in translation_tags.items()
+        )
+        if (
+            not same_tag_kinds
+            or not no_extra_tags
+            or not _html_tags_are_balanced(translation_tag_list)
+        ):
             raise InvalidTranslationError(
                 f"The '{target_lang}' translation of {text!r} does not keep its HTML tags: {translation!r}"
             )
@@ -186,7 +314,9 @@ class InvalidTranslationError(TranslationError):
 
 
 def source_context_for_prompt(
-    file_path: str, line_numbers: Sequence[Optional[int]] = ()
+    file_path: str,
+    line_numbers: Sequence[Optional[int]] = (),
+    target_texts: Sequence[str] = (),
 ) -> str:
     """
     Return the source code to show a translator alongside texts from ``file_path``.
@@ -204,26 +334,58 @@ def source_context_for_prompt(
 
     lines = source.splitlines()
     windows = []
-    for line in sorted({n for n in line_numbers if n}):
+    targets = []
+    for index, line in enumerate(line_numbers):
+        if line is None or not 1 <= line <= len(lines):
+            continue
+        target_text = target_texts[index] if index < len(target_texts) else None
+        target = (line, target_text)
+        if target not in targets:
+            targets.append(target)
+    for line, target_text in sorted(targets, key=lambda target: target[0]):
         start = max(1, line - SOURCE_SNIPPET_RADIUS_LINES)
         end = min(len(lines), line + SOURCE_SNIPPET_RADIUS_LINES)
-        if windows and start <= windows[-1][1] + 1:
-            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
-        else:
-            windows.append((start, end))
+        windows.append((line, start, end, target_text))
 
     blocks = []
     budget = MAX_SOURCE_CONTEXT_CHARS
-    for i, (start, end) in enumerate(windows):
-        share = budget // (len(windows) - i)
+    for i, (line, start, end, target_text) in enumerate(windows):
+        separator_size = 2 if blocks else 0
+        share = (budget - separator_size) // (len(windows) - i)
         header = f"Lines {start}-{end}:\n"
         body = "\n".join(lines[start - 1 : end])
-        excess = len(header) + len(body) - share
-        if excess > 0:
-            body = body[excess // 2 : len(body) - (excess - excess // 2)]
+        body_budget = max(0, share - len(header))
+        if len(body) > body_budget:
+            target_line_start = sum(
+                len(value) + 1 for value in lines[start - 1 : line - 1]
+            )
+            position_in_line = lines[line - 1].find(target_text) if target_text else -1
+            if position_in_line >= 0:
+                target_start = target_line_start + position_in_line
+                target_end = target_start + len(target_text)
+            else:
+                target_start = target_line_start
+                target_end = target_start + len(lines[line - 1])
+            if target_end - target_start >= body_budget:
+                middle = (target_start + target_end) // 2
+                crop_start = max(0, middle - body_budget // 2)
+            else:
+                crop_start = max(
+                    0,
+                    target_start - (body_budget - (target_end - target_start)) // 2,
+                )
+            crop_start = min(crop_start, len(body) - body_budget)
+            body = body[crop_start : crop_start + body_budget]
         blocks.append(header + body)
-        budget -= len(blocks[-1])
+        budget -= separator_size + len(blocks[-1])
     return "\n\n".join(blocks)
+
+
+def _max_completion_tokens(model: str) -> int:
+    """Return a safe completion-token cap for an OpenAI model."""
+    if "gpt-4o" in model.lower():
+        return GPT_4O_MAX_COMPLETION_TOKENS
+    return DEFAULT_MAX_COMPLETION_TOKENS
 
 
 def _script_name(locale: str) -> Optional[str]:
@@ -265,6 +427,7 @@ def _response_format(ids: List[str]) -> dict:
 
 class ChatGptTranslator(Translator):
     nickname = "chat_gpt"
+    use_codebook = False
 
     def get_system_prompt(
         self,
@@ -303,7 +466,9 @@ class ChatGptTranslator(Translator):
 
         if context.file_path is not None and os.path.exists(context.file_path):
             prompt += f"\n\nThe texts are taken from {context.file_path}."
-            source = source_context_for_prompt(context.file_path, context.line_numbers)
+            source = source_context_for_prompt(
+                context.file_path, context.line_numbers, context.source_texts
+            )
             if source:
                 prompt += f"\n\n{source}"
 
@@ -369,7 +534,8 @@ class ChatGptTranslator(Translator):
             # toward the limit; still stops a repetition loop well before the
             # model's own limit.
             max_completion_tokens=min(
-                32_000, 8_000 + 5 * sum(len(text) for text in texts)
+                _max_completion_tokens(openai_default_model),
+                8_000 + 5 * sum(len(text) for text in texts),
             ),
         )
         if openai_default_model not in _MODELS_WITHOUT_TEMPERATURE:

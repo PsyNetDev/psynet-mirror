@@ -1,1 +1,1 @@
-`psynet translate` now saves each locale's catalog after every request, so translations already received are kept if the run stops early, for example on a timeout or an API outage. The next run only sends what is still untranslated.
+`psynet translate` now saves each locale's catalog atomically after every request, so translations already received are kept if the run stops early, for example on a timeout, an API outage, or an interrupted save. The next run only sends what is still untranslated.

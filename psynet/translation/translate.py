@@ -1,5 +1,7 @@
 import copy
 import os
+import stat
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Iterable, List, Optional
@@ -254,6 +256,7 @@ class TranslationBatch:
             file_path=self.file,
             labels=[entry.msgctxt for entry in self.entries],
             line_numbers=[_line_number(entry) for entry in self.entries],
+            source_texts=texts,
             examples=self.examples,
         )
         try:
@@ -361,7 +364,18 @@ def translate_po(
 def _save_po(po: polib.POFile, po_path: str):
     """Save ``po`` sorted and without line numbers, leaving ``po`` itself unchanged."""
     # Line numbers are only needed for sorting and prompts; they are not saved.
-    remove_line_numbers(sort_po(copy.deepcopy(po))).save(po_path)
+    output = remove_line_numbers(sort_po(copy.deepcopy(po)))
+    destination = os.path.realpath(po_path) if os.path.islink(po_path) else po_path
+    directory = os.path.dirname(os.path.abspath(destination))
+    with tempfile.TemporaryDirectory(dir=directory) as temporary_directory:
+        temporary_path = os.path.join(
+            temporary_directory, os.path.basename(destination)
+        )
+        output.save(temporary_path)
+        if os.path.exists(destination):
+            mode = stat.S_IMODE(os.stat(destination).st_mode)
+            os.chmod(temporary_path, mode)
+        os.replace(temporary_path, destination)
 
 
 def initialize_po(pot_path, po_path, output_lang):
