@@ -221,13 +221,14 @@ def test_temperature_is_sent_only_when_configured(monkeypatch, temperature, expe
     assert requests[0].get("temperature", "absent") == expected
 
 
-def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
+def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
     requests = _fake_chat_gpt(monkeypatch, "0", reject_temperature=True)
 
     for _ in range(2):
         assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
 
     assert ["temperature" in request for request in requests] == [True, False, False]
+    assert "openai_default_temperature is ignored" in capsys.readouterr().out
 
 
 def test_removed_google_translator_has_a_clear_error():

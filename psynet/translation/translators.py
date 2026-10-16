@@ -387,6 +387,10 @@ class ChatGptTranslator(Translator):
             if "temperature" not in request or e.param != "temperature":
                 raise
             _MODELS_WITHOUT_TEMPERATURE.add(openai_default_model)
+            print(
+                f"{openai_default_model} rejects temperature {request['temperature']}, "
+                "so openai_default_temperature is ignored for it."
+            )
             del request["temperature"]
             response = client.chat.completions.create(**request)
         choice = response.choices[0]
