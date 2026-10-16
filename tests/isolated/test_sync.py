@@ -46,6 +46,7 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
+    SyncGroup,
     _advance_released_hold_waiters_after_commit,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
@@ -3320,6 +3321,82 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_dissolution_leaves_a_busy_member_to_the_poller(
+    in_experiment_directory, db_session
+):
+    """A partner busy in their own request is failed by the next poll, not waited for."""
+    exp = get_experiment()
+    leaving, busy = _pair_sync_group(exp, db_session)[0]
+    busy_id, group_id = busy.id, busy.sync_group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leaving.fail("left")
+        db.session.commit()
+    assert not Participant.query.get(busy_id).failed
+
+    check_barriers()
+
+    db.session.expire_all()
+    assert Participant.query.get(busy_id).failure_tags == [
+        "sync group below minimum size"
+    ]
+    assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_two_members_failing_at_once_do_not_deadlock(
+    in_experiment_directory, db_session
+):
+    """Each holds their own row, as their requests do, then fails at the same time."""
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 3)
+    ids, group_id = [p.id for p in members], group.id
+    db.session.remove()
+    both_locked = threading.Barrier(2)
+    errors = []
+
+    def fail_self(participant_id):
+        try:
+            _set_transaction_lock_timeout(5)
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            both_locked.wait(5)
+            participant.fail("timeout")
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    threads = [threading.Thread(target=fail_self, args=(i,)) for i in ids[1:]]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(15)
+    check_barriers()
+
+    assert errors == []
+    db.session.expire_all()
+    tags = [Participant.query.get(i).failure_tags for i in ids]
+    assert tags[0] == ["sync group below minimum size"]
+    assert all("timeout" in t for t in tags[1:])
+    assert SyncGroup.query.get(group_id).active is False
 
 
 @pytest.mark.parametrize(

@@ -50,6 +50,8 @@ When a participant reaches a barrier, ``Barrier.receive_participant``:
 A scheduled task in ``Experiment._check_barriers`` calls ``check_barriers`` in
 this module. That loop:
 
+- Finishes dissolving sync groups whose dissolution skipped members who were
+  busy in their own request (see ``SyncGroup._dissolve``).
 - Applies ``max_wait_time`` to waiters whose hold deadline has passed. Their
   own request normally does this, so waiters who left would otherwise stay.
 - Finds waiting barrier instances and checks them least recently checked
@@ -107,6 +109,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    select,
     text,
 )
 from sqlalchemy import inspect as sa_inspect
@@ -1397,15 +1400,11 @@ class GroupBarrier(Barrier):
                 # The group can never reach its minimum size, so remove everyone
                 # and release whoever is waiting here, failing them first when
                 # fail_participants_below_min_size is True.
-                for participant in list(group.active_participants):
-                    if group.fail_participants_below_min_size:
-                        participant.fail("sync group below minimum size")
-                    group.remove_participant(participant)
-                    if participant.id in waiting_participant_ids:
-                        participants_to_release.append(participant)
-                group.check_numbers()
-                if group.n_active_participants == 0:
-                    group.close()
+                participants_to_release.extend(
+                    participant
+                    for participant in group._dissolve()
+                    if participant.id in waiting_participant_ids
+                )
             elif outcome == "release":
                 group.check_leader()
                 for participant in group.active_participants:
@@ -1485,9 +1484,16 @@ class GroupBarrier(Barrier):
     def _timeout_participants_between_barriers(
         self, group: "SyncGroup", waiting_participants: List[Participant]
     ):
-        """Kick or fail group members who are late reaching this barrier."""
+        """Kick or fail group members who are late reaching this barrier.
+
+        A late member whose own request holds their row is not failed now;
+        they are still late on the next check.
+        """
         waiting_participant_ids = {p.id for p in waiting_participants}
-        for participant in self._late_between_barriers(group, waiting_participant_ids):
+        late = self._late_between_barriers(group, waiting_participant_ids)
+        if self.timeout_between_barriers_action == "fail":
+            late = _lock_free_participants(late)
+        for participant in late:
             if self.timeout_between_barriers_action == "kick":
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
@@ -1569,7 +1575,8 @@ class Grouper(Barrier):
         by :class:`~psynet.sync.SimpleGrouper`. When a member leaves and the group falls below its
         minimum size, the group is dissolved at once. If ``True`` (default), the remaining members
         are failed. If ``False``, they are removed from the group without being failed and continue
-        alone.
+        alone. A member whose own request is in progress is handled within about a second by the
+        barrier poller instead.
     """
 
     def __init__(
@@ -1734,7 +1741,8 @@ class SimpleGrouper(Grouper):
         When a member leaves a group that doesn't accept top-ups and the group falls below
         ``min_group_size``, the group is dissolved at once. If ``True`` (default), the remaining
         members are failed. If ``False``, they are removed from the group without being failed and
-        continue alone.
+        continue alone. A member whose own request is in progress is handled within about a second
+        by the barrier poller instead.
 
     kwargs
         Further arguments to pass to Grouper.
@@ -1938,6 +1946,9 @@ class SyncGroup(SQLBase, SQLMixin):
     end_time = Column(DateTime)
     last_barrier_pass_time = Column(DateTime, nullable=True)
     leader_id = Column(Integer, ForeignKey("participant.id"))
+    # Dissolution started but skipped members whose rows were busy; the
+    # barrier poller finishes it.
+    dissolving = Column(Boolean, default=False)
 
     participant_links = relationship(
         "ParticipantLinkSyncGroup",
@@ -1975,11 +1986,21 @@ class SyncGroup(SQLBase, SQLMixin):
     )
 
     def check_leader(self):
+        """Make the lowest-id active member leader if the leader has left.
+
+        Setting ``leader_id`` makes PostgreSQL lock the new leader's row for
+        its foreign-key check, so only a member whose row is free (or already
+        held by this transaction) is chosen. If every remaining member is
+        busy in their own request, the old leader stays until the next call,
+        for example the group's next barrier release.
+        """
         active_participants = sorted(self.active_participants, key=lambda p: p.id)
         if len(active_participants) == 0:
             self.leader = None
         elif self.leader not in active_participants:
-            self.leader = active_participants[0]
+            free = _lock_free_participants(active_participants)
+            if free:
+                self.leader = free[0]
 
     @property
     def active_followers(self):
@@ -2015,6 +2036,36 @@ class SyncGroup(SQLBase, SQLMixin):
         else:
             self.check_leader()
 
+    def _dissolve(self):
+        """Remove every active member, failing them if the group says so.
+
+        Other members' rows are locked without waiting. A member whose own
+        request holds their row is skipped and the group is marked
+        ``dissolving``, so the barrier poller finishes the job once that
+        request commits. Waiting here could deadlock with that member's
+        request, which holds their row and then needs this group's row.
+
+        Returns
+        -------
+        list of Participant
+            The members removed now.
+        """
+        self._dissolving_below_min_size = True
+        try:
+            remaining = list(self.active_participants)
+            removed = _lock_free_participants(remaining)
+            for participant in removed:
+                if getattr(self, "fail_participants_below_min_size", True):
+                    participant.fail("sync group below minimum size")
+                SyncGroup.remove_participant(self, participant)
+            self.check_numbers()
+            self.dissolving = len(removed) < len(remaining)
+            if self.n_active_participants == 0:
+                self.close()
+        finally:
+            self._dissolving_below_min_size = False
+        return removed
+
 
 class SimpleSyncGroup(SyncGroup):
     """
@@ -2032,27 +2083,49 @@ class SimpleSyncGroup(SyncGroup):
         self.dissolve_if_below_min_size()
 
     def dissolve_if_below_min_size(self):
+        """Dissolve a group without top-ups that fell below its minimum size.
+
+        Members who are busy in another request are handled shortly after
+        by the barrier poller; see :meth:`SyncGroup._dissolve`.
+        """
         if (
             getattr(self, "_dissolving_below_min_size", False)
             or self.accepts_top_ups
             or self.n_active_participants >= self.min_group_size
         ):
             return
+        self._dissolve()
 
-        self._dissolving_below_min_size = True
-        try:
-            remaining_participants = list(self.active_participants)
-            for participant in remaining_participants:
-                if self.fail_participants_below_min_size:
-                    participant.fail("sync group below minimum size")
-                else:
-                    super().remove_participant(participant)
 
-            self.check_numbers()
-            if self.n_active_participants == 0:
-                self.close()
-        finally:
-            self._dissolving_below_min_size = False
+def _lock_free_participants(participants):
+    """Lock participants' rows without waiting and return the free ones.
+
+    ``SKIP LOCKED`` leaves out rows another transaction holds; rows this
+    transaction already holds count as free. Code that fails or removes
+    *other* participants uses this, because their own requests lock their
+    row first and may then need a sync group row this transaction holds.
+    The returned participants are refreshed, and any who failed or left
+    meanwhile are dropped.
+    """
+    if not participants:
+        return []
+    ids = sorted({participant.id for participant in participants})
+    locked = set(
+        db.session.execute(
+            select(Participant.id)
+            .where(Participant.id.in_(ids))
+            .order_by(Participant.id)
+            .with_for_update(skip_locked=True)
+        ).scalars()
+    )
+    free = []
+    for participant in participants:
+        if participant.id not in locked:
+            continue
+        db.session.refresh(participant, ["failed", "status"])
+        if not participant.failed and participant.status == "working":
+            free.append(participant)
+    return free
 
 
 def _insert_values_from_state(record) -> dict:
@@ -2767,6 +2840,39 @@ def _process_barrier_instance(instance_id, *, retry=False):
     return False
 
 
+def _finish_dissolving_groups():
+    """Remove or fail members that a group dissolution had to skip.
+
+    Each group is handled in its own transaction. A group another request
+    holds, and members still busy, are left for the next sweep. Nothing here
+    waits for a lock.
+    """
+    with Session(bind=db.engine) as session:
+        group_ids = [
+            group_id
+            for (group_id,) in session.query(SyncGroup.id)
+            .filter(SyncGroup.active.is_(True), SyncGroup.dissolving.is_(True))
+            .order_by(SyncGroup.id)
+        ]
+    for group_id in group_ids:
+        try:
+            group = (
+                SyncGroup.query.filter_by(id=group_id)
+                .with_for_update(of=SyncGroup, key_share=True, skip_locked=True)
+                .populate_existing()
+                .first()
+            )
+            if group is not None and group.active and group.dissolving:
+                group._dissolve()
+            db.session.commit()
+        except Exception as err:
+            db.session.rollback()
+            if is_transient_transaction_error(err):
+                logger.debug("Dissolving sync group %s is busy.", group_id)
+                continue
+            logger.exception("Failed to finish dissolving sync group %s.", group_id)
+
+
 def _visits_due(waiting, sweep_ends):
     """Yield waiting visits in check order until ``sweep_ends``, at least one.
 
@@ -2802,7 +2908,8 @@ def check_barriers():
     publishes unpublished until that walk returns. Each visit still commits
     before the next check so a locked waiter cannot poison sibling checks.
 
-    Each sweep first times out overdue waiters, then checks visits, least
+    Each sweep first finishes group dissolutions that skipped busy members
+    and times out overdue waiters, then checks visits, least
     recently checked first, with new or changed ones given a head start. Each
     of the two steps stops starting new work after
     ``_POLLER_SWEEP_BUDGET_SECONDS``, so thousands of idle waiters cannot
@@ -2812,6 +2919,7 @@ def check_barriers():
     """
     seen = set()
     with _defer_timeline_hold_wakes():
+        _finish_dissolving_groups()
         _time_out_overdue_waiters(time.monotonic() + _POLLER_SWEEP_BUDGET_SECONDS)
         sweep_ends = time.monotonic() + _POLLER_SWEEP_BUDGET_SECONDS
         # Settle on an empty snapshot *before* more work. The False yield is
