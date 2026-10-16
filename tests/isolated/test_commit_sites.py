@@ -46,9 +46,9 @@ COMMIT_SITES = {
     "experiment.py::Experiment._relock_arriver_after_barrier_check": _OWNS_REQUEST,
     "experiment.py::Experiment._attempt_queued_barrier_checks": _OWNS_REQUEST,
     "experiment.py::Experiment.route_response": _OWNS_REQUEST,
-    "process.py::AsyncProcess.call_function": _OWNS_JOB,
-    "process.py::LocalAsyncProcess.thread_function": _OWNS_JOB,
-    "process.py::WorkerAsyncProcess.check_timeouts": _OWNS_JOB,
+    "async_job.py::AsyncJob.call_function": _OWNS_JOB,
+    "async_job.py::LocalAsyncJob.thread_function": _OWNS_JOB,
+    "async_job.py::WorkerAsyncJob.check_timeouts": _OWNS_JOB,
     "pytest_psynet.py::trial": "pytest fixture",
     "recruiters.py::BaseLucidRecruiter.normalize_entry_information": (
         "Dallinger's /participant and /load-participant routes do not commit"

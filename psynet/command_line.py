@@ -4273,6 +4273,38 @@ _test_options["time_factor"] = click.option(
 )
 
 
+def _in_isolated_test_environment(func):
+    """Run a local test or performance-test command in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports. With ``--existing`` the command tests a live server,
+    so it runs in this process.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import (
+            READY_ENV_VAR,
+            shared_environment_warning,
+            should_isolate,
+        )
+
+        if not kwargs.get("existing"):
+            try:
+                isolate = should_isolate()
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            if isolate:
+                _rerun_in_isolated_test_environment()
+            warning = shared_environment_warning()
+            if warning:
+                log(warning)
+                os.environ[READY_ENV_VAR] = "1"
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @test.command("local")
 @_test_options["existing"]
 @_test_options["n_bots"]
@@ -4281,6 +4313,7 @@ _test_options["time_factor"] = click.option(
 @_test_options["stagger"]
 @_test_options["time_factor"]
 @_add_sql_profile_options
+@_in_isolated_test_environment
 @sql_profiled_command
 def test__local(
     existing=False,
@@ -4297,6 +4330,10 @@ def test__local(
 ):
     """
     Test the experiment locally.
+
+    The tests get a free port, a database and a Redis server of their own, so
+    they leave local debug servers alone. Set PSYNET_TEST_ENVIRONMENT=shared
+    to run them against the local ones instead, which resets them.
     """
     assert not (parallel and serial)
 
@@ -4346,6 +4383,61 @@ def test__local(
         # Use sys.exit() to ensure that the exit code is propagated to the shell.
         # This is helpful for CI pipelines, where we want to fail the build if the tests fail.
         sys.exit(exit_code)
+
+
+def _rerun_in_isolated_test_environment():
+    """Re-run this command in a child process with its own database, Redis and port.
+
+    Dallinger connected to the shared database when this module was imported,
+    so the switch needs a new process; see :mod:`psynet.isolated_environment`.
+    The child re-runs the whole original command line (for example
+    ``psynet test local --n-bots 4``) with this interpreter, and this process
+    then exits with its code. A second Ctrl+C kills the child.
+    """
+    from .isolated_environment import IsolatedEnvironment
+    from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
+
+    _check_no_debug_server_here()
+    # Before creating the database and Redis, so that an experiment that isn't
+    # set up fails without advice about services it won't use.
+    _check_experiment_directory("test")
+    ensure_local_services(assume_yes=False, strict=True)
+    try:
+        environment = IsolatedEnvironment.start()
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    exit_code = 130
+    with environment:
+        log(environment.describe())
+        # On macOS framework builds, sys.orig_argv[0] is the framework's own
+        # interpreter, which runs outside the virtual environment.
+        process = subprocess.Popen(
+            [sys.executable, *sys.orig_argv[1:]],
+            env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
+        )
+        interrupted = False
+        while True:
+            try:
+                exit_code = process.wait()
+                break
+            except KeyboardInterrupt:
+                # The child got the same Ctrl+C; let it stop its servers,
+                # unless the user presses Ctrl+C again.
+                if interrupted and process.poll() is None:
+                    process.kill()
+                interrupted = True
+    # A child killed by signal N reports -N; shells report 128 + N.
+    sys.exit(exit_code if exit_code >= 0 else 128 - exit_code)
+
+
+def _check_no_debug_server_here():
+    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
+    from .isolated_environment import check_no_debug_server
+
+    try:
+        check_no_debug_server(os.getcwd())
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
 
 
 def build_remote_experiment_command(app, cmd):
@@ -4650,6 +4742,7 @@ def performance_test(ctx):
 @_test_options["duration_minutes"]
 @_test_options["performance_json_output"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
+@_in_isolated_test_environment
 def performance_test__local(
     existing=False,
     n_bots=None,
@@ -4666,8 +4759,11 @@ def performance_test__local(
     to run sequential tests with different concurrency levels.
     Example: --n-bots "5,10,20" will run three separate tests.
 
-    By default, this command starts a new experiment server automatically.
-    Use --existing to connect to an already-running server instead.
+    By default, this command starts a new experiment server automatically,
+    with a free port, a database and a Redis server of its own, so it leaves
+    local debug servers alone (set PSYNET_TEST_ENVIRONMENT=shared to use the
+    local ones instead, which resets them). Use --existing to connect to an
+    already-running server instead.
 
     This command never updates an experiment audit. Use
     ``psynet audit performance-test`` to collect audit evidence.
@@ -4938,7 +5034,12 @@ def _start_local_server_and_wait_for_ready(
             for line in recent_output:
                 print(line, file=sys.stderr)
         log_file.close()
-        raise click.ClickException("Failed to start experiment server.")
+        from .isolated_environment import postgres_connection_limit_message
+
+        advice = postgres_connection_limit_message("\n".join(recent_output))
+        raise click.ClickException(
+            "Failed to start experiment server." + (f" {advice}" if advice else "")
+        )
 
 
 def _terminate_server_process(process):
@@ -5030,6 +5131,7 @@ def _run_performance_test_with_new_server(
     n_bots, stagger, time_factor, duration_minutes, debug, json_output=None
 ):
     """Run performance test after starting a new experiment server"""
+    _check_no_debug_server_here()
     # Prefer legacy debug: gunicorn with several workers is closer to a deployed
     # server than the auto-reload develop path used by normal
     # ``psynet debug local``.
@@ -5187,6 +5289,7 @@ def audit_simulate(ctx, n_bots=None):
 @_test_options["duration_minutes"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @require_exp_directory
+@_in_isolated_test_environment
 def audit_performance_test(
     existing=False,
     n_bots=None,

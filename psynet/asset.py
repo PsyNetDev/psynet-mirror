@@ -30,6 +30,7 @@ from tqdm import tqdm
 from psynet.timeline import NullElt
 
 from . import deployment_info
+from .async_job import LocalAsyncJob, _deprecated_async_processes, _in_async_job
 from .cache import IMMUTABLE_CACHE_CONTROL, IMMUTABLE_CACHE_MAX_AGE
 from .data import SQLBase, SQLMixin, register_table
 from .export.path_safety import UnsafePathError, normalize_relative_path
@@ -40,7 +41,6 @@ from .media import (
     get_s3_client,
     get_s3_resource,
 )
-from .process import LocalAsyncProcess, _in_async_process
 from .serialize import prepare_function_for_serialization
 from .utils import (
     content_object_path,
@@ -251,8 +251,8 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     storage : AssetStorage
         The storage backend used for the asset.
 
-    async_processes : list
-        Lists all async processes that have been created for the asset, including completed ones.
+    async_jobs : list
+        Lists all async jobs that have been created for the asset, including completed ones.
 
     participant :
         If the parent is a ``Participant``, returns that participant.
@@ -348,7 +348,8 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     storage = Column(PythonObject)
     node_definition = Column(PythonObject)
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     module_state_links = relationship(
         "AssetModuleState",
@@ -793,7 +794,7 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
 
         Returns ``True`` if the deposit has been completed,
         or ``False`` if the deposit has yet to be completed,
-        typically because it is being performed in an asynchronous process
+        typically because it is being performed in an async job
         which will take responsibility for marking the deposit as complete
         in due course.
         """
@@ -1198,7 +1199,7 @@ class ManagedAsset(Asset):
                 "Calling check_if_can_run_async_post_trial as part of after_deposit."
             )
             self.trial.check_if_can_run_async_post_trial()
-            if not _in_async_process():
+            if not _in_async_job():
                 self.trial.check_if_can_mark_as_finalized()
         if self.participant_id is not None:
             from psynet.timeline_hold import _queue_timeline_hold_wake
@@ -1639,8 +1640,8 @@ class ExternalAsset(Asset):
     storage : AssetStorage
         The storage backend used for the asset.
 
-    async_processes : list
-        Lists all async processes that have been created for the asset, including completed ones.
+    async_jobs : list
+        Lists all async jobs that have been created for the asset, including completed ones.
 
     participant :
         If the parent is a ``Participant``, returns that participant.
@@ -1866,16 +1867,15 @@ class AssetStorage:
     def _async__call_receive_deposit(
         self, asset: Asset, host_path: str, delete_input: bool
     ):
-        LocalAsyncProcess(
+        LocalAsyncJob(
             self._call_receive_deposit,
             arguments=dict(
                 asset=asset,
                 host_path=host_path,
                 delete_input=delete_input,
-                # db_commit=True,
             ),
             asset=asset,
-        )
+        ).enqueue()
 
     def export(self, asset, path, **kwargs):
         self.raise_not_implemented_error()

@@ -1,562 +1,67 @@
-import datetime
-import threading
-import time
-from contextvars import ContextVar
-from functools import partial
+"""Deprecated: async processes are now async jobs in :mod:`psynet.async_job`."""
 
-import dallinger.db
-from dallinger import db
-from dallinger.db import redis_conn
-from dallinger.utils import classproperty
-from redis.exceptions import RedisError
-from rq import Queue
-from rq.exceptions import InvalidJobOperation, NoSuchJobError
-from rq.job import Job
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    inspect,
-)
-from sqlalchemy.exc import NoResultFound
-from sqlalchemy.orm import deferred, relationship
-from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
+import warnings
 
-from .data import SQLBase, SQLMixin, register_table
-from .db import _call_after_commit, _set_transaction_lock_timeout, with_transaction
-from .field import PythonDict, PythonObject
-from .notifier import _send_alert
-from .serialize import prepare_function_for_serialization
-from .utils import get_logger
-
-logger = get_logger()
-
-_RECHECK_LOCK_TIMEOUT_SECONDS = 5
-
-_running_async_process = ContextVar("psynet_running_async_process", default=False)
+from .async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
 
 
-def _in_async_process():
-    """Whether the current code runs inside an async process's function.
+class _DeprecatedJobAlias:
+    """Warning stand-in for a renamed job class.
 
-    The process's own trial is finalized by :meth:`Trial.recheck_finalization`
-    after the process commits, which locks the participant before the trial;
-    other trials touched there are left to :meth:`Trial.finalize_pending_trials`.
-    Finalizing inside the process would lock the trial first, and a request
-    holding the participant could then deadlock with it.
+    Calling it creates and enqueues the new job; public attribute access,
+    ``isinstance`` and ``issubclass`` are forwarded to the new class, and
+    subclassing it subclasses the new class. It is not a mapped class
+    itself, so it adds no SQLAlchemy polymorphic identity.
     """
-    return _running_async_process.get()
 
+    def __init__(self, old_name, target):
+        self._old_name = old_name
+        self._target = target
 
-@register_table
-class AsyncProcess(SQLBase, SQLMixin):
-    __tablename__ = "process"
-
-    label = Column(String)
-    function = Column(PythonObject)
-    arguments = deferred(Column(PythonDict))
-    pending = Column(Boolean)
-    finished = Column(Boolean, default=False)
-    time_enqueued = Column(DateTime)
-    time_started = Column(DateTime)
-    time_finished = Column(DateTime)
-    time_taken = Column(Float)
-    queue_delay = Column(Float)
-    _unique_key = Column(PythonDict, unique=True)
-
-    participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
-    participant = relationship(
-        "psynet.participant.Participant",
-        backref="async_processes",
-        foreign_keys=[participant_id],
-    )
-
-    trial_maker_id = Column(String, index=True)
-
-    network_id = Column(Integer, ForeignKey("network.id"), index=True)
-    network = relationship("TrialNetwork", back_populates="async_processes")
-
-    node_id = Column(Integer, ForeignKey("node.id"), index=True)
-    node = relationship("TrialNode", back_populates="async_processes")
-
-    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
-    trial = relationship("psynet.trial.main.Trial", back_populates="async_processes")
-
-    response_id = Column(Integer, ForeignKey("response.id"), index=True)
-    response = relationship(
-        "psynet.timeline.Response", back_populates="async_processes"
-    )
-
-    asset_id = Column(Integer, ForeignKey("asset.id"), index=True)
-    asset = relationship("Asset", back_populates="async_processes")
-
-    errors = relationship("ErrorRecord")
-
-    def add_to_launch_queue(self):
-        """Queue this process to launch once the creating session commits."""
-        self.time_enqueued = datetime.datetime.now()
-        _call_after_commit(partial(_launch_unless_cancelled, self.get_launch_spec()))
-
-    def get_launch_spec(self) -> dict:
-        db.session.flush([self])
-        return {
-            "obj": self,
-            "class": self.__class__,
-            "id": self.id,
-        }
-
-    def __init__(
-        self,
-        function,
-        arguments=None,
-        trial=None,
-        response=None,
-        participant=None,
-        node=None,
-        network=None,
-        asset=None,
-        label=None,
-        unique=False,
-    ):
-        if label is None:
-            label = function.__name__
-
-        if arguments is None:
-            arguments = {}
-
-        db.session.flush()
-
-        function, arguments = prepare_function_for_serialization(function, arguments)
-
-        self.label = label
-        self.function = function
-        self.arguments = arguments
-
-        self.asset = asset
-        if asset:
-            self.asset_id = asset.id
-
-        self.participant = participant
-        if participant:
-            self.participant_id = participant.id
-
-        self.network = network
-        if network:
-            self.network_id = network.id
-
-        self.node = node
-        if node:
-            self.node_id = node.id
-
-        self.trial = trial
-        if trial:
-            self.trial_id = trial.id
-
-        self.response = response
-        if response:
-            self.response_id = response.id
-
-        self.infer_participant()
-        self.infer_trial_maker_id()
-        self.pending = True
-
-        if unique:
-            if isinstance(unique, bool):
-                self._unique_key = {
-                    "label": label,
-                    "function": function,
-                    "arguments": arguments,
-                }
-            else:
-                self._unique_key = unique
-
-        db.session.add(self)
-        self.add_to_launch_queue()
-
-    def log_time_started(self):
-        self.time_started = datetime.datetime.now()
-
-    def log_time_finished(self):
-        self.time_finished = datetime.datetime.now()
-
-    def infer_participant(self):
-        if self.participant is None:
-            for obj in [self.asset, self.trial, self.node, self.network]:
-                if obj and hasattr(obj, "participant") and obj.participant:
-                    self.participant = obj.participant
-                    break
-            # For safety...
-            if self.participant:
-                self.participant_id = self.participant.id
-
-    def infer_trial_maker_id(self):
-        for obj in [self.trial, self.node, self.network]:
-            if obj and obj.trial_maker_id:
-                self.trial_maker_id = obj.trial_maker_id
-                return
-
-    @property
-    def failure_cascade(self):
-        """
-        These are the objects that will be failed if the process fails. Ultimately we might want to
-        add more objects to this list, for example participants, assets, and networks,
-        but currently we're not confident that PsyNet supports failing those objects in that kind of way.
-        An asset's process (e.g. an async deposit) fails the asset's trial, which could otherwise
-        never be finalized; a trial that is already finalized is left alone.
-        """
-        trial = self.trial
-        if trial is None and self.asset and self.asset.trial:
-            trial = None if self.asset.trial.finalized else self.asset.trial
-        candidates = [trial, self.node]
-        return [lambda obj=obj: [obj] for obj in candidates if obj is not None]
-
-    @classmethod
-    def launch(cls, process: dict):
-        raise NotImplementedError
-
-    @classproperty
-    def redis_queue(cls):
-        return Queue("default", connection=redis_conn)
-
-    @classmethod
-    def call_function_with_logger(cls, process_id):
-        cls.call_function(process_id)
-
-    @classmethod
-    @retry(
-        retry=retry_if_exception_type(NoResultFound),
-        wait=wait_exponential(multiplier=0.1, min=0.01),
-        stop=stop_after_delay(4),
-    )
-    # The process gets launched when SQLAlchemy's after_commit event is triggered. This tells us when the COMMIT
-    # has been issued to the database, but it does not guarantee that the commit has finished execution.
-    # This is why we add some retry logic to ensure that the process is available in the database before continuing.
-    def get_process(cls, process_id: int):
-        return (
-            AsyncProcess.query.filter_by(id=process_id)
-            .with_for_update(of=AsyncProcess)
-            .populate_existing()
-            .one()
+    def _warn(self, usage=""):
+        warnings.warn(
+            f"psynet.process.{self._old_name} is deprecated; use "
+            f"psynet.async_job.{self._target.__name__}{usage} instead.",
+            DeprecationWarning,
+            stacklevel=3,
         )
 
-    @classmethod
-    @with_transaction
-    def call_function(cls, process_id):
-        """
-        Calls the defining function of a given process
-        """
-        # cls.log(f"Calling function for process_id: {process_id}")
-        print("\n")
-        logger.info(f"Calling function for process_id {process_id}...")
+    def __call__(self, *args, **kwargs):
+        self._warn("(...).enqueue()")
+        return self._target(*args, **kwargs).enqueue()
 
-        process = None
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        self._warn()
+        return getattr(self._target, name)
 
-        try:
-            from psynet.experiment import get_experiment
+    def __instancecheck__(self, obj):
+        self._warn()
+        return isinstance(obj, self._target)
 
-            experiment = get_experiment()
+    def __subclasscheck__(self, cls):
+        self._warn()
+        return issubclass(cls, self._target)
 
-            process = cls.get_process(process_id)
-            if getattr(process, "cancelled", False):
-                logger.info("Async process %s was cancelled; skipping.", process_id)
-                return
-            function = process.function
+    def __mro_entries__(self, bases):
+        self._warn(" (and call .enqueue() on each job)")
+        return (self._target,)
 
-            arguments = cls.preprocess_args(process.arguments)
+    def __repr__(self):
+        return f"<deprecated alias {self._old_name} of {self._target.__name__}>"
 
-            timer = time.monotonic()
-            process.time_started = datetime.datetime.now()
-            if process.time_enqueued:
-                process.queue_delay = (
-                    process.time_started - process.time_enqueued
-                ).total_seconds()
-            db.session.commit()
 
-            token = _running_async_process.set(True)
-            try:
-                function(**arguments)
-            finally:
-                _running_async_process.reset(token)
+WorkerAsyncProcess = _DeprecatedJobAlias("WorkerAsyncProcess", WorkerAsyncJob)
+LocalAsyncProcess = _DeprecatedJobAlias("LocalAsyncProcess", LocalAsyncJob)
 
-            process.time_finished = datetime.datetime.now()
-            process.time_taken = time.monotonic() - timer
-            process.pending = False
-            process.finished = True
 
-        except Exception as err:
-            if not isinstance(err, experiment.HandledError):
-                experiment.handle_error(err, process=process)
-
-            if process:
-                # We need to re-fetch the process because handle_error has done a rollback
-                process = cls.get_process(process_id)
-                process.pending = False
-                process.fail(f"Exception in asynchronous process: {repr(err)}")
-
-        finally:
-            if process is not None and process.participant_id is not None:
-                from psynet.timeline_hold import _queue_timeline_hold_wake
-
-                _queue_timeline_hold_wake(
-                    process.participant_id,
-                    reason="async_process_finished",
-                )
-            trial_id = cls._get_trial_id(process)
-            db.session.commit()
-
-        if trial_id is not None:
-            from psynet.trial.main import Trial
-
-            try:
-                # A busy participant should not tie up the worker; the
-                # finalize backstop picks the trial up if this times out.
-                _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
-                Trial.recheck_finalization(trial_id)
-                db.session.commit()
-            except Exception:
-                logger.warning(
-                    "Post-commit finalize re-check failed for trial %s; "
-                    "leaving it to the finalize backstop.",
-                    trial_id,
-                    exc_info=True,
-                )
-                db.session.rollback()
-
-    @staticmethod
-    def _get_trial_id(process):
-        """Return the ID of the trial this process works on, if any."""
-        if process is None:
-            return None
-        if process.trial_id is not None:
-            return process.trial_id
-        if process.asset is not None:
-            return process.asset.trial_id
-        return None
-
-    @classmethod
-    def preprocess_args(cls, arguments):
-        """
-        Preprocesses the arguments that are passed to the process's function.
-        """
-        return {key: cls.preprocess_arg(value) for key, value in arguments.items()}
-
-    @classmethod
-    def preprocess_arg(cls, arg):
-        if isinstance(
-            arg, dallinger.db.Base
-        ):  # Tests if the object is an SQLAlchemy object
-            arg = db.session.merge(arg)  # Reattaches the object to the database session
-            db.session.refresh(arg)
-        return arg
-
-    @classmethod
-    def log(cls, msg):
-        raise NotImplementedError
-
-    @classmethod
-    def log_to_stdout(cls, msg):
-        print(msg)
-
-    @classmethod
-    def log_to_redis(cls, msg):
-        cls.redis_queue.enqueue_call(
-            func=logger.info, args=(), kwargs=dict(msg=msg), timeout=1e10, at_front=True
+def __getattr__(name):
+    if name == "AsyncProcess":
+        warnings.warn(
+            "psynet.process.AsyncProcess has been renamed to psynet.async_job.AsyncJob.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-
-
-def _launch_unless_cancelled(process):
-    """Launch a committed process, unless it was cancelled before the commit."""
-    # No SQL can run in after_commit, so read only already-loaded state; an
-    # expired object here means a rolled-back change, so launch it.
-    if inspect(process["obj"]).dict.get("cancelled", False):
-        return
-    logger.info("Launching async process %s...", process["id"])
-    try:
-        process["class"].launch(process)
-    except Exception:
-        logger.exception("Could not launch async process %s.", process["id"])
-        _send_alert(
-            f"Async process {process['id']} ({process['class'].__name__}) was "
-            "saved but could not be launched, "
-            "so it stays pending until its timeout, if any."
-        )
-
-
-class LocalAsyncProcess(AsyncProcess):
-    @classmethod
-    def launch(cls, process: dict):
-        thr = threading.Thread(
-            target=cls.thread_function, kwargs={"process_id": process["id"]}
-        )
-        thr.start()
-
-    @classmethod
-    def thread_function(cls, process_id):
-        try:
-            cls.call_function_with_logger(process_id)
-        finally:
-            db.session.commit()
-            db.session.close()
-
-    @classmethod
-    def call_function_with_logger(cls, process_id):
-        cls.call_function(process_id)
-
-        # log = io.StringIO()
-        # try:
-        #     with contextlib.redirect_stdout(log):
-        #         # yield
-        #         cls.call_function(process_id)
-        # finally:
-        #     cls.log_to_redis(log.getvalue())
-
-        # with cls.log_output():
-        #     cls.call_function(process_id)
-
-    # @classmethod
-    # @contextlib.contextmanager
-    # def log_output(cls):
-    #     log = io.StringIO()
-    #     try:
-    #         with contextlib.redirect_stdout(log):
-    #             yield
-    #     finally:
-    #         cls.log_to_redis(log.getvalue())
-
-    # @classmethod
-    # def log(cls, msg):
-    #     cls.log_to_redis(msg)
-
-
-def _rq_job_id(process_id):
-    """Return the RQ job ID for an async process, so it can be found to cancel."""
-    return f"psynet_async_process_{process_id}"
-
-
-def _cancel_rq_job(process_id):
-    """Cancel an async process's RQ job if it is still queued."""
-    try:
-        Job.fetch(_rq_job_id(process_id), connection=redis_conn).cancel()
-    except (NoSuchJobError, InvalidJobOperation):
-        logger.info(
-            "No job to cancel for async process %s; it expired, was already "
-            "cancelled, or was never launched.",
-            process_id,
-        )
-    except RedisError:
-        logger.warning(
-            "Could not cancel the RQ job of async process %s; the worker will "
-            "skip it because the process is marked cancelled.",
-            process_id,
-            exc_info=True,
-        )
-
-
-class WorkerAsyncProcess(AsyncProcess):
-    timeout = Column(Float)  # note -- currently only applies to non-local proceses
-    timeout_scheduled_for = Column(DateTime)
-    cancelled = Column(Boolean, default=False)
-
-    def get_launch_spec(self) -> dict:
-        spec = super().get_launch_spec()
-        spec["timeout"] = self.timeout
-        return spec
-
-    def __init__(
-        self,
-        function,
-        arguments=None,
-        trial=None,
-        participant=None,
-        node=None,
-        network=None,
-        asset=None,
-        label=None,
-        unique=False,
-        timeout=None,  # <-- new argument for this class
-    ):
-        self.timeout = timeout
-        if timeout:
-            self.timeout_scheduled_for = datetime.datetime.now() + datetime.timedelta(
-                seconds=timeout
-            )
-
-        super().__init__(
-            function,
-            arguments,
-            trial=trial,
-            participant=participant,
-            node=node,
-            network=network,
-            asset=asset,
-            label=label,
-            unique=unique,
-        )
-
-    @classmethod
-    def launch(cls, process: dict):
-        cls.redis_queue.enqueue_call(
-            func=cls.call_function_with_logger,
-            args=(),
-            kwargs=dict(process_id=process["id"]),
-            timeout=process["timeout"],
-            job_id=_rq_job_id(process["id"]),
-        )
-
-    @classmethod
-    def check_timeouts(cls):
-        processes = cls.query.filter(
-            cls.pending,
-            ~cls.failed,
-            cls.timeout != None,  # noqa -- this is special SQLAlchemy syntax
-            cls.timeout_scheduled_for < datetime.datetime.now(),
-        ).all()
-        for p in processes:
-            p.fail(
-                "Asynchronous process timed out",
-            )
-            if p.participant_id is not None:
-                from psynet.timeline_hold import _queue_timeline_hold_wake
-
-                _queue_timeline_hold_wake(
-                    p.participant_id,
-                    reason="async_process_timed_out",
-                )
-            db.session.commit()
-
-    @property
-    def redis_job_id(self):
-        return _rq_job_id(self.id)
-
-    @property
-    def redis_job(self):
-        return Job.fetch(self.redis_job_id, connection=redis_conn)
-
-    def cancel(self):
-        """Cancel the process.
-
-        The caller's transaction saves the change; the queued job is cancelled
-        once that transaction commits, and not at all if it rolls back.
-        """
-        if self.cancelled:
-            return
-        self.cancelled = True
-        self.pending = False
-        self.fail("Cancelled asynchronous process")
-        db.session.flush([self])
-        _call_after_commit(partial(_cancel_rq_job, self.id))
-        if self.participant_id is not None:
-            from psynet.timeline_hold import _queue_timeline_hold_wake
-
-            _queue_timeline_hold_wake(
-                self.participant_id,
-                reason="async_process_cancelled",
-            )
-
-    # @classmethod
-    # def log(cls, msg):
-    #     cls.log_to_stdout(msg)
+        return AsyncJob
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
