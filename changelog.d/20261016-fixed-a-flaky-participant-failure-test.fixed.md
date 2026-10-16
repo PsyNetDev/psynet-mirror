@@ -1,1 +1,1 @@
-Fixed a flaky test of failing a participant with a complete trial that is not yet finalized: the experiment's finalize backstop could finalize the trial during the test.
+Fixed a flaky participant-failure test by removing it: the experiment's finalize backstop could finalize its trial mid-test, and its remaining check duplicated test_exit_fails_incomplete_and_preserves_completed.
