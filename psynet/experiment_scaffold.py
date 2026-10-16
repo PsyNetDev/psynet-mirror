@@ -155,6 +155,16 @@ def _experiment_script_resource(relative_path: str):
     return resources.files("psynet") / f"resources/experiment_scripts/{relative_path}"
 
 
+def _template_contents(relative_path: str) -> bytes:
+    """Return the contents a scaffold-managed template file should have."""
+    contents = _experiment_script_resource(relative_path).read_bytes()
+    if relative_path == "Dockerfile":
+        contents = contents.replace(
+            b"{python_major_minor}", _current_python_major_minor().encode()
+        )
+    return contents
+
+
 def scaffold_managed_paths() -> frozenset[str]:
     """Return paths managed by the experiment scaffold.
 
@@ -829,8 +839,7 @@ def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
         return False
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with resources.as_file(_experiment_script_resource(relative_path)) as path:
-        shutil.copyfile(path, destination)
+    destination.write_bytes(_template_contents(relative_path))
     if (
         relative_path == "deploy.toml"
         and previous_gitignore is not None
@@ -1074,8 +1083,7 @@ def _template_file_matches(relative_path):
     if not destination.is_file():
         return False
 
-    with resources.as_file(_experiment_script_resource(relative_path)) as template:
-        return destination.read_bytes() == template.read_bytes()
+    return destination.read_bytes() == _template_contents(relative_path)
 
 
 def _generated_file_matches(relative_path):

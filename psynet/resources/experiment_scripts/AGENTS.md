@@ -19,7 +19,7 @@ Skills elsewhere under `.cursor/skills/` belong to the experiment.
 
 Follow the `install` page (see "Documentation" below). In short: use a
 virtual environment at `.venv/` (ask the user before creating one with
-`uv venv --python 3.13`, which downloads Python if it is missing), then run
+`uv venv --python 3.14`, which downloads Python if it is missing), then run
 `uv pip install psynet` and `psynet setup`, which installs the experiment
 dependencies. Start PostgreSQL and Redis with `psynet services ensure`.
 Without Docker (for example on some cloud agents), install both natively and

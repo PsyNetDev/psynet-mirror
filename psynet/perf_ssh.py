@@ -52,11 +52,9 @@ Design constraints:
 
 import csv
 import datetime
-import hashlib
 import io
 import json
 import logging
-import os
 import re
 import shlex
 import time
@@ -98,42 +96,6 @@ _OBJECT_IN_USE = "55006"
 _DUPLICATE_DATABASE = "42P04"
 _MAX_NAME_LENGTH = 63
 _SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1", "dallinger"})
-_SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
-
-
-def experiment_code_key():
-    """Return a short hash of the experiment's files and the PsyNet and Dallinger versions.
-
-    ``performance-test ssh`` updates its app when this changes. The files are
-    those that a deployment would copy, without the ones Git ignores, such
-    as generated boilerplate, plus the ``_SETTINGS_FILES`` that exist.
-
-    Raises
-    ------
-    ValueError
-        If the experiment has no ``deploy.toml``.
-    """
-    import dallinger.version
-
-    import psynet
-    from psynet.deployment_info import authored_deployment_files
-
-    files = authored_deployment_files()
-    if files is None:
-        raise ValueError("The experiment has no deploy.toml.")
-    listed = {destination for destination, _ in files}
-    files += [(name, name) for name in _SETTINGS_FILES if name not in listed]
-    digest = hashlib.sha256(
-        f"{psynet.__version__}\0{dallinger.version.__version__}".encode()
-    )
-    for destination, source in sorted(files):
-        if not os.path.isfile(source):
-            continue
-        digest.update(f"\0{destination}\0".encode())
-        with open(source, "rb") as f:
-            while chunk := f.read(1 << 20):
-                digest.update(chunk)
-    return digest.hexdigest()[:12]
 
 
 def run_with_status(executor, cmd):

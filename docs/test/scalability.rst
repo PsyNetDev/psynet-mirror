@@ -299,7 +299,9 @@ during it point to a query to profile.
 To test with real data, for example from a pilot, deploy a performance-test
 app from its export (see :doc:`/deploy/reference/deploy_from_archive`) with
 ``performance_test_app = true`` in ``config.txt``, and run
-``performance-test ssh`` on it with ``--force``.
+``performance-test ssh`` on it with ``--force`` from the experiment's
+directory; each run updates the app's code from that directory, keeping the
+pilot's database.
 
 .. _performance_testing_server:
 
@@ -331,13 +333,17 @@ only run on apps that ``performance-test ssh`` deployed for them. If the
 server has no app named ``--app``, the command first deploys the experiment
 under that name in debug mode, taking the same ``--server``, ``--dns-host``,
 ``--ingress``, ``--use-local-dallinger`` and ``--yes`` options as ``psynet
-debug ssh``.
+debug ssh``. Like ``psynet debug ssh``, that first deploy resets your local
+debug database.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
-The app's config is marked with ``performance_test_app = true``. When the
-experiment's files change, the next run updates the app in place and keeps
-its database; destroy the app if the change needs a fresh launch. The app
-stays on the server between runs, and the command prints how to destroy it:
+The app's config is marked with ``performance_test_app = true``. Every
+later run updates the app in place from the current directory before
+testing, so it always tests your current code, and keeps its database.
+An update doesn't deposit new assets, so destroy the app if you add assets
+or want a fresh launch. The app stays on the server
+after each run, so that you can look at its dashboard and logs, and the
+command prints how to destroy it when you're done:
 
 .. code-block:: bash
 
