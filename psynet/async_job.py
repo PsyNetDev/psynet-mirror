@@ -146,10 +146,12 @@ class AsyncJob(SQLBase, SQLMixin):
     cpu_time : float
         CPU seconds used by the job's thread while its function ran,
         measured with :func:`time.thread_time`. CPU used by other processes,
-        such as the database server, is not counted. In a gevent worker the
-        measurement also counts other greenlets that ran while this job
-        waited on I/O, so it is exact for jobs that run alone and an upper
-        bound when jobs overlap.
+        such as the database server, is not counted. Worker and web
+        processes run on gevent, so the measurement also counts other
+        greenlets that ran while this job waited on I/O: other jobs in a
+        worker, and page requests too for a :class:`LocalAsyncJob` in the
+        web process. It is exact for jobs that run alone and an upper bound
+        otherwise.
     """
 
     __tablename__ = "async_job"

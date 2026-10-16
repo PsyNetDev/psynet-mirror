@@ -70,11 +70,13 @@ make the job cheaper or move its work into a `WorkerAsyncJob`.
 An **I/O-bound** job, such as an API call or an upload, mostly waits, so more
 cores do not help it.
 
-In a worker that runs several jobs at once, `cpu_time` also counts the other
-jobs that ran while this one waited on I/O. With a few bots in
-`psynet test local` the jobs mostly run alone, so the numbers are close to
-exact; under load they are an upper bound. Your computer may also be faster
-or slower than the server.
+While a job waits on I/O, its process runs other work, and `cpu_time` counts
+that too: other jobs in a worker, and page requests in the web process. With a
+few bots in `psynet test local`, `worker` jobs mostly run alone, so their
+numbers are close to exact; under load they are an upper bound. `web` jobs
+share the web process with the bots' page requests, so a `web` row that waits
+on I/O, such as an upload, can look CPU-heavy when it isn't. Your computer may
+also be faster or slower than the server.
 
 `cpu_time` counts only the job's own thread. CPU used by subprocesses (such as
 `ffmpeg`) or by library threads (such as NumPy's BLAS) is missing, so a job
