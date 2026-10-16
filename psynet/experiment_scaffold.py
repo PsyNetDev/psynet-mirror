@@ -380,19 +380,24 @@ def _remote_contains_commit(source: Path, commit: str, remote: str = "origin") -
     return _remote_advertises_commit(source, commit, remote=remote)
 
 
-def _psynet_direct_url_info() -> dict | None:
-    """Return PEP 610 ``direct_url.json`` metadata for the installed PsyNet.
+def _direct_url_info(package: str) -> dict | None:
+    """Return PEP 610 ``direct_url.json`` metadata for an installed package.
 
     Present only for direct installs (path, editable, or VCS); ``None`` when
-    PsyNet came from an index or is not installed.
+    the package came from an index or is not installed.
     """
     try:
-        direct_url = metadata.distribution("psynet").read_text("direct_url.json")
+        direct_url = metadata.distribution(package).read_text("direct_url.json")
     except metadata.PackageNotFoundError:
         return None
     if direct_url is None:
         return None
     return json.loads(direct_url)
+
+
+def _psynet_direct_url_info() -> dict | None:
+    """Return PEP 610 ``direct_url.json`` metadata for the installed PsyNet."""
+    return _direct_url_info("psynet")
 
 
 def _installed_psynet_file_path() -> Path | None:
@@ -516,7 +521,20 @@ def _optional_commit_psynet_requirement(source: Path) -> str | None:
 
 def get_editable_psynet_source() -> Path | None:
     """Return the source path when PsyNet is installed in editable mode."""
-    installation = _psynet_direct_url_info()
+    return _editable_source(_psynet_direct_url_info())
+
+
+def get_editable_source(package: str) -> Path | None:
+    """Return the source path when ``package`` is installed in editable mode.
+
+    Reads the ``direct_url.json`` that pip and uv record for every editable
+    install, so it does not depend on legacy ``.egg-link`` files.
+    """
+    return _editable_source(_direct_url_info(package))
+
+
+def _editable_source(installation: dict | None) -> Path | None:
+    """Return the local source path recorded by editable ``direct_url.json`` metadata."""
     if installation is None:
         return None
     if not installation.get("dir_info", {}).get("editable", False):

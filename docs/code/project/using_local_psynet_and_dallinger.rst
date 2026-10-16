@@ -42,6 +42,8 @@ This writes a Git URL for the checkout's current commit, using its
 the checkout are not included. Setup also installs PsyNet from that commit,
 replacing the editable install, so rerun
 ``psynet setup --psynet-source editable`` to resume local development.
+A commit is not a release, so ``psynet deploy ssh`` and
+``psynet deploy heroku`` ask you to confirm before launching it.
 :ref:`dependencies_updating_psynet` shows the format for pinning a branch or
 tag by hand.
 

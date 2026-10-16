@@ -130,12 +130,13 @@ def test_check_core_dependency_versions_release_pin_rejects_development_install(
         ("45f31768", False),
     ],
 )
+@pytest.mark.parametrize("repo", ["PsyNetDev/PsyNet", "alice/my-fork"])
 @patch("psynet.version.get_requirement_line_from_pip_freeze")
 def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
-    mock_get_requirement, pinned_commit, matches
+    mock_get_requirement, repo, pinned_commit, matches
 ):
     mock_get_requirement.return_value = (
-        "-e git+https://gitlab.com/PsyNetDev/PsyNet.git"
+        f"-e git+https://gitlab.com/{repo}.git"
         "@2da1cc662d0db5969a14f20f18a2e1834187ff8b#egg=psynet"
     )
 
@@ -143,7 +144,7 @@ def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
         with working_directory(dir):
             with open("requirements.txt", "w") as file:
                 file.write(
-                    "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git"
+                    f"psynet[experiment] @ git+https://gitlab.com/{repo}.git"
                     f"@{pinned_commit}"
                 )
 
