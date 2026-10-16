@@ -797,7 +797,7 @@ def _tolerate_missing_translation(namespace):
     Return whether a missing catalog entry should be downgraded to a warning.
 
     Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
-    so feature-branch test runs and debug sessions must not depend on them.
+    so feature-branch test runs and local debug sessions must not depend on them.
     Experiment catalogs are owned by the experiment author, so those keep
     failing loudly.
     """
@@ -835,8 +835,8 @@ def check_translation_is_available(message, context, locale, namespace):
             error_message += (
                 " The untranslated English text will be shown instead. "
                 f"Catalogs for the {namespace} package are refreshed on the release branch "
-                "with `psynet translate`, so tests and debug sessions do not require "
-                "them to be up to date."
+                "with `psynet translate`, so tests and local debug sessions do not "
+                "require them to be up to date."
             )
             logger.warning(error_message)
         else:
