@@ -482,7 +482,7 @@ def test_balanced_selection_ignores_failed_and_repeat_trials(db_session, partici
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_viable_trial_counts_do_not_read_trial_rows(db_session, participant):
+def test_viable_trial_counts_use_index_only_scan(db_session, participant):
     """Balanced selection counts trials per candidate node, so it must use an index."""
     trial_maker = static_trial_maker(target_trials_per_node=None)
     network = create_chain_network(
