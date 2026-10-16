@@ -348,6 +348,7 @@ def test_performance_test_ssh_has_no_json_output_option():
         performance_test__docker_ssh, ["--json-output", "results.json"]
     )
 
+    assert result.exit_code == 2
     assert "No such option '--json-output'" in result.output
 
 

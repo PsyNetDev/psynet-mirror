@@ -4873,12 +4873,7 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
     assert pre_launch_kwargs["docker"] is True
 
 
-@pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
-@pytest.mark.parametrize(
-    "app_args, expected",
-    [(["--app", "one"], ["one"]), (["one", "two"], ["one", "two"])],
-)
-def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, expected):
+def _patch_dallinger_destroy_ssh(monkeypatch):
     destroyed = []
 
     @click.command()
@@ -4890,6 +4885,24 @@ def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, exp
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
+    return destroyed
+
+
+def test_destroy_ssh_confirmation_names_the_app_and_server(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one"], input="n\n")
+    assert "Would you like to delete one from musix?" in result.output
+    assert destroyed == []
+
+
+@pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
+@pytest.mark.parametrize(
+    "app_args, expected",
+    [(["--app", "one"], ["one"]), (["one", "two"], ["one", "two"])],
+)
+def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, expected):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
     monkeypatch.setattr(
         click, "confirm", lambda *args, **kwargs: pytest.fail("--yes prompted")
     )
