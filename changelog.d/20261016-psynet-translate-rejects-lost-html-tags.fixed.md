@@ -1,1 +1,1 @@
-`psynet translate` now retries ChatGPT replies that are empty or that drop, add, or alter HTML markup, such as `<i>` becoming `<em>`, instead of saving them. A translation may still use a tag fewer times than the English text.
+`psynet translate` now retries ChatGPT replies that are empty or that drop or change an HTML tag, such as `<i>` becoming `<em>`, instead of saving them. A translation may still use a tag fewer times than the English text.
