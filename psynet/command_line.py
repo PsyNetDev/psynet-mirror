@@ -2544,10 +2544,7 @@ def _debug_ssh(
 
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment sets
-    ``performance_test_app`` and records the experiment's code key in
-    ``performance_test_code_key`` (see
-    :func:`psynet.perf_ssh.experiment_code_key`), and an update isn't
-    confirmed first.
+    ``performance_test_app``, and an update isn't confirmed first.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2573,12 +2570,7 @@ def _debug_ssh(
         )
         config_options = {}
         if performance_test_app:
-            from .perf_ssh import experiment_code_key
-
-            config_options = {
-                "performance_test_app": "true",
-                "performance_test_code_key": experiment_code_key(),
-            }
+            config_options = {"performance_test_app": "true"}
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -6028,23 +6020,10 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
         _stop_server(server_info)
 
 
-def _current_code_key():
-    """Return the experiment's code key, or ``None`` without a deploy.toml."""
-    from psynet.perf_ssh import experiment_code_key
-
-    try:
-        return experiment_code_key()
-    except ValueError:
-        return None
-
-
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app, and its recorded code key."""
+    """Return whether the running experiment is a performance-test app."""
     config = load_runtime_server_config()
-    return {
-        "performance_test_app": bool(config.get("performance_test_app", False)),
-        "performance_test_code_key": config.get("performance_test_code_key", None),
-    }
+    return {"performance_test_app": bool(config.get("performance_test_app", False))}
 
 
 @performance_test.command("app-info", hidden=True)
@@ -6232,12 +6211,11 @@ def performance_test__docker_ssh(
 
     If the server has no app named --app, this deploys one from this
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
-    a performance-test app, whose data is disposable. Later runs reuse it,
-    updating it first if the experiment's files, PsyNet or Dallinger have
-    changed; the update keeps its database. They refuse apps that this
-    command didn't deploy, or whose deploy didn't finish launching the
-    experiment. The app is kept after the run; destroy it with
-    ``psynet destroy ssh``.
+    a performance-test app, whose data is disposable. Later runs update it
+    in place from this directory before testing, keeping its database. They
+    refuse apps that this command didn't deploy, or whose deploy didn't
+    finish launching the experiment. The app is kept after the run; destroy
+    it with ``psynet destroy ssh``.
 
     The bots run inside the app's web container, while this computer runs
     the suite: it runs each test in the web container. With
@@ -6279,7 +6257,7 @@ def performance_test__docker_ssh(
 
 
 def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
-    """Deploy ``app`` for performance tests, or update it if the experiment has changed since.
+    """Deploy ``app`` for performance tests, or update it in place if it exists.
 
     ``deploy_options`` are the options of ``psynet debug ssh`` (see
     :func:`_debug_ssh`).
@@ -6298,34 +6276,21 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     """
     from dallinger.command_line.docker_ssh import get_apps
 
-    info = None
-    if app not in {entry.name for entry in get_apps(server)}:
-        print(f"▶ Deploying {app} on {server} for performance tests...")
-        _debug_ssh(
-            ctx, app=app, server=server, performance_test_app=True, **deploy_options
-        )
+    update = app in {entry.name for entry in get_apps(server)}
+    if update:
+        _require_performance_test_app(server, app)
+        print(f"▶ Updating {app} on {server}, keeping its database...")
     else:
-        info = _require_performance_test_app(server, app)
-        current_key = _current_code_key()
-        if current_key is not None and current_key == info["performance_test_code_key"]:
-            print(f"Using {app} on {server}, deployed for performance tests.")
-        else:
-            print(
-                f"▶ Updating {app} on {server}: the experiment's files, PsyNet or "
-                "Dallinger have changed since it was deployed. The update keeps its "
-                "database."
-            )
-            _debug_ssh(
-                ctx,
-                app=app,
-                server=server,
-                update=True,
-                performance_test_app=True,
-                **deploy_options,
-            )
-            info = None
-    if info is None:
-        info = _require_performance_test_app(server, app)
+        print(f"▶ Deploying {app} on {server} for performance tests...")
+    _debug_ssh(
+        ctx,
+        app=app,
+        server=server,
+        update=update,
+        performance_test_app=True,
+        **deploy_options,
+    )
+    info = _require_performance_test_app(server, app)
     if "experiment" not in info:
         raise click.ClickException(
             f"Could not load the experiment in {app}'s web container; see the "

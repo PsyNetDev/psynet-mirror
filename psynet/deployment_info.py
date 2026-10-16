@@ -190,23 +190,6 @@ def _git_ignored_deployment_paths(extra_excludes_file=None):
     return tuple(path for path in result.stdout.split("\0") if path)
 
 
-def authored_deployment_files():
-    """Return ``(destination, source)`` for each deployed file that Git doesn't ignore.
-
-    Git-ignored files, such as boilerplate that PsyNet generates, are left
-    out. Returns ``None`` if the experiment has no ``deploy.toml``.
-    """
-    plan = _deployment_plan()
-    if plan is None:
-        return None
-    ignored = set(_git_ignored_deployment_paths() or ())
-    return sorted(
-        (entry.destination, entry.source)
-        for entry in plan.entries
-        if entry.destination not in ignored
-    )
-
-
 def _get_git_provenance():
     """Return the current commit SHA and deployment-scoped dirty state."""
     commit_sha = _git_output("rev-parse", "HEAD")
