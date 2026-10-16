@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import uuid
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -2538,13 +2539,14 @@ def _debug_ssh(
     use_local_dallinger=False,
     update=False,
     assume_yes=False,
-    performance_test_app=False,
+    performance_test_deploy_id=None,
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
-    With ``performance_test_app``, the app is one that ``psynet
+    With ``performance_test_deploy_id``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment sets
-    ``performance_test_app``, and an update isn't confirmed first.
+    ``performance_test_app`` and records the ID in
+    ``performance_test_deploy_id``, and an update isn't confirmed first.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2566,11 +2568,14 @@ def _debug_ssh(
             update=update,
             local_packages=local_packages,
             assume_yes=assume_yes,
-            confirm_update=not performance_test_app,
+            confirm_update=performance_test_deploy_id is None,
         )
         config_options = {}
-        if performance_test_app:
-            config_options = {"performance_test_app": "true"}
+        if performance_test_deploy_id is not None:
+            config_options = {
+                "performance_test_app": "true",
+                "performance_test_deploy_id": performance_test_deploy_id,
+            }
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -6021,9 +6026,12 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
 
 
 def _performance_test_app_info():
-    """Return whether the running experiment is a performance-test app."""
+    """Return whether the running experiment is a performance-test app, and the ID of its last deploy."""
     config = load_runtime_server_config()
-    return {"performance_test_app": bool(config.get("performance_test_app", False))}
+    return {
+        "performance_test_app": bool(config.get("performance_test_app", False)),
+        "performance_test_deploy_id": config.get("performance_test_deploy_id", None),
+    }
 
 
 @performance_test.command("app-info", hidden=True)
@@ -6251,6 +6259,9 @@ def performance_test__docker_ssh(
     if exists:
         # Before the try, so that an app this command didn't deploy is never destroyed.
         _require_performance_test_app(server, app)
+    deploy_id = uuid.uuid4().hex
+    # Files left by someone else's failed deploy are never destroyed.
+    had_files = exists or _ssh_app_files_exist(server, app)
     deployed = exists
     try:
         experiment = _prepare_performance_test_app(
@@ -6258,6 +6269,7 @@ def performance_test__docker_ssh(
             app,
             server=server,
             update=exists,
+            deploy_id=deploy_id,
             dns_host=dns_host,
             ingress=ingress,
             use_local_dallinger=use_local_dallinger,
@@ -6275,36 +6287,44 @@ def performance_test__docker_ssh(
             **options,
         )
     finally:
-        if keep_app:
-            print(
-                f"{app} is kept on {server}. Destroy it when you're done with:\n"
-                f"    psynet destroy ssh --server {server} --app {app}"
-            )
-        elif deployed or _failed_deploy_left_performance_test_app(server, app):
-            _destroy_performance_test_app(ctx, server, app)
+        if deployed or _failed_deploy_left_app(server, app, deploy_id, had_files):
+            if keep_app:
+                print(
+                    f"{app} is kept on {server}. Destroy it when you're done with:\n"
+                    f"    psynet destroy ssh --server {server} --app {app}"
+                )
+            else:
+                _destroy_performance_test_app(ctx, server, app)
 
 
-def _failed_deploy_left_performance_test_app(server, app):
-    """Return whether ``app`` is on ``server`` with the ``performance_test_app`` mark, after its deploy failed.
+def _ssh_app_files_exist(server, app):
+    """Return whether ``~/dallinger/<app>`` exists on ``server``."""
+    return bool(
+        _ssh_executor(server).run(
+            f"test -e ~/dallinger/{shlex.quote(app)} && echo Yes", raise_=False
+        )
+    )
 
-    The deploy may have failed before creating anything, or because another
-    app of that name appeared after the command checked, so an app is only
-    destroyed if its own config has the mark.
+
+def _failed_deploy_left_app(server, app, deploy_id, had_files):
+    """Return whether the failed first deploy ``deploy_id`` of ``app`` left anything of its own on ``server``.
+
+    A listed app is this deploy's only if its config records ``deploy_id``:
+    the deploy may have failed because another app of that name appeared,
+    even one that another ``performance-test ssh`` deployed. An app that
+    isn't listed may still have left files, such as a Cloudflare tunnel, if
+    ``had_files`` says there were none before.
     """
     from dallinger.command_line.docker_ssh import get_apps
 
     try:
         if app not in {entry.name for entry in get_apps(server)}:
-            return False
-        if _remote_performance_test_app_info(server, app).get("performance_test_app"):
+            return not had_files and _ssh_app_files_exist(server, app)
+        info = _remote_performance_test_app_info(server, app)
+        if info.get("performance_test_deploy_id") == deploy_id:
             return True
     except Exception as e:
-        logger.warning(
-            "Could not check whether %s on %s is a performance-test app: %r",
-            app,
-            server,
-            e,
-        )
+        logger.warning("Could not check what the failed deploy of %s left: %r", app, e)
     print(
         f"Not destroying {app} on {server}: could not confirm that this run "
         "deployed it. If it did, destroy it with:\n"
@@ -6313,11 +6333,13 @@ def _failed_deploy_left_performance_test_app(server, app):
     return False
 
 
-def _prepare_performance_test_app(ctx, app, *, server, update, **deploy_options):
+def _prepare_performance_test_app(
+    ctx, app, *, server, update, deploy_id, **deploy_options
+):
     """Deploy ``app`` for performance tests, or with ``update``, update it in place.
 
-    ``deploy_options`` are the options of ``psynet debug ssh`` (see
-    :func:`_debug_ssh`).
+    The app's config records ``deploy_id``. ``deploy_options`` are the
+    options of ``psynet debug ssh`` (see :func:`_debug_ssh`).
 
     Returns
     -------
@@ -6339,7 +6361,7 @@ def _prepare_performance_test_app(ctx, app, *, server, update, **deploy_options)
         app=app,
         server=server,
         update=update,
-        performance_test_app=True,
+        performance_test_deploy_id=deploy_id,
         **deploy_options,
     )
     info = _require_performance_test_app(server, app)

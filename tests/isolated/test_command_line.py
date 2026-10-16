@@ -1288,11 +1288,20 @@ def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
 
 
 def _invoke_performance_test_ssh(
-    args, *, apps, app_info, run_error=None, deploy_error=None, apps_later=None
+    args,
+    *,
+    apps,
+    app_info,
+    run_error=None,
+    deploy_error=None,
+    apps_later=None,
+    files=(False, False),
 ):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
     Later listings of the server's apps return ``apps_later``, if given.
+    ``files`` says whether ``~/dallinger/my-app`` exists before and after
+    the deploy. The run's deploy ID is ``"run-1"``.
     """
     from types import SimpleNamespace
 
@@ -1309,6 +1318,8 @@ def _invoke_performance_test_ssh(
             side_effect=[[SimpleNamespace(name=a) for a in x] for x in listings],
         ),
         patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._ssh_app_files_exist", side_effect=files),
+        patch("psynet.command_line.uuid.uuid4", return_value=Mock(hex="run-1")),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
         patch("psynet.command_line._debug_ssh", side_effect=deploy_error) as deploy,
@@ -1323,7 +1334,11 @@ def _invoke_performance_test_ssh(
     return result, deploy, run, destroy
 
 
-_MARKED = {"performance_test_app": True, "experiment": {"label": "Test"}}
+_MARKED = {
+    "performance_test_app": True,
+    "performance_test_deploy_id": "run-1",
+    "experiment": {"label": "Test"},
+}
 
 
 @pytest.mark.parametrize(
@@ -1350,7 +1365,7 @@ def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
     assert deploy.call_args.kwargs == {
         "app": "my-app",
         "server": "server",
-        "performance_test_app": True,
+        "performance_test_deploy_id": "run-1",
         "dns_host": None,
         "ingress": None,
         "use_local_dallinger": False,
@@ -1376,22 +1391,47 @@ def test_performance_test_ssh_destroys_the_app_after_a_failed_run():
     assert destroy.call_args.kwargs == {"app": "my-app", "server": "server"}
 
 
+_OTHER_RUN = {**_MARKED, "performance_test_deploy_id": "run-2"}
+
+
 @pytest.mark.parametrize(
-    "apps_later, app_info, destroyed",
+    "args, apps_later, files, app_info, destroyed, message",
     [
-        ([], _MARKED, False),
-        (["my-app"], {"performance_test_app": False}, False),
-        (["my-app"], {**_MARKED, "launched": False}, True),
+        ([], [], (False, False), _MARKED, False, None),
+        ([], [], (False, True), _MARKED, True, None),
+        ([], [], (True, True), _MARKED, False, None),
+        (
+            [],
+            ["my-app"],
+            (False, True),
+            {"performance_test_app": False},
+            False,
+            "Not destroying",
+        ),
+        ([], ["my-app"], (False, True), _OTHER_RUN, False, "Not destroying"),
+        ([], ["my-app"], (False, True), {**_MARKED, "launched": False}, True, None),
+        (["--keep-app"], [], (False, False), _MARKED, False, None),
+        (["--keep-app"], [], (False, True), _MARKED, False, "is kept"),
     ],
-    ids=["nothing-deployed", "another-app-appeared", "partly-deployed"],
+    ids=[
+        "nothing-deployed",
+        "unlisted-files-left",
+        "files-from-before",
+        "another-app-appeared",
+        "another-run-deployed-it",
+        "partly-deployed",
+        "keep-nothing",
+        "keep-what-was-left",
+    ],
 )
-def test_performance_test_ssh_only_destroys_a_failed_deploy_with_the_mark(
-    apps_later, app_info, destroyed
+def test_performance_test_ssh_only_cleans_up_what_its_failed_deploy_left(
+    args, apps_later, files, app_info, destroyed, message
 ):
     result, _, _, destroy = _invoke_performance_test_ssh(
-        [],
+        args,
         apps=[],
         apps_later=apps_later,
+        files=files,
         app_info=app_info,
         deploy_error=click.ClickException("deploy failed"),
     )
@@ -1399,9 +1439,8 @@ def test_performance_test_ssh_only_destroys_a_failed_deploy_with_the_mark(
     assert result.exit_code == 1
     assert "deploy failed" in result.output
     assert destroy.called == destroyed
-    assert ("Not destroying my-app" in result.output) == (
-        bool(apps_later) and not destroyed
-    )
+    for text in ("Not destroying", "is kept"):
+        assert (text in result.output) == (text == message)
 
 
 @pytest.mark.parametrize(
@@ -1450,11 +1489,12 @@ def test_performance_test_deploys_mark_the_app():
             server="server",
             dns_host=None,
             update=True,
-            performance_test_app=True,
+            performance_test_deploy_id="run-1",
         )
 
     assert ctx.invoke.call_args.kwargs["config_options"] == {
-        "performance_test_app": "true"
+        "performance_test_app": "true",
+        "performance_test_deploy_id": "run-1",
     }
     assert pre_launch.call_args.kwargs["confirm_update"] is False
 
