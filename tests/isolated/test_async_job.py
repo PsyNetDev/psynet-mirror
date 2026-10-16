@@ -18,6 +18,7 @@ from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
 from psynet.trial.main import Trial
+from psynet.utils import get_authenticated_session
 
 
 def do_nothing():
@@ -100,14 +101,26 @@ class TestAsyncJobs2:
         assert abs(job.time_taken - 1) < 0.5
         assert job.cpu_time < 0.2
 
-    def test_cpu_bound_job_records_cpu_time(self):
+    def test_cpu_bound_job_records_cpu_time(self, launched_experiment):
         job = LocalAsyncJob(busy_for, {"seconds": 0.3}).enqueue()
         db.session.commit()
-        time.sleep(1)
-        db.session.commit()
+        for _ in range(50):
+            time.sleep(0.1)
+            db.session.commit()
+            if job.finished:
+                break
 
         assert job.finished
         assert 0.3 <= job.cpu_time <= job.time_taken
+
+        base_url = launched_experiment.base_url
+        response = get_authenticated_session(base_url).get(
+            base_url + "/async_job_cpu_time"
+        )
+        response.raise_for_status()
+        row = next(row for row in response.json() if row["label"] == "busy_for")
+        assert row["runs_in"] == "web"
+        assert row["mean_cpu"] >= 0.3
 
     def test_invalid_function(self):
         def local_function():
@@ -436,6 +449,34 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
         WorkerAsyncJob.call_function(job_id)
         job = WorkerAsyncJob.query.get(job_id)
         assert not job.finished and not job.pending
+
+
+def time_out_own_job_then_raise():
+    job = WorkerAsyncJob.query.filter_by(label="times_out_while_running").one()
+    job.fail("Async job timed out")
+    db.session.commit()
+    raise RuntimeError("Interrupted by the timeout.")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_job_failing_after_the_clock_timed_it_out_keeps_the_timeout(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    job = WorkerAsyncJob(
+        time_out_own_job_then_raise, label="times_out_while_running"
+    ).enqueue()
+    db.session.commit()
+    job_id = job.id
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = WorkerAsyncJob.query.get(job_id)
+    assert job.failed_reason == "Async job timed out" and not job.pending
 
 
 @pytest.mark.parametrize(
