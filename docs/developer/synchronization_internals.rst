@@ -55,6 +55,9 @@ row:
 - Re-electing a leader picks only a member whose row is free, because the
   foreign-key check on ``leader_id`` locks the new leader's row.
 - Barrier checks lock waiters with ``NOWAIT`` and defer if one is busy.
+- Joining an open group (``join_existing_groups=True``) locks the group row
+  with ``SKIP LOCKED`` and re-counts its members under that lock; a busy
+  group is skipped for the next candidate.
 
 Two members failing at the same moment therefore no longer deadlock: each
 fails itself and whoever else is free, and the poller completes the rest.
