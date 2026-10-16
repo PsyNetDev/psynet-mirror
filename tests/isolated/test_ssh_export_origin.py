@@ -58,6 +58,28 @@ def test_ssh_export_uses_the_newest_public_origin(tmp_path, monkeypatch):
     assert endpoint.auth == ("admin", "deploy-secret")
 
 
+def test_ssh_export_uses_launch_credentials_without_local_config(tmp_path, monkeypatch):
+    class NoCredentials:
+        def get(self, key, *default):
+            if default:
+                return default[0]
+            raise KeyError(key)
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    launch = {
+        "app": "rrpsy",
+        "server": "rr-pc01.example",
+        "dashboard_user": "admin",
+        "dashboard_password": "deploy-secret",
+        "public_origin": "https://rrpsy.example",
+    }
+    _write_launch(tmp_path, "only", launch, 10)
+
+    endpoint = _ssh_dashboard_endpoint("rrpsy", "rr-pc01.example", NoCredentials())
+
+    assert endpoint.auth == ("admin", "deploy-secret")
+
+
 def test_ssh_export_reads_the_server_manifest_when_launch_info_is_missing(
     tmp_path, monkeypatch
 ):

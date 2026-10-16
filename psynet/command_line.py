@@ -3314,14 +3314,21 @@ def _ssh_dashboard_endpoint(app, server, config):
 
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
-    fallback when that note is missing.
+    fallback when that note is missing. The note's dashboard credentials take
+    precedence over the local config, which may lack them, for example when
+    ``psynet destroy ssh`` runs outside the experiment directory.
+
+    Raises
+    ------
+    KeyError
+        If neither the note nor the config has dashboard credentials.
     """
     from .export.client import DashboardEndpoint
 
     record = _latest_launch_record(app, server)
     origin = None
-    user = config.get("dashboard_user")
-    password = config.get("dashboard_password")
+    user = config.get("dashboard_user", None)
+    password = config.get("dashboard_password", None)
     if record:
         origin = _normalize_public_origin(record.get("public_origin"))
         record_user = record.get("dashboard_user")
@@ -3329,6 +3336,8 @@ def _ssh_dashboard_endpoint(app, server, config):
         if record_user and record_password:
             user = record_user
             password = record_password
+    if not (user and password):
+        raise KeyError("dashboard_user and dashboard_password")
     if origin is None:
         origin = _remote_public_origin(app, server)
     if origin is None:
@@ -3806,6 +3815,7 @@ def user_confirms(question, default=False):
 
 
 def _stdin_is_interactive():
+    """Return whether stdin is a terminal, so the user can answer a prompt."""
     return sys.stdin.isatty()
 
 
