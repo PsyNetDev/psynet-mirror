@@ -118,10 +118,10 @@ class TestCommandLine(object):
 
         Path("Dockerfile").write_text("FROM python\n")
         with pytest.raises(click.UsageError, match="psynet scripts update"):
-            with command_line._local_image_packages(local_packages):
-                pass
+            command_line._check_local_image_packages(local_packages)
 
         Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
+        command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
             assert Path("local-image-pins.txt").read_text() == (
