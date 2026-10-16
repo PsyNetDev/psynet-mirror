@@ -10,6 +10,7 @@ import pytest
 from psynet.translation import translators
 from psynet.translation.translate import (
     MAX_BATCH_SIZE,
+    _save_po,
     batch_untranslated,
     reuse_translations,
     translate_po,
@@ -31,6 +32,8 @@ from psynet.translation.translators import (
 
 class CountingTranslator(Translator):
     """A translator that records its calls instead of contacting a provider."""
+
+    use_codebook = False
 
     def __init__(self, failures=0, drop_variables=0):
         self.failures = failures
@@ -79,6 +82,26 @@ def test_translation_that_drops_a_variable_is_retried():
     assert translator.attempts == [0, 1]
 
 
+def test_custom_translators_keep_automatic_placeholder_protection():
+    class CustomTranslator(Translator):
+        def _translate_texts(
+            self, texts, source_lang, target_lang, context=None, attempt=0
+        ):
+            self.received = texts
+            return [text.replace("Hello", "Bonjour") for text in texts]
+
+    translator = CustomTranslator()
+
+    result = translator.translate(
+        texts=['<a title="x > y">Hello {NAME}</a>'],
+        source_lang="en",
+        target_lang="fr",
+    )
+
+    assert translator.received == ["■0■Hello ■1■■2■"]
+    assert result == ['<a title="x > y">Bonjour {NAME}</a>']
+
+
 @pytest.mark.parametrize(
     "text, translation, valid",
     [
@@ -86,6 +109,20 @@ def test_translation_that_drops_a_variable_is_retried():
         ("<I>Agreement</I> of the <I>Data</I>", "<I>Datenvereinbarung</I>", True),
         ("<i>audiovisual</i> recordings", "audiovisuelle Aufnahmen", False),
         ("<i>audiovisual</i> recordings", "<em>audiovisuelle</em> Aufnahmen", False),
+        (
+            '<a href="/consent">Consent</a>',
+            '<a href="/withdraw">Einwilligung</a>',
+            False,
+        ),
+        (
+            '<a title="x > y" href="/consent">Consent</a>',
+            '<a title="x > y" href="/withdraw">Einwilligung</a>',
+            False,
+        ),
+        ("<i><b>Important</b></i>", "<i><b>Wichtig</i></b>", False),
+        ("<i>One</i>", "<i>Eins</i><i>Zwei</i>", False),
+        ("1 < x > 0", "1 < x > 0", True),
+        ("Save <filename>", "Enregistrer <filename>", True),
         ("Hello", " ", False),
     ],
 )
@@ -150,6 +187,36 @@ def test_oversized_source_blocks_are_cut_not_dropped(tmp_path):
     assert '_p("lucid", "Save")' in context
     assert '_p("lucid", "Cancel")' in context
     assert len(context) <= MAX_SOURCE_CONTEXT_CHARS + 2
+
+
+def test_nearby_source_lines_are_not_lost_when_their_context_windows_overlap(
+    tmp_path,
+):
+    source = tmp_path / "recruiters.py"
+    lines = ["#" * 2_000] * 2_000
+    lines[999] = '_p("lucid", "Save")'
+    lines[1_015] = '_p("lucid", "Cancel")'
+    source.write_text("\n".join(lines), encoding="utf-8")
+
+    context = source_context_for_prompt(str(source), [1_000, 1_016])
+
+    assert '_p("lucid", "Save")' in context
+    assert '_p("lucid", "Cancel")' in context
+    assert len(context) <= MAX_SOURCE_CONTEXT_CHARS
+    assert source_context_for_prompt(str(source), [-1, 0, 2_001]) == ""
+
+
+def test_source_context_crops_around_text_on_an_oversized_target_line(tmp_path):
+    source = tmp_path / "recruiters.py"
+    lines = ["# padding"] * 2_000
+    lines[998] = 'unrelated = "Save"'
+    lines[999] = "#" * 30_000 + 'TARGET = _p("lucid", "Save")'
+    source.write_text("\n".join(lines), encoding="utf-8")
+
+    context = source_context_for_prompt(str(source), [1_000], ["Save"])
+
+    assert 'TARGET = _p("lucid", "Save")' in context
+    assert len(context) <= MAX_SOURCE_CONTEXT_CHARS
 
 
 def test_system_prompt_asks_to_translate_ui_labels():
@@ -239,6 +306,43 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
     assert "openai_default_temperature is ignored" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("model", ["gpt-4o", "chatgpt-4o-latest", "ft:gpt-4o-custom"])
+def test_gpt_4o_request_stays_within_its_completion_token_limit(monkeypatch, model):
+    requests = []
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(
+            OpenAI=lambda api_key: client,
+            BadRequestError=type("BadRequestError", (Exception,), {}),
+        ),
+    )
+    monkeypatch.setattr(
+        translators,
+        "get_config",
+        lambda: {
+            "openai_api_key": "key",
+            "openai_default_model": model,
+            "openai_default_temperature": "0",
+        },
+    )
+
+    ChatGptTranslator().translate(["a" * 5_000], "en", "fr")
+
+    assert requests[0]["max_completion_tokens"] <= 16_000
+
+
 def test_removed_google_translator_has_a_clear_error():
     with pytest.raises(ValueError, match="no longer supports Google Translate"):
         get_translator_from_name("google_translate")
@@ -282,6 +386,39 @@ def test_finished_batches_are_saved_when_a_later_batch_fails(tmp_path):
 
     saved = {entry.msgid: entry.msgstr for entry in polib.pofile(str(po_path))}
     assert saved == {"Hello": "Hello-fr", "Goodbye": ""}
+
+
+def test_saving_a_catalog_is_atomic(tmp_path, monkeypatch):
+    po_path = tmp_path / "experiment.po"
+    po_path.write_text("original catalog", encoding="utf-8")
+    po = polib.POFile()
+    po.append(_entry("Hello", "a.py", 1, msgstr="Bonjour"))
+
+    def fail_during_save(self, path):
+        with open(path, "w", encoding="utf-8") as file:
+            file.write("partial catalog")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(polib.POFile, "save", fail_during_save)
+
+    with pytest.raises(OSError, match="disk full"):
+        _save_po(po, str(po_path))
+
+    assert po_path.read_text(encoding="utf-8") == "original catalog"
+
+
+def test_saving_a_catalog_preserves_symlinks(tmp_path):
+    target_path = tmp_path / "catalog-target.po"
+    target_path.write_text("original catalog", encoding="utf-8")
+    po_path = tmp_path / "experiment.po"
+    po_path.symlink_to(target_path)
+    po = polib.POFile()
+    po.append(_entry("Hello", "a.py", 1, msgstr="Bonjour"))
+
+    _save_po(po, str(po_path))
+
+    assert po_path.is_symlink()
+    assert polib.pofile(str(target_path))[0].msgstr == "Bonjour"
 
 
 class RecordingTranslator(Translator):
