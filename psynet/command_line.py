@@ -1352,10 +1352,10 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 ##############
 def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
-    if not local_:
-        confirm_deploying_development_psynet()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
+    if not local_:
+        confirm_deploying_development_psynet()
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -2281,6 +2281,8 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
     from dallinger.utils import get_editable_dallinger_path
 
+    from .experiment_scaffold import get_editable_source
+
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
             subprocess.run(
@@ -2341,7 +2343,11 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    dallinger_is_editable = get_editable_dallinger_path() is not None
+    # Dallinger 12.4 and older only detect legacy .egg-link editable installs.
+    dallinger_is_editable = (
+        get_editable_source("dallinger") is not None
+        or get_editable_dallinger_path() is not None
+    )
     if dallinger_is_editable:
         _prepare(
             dallinger_version,
