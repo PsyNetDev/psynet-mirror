@@ -492,11 +492,11 @@ class DatabaseReset:
     database if asked, waits for async jobs to finish, and takes the snapshot
     with ``CREATE DATABASE ... TEMPLATE``, a file-level copy that keeps
     sequences, indexes and table bloat. Every later call drops the database
-    and creates it again from the snapshot. :meth:`close` drops the snapshot
-    and, with ``restore_at_end``, first restores the database to how the run
-    found it, so that the next run on a kept app starts from the same data.
-    When pre-filling with ``restore_at_end``, the first call also copies the
-    database before the pre-fill, which is what :meth:`close` restores then.
+    and creates it again from the snapshot. :meth:`close` restores the
+    database to how the run found it, so that every run starts from the same
+    data, and drops the snapshot. When pre-filling, the first call also
+    copies the database before the pre-fill, and :meth:`close` restores that
+    copy.
 
     PostgreSQL only copies or drops a database that nobody is connected to,
     so each call stops the app's server processes (:meth:`RemoteApp.stop`),
@@ -514,9 +514,6 @@ class DatabaseReset:
     prefill_participants : int, optional
         Bots to run through the experiment before the snapshot is taken, so
         that every test starts with their data.
-    restore_at_end : bool
-        Whether :meth:`close` restores the database. Not needed when the app
-        is destroyed after the run.
 
     Raises
     ------
@@ -525,9 +522,8 @@ class DatabaseReset:
         container's database isn't the app's own.
     """
 
-    def __init__(self, remote, prefill_participants=None, restore_at_end=True):
+    def __init__(self, remote, prefill_participants=None):
         self.remote = remote
-        self._restore_at_end = restore_at_end
         self.database = remote.app
         # The first check that the database may be reset, before anything changes.
         remote.prepare()
@@ -545,7 +541,7 @@ class DatabaseReset:
         self.snapshot_rows = None
         # Every copy, named before it is made, so that close() drops interrupted ones.
         self._copies = []
-        # With restore_at_end, the complete copy of the database as the run found it.
+        # The complete copy of the database as the run found it.
         self._original = None
 
     def __call__(self):
@@ -560,7 +556,7 @@ class DatabaseReset:
             logger.info(f"Resetting the database to {self.snapshot}...")
             self._restore(self.snapshot)
             return
-        if self._prefill_participants and self._restore_at_end:
+        if self._prefill_participants:
             # The copy clears the job queues, which would orphan unfinished jobs.
             self._check_no_async_jobs_waiting(
                 self.remote.prepare(async_timeout_s=_ASYNC_DRAIN_TIMEOUT_S),
@@ -579,8 +575,7 @@ class DatabaseReset:
         logger.info("")
         logger.info("Taking a snapshot of the database...")
         self.snapshot = self._take_copy("snapshot")
-        if self._restore_at_end:
-            self._original = self._original or self.snapshot
+        self._original = self._original or self.snapshot
 
         from psynet.perf_test.measure import database_rows
 
@@ -593,8 +588,7 @@ class DatabaseReset:
                 warning(
                     f"The database already held {n_participants:,} "
                     "participants when the snapshot was taken, for example "
-                    "from earlier tests on an app kept with --keep-app, manual "
-                    "testing or a run that couldn't restore it, so "
+                    "from manual testing or a run that couldn't restore it, so "
                     "every test starts from that data rather than from a fresh "
                     "database. To start fresh, destroy the app with 'psynet "
                     f"destroy ssh --server {self.remote.server} --app "
@@ -615,7 +609,7 @@ class DatabaseReset:
             )
 
     def close(self):
-        """Restore the database to how the run found it if ``restore_at_end``, then drop the copies.
+        """Restore the database to how the run found it, then drop the copies.
 
         The app's server processes stay stopped afterwards, for
         :meth:`RemoteApp.start_stopped_services` to start. A copy that can't
@@ -632,7 +626,7 @@ class DatabaseReset:
 
         kept = None
         restore_error = None
-        if self._original is not None and self._restore_at_end:
+        if self._original is not None:
             logger.info("")
             logger.info("Restoring the database to how it was before the run...")
             try:

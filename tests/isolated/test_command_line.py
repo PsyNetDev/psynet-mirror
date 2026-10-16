@@ -1287,52 +1287,12 @@ def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
     executor.assert_not_called()
 
 
-_MARKED = {"performance_test_app": True, "experiment": {"label": "Test"}}
-
-
-def _invoke_performance_test_ssh(
-    args,
-    *,
-    before=None,
-    after="run-1",
-    app_info=_MARKED,
-    deploy_error=None,
-    run_error=None,
-    check_error=None,
-):
-    """Invoke ``performance-test ssh`` for ``my-app`` on a fake server whose web containers report ``app_info``.
-
-    ``before`` and ``after`` say what the server has of ``my-app`` before and
-    after this run's deploy: ``None`` for nothing, ``"files"`` for files
-    without a compose file, or else the deploy ID that its compose file
-    records. This run's deploy ID is ``"run-1"``. ``check_error`` is raised
-    when the command checks which app is its own.
-    """
+def _invoke_performance_test_ssh(args, *, apps, app_info):
+    """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``."""
     from types import SimpleNamespace
 
     from psynet.command_line import performance_test
 
-    state = {"app": before}
-
-    def run(cmd, raise_=True):
-        app = state["app"]
-        has_compose = app not in (None, "files")
-        if "grep -qF" in cmd:
-            if check_error:
-                raise check_error
-            return "Yes" if has_compose and f'"{app}"' in cmd else ""
-        if "test -e" in cmd and "docker-compose.yml" in cmd:
-            return "Yes" if has_compose else ""
-        if "test -e" in cmd:
-            return "Yes" if app is not None else ""
-        return ""
-
-    def deploy(*args, **kwargs):
-        state["app"] = after
-        if deploy_error:
-            raise deploy_error
-
-    listed = before not in (None, "files")
     with (
         patch(
             "dallinger.command_line.docker_ssh.get_configured_hosts",
@@ -1340,50 +1300,46 @@ def _invoke_performance_test_ssh(
         ),
         patch(
             "dallinger.command_line.docker_ssh.get_apps",
-            return_value=[SimpleNamespace(name="my-app")] if listed else [],
+            return_value=[SimpleNamespace(name=app) for app in apps],
         ),
-        patch(
-            "psynet.command_line._ssh_executor",
-            return_value=Mock(run=Mock(side_effect=run)),
-        ),
-        patch("psynet.command_line.uuid.uuid4", return_value=Mock(hex="run-1")),
+        patch("psynet.command_line._ssh_executor"),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
-        patch("psynet.command_line._debug_ssh", side_effect=deploy) as deploy_mock,
-        patch(
-            "psynet.command_line._run_ssh_performance_test", side_effect=run_error
-        ) as run_mock,
-        patch("dallinger.command_line.docker_ssh.destroy") as destroy,
+        patch("psynet.command_line._debug_ssh") as deploy,
+        patch("psynet.command_line._run_ssh_performance_test") as run,
     ):
         result = CliRunner().invoke(
             performance_test.commands["ssh"], ["--app", "my-app", *args]
         )
-    return result, deploy_mock, run_mock, destroy
+    return result, deploy, run
+
+
+_MARKED = {"performance_test_app": True, "experiment": {"label": "Test"}}
 
 
 @pytest.mark.parametrize(
-    "args, before, deployed",
+    "args, apps, deployed",
     [
-        ([], None, {"update": False}),
-        (["--yes"], None, {"update": False, "assume_yes": True}),
-        ([], "run-0", {"update": True}),
-        (["--keep-app"], None, {"update": False}),
+        ([], [], {"update": False}),
+        (["--yes"], [], {"update": False, "assume_yes": True}),
+        ([], ["my-app"], {"update": True}),
     ],
     ids=[
         "deploys-a-missing-app",
         "passes-yes-to-the-deploy",
         "updates-an-existing-app",
-        "keeps-the-app",
     ],
 )
-def test_performance_test_ssh_manages_its_own_app(args, before, deployed):
-    result, deploy, run, destroy = _invoke_performance_test_ssh(args, before=before)
+def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
+    result, deploy, run = _invoke_performance_test_ssh(
+        args, apps=apps, app_info=_MARKED
+    )
 
     assert result.exit_code == 0, result.output
     assert deploy.call_args.kwargs == {
         "app": "my-app",
         "server": "server",
-        "performance_test_deploy_id": "run-1",
+        "performance_test_app": True,
         "dns_host": None,
         "ingress": None,
         "use_local_dallinger": False,
@@ -1391,136 +1347,43 @@ def test_performance_test_ssh_manages_its_own_app(args, before, deployed):
         **deployed,
     }
     assert run.call_args.args[2] == {"label": "Test"}
-    assert run.call_args.kwargs["keep_app"] == ("--keep-app" in args)
-    if "--keep-app" in args:
-        destroy.assert_not_called()
-        assert "psynet destroy ssh --server server --app my-app" in result.output
-    else:
-        assert destroy.call_args.kwargs == {"app": "my-app", "server": "server"}
+    assert "psynet destroy ssh --server server --app my-app" in result.output
 
 
-@pytest.mark.parametrize(
-    "args, before, after, failure, destroyed, message",
-    [
-        ([], None, None, "deploy", False, None),
-        ([], None, "files", "deploy", True, None),
-        ([], "files", "files", "deploy", False, "Leaving"),
-        ([], None, "run-2", "deploy", False, "Leaving"),
-        ([], None, "run-1", "deploy", True, None),
-        ([], None, "run-1", "run", True, None),
-        ([], "run-0", "run-0", "deploy", False, "Leaving"),
-        ([], "run-0", "run-2", "run", False, "Leaving"),
-        (["--keep-app"], None, None, "deploy", False, None),
-        (["--keep-app"], None, "files", "deploy", False, "is kept"),
-    ],
-    ids=[
-        "nothing-deployed",
-        "files-left",
-        "files-from-before",
-        "another-app-appeared",
-        "partly-deployed",
-        "failed-run",
-        "update-never-reached-the-server",
-        "replaced-during-the-run",
-        "keep-nothing",
-        "keep-what-was-left",
-    ],
-)
-def test_performance_test_ssh_only_destroys_what_this_run_left(
-    args, before, after, failure, destroyed, message
-):
-    error = click.ClickException(f"{failure} failed")
-    result, _, _, destroy = _invoke_performance_test_ssh(
-        args,
-        before=before,
-        after=after,
-        deploy_error=error if failure == "deploy" else None,
-        run_error=error if failure == "run" else None,
+@pytest.mark.parametrize("args", [[], ["--reset-database"]])
+def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
+    result, deploy, run = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info={"performance_test_app": False}
     )
 
     assert result.exit_code == 1
-    assert f"{failure} failed" in result.output
-    assert destroy.called == destroyed
-    for text in ("Leaving", "is kept"):
-        assert (text in result.output) == (text == message)
-
-
-@pytest.mark.parametrize("interrupted", ["run", "check"])
-def test_performance_test_ssh_cleans_up_after_ctrl_c(interrupted):
-    result, _, _, destroy = _invoke_performance_test_ssh(
-        [],
-        run_error=KeyboardInterrupt() if interrupted == "run" else None,
-        check_error=KeyboardInterrupt() if interrupted == "check" else None,
-    )
-
-    assert result.exit_code == 1
-    assert "Aborted!" in result.output
-    assert destroy.called == (interrupted == "run")
-
-
-def test_performance_test_ssh_recognises_its_deploy_in_the_compose_file():
-    from dallinger.command_line.docker_ssh import get_docker_compose_yml
-
-    from psynet.command_line import _deploy_id_marker
-
-    compose = get_docker_compose_yml(
-        {
-            "num_dynos_worker": "1",
-            "docker_worker_cpu_shares": "1024",
-            "clock_on": False,
-            "docker_volumes": "",
-            "performance_test_deploy_id": "run-1",
-        },
-        "my-app",
-        "image:latest",
-        "classic",
-    )
-
-    assert _deploy_id_marker("run-1") in compose
-
-
-def test_performance_test_ssh_destroys_nothing_if_it_cannot_check():
-    result, _, _, destroy = _invoke_performance_test_ssh(
-        [],
-        run_error=click.ClickException("run failed"),
-        check_error=RuntimeError("ssh down"),
-    )
-
-    assert result.exit_code == 1
-    assert "run failed" in result.output
-    assert "Could not check whether my-app on server is this run's" in result.output
-    destroy.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "app_info, message",
-    [
-        ({"performance_test_app": False}, "didn't deploy it"),
-        ({**_MARKED, "launched": False}, "didn't finish launching"),
-    ],
-)
-def test_performance_test_ssh_refuses_other_apps_without_destroying_them(
-    app_info, message
-):
-    result, deploy, run, destroy = _invoke_performance_test_ssh(
-        [], before="run-0", app_info=app_info
-    )
-
-    assert result.exit_code == 1
-    assert message in result.output
+    assert "didn't deploy it" in result.output
+    assert "Choose another --app name" in result.output
     deploy.assert_not_called()
     run.assert_not_called()
-    destroy.assert_not_called()
+
+
+def test_performance_test_ssh_refuses_apps_that_never_launched():
+    result, deploy, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info={**_MARKED, "launched": False}
+    )
+
+    assert result.exit_code == 1
+    assert "didn't finish launching" in result.output
+    assert "psynet destroy ssh --server server --app my-app" in result.output
+    deploy.assert_not_called()
+    run.assert_not_called()
 
 
 def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     app_info = {k: v for k, v in _MARKED.items() if k != "experiment"}
-    result, _, run, destroy = _invoke_performance_test_ssh([], app_info=app_info)
+    result, _, run = _invoke_performance_test_ssh(
+        [], apps=["my-app"], app_info=app_info
+    )
 
     assert result.exit_code == 1
     assert "Could not load the experiment in my-app" in result.output
     run.assert_not_called()
-    assert destroy.called
 
 
 def test_performance_test_deploys_mark_the_app():
@@ -1539,12 +1402,11 @@ def test_performance_test_deploys_mark_the_app():
             server="server",
             dns_host=None,
             update=True,
-            performance_test_deploy_id="run-1",
+            performance_test_app=True,
         )
 
     assert ctx.invoke.call_args.kwargs["config_options"] == {
-        "performance_test_app": "true",
-        "performance_test_deploy_id": "run-1",
+        "performance_test_app": "true"
     }
     assert pre_launch.call_args.kwargs["confirm_update"] is False
 

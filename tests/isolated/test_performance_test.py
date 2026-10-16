@@ -2337,23 +2337,6 @@ def test_an_interrupted_final_restore_still_drops_the_other_copies():
     assert dropped == [reset.snapshot]
 
 
-def test_a_reset_without_restore_at_end_only_snapshots_the_prefill():
-    from psynet.perf_ssh import DatabaseReset
-
-    remote = _remote_app(
-        _answers({**_DISK, "pg_tables": "participant\n", "count(*)": "0\n"})
-    )
-    remote.stop, remote.start = Mock(), Mock()
-    reset = DatabaseReset(remote, prefill_participants=5, restore_at_end=False)
-    reset()
-    reset.close()
-
-    sql = " ".join(c for c in remote.executor.commands if " psql " in c)
-    assert 'CREATE DATABASE "my-app" TEMPLATE' not in sql
-    dropped = re.findall(r'DROP DATABASE IF EXISTS "(my-app_[^"]*)"', sql)
-    assert dropped == [reset.snapshot]
-
-
 @pytest.mark.parametrize(
     "error, ours",
     [
@@ -2452,7 +2435,6 @@ def test_ssh_starts_the_stopped_services_again_after_a_failed_reset(
             "server",
             _EXPERIMENT,
             reset=True,
-            keep_app=True,
             n_bots=[2],
             force=False,
             json_output="results.json",
@@ -2674,7 +2656,7 @@ def _remote_search(
             {**_EXPERIMENT, "estimated_duration_minutes": 12},
             reset=reset,
             n_bots="auto",
-            **{"keep_app": True, **options},
+            **options,
         )
     return [c.args[0] for c in run.call_args_list], results
 
@@ -2725,17 +2707,6 @@ def test_a_failed_final_restore_fails_the_command(monkeypatch):
         error.value.message
     )
     start_stopped_services.assert_called_once()
-
-
-def test_a_reset_run_does_not_restart_an_app_that_will_be_destroyed(monkeypatch):
-    start_stopped_services = Mock()
-    _remote_search(
-        monkeypatch,
-        reset=True,
-        keep_app=False,
-        start_stopped_services=start_stopped_services,
-    )
-    start_stopped_services.assert_not_called()
 
 
 def test_an_interrupted_remote_search_keeps_the_finished_tests_json(

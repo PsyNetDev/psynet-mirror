@@ -300,11 +300,8 @@ To test with real data, for example from a pilot, deploy a performance-test
 app from its export (see :doc:`/deploy/reference/deploy_from_archive`) with
 ``performance_test_app = true`` in ``config.txt``, and run
 ``performance-test ssh`` on it with ``--force`` from the experiment's
-directory; the command updates the app's code from that directory, keeping
-the pilot's database. To test it more than once,
-add ``--keep-app``, without which the run destroys the app at the end, and
-``--reset-database``, without which each run adds its bots' data to the
-pilot's.
+directory; each run updates the app's code from that directory, keeping the
+pilot's database.
 
 .. _performance_testing_server:
 
@@ -340,23 +337,16 @@ debug ssh``. Like ``psynet debug ssh``, that first deploy resets your local
 debug database.
 On a private network, such as a lab computer, use ``--ingress cloudflare``.
 
-The app's config is marked with ``performance_test_app = true``. At the end
-of the run, even one that fails or that you interrupt, the command destroys
-the app. That includes an existing performance-test app with the same
-``--app``, such as one kept by an earlier run, which the command first
-updates from this directory. Each deploy or update records a new ID in the
-app's ``docker-compose.yml``, and the command only destroys the app if it
-still records this run's ID, so it leaves alone an app that replaced it
-during the run, or an existing app whose update failed before recording
-this run's ID. To keep the app, for example to look at its dashboard and logs, pass
-``--keep-app``; the command then prints how to destroy it when you're done:
+The app's config is marked with ``performance_test_app = true``. Every
+later run updates the app in place from the current directory before
+testing, so it always tests your current code, and keeps its database;
+destroy the app if you want a fresh launch. The app stays on the server
+after each run, so that you can look at its dashboard and logs, and the
+command prints how to destroy it when you're done:
 
 .. code-block:: bash
 
     psynet destroy ssh --server my-server --app my-experiment-perf
-
-A later run with the same ``--app`` updates a kept app in place, keeping its
-database; destroy the app first if you want a fresh launch.
 
 Runs refuse apps without the mark, such as ones deployed with ``psynet debug
 ssh``, and live deployments refuse the mark. They also refuse a database
@@ -379,11 +369,11 @@ database instead:
 
 PsyNet snapshots the database before the first test and restores it before
 each later one, restarting the app's containers other than PostgreSQL,
-Redis and the front door. At the end it drops the snapshot. With
-``--keep-app``, it first restores the database to how the run found it; if
-that fails, the command exits with an error, keeps the copy and names it;
-destroy the app and run again to recover. Each copy needs free disk space
-of twice the database's size, which PsyNet checks first. Uploaded files stay in the asset storage. With
+Redis and the front door. At the end it restores the database to how the
+run found it and drops the snapshot. If a restore fails, the command exits
+with an error, keeps the copy and names it; destroy the app and run again
+to recover. Each copy needs free disk space of twice the database's size,
+which PsyNet checks first. Uploaded files stay in the asset storage. With
 classic ingress, apps share one PostgreSQL server, so a run that is killed
 can leave ``*_snapshot_*`` or ``*_baseline_*`` databases that ``psynet
 destroy ssh`` doesn't remove; drop them with ``docker exec
@@ -396,10 +386,9 @@ To test with the amount of data the study will reach, pre-fill the database:
     psynet performance-test ssh --app my-experiment-perf --prefill-participants 1500 --n-bots auto
 
 This implies ``--reset-database``. Bots fill 1,500 participants' data
-through the experiment's own routes before the snapshot. The pre-filled
-data doesn't outlast the run, even with ``--keep-app``, so each run
-pre-fills again. That takes time: about an hour for 1,500 participants at a
-few hundred requests a second.
+through the experiment's own routes before the snapshot, and the database
+is restored afterwards, so each run pre-fills again. That takes time: about
+an hour for 1,500 participants at a few hundred requests a second.
 
 .. _performance_testing_bot_processes:
 
