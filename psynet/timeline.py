@@ -498,6 +498,11 @@ class AsyncCodeBlock(EltCollection):
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
+
+    priority:
+        Priority of the function's :class:`~psynet.async_job.WorkerAsyncJob`,
+        ``"high"`` or ``"low"``. Defaults to ``"high"`` if ``wait=True``,
+        because the participant is waiting for it, and ``"low"`` otherwise.
     """
 
     def __init__(
@@ -509,7 +514,14 @@ class AsyncCodeBlock(EltCollection):
         content: Optional[str] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
+        priority: Optional[str] = None,
     ):
+        from psynet.async_job import check_priority
+
+        if priority is None:
+            priority = "high" if wait else "low"
+        check_priority(priority)
+
         if is_lambda_function(function):
             raise ValueError(
                 "Asynchronous code blocks require named functions rather than lambda functions."
@@ -533,6 +545,7 @@ class AsyncCodeBlock(EltCollection):
         self.content = content
         self.max_wait_time = max_wait_time
         self.on_timeout = on_timeout
+        self.priority = priority
 
     def resolve(self):
         return join(
@@ -580,6 +593,7 @@ class AsyncCodeBlock(EltCollection):
             call_function_with_context,
             label="AsyncCodeBlock",
             participant=participant,
+            priority=self.priority,
             arguments=dict(
                 function=self.function,
                 participant=participant,

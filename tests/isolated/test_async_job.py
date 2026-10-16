@@ -1,3 +1,4 @@
+import datetime
 import tempfile
 import threading
 import time
@@ -8,12 +9,15 @@ from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
 from rq.exceptions import NoSuchJobError
+from rq.job import JobStatus
 from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.timeline import AsyncCodeBlock
+from psynet.trial.main import Trial
 from psynet.utils import get_authenticated_session
 
 
@@ -286,7 +290,9 @@ def test_failed_launch_alerts_and_later_launches_still_run(monkeypatch):
 @pytest.mark.usefixtures("launched_experiment")
 def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
-    monkeypatch.setattr(WorkerAsyncJob, "redis_queue", unworked_queue)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
 
     job = WorkerAsyncJob(do_nothing).enqueue()
     db.session.commit()
@@ -389,17 +395,175 @@ def test_deprecated_process_names_still_work(monkeypatch, participant):
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_enqueue_starts_timeout_and_enforces_unique():
-    job = WorkerAsyncJob(do_nothing, timeout=30)
-    assert job.timeout_scheduled_for is None
-    job.enqueue()
-    assert (job.timeout_scheduled_for - job.time_enqueued).total_seconds() == 30
+def test_timeout_counts_from_start_not_enqueue(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
+    stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
+    stalled.log_time_started()
+    backlog = WorkerAsyncJob(do_nothing).enqueue()
+    lost = WorkerAsyncJob(do_nothing).enqueue()
+    finished_in_rq = WorkerAsyncJob(do_nothing).enqueue()
+    for job in [backlog, lost, finished_in_rq]:
+        job.time_enqueued -= datetime.timedelta(hours=2)
+    queued_id, stalled_id, backlog_id, lost_id, finished_in_rq_id = (
+        queued.id,
+        stalled.id,
+        backlog.id,
+        lost.id,
+        finished_in_rq.id,
+    )
+    db.session.commit()
+    lost.redis_job.delete()
+    finished_in_rq.redis_job.set_status(JobStatus.FINISHED)
+    time.sleep(0.05)
+    WorkerAsyncJob.check_timeouts()
+    for job_id in [queued_id, backlog_id, finished_in_rq_id]:
+        job = WorkerAsyncJob.query.get(job_id)
+        assert job.pending and not job.failed
+    stalled = WorkerAsyncJob.query.get(stalled_id)
+    assert stalled.failed and not stalled.pending
+    lost = WorkerAsyncJob.query.get(lost_id)
+    assert "probably lost" in lost.failed_reason and not lost.pending
 
+    finished_in_rq = WorkerAsyncJob.query.get(finished_in_rq_id)
+    finished_in_rq.pending, finished_in_rq.finished = False, True
+    finished_in_rq.redis_job.delete()
+    db.session.commit()
+    WorkerAsyncJob._fail_if_overdue(finished_in_rq_id, datetime.datetime.now())
+    db.session.commit()
+    assert not WorkerAsyncJob.query.get(finished_in_rq_id).failed
+
+    WorkerAsyncJob.call_function(queued_id)
+    queued = WorkerAsyncJob.query.get(queued_id)
+    assert queued.finished and not queued.failed
+    assert queued.timeout_scheduled_for > queued.time_started
+
+    for job_id in [stalled_id, lost_id]:
+        WorkerAsyncJob.call_function(job_id)
+        job = WorkerAsyncJob.query.get(job_id)
+        assert not job.finished and not job.pending
+
+
+def time_out_own_job_then_raise():
+    job = WorkerAsyncJob.query.filter_by(label="times_out_while_running").one()
+    job.fail("Async job timed out")
+    db.session.commit()
+    raise RuntimeError("Interrupted by the timeout.")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_job_failing_after_the_clock_timed_it_out_keeps_the_timeout(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    job = WorkerAsyncJob(
+        time_out_own_job_then_raise, label="times_out_while_running"
+    ).enqueue()
+    db.session.commit()
+    job_id = job.id
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = WorkerAsyncJob.query.get(job_id)
+    assert job.failed_reason == "Async job timed out" and not job.pending
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_enqueue_enforces_unique():
     LocalAsyncJob(do_nothing, unique=True).enqueue()
     duplicate = LocalAsyncJob(do_nothing, unique=True)
     with pytest.raises(IntegrityError):
         duplicate.enqueue()
     db.session.rollback()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_worker_job_runs_on_the_queue_named_by_its_priority():
+    default = WorkerAsyncJob(do_nothing).enqueue()
+    low = WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    db.session.commit()
+
+    assert default.priority == "high"
+    assert default.redis_job.origin == "high"
+    assert low.redis_job.origin == "low"
+
+
+def test_invalid_priority_raises():
+    with pytest.raises(ValueError, match="priority"):
+        WorkerAsyncJob(do_nothing, priority="urgent")
+    with pytest.raises(ValueError, match="priority"):
+        AsyncCodeBlock(do_nothing, wait=False, priority="default")
+
+
+def test_async_code_block_priority_follows_wait():
+    assert AsyncCodeBlock(do_nothing, expected_wait=1).priority == "high"
+    assert AsyncCodeBlock(do_nothing, wait=False).priority == "low"
+    assert AsyncCodeBlock(do_nothing, wait=False, priority="high").priority == "high"
+
+
+class _FeedbackTrial(Trial):
+    def show_feedback(self, experiment, participant):
+        pass
+
+
+class _NoWaitFeedbackTrial(_FeedbackTrial):
+    wait_for_feedback = False
+
+
+class _GivesFeedbackTrial(Trial):
+    def gives_feedback(self, experiment, participant):
+        return True
+
+
+class _LowFeedbackTrial(_FeedbackTrial):
+    async_post_trial_priority = "low"
+
+
+class _InvalidPriorityTrial(Trial):
+    async_post_trial_priority = "urgent"
+
+
+@pytest.mark.parametrize(
+    "trial_class, check_performance, chain_type, expected",
+    [
+        (Trial, False, "across", "low"),
+        (Trial, True, "across", "high"),
+        (Trial, False, "within", "high"),
+        (_FeedbackTrial, False, "across", "high"),
+        (_GivesFeedbackTrial, False, "across", "high"),
+        (_NoWaitFeedbackTrial, False, "across", "low"),
+        (_LowFeedbackTrial, True, "within", "low"),
+    ],
+)
+def test_async_post_trial_priority(
+    trial_class, check_performance, chain_type, expected
+):
+    for flag in ["check_performance_at_end", "check_performance_every_trial"]:
+        trial_maker = types.SimpleNamespace(
+            check_performance_at_end=False,
+            check_performance_every_trial=False,
+            chain_type=chain_type,
+        )
+        setattr(trial_maker, flag, check_performance)
+        assert trial_class._get_async_post_trial_priority(trial_maker) == expected
+
+
+def test_invalid_async_post_trial_priority_raises():
+    with pytest.raises(ValueError, match="priority"):
+        _InvalidPriorityTrial._get_async_post_trial_priority(None)
 
 
 @pytest.mark.parametrize(
@@ -417,9 +581,9 @@ def test_cpu_time_summary_says_where_jobs_run():
     summary = _get_cpu_time_summary()
     db.session.rollback()
     rows = [row for row in summary if row["label"] == "summary_test"]
-    assert [(row["runs_in"], row["mean_cpu"]) for row in rows] == [
-        ("web", 0.1),
-        ("worker", 0.3),
+    assert [(row["runs_in"], row["priority"], row["mean_cpu"]) for row in rows] == [
+        ("web", None, 0.1),
+        ("worker", "high", 0.3),
     ]
 
 
@@ -431,6 +595,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
             {
                 "runs_in": "worker",
                 "label": "analyse",
+                "priority": "high",
                 "count": 3,
                 "mean_cpu": 0.8,
                 "max_cpu": 1.2,
@@ -439,6 +604,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
             {
                 "runs_in": "web",
                 "label": "upload",
+                "priority": None,
                 "count": 5,
                 "mean_cpu": 0.01,
                 "max_cpu": 0.02,
@@ -450,13 +616,14 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
     assert rows["analyse"] == [
         "worker",
         "analyse",
+        "high",
         "3",
         "0.800",
         "1.200",
         "1.000",
         "yes",
     ]
-    assert rows["upload"][0] == "web"
+    assert rows["upload"][:3] == ["web", "upload", "-"]
     assert rows["upload"][-1] == "no"
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."

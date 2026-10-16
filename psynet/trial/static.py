@@ -258,7 +258,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async job times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
