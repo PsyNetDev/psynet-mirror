@@ -22,7 +22,7 @@ test.describe("Optional background capture lifecycle @both", () => {
     }, captureLabels);
   });
 
-  test("duration limit preserves a clip and rejected answers reuse it", async ({page}) => {
+  test("duration limit preserves a clip", async ({page}) => {
     await page.evaluate(() => {window.started = capture.begin(config);});
     await page.getByRole("button",{name:"Enable camera",exact:true}).click();
     await page.evaluate(() => started);
@@ -30,31 +30,48 @@ test.describe("Optional background capture lifecycle @both", () => {
     const result = await page.evaluate(async () => {
       const first = await capture.finish();
       const second = await capture.finish();
-      return {size:first.recordings.camera.size,same:first.recordings.camera === second.recordings.camera,unavailable:first.unavailable};
+      return {size:first.recordings.camera.size,again:second.recordings.camera.size,unavailable:first.unavailable};
     });
     expect(result.size).toBeGreaterThan(0);
-    expect(result.same).toBe(true);
+    expect(result.again).toBe(result.size);
     expect(result.unavailable).toEqual({});
     await page.evaluate(() => capture.begin(config));
     await expect(page.locator("#background-recording-permission")).toHaveCount(0);
   });
 
-  test("oversized capture is discarded without blocking submission", async ({page}) => {
-    await page.evaluate(() => {window.started = capture.begin({...config,max_bytes:1});});
+  test("size limit keeps the part captured so far", async ({page}) => {
+    const limit = 160 * 1024;
+    await page.evaluate(limit => {window.started = capture.begin({...config,max_duration:30,max_bytes:limit});}, limit);
     await page.getByRole("button",{name:"Enable camera",exact:true}).click();
     await page.evaluate(() => started);
-    await expect.poll(() => page.evaluate(() => capture.unavailable.camera)).toBe("size_limit");
+    await expect.poll(() => page.evaluate(() => capture.outcomes.camera), {timeout:20000}).toBe("size_limit");
     const result = await page.evaluate(async () => {
       const result = await capture.finish();
-      return {sources:Object.keys(result.recordings),unavailable:result.unavailable};
+      return {size:result.recordings.camera?.size || 0,unavailable:result.unavailable,outcome:result.outcomes.camera};
     });
-    expect(result).toEqual({sources:[],unavailable:{camera:"size_limit"}});
+    expect(result.outcome).toBe("size_limit");
+    expect(result.unavailable).toEqual({});
+    expect(result.size).toBeGreaterThan(0);
+    expect(result.size).toBeLessThanOrEqual(limit);
+  });
+
+  test("submitting does not stop recording, so a later submission includes more", async ({page}) => {
+    await page.evaluate(() => {window.started = capture.begin({...config,max_duration:30});});
+    await page.getByRole("button",{name:"Enable camera",exact:true}).click();
+    await page.evaluate(() => started);
+    await expect.poll(() => page.evaluate(() => capture.clips.camera.size)).toBeGreaterThan(0);
+    const first = await page.evaluate(async () => (await capture.finish()).recordings.camera.size);
+    expect(first).toBeGreaterThan(0);
+    expect(await page.evaluate(() => capture.clips.camera.getState())).toBe("recording");
+    await expect.poll(async () => page.evaluate(async () => (await capture.finish()).recordings.camera.size)).toBeGreaterThan(first);
   });
 
   test("skipping capture avoids another permission prompt", async ({page}) => {
     await page.evaluate(() => {window.started = capture.begin(config);});
     await page.getByRole("button",{name:"Continue without recording",exact:true}).click();
     await page.evaluate(() => started);
+    // Nothing is recorded, so no status chip is shown.
+    await expect(page.locator("#background-recording-status")).toHaveCount(0);
     expect(await page.evaluate(async () => (await capture.finish()).unavailable)).toEqual({camera:"skipped"});
     await page.evaluate(() => capture.begin(config));
     await expect(page.locator("#background-recording-permission")).toHaveCount(0);
@@ -62,8 +79,17 @@ test.describe("Optional background capture lifecycle @both", () => {
     await expect(page.locator("#background-recording-permission")).toBeVisible();
     await page.getByRole("button",{name:"Enable camera",exact:true}).click();
     await page.evaluate(() => started);
+    // A granted camera is reacquired silently once its track ends; the dialog
+    // returns only when that fails.
+    await page.evaluate(async () => {
+      capture.streams.get("camera").getVideoTracks()[0].stop();
+      await capture.begin({...config,required:true});
+    });
+    await expect(page.locator("#background-recording-permission")).toHaveCount(0);
+    expect(await page.evaluate(() => capture.clips.camera.getState())).toBe("recording");
     await page.evaluate(() => {
       capture.streams.get("camera").getVideoTracks()[0].stop();
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException("Denied", "NotAllowedError"));
       window.started = capture.begin({...config,required:true});
     });
     await expect(page.locator("#background-recording-permission")).toBeVisible();

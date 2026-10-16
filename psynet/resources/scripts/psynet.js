@@ -3758,7 +3758,7 @@
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
       psynet.alert(
-        psynet.var.recordingLabels?.unconfirmed ||
+        (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
           "We could not confirm that your answer was received. Please check your connection and press Next again.",
       );
       psynet.restoreSubmissionControlState();
