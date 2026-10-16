@@ -236,8 +236,8 @@ database on your computer first, which clears the local PostgreSQL database
 and Redis and stops local PsyNet workers, so stop any local experiment before
 you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
 commands ask before resetting if a local server or another program is connected
-to the local database or Redis; pass ``--yes`` to
-skip the question. When ``psynet deploy ssh`` finishes, it
+to the local database or Redis; pass ``--yes`` to skip the question.
+``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
 prints:
 
 - the recruitment message (for Prolific, a link to the new draft study);

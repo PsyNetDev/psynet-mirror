@@ -41,8 +41,9 @@ port, as described in "Run several experiments at once" in
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
 `psynet debug ssh` and `psynet debug heroku`) also clear the local database
 and Redis and stop local workers, so don't run them while a local experiment is
-running. They refuse without `--yes` when local data is in use; don't pass
-`--yes` to get past that. `--update` leaves local data alone.
+running. When local data is in use they ask first, or refuse in a session
+without a terminal; don't pass `--yes` to get past that. `--update` leaves
+local data alone.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For

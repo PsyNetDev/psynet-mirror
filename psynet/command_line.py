@@ -883,7 +883,8 @@ def _confirm_local_data_reset(assume_yes):
         "To do so, it will:\n"
         f"  - drop every table in the local database {database}\n"
         f"  - delete every key in local Redis {redis}\n"
-        "  - stop the local PsyNet worker and clock processes using that database\n"
+        "  - stop the local PsyNet worker, clock and legacy web server processes "
+        "using that database\n"
         "Other programs connected to the database or Redis, such as the web "
         "server of a running psynet debug local, Docker containers or another "
         "experiment, keep running and should be stopped or restarted."
@@ -892,7 +893,7 @@ def _confirm_local_data_reset(assume_yes):
     n_workers = len(list_psynet_worker_processes())
     if n_workers:
         in_use.append(
-            f"{n_workers} local PsyNet worker or clock process(es) are using this database."
+            f"{n_workers} local PsyNet server process(es) are using this database."
         )
     clients = list_other_database_clients()
     if clients:
@@ -901,7 +902,9 @@ def _confirm_local_data_reset(assume_yes):
             f"{_format_other_database_clients(clients)}."
         )
     n_redis_clients = _count_other_redis_clients()
-    if n_redis_clients:
+    if n_redis_clients is None:
+        in_use.append("Couldn't list the clients of local Redis, so it may be in use.")
+    elif n_redis_clients:
         in_use.append(
             f"{n_redis_clients} other client(s) are connected to local Redis."
         )
@@ -925,15 +928,21 @@ def _count_other_redis_clients():
     Keys left behind by a stopped experiment don't count, so a launch after
     ``psynet debug local`` has stopped doesn't ask. This process's pooled
     connections are closed first, so only the connection running the query
-    belongs to it.
+    belongs to it. Returns ``None`` if Redis refuses ``CLIENT LIST``, for
+    example because of an ACL or a renamed command.
     """
     from dallinger.db import redis_conn
+    from redis.exceptions import ResponseError
 
     redis_conn.connection_pool.disconnect()
     pipe = redis_conn.pipeline(transaction=False)
     pipe.client_id()
     pipe.client_list()
-    own_id, clients = pipe.execute()
+    try:
+        own_id, clients = pipe.execute()
+    except ResponseError as error:
+        logger.warning("Couldn't list local Redis clients: %s", error)
+        return None
     return sum(1 for client in clients if int(client["id"]) != own_id)
 
 

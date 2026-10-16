@@ -4398,9 +4398,10 @@ def test_remote_update_keeps_local_data(remote_launch):
     "in_use, reason",
     [
         ({}, None),
-        ({"workers": 1}, "1 local PsyNet worker or clock process(es)"),
+        ({"workers": 1}, "1 local PsyNet server process(es)"),
         ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
         ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
+        ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
     ],
 )
 def test_remote_launch_asks_before_resetting_local_data_in_use(
