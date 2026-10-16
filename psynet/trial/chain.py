@@ -96,7 +96,7 @@ def _count_viable_trials_for_nodes(node_ids: Iterable[int]) -> dict[int, int]:
     if not ids:
         return {}
     rows = (
-        db.session.query(Trial.node_id, func.count(Trial.id))
+        db.session.query(Trial.node_id, func.count())
         .filter(
             Trial.node_id.in_(ids),
             Trial.is_repeat_trial.is_(False),
@@ -235,10 +235,15 @@ def _network_needs_trials(network):
 
 
 def _viable_trial_count_expression(node_id):
-    """Return a correlated expression counting viable trials for a node ID."""
+    """Return a correlated expression counting viable trials for a node ID.
+
+    ``count(*)`` keeps the count answerable from ``ix_trial_viable_node_id``
+    alone; balanced selection evaluates it once per candidate node.
+    """
 
     return (
-        select(func.count(Trial.id))
+        select(func.count())
+        .select_from(Trial)
         .where(
             Trial.node_id == node_id,
             Trial.is_repeat_trial.is_(False),

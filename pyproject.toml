@@ -71,7 +71,6 @@ experiment = [
     "joblib",
     "jsonpickle",
     "pandas",
-    "paramiko",
     "polib",
     "progress",
     "pytest",

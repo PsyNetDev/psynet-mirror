@@ -1,8 +1,8 @@
-import datetime
 import tempfile
 import threading
 import time
 import types
+from datetime import datetime, timedelta
 
 import pytest
 from dallinger import db
@@ -13,11 +13,12 @@ from rq.job import JobStatus
 from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
-from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
+from psynet.async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
 from psynet.trial.main import Trial
+from psynet.utils import get_authenticated_session
 
 
 def do_nothing():
@@ -100,14 +101,26 @@ class TestAsyncJobs2:
         assert abs(job.time_taken - 1) < 0.5
         assert job.cpu_time < 0.2
 
-    def test_cpu_bound_job_records_cpu_time(self):
+    def test_cpu_bound_job_records_cpu_time(self, launched_experiment):
         job = LocalAsyncJob(busy_for, {"seconds": 0.3}).enqueue()
         db.session.commit()
-        time.sleep(1)
-        db.session.commit()
+        for _ in range(50):
+            time.sleep(0.1)
+            db.session.commit()
+            if job.finished:
+                break
 
         assert job.finished
         assert 0.3 <= job.cpu_time <= job.time_taken
+
+        base_url = launched_experiment.base_url
+        response = get_authenticated_session(base_url).get(
+            base_url + "/async_job_cpu_time"
+        )
+        response.raise_for_status()
+        row = next(row for row in response.json() if row["label"] == "busy_for")
+        assert row["runs_in"] == "web"
+        assert row["mean_cpu"] >= 0.3
 
     def test_invalid_function(self):
         def local_function():
@@ -347,7 +360,6 @@ def test_only_enqueued_jobs_launch(monkeypatch, caplog):
 @pytest.mark.usefixtures("launched_experiment")
 def test_deprecated_process_names_still_work(monkeypatch, participant):
     import psynet.process
-    from psynet.async_job import AsyncJob
 
     launched = []
     monkeypatch.setattr(
@@ -393,36 +405,41 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     backlog = WorkerAsyncJob(do_nothing).enqueue()
     lost = WorkerAsyncJob(do_nothing).enqueue()
     finished_in_rq = WorkerAsyncJob(do_nothing).enqueue()
-    for job in [backlog, lost, finished_in_rq]:
-        job.time_enqueued -= datetime.timedelta(hours=2)
-    queued_id, stalled_id, backlog_id, lost_id, finished_in_rq_id = (
-        queued.id,
-        stalled.id,
-        backlog.id,
-        lost.id,
-        finished_in_rq.id,
-    )
+    local_lost = LocalAsyncJob(do_nothing)
+    db.session.add(local_lost)
+    for job in [backlog, lost, finished_in_rq, local_lost]:
+        job.time_enqueued = datetime.now() - timedelta(hours=2)
     db.session.commit()
+    ids = dict(
+        queued=queued.id,
+        stalled=stalled.id,
+        backlog=backlog.id,
+        lost=lost.id,
+        finished_in_rq=finished_in_rq.id,
+        local_lost=local_lost.id,
+    )
     lost.redis_job.delete()
     finished_in_rq.redis_job.set_status(JobStatus.FINISHED)
     time.sleep(0.05)
-    WorkerAsyncJob.check_timeouts()
-    for job_id in [queued_id, backlog_id, finished_in_rq_id]:
-        job = WorkerAsyncJob.query.get(job_id)
+    AsyncJob.check_timeouts()
+    for name in ["queued", "backlog", "finished_in_rq"]:
+        job = AsyncJob.query.get(ids[name])
         assert job.pending and not job.failed
-    stalled = WorkerAsyncJob.query.get(stalled_id)
+    stalled = AsyncJob.query.get(ids["stalled"])
     assert stalled.failed and not stalled.pending
-    lost = WorkerAsyncJob.query.get(lost_id)
-    assert "probably lost" in lost.failed_reason and not lost.pending
+    for name in ["lost", "local_lost"]:
+        job = AsyncJob.query.get(ids[name])
+        assert "probably lost" in job.failed_reason and not job.pending
 
-    finished_in_rq = WorkerAsyncJob.query.get(finished_in_rq_id)
+    finished_in_rq = AsyncJob.query.get(ids["finished_in_rq"])
     finished_in_rq.pending, finished_in_rq.finished = False, True
     finished_in_rq.redis_job.delete()
     db.session.commit()
-    WorkerAsyncJob._fail_if_overdue(finished_in_rq_id, datetime.datetime.now())
+    AsyncJob._fail_if_overdue(finished_in_rq.id, datetime.now())
     db.session.commit()
-    assert not WorkerAsyncJob.query.get(finished_in_rq_id).failed
+    assert not AsyncJob.query.get(ids["finished_in_rq"]).failed
 
+    queued_id, stalled_id, lost_id = ids["queued"], ids["stalled"], ids["lost"]
     WorkerAsyncJob.call_function(queued_id)
     queued = WorkerAsyncJob.query.get(queued_id)
     assert queued.finished and not queued.failed
@@ -432,6 +449,34 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
         WorkerAsyncJob.call_function(job_id)
         job = WorkerAsyncJob.query.get(job_id)
         assert not job.finished and not job.pending
+
+
+def time_out_own_job_then_raise():
+    job = WorkerAsyncJob.query.filter_by(label="times_out_while_running").one()
+    job.fail("Async job timed out")
+    db.session.commit()
+    raise RuntimeError("Interrupted by the timeout.")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_job_failing_after_the_clock_timed_it_out_keeps_the_timeout(monkeypatch):
+    unworked_queue = Queue("psynet_test_unworked", connection=redis_conn)
+    monkeypatch.setattr(
+        WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
+    )
+    job = WorkerAsyncJob(
+        time_out_own_job_then_raise, label="times_out_while_running"
+    ).enqueue()
+    db.session.commit()
+    job_id = job.id
+
+    WorkerAsyncJob.call_function(job_id)
+
+    job = WorkerAsyncJob.query.get(job_id)
+    assert job.failed_reason == "Async job timed out" and not job.pending
 
 
 @pytest.mark.parametrize(
@@ -544,6 +589,98 @@ def test_cpu_time_summary_says_where_jobs_run():
         ("web", None, 0.1),
         ("worker", "high", 0.3),
     ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_pending_jobs_keep_the_app_awake():
+    from psynet.async_job import _get_pending_job_summary
+    from psynet.experiment import get_experiment
+
+    experiment = get_experiment()
+    AsyncJob.query.filter_by(pending=True).update({"pending": False})
+    assert _get_pending_job_summary() == {
+        "counts": {"high": 0, "low": 0, "local": 0},
+        "total": 0,
+        "oldest_age": None,
+    }
+    assert experiment.reason_to_stay_awake() is None
+
+    WorkerAsyncJob(do_nothing).enqueue()
+    WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    LocalAsyncJob(do_nothing).enqueue()
+    WorkerAsyncJob(do_nothing).enqueue().cancel()
+    WorkerAsyncJob(do_nothing, timeout=1).enqueue().fail("Async job timed out")
+    finished = WorkerAsyncJob(do_nothing).enqueue()
+    finished.pending, finished.finished = False, True
+    db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued"))
+    db.session.flush()
+
+    summary = _get_pending_job_summary()
+    assert summary["counts"] == {"high": 1, "low": 2, "local": 1}
+    assert summary["total"] == 4
+    assert summary["oldest_age"] < 60
+    assert experiment.reason_to_stay_awake() == (
+        "4 async jobs are still pending "
+        "(1 high priority, 2 low priority, 1 in the web process); "
+        "the oldest was enqueued under a minute ago"
+    )
+    db.session.rollback()
+
+    response = experiment.authenticated_session.get(
+        experiment.base_url + "/async_job_status"
+    )
+    response.raise_for_status()
+    assert set(response.json()) == {"counts", "total", "oldest_age"}
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_local_jobs_time_out_after_an_hour():
+    job = LocalAsyncJob(do_nothing)
+    assert job.timeout == AsyncJob.default_timeout == 3600
+    job.time_enqueued = datetime.now()
+    job.log_time_started()
+    assert job.timeout_scheduled_for - job.time_started == timedelta(hours=1)
+    job.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
+    db.session.add(job)
+    db.session.commit()
+    job_id = job.id
+
+    AsyncJob.check_timeouts()
+    job = LocalAsyncJob.query.get(job_id)
+    assert job.failed and not job.pending
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+def test_check_timeouts_skips_a_job_that_cannot_be_failed(monkeypatch):
+    jobs = [LocalAsyncJob(do_nothing), LocalAsyncJob(do_nothing)]
+    for job in jobs:
+        job.time_enqueued = datetime.now() - timedelta(hours=2)
+        db.session.add(job)
+    db.session.commit()
+    broken_id, other_id = (job.id for job in jobs)
+
+    original_fail = AsyncJob.fail
+
+    def fail(self, reason=None):
+        if self.id == broken_id:
+            raise RuntimeError("the failure cascade raised")
+        original_fail(self, reason)
+
+    monkeypatch.setattr(AsyncJob, "fail", fail)
+    AsyncJob.check_timeouts()
+
+    assert AsyncJob.query.get(broken_id).pending
+    assert AsyncJob.query.get(other_id).failed
 
 
 def test_cpu_time_summary_flags_cpu_heavy_labels():

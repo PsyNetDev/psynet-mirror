@@ -839,22 +839,40 @@ def is_release_branch():
     return os.environ.get("CI_COMMIT_REF_NAME", "").startswith("release-")
 
 
+def _deployment_mode():
+    """Return the deployment mode (``"debug"``, ``"sandbox"`` or ``"live"``).
+
+    Returns ``None`` outside a deployment package, for example when PsyNet
+    code runs from an experiment's source folder.
+    """
+    from . import deployment_info
+    from .experiment import in_deployment_package
+
+    if not in_deployment_package():
+        return None
+    return deployment_info.read("mode")
+
+
 def _tolerate_missing_translation(namespace):
     """
     Return whether a missing catalog entry should be downgraded to a warning.
 
     Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
-    so feature-branch test runs must not depend on them. Experiment catalogs
-    are owned by the experiment author, so those keep failing loudly.
+    so feature-branch test runs and local debug sessions must not depend on them.
+    Experiment catalogs are owned by the experiment author, so those keep
+    failing loudly.
     """
     if namespace == "experiment":
         return False
-    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not is_release_branch()
+    if is_release_branch():
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _deployment_mode() in (None, "debug")
 
 
 def check_translation_is_available(message, context, locale, namespace):
-    from . import deployment_info
-    from .experiment import get_experiment, in_deployment_package
+    from .experiment import get_experiment
 
     is_available = (context, message) in REGISTERED_TRANSLATIONS[namespace][locale]
 
@@ -867,10 +885,7 @@ def check_translation_is_available(message, context, locale, namespace):
             "You cannot rename the functions _ or _p, and you must pass them strings directly, "
             "not variables or strings wrapped in parentheses."
         )
-        is_live_experiment = (
-            in_deployment_package() and deployment_info.read("mode") == "live"
-        )
-        if is_live_experiment:
+        if _deployment_mode() == "live":
             error_message += " Since this is a live experiment, we instead presented the untranslated text."
             logger.warning(error_message)
             try:
@@ -881,8 +896,8 @@ def check_translation_is_available(message, context, locale, namespace):
             error_message += (
                 " The untranslated English text will be shown instead. "
                 f"Catalogs for the {namespace} package are refreshed on the release branch "
-                "with `psynet translate`, so feature-branch tests do not require them "
-                "to be up to date."
+                "with `psynet translate`, so tests and local debug sessions do not "
+                "require them to be up to date."
             )
             logger.warning(error_message)
         else:

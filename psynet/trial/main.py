@@ -1412,6 +1412,15 @@ Index(
     ),
 )
 
+# Lets balanced selection count each candidate node's viable trials with an
+# index-only scan instead of one heap page per trial. Count queries must use
+# count(*) and the same IS false predicates for Postgres to use it.
+Index(
+    "ix_trial_viable_node_id",
+    Trial.node_id,
+    postgresql_where=text("is_repeat_trial IS false AND failed IS false"),
+)
+
 
 class TrialMakerState(ModuleState):
     participant_group = Column(String)
@@ -1977,7 +1986,6 @@ class TrialMaker(Module):
 
     def check_timeout(self):
         self.check_old_trials()
-        WorkerAsyncJob.check_timeouts()
 
     def selected_recruit_criterion(self, experiment):
         if self.recruit_mode not in self.recruit_criteria:

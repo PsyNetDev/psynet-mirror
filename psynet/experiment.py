@@ -72,6 +72,7 @@ from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
@@ -85,6 +86,7 @@ from psynet.utils import (
 from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
@@ -726,7 +728,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "in your Experiment class. For example, you might write: label = 'GSP experiment with faces'"
             )
 
-        self.database_checks = []
+        self.database_checks = [
+            DatabaseCheck("async_job_timeouts", AsyncJob.check_timeouts)
+        ]
         self.participant_fail_routines = []
         self.recruitment_criteria = []
         self._websocket_message_handlers = {}
@@ -1734,6 +1738,39 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .async_job import _get_cpu_time_summary
 
         return _get_cpu_time_summary()
+
+    @experiment_route("/async_job_status", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_status(cls):
+        """Report the async jobs still pending, for ``psynet destroy`` and ``psynet export``."""
+        from .async_job import _get_pending_job_summary
+
+        return _get_pending_job_summary()
+
+    def reason_to_stay_awake(self):
+        """Keep a docker-ssh app awake while async jobs are pending.
+
+        Idle hibernation stops the workers and the web process, so pending
+        :class:`~psynet.async_job.WorkerAsyncJob` and
+        :class:`~psynet.async_job.LocalAsyncJob` jobs would not finish.
+
+        Returns
+        -------
+        str or None
+            A short reason for the deploy logs, or ``None`` to allow sleep.
+        """
+        parent = getattr(super(), "reason_to_stay_awake", None)
+        reason = parent() if parent else None
+        if reason:
+            return reason
+        from .async_job import _describe_pending_jobs, _get_pending_job_summary
+
+        summary = _get_pending_job_summary()
+        return (
+            _describe_pending_jobs(summary, precise=False) if summary["total"] else None
+        )
 
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
@@ -3565,6 +3602,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if Experiment._pending_redirect_replaces_open_page(participant):
+                if page_uuid != participant.page_uuid:
+                    Experiment._settle_stale_hold(participant, page_uuid)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page),
+                    page=page,
+                )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3663,6 +3711,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
+    @staticmethod
+    def _pending_redirect_replaces_open_page(participant):
+        """Return whether a queued redirect should replace the open page unbuilt.
+
+        ``Participant.fail()`` queues ``pending_redirect`` when it runs outside
+        this participant's request, for example when a partner leaves and
+        their sync group closes. The open page belongs to the abandoned flow,
+        and its page maker may read state that ``fail()`` removed, so it is
+        neither rebuilt nor scored. Timeline holds are still rebuilt, because
+        leaving one settles its wait record.
+        """
+        if getattr(participant, "pending_redirect", None) is None:
+            return False
+        from .timeline_hold import TimelineHoldRecord
+
+        on_hold = db.session.query(
+            TimelineHoldRecord.query.filter_by(
+                participant_id=participant.id, page_uuid=participant.page_uuid
+            ).exists()
+        ).scalar()
+        return not on_hold
+
     def _hold_resume_must_settle(self, participant, event):
         """Return whether a release by failure, redirect, or timeout must take the locked path.
 
@@ -3692,6 +3762,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
+        if Experiment._pending_redirect_replaces_open_page(participant):
+            return None
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
             event
@@ -3724,6 +3796,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant, settle the old hold if needed and skip any later holds
         that are already clear, instead of treating it as a multi-tab mismatch.
         """
+        if not self._settle_stale_hold(participant, submitted_page_uuid):
+            return None
+        return self._advance_past_ready_holds(participant, current_page)
+
+    @staticmethod
+    def _settle_stale_hold(participant, submitted_page_uuid):
+        """Settle the hold a catch-up submit came from, if needed.
+
+        Returns
+        -------
+        bool
+            Whether ``submitted_page_uuid`` is a catch-up from one of this
+            participant's holds rather than a stale tab.
+        """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
@@ -3731,10 +3817,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             submitted_page_uuid,
         )
         if record is None:
-            return None
+            return False
         if record.resumed_at is None:
             record.settle(participant)
-        return self._advance_past_ready_holds(participant, current_page)
+        return True
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
@@ -5626,12 +5712,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
           a response to the page
         """
         participant = Bot.query.get(participant_id)
+        at_page_maker_start = participant.elt_id[1:] == [-1]
+        if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
+            # get_current_page will move the cursor, so take the row lock. Routine
+            # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
+            participant = (
+                Bot.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
         experiment = get_experiment()
 
-        status = {
-            "status": participant.status,
-            "page_uuid": participant.page_uuid,
-        }
+        status = {"status": participant.status}
 
         if participant.status == "working":
             current_page = participant.get_current_page()
@@ -5653,6 +5745,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 status["page"]["check_interval"] = current_page.check_interval
         else:
             bot_response = None
+        status["page_uuid"] = participant.page_uuid
 
         if not (bot_response and bot_response.blobs):
             return jsonify(status)
@@ -5664,6 +5757,33 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 for key, blob in bot_response.blobs.items():
                     zf.write(blob.file, f"bot_response_files/{key}")
             return send_file(zip_path, mimetype="application/zip")
+
+    @classmethod
+    def _error_trial_context(cls, participant):
+        """Return the trial, node and network for an error report.
+
+        The participant can be detached from the session after a rollback,
+        in which case its current trial cannot be loaded. The error is then
+        reported without trial context rather than failing again.
+        """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
+        try:
+            trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
+        except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
+            logger.warning(
+                "Could not load the current trial for participant %s while "
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
+            )
+        return context
 
     @classmethod
     def fail_participant_on_error(cls, participant, error):
@@ -5836,17 +5956,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled_error = cls.handle_error(
                 err,
                 participant=participant,
-                trial=participant.current_trial,
-                node=(
-                    participant.current_trial.node
-                    if participant.current_trial
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if participant.current_trial
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
             cls._prepare_tracked_fatal_recovery(handled_error, err)
             error_page = handled_error.error_page()
@@ -6205,7 +6315,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
-        if participant.elt_id[1:] == [-1]:
+        replace_open_page = cls._pending_redirect_replaces_open_page(participant)
+        if participant.elt_id[1:] == [-1] or replace_open_page:
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
@@ -6758,10 +6869,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 total_ms=clock.elapsed_ms(),
             )
 
-        exp = get_experiment()
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        # Read the whole body before any SQL, so a slow upload does not hold
+        # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+
+        exp = get_experiment()
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
 
         participant_id = get_arg_from_dict(json_data, "participant_id")
         page_uuid = get_arg_from_dict(json_data, "page_uuid")
@@ -7008,17 +7122,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(

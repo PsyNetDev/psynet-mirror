@@ -31,6 +31,7 @@ from dallinger.command_line.docker_ssh import (
     CONFIGURED_HOSTS,
     option_server,
     remote_postgres,
+    resolve_server_option,
 )
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
@@ -47,6 +48,8 @@ from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
     check_installed_dallinger_version_is_recommended,
+    is_release_version_specifier,
+    specified_version,
 )
 
 from . import deployment_info
@@ -101,12 +104,50 @@ ensure_runtime()
 
 logger = get_logger()
 
+
+def _reject_ingress_without_dallinger_support(ctx, param, value):
+    """Reject ``--ingress cloudflare`` when Dallinger only supports classic ingress.
+
+    The value is not passed on, because such a Dallinger has no ingress option.
+    """
+    if value == "cloudflare":
+        raise click.UsageError(
+            "--ingress cloudflare needs a Dallinger version with Cloudflare "
+            "ingress support, which this Dallinger installation does not have. "
+            "Install Dallinger from its master branch, or use classic ingress."
+        )
+    return None
+
+
 try:
     from dallinger.command_line.docker_ssh import option_ingress
 except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
+    option_ingress = click.option(
+        "--ingress",
+        type=click.Choice(["classic", "cloudflare"]),
+        default=None,
+        callback=_reject_ingress_without_dallinger_support,
+        help=(
+            "How participants reach the experiment. Cloudflare ingress needs a "
+            "newer Dallinger than the one installed."
+        ),
+    )
 
-    def option_ingress(func):
-        return func
+
+_LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
+_LOCAL_IMAGE_PINS = "local-image-pins.txt"
+
+
+def _use_local_psynet_option(func):
+    return click.option(
+        "--use-local-psynet",
+        is_flag=True,
+        default=False,
+        help=(
+            "Build the editable PsyNet checkout into the experiment image instead "
+            "of installing the PsyNet version in requirements.txt."
+        ),
+    )(func)
 
 
 def _use_local_dallinger_option(func):
@@ -115,9 +156,9 @@ def _use_local_dallinger_option(func):
         is_flag=True,
         default=False,
         help=(
-            "Bake the locally imported Dallinger source into the experiment "
-            "image instead of the Git pin. Required for canary deploys of "
-            "unreleased docker-ssh features."
+            "Build the locally imported Dallinger source into the experiment "
+            "image instead of installing the Dallinger version pinned in "
+            "requirements.txt or constraints.txt."
         ),
     )(func)
 
@@ -346,11 +387,13 @@ def _experiment_variables(connection, echo=False):
 
 
 def _validate_location(ctx, param, value):
+    """Click callback that accepts only the supported database locations."""
     allowed = ["local", "heroku", "ssh"]
     if value not in allowed:
         raise click.UsageError(
             f"Invalid location {value}; location must be one of: {', '.join(allowed)}"
         )
+    return value
 
 
 @psynet.command("experiment-variables")
@@ -405,13 +448,6 @@ def db_connection(location, app=None, server=None):
             connection.close()
 
 
-def prompt_for_ssh_server():
-    click.echo(
-        "Choose one of the configured servers (add one with `dallinger docker-ssh servers add`):"
-    )
-    return click.Choice(CONFIGURED_HOSTS.keys())
-
-
 @contextmanager
 def get_db_uri(location, app=None, server=None):
     match location:
@@ -424,8 +460,9 @@ def get_db_uri(location, app=None, server=None):
         case "ssh":
             if app is None:
                 raise click.UsageError("Missing parameter: --app")
-            if server is None:
-                server = prompt_for_ssh_server()
+            server = resolve_server_option(
+                click.get_current_context(silent=True), None, server
+            )
             server_info = CONFIGURED_HOSTS[server]
             with remote_postgres(server_info, app) as db_uri:
                 yield db_uri
@@ -812,26 +849,118 @@ def run_prepare_in_subprocess():
     run_subprocess_with_live_output(prepare_cmd)
 
 
-def _prepare_after_stopping_local_workers(ctx, archive, update=False):
-    """Stop leftover local debug workers, then reset the local database.
+def _reset_local_data(*, remote, assume_yes=False):
+    """Clear this computer's Redis and stop local servers before ``prepare``.
 
-    Every launch path runs ``prepare`` against this machine's Postgres, so
-    leftover ``dallinger_heroku_*`` backends must be gone first. Chrome
-    windows are left alone here so a remote deploy does not close the
-    author's browser. An ``--update`` prepares only the image.
+    Launches build the experiment's starting database with ``prepare`` on this
+    computer, which drops every table, so leftover ``dallinger_heroku_*``
+    backends must be stopped first. Chrome windows are left alone so a remote
+    launch does not close the author's browser.
+
+    Parameters
+    ----------
+    remote : bool
+        Whether the experiment will run elsewhere. Remote launches first say
+        what they reset, and ask before resetting data that is in use.
+    assume_yes : bool
+        Reset data that is in use without asking.
     """
+    if remote:
+        _confirm_local_data_reset(assume_yes)
+    redis_vars.clear()
     kill_psynet_worker_processes()
-    if update:
-        _prepare_image_for_update()
-    else:
-        ctx.invoke(prepare, archive=archive)
+
+
+def _confirm_local_data_reset(assume_yes):
+    """Describe the local reset, and ask first if the local data looks in use."""
+    from .data import _format_other_database_clients
+    from .db import list_other_database_clients
+    from .services import _is_interactive, _redis_url
+
+    database = _url_without_password(_current_database_url())
+    redis = _url_without_password(_redis_url())
+    click.echo(
+        "This launch builds the experiment's starting database on this computer. "
+        "To do so, it will:\n"
+        f"  - drop every table in the local database {database}\n"
+        f"  - delete every key in local Redis {redis}\n"
+        "  - stop the local PsyNet worker, clock and legacy web server processes "
+        "using that database\n"
+        "Other programs connected to the database or Redis, such as the web "
+        "server of a running psynet debug local, Docker containers or another "
+        "experiment, keep running and should be stopped or restarted."
+    )
+    in_use = []
+    n_workers = len(list_psynet_worker_processes())
+    if n_workers:
+        in_use.append(
+            f"{n_workers} local PsyNet server process(es) are using this database."
+        )
+    clients = list_other_database_clients()
+    if clients:
+        in_use.append(
+            "Other clients are connected to the local database: "
+            f"{_format_other_database_clients(clients)}."
+        )
+    n_redis_clients = _count_other_redis_clients()
+    if n_redis_clients is None:
+        in_use.append("Couldn't list the clients of local Redis, so it may be in use.")
+    elif n_redis_clients:
+        in_use.append(
+            f"{n_redis_clients} other client(s) are connected to local Redis."
+        )
+    if not in_use:
+        return
+    click.echo("\n".join(in_use))
+    if assume_yes:
+        return
+    if not _is_interactive():
+        raise click.ClickException(
+            "Refusing to reset local data in a non-interactive session. "
+            "Re-run with --yes to reset it anyway, or stop the local experiment, "
+            "or point DATABASE_URL and REDIS_URL at a scratch database."
+        )
+    click.confirm("Reset this local data and continue?", default=False, abort=True)
+
+
+def _count_other_redis_clients():
+    """Return the number of connections to local Redis from other programs.
+
+    Keys left behind by a stopped experiment don't count, so a launch after
+    ``psynet debug local`` has stopped doesn't ask. This process's pooled
+    connections are closed first, so only the connection running the query
+    belongs to it. Returns ``None`` if Redis refuses ``CLIENT LIST``, for
+    example because of an ACL or a renamed command.
+    """
+    from dallinger.db import redis_conn
+    from redis.exceptions import ResponseError
+
+    redis_conn.connection_pool.disconnect()
+    pipe = redis_conn.pipeline(transaction=False)
+    pipe.client_id()
+    pipe.client_list()
+    try:
+        own_id, clients = pipe.execute()
+    except ResponseError as error:
+        logger.warning("Couldn't list local Redis clients: %s", error)
+        return None
+    return sum(1 for client in clients if int(client["id"]) != own_id)
+
+
+def _url_without_password(url):
+    """Return ``url`` with any password removed, for display."""
+    parts = urlsplit(url)
+    if parts.password is None:
+        return url
+    host = parts.netloc.rpartition("@")[2]
+    netloc = f"{parts.username}@{host}" if parts.username else host
+    return parts._replace(netloc=netloc).geturl()
 
 
 def _prepare_image_for_update():
     """Prepare the image for ``--update``; the running app keeps its database."""
     from .experiment import get_experiment
 
-    redis_vars.clear()
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
     update_docker_tag()
@@ -878,6 +1007,8 @@ def run_pre_auto_reload_checks():
 
     from dallinger.utils import develop_target_path
 
+    from .experiment_scaffold import get_editable_psynet_source
+
     _develop_path = str(develop_target_path(config))
     if "." in _develop_path:
         raise ValueError(
@@ -887,7 +1018,7 @@ def run_pre_auto_reload_checks():
             "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
-    if is_editable("psynet"):
+    if get_editable_psynet_source() is not None:
         root_dir = str(psynet_dir())
         root_basename = os.path.basename(root_dir)
         if root_basename == "psynet" and root_dir in os.getcwd():
@@ -1345,6 +1476,8 @@ def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
+    if not local_:
+        confirm_deploying_development_psynet()
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -1391,6 +1524,18 @@ _option_ssh_update = click.option(
     help="Rebuild a running app in place, keeping its database and skipping launch.",
 )
 
+_option_yes_reset_local_data = click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help=(
+        "Reset the local database and Redis without asking, even if they look "
+        "in use. Other prompts, such as starting local services, still ask."
+    ),
+)
+
+
 _ssh_deployment_options = [
     option_server,
     click.option(
@@ -1398,7 +1543,6 @@ _ssh_deployment_options = [
         help="DNS name to use. Must resolve all its subdomains to the IP address specified as ssh host",
     ),
     option_ingress,
-    _use_local_dallinger_option,
 ]
 
 
@@ -1501,9 +1645,14 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    local_packages=(),
+    assume_yes=False,
     confirm_update=True,
 ):
     from .experiment import get_experiment
+
+    if docker:
+        _reject_leftover_local_image_files()
 
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
@@ -1515,9 +1664,8 @@ def _pre_launch(
     # helpers on this machine before any remote packaging, so local Postgres
     # and Redis are required here even when the experiment ultimately runs
     # elsewhere.
-    ensure_local_services(assume_yes=False, strict=True)
+    ensure_local_services(assume_yes=False, strict=True, remote_launch=not local_)
 
-    redis_vars.clear()
     deployment_info.init(
         redeploying_from_archive=archive is not None,
         mode=mode,
@@ -1542,7 +1690,11 @@ def _pre_launch(
         if update:
             _check_ssh_update(server, app, mode, confirm=confirm_update)
 
-    run_pre_checks(mode, local_, heroku, docker, app)
+    run_pre_checks(mode, local_, heroku, docker, app, local_packages)
+
+    # An --update only rebuilds the image, so it leaves local data alone.
+    if not update:
+        _reset_local_data(remote=not local_, assume_yes=assume_yes)
 
     if os.environ.get("DALLINGER_SOURCE"):
         os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1573,7 +1725,10 @@ def _pre_launch(
     if config.get("check_dallinger_version"):
         check_installed_dallinger_version_is_recommended()
 
-    _prepare_after_stopping_local_workers(ctx, archive, update=update)
+    if update:
+        _prepare_image_for_update()
+    else:
+        ctx.invoke(prepare, archive=archive)
 
     _forget_tables_defined_in_experiment_directory()
 
@@ -1633,13 +1788,15 @@ def deploy__local(ctx, docker, archive, legacy, no_browsers):
 @click.option("--app", callback=verify_id, required=True, help="Experiment id")
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @click.option("--docker", is_flag=True, default=False, help="Deploy using Docker")
+@_option_yes_reset_local_data
 @click.pass_context
-def deploy__heroku(ctx, app, archive, docker):
+def deploy__heroku(ctx, app, archive, docker, assume_yes):
     """
     Deploy the experiment to Heroku.
     """
     if docker:
-        _deploy__docker_heroku(ctx, app, archive)
+        _deploy__docker_heroku(ctx, app, archive, assume_yes)
+        return
 
     try:
         from dallinger.command_line import deploy as dallinger_deploy
@@ -1651,6 +1808,7 @@ def deploy__heroku(ctx, app, archive, docker):
             local_=False,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app, archive=None)
@@ -1660,7 +1818,7 @@ def deploy__heroku(ctx, app, archive, docker):
         reset_console()
 
 
-def _deploy__docker_heroku(ctx, app, archive):
+def _deploy__docker_heroku(ctx, app, archive, assume_yes=False):
     try:
         from dallinger.command_line.docker import deploy as dallinger_deploy
 
@@ -1678,6 +1836,7 @@ def _deploy__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_deploy, verbose=True, app=app)
         _post_deploy(result)
@@ -1691,6 +1850,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @_add_ssh_deployment_options
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def deploy__docker_ssh(
     ctx,
@@ -1699,15 +1859,19 @@ def deploy__docker_ssh(
     dns_host,
     server,
     ingress=None,
-    use_local_dallinger=False,
     update=False,
+    assume_yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
+
+    The image always installs the PsyNet and Dallinger versions pinned in
+    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
+    ``--use-local-psynet`` or ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
-        _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
             ctx,
@@ -1719,6 +1883,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            assume_yes=assume_yes,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -1790,7 +1955,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         # Dallinger bakes DALLINGER_SOURCE whenever it is set.
         if os.environ.pop("DALLINGER_SOURCE", None):
             click.echo(
-                "Ignoring DALLINGER_SOURCE; pass --use-local-dallinger to bake it."
+                "Ignoring DALLINGER_SOURCE; only "
+                "'psynet debug ssh --use-local-dallinger' bakes it."
             )
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
@@ -1811,6 +1977,131 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         )
     os.environ["DALLINGER_SOURCE"] = source
     click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+
+
+def _reject_leftover_local_image_files():
+    """Stop if the experiment directory holds local-build files from an earlier run.
+
+    The experiment Dockerfile installs a PsyNet wheel over the pinned version
+    and prefers ``local-image-pins.txt`` over the pins, so files left by an
+    interrupted ``psynet debug ssh --use-local-psynet`` or
+    ``--use-local-dallinger`` run would replace the pins, even in
+    ``psynet deploy``.
+    """
+    leftovers = sorted(p.name for p in Path.cwd().glob(_LOCAL_PSYNET_WHEEL_PATTERN))
+    if Path(_LOCAL_IMAGE_PINS).exists():
+        leftovers.append(_LOCAL_IMAGE_PINS)
+    if leftovers:
+        raise click.UsageError(
+            f"Remove {', '.join(leftovers)} from the experiment directory. "
+            "These files are left over from an interrupted 'psynet debug ssh' "
+            "with --use-local-psynet or --use-local-dallinger, and the image "
+            "would use them instead of the versions in requirements.txt."
+        )
+
+
+def _local_packages(use_local_psynet, use_local_dallinger):
+    """Return the names of the packages built into the image from local checkouts."""
+    return tuple(
+        package
+        for package, enabled in (
+            ("psynet", use_local_psynet),
+            ("dallinger", use_local_dallinger),
+        )
+        if enabled
+    )
+
+
+def _check_local_image_packages(local_packages):
+    """Stop before launching if ``local_packages`` cannot be built into the image.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts, from :func:`_local_packages`.
+    """
+    if not local_packages:
+        return
+    dockerfile = Path("Dockerfile")
+    if not dockerfile.is_file() or _LOCAL_IMAGE_PINS not in dockerfile.read_text():
+        raise click.UsageError(
+            "This experiment's Dockerfile does not install local PsyNet or "
+            "Dallinger builds. Run 'psynet scripts update' to refresh it."
+        )
+    if "psynet" in local_packages:
+        from .experiment_scaffold import get_editable_psynet_source
+
+        if get_editable_psynet_source() is None:
+            raise click.UsageError(
+                "--use-local-psynet needs an editable PsyNet checkout."
+            )
+
+
+@contextmanager
+def _local_image_packages(local_packages):
+    """Stage local PsyNet and Dallinger builds for the experiment image.
+
+    For ``"psynet"``, the editable PsyNet checkout is built into a wheel in the
+    experiment directory, so it is sent with the other experiment files, and
+    the experiment Dockerfile installs it over the pinned version. Dallinger
+    stages its own wheel when ``DALLINGER_SOURCE`` is set.
+
+    The pins without these packages are written to ``local-image-pins.txt``,
+    which the Dockerfile installs instead, because their pins may point at a
+    checkout that only exists on this machine. Staged files are removed
+    afterwards.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built from local checkouts and checked by
+        :func:`_check_local_image_packages`.
+    """
+    if not local_packages:
+        yield
+        return
+    staged = []
+    try:
+        if "psynet" in local_packages:
+            staged.append(_build_local_psynet_wheel())
+        staged.append(_write_local_image_pins(local_packages))
+        yield
+    finally:
+        for path in staged:
+            path.unlink(missing_ok=True)
+
+
+def _build_local_psynet_wheel():
+    """Build the editable PsyNet checkout into a wheel in the experiment directory."""
+    from dallinger.utils import build_and_place
+
+    from .experiment_scaffold import get_editable_psynet_source
+
+    source = get_editable_psynet_source()
+    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
+
+
+def _write_local_image_pins(local_packages):
+    """Write the image's pins without ``local_packages`` to ``local-image-pins.txt``.
+
+    Like the Dockerfile, this reads ``constraints.txt`` when present and
+    ``requirements.txt`` otherwise. In-repo experiments always read
+    ``requirements.txt``, because they ignore ``constraints.txt``.
+    """
+    from .experiment_scaffold import is_requirement_line_for
+
+    source = Path("constraints.txt")
+    if is_in_repo_experiment() or not source.is_file():
+        source = Path("requirements.txt")
+    kept = [
+        line
+        for line in source.read_text().splitlines(keepends=True)
+        if not any(is_requirement_line_for(line, p) for p in local_packages)
+    ]
+    target = Path.cwd() / _LOCAL_IMAGE_PINS
+    target.write_text("".join(kept))
+    return target
 
 
 def _awaken_ssh_app(server, app):
@@ -2026,7 +2317,9 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             )
 
 
-def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
+def run_pre_checks(
+    mode, local_, heroku=False, docker=False, app=None, local_packages=()
+):
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
@@ -2073,8 +2366,6 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
         check_dockerfile()
 
     if not local_:
-        init_db(drop_all=True)
-
         config = get_config()
         if not config.ready:
             config.load()
@@ -2124,7 +2415,7 @@ def run_pre_checks(mode, local_, heroku=False, docker=False, app=None):
                 check_prolific_payment(exp, config)
 
         if mode == "sandbox":
-            run_pre_checks_sandbox()
+            run_pre_checks_sandbox(local_packages)
         elif mode == "live":
             run_pre_checks_deploy(local_, recruiter)
 
@@ -2141,10 +2432,19 @@ def _check_constraints_before_remote_deploy():
     _check_constraints()
 
 
-def run_pre_checks_sandbox():
-    check_psynet_requirement_is_unambiguous()
-    check_psynet_requirement_includes_experiment_extra()
-    check_core_dependency_versions_match_requirements()
+def run_pre_checks_sandbox(local_packages=()):
+    """Check the PsyNet and Dallinger pins before a debug deploy.
+
+    Parameters
+    ----------
+    local_packages : tuple of str
+        Packages built into the image from local checkouts. Their pins do not
+        decide what runs, so they are not checked.
+    """
+    if "psynet" not in local_packages:
+        check_psynet_requirement_is_unambiguous()
+        check_psynet_requirement_includes_experiment_extra()
+    check_core_dependency_versions_match_requirements(skip=local_packages)
 
 
 @debug.command("heroku")
@@ -2153,19 +2453,26 @@ def run_pre_checks_sandbox():
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@_option_yes_reset_local_data
 @click.pass_context
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, assume_yes):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
+        debug__docker_heroku(ctx, app, archive, assume_yes)
     else:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
         try:
             _pre_launch(
-                ctx, mode="sandbox", archive=archive, local_=False, heroku=True, app=app
+                ctx,
+                mode="sandbox",
+                archive=archive,
+                local_=False,
+                heroku=True,
+                app=app,
+                assume_yes=assume_yes,
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
@@ -2175,7 +2482,7 @@ def debug__heroku(ctx, app, docker, archive):
             reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
+def debug__docker_heroku(ctx, app, archive, assume_yes=False):
     from dallinger.command_line.docker import sandbox as dallinger_sandbox
 
     try:
@@ -2185,7 +2492,14 @@ def debug__docker_heroku(ctx, app, archive):
                 "This shouldn't be hard to fix..."
             )
         _pre_launch(
-            ctx, mode="sandbox", archive=archive, local_=False, docker=True, app=app
+            ctx,
+            mode="sandbox",
+            archive=archive,
+            local_=False,
+            docker=True,
+            heroku=True,
+            app=app,
+            assume_yes=assume_yes,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -2200,7 +2514,10 @@ def debug__docker_heroku(ctx, app, archive):
 )
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
 @_add_ssh_deployment_options
+@_use_local_psynet_option
+@_use_local_dallinger_option
 @_option_ssh_update
+@_option_yes_reset_local_data
 @click.pass_context
 def debug__docker_ssh(ctx, **options):
     """
@@ -2217,8 +2534,10 @@ def _debug_ssh(
     dns_host,
     archive=None,
     ingress=None,
+    use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    assume_yes=False,
     performance_test_app=False,
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
@@ -2235,6 +2554,8 @@ def _debug_ssh(
 
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
+        local_packages = _local_packages(use_local_psynet, use_local_dallinger)
+        _check_local_image_packages(local_packages)
 
         _pre_launch(
             ctx,
@@ -2246,6 +2567,8 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
+            local_packages=local_packages,
+            assume_yes=assume_yes,
             confirm_update=not performance_test_app,
         )
         config_options = {}
@@ -2257,17 +2580,18 @@ def _debug_ssh(
                 "performance_test_code_key": experiment_code_key(),
             }
 
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
-        result = _invoke_docker_ssh_deploy(
-            ctx,
-            sandbox,
-            server=server,
-            dns_host=dns_host,
-            app=app,
-            ingress=ingress,
-            update=update,
-            config_options=config_options,
-        )
+        with _local_image_packages(local_packages):
+            # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
+            result = _invoke_docker_ssh_deploy(
+                ctx,
+                sandbox,
+                server=server,
+                dns_host=dns_host,
+                app=app,
+                ingress=ingress,
+                update=update,
+                config_options=config_options,
+            )
 
         _post_deploy(result)
     finally:
@@ -2328,6 +2652,9 @@ def install_autocomplete():
 #######################
 def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
+    from dallinger.utils import get_editable_dallinger_path
+
+    from .experiment_scaffold import get_editable_source
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -2389,7 +2716,12 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    if is_editable("dallinger"):
+    # Dallinger 12.4 and older only detect legacy .egg-link editable installs.
+    dallinger_is_editable = (
+        get_editable_source("dallinger") is not None
+        or get_editable_dallinger_path() is not None
+    )
+    if dallinger_is_editable:
         _prepare(
             dallinger_version,
             "Dallinger",
@@ -2397,7 +2729,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
             capture_output,
         )
 
-    if is_editable("dallinger"):
+    if dallinger_is_editable:
         text = "Installing base packages and development requirements..."
         install_command = "pip install --editable '.[data]'"
     else:
@@ -2408,7 +2740,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
         text=text,
         color="green",
     ) as spinner:
-        if is_editable("dallinger"):
+        if dallinger_is_editable:
             subprocess.run(
                 ["pip3 install -r dev-requirements.txt"],
                 shell=True,
@@ -2528,14 +2860,6 @@ def get_version(project_name):
         .decode("utf-8")
         .strip()
     )
-
-
-def is_editable(project):
-    for path_item in sys.path:
-        egg_link = os.path.join(path_item, project + ".egg-link")
-        if os.path.isfile(egg_link):
-            return True
-    return False
 
 
 ############
@@ -2810,6 +3134,39 @@ def check_psynet_requirement_is_unambiguous():
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
 
 
+def confirm_deploying_development_psynet():
+    """Ask before a live remote deployment installs a development PsyNet.
+
+    Release pins (``14.0.0``, ``14.0.0rc1`` or the tag ``v14.0.0``) pass
+    silently. A commit, an alpha, or an entry accepted only because
+    ``SKIP_CHECK_PSYNET_VERSION_REQUIREMENT`` is set is a development version.
+    Setting that variable replaces the question with a warning.
+
+    Raises
+    ------
+    click.Abort
+        If the user declines to deploy a development version.
+    """
+    requirement = get_psynet_requirement()
+    if requirement and is_release_version_specifier(specified_version(requirement)):
+        return
+
+    message = (
+        "requirements.txt installs a development version of PsyNet, not a release:\n"
+        f"  {requirement or '(no PsyNet entry)'}\n"
+        "Live experiments should normally pin a PsyNet release, for example "
+        "psynet[experiment]==<version>."
+    )
+    if os.environ.get("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"):
+        click.echo(f"Warning: {message}", err=True)
+        return
+    if not user_confirms(
+        f"{message}\nDeploy it anyway? (Set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1 "
+        "to skip this question.)"
+    ):
+        raise click.Abort
+
+
 def check_psynet_requirement_includes_experiment_extra():
     """Require the PsyNet pin to install the experiment runtime.
 
@@ -2914,6 +3271,14 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
                 "  psynet setup --psynet-source commit\n"
                 "to pin a pushed Git commit before deploying."
             )
+    from .experiment_scaffold import get_editable_psynet_source
+
+    if get_editable_psynet_source() is not None:
+        parts.append(
+            "\n\nTo try your editable PsyNet checkout on a server without "
+            "pinning it, run 'psynet debug ssh --use-local-psynet'. "
+            "'psynet deploy' always needs a pin."
+        )
     parts.append(
         "\n\nExamples:\n"
         + "\n".join(examples)
@@ -3117,6 +3482,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
         local=False,
         server=server,
         docker_ssh=True,
+        pending_jobs=_fetch_ssh_pending_async_jobs(app, server),
         **kwargs,
     )
 
@@ -3137,6 +3503,7 @@ def export_(
     password=None,
     transfer="auto",
     allow_project_mismatch=False,
+    pending_jobs=None,
     **kwargs,
 ):
     """
@@ -3177,6 +3544,10 @@ def export_(
     because for remote experiments it opens an SSH tunnel to the experiment
     database. Server-built exports do not need them: they take the experiment's
     identity from an authenticated preflight instead.
+
+    ``pending_jobs`` is a remote app's async job summary, taken before the
+    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
     _warn_deprecated_export_options(
@@ -3222,7 +3593,7 @@ def export_(
     shutil.rmtree(staging, ignore_errors=True)
     try:
         if local:
-            _build_local_export(str(staging), assets)
+            pending_jobs = _build_local_export(str(staging), assets)
         else:
             _fetch_remote_export(
                 experiment_class,
@@ -3245,14 +3616,49 @@ def export_(
         raise
 
     log(f"Export complete. You can find your results at: {published}")
+    _warn_export_misses_pending_jobs(pending_jobs)
 
 
 def _build_local_export(export_path, assets):
-    """Build an export directly from the local deployment's database."""
+    """Build an export directly from the local deployment's database.
+
+    Returns
+    -------
+    dict or None
+        The pending async job summary taken before the export; see
+        :func:`_get_local_pending_async_jobs`.
+    """
     from .export.service import build_export_tree
 
+    pending_jobs = _get_local_pending_async_jobs()
     log(f"Building export in {export_path}")
     build_export_tree(export_path, assets=assets, local=True)
+    return pending_jobs
+
+
+def _get_local_pending_async_jobs():
+    """Summarize the local database's pending async jobs.
+
+    Returns
+    -------
+    dict or None
+        The summary from :func:`psynet.async_job._get_pending_job_summary`,
+        or ``None`` after printing a warning if the database could not be
+        queried.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    from .async_job import _get_pending_job_summary
+
+    try:
+        return _get_pending_job_summary()
+    except DBAPIError as exc:
+        db.session.rollback()
+        log(
+            "WARNING: Skipped the check for pending async jobs: "
+            f"could not query the database ({exc.orig})."
+        )
+        return None
 
 
 def _normalize_public_origin(value):
@@ -3328,14 +3734,21 @@ def _ssh_dashboard_endpoint(app, server, config):
 
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
-    fallback when that note is missing.
+    fallback when that note is missing. The note's dashboard credentials take
+    precedence over the local config, which may lack them, for example when
+    ``psynet destroy ssh`` runs outside the experiment directory.
+
+    Raises
+    ------
+    KeyError
+        If neither the note nor the config has dashboard credentials.
     """
     from .export.client import DashboardEndpoint
 
     record = _latest_launch_record(app, server)
     origin = None
-    user = config.get("dashboard_user")
-    password = config.get("dashboard_password")
+    user = config.get("dashboard_user", None)
+    password = config.get("dashboard_password", None)
     if record:
         origin = _normalize_public_origin(record.get("public_origin"))
         record_user = record.get("dashboard_user")
@@ -3343,11 +3756,79 @@ def _ssh_dashboard_endpoint(app, server, config):
         if record_user and record_password:
             user = record_user
             password = record_password
+    if not (user and password):
+        raise KeyError("dashboard_user and dashboard_password")
     if origin is None:
         origin = _remote_public_origin(app, server)
     if origin is None:
         origin = get_experiment_url(app, server)
     return DashboardEndpoint(base_url=origin, auth=(user, password))
+
+
+def _fetch_pending_async_jobs(endpoint):
+    """Ask a deployed app which async jobs are still pending.
+
+    Parameters
+    ----------
+    endpoint : psynet.export.client.DashboardEndpoint
+        The app's address and dashboard credentials.
+
+    Returns
+    -------
+    dict or None
+        The app's ``/async_job_status`` summary (see
+        :func:`psynet.async_job._get_pending_job_summary`), or ``None`` after
+        printing a warning if the app could not be checked.
+    """
+    import requests
+
+    try:
+        response = requests.get(
+            endpoint.url("async_job_status"), auth=endpoint.auth, timeout=30
+        )
+    except requests.RequestException as exc:
+        reason = f"could not reach the app ({exc})"
+    else:
+        if response.status_code == 404:
+            reason = "the app runs a PsyNet version without this check"
+        elif response.status_code == 503:
+            reason = "the app is unavailable (503 Service Unavailable)"
+        elif response.status_code != 200:
+            reason = f"the app returned {response.status_code} {response.reason}"
+        else:
+            try:
+                return response.json()
+            except ValueError:
+                reason = "the app's reply was not JSON; check the dashboard credentials"
+    log(f"WARNING: Skipped the check for pending async jobs: {reason}.")
+    return None
+
+
+def _fetch_ssh_pending_async_jobs(app, server):
+    """Run :func:`_fetch_pending_async_jobs` for a docker-ssh app."""
+    config = get_config()
+    try:
+        if not config.ready:
+            config.load()
+        endpoint = _ssh_dashboard_endpoint(app, server, config)
+    except (KeyError, RuntimeError) as exc:
+        log(
+            "WARNING: Skipped the check for pending async jobs: "
+            f"could not find the dashboard credentials ({exc})."
+        )
+        return None
+    return _fetch_pending_async_jobs(endpoint)
+
+
+def _warn_export_misses_pending_jobs(summary):
+    """Warn that an export lacks the results of pending async jobs."""
+    if summary and summary["total"]:
+        from .async_job import _describe_pending_jobs
+
+        log(
+            f"WARNING: {_describe_pending_jobs(summary)}. This export will not "
+            "include their results; export again once they have finished."
+        )
 
 
 def _fetch_remote_export(
@@ -3753,18 +4234,82 @@ def user_confirms(question, default=False):
     return click.confirm("", default=default)
 
 
+def _stdin_is_interactive():
+    """Return whether stdin is a terminal, so the user can answer a prompt."""
+    return sys.stdin.isatty()
+
+
+def _confirm_destroy_with_pending_jobs(
+    app, summary, ask_for_confirmation, discard_pending_jobs=False
+):
+    """Report an app's pending async jobs and decide whether to destroy it.
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    summary : dict or None
+        The output of :func:`_fetch_pending_async_jobs`; ``None`` means the
+        check was skipped, which allows the destroy.
+    ask_for_confirmation : bool
+        Whether the user may be asked. When ``False`` (batch mode, or a
+        future ``--yes``), or when stdin is not a terminal, an app with
+        pending jobs is not destroyed.
+    discard_pending_jobs : bool
+        Destroy the app even if jobs are pending, after reporting them.
+
+    Returns
+    -------
+    bool
+        Whether the app may be destroyed.
+    """
+    if not summary or not summary["total"]:
+        return True
+    from .async_job import _describe_pending_jobs
+
+    if discard_pending_jobs:
+        log(
+            f"WARNING: {app}: {_describe_pending_jobs(summary)}. Discarding them "
+            "because --discard-pending-jobs was passed."
+        )
+        return True
+    log(
+        f"WARNING: {app}: {_describe_pending_jobs(summary)}. Destroying the app "
+        "now loses their results. Wait for them to finish, then run "
+        "`psynet export ssh` again before destroying the app."
+    )
+    if ask_for_confirmation and _stdin_is_interactive():
+        return user_confirms("Destroy the app anyway?", default=False)
+    log(f"Not destroying {app}. Pass --discard-pending-jobs to destroy it anyway.")
+    return False
+
+
 def _destroy(
     ctx,
     f_destroy,
     app,
     server=None,
     ask_for_confirmation=True,
+    discard_pending_jobs=False,
 ):
-    """Destroy a single app."""
+    """Destroy a single app.
+
+    For docker-ssh apps (``server`` given), first wake the app and check for
+    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`.
+    """
+    target = app or "the app"
+    if server:
+        target += f" from {server}"
+        _awaken_ssh_app(server, app)
+        if not _confirm_destroy_with_pending_jobs(
+            app,
+            _fetch_ssh_pending_async_jobs(app, server),
+            ask_for_confirmation,
+            discard_pending_jobs,
+        ):
+            return False
     confirmed = (
-        user_confirms(
-            "Would you like to delete the app from the web server?", default=True
-        )
+        user_confirms(f"Would you like to delete {target}?", default=True)
         if ask_for_confirmation
         else True
     )
@@ -3855,10 +4400,28 @@ def _dallinger_hibernation_command(name):
 @click.option("--app", default=None, help="Experiment id")
 @click.argument("apps", required=False, nargs=-1)
 @option_server
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip the confirmation prompt.",
+)
+@click.option(
+    "--discard-pending-jobs",
+    is_flag=True,
+    default=False,
+    help=(
+        "Destroy apps even if they still have pending async jobs, "
+        "losing those jobs' results."
+    ),
+)
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server):
+def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     """
     Destroy the experiment on a remote server via SSH.
+
+    Apps with pending async jobs are not destroyed unless you confirm
+    interactively or pass --discard-pending-jobs; --yes does not skip that.
     """
     from dallinger.command_line.docker_ssh import destroy
 
@@ -3868,13 +4431,21 @@ def destroy__docker_ssh(ctx, app, apps, server):
     if app:
         assert len(apps) == 0, "You cannot provide both --app and a list of apps."
         click.echo(f"Consider using the batch syntax: {example_usage}")
-        _destroy(ctx, destroy, app=app, server=server)
+        if not _destroy(
+            ctx,
+            destroy,
+            app=app,
+            server=server,
+            ask_for_confirmation=not yes,
+            discard_pending_jobs=discard_pending_jobs,
+        ):
+            raise click.Abort()
     if len(apps) > 0:
         assert app is None, "You cannot provide both --app and a list of apps."
         confirmation = f"""
             Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
             """
-        if click.confirm(confirmation, abort=True):
+        if yes or click.confirm(confirmation, abort=True):
             failed = []
             for app in apps:
                 try:
@@ -3884,6 +4455,7 @@ def destroy__docker_ssh(ctx, app, apps, server):
                         app=app,
                         server=server,
                         ask_for_confirmation=False,
+                        discard_pending_jobs=discard_pending_jobs,
                     ):
                         failed.append(app)
                 except click.Abort:
@@ -5618,6 +6190,7 @@ def performance_test__prepare_reset(
     deployed in debug mode from this directory for performance tests.""",
 )
 @_add_ssh_deployment_options
+@_use_local_dallinger_option
 @_performance_load_options
 @_test_options["performance_json_output"]
 @click.option(
