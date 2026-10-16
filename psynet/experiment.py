@@ -1675,17 +1675,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         PageMakers are skipped here because their pages do not exist until
         runtime; bots still surface those via richer HTTP 500 details.
         """
-        from .background_recording import _check_environment
+        from .background_recording import _check_consent_order, _check_environment
         from .timeline import Page
         from .utils import get_config
 
         config = get_config()
         inplace = config.get("inplace_timeline_transitions")
-        for elt in self.timeline.all_elts:
-            if not isinstance(elt, Page):
-                continue
-            elt._check_spa_template_contract(inplace_timeline_transitions=inplace)
-            _check_environment(elt, self)
+        pages = [elt for elt in self.timeline.all_elts if isinstance(elt, Page)]
+        for page in pages:
+            page._check_spa_template_contract(inplace_timeline_transitions=inplace)
+            _check_environment(page, self)
+        _check_consent_order(pages, self)
 
     # This is how many seconds to wait between invoking parallel bots
     test_parallel_stagger_interval_s = 0.1

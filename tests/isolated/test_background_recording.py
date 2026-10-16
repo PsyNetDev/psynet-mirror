@@ -48,6 +48,29 @@ def test_background_environment_is_checked_at_startup(
         exp._check_static_spa_contracts()
 
 
+@pytest.mark.parametrize("consent_first", [True, False])
+def test_background_page_must_follow_stock_consent(
+    submission, monkeypatch, consent_first
+):
+    from psynet.asset import LocalStorage
+    from psynet.consent import AudiovisualConsent
+
+    exp, _, _, _ = submission
+    capture = InfoPage("Capture", time_estimate=1, background_recording="camera")
+    consent = AudiovisualConsent(time_estimate=1)
+    elts = [consent, capture] if consent_first else [capture, consent]
+    monkeypatch.setattr(exp, "timeline", Timeline(*elts))
+    monkeypatch.setattr(exp, "asset_storage", LocalStorage())
+    monkeypatch.setattr(
+        "psynet.utils.get_config", lambda: {"inplace_timeline_transitions": True}
+    )
+    if consent_first:
+        exp._check_static_spa_contracts()
+    else:
+        with pytest.raises(ValueError, match="before the audiovisual consent"):
+            exp._check_static_spa_contracts()
+
+
 def test_recording_labels_use_participant_translation(monkeypatch):
     from psynet.background_recording import _recording_labels
 
@@ -134,7 +157,8 @@ def test_background_answer_and_expiry(
     deadline = asset.upload_deadline
     db.session.commit()
     media_upload._expire_recordings()
-    assert not db.session.get(Trial, trial_id).failed
+    # A source reported unavailable at acceptance resolves immediately.
+    assert db.session.get(Trial, trial_id).failed is (required and bool(unavailable))
     monkeypatch.setattr(
         media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
     )

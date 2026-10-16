@@ -84,6 +84,42 @@ def _check_environment(page, experiment):
         raise ValueError("Background recording requires LocalStorage.")
 
 
+def _stock_consent_pages(experiment):
+    """Return the stock audiovisual consent page classes this experiment uses."""
+    from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
+
+    return tuple(
+        page_class
+        for module, page_class in (
+            (AudiovisualConsent, AudiovisualConsent.AudiovisualConsentPage),
+            (
+                LabRecruiterAudiovisualConsent,
+                LabRecruiterAudiovisualConsent.LabRecruiterAudiovisualConsentPage,
+            ),
+        )
+        if any(isinstance(elt, module) for elt in experiment.timeline.module_list)
+    )
+
+
+def _check_consent_order(pages, experiment):
+    """Fail at startup if a static background page precedes stock AV consent.
+
+    ``pages`` are the static pages in timeline order. Generated pages are
+    checked when rendered, through the stored consent variable.
+    """
+    consent_pages = _stock_consent_pages(experiment)
+    if not consent_pages:
+        return
+    for page in pages:
+        if isinstance(page, consent_pages):
+            return
+        if getattr(page, "background_recording", None) is not None:
+            raise ValueError(
+                f"Page {page.label!r} records background video before the "
+                "audiovisual consent page. Move the consent module earlier."
+            )
+
+
 def _recording_labels():
     """Translate capture UI in the participant's current language."""
     from .modular_page import _recording_labels as answer_recording_labels
@@ -129,7 +165,8 @@ def _browser_config(page, experiment, participant):
 
 def _accept_background_recordings(page, response, participant, experiment, page_uuid):
     """Reserve background clips without replacing or changing the ordinary answer."""
-    from .media_upload import _reserve_recording, _upload_timeout
+    from .media_upload import _reserve_recording, _resolve_unavailable, _upload_timeout
+    from .trial.main import Trial
     from .trial.record import Recording
 
     config = _browser_config(page, experiment, participant)
@@ -144,7 +181,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
     if not isinstance(outcomes, dict) or any(
         source not in config["sources"]
         or not isinstance(outcome, str)
-        or outcome not in {"source_ended", "duration_limit"}
+        or outcome not in {"source_ended", "duration_limit", "size_limit"}
         for source, outcome in outcomes.items()
     ):
         raise ValueError("Invalid background capture outcome.")
@@ -200,7 +237,10 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             "capture_outcome": outcomes.get(source),
         }
         if reason:
-            asset.upload_token_hash = None
+            parent = response._background_parent
+            _resolve_unavailable(
+                asset, reason, parent if isinstance(parent, Trial) else None
+            )
         else:
             receipts.append({**receipt, "source": source})
     return receipts

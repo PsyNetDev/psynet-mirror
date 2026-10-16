@@ -520,9 +520,15 @@ def test_finalize_pending_trials_skips_asset_deposit_pending(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+@pytest.mark.parametrize("stage", ["upload", "processing"])
 def test_optional_recording_can_expire_after_trial_finalization(
-    db_session, participant, tmp_path, monkeypatch
+    db_session, participant, tmp_path, monkeypatch, stage
 ):
+    """Optional clips never hold feedback, and expiring later never fails the trial.
+
+    The processing stage covers a worker job that never finishes: the clip
+    expires at its processing bound, and only the recording records that.
+    """
     from datetime import timedelta
 
     from psynet import media_upload
@@ -534,12 +540,19 @@ def test_optional_recording_can_expire_after_trial_finalization(
     asset, _ = _reserve_trial_recording(
         trial, tmp_path, background=True, required=False
     )
-    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
     deadline = asset.upload_deadline
+    if stage == "processing":
+        asset.upload_status = "queued"
+        asset.upload_received_at = media_upload._utcnow()
+        deadline = asset.upload_processing_deadline = asset.upload_received_at + (
+            timedelta(seconds=media_upload._PROCESSING_BOUND)
+        )
+    trial_id, asset_id, answer = trial.id, asset.id, trial.answer
     db.session.commit()
     assert media_upload._recording_wait_timeout(participant.id, trial_id=trial_id) == 20
     assert Trial.finalize_pending_trials() == 1
-    assert db.session.get(Trial, trial_id).finalized
+    trial = db.session.get(Trial, trial_id)
+    assert trial.finalized and trial.ready_for_feedback
     monkeypatch.setattr(
         media_upload, "_utcnow", lambda: deadline + timedelta(seconds=1)
     )
@@ -547,7 +560,9 @@ def test_optional_recording_can_expire_after_trial_finalization(
     trial = db.session.get(Trial, trial_id)
     assert trial.finalized and not trial.failed
     assert trial.answer == answer
-    assert db.session.get(Recording, asset_id).upload_status == "expired"
+    assert db.session.get(Recording, asset_id).upload_failed_reason == (
+        "upload_timeout" if stage == "upload" else "processing_timeout"
+    )
 
 
 @pytest.mark.parametrize(
@@ -877,6 +892,8 @@ def test_required_background_deposit_releases_finalization(
     db.session.commit()
     assert Trial.finalize_pending_trials() == 0
     assert not trial.finalized
+    # Feedback waits for finalization, so the pending required clip holds it.
+    assert not trial.ready_for_feedback
     assert RecordTrial.recording.fget(trial) is None
 
     # Background evidence does not gate analysis of the independent button answer.
@@ -910,6 +927,7 @@ def test_required_background_deposit_releases_finalization(
     trial = db.session.get(Trial, trial_id)
     assert db.session.get(Recording, asset_id).deposited
     assert trial.finalized and not trial.failed
+    assert trial.ready_for_feedback
     assert trial.answer == answer
 
 

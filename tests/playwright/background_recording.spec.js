@@ -36,6 +36,43 @@ test("background clips survive page changes without changing button answers @inp
   });
 });
 
+test("manual resend after lost replies uploads the original background snapshot @inplace-only",async ({page,context}) => {
+  // The recorder keeps running after a lost reply. The resend must still carry
+  // the snapshot the server first accepted, not a longer recording.
+  test.setTimeout(120000);
+  const declaredSizes = [];
+  await context.route("**/response",async route => {
+    const body = route.request().postData() || "";
+    if (!body.includes("recording_recovery_secret")) return route.continue();
+    declaredSizes.push(Number(body.match(/"sizes":\{"camera":(\d+)\}/)[1]));
+    const reply = await route.fetch();
+    if (declaredSizes.length <= 3) return route.abort("failed");
+    return route.fulfill({response:reply});
+  });
+  let held;
+  await context.route("**/media-upload/*",route => {held = route;});
+  await withExperiment(page,context,experiment,async p => {
+    await completeInitialGateway(p);
+    await clickConsentButton(p);
+    await p.getByRole("button",{name:"Enable camera",exact:true}).click();
+    await expect(p.locator("#main-body")).toContainText("First judgment");
+    await waitForTimelinePageReady(p);
+    await expect.poll(() => p.locator("#background-recording-status").getAttribute("data-bytes").then(Number)).toBeGreaterThan(0);
+    await p.getByRole("button",{name:"Yes",exact:true}).click();
+    await expect(p.locator("#alert-modal")).toBeVisible({timeout:30000});
+    await p.locator("#alert-button").click();
+    // Let the recorder capture more before the participant answers again.
+    await expect.poll(() => p.locator("#background-recording-status").getAttribute("data-bytes").then(Number))
+      .toBeGreaterThan(declaredSizes[0]);
+    await p.getByRole("button",{name:"Yes",exact:true}).click();
+    await expect(p.locator("#main-body")).toContainText("Second judgment");
+    expect(new Set(declaredSizes).size).toBe(1);
+    await expect.poll(() => Boolean(held)).toBe(true);
+    expect(held.request().postDataBuffer().length).toBe(declaredSizes[0]);
+    await held.continue();
+  });
+});
+
 test("denied camera permission allows both answers without prompting again @inplace-only",async ({page,context}) => {
   test.setTimeout(120000);
   await context.addInitScript(() => {
@@ -53,6 +90,7 @@ test("denied camera permission allows both answers without prompting again @inpl
       const accepted = await (await response).json();
       expect(accepted.submission).toBe("approved");
       expect(accepted.recording_uploads).toEqual([]);
+      await expect(p.locator("#background-recording-status")).toHaveCount(0);
     }
     await expect(p.locator("#main-body")).toContainText("Independent page reached.");
   });
