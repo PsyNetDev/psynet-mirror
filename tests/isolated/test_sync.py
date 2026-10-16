@@ -15,6 +15,7 @@ from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
 
+from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
     barrier_from_spec_json,
@@ -33,7 +34,6 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
-from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.serialize import SerializedCallable
 from psynet.sqlalchemy_profiling import assert_query_count
@@ -67,7 +67,7 @@ from psynet.sync import (
     check_sync_groups,
     pending_arrival_notice_for,
 )
-from psynet.timeline import Page, Timeline
+from psynet.timeline import Page, PageMaker, Response, Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -107,7 +107,7 @@ def get_random_id():
     return str(uuid.uuid4())
 
 
-def async_process_noop():
+def async_job_noop():
     return None
 
 
@@ -692,6 +692,91 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
     assert first.sync_group is not None
     assert second.sync_group.id == first.sync_group.id
     assert len(first.sync_group.participants) == 2
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_leftover_waiter_joins_an_open_group(
+    in_experiment_directory, db_session
+):
+    """A waiter left over from a burst joins the group formed without them."""
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+    participants = _working_participants(exp, 3)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    leftover = next(p for p in participants if p.sync_group is None)
+
+    check_barriers()
+
+    db_session.refresh(leftover)
+    assert grouper.can_participant_exit(leftover)
+    assert len(leftover.sync_group.participants) == 3
+
+
+@pytest.mark.parametrize("accepts_top_ups", [True, False])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_does_not_join_a_group_without_active_members(
+    in_experiment_directory, db_session, accepts_top_ups
+):
+    """A group whose members all left stays open (top-ups) or closes; neither is joined."""
+    exp = get_experiment()
+    (member,), group = _sync_group_of(exp, db_session, 1, group_type="quorum")
+    group.accepts_top_ups = accepts_top_ups
+    member.fail("left")
+    (newcomer,) = _working_participants(exp, 1)
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+
+    assert grouper.choose_who_to_release([newcomer]) == []
+    assert newcomer.sync_group is None
+
+
+@pytest.mark.parametrize("request_kind", ["response", "timeline"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_partner_leaving_sends_participant_to_unsuccessful_end(
+    in_experiment_directory, db_session, request_kind
+):
+    """The open page is not rebuilt after the partner leaves and the group closes."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        PageMaker(
+            lambda participant: InfoPage(f"Group {participant.sync_group.id}"),
+            time_estimate=1,
+        ),
+    )
+    try:
+        (stayer, leaver), _ = _pair_sync_group(exp, db_session)
+        assert _json_timeline(exp, stayer).status_code == 200
+        leaver.fail("returned the study")
+        db_session.commit()
+        assert stayer.failed
+
+        if request_kind == "response":
+            result = _process_response(exp, stayer, stayer.page_uuid)
+            assert result.payload["submission"] == "approved"
+            assert Response.query.filter_by(participant_id=stayer.id).count() == 0
+        else:
+            assert _json_timeline(exp, stayer).status_code == 200
+        assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
 
 
 def test_sync_group_dashboard_waiting_barrier_indexes():
@@ -5835,11 +5920,10 @@ def test_deleted_orm_callback_receiver_is_rejected(in_experiment_directory, db_s
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_async_process_events_wake_timeline_holds(
-    in_experiment_directory, db_session, monkeypatch
+def test_async_job_events_wake_timeline_holds(
+    in_experiment_directory, db_session, monkeypatch, caplog
 ):
     wakes = []
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     monkeypatch.setattr(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
@@ -5847,25 +5931,27 @@ def test_async_process_events_wake_timeline_holds(
 
     participant = new_participant(get_experiment())
     db_session.flush()
-    finished = LocalAsyncProcess(async_process_noop, participant=participant)
-    timed_out = WorkerAsyncProcess(
-        async_process_noop, participant=participant, timeout=30
-    )
-    cancelled = WorkerAsyncProcess(async_process_noop, participant=participant)
+    # Saved without enqueue() so that the test runs the jobs itself.
+    finished = LocalAsyncJob(async_job_noop, participant=participant)
+    timed_out = WorkerAsyncJob(async_job_noop, participant=participant, timeout=30)
+    cancelled = WorkerAsyncJob(async_job_noop, participant=participant)
+    db_session.add_all([finished, timed_out, cancelled])
     timed_out.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db_session.flush()
     finished_id = finished.id
     cancelled_id = cancelled.id
-    db_session.commit()
+    with caplog.at_level("WARNING", logger="psynet"):
+        db_session.commit()
+    assert caplog.text.count("never enqueued") == 3
 
-    LocalAsyncProcess.call_function(finished_id)
-    WorkerAsyncProcess.check_timeouts()
-    WorkerAsyncProcess.query.get(cancelled_id).cancel()
+    LocalAsyncJob.call_function(finished_id)
+    WorkerAsyncJob.check_timeouts()
+    WorkerAsyncJob.query.get(cancelled_id).cancel()
 
     assert wakes == [
-        "async_process_finished",
-        "async_process_timed_out",
-        "async_process_cancelled",
+        "async_job_finished",
+        "async_job_timed_out",
+        "async_job_cancelled",
     ]
 
 

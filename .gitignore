@@ -162,6 +162,10 @@ source_code.zip
 **/deploy_logs/
 dump.rdb
 
+# Files staged by `psynet debug ssh --use-local-psynet` / `--use-local-dallinger`
+psynet-*.whl
+local-image-pins.txt
+
 # Scaffold and dependency files generated inside bundled demos.
 # Patterns use ``/**/`` so nested experiment roots (e.g. create_and_rate/basic)
 # are covered.

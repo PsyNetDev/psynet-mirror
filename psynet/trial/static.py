@@ -53,9 +53,6 @@ class StaticTrial(ChainTrial):
         The user should not typically change this directly.
         Stored in ``details`` in the database.
 
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
-
     definition
         A dictionary of parameters defining the trial,
         inherited from the respective :class:`~psynet.trial.static.Stimulus` object.
@@ -261,7 +258,7 @@ class StaticTrialMaker(ChainTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long until an async job times out, in seconds (default = 300).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -284,7 +281,7 @@ class StaticTrialMaker(ChainTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
     """
 

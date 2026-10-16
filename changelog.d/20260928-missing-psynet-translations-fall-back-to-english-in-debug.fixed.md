@@ -1,0 +1,1 @@
+Missing entries in PsyNet's own translation catalogs now fall back to English, with a warning, under ``psynet debug local`` as well as in tests. Sandbox deployments and release-branch CI still raise an error, and live deployments still report it.

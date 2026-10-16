@@ -3279,7 +3279,7 @@ def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
         worker_id="W7",
         failed=True,
         module_state=None,
-        awaited_async_code_block_process=MagicMock(finished=False, failed=False),
+        awaited_async_code_block_job=MagicMock(finished=False, failed=False),
     )
     experiment = MagicMock()
 

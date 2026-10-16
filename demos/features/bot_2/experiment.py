@@ -10,10 +10,10 @@ from statistics import mean
 from dallinger import db
 
 import psynet.experiment
+from psynet.async_job import WorkerAsyncJob
 from psynet.experiment import scheduled_task
 from psynet.modular_page import ModularPage, Prompt, TextControl
 from psynet.page import InfoPage
-from psynet.process import WorkerAsyncProcess
 from psynet.timeline import FailedValidation, Timeline
 from psynet.trial.imitation_chain import (
     ImitationChainNode,
@@ -122,9 +122,9 @@ class Exp(psynet.experiment.Experiment):
         from psynet.experiment import get_experiment, is_experiment_launched
 
         if is_experiment_launched():
-            WorkerAsyncProcess(
+            WorkerAsyncJob(
                 function=get_experiment().run_bot, arguments={"time_factor": 0.2}
-            )
+            ).enqueue()
             db.session.commit()
 
     def initialize_bot(self, bot):
