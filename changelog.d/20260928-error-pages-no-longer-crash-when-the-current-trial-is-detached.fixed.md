@@ -1,1 +1,1 @@
-Error pages no longer fail when the participant's current trial cannot be loaded after a rollback; the error is reported without trial context and a warning is logged.
+Error pages and ``/response`` error reports no longer fail when the participant's current trial cannot be loaded because the participant is detached from the database session; the error is reported without trial context and a warning is logged.

@@ -5646,21 +5646,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         in which case its current trial cannot be loaded. The error is then
         reported without trial context rather than failing again.
         """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
         try:
             trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
         except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
             logger.warning(
                 "Could not load the current trial for participant %s while "
-                "reporting an error, because the participant is detached from "
-                "the database session.",
-                getattr(participant, "id", None),
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
             )
-            trial = None
-        return {
-            "trial": trial,
-            "node": trial.node if trial else None,
-            "network": trial.network if trial else None,
-        }
+        return context
 
     @classmethod
     def fail_participant_on_error(cls, participant, error):
@@ -7024,17 +7027,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(
