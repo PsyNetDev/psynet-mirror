@@ -2726,6 +2726,17 @@ def test_a_failed_final_restore_fails_the_command(monkeypatch):
     start_stopped_services.assert_called_once()
 
 
+def test_a_reset_run_does_not_restart_an_app_that_will_be_destroyed(monkeypatch):
+    start_stopped_services = Mock()
+    _remote_search(
+        monkeypatch,
+        reset=True,
+        keep_app=False,
+        start_stopped_services=start_stopped_services,
+    )
+    start_stopped_services.assert_not_called()
+
+
 def test_an_interrupted_remote_search_keeps_the_finished_tests_json(
     tmp_path, monkeypatch
 ):

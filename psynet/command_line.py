@@ -6057,6 +6057,15 @@ def performance_test__app_info(json_output):
         json.dump(info, f)
 
 
+def _remote_performance_test_app_info(server, app):
+    """Return what ``performance-test app-info`` reports in the web container of ``app`` on ``server``."""
+    from psynet.perf_ssh import RemoteApp
+
+    _awaken_ssh_app(server, app)
+    remote = RemoteApp(_ssh_executor(server), app, server)
+    return remote.run_psynet("performance-test app-info")
+
+
 def _require_performance_test_app(server, app):
     """Return the :func:`_performance_test_app_info` of ``app`` on ``server``.
 
@@ -6070,17 +6079,13 @@ def _require_performance_test_app(server, app):
         finished launching the experiment, or that can't be checked. Apps
         whose PsyNet predates the launch check count as launched.
     """
-    from psynet.perf_ssh import RemoteApp
-
-    _awaken_ssh_app(server, app)
-    remote = RemoteApp(_ssh_executor(server), app, server)
     advice = (
         "Performance tests only run on apps that 'psynet performance-test ssh' "
         "deployed for them, whose data is disposable. Choose another --app name, "
         "and 'performance-test ssh' deploys a new app under that name."
     )
     try:
-        info = remote.run_psynet("performance-test app-info")
+        info = _remote_performance_test_app_info(server, app)
     except (click.ClickException, RuntimeError) as e:
         raise click.ClickException(
             f"Could not check whether {app} on {server} is a performance-test app "
@@ -6246,6 +6251,7 @@ def performance_test__docker_ssh(
     if exists:
         # Before the try, so that an app this command didn't deploy is never destroyed.
         _require_performance_test_app(server, app)
+    deployed = exists
     try:
         experiment = _prepare_performance_test_app(
             ctx,
@@ -6257,13 +6263,14 @@ def performance_test__docker_ssh(
             use_local_dallinger=use_local_dallinger,
             assume_yes=assume_yes,
         )
+        deployed = True
         _run_ssh_performance_test(
             app,
             server,
             experiment,
             reset=reset_database or bool(prefill_participants),
             prefill_participants=prefill_participants,
-            restore_at_end=keep_app,
+            keep_app=keep_app,
             json_output=json_output,
             **options,
         )
@@ -6273,8 +6280,37 @@ def performance_test__docker_ssh(
                 f"{app} is kept on {server}. Destroy it when you're done with:\n"
                 f"    psynet destroy ssh --server {server} --app {app}"
             )
-        else:
+        elif deployed or _failed_deploy_left_performance_test_app(server, app):
             _destroy_performance_test_app(ctx, server, app)
+
+
+def _failed_deploy_left_performance_test_app(server, app):
+    """Return whether ``app`` is on ``server`` with the ``performance_test_app`` mark, after its deploy failed.
+
+    The deploy may have failed before creating anything, or because another
+    app of that name appeared after the command checked, so an app is only
+    destroyed if its own config has the mark.
+    """
+    from dallinger.command_line.docker_ssh import get_apps
+
+    try:
+        if app not in {entry.name for entry in get_apps(server)}:
+            return False
+        if _remote_performance_test_app_info(server, app).get("performance_test_app"):
+            return True
+    except Exception as e:
+        logger.warning(
+            "Could not check whether %s on %s is a performance-test app: %r",
+            app,
+            server,
+            e,
+        )
+    print(
+        f"Not destroying {app} on {server}: could not confirm that this run "
+        "deployed it. If it did, destroy it with:\n"
+        f"    psynet destroy ssh --server {server} --app {app}"
+    )
+    return False
 
 
 def _prepare_performance_test_app(ctx, app, *, server, update, **deploy_options):
@@ -6322,12 +6358,14 @@ def _destroy_performance_test_app(ctx, server, app):
     print(f"▶ Destroying {app} on {server}; pass --keep-app to keep it...")
     try:
         ctx.invoke(destroy, app=app, server=server)
-    except Exception as e:
+    except BaseException as e:
         logger.warning("Could not destroy %s on %s: %r", app, server, e)
         print(
             f"Could not destroy {app}; see the output above. Destroy it with:\n"
             f"    psynet destroy ssh --server {server} --app {app}"
         )
+        if not isinstance(e, Exception):
+            raise
 
 
 def _run_ssh_performance_test(
@@ -6337,7 +6375,7 @@ def _run_ssh_performance_test(
     *,
     reset=False,
     prefill_participants=None,
-    restore_at_end=True,
+    keep_app=True,
     n_bots=None,
     stagger=None,
     time_factor=1.0,
@@ -6352,9 +6390,10 @@ def _run_ssh_performance_test(
     ``experiment`` holds the experiment's test defaults (see
     :func:`_prepare_performance_test_app`). With ``reset``, the database is
     reset before each test, after ``prefill_participants`` bots have run
-    through the experiment, and with ``restore_at_end``, restored at the
-    end to how the run found it. Default test lengths are those of
-    ``performance-test local``, and ``suite_options`` those of
+    through the experiment. If ``keep_app``, the app outlasts the run, so at
+    the end the database is restored to how the run found it and the server
+    processes that a reset stopped start again. Default test lengths are
+    those of ``performance-test local``, and ``suite_options`` those of
     :func:`_run_performance_suite`.
     """
     import logging
@@ -6403,7 +6442,7 @@ def _run_ssh_performance_test(
             label=f"{app} on {server}",
             metadata={"experiment_label": experiment["label"]},
             database_reset=(
-                _ssh_database_reset(remote, prefill_participants, restore_at_end)
+                _ssh_database_reset(remote, prefill_participants, keep_app)
                 if reset
                 else None
             ),
@@ -6411,12 +6450,12 @@ def _run_ssh_performance_test(
                 "reset_database": reset,
                 "prefill_participants": prefill_participants,
             },
-            cleanup=remote.start_stopped_services,
+            cleanup=remote.start_stopped_services if keep_app else None,
             **suite_options,
         )
 
 
-def _ssh_database_reset(remote, prefill_participants, restore_at_end):
+def _ssh_database_reset(remote, prefill_participants, keep_app):
     """Return the :class:`~psynet.perf_ssh.DatabaseReset` of the SSH app.
 
     Raises
@@ -6427,7 +6466,9 @@ def _ssh_database_reset(remote, prefill_participants, restore_at_end):
     from psynet.perf_ssh import DatabaseReset
 
     try:
-        database_reset = DatabaseReset(remote, prefill_participants, restore_at_end)
+        database_reset = DatabaseReset(
+            remote, prefill_participants, restore_at_end=keep_app
+        )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     print(
