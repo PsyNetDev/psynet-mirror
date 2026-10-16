@@ -155,7 +155,7 @@ def _checkout_files(root):
     """Return ``(name, path)`` for the files under ``root``, sorted by name.
 
     In a Git checkout these are the files Git doesn't ignore; otherwise every
-    file outside ``.git`` and ``__pycache__`` directories.
+    file outside ``.git``, ``__pycache__`` and ``node_modules`` directories.
     """
     import subprocess
 
@@ -179,7 +179,9 @@ def _checkout_files(root):
         names = set()
         for directory, subdirectories, filenames in os.walk(root):
             subdirectories[:] = [
-                d for d in subdirectories if d not in (".git", "__pycache__")
+                d
+                for d in subdirectories
+                if d not in (".git", "__pycache__", "node_modules")
             ]
             for filename in filenames:
                 path = os.path.join(directory, filename)

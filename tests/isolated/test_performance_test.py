@@ -2145,8 +2145,9 @@ def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
     assert experiment_code_key() != key
 
 
+@pytest.mark.parametrize("git", [True, False], ids=["git", "not-git"])
 def test_experiment_code_key_follows_the_local_dallinger_checkout(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, git
 ):
     import subprocess
 
@@ -2160,7 +2161,10 @@ def test_experiment_code_key_follows_the_local_dallinger_checkout(
     monkeypatch.chdir(experiment)
     checkout = tmp_path / "Dallinger"
     checkout.mkdir()
-    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    generated = checkout / ("build" if git else "__pycache__")
+    if git:
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        (checkout / ".gitignore").write_text("build/\n")
     (checkout / "bots.py").write_text("A = 1\n")
 
     keys = [experiment_code_key(), experiment_code_key(dallinger_source=str(checkout))]
@@ -2168,8 +2172,11 @@ def test_experiment_code_key_follows_the_local_dallinger_checkout(
     keys.append(experiment_code_key(dallinger_source=str(checkout)))
     (checkout / "new_module.py").write_text("")
     keys.append(experiment_code_key(dallinger_source=str(checkout)))
+    generated.mkdir()
+    (generated / "output").write_text("")
 
     assert len(set(keys)) == 4
+    assert experiment_code_key(dallinger_source=str(checkout)) == keys[-1]
 
 
 @pytest.mark.parametrize(

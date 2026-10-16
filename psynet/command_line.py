@@ -1966,7 +1966,7 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
 
 
 def _local_dallinger_source():
-    """Return the Dallinger checkout that ``--use-local-dallinger`` bakes into the image."""
+    """Return the absolute path of the Dallinger checkout that ``--use-local-dallinger`` bakes into the image."""
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
     if not source:
         from dallinger.utils import get_editable_dallinger_path
@@ -1982,7 +1982,7 @@ def _local_dallinger_source():
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
-    return source
+    return str(Path(source).expanduser().resolve())
 
 
 def _reject_leftover_local_image_files():

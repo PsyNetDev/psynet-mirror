@@ -218,7 +218,7 @@ class TestCommandLine(object):
         src.mkdir()
         (src / "pyproject.toml").write_text("[project]\nname='dallinger'\n")
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("DALLINGER_SOURCE", str(src))
+        monkeypatch.setenv("DALLINGER_SOURCE", "Dallinger/")
         monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
         _configure_dallinger_image_source(use_local_dallinger=True)
         assert os.environ["DALLINGER_SOURCE"] == str(src)
