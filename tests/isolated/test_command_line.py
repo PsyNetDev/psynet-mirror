@@ -1288,20 +1288,26 @@ def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
     executor.assert_not_called()
 
 
-def _invoke_performance_test_ssh(args, *, apps, app_info):
-    """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``."""
+def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
+    """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
+
+    ``calls`` records the experiment directory check and the server's app listing.
+    """
     from types import SimpleNamespace
 
     from psynet.command_line import performance_test
 
+    calls = calls or Mock()
+    calls.get_apps.return_value = [SimpleNamespace(name=app) for app in apps]
     with (
         patch(
             "dallinger.command_line.docker_ssh.get_configured_hosts",
             return_value={"server": {}},
         ),
+        patch("dallinger.command_line.docker_ssh.get_apps", calls.get_apps),
         patch(
-            "dallinger.command_line.docker_ssh.get_apps",
-            return_value=[SimpleNamespace(name=app) for app in apps],
+            "psynet.command_line._check_experiment_directory",
+            calls.check_experiment_directory,
         ),
         patch("psynet.command_line._ssh_executor"),
         patch("psynet.command_line._awaken_ssh_app"),
@@ -1343,12 +1349,27 @@ def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
         "performance_test_app": True,
         "dns_host": None,
         "ingress": None,
+        "use_local_psynet": False,
         "use_local_dallinger": False,
         "assume_yes": False,
         **deployed,
     }
     assert run.call_args.args[2] == {"label": "Test"}
     assert "psynet destroy ssh --server server --app my-app" in result.output
+
+
+def test_performance_test_ssh_scaffolds_before_contacting_the_server():
+    calls = Mock()
+    result, deploy, _ = _invoke_performance_test_ssh(
+        ["--use-local-psynet"], apps=[], app_info=_MARKED, calls=calls
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [name for name, *_ in calls.mock_calls] == [
+        "check_experiment_directory",
+        "get_apps",
+    ]
+    assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
@@ -1409,7 +1430,7 @@ def test_performance_test_deploys_mark_the_app():
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "performance_test_app": "true"
     }
-    assert pre_launch.call_args.kwargs["confirm_update"] is False
+    assert pre_launch.call_args.kwargs["performance_test_app"] is True
 
 
 def test_live_deployments_refuse_performance_test_apps():
@@ -4707,6 +4728,18 @@ def remote_launch(monkeypatch, tmp_path):
             _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
 
     return launch, resets, confirm
+
+
+@pytest.mark.parametrize("performance_test_app", [False, True])
+def test_only_performance_test_apps_skip_the_consent_check(
+    remote_launch, performance_test_app
+):
+    from psynet import command_line
+
+    launch, _, _ = remote_launch
+    launch(performance_test_app=performance_test_app)
+    check_consents = command_line.run_pre_checks.call_args.kwargs["check_consents"]
+    assert check_consents is not performance_test_app
 
 
 def test_remote_update_keeps_local_data(remote_launch):
