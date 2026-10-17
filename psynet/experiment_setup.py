@@ -649,10 +649,22 @@ def _resolve_shared_checkout_venv_action(*, no_install, force_shared_env):
     return choice
 
 
-def _editable_checkout_is_dirty(source):
-    """Return whether an editable PsyNet checkout has uncommitted changes."""
+def _editable_checkout_is_dirty(source, include_untracked=True):
+    """Return whether an editable checkout has uncommitted changes.
+
+    Parameters
+    ----------
+    source : path-like
+        Root of the Git checkout.
+    include_untracked : bool
+        Whether untracked (but not ignored) files count as changes. If so,
+        Git's ``status.showUntrackedFiles`` setting is respected.
+    """
+    command = ["git", "-C", str(source), "status", "--porcelain"]
+    if not include_untracked:
+        command.append("--untracked-files=no")
     result = subprocess.run(
-        ["git", "-C", str(source), "status", "--porcelain"],
+        command,
         capture_output=True,
         text=True,
         check=False,

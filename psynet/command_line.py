@@ -1648,8 +1648,14 @@ def _pre_launch(
     update=False,
     local_packages=(),
     assume_yes=False,
-    confirm_update=True,
+    performance_test_app=False,
 ):
+    """Check and prepare the experiment directory before a launch.
+
+    ``performance_test_app`` marks an app that ``psynet performance-test
+    ssh`` deploys for bots: an update isn't confirmed first, and the
+    experiment needn't have a consent page.
+    """
     from .experiment import get_experiment
 
     if docker:
@@ -1658,6 +1664,7 @@ def _pre_launch(
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
+    _check_local_image_packages(local_packages)
 
     from .services import ensure_local_services
 
@@ -1689,9 +1696,17 @@ def _pre_launch(
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
         if update:
-            _check_ssh_update(server, app, mode, confirm=confirm_update)
+            _check_ssh_update(server, app, mode, confirm=not performance_test_app)
 
-    run_pre_checks(mode, local_, heroku, docker, app, local_packages)
+    run_pre_checks(
+        mode,
+        local_,
+        heroku,
+        docker,
+        app,
+        local_packages,
+        check_consents=not performance_test_app,
+    )
 
     # An --update only rebuilds the image, so it leaves local data alone.
     if not update:
@@ -2319,8 +2334,19 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
 
 
 def run_pre_checks(
-    mode, local_, heroku=False, docker=False, app=None, local_packages=()
+    mode,
+    local_,
+    heroku=False,
+    docker=False,
+    app=None,
+    local_packages=(),
+    check_consents=True,
 ):
+    """Check the experiment before a launch.
+
+    ``check_consents=False`` skips the consent page check, for apps that only
+    bots take part in.
+    """
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
@@ -2333,7 +2359,8 @@ def run_pre_checks(
     exp = get_experiment()
     exp.check_config()
     exp.check_size(heroku=heroku)
-    exp.check_consents()
+    if check_consents:
+        exp.check_consents()
     exp.check_python_dependencies()
 
     try:
@@ -2547,7 +2574,7 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, and an update isn't confirmed first.
+    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2555,7 +2582,6 @@ def _debug_ssh(
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
-        _check_local_image_packages(local_packages)
 
         _pre_launch(
             ctx,
@@ -2569,7 +2595,7 @@ def _debug_ssh(
             update=update,
             local_packages=local_packages,
             assume_yes=assume_yes,
-            confirm_update=not performance_test_app,
+            performance_test_app=performance_test_app,
         )
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
@@ -3271,8 +3297,8 @@ def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
     if get_editable_psynet_source() is not None:
         parts.append(
             "\n\nTo try your editable PsyNet checkout on a server without "
-            "pinning it, run 'psynet debug ssh --use-local-psynet'. "
-            "'psynet deploy' always needs a pin."
+            "pinning it, add --use-local-psynet to 'psynet debug ssh' or "
+            "'psynet performance-test ssh'. 'psynet deploy' always needs a pin."
         )
     parts.append(
         "\n\nExamples:\n"
@@ -6300,6 +6326,7 @@ def performance_test__prepare_reset(
     deployed in debug mode from this directory for performance tests.""",
 )
 @_add_ssh_deployment_options
+@_use_local_psynet_option
 @_use_local_dallinger_option
 @_performance_load_options
 @_test_options["performance_json_output"]
@@ -6330,6 +6357,7 @@ def performance_test__docker_ssh(
     server,
     dns_host=None,
     ingress=None,
+    use_local_psynet=False,
     use_local_dallinger=False,
     assume_yes=False,
     json_output=None,
@@ -6342,7 +6370,8 @@ def performance_test__docker_ssh(
 
     If the server has no app named --app, this deploys one from this
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
-    a performance-test app, whose data is disposable. Later runs update it
+    a performance-test app, whose data is disposable. Since only bots take
+    part, the experiment needn't have a consent page. Later runs update it
     in place from this directory before testing, keeping its database. They
     refuse apps that this command didn't deploy, or whose deploy didn't
     finish launching the experiment. The app is kept after the run; destroy
@@ -6367,6 +6396,7 @@ def performance_test__docker_ssh(
         server=server,
         dns_host=dns_host,
         ingress=ingress,
+        use_local_psynet=use_local_psynet,
         use_local_dallinger=use_local_dallinger,
         assume_yes=assume_yes,
     )
@@ -6407,6 +6437,9 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     """
     from dallinger.command_line.docker_ssh import get_apps
 
+    # Contacting the server loads the config, so a missing config.txt must be
+    # scaffolded first.
+    _check_experiment_directory("sandbox", require_git_commit=True)
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)

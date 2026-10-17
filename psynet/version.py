@@ -1,6 +1,9 @@
 import os
 import re
 import subprocess
+import sys
+from importlib import metadata
+from pathlib import Path
 
 import click
 
@@ -45,19 +48,20 @@ def check_core_dependency_versions_match_requirements(skip=()):
     from yaspin import yaspin
 
     skip_messages = []
+    warning_messages = []
     with yaspin(
         text="Checking whether PsyNet and Dallinger versions specified and installed are the same...",
         color="green",
     ) as spinner:
         with open("requirements.txt", "r") as file:
             versions = collect_core_dependency_version_info_from_requirements(
-                file.read()
+                file.read(), skip=skip
             )
 
             for package_name, version_infos in versions.items():
-                if package_name.lower() in skip:
-                    continue
                 status = version_infos["status"]
+                if version_infos.get("warning"):
+                    warning_messages.append(version_infos["warning"])
 
                 if status == "consistent":
                     spinner.ok("✔")
@@ -81,9 +85,11 @@ def check_core_dependency_versions_match_requirements(skip=()):
 
     for message in skip_messages:
         click.echo(message)
+    for message in warning_messages:
+        click.secho(f"Warning: {message}", fg="yellow", err=True)
 
 
-def collect_core_dependency_version_info_from_requirements(file_content):
+def collect_core_dependency_version_info_from_requirements(file_content, skip=()):
     """
     Parse requirements.txt content and compare to installed versions.
 
@@ -91,20 +97,33 @@ def collect_core_dependency_version_info_from_requirements(file_content):
     ----------
     file_content : str
         Contents of a requirements.txt file.
+    skip : collection of str
+        Lowercase names of packages not to check; they are omitted from the
+        result without their installed version being looked up.
+
     Returns
     -------
     dict
         Mapping of package name to a dict containing ``specified``, ``installed``,
-        ``status`` (``consistent``, ``inconsistent``, or ``skipped``), and an optional
-        ``skip_reason``.
+        ``status`` (``consistent``, ``inconsistent``, or ``skipped``), and optional
+        ``skip_reason`` and ``warning`` messages.
+
+    Raises
+    ------
+    ValueError
+        If a branch or commit pin is checked against an editable install whose
+        Git commit cannot be determined.
     """
     versions = {}
     for package_name in ["Dallinger", "PsyNet"]:
+        if package_name.lower() in skip:
+            continue
         versions[package_name] = {
             "specified": None,
             "installed": None,
             "status": "consistent",
             "skip_reason": None,
+            "warning": None,
         }
         specified = None
         installed = None
@@ -132,14 +151,14 @@ def collect_core_dependency_version_info_from_requirements(file_content):
             # Get installed version via the Dallinger/PsyNet API
             installed = get_installed_version_for_package(package_name)
         else:
-            # Get installed version from `pip freeze`
-            installed = get_installed_commit_or_version_from_pip_freeze(package_name)
+            installed = get_installed_commit_or_version(package_name)
 
         # A release pin must match exactly even for a development install: the
         # deployment copies templates and static files from the local package,
         # while the image installs the pinned one.
         if not release_pin and is_development_version(installed):
-            # A development version could correspond to many possible branches/commits,
+            # Only index or non-editable path installs report a version here, and
+            # a development version could correspond to many branches/commits,
             # so it cannot be compared with a branch or commit pin.
             status = "skipped"
             skip_reason = "installed version is a development version"
@@ -152,11 +171,15 @@ def collect_core_dependency_version_info_from_requirements(file_content):
                 else "inconsistent"
             )
             skip_reason = None
+        warning = None
+        if status == "consistent" and _commit_pin_matches(specified, installed):
+            warning = _uncommitted_changes_warning(package_name)
         versions[package_name] = {
             "specified": specified,
             "installed": installed,
             "status": status,
             "skip_reason": skip_reason,
+            "warning": warning,
         }
     return versions
 
@@ -227,43 +250,100 @@ def get_installed_version_for_package(package_name):
     raise ValueError(f"Unsupported package '{package_name}'")
 
 
-def get_requirement_line_from_pip_freeze(name):
-    # Use pip freeze because it shows git URLs with commit hashes,
-    # unlike metadata.version().
-    pip_freeze_stdout = subprocess.run(
-        ["pip freeze"],
-        shell=True,
-        capture_output=True,
-    ).stdout
+def get_installed_commit_or_version(package_name):
+    """Return the installed Git commit of a package, or its version.
 
-    # Find line corresponding to this package in pip freeze output.
-    # This line could have one of the following formats:
-    #   "psynet==1.0.0"
-    #   "psynet @ git+https://..."
-    #   "psynet[extra]==1.0.0"
-    #   "-e git+https://...#egg=psynet"
-    #
-    # Regex breakdown:
-    #   ^(?:-e\s+)?           - Start of line, optionally prefixed with "-e " (editable)
-    #   {name}                - The package name (escaped for regex safety)
-    #   (?:\s*[@=\[]|$)       - Followed by " @", "=", "[", or end of line
-    #   |                     - OR
-    #   #egg={name}(?:\s|$)   - "#egg=<name>" followed by whitespace or end of line
-    pattern = re.compile(
-        rf"^(?:-e\s+)?{re.escape(name)}(?:\s*[@=\[]|$)|#egg={re.escape(name)}(?:\s|$)",
-        re.IGNORECASE,
+    Inspects the running interpreter's distribution metadata rather than
+    whatever ``pip`` is on ``PATH``. VCS installs report the commit recorded
+    in PEP 610 ``direct_url.json``; editable installs report the current
+    ``HEAD`` of the Git checkout they point at (uncommitted changes are not
+    reflected). Other installs report the version string.
+
+    Parameters
+    ----------
+    package_name : str
+        Distribution name, e.g. ``"PsyNet"`` or ``"Dallinger"``.
+
+    Returns
+    -------
+    str
+        A 40-character commit hash or a version string.
+
+    Raises
+    ------
+    ValueError
+        If the package is not installed, or is installed editable from a
+        directory that is not the root of a readable Git checkout.
+    """
+    from psynet.experiment_scaffold import _direct_url_info, _editable_source
+
+    installation = _direct_url_info(package_name)
+    commit = ((installation or {}).get("vcs_info") or {}).get("commit_id")
+    if commit is not None:
+        return commit
+    source = _editable_source(installation)
+    if source is not None:
+        return _editable_checkout_commit(package_name, source)
+    try:
+        return metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        raise ValueError(
+            f"Package '{package_name}' is not installed in the active Python "
+            f"environment ({sys.executable})."
+        ) from None
+
+
+def _editable_checkout_commit(package_name, source):
+    """Return the ``HEAD`` commit of the Git checkout rooted at ``source``.
+
+    ``git -C`` searches parent directories, so the checkout's top level must be
+    ``source`` itself; otherwise an enclosing repository's commit would be
+    reported.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-toplevel", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        toplevel, commit = result.stdout.splitlines()
+        if not (Path(toplevel).exists() and os.path.samefile(toplevel, source)):
+            problem = f"it is not the root of a Git checkout (found {toplevel})"
+        else:
+            return commit
+    except OSError as exc:
+        problem = f"git could not be run: {exc}"
+    except subprocess.CalledProcessError as exc:
+        problem = f"git failed: {exc.stderr.strip()}"
+    raise ValueError(
+        f"{package_name} is installed in editable mode from {source}, but its "
+        f"Git commit cannot be determined because {problem}. A branch or commit "
+        "pin in requirements.txt cannot be checked against it."
     )
 
-    for line in pip_freeze_stdout.decode().splitlines():
-        if pattern.search(line):
-            return line
 
-    raise ValueError(f"Package '{name}' not found in pip freeze")
+def _uncommitted_changes_warning(package_name):
+    """Return a warning if the editable checkout of a commit-pinned package has local edits.
 
+    Only modified tracked files count; untracked files are often scratch files
+    and would make this warning fire on most deployments.
+    """
+    from psynet.experiment_scaffold import get_editable_source
+    from psynet.experiment_setup import _editable_checkout_is_dirty
 
-def get_installed_commit_or_version_from_pip_freeze(package_name):
-    """Return the installed commit hash or version from pip freeze output."""
-    return specified_version(get_requirement_line_from_pip_freeze(package_name))
+    source = get_editable_source(package_name)
+    if source is None or not _editable_checkout_is_dirty(
+        source, include_untracked=False
+    ):
+        return None
+    return (
+        f"The editable {package_name} checkout at {source} has uncommitted "
+        "changes to tracked files. The server will install the commit pinned in requirements.txt, "
+        "not your local edits. Commit and push them and update the pin, or, "
+        f"for 'psynet debug ssh', use '--use-local-{package_name.lower()}' to "
+        "build the local checkout into the image."
+    )
 
 
 def parse_version_triplet(x):
