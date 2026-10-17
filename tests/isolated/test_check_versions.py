@@ -13,41 +13,42 @@ from psynet.version import (
 )
 
 
-def _install_fake_distribution(tmp_path, monkeypatch, direct_url=None):
-    """Make ``fakepkg`` 1.2.3 visible to ``importlib.metadata``."""
-    dist_info = tmp_path / "site-packages" / "fakepkg-1.2.3.dist-info"
+def _install_fake_distribution(
+    tmp_path, monkeypatch, direct_url=None, name="fakepkg", version="1.2.3"
+):
+    """Make a distribution visible to ``importlib.metadata``, ahead of real ones."""
+    dist_info = tmp_path / "site-packages" / f"{name}-{version}.dist-info"
     dist_info.mkdir(parents=True)
-    (dist_info / "METADATA").write_text("Name: fakepkg\nVersion: 1.2.3\n")
+    (dist_info / "METADATA").write_text(f"Name: {name}\nVersion: {version}\n")
     if direct_url is not None:
         (dist_info / "direct_url.json").write_text(json.dumps(direct_url))
     monkeypatch.syspath_prepend(str(dist_info.parent))
 
 
+def _git(path, *args):
+    """Run git in ``path`` and return its stripped output."""
+    return subprocess.check_output(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+        + ["-C", str(path), *args],
+        text=True,
+    ).strip()
+
+
+def _editable(path):
+    return {"url": path.as_uri(), "dir_info": {"editable": True}}
+
+
 def test_installed_commit_of_editable_git_worktree(tmp_path, monkeypatch):
     repo, worktree = tmp_path / "repo", tmp_path / "worktree"
-    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
-    subprocess.run([*git, "init", "-q", str(repo)], check=True)
-    subprocess.run(
-        [*git, "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "a"], check=True
-    )
-    subprocess.run(
-        [*git, "-C", str(repo), "worktree", "add", "-q", "-b", "wt", str(worktree)],
-        check=True,
-    )
-    subprocess.run(
-        [*git, "-C", str(worktree), "commit", "-q", "--allow-empty", "-m", "b"],
-        check=True,
-    )
-    head = subprocess.check_output(
-        ["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True
-    ).strip()
-    _install_fake_distribution(
-        tmp_path,
-        monkeypatch,
-        {"url": worktree.as_uri(), "dir_info": {"editable": True}},
-    )
+    _git(tmp_path, "init", "-q", str(repo))
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "a")
+    _git(repo, "worktree", "add", "-q", "-b", "wt", str(worktree))
+    _git(worktree, "commit", "-q", "--allow-empty", "-m", "b")
+    _install_fake_distribution(tmp_path, monkeypatch, _editable(worktree))
 
-    assert get_installed_commit_or_version("fakepkg") == head
+    assert get_installed_commit_or_version("fakepkg") == _git(
+        worktree, "rev-parse", "HEAD"
+    )
 
 
 @pytest.mark.parametrize(
@@ -60,10 +61,9 @@ def test_installed_commit_of_editable_git_worktree(tmp_path, monkeypatch):
             },
             "a" * 40,
         ),
-        ({"url": "file:///no-such-checkout", "dir_info": {"editable": True}}, "1.2.3"),
         (None, "1.2.3"),
     ],
-    ids=["vcs", "editable-non-git", "index"],
+    ids=["vcs", "index"],
 )
 def test_installed_commit_or_version_from_metadata(
     tmp_path, monkeypatch, direct_url, expected
@@ -71,6 +71,57 @@ def test_installed_commit_or_version_from_metadata(
     _install_fake_distribution(tmp_path, monkeypatch, direct_url)
 
     assert get_installed_commit_or_version("fakepkg") == expected
+
+
+def test_installed_commit_or_version_of_missing_package():
+    with pytest.raises(ValueError, match="'no-such-package' is not installed"):
+        get_installed_commit_or_version("no-such-package")
+
+
+@pytest.mark.parametrize("inside_repo", [False, True])
+def test_commit_pin_fails_for_editable_install_without_own_checkout(
+    tmp_path, monkeypatch, inside_repo
+):
+    source = tmp_path / "repo" / "PsyNet"
+    source.mkdir(parents=True)
+    if inside_repo:
+        _git(tmp_path / "repo", "init", "-q")
+    _install_fake_distribution(
+        tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
+    )
+
+    with working_directory(tmp_path):
+        (tmp_path / "requirements.txt").write_text(
+            f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{'a' * 40}"
+        )
+        with pytest.raises(ValueError, match="Git commit cannot be determined"):
+            check_core_dependency_versions_match_requirements()
+
+
+@pytest.mark.parametrize(
+    "change, warns", [("tracked", True), ("untracked", False), (None, False)]
+)
+def test_commit_pin_warns_about_uncommitted_editable_changes(
+    tmp_path, monkeypatch, capsys, change, warns
+):
+    source = tmp_path / "PsyNet"
+    _git(tmp_path, "init", "-q", str(source))
+    (source / "tracked.py").write_text("a = 1\n")
+    _git(source, "add", "tracked.py")
+    _git(source, "commit", "-q", "-m", "a")
+    if change:
+        (source / f"{change}.py").write_text("a = 2\n")
+    _install_fake_distribution(
+        tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
+    )
+    (tmp_path / "requirements.txt").write_text(
+        f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{_git(source, 'rev-parse', 'HEAD')}"
+    )
+
+    with working_directory(tmp_path):
+        check_core_dependency_versions_match_requirements()
+
+    assert ("uncommitted changes" in capsys.readouterr().err) == warns
 
 
 # PsyNet tests
