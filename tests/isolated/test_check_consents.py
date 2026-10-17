@@ -28,3 +28,4 @@ class TestCheckConsents:
             match="It looks like your experiment is missing a consent page.",
         ):
             run_pre_checks(mode="live", **pre_check_args)
+        run_pre_checks(mode="live", check_consents=False, **pre_check_args)
