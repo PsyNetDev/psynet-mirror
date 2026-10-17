@@ -120,7 +120,11 @@ def run_with_status(executor, cmd):
 
 
 class RemoteApp:
-    """An app on an SSH server, as ``psynet performance-test ssh`` deployed it.
+    """A docker-ssh app on an SSH server, whose web container runs ``psynet`` commands.
+
+    ``psynet performance-test ssh`` uses it to drive and reset an app it
+    deployed; ``psynet destroy ssh`` and ``psynet export ssh`` use it to ask
+    any app for its pending async jobs.
 
     Parameters
     ----------
@@ -193,7 +197,7 @@ class RemoteApp:
         )
 
         run_id = uuid.uuid4().hex
-        json_path = f"/tmp/psynet_perf_{run_id}.json"
+        json_path = f"/tmp/psynet_remote_{run_id}.json"
         log_path = f"/tmp/psynet_bots_{run_id}.log"
         cmd = (
             f"env PSYNET_EXPERIMENT_URL=http://localhost:{_CONTAINER_WEB_PORT} "

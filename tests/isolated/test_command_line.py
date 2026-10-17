@@ -1273,7 +1273,7 @@ def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_pat
             "results": []
         }
 
-    assert "--json-output /tmp/psynet_perf_" in channel.command
+    assert "--json-output /tmp/psynet_remote_" in channel.command
     assert "--bot-log /tmp/psynet_bots_" in channel.command
     assert bot_log.read_text() == "bot 1 failed\n"
 
@@ -5459,7 +5459,10 @@ def _invoke_destroy_ssh(
     )
     monkeypatch.setattr(
         "psynet.command_line._fetch_ssh_pending_async_jobs",
-        lambda app, server: events.append(("check", app)) or pending,
+        lambda app, server: (
+            events.append(("check", app))
+            or (pending(app) if callable(pending) else pending)
+        ),
     )
     monkeypatch.setattr(click, "confirm", confirm)
 
@@ -5642,6 +5645,27 @@ def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
     assert message in result.output
 
 
+def test_destroy_ssh_batch_destroys_only_the_apps_it_could_check(monkeypatch):
+    from psynet.command_line import _PendingJobCheckError
+
+    def pending(app):
+        if app == "down":
+            raise _PendingJobCheckError("web container not running")
+        return {"total": 0}
+
+    monkeypatch.setattr(
+        "psynet.command_line._is_debug_ssh_app", lambda server, app: False
+    )
+    fake_destroy, destroyed = _recording_destroy()
+    result = _invoke_destroy_ssh(
+        monkeypatch, fake_destroy, apps=("done", "down"), pending=pending
+    )
+
+    assert destroyed == ["done"], result.output
+    assert result.exit_code == 1, result.output
+    assert "Not destroying down" in result.output
+
+
 def test_ssh_pending_job_check_queries_the_web_container(monkeypatch):
     from psynet.command_line import _fetch_ssh_pending_async_jobs
 
@@ -5737,7 +5761,7 @@ def test_destroy_ssh_pending_job_check_times_out(monkeypatch):
     assert destroyed == [], result.output
     assert commands[0].startswith("timeout 30 sh -c ")
     remove, read_compose = run_commands
-    assert "timeout 30 sh -c" in remove and "rm -f /tmp/psynet_perf_" in remove
+    assert "timeout 30 sh -c" in remove and "rm -f /tmp/psynet_remote_" in remove
     assert read_compose.startswith("timeout 30 sh -c ")
     assert "docker-compose.yml" in read_compose
     assert (

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -4901,7 +4902,7 @@ def run_remote_experiment_command(executor, app, cmd, timeout_s=None):
     remote_cmd = build_remote_experiment_command(app, _stop_when_disconnected(cmd))
     if timeout_s is not None:
         remote_cmd = _with_remote_timeout(remote_cmd, timeout_s)
-    timed_out = click.ClickException(f"no answer within {timeout_s} s")
+        deadline = time.monotonic() + timeout_s + _SSH_TIMEOUT_GRACE_S
     channel = executor.client.get_transport().open_session()
     # Closing the channel, also after Ctrl-C, ends the remote command's stdin,
     # which stops it (see _stop_when_disconnected).
@@ -4921,13 +4922,18 @@ def run_remote_experiment_command(executor, app, cmd, timeout_s=None):
                 sys.stdout.write(text)
                 sys.stdout.flush()
 
+        if timeout_s is not None:
+            while not channel.exit_status_ready():
+                if time.monotonic() > deadline:
+                    raise TimeoutError
+                time.sleep(0.1)
         status = channel.recv_exit_status()
     except TimeoutError as e:
-        raise timed_out from e
+        raise click.ClickException(f"no answer within {timeout_s} s") from e
     finally:
         channel.close()
     if timeout_s is not None and status == _REMOTE_TIMEOUT_STATUS:
-        raise timed_out
+        raise click.ClickException(f"no answer within {timeout_s} s")
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
         raise click.ClickException(_remote_failure_summary(status, recent))
