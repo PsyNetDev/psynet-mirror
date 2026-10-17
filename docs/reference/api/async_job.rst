@@ -98,7 +98,7 @@ deployments:
 * ``psynet destroy ssh`` wakes the app if it is asleep, then refuses to
   destroy it while jobs are pending, or asks you to confirm when run
   interactively. It also refuses if the jobs cannot be checked, unless
-  the app runs in debug mode or is a performance-test app.
+  the app was deployed with ``psynet debug ssh`` (see below).
 
 Wait for the backlog to finish, export again, and then destroy the app. For
 example, ``psynet destroy ssh`` prints:
@@ -120,7 +120,12 @@ within 30 seconds. ``psynet destroy ssh`` then says why and does not destroy
 the app: start its web container and run the command again, or check in the
 app's logs that its jobs have finished and pass ``--discard-pending-jobs``.
 Apps deployed with ``psynet debug ssh`` or ``psynet performance-test ssh``
-are destroyed anyway with a warning, because their data is disposable.
+are destroyed anyway with a warning, because debug apps' data is treated as
+disposable. This includes a debug app that recruits real participants, for
+example through Prolific, so deploy real studies with ``psynet deploy ssh``.
+PsyNet recognises these apps by the ``debug_ssh_app`` config variable that
+``psynet debug ssh`` sets; apps deployed by older PsyNet versions lack it
+and are refused like any other app.
 When ``destroy ssh`` destroys several apps, it skips those it refuses and
 destroys the others, then exits with status 1.
 

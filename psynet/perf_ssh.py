@@ -200,17 +200,26 @@ class RemoteApp:
         )
         if bot_log:
             cmd += f" --bot-log {log_path}"
+        read = shlex.quote(f"cat {json_path}; s=$?; rm -f {json_path}; exit $s")
+        read = build_remote_experiment_command(self.app, f"sh -c {read}")
+        if timeout_s is not None:
+            read = _with_remote_timeout(read, timeout_s)
         try:
             run_remote_experiment_command(
                 self.executor, self.app, cmd, timeout_s=timeout_s
             )
+        except Exception:
+            remove = build_remote_experiment_command(self.app, f"rm -f {json_path}")
+            if timeout_s is not None:
+                remove = _with_remote_timeout(remove, timeout_s)
+            try:
+                run_with_status(self.executor, remove)
+            except Exception as e:
+                logger.debug("Could not remove %s from %s: %s", json_path, self.app, e)
+            raise
         finally:
             if bot_log:
                 self._append_bot_log(log_path)
-        read = shlex.quote(f"cat {json_path} && rm -f {json_path}")
-        read = build_remote_experiment_command(self.app, f"sh -c {read}")
-        if timeout_s is not None:
-            read = _with_remote_timeout(read, timeout_s)
         try:
             output = self.run(read)
             return json.loads(output)

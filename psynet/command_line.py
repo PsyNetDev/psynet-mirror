@@ -1714,12 +1714,12 @@ def _pre_launch(
     experiment.update_deployment_id()
 
     config = get_config()
-    if mode == "live" and config.get("performance_test_app", False):
-        raise click.UsageError(
-            "performance_test_app is set, which declares that the app's data is "
-            "disposable and lets performance tests reset it. Remove it from the "
-            "config to deploy in live mode."
-        )
+    for key in ("performance_test_app", "debug_ssh_app"):
+        if mode == "live" and config.get(key, False):
+            raise click.UsageError(
+                f"{key} is set, which declares that the app's data is disposable. "
+                "Remove it from the config to deploy in live mode."
+            )
     deployment_info.write(locale=config.get("locale", "en"))
 
     if config.get("check_dallinger_version"):
@@ -2542,8 +2542,10 @@ def _debug_ssh(
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
+    The app's environment sets ``debug_ssh_app``, which lets ``psynet
+    destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
-    performance-test ssh`` deploys for its tests: its environment sets
+    performance-test ssh`` deploys for its tests: its environment also sets
     ``performance_test_app``, and an update isn't confirmed first.
     """
     try:
@@ -2568,9 +2570,9 @@ def _debug_ssh(
             assume_yes=assume_yes,
             confirm_update=not performance_test_app,
         )
-        config_options = {}
+        config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
-            config_options = {"performance_test_app": "true"}
+            config_options["performance_test_app"] = "true"
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -4303,46 +4305,33 @@ def _confirm_destroy_with_pending_jobs(
 _COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
 
 
-def _disposable_ssh_app_kind(server, app):
-    """Say whether an SSH app's data is disposable, from the config in its compose file.
+def _is_debug_ssh_app(server, app):
+    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
 
     The compose file is read rather than the app's config in its web
-    container, which may be what failed.
-
-    Returns
-    -------
-    str or None
-        ``"a performance-test app"`` or ``"a debug-mode app"``, or ``None``
-        for other apps and apps whose compose file can't be read.
+    container, which may be what failed. Apps whose compose file can't be
+    read count as not deployed by ``psynet debug ssh``.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException
 
+    cmd = f"cat ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
     try:
         compose = _ssh_executor(server).run(
-            f"cat ~/dallinger/{shlex.quote(app)}/docker-compose.yml", raise_=False
+            _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S), raise_=False
         )
     except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
         log(f"Could not read {app}'s compose file on {server}: {e}")
-        return None
-
-    def setting(key):
-        match = re.search(_COMPOSE_SETTING.format(re.escape(key)), compose or "")
-        return match[1].strip().lower() if match else None
-
-    if setting("performance_test_app") == "true":
-        return "a performance-test app"
-    if setting("mode") == "sandbox":
-        return "a debug-mode app"
-    return None
+        return False
+    match = re.search(_COMPOSE_SETTING.format("debug_ssh_app"), compose or "")
+    return bool(match) and match[1].strip().lower() == "true"
 
 
 def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs):
     """Decide whether to destroy an SSH app whose pending async jobs couldn't be checked.
 
-    It is destroyed with ``discard_pending_jobs``, or with a warning if it
-    is a debug-mode or performance-test app (see
-    :func:`_disposable_ssh_app_kind`).
+    It is destroyed with ``discard_pending_jobs``, or with a warning if
+    ``psynet debug ssh`` deployed it (see :func:`_is_debug_ssh_app`).
 
     Parameters
     ----------
@@ -4367,9 +4356,11 @@ def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs)
             "--discard-pending-jobs was passed."
         )
         return True
-    kind = _disposable_ssh_app_kind(server, app)
-    if kind:
-        log(f"WARNING: {problem} Destroying it anyway because it is {kind}.")
+    if _is_debug_ssh_app(server, app):
+        log(
+            f"WARNING: {problem} Destroying it anyway because it is a "
+            "`psynet debug ssh` app."
+        )
         return True
     log(
         f"{problem} Not destroying {app}, because destroying it would lose the "
@@ -4527,7 +4518,8 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
     Apps that can't be checked for pending jobs are not destroyed without
-    --discard-pending-jobs, except debug-mode and performance-test apps.
+    --discard-pending-jobs, except apps deployed with `psynet debug ssh` or
+    `psynet performance-test ssh`.
     """
     from dallinger.command_line.docker_ssh import destroy
 

@@ -1409,7 +1409,8 @@ def test_performance_test_deploys_mark_the_app():
         )
 
     assert ctx.invoke.call_args.kwargs["config_options"] == {
-        "performance_test_app": "true"
+        "debug_ssh_app": "true",
+        "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["confirm_update"] is False
 
@@ -5660,7 +5661,8 @@ _WEB_DOWN = b'service "web" is not running\n'
 def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
     """Run ``psynet destroy ssh`` on a server whose web containers fail the pending-jobs check with ``status``.
 
-    Returns the result, the destroyed apps and the remote check's commands.
+    Returns the result, the destroyed apps, the remote check's commands and
+    the other commands run on the server.
     """
     destroyed = _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=True)
     channels = []
@@ -5668,18 +5670,27 @@ def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
     executor.client.get_transport.return_value.open_session.side_effect = lambda: (
         channels.append(_FakeChannel(status, _WEB_DOWN)) or channels[-1]
     )
-    executor.run.side_effect = lambda cmd, raise_=True: compose
+    run_commands = []
+    executor.run.side_effect = lambda cmd, raise_=True: (
+        run_commands.append(cmd) or compose
+    )
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *args])
-    return result, [app for app, _ in destroyed], [c.command for c in channels]
+    destroyed = [app for app, _ in destroyed]
+    return result, destroyed, [c.command for c in channels], run_commands
 
 
 @pytest.mark.parametrize(
-    "args", [["--app", "one"], ["--app", "one", "--yes"], ["one", "two", "--yes"]]
+    "args, mode",
+    [
+        (["--app", "one"], "live"),
+        (["--app", "one", "--yes"], "live"),
+        (["one", "two", "--yes"], "sandbox"),
+    ],
 )
-def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args):
-    compose = '    environment:\n      mode: "live"\n'
-    result, destroyed, _ = _destroy_unchecked_ssh_apps(
+def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode):
+    compose = f'    environment:\n      mode: "{mode}"\n'
+    result, destroyed, *_ = _destroy_unchecked_ssh_apps(
         monkeypatch, args, compose=compose
     )
 
@@ -5697,18 +5708,17 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args):
     "flags, compose, reason",
     [
         (["--discard-pending-jobs"], "", "--discard-pending-jobs was passed"),
-        ([], '      mode: "sandbox"\n', "it is a debug-mode app"),
         (
             [],
-            '      mode: "sandbox"\n      performance_test_app: "true"\n',
-            "it is a performance-test app",
+            '      mode: "sandbox"\n      debug_ssh_app: "true"\n',
+            "it is a `psynet debug ssh` app",
         ),
     ],
 )
 def test_destroy_ssh_destroys_unchecked_apps_with_discard_or_disposable_data(
     monkeypatch, flags, compose, reason
 ):
-    result, destroyed, _ = _destroy_unchecked_ssh_apps(
+    result, destroyed, *_ = _destroy_unchecked_ssh_apps(
         monkeypatch, ["one", "two", "--yes", *flags], compose=compose
     )
 
@@ -5719,12 +5729,16 @@ def test_destroy_ssh_destroys_unchecked_apps_with_discard_or_disposable_data(
 
 
 def test_destroy_ssh_pending_job_check_times_out(monkeypatch):
-    result, destroyed, commands = _destroy_unchecked_ssh_apps(
+    result, destroyed, commands, run_commands = _destroy_unchecked_ssh_apps(
         monkeypatch, ["--app", "one", "--yes"], status=124
     )
 
     assert destroyed == [], result.output
     assert commands[0].startswith("timeout 30 sh -c ")
+    remove, read_compose = run_commands
+    assert "timeout 30 sh -c" in remove and "rm -f /tmp/psynet_perf_" in remove
+    assert read_compose.startswith("timeout 30 sh -c ")
+    assert "docker-compose.yml" in read_compose
     assert (
         "could not query one's web container on musix (no answer within 30 s). "
         "Not destroying one" in result.output

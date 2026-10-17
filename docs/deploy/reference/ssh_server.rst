@@ -188,7 +188,8 @@ asleep and asks it for pending async jobs, and does not destroy an app that
 has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
 not skip this check. If the check cannot run, for example because the app's
 web container is down, it does not destroy the app without
-``--discard-pending-jobs``, except for debug-mode and performance-test apps.
+``--discard-pending-jobs``, except for apps deployed with ``psynet debug ssh``
+or ``psynet performance-test ssh``, which it destroys with a warning.
 See :doc:`/reference/api/async_job`.
 
 Updating a running app

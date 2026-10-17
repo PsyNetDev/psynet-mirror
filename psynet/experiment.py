@@ -637,6 +637,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
         Default: ``True``.
 
+    debug_ssh_app : ``bool``
+        Marks an SSH app as one that ``psynet debug ssh`` (or ``psynet
+        performance-test ssh``) deployed, which sets it. ``psynet destroy
+        ssh`` destroys such an app with a warning when it can't check the
+        app for pending async jobs, instead of refusing. Don't set it
+        yourself.
+        Default: ``False``.
+
     performance_test_app : ``bool``
         Marks an SSH app as one that ``psynet performance-test ssh`` may load,
         reset and pre-fill, which means that its data is disposable.
@@ -2261,6 +2269,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "needs_internet_access": True,
             "check_participant_opened_devtools": False,
             "performance_test_app": False,
+            "debug_ssh_app": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,
             "window_height": 768,
@@ -4257,6 +4266,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
         config.register("performance_test_app", bool)
+        config.register("debug_ssh_app", bool)
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
