@@ -1,0 +1,1 @@
+Fixed the deploy-time check that compares installed PsyNet and Dallinger versions with `requirements.txt`: it now reads the active interpreter's package metadata instead of running whatever `pip` is on `PATH`, so it works in `uv` virtual environments without pip and recognises editable installs from Git worktrees.

@@ -1,11 +1,76 @@
+import json
 import os
+import subprocess
 import tempfile
 from unittest.mock import patch
 
 import pytest
 
 from psynet.utils import working_directory
-from psynet.version import check_core_dependency_versions_match_requirements
+from psynet.version import (
+    check_core_dependency_versions_match_requirements,
+    get_installed_commit_or_version,
+)
+
+
+def _install_fake_distribution(tmp_path, monkeypatch, direct_url=None):
+    """Make ``fakepkg`` 1.2.3 visible to ``importlib.metadata``."""
+    dist_info = tmp_path / "site-packages" / "fakepkg-1.2.3.dist-info"
+    dist_info.mkdir(parents=True)
+    (dist_info / "METADATA").write_text("Name: fakepkg\nVersion: 1.2.3\n")
+    if direct_url is not None:
+        (dist_info / "direct_url.json").write_text(json.dumps(direct_url))
+    monkeypatch.syspath_prepend(str(dist_info.parent))
+
+
+def test_installed_commit_of_editable_git_worktree(tmp_path, monkeypatch):
+    repo, worktree = tmp_path / "repo", tmp_path / "worktree"
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+    subprocess.run([*git, "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        [*git, "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "a"], check=True
+    )
+    subprocess.run(
+        [*git, "-C", str(repo), "worktree", "add", "-q", "-b", "wt", str(worktree)],
+        check=True,
+    )
+    subprocess.run(
+        [*git, "-C", str(worktree), "commit", "-q", "--allow-empty", "-m", "b"],
+        check=True,
+    )
+    head = subprocess.check_output(
+        ["git", "-C", str(worktree), "rev-parse", "HEAD"], text=True
+    ).strip()
+    _install_fake_distribution(
+        tmp_path,
+        monkeypatch,
+        {"url": worktree.as_uri(), "dir_info": {"editable": True}},
+    )
+
+    assert get_installed_commit_or_version("fakepkg") == head
+
+
+@pytest.mark.parametrize(
+    "direct_url, expected",
+    [
+        (
+            {
+                "url": "https://gitlab.com/PsyNetDev/PsyNet.git",
+                "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+            },
+            "a" * 40,
+        ),
+        ({"url": "file:///no-such-checkout", "dir_info": {"editable": True}}, "1.2.3"),
+        (None, "1.2.3"),
+    ],
+    ids=["vcs", "editable-non-git", "index"],
+)
+def test_installed_commit_or_version_from_metadata(
+    tmp_path, monkeypatch, direct_url, expected
+):
+    _install_fake_distribution(tmp_path, monkeypatch, direct_url)
+
+    assert get_installed_commit_or_version("fakepkg") == expected
 
 
 # PsyNet tests
@@ -57,11 +122,11 @@ def test_check_core_dependency_versions_psynet_editable_version_tag_without_egg(
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_psynet_editable_commit_hash(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = "-e git+ssh://git@gitlab.com/PsyNetDev/PsyNet@COMMIT_HASH_FROM_PIP_FREEEZE#egg=psynet"
+    mock_installed.return_value = "INSTALLED_COMMIT_HASH"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -75,18 +140,18 @@ def test_check_core_dependency_versions_psynet_editable_commit_hash(
                 with pytest.raises(
                     ValueError,
                     match="The PsyNet versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
-                    "Version installed locally: COMMIT_HASH_FROM_PIP_FREEEZE[\\n\\r\\s]+"
+                    "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
                     "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
                 ):
                     check_core_dependency_versions_match_requirements()
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_psynet_pip_install_requirement(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = "psynet==10.0.0"
+    mock_installed.return_value = "10.0.0"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -131,14 +196,11 @@ def test_check_core_dependency_versions_release_pin_rejects_development_install(
     ],
 )
 @pytest.mark.parametrize("repo", ["PsyNetDev/PsyNet", "alice/my-fork"])
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
-    mock_get_requirement, repo, pinned_commit, matches
+    mock_installed, repo, pinned_commit, matches
 ):
-    mock_get_requirement.return_value = (
-        f"-e git+https://gitlab.com/{repo}.git"
-        "@2da1cc662d0db5969a14f20f18a2e1834187ff8b#egg=psynet"
-    )
+    mock_installed.return_value = "2da1cc662d0db5969a14f20f18a2e1834187ff8b"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -155,11 +217,11 @@ def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
                     check_core_dependency_versions_match_requirements()
 
 
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_branch_pin_skips_development_install(
-    mock_get_requirement, capsys
+    mock_installed, capsys
 ):
-    mock_get_requirement.return_value = "psynet==13.4.0a0"
+    mock_installed.return_value = "13.4.0a0"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -172,11 +234,11 @@ def test_check_core_dependency_versions_branch_pin_skips_development_install(
 
 
 @patch("psynet.__version__", "10.0.0rc1")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_psynet_pip_install_requirement_rc(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = "PsyNet==10.0.0rc1"
+    mock_installed.return_value = "10.0.0rc1"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -188,11 +250,11 @@ def test_check_core_dependency_versions_psynet_pip_install_requirement_rc(
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_psynet_pip_install_commit_hash(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = "psynet==10.0.0"
+    mock_installed.return_value = "10.0.0"
 
     for extension in ["", ".git"]:
         with tempfile.TemporaryDirectory() as dir:
@@ -277,11 +339,11 @@ def test_check_core_dependency_versions_dallinger_unspecified_requirement():
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_dallinger_editable_commit_hash_with_egg(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = "-e git+https://github.com/Dallinger/Dallinger@COMMIT_HASH_FROM_PIP_FREEEZE#egg=dallinger"
+    mock_installed.return_value = "INSTALLED_COMMIT_HASH"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -296,20 +358,18 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_with_egg(
                 with pytest.raises(
                     ValueError,
                     match="The Dallinger versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
-                    "Version installed locally: COMMIT_HASH_FROM_PIP_FREEEZE[\\n\\r\\s]+"
+                    "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
                     "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
                 ):
                     check_core_dependency_versions_match_requirements()
 
 
 @patch("psynet.__version__", "10.0.0")
-@patch("psynet.version.get_requirement_line_from_pip_freeze")
+@patch("psynet.version.get_installed_commit_or_version")
 def test_check_core_dependency_versions_dallinger_editable_commit_hash_without_egg(
-    mock_get_requirement,
+    mock_installed,
 ):
-    mock_get_requirement.return_value = (
-        "-e git+https://github.com/Dallinger/Dallinger@COMMIT_HASH_FROM_PIP_FREEEZE"
-    )
+    mock_installed.return_value = "INSTALLED_COMMIT_HASH"
 
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
@@ -324,7 +384,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_without_e
                 with pytest.raises(
                     ValueError,
                     match="The Dallinger versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
-                    "Version installed locally: COMMIT_HASH_FROM_PIP_FREEEZE[\\n\\r\\s]+"
+                    "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
                     "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
                 ):
                     check_core_dependency_versions_match_requirements()

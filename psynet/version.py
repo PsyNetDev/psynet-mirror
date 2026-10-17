@@ -1,6 +1,6 @@
 import os
 import re
-import subprocess
+from importlib import metadata
 
 import click
 
@@ -132,8 +132,7 @@ def collect_core_dependency_version_info_from_requirements(file_content):
             # Get installed version via the Dallinger/PsyNet API
             installed = get_installed_version_for_package(package_name)
         else:
-            # Get installed version from `pip freeze`
-            installed = get_installed_commit_or_version_from_pip_freeze(package_name)
+            installed = get_installed_commit_or_version(package_name)
 
         # A release pin must match exactly even for a development install: the
         # deployment copies templates and static files from the local package,
@@ -227,43 +226,38 @@ def get_installed_version_for_package(package_name):
     raise ValueError(f"Unsupported package '{package_name}'")
 
 
-def get_requirement_line_from_pip_freeze(name):
-    # Use pip freeze because it shows git URLs with commit hashes,
-    # unlike metadata.version().
-    pip_freeze_stdout = subprocess.run(
-        ["pip freeze"],
-        shell=True,
-        capture_output=True,
-    ).stdout
+def get_installed_commit_or_version(package_name):
+    """Return the installed Git commit of a package, or its version.
 
-    # Find line corresponding to this package in pip freeze output.
-    # This line could have one of the following formats:
-    #   "psynet==1.0.0"
-    #   "psynet @ git+https://..."
-    #   "psynet[extra]==1.0.0"
-    #   "-e git+https://...#egg=psynet"
-    #
-    # Regex breakdown:
-    #   ^(?:-e\s+)?           - Start of line, optionally prefixed with "-e " (editable)
-    #   {name}                - The package name (escaped for regex safety)
-    #   (?:\s*[@=\[]|$)       - Followed by " @", "=", "[", or end of line
-    #   |                     - OR
-    #   #egg={name}(?:\s|$)   - "#egg=<name>" followed by whitespace or end of line
-    pattern = re.compile(
-        rf"^(?:-e\s+)?{re.escape(name)}(?:\s*[@=\[]|$)|#egg={re.escape(name)}(?:\s|$)",
-        re.IGNORECASE,
+    Inspects the running interpreter's distribution metadata rather than
+    whatever ``pip`` is on ``PATH``. VCS installs report the commit recorded
+    in PEP 610 ``direct_url.json``; editable installs from a local Git
+    checkout report that checkout's current ``HEAD`` (uncommitted changes are
+    not reflected). Other installs report the version string.
+
+    Parameters
+    ----------
+    package_name : str
+        Distribution name, e.g. ``"PsyNet"`` or ``"Dallinger"``.
+
+    Returns
+    -------
+    str
+        A 40-character commit hash or a version string.
+    """
+    from psynet.experiment_scaffold import (
+        _current_source_commit,
+        _direct_url_info,
+        _editable_source,
     )
 
-    for line in pip_freeze_stdout.decode().splitlines():
-        if pattern.search(line):
-            return line
-
-    raise ValueError(f"Package '{name}' not found in pip freeze")
-
-
-def get_installed_commit_or_version_from_pip_freeze(package_name):
-    """Return the installed commit hash or version from pip freeze output."""
-    return specified_version(get_requirement_line_from_pip_freeze(package_name))
+    installation = _direct_url_info(package_name)
+    commit = ((installation or {}).get("vcs_info") or {}).get("commit_id")
+    if commit is None:
+        source = _editable_source(installation)
+        if source is not None:
+            commit = _current_source_commit(source)
+    return commit or metadata.version(package_name)
 
 
 def parse_version_triplet(x):
