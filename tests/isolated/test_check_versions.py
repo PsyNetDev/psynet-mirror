@@ -116,26 +116,39 @@ def test_skipped_editable_package_without_own_checkout_is_not_looked_up(
 
 
 @pytest.mark.parametrize(
-    "change, warns", [("tracked", True), ("untracked", False), (None, False)]
+    "change, experiment_dir, warns",
+    [
+        ("tracked.py", ".", True),
+        ("untracked.py", ".", False),
+        (None, ".", False),
+        ("tracked.py", "PsyNet/demo", True),
+        ("demo/experiment.py", "PsyNet/demo", False),
+        ("tracked.py", "PsyNet", True),
+        ("demo/experiment.py", "PsyNet/de*", True),
+    ],
 )
 def test_commit_pin_warns_about_uncommitted_editable_changes(
-    tmp_path, monkeypatch, capsys, change, warns
+    tmp_path, monkeypatch, capsys, change, experiment_dir, warns
 ):
     source = tmp_path / "PsyNet"
     _git(tmp_path, "init", "-q", str(source))
-    (source / "tracked.py").write_text("a = 1\n")
-    _git(source, "add", "tracked.py")
+    (source / "demo").mkdir()
+    for path in ["tracked.py", "demo/experiment.py"]:
+        (source / path).write_text("a = 1\n")
+    _git(source, "add", ".")
     _git(source, "commit", "-q", "-m", "a")
     if change:
-        (source / f"{change}.py").write_text("a = 2\n")
+        (source / change).write_text("a = 2\n")
     _install_fake_distribution(
         tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
     )
-    (tmp_path / "requirements.txt").write_text(
+    experiment_dir = tmp_path / experiment_dir
+    experiment_dir.mkdir(exist_ok=True)
+    (experiment_dir / "requirements.txt").write_text(
         f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{_git(source, 'rev-parse', 'HEAD')}"
     )
 
-    with working_directory(tmp_path):
+    with working_directory(experiment_dir):
         check_core_dependency_versions_match_requirements()
 
     assert ("uncommitted changes" in capsys.readouterr().err) == warns
