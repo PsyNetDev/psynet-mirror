@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import types
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -1232,6 +1231,9 @@ class _FakeChannel:
     def set_combine_stderr(self, value):
         self.combine_stderr = value
 
+    def settimeout(self, timeout):
+        pass
+
     def exec_command(self, command):
         self.command = command
 
@@ -1271,7 +1273,7 @@ def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_pat
             "results": []
         }
 
-    assert "--json-output /tmp/psynet_perf_" in channel.command
+    assert "--json-output /tmp/psynet_remote_" in channel.command
     assert "--bot-log /tmp/psynet_bots_" in channel.command
     assert bot_log.read_text() == "bot 1 failed\n"
 
@@ -1431,12 +1433,14 @@ def test_performance_test_deploys_mark_the_app():
         )
 
     assert ctx.invoke.call_args.kwargs["config_options"] == {
-        "performance_test_app": "true"
+        "debug_ssh_app": "true",
+        "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
 
 
-def test_live_deployments_refuse_performance_test_apps():
+@pytest.mark.parametrize("key", ["performance_test_app", "debug_ssh_app"])
+def test_live_deployments_refuse_debug_markers(key):
     from psynet.command_line import _pre_launch
 
     with (
@@ -1449,9 +1453,9 @@ def test_live_deployments_refuse_performance_test_apps():
         patch("psynet.experiment.get_experiment"),
         patch(
             "psynet.command_line.get_config",
-            return_value={"performance_test_app": True},
+            return_value={key: True},
         ),
-        pytest.raises(click.UsageError, match="performance_test_app"),
+        pytest.raises(click.UsageError, match=key),
     ):
         _pre_launch(Mock(), mode="live", archive=None, local_=True)
     info.write.assert_not_called()
@@ -4977,8 +4981,6 @@ def test_export_local_builds_directly_from_the_runtime_configuration(
     tmp_path, monkeypatch
 ):
     """A local export reads the local database instead of its own dashboard."""
-    import requests
-
     from psynet.command_line import export_
 
     deployment_id = "timeline-demo__mode=debug__launch=test"
@@ -5493,7 +5495,10 @@ def _invoke_destroy_ssh(
     )
     monkeypatch.setattr(
         "psynet.command_line._fetch_ssh_pending_async_jobs",
-        lambda app, server: events.append(("check", app)) or pending,
+        lambda app, server: (
+            events.append(("check", app))
+            or (pending(app) if callable(pending) else pending)
+        ),
     )
     monkeypatch.setattr(click, "confirm", confirm)
 
@@ -5550,7 +5555,7 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
     assert pre_launch_kwargs["docker"] is True
 
 
-def _patch_dallinger_destroy_ssh(monkeypatch):
+def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
     destroyed = []
 
     @click.command()
@@ -5563,9 +5568,11 @@ def _patch_dallinger_destroy_ssh(monkeypatch):
     monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
     monkeypatch.setattr("psynet.command_line._awaken_ssh_app", lambda server, app: None)
-    monkeypatch.setattr(
-        "psynet.command_line._fetch_ssh_pending_async_jobs", lambda app, server: None
-    )
+    if not check_pending_jobs:
+        monkeypatch.setattr(
+            "psynet.command_line._fetch_ssh_pending_async_jobs",
+            lambda app, server: {"total": 0},
+        )
     return destroyed
 
 
@@ -5654,7 +5661,6 @@ def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
     "pending, discard, message",
     [
         (_PENDING, True, "2 async jobs are still pending (2 low priority)"),
-        (None, False, ""),
         ({**_PENDING, "total": 0}, False, ""),
     ],
 )
@@ -5675,33 +5681,148 @@ def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
     assert message in result.output
 
 
+def test_destroy_ssh_batch_destroys_only_the_apps_it_could_check(monkeypatch):
+    from psynet.command_line import _PendingJobCheckError
+
+    def pending(app):
+        if app == "down":
+            raise _PendingJobCheckError("web container not running")
+        return {"total": 0}
+
+    monkeypatch.setattr(
+        "psynet.command_line._is_debug_ssh_app", lambda server, app: False
+    )
+    fake_destroy, destroyed = _recording_destroy()
+    result = _invoke_destroy_ssh(
+        monkeypatch, fake_destroy, apps=("done", "down"), pending=pending
+    )
+
+    assert destroyed == ["done"], result.output
+    assert result.exit_code == 1, result.output
+    assert "Not destroying down" in result.output
+
+
+def test_ssh_pending_job_check_queries_the_web_container(monkeypatch):
+    from psynet.command_line import _fetch_ssh_pending_async_jobs
+
+    calls = []
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: "ssh")
+    monkeypatch.setattr(
+        "psynet.perf_ssh.RemoteApp.run_psynet",
+        lambda self, args, timeout_s: calls.append((self.app, args)) or _PENDING,
+    )
+
+    assert _fetch_ssh_pending_async_jobs("busy", "rr-pc02") == _PENDING
+    assert calls == [("busy", "async-job-status")]
+
+
+_WEB_DOWN = b'service "web" is not running\n'
+
+
+def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
+    """Run ``psynet destroy ssh`` on a server whose web containers fail the pending-jobs check with ``status``.
+
+    Returns the result, the destroyed apps, the remote check's commands and
+    the other commands run on the server.
+    """
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=True)
+    channels = []
+    executor = Mock()
+    executor.client.get_transport.return_value.open_session.side_effect = lambda: (
+        channels.append(_FakeChannel(status, _WEB_DOWN)) or channels[-1]
+    )
+    run_commands = []
+    executor.run.side_effect = lambda cmd, raise_=True: (
+        run_commands.append(cmd) or compose
+    )
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", *args])
+    destroyed = [app for app, _ in destroyed]
+    return result, destroyed, [c.command for c in channels], run_commands
+
+
 @pytest.mark.parametrize(
-    "response, reason",
+    "args, mode",
     [
-        (types.SimpleNamespace(status_code=404), "a PsyNet version without this check"),
-        (types.SimpleNamespace(status_code=503), "the app is unavailable"),
-        (requests.ConnectionError("refused"), "could not reach the app (refused)"),
+        (["--app", "one"], "live"),
+        (["--app", "one", "--yes"], "live"),
+        (["one", "two", "--yes"], "sandbox"),
     ],
 )
-def test_pending_job_check_is_skipped_with_a_warning(
-    monkeypatch, capsys, response, reason
+def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode):
+    compose = f'    environment:\n      mode: "{mode}"\n'
+    result, destroyed, *_ = _destroy_unchecked_ssh_apps(
+        monkeypatch, args, compose=compose
+    )
+
+    assert destroyed == [], result.output
+    assert result.exit_code == 1
+    assert (
+        "Could not check one for pending async jobs: could not query one's web "
+        'container on musix (exit code 1: service "web" is not running). '
+        "Not destroying one" in result.output
+    )
+    assert "pass --discard-pending-jobs to destroy it anyway" in result.output
+
+
+@pytest.mark.parametrize(
+    "flags, compose, warning",
+    [
+        (
+            ["--discard-pending-jobs"],
+            "",
+            "Destroying it anyway because --discard-pending-jobs was passed.",
+        ),
+        ([], '      mode: "sandbox"\n      debug_ssh_app: "true"\n', None),
+    ],
+)
+def test_destroy_ssh_destroys_unchecked_apps_with_discard_or_disposable_data(
+    monkeypatch, flags, compose, warning
 ):
-    from psynet.command_line import _fetch_pending_async_jobs
-    from psynet.export.client import DashboardEndpoint
+    result, destroyed, *_ = _destroy_unchecked_ssh_apps(
+        monkeypatch, ["one", "two", "--yes", *flags], compose=compose
+    )
 
-    def fake_get(url, **kwargs):
-        assert url == "https://app.example.org/async_job_status"
-        if isinstance(response, Exception):
-            raise response
-        return response
+    assert destroyed == ["one", "two"], result.output
+    assert result.exit_code == 0
+    if warning:
+        assert warning in result.output
+    else:
+        assert "Could not check" not in result.output
 
-    monkeypatch.setattr(requests, "get", fake_get)
-    endpoint = DashboardEndpoint("https://app.example.org", ("admin", "pw"))
 
-    assert _fetch_pending_async_jobs(endpoint) is None
+def test_destroy_ssh_pending_job_check_times_out(monkeypatch):
+    result, destroyed, commands, run_commands = _destroy_unchecked_ssh_apps(
+        monkeypatch, ["--app", "one", "--yes"], status=124
+    )
+
+    assert destroyed == [], result.output
+    assert commands[0].startswith("timeout 30 sh -c ")
+    remove, read_compose = run_commands
+    assert "timeout 30 sh -c" in remove and "rm -f /tmp/psynet_remote_" in remove
+    assert read_compose.startswith("timeout 30 sh -c ")
+    assert "docker-compose.yml" in read_compose
+    assert (
+        "could not query one's web container on musix (no answer within 30 s). "
+        "Not destroying one" in result.output
+    )
+
+
+def test_export_ssh_continues_if_pending_jobs_cannot_be_checked(monkeypatch, capsys):
+    from psynet.command_line import _fetch_ssh_pending_async_jobs_for_export
+
+    monkeypatch.setattr(
+        "psynet.command_line._ssh_executor",
+        lambda server: _executor_for(_FakeChannel(2, b"No such command 'x'.\n")),
+    )
+
+    assert _fetch_ssh_pending_async_jobs_for_export("busy", "rr-pc02") is None
     output = capsys.readouterr().out
-    assert "WARNING: Skipped the check for pending async jobs" in output
-    assert reason in output
+    assert (
+        "WARNING: Skipped the check for pending async jobs: busy runs a PsyNet "
+        "version without this check. The export continues" in output
+    )
+    assert "destroy" not in output
 
 
 def test_local_pending_job_check_is_skipped_if_the_database_fails(monkeypatch, capsys):
@@ -5933,8 +6054,6 @@ def test_db_ssh_without_a_terminal_asks_for_server(monkeypatch):
 
 
 def test_performance_test_existing_explains_a_missing_server():
-    import requests
-
     from psynet.command_line import _check_existing_server_answers
 
     with patch("psynet.command_line.redis_vars.get", return_value=None):

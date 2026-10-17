@@ -186,7 +186,11 @@ name is deployed, which replaces it. It asks you to confirm first; add
 ``--yes`` to skip the confirmation in scripts. It also wakes the app if it is
 asleep and asks it for pending async jobs, and does not destroy an app that
 has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
-not skip this check. See :doc:`/reference/api/async_job`.
+not skip this check. If the check cannot run, for example because the app's
+web container is down, it does not destroy the app without
+``--discard-pending-jobs``, except for apps deployed with ``psynet debug ssh``
+or ``psynet performance-test ssh``, which it destroys anyway.
+See :doc:`/reference/api/async_job`.
 
 Updating a running app
 ----------------------
