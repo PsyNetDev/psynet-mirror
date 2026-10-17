@@ -123,6 +123,8 @@ def test_skipped_editable_package_without_own_checkout_is_not_looked_up(
         (None, ".", False),
         ("tracked.py", "PsyNet/demo", True),
         ("demo/experiment.py", "PsyNet/demo", False),
+        ("tracked.py", "PsyNet", True),
+        ("demo/experiment.py", "PsyNet/de*", True),
     ],
 )
 def test_commit_pin_warns_about_uncommitted_editable_changes(
@@ -141,6 +143,7 @@ def test_commit_pin_warns_about_uncommitted_editable_changes(
         tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
     )
     experiment_dir = tmp_path / experiment_dir
+    experiment_dir.mkdir(exist_ok=True)
     (experiment_dir / "requirements.txt").write_text(
         f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{_git(source, 'rev-parse', 'HEAD')}"
     )
