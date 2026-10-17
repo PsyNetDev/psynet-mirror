@@ -55,8 +55,9 @@ image:
 
     psynet debug ssh --app my-test --use-local-psynet
 
-The experiment's ``Dockerfile`` must be recent enough to install the wheel;
-if PsyNet says it isn't, run ``psynet scripts update``. See
+``psynet performance-test ssh`` takes the same option for the app it
+deploys. The experiment's ``Dockerfile`` must be recent enough to install
+the wheel; if PsyNet says it isn't, run ``psynet scripts update``. See
 :doc:`/deploy/reference/ssh_server` for details. ``psynet deploy`` does not
 offer this, so live deployments always use a pin.
 
