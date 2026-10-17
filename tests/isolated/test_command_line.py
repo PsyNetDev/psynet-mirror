@@ -1415,7 +1415,8 @@ def test_performance_test_deploys_mark_the_app():
     assert pre_launch.call_args.kwargs["confirm_update"] is False
 
 
-def test_live_deployments_refuse_performance_test_apps():
+@pytest.mark.parametrize("key", ["performance_test_app", "debug_ssh_app"])
+def test_live_deployments_refuse_debug_markers(key):
     from psynet.command_line import _pre_launch
 
     with (
@@ -1428,9 +1429,9 @@ def test_live_deployments_refuse_performance_test_apps():
         patch("psynet.experiment.get_experiment"),
         patch(
             "psynet.command_line.get_config",
-            return_value={"performance_test_app": True},
+            return_value={key: True},
         ),
-        pytest.raises(click.UsageError, match="performance_test_app"),
+        pytest.raises(click.UsageError, match=key),
     ):
         _pre_launch(Mock(), mode="live", archive=None, local_=True)
     info.write.assert_not_called()

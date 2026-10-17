@@ -175,7 +175,8 @@ class RemoteApp:
         The output is echoed as it arrives. With ``bot_log``, the command
         also gets ``--bot-log``, whose contents are appended to
         :attr:`bot_log_file`. With ``timeout_s``, the command and the read
-        of its JSON each fail after that many seconds.
+        of its JSON each fail after that many seconds; if the command fails,
+        removing its JSON file can take up to another ``timeout_s``.
 
         Raises
         ------
