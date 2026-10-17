@@ -64,9 +64,9 @@
         "unit": "s",
         "version": "3"
     },
-    "slow.experiment_performance.AsyncProcesses.track_median_queue_delay_ms": {
-        "code": "class AsyncProcesses:\n    def track_median_queue_delay_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"q_delay_median\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no async process queue delay\")\n        return value * 1000.0\n\n    def setup_cache(self):\n        return super().setup_cache()",
-        "name": "slow.experiment_performance.AsyncProcesses.track_median_queue_delay_ms",
+    "slow.experiment_performance.AsyncJobs.track_median_queue_delay_ms": {
+        "code": "class AsyncJobs:\n    def track_median_queue_delay_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"q_delay_median\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no async job queue delay\")\n        return value * 1000.0\n\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.AsyncJobs.track_median_queue_delay_ms",
         "param_names": [
             "n_bots",
             "duration_minutes"
@@ -79,16 +79,16 @@
                 "2.0"
             ]
         ],
-        "pretty_name": "async_processes Median queue delay",
+        "pretty_name": "async_jobs Median queue delay",
         "setup_cache_key": "slow.experiment_performance:209",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
         "version": "5"
     },
-    "slow.experiment_performance.AsyncProcesses.track_median_response_time_ms": {
-        "code": "class _BaseExperiment:\n    def track_median_response_time_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"median_response_time\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no median response time\")\n        return value * 1000.0\n\nclass AsyncProcesses:\n    def setup_cache(self):\n        return super().setup_cache()",
-        "name": "slow.experiment_performance.AsyncProcesses.track_median_response_time_ms",
+    "slow.experiment_performance.AsyncJobs.track_median_response_time_ms": {
+        "code": "class _BaseExperiment:\n    def track_median_response_time_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"median_response_time\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no median response time\")\n        return value * 1000.0\n\nclass AsyncJobs:\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.AsyncJobs.track_median_response_time_ms",
         "param_names": [
             "n_bots",
             "duration_minutes"
@@ -101,7 +101,7 @@
                 "2.0"
             ]
         ],
-        "pretty_name": "async_processes Median request time",
+        "pretty_name": "async_jobs Median request time",
         "setup_cache_key": "slow.experiment_performance:209",
         "timeout": 1800,
         "type": "track",
