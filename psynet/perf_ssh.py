@@ -120,7 +120,11 @@ def run_with_status(executor, cmd):
 
 
 class RemoteApp:
-    """An app on an SSH server, as ``psynet performance-test ssh`` deployed it.
+    """A docker-ssh app on an SSH server, whose web container runs ``psynet`` commands.
+
+    ``psynet performance-test ssh`` uses it to drive and reset an app it
+    deployed; ``psynet destroy ssh`` and ``psynet export ssh`` use it to ask
+    any app for its pending async jobs.
 
     Parameters
     ----------
@@ -169,28 +173,31 @@ class RemoteApp:
         """Run ``docker compose`` with the app's compose file and return its output."""
         return self.run(" ".join([self._compose, *map(shlex.quote, args)]))
 
-    def run_psynet(self, args, *, bot_log=False):
+    def run_psynet(self, args, *, bot_log=False, timeout_s=None):
         """Run ``psynet <args> --json-output PATH`` in the web container and return that JSON.
 
         The output is echoed as it arrives. With ``bot_log``, the command
         also gets ``--bot-log``, whose contents are appended to
-        :attr:`bot_log_file`.
+        :attr:`bot_log_file`. With ``timeout_s``, the command and the read
+        of its JSON each fail after that many seconds; if the command fails,
+        removing its JSON file can take up to another ``timeout_s``.
 
         Raises
         ------
         click.ClickException
-            If the command fails.
+            If the command fails or times out.
         RuntimeError
             If its JSON can't be read back.
         """
         from psynet.command_line import (
             _CONTAINER_WEB_PORT,
+            _with_remote_timeout,
             build_remote_experiment_command,
             run_remote_experiment_command,
         )
 
         run_id = uuid.uuid4().hex
-        json_path = f"/tmp/psynet_perf_{run_id}.json"
+        json_path = f"/tmp/psynet_remote_{run_id}.json"
         log_path = f"/tmp/psynet_bots_{run_id}.log"
         cmd = (
             f"env PSYNET_EXPERIMENT_URL=http://localhost:{_CONTAINER_WEB_PORT} "
@@ -198,16 +205,28 @@ class RemoteApp:
         )
         if bot_log:
             cmd += f" --bot-log {log_path}"
+        read = shlex.quote(f"cat {json_path}; s=$?; rm -f {json_path}; exit $s")
+        read = build_remote_experiment_command(self.app, f"sh -c {read}")
+        if timeout_s is not None:
+            read = _with_remote_timeout(read, timeout_s)
         try:
-            run_remote_experiment_command(self.executor, self.app, cmd)
+            run_remote_experiment_command(
+                self.executor, self.app, cmd, timeout_s=timeout_s
+            )
+        except Exception:
+            remove = build_remote_experiment_command(self.app, f"rm -f {json_path}")
+            if timeout_s is not None:
+                remove = _with_remote_timeout(remove, timeout_s)
+            try:
+                run_with_status(self.executor, remove)
+            except Exception as e:
+                logger.debug("Could not remove %s from %s: %s", json_path, self.app, e)
+            raise
         finally:
             if bot_log:
                 self._append_bot_log(log_path)
-        read = shlex.quote(f"cat {json_path} && rm -f {json_path}")
         try:
-            output = self.run(
-                build_remote_experiment_command(self.app, f"sh -c {read}")
-            )
+            output = self.run(read)
             return json.loads(output)
         except (RuntimeError, ValueError) as e:
             raise RuntimeError(

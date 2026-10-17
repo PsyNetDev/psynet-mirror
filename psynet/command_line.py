@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -1729,12 +1730,12 @@ def _pre_launch(
     experiment.update_deployment_id()
 
     config = get_config()
-    if mode == "live" and config.get("performance_test_app", False):
-        raise click.UsageError(
-            "performance_test_app is set, which declares that the app's data is "
-            "disposable and lets performance tests reset it. Remove it from the "
-            "config to deploy in live mode."
-        )
+    for key in ("performance_test_app", "debug_ssh_app"):
+        if mode == "live" and config.get(key, False):
+            raise click.UsageError(
+                f"{key} is set, which declares that the app's data is disposable. "
+                "Remove it from the config to deploy in live mode."
+            )
     deployment_info.write(locale=config.get("locale", "en"))
 
     if config.get("check_dallinger_version"):
@@ -2569,8 +2570,10 @@ def _debug_ssh(
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
+    The app's environment sets ``debug_ssh_app``, which lets ``psynet
+    destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
-    performance-test ssh`` deploys for its tests: its environment sets
+    performance-test ssh`` deploys for its tests: its environment also sets
     ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
     """
     try:
@@ -2594,9 +2597,9 @@ def _debug_ssh(
             assume_yes=assume_yes,
             performance_test_app=performance_test_app,
         )
-        config_options = {}
+        config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
-            config_options = {"performance_test_app": "true"}
+            config_options["performance_test_app"] = "true"
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -3500,7 +3503,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
         local=False,
         server=server,
         docker_ssh=True,
-        pending_jobs=_fetch_ssh_pending_async_jobs(app, server),
+        pending_jobs=_fetch_ssh_pending_async_jobs_for_export(app, server),
         **kwargs,
     )
 
@@ -3564,7 +3567,7 @@ def export_(
     identity from an authenticated preflight instead.
 
     ``pending_jobs`` is a remote app's async job summary, taken before the
-    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    export (see :func:`_fetch_ssh_pending_async_jobs`); local exports read their
     own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
@@ -3753,8 +3756,7 @@ def _ssh_dashboard_endpoint(app, server, config):
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
     fallback when that note is missing. The note's dashboard credentials take
-    precedence over the local config, which may lack them, for example when
-    ``psynet destroy ssh`` runs outside the experiment directory.
+    precedence over the local config, which may lack them.
 
     Raises
     ------
@@ -3783,59 +3785,83 @@ def _ssh_dashboard_endpoint(app, server, config):
     return DashboardEndpoint(base_url=origin, auth=(user, password))
 
 
-def _fetch_pending_async_jobs(endpoint):
-    """Ask a deployed app which async jobs are still pending.
+_PENDING_JOB_CHECK_TIMEOUT_S = 30
 
-    Parameters
-    ----------
-    endpoint : psynet.export.client.DashboardEndpoint
-        The app's address and dashboard credentials.
 
-    Returns
-    -------
-    dict or None
-        The app's ``/async_job_status`` summary (see
-        :func:`psynet.async_job._get_pending_job_summary`), or ``None`` after
-        printing a warning if the app could not be checked.
-    """
-    import requests
-
-    try:
-        response = requests.get(
-            endpoint.url("async_job_status"), auth=endpoint.auth, timeout=30
-        )
-    except requests.RequestException as exc:
-        reason = f"could not reach the app ({exc})"
-    else:
-        if response.status_code == 404:
-            reason = "the app runs a PsyNet version without this check"
-        elif response.status_code == 503:
-            reason = "the app is unavailable (503 Service Unavailable)"
-        elif response.status_code != 200:
-            reason = f"the app returned {response.status_code} {response.reason}"
-        else:
-            try:
-                return response.json()
-            except ValueError:
-                reason = "the app's reply was not JSON; check the dashboard credentials"
-    log(f"WARNING: Skipped the check for pending async jobs: {reason}.")
-    return None
+class _PendingJobCheckError(Exception):
+    """The check for an SSH app's pending async jobs could not run; the message says why."""
 
 
 def _fetch_ssh_pending_async_jobs(app, server):
-    """Run :func:`_fetch_pending_async_jobs` for a docker-ssh app."""
-    config = get_config()
+    """Ask a docker-ssh app which async jobs are still pending.
+
+    ``psynet async-job-status`` runs in the app's web container over SSH, so
+    the check doesn't depend on the app's public address, which a Cloudflare
+    tunnel or DNS may make unreachable, or on dashboard credentials on this
+    computer. Wake a hibernated app first (see :func:`_awaken_ssh_app`).
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    server : str
+        The configured SSH server.
+
+    Returns
+    -------
+    dict
+        The summary of :func:`psynet.async_job._get_pending_job_summary`.
+
+    Raises
+    ------
+    _PendingJobCheckError
+        If the app could not be checked, including when it doesn't answer
+        within ``_PENDING_JOB_CHECK_TIMEOUT_S`` seconds.
+    """
+    import paramiko
+
+    from .perf_ssh import RemoteApp
+
     try:
-        if not config.ready:
-            config.load()
-        endpoint = _ssh_dashboard_endpoint(app, server, config)
-    except (KeyError, RuntimeError) as exc:
+        remote = RemoteApp(_ssh_executor(server), app, server)
+        return remote.run_psynet(
+            "async-job-status", timeout_s=_PENDING_JOB_CHECK_TIMEOUT_S
+        )
+    except (click.ClickException, RuntimeError, OSError, paramiko.SSHException) as e:
+        if "No such command" in str(e):
+            reason = f"{app} runs a PsyNet version without this check"
+        else:
+            reason = f"could not query {app}'s web container on {server} ({e})"
+        raise _PendingJobCheckError(reason) from e
+
+
+def _fetch_ssh_pending_async_jobs_for_export(app, server):
+    """Return :func:`_fetch_ssh_pending_async_jobs`, or ``None`` after a warning if the check can't run."""
+    try:
+        return _fetch_ssh_pending_async_jobs(app, server)
+    except _PendingJobCheckError as e:
         log(
-            "WARNING: Skipped the check for pending async jobs: "
-            f"could not find the dashboard credentials ({exc})."
+            f"WARNING: Skipped the check for pending async jobs: {e}. The export "
+            "continues, but it will not include the results of jobs that haven't "
+            "finished; check the app's logs to see whether any are still running."
         )
         return None
-    return _fetch_pending_async_jobs(endpoint)
+
+
+@psynet.command("async-job-status", hidden=True)
+@click.option("--json-output", required=True, type=click.Path(dir_okay=False))
+def async_job_status(json_output):
+    """
+    Write the running app's pending async jobs to --json-output; used by ``psynet destroy ssh`` and ``psynet export ssh``.
+    """
+    from .async_job import _get_pending_job_summary
+    from .experiment import get_experiment
+
+    load_runtime_server_config()
+    # Registers the experiment's own async job classes, whose rows count too.
+    get_experiment()
+    with open(json_output, "w") as f:
+        json.dump(_get_pending_job_summary(), f)
 
 
 def _warn_export_misses_pending_jobs(summary):
@@ -4266,9 +4292,8 @@ def _confirm_destroy_with_pending_jobs(
     ----------
     app : str
         The app name.
-    summary : dict or None
-        The output of :func:`_fetch_pending_async_jobs`; ``None`` means the
-        check was skipped, which allows the destroy.
+    summary : dict
+        The output of :func:`_fetch_ssh_pending_async_jobs`.
     ask_for_confirmation : bool
         Whether the user may be asked. When ``False`` (batch mode, or a
         future ``--yes``), or when stdin is not a terminal, an app with
@@ -4302,6 +4327,75 @@ def _confirm_destroy_with_pending_jobs(
     return False
 
 
+# Config values in a docker-ssh app's compose file, which Dallinger writes as
+# ``    key: "value"`` in the environment of the app's server processes.
+_COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
+
+
+def _is_debug_ssh_app(server, app):
+    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
+
+    The compose file is read rather than the app's config in its web
+    container, which may be what failed. Apps whose compose file can't be
+    read count as not deployed by ``psynet debug ssh``.
+    """
+    import paramiko
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    cmd = f"cat ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
+    try:
+        compose = _ssh_executor(server).run(
+            _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S), raise_=False
+        )
+    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
+        log(f"Could not read {app}'s compose file on {server}: {e}")
+        return False
+    match = re.search(_COMPOSE_SETTING.format("debug_ssh_app"), compose or "")
+    return bool(match) and match[1].strip().lower() == "true"
+
+
+def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs):
+    """Decide whether to destroy an SSH app whose pending async jobs couldn't be checked.
+
+    It is destroyed with ``discard_pending_jobs`` (with a warning), or silently
+    if ``psynet debug ssh`` deployed it (see :func:`_is_debug_ssh_app`).
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    server : str
+        The configured SSH server.
+    error : _PendingJobCheckError
+        Why the check couldn't run.
+    discard_pending_jobs : bool
+        Whether ``--discard-pending-jobs`` was passed.
+
+    Returns
+    -------
+    bool
+        Whether the app may be destroyed.
+    """
+    problem = f"Could not check {app} for pending async jobs: {error}."
+    if discard_pending_jobs:
+        log(
+            f"WARNING: {problem} Destroying it anyway because "
+            "--discard-pending-jobs was passed."
+        )
+        return True
+    if _is_debug_ssh_app(server, app):
+        return True
+    log(
+        f"{problem} Not destroying {app}, because destroying it would lose the "
+        "results of any jobs still running. If its web container isn't "
+        f"running, start it (see 'psynet apps ssh --server {server}' or its "
+        "logs in Dozzle) and run this command again. Otherwise check in its "
+        "logs that its async jobs have finished, then pass "
+        "--discard-pending-jobs to destroy it anyway."
+    )
+    return False
+
+
 def _destroy(
     ctx,
     f_destroy,
@@ -4313,18 +4407,24 @@ def _destroy(
     """Destroy a single app.
 
     For docker-ssh apps (``server`` given), first wake the app and check for
-    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`.
+    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`, or
+    :func:`_destroy_without_pending_job_check` if the check can't run.
     """
     target = app or "the app"
     if server:
         target += f" from {server}"
         _awaken_ssh_app(server, app)
-        if not _confirm_destroy_with_pending_jobs(
-            app,
-            _fetch_ssh_pending_async_jobs(app, server),
-            ask_for_confirmation,
-            discard_pending_jobs,
-        ):
+        try:
+            pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
+        except _PendingJobCheckError as e:
+            may_destroy = _destroy_without_pending_job_check(
+                app, server, e, discard_pending_jobs
+            )
+        else:
+            may_destroy = _confirm_destroy_with_pending_jobs(
+                app, pending_jobs, ask_for_confirmation, discard_pending_jobs
+            )
+        if not may_destroy:
             return False
     confirmed = (
         user_confirms(f"Would you like to delete {target}?", default=True)
@@ -4429,8 +4529,8 @@ def _dallinger_hibernation_command(name):
     is_flag=True,
     default=False,
     help=(
-        "Destroy apps even if they still have pending async jobs, "
-        "losing those jobs' results."
+        "Destroy apps even if they still have pending async jobs, or if "
+        "they can't be checked for them, losing those jobs' results."
     ),
 )
 @click.pass_context
@@ -4440,6 +4540,9 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
+    Apps that can't be checked for pending jobs are not destroyed without
+    --discard-pending-jobs, except apps deployed with `psynet debug ssh` or
+    `psynet performance-test ssh`.
     """
     from dallinger.command_line.docker_ssh import destroy
 
@@ -4790,7 +4893,18 @@ def _stop_when_disconnected(cmd):
     return f"sh -c {shlex.quote(script)}"
 
 
-def run_remote_experiment_command(executor, app, cmd):
+# GNU timeout's exit status for a command that it stopped.
+_REMOTE_TIMEOUT_STATUS = 124
+# How much longer than the server's timeout to wait for an answer over SSH.
+_SSH_TIMEOUT_GRACE_S = 10
+
+
+def _with_remote_timeout(cmd, timeout_s):
+    """Wrap the server shell command ``cmd`` so that the server stops it after ``timeout_s`` seconds."""
+    return f"timeout {int(timeout_s)} sh -c {shlex.quote(cmd)}"
+
+
+def run_remote_experiment_command(executor, app, cmd, timeout_s=None):
     """Run ``cmd`` in the app's web container, echoing its output as it arrives.
 
     Dallinger's ``Executor.run_and_echo`` also watches local stdin so that the user
@@ -4803,12 +4917,20 @@ def run_remote_experiment_command(executor, app, cmd):
     available. The exit status arrives before the last of the output, so polling
     on it drops whatever is still in flight -- typically the test summary, which
     is the part worth reading.
+
+    With ``timeout_s``, the command is stopped after that many seconds and
+    ``click.ClickException`` says so.
     """
     remote_cmd = build_remote_experiment_command(app, _stop_when_disconnected(cmd))
+    if timeout_s is not None:
+        remote_cmd = _with_remote_timeout(remote_cmd, timeout_s)
+        deadline = time.monotonic() + timeout_s + _SSH_TIMEOUT_GRACE_S
     channel = executor.client.get_transport().open_session()
     # Closing the channel, also after Ctrl-C, ends the remote command's stdin,
     # which stops it (see _stop_when_disconnected).
     try:
+        if timeout_s is not None:
+            channel.settimeout(timeout_s + _SSH_TIMEOUT_GRACE_S)
         # Interleaving two streams without threads risks reordering the output,
         # and the caller only wants to read it, so merge stderr into stdout.
         channel.set_combine_stderr(True)
@@ -4822,9 +4944,18 @@ def run_remote_experiment_command(executor, app, cmd):
                 sys.stdout.write(text)
                 sys.stdout.flush()
 
+        if timeout_s is not None:
+            while not channel.exit_status_ready():
+                if time.monotonic() > deadline:
+                    raise TimeoutError
+                time.sleep(0.1)
         status = channel.recv_exit_status()
+    except TimeoutError as e:
+        raise click.ClickException(f"no answer within {timeout_s} s") from e
     finally:
         channel.close()
+    if timeout_s is not None and status == _REMOTE_TIMEOUT_STATUS:
+        raise click.ClickException(f"no answer within {timeout_s} s")
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
         raise click.ClickException(_remote_failure_summary(status, recent))
