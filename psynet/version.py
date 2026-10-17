@@ -327,14 +327,16 @@ def _uncommitted_changes_warning(package_name):
     """Return a warning if the editable checkout of a commit-pinned package has local edits.
 
     Only modified tracked files count; untracked files are often scratch files
-    and would make this warning fire on most deployments.
+    and would make this warning fire on most deployments. Changes inside the
+    experiment directory (the current directory) are ignored, because those
+    files are uploaded with the deployment.
     """
     from psynet.experiment_scaffold import get_editable_source
     from psynet.experiment_setup import _editable_checkout_is_dirty
 
     source = get_editable_source(package_name)
     if source is None or not _editable_checkout_is_dirty(
-        source, include_untracked=False
+        source, include_untracked=False, exclude=Path.cwd()
     ):
         return None
     return (

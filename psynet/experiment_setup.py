@@ -649,7 +649,7 @@ def _resolve_shared_checkout_venv_action(*, no_install, force_shared_env):
     return choice
 
 
-def _editable_checkout_is_dirty(source, include_untracked=True):
+def _editable_checkout_is_dirty(source, include_untracked=True, exclude=None):
     """Return whether an editable checkout has uncommitted changes.
 
     Parameters
@@ -659,10 +659,16 @@ def _editable_checkout_is_dirty(source, include_untracked=True):
     include_untracked : bool
         Whether untracked (but not ignored) files count as changes. If so,
         Git's ``status.showUntrackedFiles`` setting is respected.
+    exclude : path-like, optional
+        Directory whose changes are ignored, if it lies inside the checkout.
     """
     command = ["git", "-C", str(source), "status", "--porcelain"]
     if not include_untracked:
         command.append("--untracked-files=no")
+    if exclude is not None:
+        prefix = _checkout_prefix(source, exclude)
+        if prefix:
+            command += ["--", ":/", f":(top,exclude,literal){prefix}"]
     result = subprocess.run(
         command,
         capture_output=True,
@@ -670,6 +676,29 @@ def _editable_checkout_is_dirty(source, include_untracked=True):
         check=False,
     )
     return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def _checkout_prefix(source, path):
+    """Return ``path`` relative to the root of the Git checkout ``source``.
+
+    Returns ``None`` if ``path`` is not inside that checkout, and an empty
+    string if it is the checkout root.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel", "--show-prefix"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = result.stdout.split("\n")
+    if result.returncode != 0 or len(lines) < 2:
+        return None
+    try:
+        if not os.path.samefile(lines[0], source):
+            return None
+    except OSError:
+        return None
+    return lines[1]
 
 
 _EDITABLE_SOURCE_DESCRIPTIONS = {
