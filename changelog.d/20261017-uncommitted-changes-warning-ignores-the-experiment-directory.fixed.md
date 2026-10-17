@@ -1,1 +1,0 @@
-The pre-deployment warning about uncommitted changes in a commit-pinned editable PsyNet or Dallinger checkout now ignores changes inside the experiment directory, such as a bundled demo under `demos/`, because those files are uploaded with the deployment.
