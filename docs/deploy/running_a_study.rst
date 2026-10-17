@@ -483,8 +483,10 @@ When the target number of participants is reached:
    pending, the command says how many and asks you to confirm, or refuses
    when it cannot ask (for example in a script, or when destroying several
    apps at once). Pass ``--discard-pending-jobs`` only if you accept losing
-   their results. If the app cannot be checked, the command prints a
-   warning and destroys it anyway.
+   their results. If the app cannot be checked, for example because its
+   web container is not running, the command says why and does not destroy
+   it: start the container and try again, or check in the app's logs that
+   its jobs have finished and pass ``--discard-pending-jobs``.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with
