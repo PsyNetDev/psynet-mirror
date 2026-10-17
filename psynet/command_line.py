@@ -3538,7 +3538,7 @@ def export_(
     identity from an authenticated preflight instead.
 
     ``pending_jobs`` is a remote app's async job summary, taken before the
-    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    export (see :func:`_fetch_ssh_pending_async_jobs`); local exports read their
     own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
@@ -3727,8 +3727,7 @@ def _ssh_dashboard_endpoint(app, server, config):
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
     fallback when that note is missing. The note's dashboard credentials take
-    precedence over the local config, which may lack them, for example when
-    ``psynet destroy ssh`` runs outside the experiment directory.
+    precedence over the local config, which may lack them.
 
     Raises
     ------
@@ -3757,59 +3756,66 @@ def _ssh_dashboard_endpoint(app, server, config):
     return DashboardEndpoint(base_url=origin, auth=(user, password))
 
 
-def _fetch_pending_async_jobs(endpoint):
-    """Ask a deployed app which async jobs are still pending.
+def _fetch_ssh_pending_async_jobs(app, server):
+    """Ask a docker-ssh app which async jobs are still pending.
+
+    ``psynet async-job-status`` runs in the app's web container over SSH, so
+    the check doesn't depend on the app's public address, which a Cloudflare
+    tunnel or DNS may make unreachable, or on dashboard credentials on this
+    computer. Wake a hibernated app first (see :func:`_awaken_ssh_app`).
 
     Parameters
     ----------
-    endpoint : psynet.export.client.DashboardEndpoint
-        The app's address and dashboard credentials.
+    app : str
+        The app name.
+    server : str
+        The configured SSH server.
 
     Returns
     -------
     dict or None
-        The app's ``/async_job_status`` summary (see
-        :func:`psynet.async_job._get_pending_job_summary`), or ``None`` after
-        printing a warning if the app could not be checked.
+        The summary of :func:`psynet.async_job._get_pending_job_summary`, or
+        ``None`` after printing a warning if the app could not be checked.
     """
-    import requests
+    import paramiko
+
+    from .perf_ssh import RemoteApp
 
     try:
-        response = requests.get(
-            endpoint.url("async_job_status"), auth=endpoint.auth, timeout=30
-        )
-    except requests.RequestException as exc:
-        reason = f"could not reach the app ({exc})"
-    else:
-        if response.status_code == 404:
-            reason = "the app runs a PsyNet version without this check"
-        elif response.status_code == 503:
-            reason = "the app is unavailable (503 Service Unavailable)"
-        elif response.status_code != 200:
-            reason = f"the app returned {response.status_code} {response.reason}"
+        remote = RemoteApp(_ssh_executor(server), app, server)
+        return remote.run_psynet("async-job-status")
+    except (click.ClickException, RuntimeError, OSError, paramiko.SSHException) as e:
+        if "No such command" in str(e):
+            reason = (
+                f"{app} runs a PsyNet version without this check. Before "
+                "destroying the app, check in its logs that its async jobs "
+                "have finished"
+            )
         else:
-            try:
-                return response.json()
-            except ValueError:
-                reason = "the app's reply was not JSON; check the dashboard credentials"
+            reason = (
+                f"could not query {app}'s web container on {server} ({e}). "
+                "Before destroying the app, check that it is running, for "
+                f"example with 'psynet apps ssh --server {server}' or in Dozzle, "
+                "and run this command again"
+            )
     log(f"WARNING: Skipped the check for pending async jobs: {reason}.")
     return None
 
 
-def _fetch_ssh_pending_async_jobs(app, server):
-    """Run :func:`_fetch_pending_async_jobs` for a docker-ssh app."""
-    config = get_config()
-    try:
-        if not config.ready:
-            config.load()
-        endpoint = _ssh_dashboard_endpoint(app, server, config)
-    except (KeyError, RuntimeError) as exc:
-        log(
-            "WARNING: Skipped the check for pending async jobs: "
-            f"could not find the dashboard credentials ({exc})."
-        )
-        return None
-    return _fetch_pending_async_jobs(endpoint)
+@psynet.command("async-job-status", hidden=True)
+@click.option("--json-output", required=True, type=click.Path(dir_okay=False))
+def async_job_status(json_output):
+    """
+    Write the running app's pending async jobs to --json-output; used by ``psynet destroy ssh`` and ``psynet export ssh``.
+    """
+    from .async_job import _get_pending_job_summary
+    from .experiment import get_experiment
+
+    load_runtime_server_config()
+    # Registers the experiment's own async job classes, whose rows count too.
+    get_experiment()
+    with open(json_output, "w") as f:
+        json.dump(_get_pending_job_summary(), f)
 
 
 def _warn_export_misses_pending_jobs(summary):
@@ -4241,7 +4247,7 @@ def _confirm_destroy_with_pending_jobs(
     app : str
         The app name.
     summary : dict or None
-        The output of :func:`_fetch_pending_async_jobs`; ``None`` means the
+        The output of :func:`_fetch_ssh_pending_async_jobs`; ``None`` means the
         check was skipped, which allows the destroy.
     ask_for_confirmation : bool
         Whether the user may be asked. When ``False`` (batch mode, or a

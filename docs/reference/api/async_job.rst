@@ -111,9 +111,11 @@ example, ``psynet destroy ssh`` prints:
 
 Pass ``--discard-pending-jobs`` to destroy the app anyway, for example when
 the jobs can never finish; the command still says how many jobs it discards.
-If the app cannot be checked, for example because it runs an older PsyNet
-version or does not answer, the command prints a warning and destroys the
-app as before.
+The check queries the app's database from its web container over SSH, so it
+works whatever the app's ingress, including a Cloudflare tunnel that is
+briefly down. If the app cannot be checked, for example because it runs an
+older PsyNet version or its web container is not running, the command prints
+a warning that says what to check and destroys the app as before.
 
 A job is pending from :meth:`~psynet.async_job.AsyncJob.enqueue` until it
 finishes, fails, times out or is cancelled, and

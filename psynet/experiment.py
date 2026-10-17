@@ -1739,16 +1739,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return _get_cpu_time_summary()
 
-    @experiment_route("/async_job_status", methods=["GET"])
-    @classmethod
-    @login_required
-    @with_transaction
-    def async_job_status(cls):
-        """Report the async jobs still pending, for ``psynet destroy`` and ``psynet export``."""
-        from .async_job import _get_pending_job_summary
-
-        return _get_pending_job_summary()
-
     def reason_to_stay_awake(self):
         """Keep a docker-ssh app awake while async jobs are pending.
 

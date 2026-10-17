@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import types
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -4941,8 +4940,6 @@ def test_export_local_builds_directly_from_the_runtime_configuration(
     tmp_path, monkeypatch
 ):
     """A local export reads the local database instead of its own dashboard."""
-    import requests
-
     from psynet.command_line import export_
 
     deployment_id = "timeline-demo__mode=debug__launch=test"
@@ -5639,30 +5636,48 @@ def test_destroy_ssh_proceeds_without_pending_jobs_or_with_discard(
     assert message in result.output
 
 
+def test_ssh_pending_job_check_queries_the_web_container(monkeypatch):
+    from psynet.command_line import _fetch_ssh_pending_async_jobs
+
+    calls = []
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: "ssh")
+    monkeypatch.setattr(
+        "psynet.perf_ssh.RemoteApp.run_psynet",
+        lambda self, args: calls.append((self.app, args)) or _PENDING,
+    )
+
+    assert _fetch_ssh_pending_async_jobs("busy", "rr-pc02") == _PENDING
+    assert calls == [("busy", "async-job-status")]
+
+
 @pytest.mark.parametrize(
-    "response, reason",
+    "error, reason",
     [
-        (types.SimpleNamespace(status_code=404), "a PsyNet version without this check"),
-        (types.SimpleNamespace(status_code=503), "the app is unavailable"),
-        (requests.ConnectionError("refused"), "could not reach the app (refused)"),
+        (
+            click.ClickException("exit code 2: Error: No such command 'x'."),
+            "busy runs a PsyNet version without this check",
+        ),
+        (
+            click.ClickException('exit code 1: service "web" is not running'),
+            "could not query busy's web container on rr-pc02 (exit code 1: "
+            'service "web" is not running). Before destroying the app, check '
+            "that it is running",
+        ),
+        (OSError("Connection reset"), "(Connection reset)"),
     ],
 )
-def test_pending_job_check_is_skipped_with_a_warning(
-    monkeypatch, capsys, response, reason
+def test_ssh_pending_job_check_is_skipped_with_a_warning(
+    monkeypatch, capsys, error, reason
 ):
-    from psynet.command_line import _fetch_pending_async_jobs
-    from psynet.export.client import DashboardEndpoint
+    from psynet.command_line import _fetch_ssh_pending_async_jobs
 
-    def fake_get(url, **kwargs):
-        assert url == "https://app.example.org/async_job_status"
-        if isinstance(response, Exception):
-            raise response
-        return response
+    def fail(self, args):
+        raise error
 
-    monkeypatch.setattr(requests, "get", fake_get)
-    endpoint = DashboardEndpoint("https://app.example.org", ("admin", "pw"))
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: "ssh")
+    monkeypatch.setattr("psynet.perf_ssh.RemoteApp.run_psynet", fail)
 
-    assert _fetch_pending_async_jobs(endpoint) is None
+    assert _fetch_ssh_pending_async_jobs("busy", "rr-pc02") is None
     output = capsys.readouterr().out
     assert "WARNING: Skipped the check for pending async jobs" in output
     assert reason in output
@@ -5897,8 +5912,6 @@ def test_db_ssh_without_a_terminal_asks_for_server(monkeypatch):
 
 
 def test_performance_test_existing_explains_a_missing_server():
-    import requests
-
     from psynet.command_line import _check_existing_server_answers
 
     with patch("psynet.command_line.redis_vars.get", return_value=None):
