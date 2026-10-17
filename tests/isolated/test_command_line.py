@@ -1369,6 +1369,9 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
         "check_experiment_directory",
         "get_apps",
     ]
+    calls.check_experiment_directory.assert_called_once_with(
+        "sandbox", require_git_commit=True
+    )
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
