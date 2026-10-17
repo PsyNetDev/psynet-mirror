@@ -657,18 +657,14 @@ def _editable_checkout_is_dirty(source, include_untracked=True):
     source : path-like
         Root of the Git checkout.
     include_untracked : bool
-        Whether untracked (but not ignored) files count as changes.
+        Whether untracked (but not ignored) files count as changes. If so,
+        Git's ``status.showUntrackedFiles`` setting is respected.
     """
-    untracked = "normal" if include_untracked else "no"
+    command = ["git", "-C", str(source), "status", "--porcelain"]
+    if not include_untracked:
+        command.append("--untracked-files=no")
     result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(source),
-            "status",
-            "--porcelain",
-            f"--untracked-files={untracked}",
-        ],
+        command,
         capture_output=True,
         text=True,
         check=False,

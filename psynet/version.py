@@ -23,7 +23,7 @@ def _get_dallinger_version() -> str:
     return dallinger_version
 
 
-def check_core_dependency_versions_match_requirements(skip=()):
+def check_core_dependency_versions_match_requirements(skip=(), remote=True):
     """
     Check whether PsyNet and Dallinger versions match requirements.txt.
 
@@ -31,6 +31,10 @@ def check_core_dependency_versions_match_requirements(skip=()):
     ----------
     skip : collection of str
         Lowercase names of packages (``"psynet"``, ``"dallinger"``) not to check.
+    remote : bool
+        Whether the experiment will run from the pinned packages on a server.
+        Local deploys run the editable checkouts, so uncommitted edits there
+        are not warned about.
 
     Raises
     ------
@@ -62,7 +66,7 @@ def check_core_dependency_versions_match_requirements(skip=()):
                 if package_name.lower() in skip:
                     continue
                 status = version_infos["status"]
-                if version_infos.get("warning"):
+                if remote and version_infos.get("warning"):
                     warning_messages.append(version_infos["warning"])
 
                 if status == "consistent":
@@ -304,7 +308,7 @@ def _editable_checkout_commit(package_name, source):
             check=True,
         )
         toplevel, commit = result.stdout.splitlines()
-        if Path(toplevel).resolve() != source.resolve():
+        if not (Path(toplevel).exists() and os.path.samefile(toplevel, source)):
             problem = f"it is not the root of a Git checkout (found {toplevel})"
         else:
             return commit

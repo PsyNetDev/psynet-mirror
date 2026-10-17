@@ -1475,7 +1475,7 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 def run_pre_checks_deploy(local_, recruiter):
     check_psynet_requirement_is_unambiguous()
     check_psynet_requirement_includes_experiment_extra()
-    check_core_dependency_versions_match_requirements()
+    check_core_dependency_versions_match_requirements(remote=not local_)
     if not local_:
         confirm_deploying_development_psynet()
 

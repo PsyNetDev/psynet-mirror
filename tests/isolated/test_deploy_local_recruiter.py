@@ -16,7 +16,9 @@ def _skip_dependency_checks(monkeypatch):
         lambda: None,
     )
     monkeypatch.setattr(
-        command_line, "check_core_dependency_versions_match_requirements", lambda: None
+        command_line,
+        "check_core_dependency_versions_match_requirements",
+        lambda **kwargs: None,
     )
 
 

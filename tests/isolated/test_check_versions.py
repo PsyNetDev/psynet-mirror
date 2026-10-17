@@ -86,6 +86,7 @@ def test_commit_pin_fails_for_editable_install_without_own_checkout(
     source.mkdir(parents=True)
     if inside_repo:
         _git(tmp_path / "repo", "init", "-q")
+        _git(tmp_path / "repo", "commit", "-q", "--allow-empty", "-m", "a")
     _install_fake_distribution(
         tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
     )
@@ -122,6 +123,11 @@ def test_commit_pin_warns_about_uncommitted_editable_changes(
         check_core_dependency_versions_match_requirements()
 
     assert ("uncommitted changes" in capsys.readouterr().err) == warns
+
+    with working_directory(tmp_path):
+        check_core_dependency_versions_match_requirements(remote=False)
+
+    assert "uncommitted changes" not in capsys.readouterr().err
 
 
 # PsyNet tests
