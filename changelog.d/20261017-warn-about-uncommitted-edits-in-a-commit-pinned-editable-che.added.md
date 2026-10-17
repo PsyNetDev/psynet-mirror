@@ -1,0 +1,1 @@
+The version check run before deploying now warns when `requirements.txt` pins the commit of an editable PsyNet or Dallinger checkout that has uncommitted changes to tracked files, because a server installs the pinned commit rather than the local edits.
