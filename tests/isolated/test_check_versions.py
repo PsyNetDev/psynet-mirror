@@ -99,6 +99,22 @@ def test_commit_pin_fails_for_editable_install_without_own_checkout(
             check_core_dependency_versions_match_requirements()
 
 
+def test_skipped_editable_package_without_own_checkout_is_not_looked_up(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "PsyNet"
+    source.mkdir()
+    _install_fake_distribution(
+        tmp_path, monkeypatch, _editable(source), name="psynet", version="14.0.0a0"
+    )
+
+    with working_directory(tmp_path):
+        (tmp_path / "requirements.txt").write_text(
+            f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{'a' * 40}"
+        )
+        check_core_dependency_versions_match_requirements(skip=("psynet",))
+
+
 @pytest.mark.parametrize(
     "change, warns", [("tracked", True), ("untracked", False), (None, False)]
 )
@@ -123,11 +139,6 @@ def test_commit_pin_warns_about_uncommitted_editable_changes(
         check_core_dependency_versions_match_requirements()
 
     assert ("uncommitted changes" in capsys.readouterr().err) == warns
-
-    with working_directory(tmp_path):
-        check_core_dependency_versions_match_requirements(remote=False)
-
-    assert "uncommitted changes" not in capsys.readouterr().err
 
 
 # PsyNet tests

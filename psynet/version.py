@@ -23,7 +23,7 @@ def _get_dallinger_version() -> str:
     return dallinger_version
 
 
-def check_core_dependency_versions_match_requirements(skip=(), remote=True):
+def check_core_dependency_versions_match_requirements(skip=()):
     """
     Check whether PsyNet and Dallinger versions match requirements.txt.
 
@@ -31,10 +31,6 @@ def check_core_dependency_versions_match_requirements(skip=(), remote=True):
     ----------
     skip : collection of str
         Lowercase names of packages (``"psynet"``, ``"dallinger"``) not to check.
-    remote : bool
-        Whether the experiment will run from the pinned packages on a server.
-        Local deploys run the editable checkouts, so uncommitted edits there
-        are not warned about.
 
     Raises
     ------
@@ -59,14 +55,12 @@ def check_core_dependency_versions_match_requirements(skip=(), remote=True):
     ) as spinner:
         with open("requirements.txt", "r") as file:
             versions = collect_core_dependency_version_info_from_requirements(
-                file.read()
+                file.read(), skip=skip
             )
 
             for package_name, version_infos in versions.items():
-                if package_name.lower() in skip:
-                    continue
                 status = version_infos["status"]
-                if remote and version_infos.get("warning"):
+                if version_infos.get("warning"):
                     warning_messages.append(version_infos["warning"])
 
                 if status == "consistent":
@@ -95,7 +89,7 @@ def check_core_dependency_versions_match_requirements(skip=(), remote=True):
         click.secho(f"Warning: {message}", fg="yellow", err=True)
 
 
-def collect_core_dependency_version_info_from_requirements(file_content):
+def collect_core_dependency_version_info_from_requirements(file_content, skip=()):
     """
     Parse requirements.txt content and compare to installed versions.
 
@@ -103,6 +97,10 @@ def collect_core_dependency_version_info_from_requirements(file_content):
     ----------
     file_content : str
         Contents of a requirements.txt file.
+    skip : collection of str
+        Lowercase names of packages not to check; they are omitted from the
+        result without their installed version being looked up.
+
     Returns
     -------
     dict
@@ -118,6 +116,8 @@ def collect_core_dependency_version_info_from_requirements(file_content):
     """
     versions = {}
     for package_name in ["Dallinger", "PsyNet"]:
+        if package_name.lower() in skip:
+            continue
         versions[package_name] = {
             "specified": None,
             "installed": None,
@@ -340,9 +340,9 @@ def _uncommitted_changes_warning(package_name):
     return (
         f"The editable {package_name} checkout at {source} has uncommitted "
         "changes to tracked files. The server will install the commit pinned in requirements.txt, "
-        "not your local edits. Commit and push them and update the pin, or use "
-        f"'psynet debug ssh --use-local-{package_name.lower()}' to build the "
-        "local checkout into the image."
+        "not your local edits. Commit and push them and update the pin, or, "
+        f"for 'psynet debug ssh', use '--use-local-{package_name.lower()}' to "
+        "build the local checkout into the image."
     )
 
 
