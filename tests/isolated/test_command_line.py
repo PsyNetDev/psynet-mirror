@@ -5730,18 +5730,18 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
 
 
 @pytest.mark.parametrize(
-    "flags, compose, reason",
+    "flags, compose, warning",
     [
-        (["--discard-pending-jobs"], "", "--discard-pending-jobs was passed"),
         (
-            [],
-            '      mode: "sandbox"\n      debug_ssh_app: "true"\n',
-            "it is a `psynet debug ssh` app",
+            ["--discard-pending-jobs"],
+            "",
+            "Destroying it anyway because --discard-pending-jobs was passed.",
         ),
+        ([], '      mode: "sandbox"\n      debug_ssh_app: "true"\n', None),
     ],
 )
 def test_destroy_ssh_destroys_unchecked_apps_with_discard_or_disposable_data(
-    monkeypatch, flags, compose, reason
+    monkeypatch, flags, compose, warning
 ):
     result, destroyed, *_ = _destroy_unchecked_ssh_apps(
         monkeypatch, ["one", "two", "--yes", *flags], compose=compose
@@ -5749,8 +5749,10 @@ def test_destroy_ssh_destroys_unchecked_apps_with_discard_or_disposable_data(
 
     assert destroyed == ["one", "two"], result.output
     assert result.exit_code == 0
-    assert "Could not check two for pending async jobs" in result.output
-    assert f"Destroying it anyway because {reason}." in result.output
+    if warning:
+        assert warning in result.output
+    else:
+        assert "Could not check" not in result.output
 
 
 def test_destroy_ssh_pending_job_check_times_out(monkeypatch):

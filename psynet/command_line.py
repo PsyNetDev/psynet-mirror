@@ -4331,8 +4331,8 @@ def _is_debug_ssh_app(server, app):
 def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs):
     """Decide whether to destroy an SSH app whose pending async jobs couldn't be checked.
 
-    It is destroyed with ``discard_pending_jobs``, or with a warning if
-    ``psynet debug ssh`` deployed it (see :func:`_is_debug_ssh_app`).
+    It is destroyed with ``discard_pending_jobs`` (with a warning), or silently
+    if ``psynet debug ssh`` deployed it (see :func:`_is_debug_ssh_app`).
 
     Parameters
     ----------
@@ -4358,10 +4358,6 @@ def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs)
         )
         return True
     if _is_debug_ssh_app(server, app):
-        log(
-            f"WARNING: {problem} Destroying it anyway because it is a "
-            "`psynet debug ssh` app."
-        )
         return True
     log(
         f"{problem} Not destroying {app}, because destroying it would lose the "

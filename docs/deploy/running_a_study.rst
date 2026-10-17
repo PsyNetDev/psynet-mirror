@@ -488,7 +488,7 @@ When the target number of participants is reached:
    it: start the container and try again, or check in the app's logs that
    its jobs have finished and pass ``--discard-pending-jobs``. Apps
    deployed with ``psynet debug ssh`` are the exception: they are destroyed
-   anyway with a warning, even if they recruit real participants.
+   anyway, even if they recruit real participants.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with

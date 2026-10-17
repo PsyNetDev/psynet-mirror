@@ -120,8 +120,7 @@ within 30 seconds. ``psynet destroy ssh`` then says why and does not destroy
 the app: start its web container and run the command again, or check in the
 app's logs that its jobs have finished and pass ``--discard-pending-jobs``.
 Apps deployed with ``psynet debug ssh`` or ``psynet performance-test ssh``
-are destroyed anyway with a warning, because debug apps' data is treated as
-disposable. This includes a debug app that recruits real participants, for
+are destroyed anyway, because debug apps' data is treated as disposable. This includes a debug app that recruits real participants, for
 example through Prolific, so deploy real studies with ``psynet deploy ssh``.
 PsyNet recognises these apps by the ``debug_ssh_app`` config variable that
 ``psynet debug ssh`` sets; apps deployed by older PsyNet versions lack it
