@@ -649,7 +649,7 @@ def _resolve_shared_checkout_venv_action(*, no_install, force_shared_env):
     return choice
 
 
-def _editable_checkout_is_dirty(source, include_untracked=True):
+def _editable_checkout_is_dirty(source, include_untracked=True, exclude=None):
     """Return whether an editable checkout has uncommitted changes.
 
     Parameters
@@ -659,10 +659,19 @@ def _editable_checkout_is_dirty(source, include_untracked=True):
     include_untracked : bool
         Whether untracked (but not ignored) files count as changes. If so,
         Git's ``status.showUntrackedFiles`` setting is respected.
+    exclude : path-like, optional
+        Directory whose changes are ignored, if it lies inside the checkout.
     """
     command = ["git", "-C", str(source), "status", "--porcelain"]
     if not include_untracked:
         command.append("--untracked-files=no")
+    if exclude is not None:
+        try:
+            relative = Path(exclude).resolve().relative_to(Path(source).resolve())
+        except ValueError:
+            pass
+        else:
+            command += ["--", ".", f":(exclude){relative.as_posix()}"]
     result = subprocess.run(
         command,
         capture_output=True,
