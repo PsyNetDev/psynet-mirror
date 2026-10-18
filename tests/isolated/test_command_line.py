@@ -5642,15 +5642,19 @@ def _patch_ssh_listing(monkeypatch, executor):
     )
 
 
-def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch):
+@pytest.mark.parametrize(
+    "status, problem",
+    [("124", "timed out after 30 s"), ("127", "the server has no `timeout` command")],
+)
+def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, status, problem):
     executor = Mock()
-    executor.run.return_value = "psynet-app-listing-exit=124\n"
+    executor.run.return_value = f"psynet-app-listing-exit={status}\n"
     _patch_ssh_listing(monkeypatch, executor)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one", "--yes"])
     assert result.exit_code == 1, result.output
     assert (
-        "Couldn't list the apps on musix (timed out after 30 s); check the SSH "
+        f"Couldn't list the apps on musix ({problem}); check the SSH "
         "connection and try again." in result.output
     )
     assert "no apps" not in result.output

@@ -1507,19 +1507,13 @@ def _abort_if_app_exists(server, app, *, update=False):
 
     existing = {entry.name: entry for entry in get_apps(server)}
     if app in existing:
-        ingress = getattr(existing[app], "ingress", None)
-        ingress_option = f" --ingress {ingress}" if ingress else ""
-        ingress_note = "" if ingress else ", repeating the --ingress you deployed with"
+        ingress_option = f"--ingress {existing[app].ingress}"
         update_command = _ssh_app_update_command(server, app)
         if update_command:
-            update_advice = (
-                f"run `{update_command} --server {server}{ingress_option}`"
-                f"{ingress_note}"
-            )
+            update_advice = f"run `{update_command} --server {server} {ingress_option}`"
         else:
             update_advice = (
-                f"add --update{ingress_option} to the command that created it"
-                f"{ingress_note}"
+                f"add --update {ingress_option} to the command that created it"
             )
         raise click.ClickException(
             f"An app named {app} already exists on {server}.\n"
@@ -4666,10 +4660,11 @@ def _ssh_app_names(server):
     )
     marker = "psynet-app-listing-exit="
     timeout_s = _PENDING_JOB_CHECK_TIMEOUT_S
+    # The outer sh keeps `$?` out of the login shell, which may be fish.
+    listing_cmd = f"{_with_remote_timeout(cmd, timeout_s)}; echo {marker}$?"
     try:
         output = _ssh_executor(server).run(
-            f"{_with_remote_timeout(cmd, timeout_s)}; echo {marker}$?",
-            raise_=False,
+            f"sh -c {shlex.quote(listing_cmd)}", raise_=False
         )
     except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
         problem = str(e)
@@ -4678,7 +4673,8 @@ def _ssh_app_names(server):
         status = status.strip()
         problem = {
             "0": None,
-            "124": f"timed out after {timeout_s} s",
+            str(_REMOTE_TIMEOUT_STATUS): f"timed out after {timeout_s} s",
+            "127": "the server has no `timeout` command",
             "": "no answer from the server",
         }.get(status, f"exit code {status}")
     if problem:
