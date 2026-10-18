@@ -3243,6 +3243,8 @@ def test_setup_shared_env_interactive_new_venv_default(tmp_path, monkeypatch):
 
 def test_setup_new_venv_explains_incompatible_editable_dallinger(tmp_path, monkeypatch):
     """A failed new-venv install never suggests uninstalling from the shared env."""
+    psynet_source = tmp_path / "psynet-source"
+    psynet_source.mkdir()
     (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
@@ -3253,7 +3255,7 @@ def test_setup_new_venv_explains_incompatible_editable_dallinger(tmp_path, monke
     )
     monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
     monkeypatch.setattr(
-        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: psynet_source
     )
     dallinger_source = tmp_path / "dallinger-source"
     monkeypatch.setattr(
@@ -3270,7 +3272,8 @@ def test_setup_new_venv_explains_incompatible_editable_dallinger(tmp_path, monke
     monkeypatch.setattr("psynet.experiment_setup._run_uv", fake_run_uv)
 
     with working_directory(tmp_path):
-        result = CliRunner().invoke(psynet, ["setup"], input="\n")
+        # First answer picks the dedicated venv; second records editable PsyNet.
+        result = CliRunner().invoke(psynet, ["setup"], input="1\n1\n")
 
     assert result.exit_code == 1, result.output
     assert f"The editable Dallinger at {dallinger_source}" in result.output

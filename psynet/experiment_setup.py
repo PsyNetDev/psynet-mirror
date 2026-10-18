@@ -501,8 +501,9 @@ def _incompatible_dallinger_hint(source, *, new_venv=False):
     if new_venv:
         return (
             f"{problem} Remove ./.venv, then update the checkout to a compatible "
-            "version, or re-run 'psynet setup --psynet-source commit', which "
-            "installs PsyNet's pinned Dallinger in the new environment instead."
+            "version, or re-run 'psynet setup --psynet-source commit' (requires "
+            "the PsyNet commit to be pushed), which installs PsyNet's pinned "
+            "Dallinger in the new environment instead."
         )
     return (
         f"{problem} Update the checkout to a compatible version, or run "
