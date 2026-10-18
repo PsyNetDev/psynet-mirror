@@ -442,6 +442,10 @@ def db_connection(location, app=None, server=None):
     Get a database connection.
     """
     if location == "ssh":
+        if app is None:
+            raise click.UsageError("Missing parameter: --app")
+        # Resolved here so that the error message can name the server;
+        # get_db_uri then only normalizes the name, without prompting again.
         server = resolve_server_option(
             click.get_current_context(silent=True), None, server
         )
@@ -454,7 +458,10 @@ def db_connection(location, app=None, server=None):
                 else:
                     connection = psycopg2.connect(database=db_uri, user="dallinger")
             except psycopg2.OperationalError as err:
-                if "Connection refused" in str(err):
+                if any(
+                    text in str(err)
+                    for text in ("Connection refused", "Is the server running")
+                ):
                     raise click.ClickException(
                         _connection_refused_message(location, db_uri, app, server)
                     ) from err
@@ -474,10 +481,11 @@ def _connection_refused_message(location, db_uri, app, server):
             host, port = _host_port_from_url(
                 db_uri, schemes={"postgres", "postgresql"}, default_port=5432
             )
+            address = f" at {host}:{port}"
         except ValueError:
-            host, port = "localhost", 5432
+            address = ""
         return (
-            f"Couldn't connect to the local PostgreSQL database at {host}:{port}. "
+            f"Couldn't connect to the local PostgreSQL database{address}. "
             "Check that it is running with:\n  psynet services check"
         )
     if location == "ssh":
@@ -1175,16 +1183,28 @@ def launch_app_and_open_browsers(port, **kwargs):
     """Launch the development app, print its details, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload runs that open browsers, so that the terminal shows the
-    dashboard credentials in every local mode. It must stay importable by
-    module path because RQ workers resolve it that way.
+    auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
+    with the password embedded; this one prints the login once and logs the
+    dashboard without it. It must stay importable by module path because RQ
+    workers resolve it that way.
     """
-    from dallinger.command_line.develop import _async_browser
+    develop = importlib.import_module("dallinger.command_line.develop")
 
     _launch_app_and_report(port)
-    _async_browser("dashboard", port)
+    config = get_config()
+    log("Opening dashboard")
+    _open_browser_async(develop.dashboard_url(config, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    _async_browser("ad", port)
+    ad_url = develop.ad_url(config, port)
+    log(f"Opening ad: {ad_url}")
+    _open_browser_async(ad_url)
+
+
+def _open_browser_async(url):
+    """Open ``url`` in a thread, because opening a browser can be slow."""
+    develop = importlib.import_module("dallinger.command_line.develop")
+
+    threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
 def _launch_app_and_report(port):
@@ -3131,8 +3151,9 @@ def _missing_requirements_message():
     """Explain how to recreate a missing ``requirements.txt``."""
     return (
         "requirements.txt is missing from this experiment "
-        f"({Path.cwd() / 'requirements.txt'}). Run 'psynet setup' to recreate "
-        "it, then add any extra packages your experiment needs."
+        f"({Path.cwd() / 'requirements.txt'}). Recreate it with "
+        "'psynet scripts scaffold' (or 'psynet setup', which also installs "
+        "the packages), then add any extra packages your experiment needs."
     )
 
 

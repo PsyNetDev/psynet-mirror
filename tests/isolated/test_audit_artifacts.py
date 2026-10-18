@@ -29,6 +29,15 @@ def test_write_hashed_artifact_redacts_py_credentials(tmp_path: Path) -> None:
     )
 
 
+def test_redaction_keeps_the_server_log_password_placeholder() -> None:
+    from psynet.audit.artifacts import redact_known_credentials
+    from psynet.notifier import LoggerNotifier
+
+    message = LoggerNotifier.format_credentials("Dashboard", "http://x", None, "pw")
+    assert redact_known_credentials(message) == message
+    assert redact_known_credentials("Password: `pw`") == "Password: `[REDACTED]`"
+
+
 def test_monitor_static_href_prefix_matches_blob_layout() -> None:
     from psynet.audit.artifacts import monitor_static_href_prefix
 

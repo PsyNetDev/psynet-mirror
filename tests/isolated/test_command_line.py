@@ -726,9 +726,16 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
-    """PsyNet's launch job opens no browsers and prints what the browser would show."""
-    from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
+@pytest.mark.parametrize("no_browsers", [True, False])
+def test_debug_auto_reload_prints_the_dashboard_login_once(
+    monkeypatch, capsys, no_browsers
+):
+    """PsyNet's launch job prints the login once and never logs it in a URL."""
+    from psynet.command_line import (
+        _debug_auto_reload,
+        launch_app_and_open_browsers,
+        launch_app_without_browsers,
+    )
 
     develop = importlib.import_module("dallinger.command_line.develop")
     original_job = develop.launch_app_and_open_browser
@@ -744,8 +751,9 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
     monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-    assert calls == [({"skip_flask": False, "port": 5010}, launch_app_without_browsers)]
+    _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
+    job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
+    assert calls == [({"skip_flask": False, "port": 5010}, job)]
     assert os.environ["FLASK_RUN_PORT"] == "5010"
     assert develop.launch_app_and_open_browser is original_job
 
@@ -759,47 +767,22 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
     )
-    monkeypatch.setattr(develop, "_async_browser", pytest.fail)
-    launch_app_without_browsers(5001, no_browsers=False)
+    opened = []
+    monkeypatch.setattr(develop, "open_browser", opened.append)
+    job(5001)
+    deadline = time.monotonic() + 5
+    while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
+        time.sleep(0.01)
     output = capsys.readouterr().out
     assert "Prolific study simulated" in output
     assert "http://127.0.0.1:5001/dashboard" in output
     assert "Dashboard user: admin password: s3cret" in output
-
-
-def test_debug_auto_reload_with_browsers_prints_login_then_opens_browsers(
-    monkeypatch, capsys
-):
-    """The browser-opening launch job also prints the dashboard login."""
-    from psynet.command_line import _debug_auto_reload, launch_app_and_open_browsers
-
-    develop = importlib.import_module("dallinger.command_line.develop")
-    jobs = []
-
-    class _Ctx:
-        def invoke(self, _command, **kwargs):
-            jobs.append(develop.launch_app_and_open_browser)
-
-    for name in ("run_pre_auto_reload_checks", "patch_dallinger_develop"):
-        monkeypatch.setattr(f"psynet.command_line.{name}", lambda: None)
-    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
-    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
-    monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=False)
-    assert jobs == [launch_app_and_open_browsers]
-
-    config = Mock(ready=True)
-    config.get.side_effect = {"dashboard_user": "admin", "dashboard_password": "pw"}.get
-    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
-    monkeypatch.setattr("dallinger.deployment.handle_launch_data", lambda url, **_: {})
-    monkeypatch.setattr("psynet.command_line.time.sleep", lambda _: None)
-    opened = []
-    monkeypatch.setattr(
-        develop, "_async_browser", lambda route, port: opened.append((route, port))
-    )
-    launch_app_and_open_browsers(5001)
-    assert "Dashboard user: admin password: pw" in capsys.readouterr().out
-    assert opened == [("dashboard", 5001), ("ad", 5001)]
+    assert output.count("s3cret") == 1
+    if no_browsers:
+        assert opened == []
+    else:
+        assert "admin:s3cret@127.0.0.1:5001/dashboard" in opened[0]
+        assert "/ad?" in opened[1]
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
@@ -1038,22 +1021,29 @@ class TestExport:
         with patch("psynet.command_line.export_data") as mock_export_data:
             yield mock_export_data
 
+    @pytest.mark.parametrize("over_unix_socket", [False, True])
     def test_export_local_explains_a_stopped_database(
-        self, monkeypatch, import_local_experiment
+        self, monkeypatch, import_local_experiment, over_unix_socket
     ):
         from psynet.command_line import psynet
 
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
-        db_url = f"postgresql://dallinger:secret@127.0.0.1:{port}/dallinger"
+        if over_unix_socket:
+            socket_dir = tempfile.mkdtemp(dir="/tmp")  # Socket paths must be short.
+            db_url = f"postgresql://dallinger:secret@/dallinger?host={socket_dir}"
+        else:
+            db_url = f"postgresql://dallinger:secret@127.0.0.1:{port}/dallinger"
         monkeypatch.setenv("DATABASE_URL", db_url)
         monkeypatch.setattr("psynet.command_line.db.db_url", db_url)
 
         result = CliRunner().invoke(psynet, ["export", "local"])
+        if over_unix_socket:
+            os.rmdir(socket_dir)
 
         assert result.exit_code == 1, result.output
-        assert f"127.0.0.1:{port}" in result.output
+        assert over_unix_socket or f"127.0.0.1:{port}" in result.output
         assert "psynet services check" in result.output
         assert "apps ssh" not in result.output
         assert "secret" not in result.output
