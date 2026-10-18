@@ -245,7 +245,9 @@ prints:
 - the dashboard link with its user name and password;
 - a command and a Dozzle URL for viewing the logs.
 
-Save these. Open the dashboard and check that the experiment is running.
+It ends with a *Ready* summary of the participant link, the dashboard link and
+user, where the password is saved, and the logs command. Save these. Open the
+dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.
 

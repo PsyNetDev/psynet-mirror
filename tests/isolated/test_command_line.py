@@ -270,7 +270,7 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
-    def test_deploy_ssh_ends_with_a_ready_block(self, monkeypatch, tmp_path, capsys):
+    def test_deploy_ssh_ends_with_a_ready_block(self, monkeypatch, tmp_path):
         from psynet.command_line import psynet
 
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -281,11 +281,7 @@ class TestCommandLine(object):
         @click.command()
         def dallinger_deploy(**kwargs):
             print("Dashboard password: secret")
-            print("Launching experiment")
-            print(
-                "Initial recruitment list:\n\nAdditional details:\n\n"
-                "Single recruitment link: https://my-app.example.org/ad?mode=live\n"
-            )
+            print("Single recruitment link: https://my-app.example.org/ad?mode=live")
             return {
                 "dashboard_user": "admin",
                 "dashboard_password": "secret",
@@ -312,7 +308,7 @@ class TestCommandLine(object):
 
         assert result.exit_code == 0, result.output
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
-        assert result.output.split("Single recruitment link")[1].splitlines()[-5:] == [
+        assert result.output.splitlines()[-5:] == [
             "Ready: my-app on host",
             "  Participant link: https://my-app.example.org/ad?mode=live",
             "  Dashboard:        https://my-app.example.org/dashboard (user: admin)",
@@ -320,6 +316,7 @@ class TestCommandLine(object):
             "  Logs:             ssh host 'docker compose logs -f'",
         ]
         assert result.output.count("secret") == 1
+        assert launch_info.stat().st_mode & 0o777 == 0o600
 
     def test_reset_console_is_silent_without_a_terminal(self):
         result = subprocess.run(
@@ -1478,10 +1475,16 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app():
+def test_performance_test_deploys_mark_the_app(capsys):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
+    ctx.invoke.return_value = {
+        "app": "my-app",
+        "server": "server",
+        "dashboard_link": "https://my-app.example.org/dashboard",
+        "dashboard_user": "admin",
+    }
     with (
         patch("psynet.command_line._configure_dallinger_image_source"),
         patch("psynet.command_line._pre_launch") as pre_launch,
@@ -1502,6 +1505,7 @@ def test_performance_test_deploys_mark_the_app():
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
+    assert "Ready:" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("key", ["performance_test_app", "debug_ssh_app"])

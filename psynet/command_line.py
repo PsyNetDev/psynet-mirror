@@ -1967,7 +1967,9 @@ def _invoke_docker_ssh_deploy(
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
     # Dallinger prints the recruitment message but doesn't return it.
-    link = re.search(r"Single recruitment link: (\S+)", output.getvalue())
+    link = re.search(
+        r"Single recruitment link: (https?://[^\s\x1b]+)", output.getvalue()
+    )
     if link and isinstance(result, dict):
         result["participant_link"] = link.group(1)
     return result
@@ -2177,13 +2179,16 @@ def export_launch_data(deployment_id, **kwargs):
     saves them to disk, returning the path of the saved file.
     """
     directory = Path("~/psynet-data/launch-data").expanduser() / deployment_id
-    directory.mkdir(parents=True, exist_ok=True)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     return _export_launch_info(directory, **kwargs)
 
 
 def _export_launch_info(directory, dashboard_user, dashboard_password, **kwargs):
+    """Save launch details, including the dashboard password, readable only by this user."""
     file = directory.joinpath("launch-info.json")
-    with open(file, "w") as f:
+    fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with open(fd, "w") as f:
         json.dump(
             {
                 "dashboard_user": dashboard_user,
@@ -5491,12 +5496,15 @@ def _performance_log_directory():
     its temporary folder (macOS does). Each run writes a server log and a bot
     log; only the newest ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
     """
-    directory = Path("~/psynet-data/performance-logs").expanduser()
     try:
+        directory = Path("~/psynet-data/performance-logs").expanduser()
         directory.mkdir(parents=True, exist_ok=True)
-    except OSError as err:
-        # Containers may run as a uid whose home directory isn't writable.
-        logger.warning(f"Can't create {directory} ({err}); using a temporary folder.")
+    except (OSError, RuntimeError) as err:
+        # Containers may run as a uid without a home directory, or an unwritable one.
+        logger.warning(
+            f"Can't create ~/psynet-data/performance-logs ({err}); "
+            "using a temporary folder."
+        )
         return Path(tempfile.mkdtemp(prefix="psynet-performance-logs-"))
     for prefix in ("psynet_server_", "psynet_bots_"):
         logs = []

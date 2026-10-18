@@ -93,7 +93,7 @@ you need next:
       Participant link: https://my-study.my-server.example.org/ad?recruiter=generic&generate_tokens=1&mode=live
       Dashboard:        https://my-study.my-server.example.org/dashboard (user: admin)
       Password:         saved in ~/psynet-data/launch-data/<deployment-id>/launch-info.json
-      Logs:             ssh my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
+      Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
 
 The participant link appears for recruiters that print a single recruitment
 link, such as ``generic``. The summary doesn't repeat the dashboard password,
