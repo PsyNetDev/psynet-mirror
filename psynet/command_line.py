@@ -1966,13 +1966,27 @@ def _invoke_docker_ssh_deploy(
     output = io.StringIO()
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
-    # Dallinger prints the recruitment message but doesn't return it.
-    link = re.search(
-        r"Single recruitment link: (https?://[^\s\x1b]+)", output.getvalue()
-    )
-    if link and isinstance(result, dict):
-        result["participant_link"] = link.group(1)
+    if isinstance(result, dict):
+        link = _participant_link(result, output.getvalue())
+        if link:
+            result["participant_link"] = link
     return result
+
+
+def _participant_link(result, output):
+    """Return the participant link from a Dallinger deploy, or ``None``.
+
+    Dallinger versions that return ``recruitment_msg`` (``None`` for an
+    update) are read from it; older ones only print it, to ``output``.
+    """
+    url = r"https?://[^\s\x1b]+"
+    single = rf"Single recruitment link: ({url})"
+    if "recruitment_msg" not in result:
+        match = re.search(single, output)
+        return match and match.group(1)
+    message = result["recruitment_msg"] or ""
+    match = re.search(single, message) or re.search(f"({url})", message)
+    return match and match.group(1)
 
 
 def _print_ssh_ready(result, launch_info):

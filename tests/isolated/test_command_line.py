@@ -270,7 +270,10 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
-    def test_deploy_ssh_ends_with_a_ready_block(self, monkeypatch, tmp_path):
+    @pytest.mark.parametrize("returns_message", [False, True])
+    def test_deploy_ssh_ends_with_a_ready_block(
+        self, monkeypatch, tmp_path, returns_message
+    ):
         from psynet.command_line import psynet
 
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -280,9 +283,11 @@ class TestCommandLine(object):
 
         @click.command()
         def dallinger_deploy(**kwargs):
-            print("Dashboard password: secret")
-            print("Single recruitment link: https://my-app.example.org/ad?mode=live")
+            message = "Single recruitment link: https://my-app.example.org/ad?mode=live"
+            if not returns_message:
+                print(f"Dashboard password: secret\n{message}")
             return {
+                **({"recruitment_msg": message} if returns_message else {}),
                 "dashboard_user": "admin",
                 "dashboard_password": "secret",
                 "dashboard_link": "https://my-app.example.org/dashboard",
@@ -315,7 +320,7 @@ class TestCommandLine(object):
             f"  Password:         saved in {launch_info}",
             "  Logs:             ssh host 'docker compose logs -f'",
         ]
-        assert result.output.count("secret") == 1
+        assert "secret" not in result.output.split("Ready:")[1]
         assert launch_info.stat().st_mode & 0o777 == 0o600
 
     def test_reset_console_is_silent_without_a_terminal(self):
