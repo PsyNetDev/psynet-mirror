@@ -11,7 +11,7 @@ Create an experiment
 --------------------
 
 Each experiment lives in its own folder. The folder name becomes the
-experiment's default label and its Docker image tag, and must not be the name
+experiment's default label and its Docker image name, and must not be the name
 of an existing Python module such as ``code`` or ``test``. Lowercase letters,
 digits and underscores, with no spaces, are the safest choice.
 

@@ -478,16 +478,35 @@ def _same_psynet_install_args(psynet_source=None):
     return args
 
 
-def _incompatible_dallinger_hint(source):
-    """Explain how to recover when an editable Dallinger breaks the install."""
+def _incompatible_dallinger_hint(source, *, new_venv=False):
+    """Explain how to recover when an editable Dallinger breaks the install.
+
+    Parameters
+    ----------
+    source : Path
+        The editable Dallinger checkout.
+    new_venv : bool
+        Whether the failure happened while filling a newly created ``./.venv``.
+        The active environment is then PsyNet's shared one, which must not be
+        told to uninstall Dallinger.
+    """
     try:
         version = f" (version {importlib.metadata.version('dallinger')})"
     except importlib.metadata.PackageNotFoundError:
         version = ""
-    return (
+    problem = (
         f"The editable Dallinger at {source}{version} may not satisfy PsyNet's "
-        "Dallinger requirement. Update the checkout to a compatible version, or "
-        "run 'uv pip uninstall dallinger' and re-run 'psynet setup' to use "
+        "Dallinger requirement."
+    )
+    if new_venv:
+        return (
+            f"{problem} Remove ./.venv, then update the checkout to a compatible "
+            "version, or re-run 'psynet setup --psynet-source commit', which "
+            "installs PsyNet's pinned Dallinger in the new environment instead."
+        )
+    return (
+        f"{problem} Update the checkout to a compatible version, or run "
+        "'uv pip uninstall dallinger' and re-run 'psynet setup' to use "
         "PsyNet's pinned Dallinger instead."
     )
 
@@ -534,11 +553,14 @@ def _create_dedicated_experiment_virtualenv(*, psynet_source):
         )
     except click.ClickException as exc:
         dallinger_source = get_editable_dallinger_source()
-        if dallinger_source is None or str(dallinger_source) not in install_args:
+        if (
+            dallinger_source is None
+            or str(dallinger_source) not in install_args
+            or "dallinger" not in exc.message.lower()
+        ):
             raise
-        raise click.ClickException(
-            f"{exc.message}\n{_incompatible_dallinger_hint(dallinger_source)}"
-        ) from exc
+        hint = _incompatible_dallinger_hint(dallinger_source, new_venv=True)
+        raise click.ClickException(f"{exc.message}\n{hint}") from exc
     click.echo("Installed PsyNet into ./.venv.")
     click.echo()
 
@@ -936,7 +958,9 @@ _ENTRIES_ALLOWED_BEFORE_SETUP = frozenset(
         "__pycache__",
         "audit",
         "constraints.txt",
+        "env",
         "requirements.txt",
+        "venv",
     }
 )
 _LICENSE_PREFIXES = ("LICENSE", "LICENCE")

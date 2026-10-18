@@ -3241,6 +3241,44 @@ def test_setup_shared_env_interactive_new_venv_default(tmp_path, monkeypatch):
     assert not (tmp_path / "Dockerfile").exists()
 
 
+def test_setup_new_venv_explains_incompatible_editable_dallinger(tmp_path, monkeypatch):
+    """A failed new-venv install never suggests uninstalling from the shared env."""
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    monkeypatch.setattr(
+        "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
+    )
+    _isolate_setup_test(monkeypatch)
+    monkeypatch.setattr(
+        "psynet.experiment_setup._is_psynet_checkout_virtualenv", lambda: True
+    )
+    monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+
+    def fake_run_uv(args, description, quiet=False):
+        if args[:2] == ["pip", "install"]:
+            raise click.ClickException(
+                f"Failed to {description}.\nNo version of dallinger satisfies psynet"
+            )
+
+    monkeypatch.setattr("psynet.experiment_setup._run_uv", fake_run_uv)
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup"], input="\n")
+
+    assert result.exit_code == 1, result.output
+    assert f"The editable Dallinger at {dallinger_source}" in result.output
+    assert "Remove ./.venv" in result.output
+    assert "--psynet-source commit" in result.output
+    assert "uv pip uninstall" not in result.output
+
+
 def test_setup_shared_env_interactive_new_venv_rejects_existing_venv(
     tmp_path, monkeypatch
 ):
