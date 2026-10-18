@@ -94,8 +94,7 @@ Launch information
 ------------------
 
 At the end of a deployment, the command prints the log command, the Dozzle
-address (classic ingress only; see :ref:`ssh_server_cloudflare`) and the
-dashboard link with its credentials:
+address and the dashboard link with its credentials:
 
 .. code:: text
 

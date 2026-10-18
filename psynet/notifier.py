@@ -9,7 +9,7 @@ from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
-from .server_logs import dozzle_url, logs_command
+from .server_logs import dozzle_url
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
@@ -124,7 +124,13 @@ class Notifier:
         info = self.deployment_information
         logs_url = dozzle_url(info["server"], info.get("ingress"))
         if logs_url is None:
-            command = logs_command(info["app"], info["ssh_host"], info.get("ssh_user"))
+            command = info.get("logs_command")
+            if command is None:
+                return self.combine(
+                    self.bold("Server logs"),
+                    "Run the log command printed at the end of the deployment, "
+                    "or `docker ps` and `docker logs` on the server.",
+                )
             return self.combine(self.bold("Server logs"), f"`{command}`")
         config = get_config()
         dashboard_password = config.get("dashboard_password", secrets.token_urlsafe(8))

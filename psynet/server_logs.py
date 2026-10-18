@@ -6,11 +6,13 @@ messages about them give the ``docker compose logs`` command instead.
 
 The ingress of a new app comes from ``--ingress`` or the server registry's
 ``default_ingress`` (:func:`server_ingress`). ``psynet deploy ssh`` and
-``psynet debug ssh`` record it in ``deployment_info`` so that the app's own
-messages, such as Slack notifications, can tell the two apart; deployments
-without a record count as classic.
+``psynet debug ssh`` record it and the logs command in ``deployment_info``,
+because the app's own messages, such as Slack notifications, are built on
+the server, which knows neither; deployments without a record count as
+classic.
 """
 
+from shlex import quote
 from typing import Optional
 
 INGRESS_CLASSIC = "classic"
@@ -18,7 +20,7 @@ INGRESS_CLOUDFLARE = "cloudflare"
 
 
 def server_ingress(server_info: dict, ingress: Optional[str] = None) -> str:
-    """Return ``"classic"`` or ``"cloudflare"`` from ``--ingress`` or the server's ``default_ingress``.
+    """Return the ingress from ``--ingress`` or the server's ``default_ingress``, else classic.
 
     Parameters
     ----------
@@ -27,11 +29,7 @@ def server_ingress(server_info: dict, ingress: Optional[str] = None) -> str:
     ingress : str, optional
         The ``--ingress`` option, if given.
     """
-    try:
-        from dallinger.command_line.docker_ssh import _resolve_ingress
-    except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
-        return INGRESS_CLASSIC
-    return _resolve_ingress(server_info, ingress)
+    return (ingress or server_info.get("default_ingress") or INGRESS_CLASSIC).lower()
 
 
 def dozzle_url(server: str, ingress: Optional[str]) -> Optional[str]:
@@ -41,24 +39,47 @@ def dozzle_url(server: str, ingress: Optional[str]) -> Optional[str]:
     return f"https://logs.{server}"
 
 
-def logs_command(app: str, ssh_host: str, ssh_user: Optional[str] = None) -> str:
-    """Return the ``ssh`` command that follows an app's Compose logs."""
-    destination = f"{ssh_user}@{ssh_host}" if ssh_user else ssh_host
-    return (
-        f'ssh {destination} "docker compose -f ~/dallinger/{app}/docker-compose.yml '
-        'logs -f"'
-    )
+def logs_command(server_info: dict, app: str) -> str:
+    """Return the ``ssh`` command that follows an app's Compose logs, as Dallinger prints it.
+
+    Parameters
+    ----------
+    server_info : dict
+        The server's entry in Dallinger's server registry; its ``host`` may
+        include a port.
+    app : str
+        The app name.
+    """
+    from dallinger.command_line.docker_ssh import split_ssh_host_port
+    from dallinger.command_line.utils import get_server_pem_path
+
+    host, port = split_ssh_host_port(server_info["host"])
+    user = server_info.get("user")
+    parts = ["ssh"]
+    if port != 22:
+        parts += ["-p", str(port)]
+    try:
+        parts += ["-i", quote(str(get_server_pem_path()))]
+    except FileNotFoundError:
+        pass  # Without server_pem, ssh falls back to the user's own keys.
+    parts.append(quote(f"{user}@{host}" if user else host))
+    parts.append(f'"docker compose -f ~/dallinger/{app}/docker-compose.yml logs -f"')
+    return " ".join(parts)
 
 
 def where_to_read_logs(server: str, app: str) -> str:
-    """Describe where to read ``app``'s logs, using the server's ``default_ingress``."""
+    """Describe where to read ``app``'s logs, for messages printed on this computer.
+
+    The ingress is a best guess from the server's ``default_ingress``: an app
+    deployed with an explicit ``--ingress`` may differ, and finding out would
+    take another SSH round trip.
+    """
     from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
     server_info = CONFIGURED_HOSTS.get(server, {})
     url = dozzle_url(server, server_ingress(server_info))
     if url:
         return f"in Dozzle at {url}"
-    command = logs_command(
-        app, server_info.get("host", server), server_info.get("user")
-    )
-    return f"with '{command}'"
+    if "host" not in server_info:
+        return "with 'docker compose logs' on the server"
+    return f"with '{logs_command(server_info, app)}'"

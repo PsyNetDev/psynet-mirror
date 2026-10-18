@@ -1,52 +1,38 @@
 import pytest
 from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
-from psynet.notifier import Notifier
-from psynet.server_logs import where_to_read_logs
-
-LOGS_COMMAND = (
-    'ssh ubuntu@lab.example "docker compose -f '
-    '~/dallinger/study/docker-compose.yml logs -f"'
-)
+from psynet.server_logs import server_ingress, where_to_read_logs
 
 
 @pytest.mark.parametrize(
-    "default_ingress, expected",
+    "server_info, option, expected",
     [
-        (None, "in Dozzle at https://logs.lab"),
-        ("cloudflare", f"with '{LOGS_COMMAND}'"),
+        ({}, None, "classic"),
+        ({"default_ingress": "cloudflare"}, None, "cloudflare"),
+        ({"default_ingress": "cloudflare"}, "classic", "classic"),
     ],
 )
-def test_where_to_read_logs_follows_the_server_ingress(
-    monkeypatch, default_ingress, expected
+def test_server_ingress_prefers_the_option_to_the_server_default(
+    server_info, option, expected
 ):
-    host = {"host": "lab.example", "user": "ubuntu"}
-    if default_ingress:
-        host["default_ingress"] = default_ingress
-    monkeypatch.setitem(CONFIGURED_HOSTS, "lab", host)
-
-    assert where_to_read_logs("lab", "study") == expected
+    assert server_ingress(server_info, option) == expected
 
 
 @pytest.mark.parametrize(
-    "ingress, expected",
+    "host, expected",
     [
-        (None, "https://logs.lab"),
-        ("classic", "https://logs.lab"),
-        ("cloudflare", LOGS_COMMAND),
+        ({"host": "lab"}, "in Dozzle at https://logs.lab"),
+        (
+            {"host": "lab.example:2222", "default_ingress": "cloudflare"},
+            "with 'ssh -p 2222 -i /keys/lab.pem ubuntu@lab.example "
+            '"docker compose -f ~/dallinger/study/docker-compose.yml logs -f"\'',
+        ),
     ],
 )
-def test_notifier_logs_message_follows_the_app_ingress(monkeypatch, ingress, expected):
-    info = {"server": "lab", "app": "study", "ssh_host": "lab.example"}
-    info["ssh_user"] = "ubuntu"
-    if ingress:
-        info["ingress"] = ingress
-    monkeypatch.setattr("psynet.deployment_info.read_all", lambda: info)
+def test_where_to_read_logs_follows_the_server_ingress(monkeypatch, host, expected):
+    monkeypatch.setitem(CONFIGURED_HOSTS, "lab", {**host, "user": "ubuntu"})
     monkeypatch.setattr(
-        "psynet.notifier.get_config", lambda: {"dashboard_password": "pw"}
+        "dallinger.command_line.utils.get_server_pem_path", lambda: "/keys/lab.pem"
     )
 
-    message = Notifier().logs_message
-
-    assert expected in message
-    assert ("Dozzle" in message) is (ingress != "cloudflare")
+    assert where_to_read_logs("lab", "study") == expected

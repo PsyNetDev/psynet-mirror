@@ -82,7 +82,7 @@ from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .server_logs import server_ingress, where_to_read_logs
+from .server_logs import logs_command, server_ingress, where_to_read_logs
 from .utils import (
     format_bytes,
     get_args,
@@ -1696,6 +1696,7 @@ def _pre_launch(
             ssh_host=ssh_host,
             ssh_user=ssh_user,
             ingress=server_ingress(server_info, ingress),
+            logs_command=logs_command(server_info, app) if app else None,
         )
 
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
