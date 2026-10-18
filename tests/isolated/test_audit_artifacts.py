@@ -40,6 +40,11 @@ def test_redaction_keeps_the_server_log_password_placeholder() -> None:
         redact_known_credentials("Opening dashboard: http://admin:pw@127.0.0.1:5000/")
         == "Opening dashboard: http://admin:[REDACTED]@127.0.0.1:5000/"
     )
+    assert redact_known_credentials("redis://:pw@localhost:6379/0") == (
+        "redis://:[REDACTED]@localhost:6379/0"
+    )
+    npm_url = "https://registry.npmjs.org:443/@babel/core"
+    assert redact_known_credentials(npm_url) == npm_url
     assert (
         redact_known_credentials("Log in using this password pw and the username")
         == "Log in using this password [REDACTED] and the username"
