@@ -767,6 +767,41 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     assert "Dashboard user: admin password: s3cret" in output
 
 
+def test_debug_auto_reload_with_browsers_prints_login_then_opens_browsers(
+    monkeypatch, capsys
+):
+    """The browser-opening launch job also prints the dashboard login."""
+    from psynet.command_line import _debug_auto_reload, launch_app_and_open_browsers
+
+    develop = importlib.import_module("dallinger.command_line.develop")
+    jobs = []
+
+    class _Ctx:
+        def invoke(self, _command, **kwargs):
+            jobs.append(develop.launch_app_and_open_browser)
+
+    for name in ("run_pre_auto_reload_checks", "patch_dallinger_develop"):
+        monkeypatch.setattr(f"psynet.command_line.{name}", lambda: None)
+    monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
+    monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
+    monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
+    _debug_auto_reload(_Ctx(), archive=None, no_browsers=False)
+    assert jobs == [launch_app_and_open_browsers]
+
+    config = Mock(ready=True)
+    config.get.side_effect = {"dashboard_user": "admin", "dashboard_password": "pw"}.get
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr("dallinger.deployment.handle_launch_data", lambda url, **_: {})
+    monkeypatch.setattr("psynet.command_line.time.sleep", lambda _: None)
+    opened = []
+    monkeypatch.setattr(
+        develop, "_async_browser", lambda route, port: opened.append((route, port))
+    )
+    launch_app_and_open_browsers(5001)
+    assert "Dashboard user: admin password: pw" in capsys.readouterr().out
+    assert opened == [("dashboard", 5001), ("ad", 5001)]
+
+
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
     """Playwright hold tests set workers to the session count plus two spares."""
     from psynet.command_line import _debug_legacy
@@ -1002,6 +1037,27 @@ class TestExport:
     def export_data(self):
         with patch("psynet.command_line.export_data") as mock_export_data:
             yield mock_export_data
+
+    def test_export_local_explains_a_stopped_database(
+        self, monkeypatch, import_local_experiment
+    ):
+        from psynet.command_line import psynet
+
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        db_url = f"postgresql://dallinger:secret@127.0.0.1:{port}/dallinger"
+        monkeypatch.setenv("DATABASE_URL", db_url)
+        monkeypatch.setattr("psynet.command_line.db.db_url", db_url)
+
+        result = CliRunner().invoke(psynet, ["export", "local"])
+
+        assert result.exit_code == 1, result.output
+        assert f"127.0.0.1:{port}" in result.output
+        assert "psynet services check" in result.output
+        assert "apps ssh" not in result.output
+        assert "secret" not in result.output
+        assert "Traceback" not in result.output
 
 
 @pytest.fixture
@@ -1539,7 +1595,7 @@ def test_check_constraints():
         with working_directory(dir):
             with pytest.raises(
                 click.ClickException,
-                match="Experiment directory is missing a requirements.txt file.",
+                match="requirements.txt is missing from this experiment",
             ):
                 _check_constraints()
 
@@ -1549,7 +1605,7 @@ def test_check_constraints():
 
                 with pytest.raises(
                     click.ClickException,
-                    match="Experiment directory is missing a constraints.txt file.",
+                    match="constraints.txt is missing from this experiment",
                 ):
                     _check_constraints()
 
@@ -3351,6 +3407,7 @@ def test_check_experiment_directory_reports_missing_git(tmp_path, monkeypatch):
     with working_directory(tmp_path):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
+        (tmp_path / "constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         with pytest.raises(click.ClickException, match="git init"):
             _check_experiment_directory("debug")
@@ -3365,6 +3422,7 @@ def test_check_experiment_directory_passes_with_scaffold_and_git(tmp_path, monke
     with working_directory(tmp_path):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
+        (tmp_path / "constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         _check_experiment_directory("debug")
 
@@ -3379,6 +3437,7 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
     with working_directory(tmp_path):
         Path("experiment.py").write_text("class Exp:\n    pass\n")
         Path("requirements.txt").write_text("psynet\n")
+        Path("constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         subprocess.run(["git", "init", "-q"], check=True)
 
@@ -3401,6 +3460,20 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
             check=True,
         )
         _check_experiment_directory("deploy", require_git_commit=True)
+
+
+def test_local_runs_require_constraints_txt(tmp_path, monkeypatch):
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("constraints.txt").unlink(missing_ok=True)
+        with pytest.raises(click.ClickException, match="psynet generate-constraints"):
+            _check_experiment_directory("test")
 
 
 def test_test_local_reports_missing_scaffold_like_debug(tmp_path, monkeypatch):
