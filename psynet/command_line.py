@@ -563,9 +563,10 @@ def _refuse_if_local_server_running(docker=False):
     """Refuse to start while another local server uses this port or database.
 
     Starting resets the database, Redis and development folder and stops
-    worker processes, so it must fail before any of that happens. Per-user
-    lock files held for the whole run catch a server that hasn't bound its
-    port yet; the connection test catches other programs on the port.
+    worker processes, so it must fail before any of that happens. Lock files,
+    shared by all users and held for the whole run, catch a server that
+    hasn't bound its port yet, and a test session that has claimed the port;
+    the connection test catches other programs on the port.
     Leftover workers that use this database, for example from a server that
     was killed, are stopped first, as starting would stop them anyway. Test
     sessions skip the checks: their environment is their own.
@@ -591,15 +592,20 @@ def _refuse_if_local_server_running(docker=False):
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     with ExitStack() as stack:
-        port_lock, path = _hold_run_lock(stack, f"psynet-debug-{os.getuid()}-{port}")
+        port_lock, path = _hold_run_lock(stack, f"psynet-debug-{port}")
         if port_lock is None:
             raise click.ClickException(
                 f"Another local PsyNet server{_lock_owner(path)} is using port "
                 f"{port}. Stop it with Ctrl+C in its terminal. "
                 f"{_several_experiments_advice()}"
             )
+        if _hold_run_lock(stack, f"psynet-test-{port}")[0] is None:
+            raise click.ClickException(
+                f"A PsyNet test session is using port {port}. Wait for it to "
+                f"finish. {_several_experiments_advice()}"
+            )
         database_lock, path = _hold_run_lock(
-            stack, f"psynet-debug-db-{os.getuid()}-{_database_url_tag()}"
+            stack, f"psynet-debug-db-{_database_url_tag()}"
         )
         if database_lock is None:
             database = _url_without_password(_current_database_url())
@@ -608,17 +614,20 @@ def _refuse_if_local_server_running(docker=False):
                 f"database {database}, so starting here would wipe its data. "
                 f"Stop it with Ctrl+C in its terminal. {_several_experiments_advice()}"
             )
+        stopped_leftovers = False
         if _port_in_use(port) and list_psynet_worker_processes():
             kill_psynet_worker_processes()
+            stopped_leftovers = True
             deadline = time.monotonic() + 5
             while _port_in_use(port) and time.monotonic() < deadline:
                 time.sleep(0.2)
         if _port_in_use(port):
-            raise click.ClickException(_port_in_use_message(port))
+            raise click.ClickException(_port_in_use_message(port, stopped_leftovers))
         for lock in (port_lock, database_lock):
-            lock.truncate(0)
-            lock.write(str(os.getpid()))
-            lock.flush()
+            if lock.writable():
+                lock.truncate(0)
+                lock.write(str(os.getpid()))
+                lock.flush()
         yield
 
 
@@ -664,7 +673,7 @@ def _port_in_use(port):
     return False
 
 
-def _several_experiments_advice():
+def _several_experiments_advice(stopped_leftovers=False):
     from psynet.local_docs import published_docs_url
 
     docs_url = (
@@ -675,11 +684,12 @@ def _several_experiments_advice():
         "To run both at once, give this terminal its own port (base_port), "
         "database (DATABASE_URL), Redis server (REDIS_URL) and development folder "
         "(dallinger_develop_directory) as described in "
-        f'"Run several experiments at once": {docs_url}. Nothing was reset.'
+        f'"Run several experiments at once": {docs_url}. Nothing was reset'
+        + ("; only leftover workers were stopped." if stopped_leftovers else ".")
     )
 
 
-def _port_in_use_message(port):
+def _port_in_use_message(port, stopped_leftovers=False):
     airplay = (
         " On macOS, AirPlay Receiver uses port 5000: turn it off in System "
         "Settings > General > AirDrop & Handoff."
@@ -690,7 +700,7 @@ def _port_in_use_message(port):
         f"Port {port} is already in use by another program or a leftover "
         "process, so the local PsyNet server can't start. "
         f"`lsof -nP -iTCP:{port} -sTCP:LISTEN` shows what is listening.{airplay} "
-        f"{_several_experiments_advice()}"
+        f"{_several_experiments_advice(stopped_leftovers)}"
     )
 
 

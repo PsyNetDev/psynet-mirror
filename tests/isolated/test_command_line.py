@@ -878,19 +878,29 @@ def test_debug_local_stops_leftover_workers_on_its_port(
     assert isinstance(debug_local().exception, _PreLaunchReached)
 
 
-def test_debug_local_refuses_a_database_in_use(debug_local, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "holder, message",
+    [
+        ("psynet-debug-db-{tag}", "(PID 4242) is using the database"),
+        ("psynet-test-{port}", "A PsyNet test session is using port"),
+    ],
+)
+def test_debug_local_refuses_a_held_lock(
+    debug_local, monkeypatch, tmp_path, holder, message
+):
     from psynet.command_line import _database_url_tag
     from psynet.isolated_environment import try_lock
 
-    monkeypatch.setenv("base_port", str(_free_port()))
-    name = f"psynet-debug-db-{os.getuid()}-{_database_url_tag()}.lock"
-    with try_lock(str(tmp_path / name)) as lock:
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    name = holder.format(tag=_database_url_tag(), port=port)
+    with try_lock(str(tmp_path / f"{name}.lock")) as lock:
         lock.write("4242")
         lock.flush()
         result = debug_local()
 
     assert result.exit_code == 1
-    assert "(PID 4242) is using the database" in result.output
+    assert message in result.output
     assert "Nothing was reset." in result.output
 
 
@@ -899,7 +909,7 @@ def test_debug_local_reports_an_unopenable_lock_file(
 ):
     port = _free_port()
     monkeypatch.setenv("base_port", str(port))
-    (tmp_path / f"psynet-debug-{os.getuid()}-{port}.lock").mkdir()
+    (tmp_path / f"psynet-debug-{port}.lock").mkdir()
 
     result = debug_local()
 

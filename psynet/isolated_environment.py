@@ -275,8 +275,9 @@ class IsolatedEnvironment:
         Raises
         ------
         IsolationError
-            If no free port is found, PostgreSQL can't be reached, the
-            test database can't be created or Redis doesn't start; the message
+            If ``base_port`` can't be read, no free port is found, PostgreSQL
+            can't be reached, the test database can't be created or Redis
+            doesn't start; the message
             says how to opt out. Other errors propagate unchanged, because
             opting out would not fix them.
         """
@@ -284,7 +285,7 @@ class IsolatedEnvironment:
 
         try:
             return cls._start(environ)
-        except (OSError, RuntimeError, psycopg2.Error) as e:
+        except (OSError, RuntimeError, ValueError, psycopg2.Error) as e:
             raise IsolationError(e) from e
 
     @classmethod
@@ -527,6 +528,9 @@ def port_lock_path(port):
 def try_lock(path):
     """Take an exclusive lock on the file at ``path`` without waiting.
 
+    Another user's lock file is opened read-only, which is enough for
+    ``flock``; such a lock file is not writable.
+
     Returns
     -------
     file or None
@@ -536,12 +540,18 @@ def try_lock(path):
     Raises
     ------
     OSError
-        If the file can't be opened, for example because another user owns it.
+        If the file can't be opened at all.
     """
     # Not following symlinks or truncating, so a link planted in /tmp
     # can't make this empty someone's file.
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
-    lock = os.fdopen(fd, "r+")
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+        mode = "r+"
+    except PermissionError:
+        # Without O_CREAT, so Linux's fs.protected_regular allows it in /tmp.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        mode = "r"
+    lock = os.fdopen(fd, mode)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -563,7 +573,7 @@ def _claim_port(start, also_free=None):
         try:
             lock = try_lock(port_lock_path(port))
         except OSError:
-            # Such as another user's claim, which counts as taken.
+            # An unopenable claim file counts as taken.
             continue
         if lock is None:
             continue

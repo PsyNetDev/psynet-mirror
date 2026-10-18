@@ -23,6 +23,7 @@ from psynet.isolated_environment import (
     shared_environment_warning,
     should_isolate,
     start_redis_server,
+    try_lock,
 )
 
 
@@ -164,6 +165,16 @@ def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
 
     assert port != 6990
     assert target.read_text() == "keep me"
+
+
+def test_read_only_lock_files_still_lock(tmp_path):
+    """Another user's lock file can't be opened for writing, but still locks."""
+    path = tmp_path / "other-user.lock"
+    path.touch(mode=0o444)
+
+    with try_lock(str(path)) as lock:
+        assert not lock.writable()
+        assert try_lock(str(path)) is None
 
 
 def test_spare_redis_databases_avoid_the_shared_one():
