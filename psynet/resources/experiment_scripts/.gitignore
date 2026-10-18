@@ -17,6 +17,9 @@ env/
 # Automatically generated server log file
 server.log
 
+# Rewritten by PsyNet commands; deploy.toml excludes it from deployments
+Dockertag
+
 # Files staged by `psynet debug ssh --use-local-psynet` / `--use-local-dallinger`
 psynet-*.whl
 local-image-pins.txt

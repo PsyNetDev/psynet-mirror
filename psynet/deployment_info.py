@@ -29,6 +29,9 @@ logger = get_logger()
 
 path = ".deploy/deployment_info.json"
 
+# Enough for export to name the changed files without bloating experiment variables.
+_MAX_RECORDED_DIRTY_PATHS = 100
+
 # ``(cache_key, content)``, replaced in a single assignment so threads never
 # observe a partially updated cache.
 _cache = None
@@ -192,28 +195,44 @@ def _git_ignored_deployment_paths(extra_excludes_file=None):
 
 def _get_git_provenance():
     """Return the current commit SHA and deployment-scoped dirty state."""
+    commit_sha, paths = _git_commit_and_uncommitted_paths()
+    return commit_sha, None if paths is None else bool(paths)
+
+
+def _git_commit_and_uncommitted_paths():
+    """Return the current commit SHA and :func:`uncommitted_deployment_paths`."""
     commit_sha = _git_output("rev-parse", "HEAD")
     if commit_sha is None:
         return None, None
+    return commit_sha, uncommitted_deployment_paths()
+
+
+def uncommitted_deployment_paths():
+    """Return the deployed files that differ from ``HEAD``, or ``None`` if Git cannot tell.
+
+    Paths are relative to the experiment directory and sorted. Without a
+    ``deploy.toml``, every changed or untracked file in the directory counts.
+    """
+    prefix = _git_worktree_prefix()
+    if prefix is None:
+        return None
+    changed = _git_path_set("diff", "--name-only", "HEAD", prefix=prefix)
 
     plan = _deployment_plan()
     if plan is None:
-        status = _git_output(
-            "status", "--porcelain", "--untracked-files=normal", "--", "."
+        untracked = _git_path_set(
+            "ls-files", "--others", "--exclude-standard", prefix=prefix
         )
-        return commit_sha, None if status is None else bool(status)
-
-    prefix = _git_worktree_prefix()
-    if prefix is None:
-        return commit_sha, None
+        if changed is None or untracked is None:
+            return None
+        return sorted(changed | untracked)
 
     tracked = _git_path_set("ls-files", "--cached", prefix=prefix)
-    changed = _git_path_set("diff", "--name-only", "HEAD", prefix=prefix)
     deleted = _git_path_set(
         "diff", "--name-only", "--diff-filter=D", "HEAD", prefix=prefix
     )
     if tracked is None or changed is None or deleted is None:
-        return commit_sha, None
+        return None
 
     selected = plan.destinations
     selected_untracked = selected - tracked
@@ -221,7 +240,48 @@ def _get_git_provenance():
     selected_deleted = {
         path for path in deleted if policy_selects_path(path, plan.policy)
     }
-    return commit_sha, bool(selected_untracked or selected_changed or selected_deleted)
+    return sorted(selected_untracked | selected_changed | selected_deleted)
+
+
+def format_path_list(paths, limit=10):
+    """Return ``paths`` as indented lines, listing at most ``limit`` of them."""
+    lines = [f"  {path}" for path in paths[:limit]]
+    if len(paths) > limit:
+        lines.append(f"  ... and {len(paths) - limit} more")
+    return "\n".join(lines)
+
+
+def warn_about_uncommitted_deployment_changes(confirm):
+    """Warn before a deployment whose files have uncommitted changes.
+
+    Parameters
+    ----------
+    confirm : callable or None
+        Asks the user whether to continue and returns a boolean. ``None``
+        (non-interactive sessions) only warns, so scripted deployments keep
+        working.
+
+    Raises
+    ------
+    click.Abort
+        If the user declines to continue.
+    """
+    import click
+
+    paths = uncommitted_deployment_paths()
+    if not paths:
+        return
+    click.secho(
+        "Warning: these deployed files have uncommitted changes:\n"
+        f"{format_path_list(paths)}\n"
+        "The deployment records the Git commit, so it will not match your "
+        "files exactly, and 'psynet export' will ask you to confirm the "
+        "mismatch. Commit the changes first to keep the record exact.",
+        fg="yellow",
+        err=True,
+    )
+    if confirm is not None and not confirm("Deploy with uncommitted changes?"):
+        raise click.Abort
 
 
 def init(
@@ -235,7 +295,10 @@ def init(
 ):
     secret = uuid.uuid4()
     origin = find_git_repo()
-    git_commit_sha, git_dirty = _get_git_provenance()
+    git_commit_sha, git_dirty_paths = _git_commit_and_uncommitted_paths()
+    git_dirty = None if git_dirty_paths is None else bool(git_dirty_paths)
+    if git_dirty_paths is not None:
+        git_dirty_paths = git_dirty_paths[:_MAX_RECORDED_DIRTY_PATHS]
     write_all(locals())
 
 

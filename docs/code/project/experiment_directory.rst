@@ -73,7 +73,9 @@ boilerplate templates with those of the installed PsyNet version, and
     version in ``.python-version``.
 
 ``Dockertag``
-    The name of the Docker image, set to the directory name.
+    The name of the Docker image, set to the directory name. PsyNet rewrites
+    it, so the stock ``.gitignore`` and ``deploy.toml`` leave it out of Git
+    and out of deployments.
 
 ``.python-version``
     The Python major and minor version that was active when the experiment

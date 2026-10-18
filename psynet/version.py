@@ -1,3 +1,4 @@
+import contextlib
 import os
 import re
 import subprocess
@@ -25,7 +26,11 @@ def _get_dallinger_version() -> str:
 
 def check_core_dependency_versions_match_requirements(skip=()):
     """
-    Check whether PsyNet and Dallinger versions match requirements.txt.
+    Check that the installed PsyNet and Dallinger match the versions the deployment installs.
+
+    Each package is compared with its exact pin in ``requirements.txt`` or,
+    failing that, ``constraints.txt`` (where ``psynet setup`` pins Dallinger).
+    One line per package reports what was compared.
 
     Parameters
     ----------
@@ -43,55 +48,107 @@ def check_core_dependency_versions_match_requirements(skip=()):
         )
         return
 
+    with _spinner("Comparing installed PsyNet and Dallinger with their pins..."):
+        with open("requirements.txt", "r") as file:
+            requirements = file.read()
+        constraints_path = Path("constraints.txt")
+        constraints = (
+            constraints_path.read_text() if constraints_path.is_file() else None
+        )
+        versions = collect_core_dependency_version_info_from_requirements(
+            requirements, skip=skip, constraints_content=constraints
+        )
+
+    for package_name, info in versions.items():
+        source = info.get("source", "requirements.txt")
+        if info["status"] == "inconsistent":
+            click.echo(
+                f"✗ {package_name}: installed {_short(info['installed'])} does not "
+                f"match {source} ({_short(info['specified'])})"
+            )
+            raise ValueError(
+                f"The {package_name} versions installed on your local computer and specified in {source} do not match.\n"
+                f"\nVersion installed locally: {info['installed']}"
+                f"\nVersion specified in {source}: {info['specified']}"
+                f"{_mismatch_hint(package_name, info)}"
+                "\n\nYou can skip this check by writing `export SKIP_VERSION_CHECK=1` (without quotes) in your terminal."
+            )
+        if info["status"] == "skipped":
+            click.echo(
+                f"Skipped version check for {package_name}: {info['skip_reason']}"
+            )
+        elif info["specified"] is None:
+            click.echo(
+                f"✔ {package_name}: no exact pin in requirements.txt or "
+                "constraints.txt, so not compared"
+            )
+        else:
+            click.echo(
+                f"✔ {package_name}: installed {_short(info['installed'])} matches "
+                f"{source} ({_short(info['specified'])})"
+            )
+    for info in versions.values():
+        if info.get("warning"):
+            click.secho(f"Warning: {info['warning']}", fg="yellow", err=True)
+
+
+def _spinner(text):
+    """Return a yaspin spinner on a terminal, or a no-op context manager otherwise."""
+    if not sys.stdout.isatty():
+        return contextlib.nullcontext()
     # yaspin lives in psynet[experiment]; keep this import lazy so thin
     # bootstrap can import ``psynet_version`` without the spinner package.
     from yaspin import yaspin
 
-    skip_messages = []
-    warning_messages = []
-    with yaspin(
-        text="Checking whether PsyNet and Dallinger versions specified and installed are the same...",
-        color="green",
-    ) as spinner:
-        with open("requirements.txt", "r") as file:
-            versions = collect_core_dependency_version_info_from_requirements(
-                file.read(), skip=skip
-            )
-
-            for package_name, version_infos in versions.items():
-                status = version_infos["status"]
-                if version_infos.get("warning"):
-                    warning_messages.append(version_infos["warning"])
-
-                if status == "consistent":
-                    spinner.ok("✔")
-                elif status == "skipped":
-                    spinner.ok("✔")
-                    skip_reason = version_infos.get("skip_reason")
-                    if skip_reason:
-                        skip_messages.append(
-                            f"Skipped version check for {package_name}: {skip_reason}"
-                        )
-                else:
-                    spinner.color = "red"
-                    spinner.fail("✗")
-
-                    raise ValueError(
-                        f"The {package_name} versions installed on your local computer and specified in requirements.txt do not match.\n"
-                        f"\nVersion installed locally: {version_infos['installed']}"
-                        f"\nVersion specified in requirements.txt: {version_infos['specified']}"
-                        "\n\nYou can skip this check by writing `export SKIP_VERSION_CHECK=1` (without quotes) in your terminal."
-                    )
-
-    for message in skip_messages:
-        click.echo(message)
-    for message in warning_messages:
-        click.secho(f"Warning: {message}", fg="yellow", err=True)
+    return yaspin(text=text, color="green")
 
 
-def collect_core_dependency_version_info_from_requirements(file_content, skip=()):
+def _short(version):
+    """Abbreviate a full commit hash for display; leave versions unchanged."""
+    if version and re.fullmatch(r"[0-9a-fA-F]{40}", version):
+        return f"commit {version[:12]}"
+    return version
+
+
+def _mismatch_hint(package_name, info):
+    """Explain how to resolve a mismatch for an editable install."""
+    from psynet.experiment_scaffold import get_editable_source
+
+    source = get_editable_source(package_name)
+    if source is None:
+        return ""
+    return (
+        f"\n\nThe deployment will run {package_name} {_short(info['specified'])} "
+        f"(pinned in {info['source']}), but you have editable {package_name} at "
+        f"{_short(info['installed'])} ({source}). For a debug deployment, use "
+        f"'psynet debug ssh --use-local-{package_name.lower()}' to build your "
+        f"checkout into the image; otherwise update the {package_name} pin or "
+        f"install the pinned version."
+    )
+
+
+def _exact_pin_line(content, package_name):
+    """Return the first line of ``content`` that pins ``package_name`` exactly, if any.
+
+    Exact pins name a Git ref or use ``==``; bare names and ranges such as
+    ``dallinger~=12.4`` leave the choice to another file.
     """
-    Parse requirements.txt content and compare to installed versions.
+    from psynet.experiment_scaffold import is_requirement_line_for
+
+    for line in (content or "").splitlines():
+        line = line.split(";")[0]
+        if is_requirement_line_for(line, package_name.lower()) and (
+            "==" in line or specified_version(line) != line.strip()
+        ):
+            return line
+    return None
+
+
+def collect_core_dependency_version_info_from_requirements(
+    file_content, skip=(), constraints_content=None
+):
+    """
+    Compare the PsyNet and Dallinger pins with the installed versions.
 
     Parameters
     ----------
@@ -100,13 +157,17 @@ def collect_core_dependency_version_info_from_requirements(file_content, skip=()
     skip : collection of str
         Lowercase names of packages not to check; they are omitted from the
         result without their installed version being looked up.
+    constraints_content : str, optional
+        Contents of constraints.txt, consulted for packages that
+        requirements.txt does not pin exactly.
 
     Returns
     -------
     dict
         Mapping of package name to a dict containing ``specified``, ``installed``,
-        ``status`` (``consistent``, ``inconsistent``, or ``skipped``), and optional
-        ``skip_reason`` and ``warning`` messages.
+        ``source`` (the file the pin came from), ``status`` (``consistent``,
+        ``inconsistent``, or ``skipped``), and optional ``skip_reason`` and
+        ``warning`` messages.
 
     Raises
     ------
@@ -121,28 +182,21 @@ def collect_core_dependency_version_info_from_requirements(file_content, skip=()
         versions[package_name] = {
             "specified": None,
             "installed": None,
+            "source": None,
             "status": "consistent",
             "skip_reason": None,
             "warning": None,
         }
-        specified = None
-        installed = None
 
-        # Collect requirements omitting commented lines
-        requirements = [
-            line
-            for line in file_content.splitlines()
-            if package_name.lower() in line and not line.strip().startswith("#")
-        ]
-
-        if len(requirements) == 0:
+        source = "requirements.txt"
+        requirement = _exact_pin_line(file_content, package_name)
+        if requirement is None:
+            source = "constraints.txt"
+            requirement = _exact_pin_line(constraints_content, package_name)
+        if requirement is None:
             continue
 
-        specified = specified_version(requirements[0])
-
-        # In case just specified as the package name
-        if specified == package_name.lower():
-            continue
+        specified = specified_version(requirement)
 
         release_pin = is_release_version_specifier(specified)
         if release_pin:
@@ -173,10 +227,11 @@ def collect_core_dependency_version_info_from_requirements(file_content, skip=()
             skip_reason = None
         warning = None
         if status == "consistent" and _commit_pin_matches(specified, installed):
-            warning = _uncommitted_changes_warning(package_name)
+            warning = _uncommitted_changes_warning(package_name, source)
         versions[package_name] = {
             "specified": specified,
             "installed": installed,
+            "source": source,
             "status": status,
             "skip_reason": skip_reason,
             "warning": warning,
@@ -319,11 +374,11 @@ def _editable_checkout_commit(package_name, source):
     raise ValueError(
         f"{package_name} is installed in editable mode from {source}, but its "
         f"Git commit cannot be determined because {problem}. A branch or commit "
-        "pin in requirements.txt cannot be checked against it."
+        "pin cannot be checked against it."
     )
 
 
-def _uncommitted_changes_warning(package_name):
+def _uncommitted_changes_warning(package_name, pin_file):
     """Return a warning if the editable checkout of a commit-pinned package has local edits.
 
     Only modified tracked files count; untracked files are often scratch files
@@ -341,7 +396,7 @@ def _uncommitted_changes_warning(package_name):
         return None
     return (
         f"The editable {package_name} checkout at {source} has uncommitted "
-        "changes to tracked files. The server will install the commit pinned in requirements.txt, "
+        f"changes to tracked files. The server will install the commit pinned in {pin_file}, "
         "not your local edits. Commit and push them and update the pin, or, "
         f"for 'psynet debug ssh', use '--use-local-{package_name.lower()}' to "
         "build the local checkout into the image."

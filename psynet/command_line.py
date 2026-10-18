@@ -1479,6 +1479,9 @@ def run_pre_checks_deploy(local_, recruiter):
     check_core_dependency_versions_match_requirements()
     if not local_:
         confirm_deploying_development_psynet()
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm=user_confirms if _stdin_is_interactive() else None
+        )
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -1882,8 +1885,9 @@ def deploy__docker_ssh(
     Deploy the experiment to a remote server via Docker and SSH.
 
     The image always installs the PsyNet and Dallinger versions pinned in
-    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
-    ``--use-local-psynet`` or ``--use-local-dallinger``.
+    constraints.txt (requirements.txt if there is none). To try local
+    checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
+    ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)

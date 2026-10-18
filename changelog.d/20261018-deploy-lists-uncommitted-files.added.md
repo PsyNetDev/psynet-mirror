@@ -1,0 +1,1 @@
+`psynet deploy ssh` now lists deployed files with uncommitted changes and, in a terminal, asks whether to continue; non-interactive deploys only warn. `psynet export` names the uncommitted files when it reports a project mismatch.

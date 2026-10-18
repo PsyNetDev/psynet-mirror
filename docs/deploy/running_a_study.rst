@@ -54,9 +54,11 @@ Check the code and dependencies
   PsyNet records the deployed commit and whether the working tree had
   uncommitted changes, and ``psynet export`` compares them with your
   checkout later, so commit everything before you deploy and push to your
-  remote.
-- The PsyNet and Dallinger versions you tested locally must match
-  ``requirements.txt``. If you change ``requirements.txt``, regenerate and
+  remote. ``psynet deploy ssh`` lists any deployed files with uncommitted
+  changes and, in a terminal, asks whether to continue (the default is no).
+- The PsyNet and Dallinger versions you tested locally must match their
+  pins: PsyNet in ``requirements.txt`` and Dallinger in ``constraints.txt``.
+  Deployment checks both and stops if they differ. If you change ``requirements.txt``, regenerate and
   commit ``constraints.txt`` with ``psynet generate-constraints``. Remote
   deployment refuses to start while a generated ``constraints.txt`` is out
   of date with ``requirements.txt``. See :doc:`/code/project/dependencies`.

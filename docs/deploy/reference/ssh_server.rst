@@ -120,7 +120,11 @@ writable, retrying with a root Alpine container if needed.
 its deployment manifest.
 
 ``psynet deploy ssh`` always installs the PsyNet and Dallinger versions pinned
-in ``requirements.txt``. To try unreleased PsyNet or Dallinger checkouts on a
+in ``constraints.txt`` (``requirements.txt`` if there is no
+``constraints.txt``). Before deploying, it compares these pins with the
+installed PsyNet and Dallinger, including the commit of an editable checkout,
+and stops if they differ, so that you don't test one version locally while the
+server runs another. To try unreleased PsyNet or Dallinger checkouts on a
 server, bake them into a debug deployment's image::
 
     psynet debug ssh --app your-app-name --use-local-psynet --use-local-dallinger

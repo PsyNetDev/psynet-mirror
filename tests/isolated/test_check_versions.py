@@ -154,6 +154,41 @@ def test_commit_pin_warns_about_uncommitted_editable_changes(
     assert ("uncommitted changes" in capsys.readouterr().err) == warns
 
 
+@pytest.mark.parametrize("pin_matches", [True, False])
+def test_dallinger_is_compared_with_constraints_pin(
+    tmp_path, monkeypatch, capsys, pin_matches
+):
+    source = tmp_path / "Dallinger"
+    _git(tmp_path, "init", "-q", str(source))
+    _git(source, "commit", "-q", "--allow-empty", "-m", "a")
+    installed = _git(source, "rev-parse", "HEAD")
+    _install_fake_distribution(
+        tmp_path, monkeypatch, _editable(source), name="dallinger", version="12.5.0a1"
+    )
+    pinned = installed if pin_matches else "406f3c147354477fc11d1247403b65577c7a349f"
+    (tmp_path / "requirements.txt").write_text("dallinger~=12.4\n")
+    (tmp_path / "constraints.txt").write_text(
+        f"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@{pinned}\n"
+        "    # via psynet\n"
+    )
+
+    with working_directory(tmp_path):
+        if pin_matches:
+            check_core_dependency_versions_match_requirements(skip=("psynet",))
+            assert (
+                f"✔ Dallinger: installed commit {installed[:12]} matches "
+                f"constraints.txt (commit {installed[:12]})"
+            ) in capsys.readouterr().out
+        else:
+            with pytest.raises(ValueError) as error:
+                check_core_dependency_versions_match_requirements(skip=("psynet",))
+            assert "specified in constraints.txt do not match" in str(error.value)
+            assert f"editable Dallinger at commit {installed[:12]} ({source})" in str(
+                error.value
+            )
+            assert "--use-local-dallinger" in str(error.value)
+
+
 # PsyNet tests
 def test_skip_version_check_key_error():
     with pytest.raises(KeyError, match="'SKIP_VERSION_CHECK'"):

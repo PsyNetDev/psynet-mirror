@@ -1,0 +1,1 @@
+`psynet deploy ssh` now compares the installed Dallinger with its pin in `constraints.txt` (including the commit of an editable checkout) and stops if they differ, instead of reporting a match it never checked. Each package gets its own check line naming what was compared, and the spinner no longer garbles non-terminal output.
