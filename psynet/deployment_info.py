@@ -30,7 +30,7 @@ logger = get_logger()
 path = ".deploy/deployment_info.json"
 
 # Enough for export to name the changed files without bloating experiment variables.
-_MAX_RECORDED_DIRTY_PATHS = 100
+_MAX_RECORDED_DIRTY_PATHS = 20
 
 # ``(cache_key, content)``, replaced in a single assignment so threads never
 # observe a partially updated cache.

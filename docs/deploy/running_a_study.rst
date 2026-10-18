@@ -51,17 +51,26 @@ Check the code and dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - The experiment must be in a Git repository with at least one commit.
-  PsyNet records the deployed commit and whether the working tree had
-  uncommitted changes, and ``psynet export`` compares them with your
-  checkout later, so commit everything before you deploy and push to your
-  remote. ``psynet deploy ssh`` lists any deployed files with uncommitted
-  changes and, in a terminal, asks whether to continue (the default is no).
+  PsyNet records the deployed commit, whether any deployed file had
+  uncommitted changes, and the names of up to 20 such files.
+  ``psynet export`` compares them with your checkout later, so commit
+  everything before you deploy and push to your remote.
+  ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
+  with uncommitted changes and, in a terminal, ask whether to continue (the
+  default is no). Without a terminal they only warn.
 - The PsyNet and Dallinger versions you tested locally must match their
-  pins: PsyNet in ``requirements.txt`` and Dallinger in ``constraints.txt``.
-  Deployment checks both and stops if they differ. If you change ``requirements.txt``, regenerate and
-  commit ``constraints.txt`` with ``psynet generate-constraints``. Remote
-  deployment refuses to start while a generated ``constraints.txt`` is out
-  of date with ``requirements.txt``. See :doc:`/code/project/dependencies`.
+  pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
+  commit or release tag) takes precedence; otherwise its pin in
+  ``constraints.txt`` is used, which is where Dallinger is usually pinned.
+  ``psynet deploy ssh``, ``psynet deploy heroku``, ``psynet debug ssh``,
+  ``psynet debug heroku`` and ``psynet performance-test ssh`` check both
+  packages and stop if they differ; ``psynet debug ssh --use-local-psynet``
+  and ``--use-local-dallinger`` skip the check for that package. If you change
+  ``requirements.txt``, regenerate and commit ``constraints.txt`` with
+  ``psynet generate-constraints``, then reinstall with ``psynet setup``.
+  Remote deployment refuses to start while a generated ``constraints.txt``
+  is out of date with ``requirements.txt``. See
+  :doc:`/code/project/dependencies`.
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.

@@ -69,7 +69,6 @@ from .experiment_scaffold import (
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
-    dockertag_contents,
     ensure_deployment_policy,
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
@@ -203,10 +202,6 @@ def clean_sys_modules():
     to_clear = [k for k in sys.modules if k.startswith("dallinger_experiment")]
     for key in to_clear:
         del sys.modules[key]
-
-
-def update_docker_tag():
-    Path("Dockertag").write_text(dockertag_contents())
 
 
 @click.group()
@@ -346,7 +341,6 @@ def _prepare(archive=None):
     experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()
     clean_sys_modules()
-    update_docker_tag()
 
     db.session.commit()
 
@@ -964,7 +958,6 @@ def _prepare_image_for_update():
 
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
-    update_docker_tag()
 
 
 def _stop_leftover_debug_processes():

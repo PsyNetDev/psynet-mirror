@@ -121,10 +121,12 @@ its deployment manifest.
 
 ``psynet deploy ssh`` always installs the PsyNet and Dallinger versions pinned
 in ``constraints.txt`` (``requirements.txt`` if there is no
-``constraints.txt``). Before deploying, it compares these pins with the
-installed PsyNet and Dallinger, including the commit of an editable checkout,
-and stops if they differ, so that you don't test one version locally while the
-server runs another. To try unreleased PsyNet or Dallinger checkouts on a
+``constraints.txt``). Before deploying, ``psynet deploy ssh``,
+``psynet debug ssh`` and ``psynet performance-test ssh`` compare these pins
+with the installed PsyNet and Dallinger, including the commit of an editable
+checkout, and stop if they differ, so that you don't test one version locally
+while the server runs another. Install the pinned versions with
+``psynet setup``. To try unreleased PsyNet or Dallinger checkouts on a
 server, bake them into a debug deployment's image::
 
     psynet debug ssh --app your-app-name --use-local-psynet --use-local-dallinger

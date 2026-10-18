@@ -41,7 +41,6 @@ EXPECTED_EXCLUDE_NAMES = (
     ".idea",
     ".pytest_cache",
     ".venv",
-    "Dockertag",
     "__pycache__",
     "env",
     "logs.jsonl",

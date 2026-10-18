@@ -111,12 +111,15 @@ def _short(version):
 
 
 def _mismatch_hint(package_name, info):
-    """Explain how to resolve a mismatch for an editable install."""
+    """Explain how to resolve a version mismatch."""
     from psynet.experiment_scaffold import get_editable_source
 
     source = get_editable_source(package_name)
     if source is None:
-        return ""
+        return (
+            "\n\nInstall the pinned versions with `psynet setup` "
+            "(or `uv pip sync constraints.txt`)."
+        )
     return (
         f"\n\nThe deployment will run {package_name} {_short(info['specified'])} "
         f"(pinned in {info['source']}), but you have editable {package_name} at "
@@ -127,21 +130,39 @@ def _mismatch_hint(package_name, info):
     )
 
 
-def _exact_pin_line(content, package_name):
-    """Return the first line of ``content`` that pins ``package_name`` exactly, if any.
+def _exact_pin(content, package_name):
+    """Return ``(specified, kind)`` for the first exact pin of ``package_name`` in ``content``.
 
-    Exact pins name a Git ref or use ``==``; bare names and ranges such as
-    ``dallinger~=12.4`` leave the choice to another file.
+    ``kind`` is ``"version"`` for ``==`` pins and Git release tags, and
+    ``"commit"`` for Git commit hashes. Bare names, ranges such as
+    ``dallinger~=12.4`` and Git branches are not exact, so they return
+    ``None`` and leave the choice to another file.
     """
     from psynet.experiment_scaffold import is_requirement_line_for
 
     for line in (content or "").splitlines():
-        line = line.split(";")[0]
-        if is_requirement_line_for(line, package_name.lower()) and (
-            "==" in line or specified_version(line) != line.strip()
-        ):
-            return line
+        line = re.sub(r"\s+#.*$", "", line.split(";")[0]).rstrip(" \\")
+        if not is_requirement_line_for(line, package_name.lower()):
+            continue
+        specified = specified_version(line)
+        if re.search(r"git\+\S+@", line) and specified != line.strip():
+            if re.fullmatch(r"[0-9a-fA-F]{7,40}", specified):
+                return specified, "commit"
+            if is_release_version_specifier(specified):
+                return specified.removeprefix("v"), "version"
+        elif "==" in line:
+            return specified, "version"
     return None
+
+
+def _same_version(specified, installed):
+    """Return whether two version strings name the same version (``12.4`` == ``12.4.0``)."""
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        return Version(specified) == Version(installed)
+    except InvalidVersion:
+        return specified == installed
 
 
 def collect_core_dependency_version_info_from_requirements(
@@ -172,7 +193,7 @@ def collect_core_dependency_version_info_from_requirements(
     Raises
     ------
     ValueError
-        If a branch or commit pin is checked against an editable install whose
+        If a commit pin is checked against an editable install whose
         Git commit cannot be determined.
     """
     versions = {}
@@ -189,45 +210,36 @@ def collect_core_dependency_version_info_from_requirements(
         }
 
         source = "requirements.txt"
-        requirement = _exact_pin_line(file_content, package_name)
-        if requirement is None:
+        pin = _exact_pin(file_content, package_name)
+        if pin is None:
             source = "constraints.txt"
-            requirement = _exact_pin_line(constraints_content, package_name)
-        if requirement is None:
+            pin = _exact_pin(constraints_content, package_name)
+        if pin is None:
             continue
+        specified, kind = pin
 
-        specified = specified_version(requirement)
-
-        release_pin = is_release_version_specifier(specified)
-        if release_pin:
-            if specified.startswith("v"):
-                specified = specified[1:]
-            # Get installed version via the Dallinger/PsyNet API
+        skip_reason = None
+        warning = None
+        if kind == "version":
+            # A version pin must match exactly even for a development install:
+            # the deployment copies templates and static files from the local
+            # package, while the image installs the pinned one.
             installed = get_installed_version_for_package(package_name)
+            matches = _same_version(specified, installed)
+            status = "consistent" if matches else "inconsistent"
         else:
             installed = get_installed_commit_or_version(package_name)
-
-        # A release pin must match exactly even for a development install: the
-        # deployment copies templates and static files from the local package,
-        # while the image installs the pinned one.
-        if not release_pin and is_development_version(installed):
-            # Only index or non-editable path installs report a version here, and
-            # a development version could correspond to many branches/commits,
-            # so it cannot be compared with a branch or commit pin.
-            status = "skipped"
-            skip_reason = "installed version is a development version"
-        else:
-            status = (
-                "consistent"
-                if specified is None
-                or specified == installed
-                or _commit_pin_matches(specified, installed)
-                else "inconsistent"
-            )
-            skip_reason = None
-        warning = None
-        if status == "consistent" and _commit_pin_matches(specified, installed):
-            warning = _uncommitted_changes_warning(package_name, source)
+            if is_development_version(installed):
+                # Only index or non-editable path installs report a version
+                # here, and a development version could correspond to many
+                # commits, so it cannot be compared with a commit pin.
+                status = "skipped"
+                skip_reason = "installed version is a development version"
+            elif _commit_pin_matches(specified, installed):
+                status = "consistent"
+                warning = _uncommitted_changes_warning(package_name, source)
+            else:
+                status = "inconsistent"
         versions[package_name] = {
             "specified": specified,
             "installed": installed,
@@ -257,7 +269,7 @@ def specified_version(requirement):
 def _commit_pin_matches(specified, installed):
     """Return whether a pinned commit hash, possibly abbreviated, names the installed commit."""
     return (
-        re.fullmatch(r"[0-9a-fA-F]{8,40}", specified) is not None
+        re.fullmatch(r"[0-9a-fA-F]{7,40}", specified) is not None
         and re.fullmatch(r"[0-9a-fA-F]{40}", installed) is not None
         and installed.lower().startswith(specified.lower())
     )

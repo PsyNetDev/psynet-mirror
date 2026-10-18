@@ -4870,7 +4870,6 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     )
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr("psynet.command_line.clean_sys_modules", lambda: None)
-    monkeypatch.setattr("psynet.command_line.update_docker_tag", lambda: None)
     _prepare()
     assert inits == [True]
     assert idle_calls == []
