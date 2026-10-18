@@ -1708,9 +1708,10 @@ def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
     [
         (
             '      mode: "sandbox"\n      debug_ssh_app: "true"\n',
-            "run `psynet debug ssh --app one --update --server musix`",
+            "run `psynet debug ssh --app one --update --server musix "
+            "--ingress cloudflare`",
         ),
-        ("", "add --update to the command that created it"),
+        ("", "add --update --ingress cloudflare to the command that created it"),
     ],
 )
 def test_deploying_onto_an_existing_ssh_app_suggests_update(
@@ -1722,7 +1723,9 @@ def test_deploying_onto_an_existing_ssh_app_suggests_update(
 
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(
-        docker_ssh, "get_apps", lambda server: [SimpleNamespace(name="one")]
+        docker_ssh,
+        "get_apps",
+        lambda server: [SimpleNamespace(name="one", ingress="cloudflare")],
     )
     executor = Mock()
     executor.run.return_value = compose
@@ -5634,7 +5637,8 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
 
     executor = Mock()
     executor.run.return_value = (
-        "dogfood-dbg\n/home/u/dallinger/dogfood-dep/docker-compose.yml\n"
+        "dogfood-dbg\n/home/dallinger/dallinger/dogfood-dep/docker-compose.yml\n"
+        "/home/dallinger/dallinger/dogfood-cf/secrets/cloudflare-tunnel-token\n"
     )
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
@@ -5652,8 +5656,8 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
         result = CliRunner().invoke(command, args)
         assert result.exit_code == 1, result.output
         assert (
-            "No app named 'dogfood-dpe' on musix. Apps there: dogfood-dbg, "
-            "dogfood-dep (did you mean dogfood-dep?)" in result.output
+            "No app named 'dogfood-dpe' on musix. Apps there: dogfood-cf, "
+            "dogfood-dbg, dogfood-dep (did you mean dogfood-dep?)" in result.output
         )
 
 
@@ -5727,7 +5731,7 @@ def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
     assert destroyed == [], result.output
     assert result.exit_code == 1, result.output
     assert events == [("awaken", "busy"), ("check", "busy")]
-    assert "Destroy the app anyway?" in result.output
+    assert "Destroy busy anyway?" in result.output
     assert decline.calls == [{"default": False}, {"default": False}]
 
 
@@ -5962,7 +5966,7 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit)
     assert "Failed to destroy gone" in result.output
-    assert "Maybe it was already destroyed" in result.output
+    assert "run this command again" in result.output
     assert "Traceback" not in result.output
 
 

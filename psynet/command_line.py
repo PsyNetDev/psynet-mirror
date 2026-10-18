@@ -1505,14 +1505,22 @@ def _abort_if_app_exists(server, app, *, update=False):
 
     from dallinger.command_line.docker_ssh import get_apps
 
-    apps = get_apps(server)
-    existing_apps = {entry.name for entry in apps}
-    if app in existing_apps:
+    existing = {entry.name: entry for entry in get_apps(server)}
+    if app in existing:
+        ingress = getattr(existing[app], "ingress", None)
+        ingress_option = f" --ingress {ingress}" if ingress else ""
+        ingress_note = "" if ingress else ", repeating the --ingress you deployed with"
         update_command = _ssh_app_update_command(server, app)
         if update_command:
-            update_advice = f"run `{update_command} --server {server}`"
+            update_advice = (
+                f"run `{update_command} --server {server}{ingress_option}`"
+                f"{ingress_note}"
+            )
         else:
-            update_advice = "add --update to the command that created it"
+            update_advice = (
+                f"add --update{ingress_option} to the command that created it"
+                f"{ingress_note}"
+            )
         raise click.ClickException(
             f"An app named {app} already exists on {server}.\n"
             f"To ship changes to it, {update_advice}; this keeps its database.\n"
@@ -3267,12 +3275,18 @@ def _requirement_with_experiment_extra(requirement: str) -> str:
 def _is_local_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement points at a local filesystem path."""
     compact = requirement.lower().replace(" ", "")
-    return compact.startswith("-e") or "file://" in compact
+    return (
+        compact.startswith(("-e", ".", "/", "~"))
+        or "file://" in compact
+        or re.search(r"@[./~]", compact) is not None
+        or compact.endswith(".whl")
+    )
 
 
 def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
     """Build the deploy-time error for a missing or ambiguous PsyNet pin."""
-    version = re.match(r"\d+\.\d+\.\d+", __version__)[0]
+    is_release = re.fullmatch(r"\d+\.\d+\.\d+(?:rc\d+)?", __version__)
+    version = __version__ if is_release else "<version>"
     commit = "45f317688af59350f9a6f3052fd73076318f2775"
     examples = [
         f"* psynet[experiment]=={version}",
@@ -4277,11 +4291,12 @@ def destroy__heroku(ctx, app):
     """
     Destroy the experiment on Heroku.
     """
-    _destroy(
+    if not _destroy(
         ctx,
         dallinger.command_line.destroy,
         app=app,
-    )
+    ):
+        raise click.Abort()
 
 
 def user_confirms(question, default=False):
@@ -4309,9 +4324,9 @@ def _confirm_destroy_with_pending_jobs(
     summary : dict
         The output of :func:`_fetch_ssh_pending_async_jobs`.
     ask_for_confirmation : bool
-        Whether the user may be asked. When ``False`` (batch mode, or a
-        future ``--yes``), or when stdin is not a terminal, an app with
-        pending jobs is not destroyed.
+        Whether the user may be asked. When ``False`` (with ``--yes``), or
+        when stdin is not a terminal, an app with pending jobs is not
+        destroyed.
     discard_pending_jobs : bool
         Destroy the app even if jobs are pending, after reporting them.
 
@@ -4336,7 +4351,7 @@ def _confirm_destroy_with_pending_jobs(
         "`psynet export ssh` again before destroying the app."
     )
     if ask_for_confirmation and _stdin_is_interactive():
-        return user_confirms("Destroy the app anyway?", default=False)
+        return user_confirms(f"Destroy {app} anyway?", default=False)
     log(f"Not destroying {app}. Pass --discard-pending-jobs to destroy it anyway.")
     return False
 
@@ -4600,8 +4615,9 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
                 failed.append(app)
         except click.Abort:
             click.echo(
-                f"Failed to destroy {app}. "
-                "Maybe it was already destroyed, or the app name was wrong?"
+                f"Failed to destroy {app}; see the messages above. If it "
+                "stopped while removing the app's Cloudflare tunnel or DNS "
+                "record, fix that and run this command again."
             )
             failed.append(app)
         except Exception:
@@ -4634,15 +4650,20 @@ def _ssh_app_names(server):
     configuration, a compose file or, after a failed Cloudflare deploy, just
     a tunnel token.
     """
-    listing = _ssh_executor(server).run(
+    cmd = (
         "ls -1 ~/dallinger/caddy.d 2>/dev/null; "
         "ls -1d ~/dallinger/*/docker-compose.yml "
-        "~/dallinger/*/secrets/cloudflare-tunnel-token 2>/dev/null; true",
-        raise_=False,
+        "~/dallinger/*/secrets/cloudflare-tunnel-token 2>/dev/null; true"
+    )
+    listing = _ssh_executor(server).run(
+        _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S), raise_=False
     )
     names = set()
     for entry in (listing or "").split():
-        match = re.search(r"/dallinger/([^/]+)/", entry)
+        match = re.search(
+            r"/([^/]+)/(?:docker-compose\.yml|secrets/cloudflare-tunnel-token)$",
+            entry,
+        )
         names.add(match[1] if match else entry)
     return names
 

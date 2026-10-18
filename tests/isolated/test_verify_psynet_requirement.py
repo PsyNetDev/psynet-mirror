@@ -1,12 +1,10 @@
 import os
-import re
 import tempfile
 from pathlib import Path
 
 import click
 import pytest
 
-import psynet
 from psynet.command_line import (
     check_psynet_requirement_includes_experiment_extra,
     check_psynet_requirement_is_unambiguous,
@@ -227,6 +225,8 @@ def test_check_psynet_requirement_is_unambiguous_name_based_with_spaces():
         "psynet[experiment] @ file:///home/frank/projects/PsyNet",
         "-e file:///home/frank/projects/PsyNet#egg=psynet[experiment]",
         "psynet[experiment] @ file:///tmp/psynet-14.0.0-py3-none-any.whl",
+        "psynet[experiment] @ ./PsyNet",
+        "psynet[experiment] @ ~/PsyNet",
     ],
 )
 def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
@@ -246,8 +246,36 @@ def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
     assert message.startswith("requirements.txt installs PsyNet from a local path")
     assert "branch name" not in message
     assert "psynet setup --psynet-source commit" in message
-    release = re.match(r"\d+\.\d+\.\d+", psynet.__version__)[0]
-    assert f"psynet[experiment]=={release}" in message
+
+
+@pytest.mark.parametrize(
+    "version, example",
+    [("14.2.0", "14.2.0"), ("14.2.0rc1", "14.2.0rc1"), ("14.2.0a1", "<version>")],
+)
+def test_psynet_pin_examples_follow_the_installed_release(
+    monkeypatch, version, example
+):
+    from psynet.command_line import _ambiguous_psynet_requirement_message
+
+    monkeypatch.setattr("psynet.command_line.__version__", version)
+    message = _ambiguous_psynet_requirement_message("psynet")
+    assert f"* psynet[experiment]=={example}\n" in message
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "/opt/psynet-14.0.0-py3-none-any.whl",
+        "./PsyNet",
+        "~/PsyNet",
+        "psynet @ /opt/PsyNet",
+    ],
+)
+def test_bare_paths_and_wheels_are_local_psynet_requirements(requirement):
+    from psynet.command_line import _is_local_psynet_requirement
+
+    assert _is_local_psynet_requirement(requirement)
+    assert not _is_local_psynet_requirement("psynet[experiment]==14.0.0")
 
 
 def test_remote_deploy_reports_a_local_psynet_pin_before_stale_constraints(
