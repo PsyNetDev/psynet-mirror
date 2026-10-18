@@ -518,17 +518,22 @@ def test_bootstrap_cli_does_not_mask_internal_import_error(monkeypatch):
         main()
 
 
-def _run_cli_importing(monkeypatch, tmp_path, source):
-    """Run ``main()`` with a full CLI that imports ``source`` from ``tmp_path``."""
+def _run_cli_importing(monkeypatch, tmp_path, source, then_call=None):
+    """Run ``main()`` with a full CLI that imports ``source`` from ``tmp_path``.
+
+    If ``then_call`` is given, the CLI then calls that function from the module.
+    """
     import runpy
+
+    def full_cli(**_):
+        module = runpy.run_path(str(tmp_path / "experiment.py"))
+        if then_call:
+            module[then_call]()
 
     (tmp_path / "experiment.py").write_text(source)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.argv", ["psynet", "debug", "local"])
-    monkeypatch.setattr(
-        "psynet.bootstrap_cli._load_full_psynet_cli",
-        lambda: lambda **_: runpy.run_path(str(tmp_path / "experiment.py")),
-    )
+    monkeypatch.setattr("psynet.bootstrap_cli._load_full_psynet_cli", lambda: full_cli)
     from psynet.bootstrap_cli import main
 
     main()
@@ -560,18 +565,11 @@ def test_bootstrap_cli_shortens_experiment_import_errors(
     assert "bootstrap_cli.py" not in err
 
 
-def test_bootstrap_cli_does_not_shorten_other_errors(monkeypatch, tmp_path):
-    (tmp_path / "experiment.py").write_text("")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("sys.argv", ["psynet", "debug", "local"])
-    monkeypatch.setattr(
-        "psynet.bootstrap_cli._load_full_psynet_cli",
-        lambda: lambda **_: exec("1 / 0"),
-    )
-    from psynet.bootstrap_cli import main
-
+def test_bootstrap_cli_does_not_shorten_runtime_errors(monkeypatch, tmp_path):
     with pytest.raises(ZeroDivisionError):
-        main()
+        _run_cli_importing(
+            monkeypatch, tmp_path, "def run():\n    exec('1 / 0')\n", then_call="run"
+        )
 
 
 def test_bootstrap_cli_shows_full_traceback_on_request(monkeypatch, tmp_path):

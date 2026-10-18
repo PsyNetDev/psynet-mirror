@@ -114,32 +114,19 @@ def _is_author_file(filename: str | None, experiment_dir: Path) -> bool:
     )
 
 
-def _exception_chain_lines(exc: BaseException) -> list[str]:
-    """Format the one-line summaries of ``exc`` and the exceptions it chains to."""
-    chain = []
-    current = traceback.TracebackException.from_exception(exc)
-    while current is not None:
-        chain.append(current)
-        if current.__cause__ is not None:
-            current = current.__cause__
-        elif not current.__suppress_context__:
-            current = current.__context__
-        else:
-            current = None
-
-    chain.reverse()
-    lines = list(chain[0].format_exception_only())
-    for older, newer in zip(chain, chain[1:]):
-        if newer.__cause__ is older:
-            lines.append(
-                "\nThe above exception was the direct cause of the following exception:\n\n"
-            )
-        else:
-            lines.append(
-                "\nDuring handling of the above exception, another exception occurred:\n\n"
-            )
-        lines.extend(newer.format_exception_only())
-    return lines
+def _format_shortened(exc: BaseException, frames: list) -> str:
+    """Format ``exc`` with only ``frames``, dropping the frames of chained exceptions."""
+    shortened = traceback.TracebackException.from_exception(exc)
+    shortened.stack = traceback.StackSummary.from_list(frames)
+    pending, seen = [shortened.__cause__, shortened.__context__], set()
+    while pending:
+        chained = pending.pop()
+        if chained is None or id(chained) in seen:
+            continue
+        seen.add(id(chained))
+        chained.stack = traceback.StackSummary()
+        pending += [chained.__cause__, chained.__context__]
+    return "".join(shortened.format())
 
 
 def _experiment_import_error_message(
@@ -158,25 +145,22 @@ def _experiment_import_error_message(
 
     frames = traceback.extract_tb(exc.__traceback__)
     author_frames = [f for f in frames if _is_author_file(f.filename, experiment_dir)]
-    if not any(f.name == "<module>" for f in author_frames):
-        if not (
-            isinstance(exc, SyntaxError)
-            and _is_author_file(exc.filename, experiment_dir)
-        ):
-            return None
+    syntax_error_here = isinstance(exc, SyntaxError) and _is_author_file(
+        exc.filename, experiment_dir
+    )
+    if not (syntax_error_here or any(f.name == "<module>" for f in author_frames)):
+        return None
 
-    if isinstance(exc, SyntaxError) and exc.filename and exc.filename[0] != "<":
-        culprit = Path(exc.filename).resolve()
+    if isinstance(exc, SyntaxError) and exc.filename and Path(exc.filename).is_file():
+        culprit = exc.filename
     else:
-        culprit = Path(author_frames[-1].filename).resolve()
+        culprit = author_frames[-1].filename
         if frames[-1] is not author_frames[-1]:
             author_frames.append(frames[-1])
 
-    if culprit.is_relative_to(experiment_dir):
-        culprit = culprit.relative_to(experiment_dir)
-    details = "".join(
-        traceback.format_list(author_frames) + _exception_chain_lines(exc)
-    )
+    if Path(culprit).resolve().is_relative_to(experiment_dir):
+        culprit = Path(culprit).resolve().relative_to(experiment_dir)
+    details = _format_shortened(exc, author_frames)
     return (
         f"Error: Couldn't load the experiment because of an error in "
         f"{culprit}:\n\n{details}\n"
