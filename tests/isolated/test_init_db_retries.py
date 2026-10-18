@@ -297,7 +297,7 @@ def test_drop_all_refuses_clients_that_appear_during_retry(monkeypatch):
         calls["lists"] += 1
         if calls["lists"] == 1:
             return []
-        return [(99, "dallinger", "gunicorn", "active")]
+        return [(99, "dallinger", "gunicorn", "active", None, -1, None)]
 
     _stub_drop_all_session(monkeypatch)
     monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
@@ -323,7 +323,7 @@ def test_drop_all_retries_deadlock_without_refusing_other_clients(monkeypatch):
 
     def fake_list(release_local=True):
         calls["lists"] += 1
-        return [(99, "dallinger", "gunicorn", "idle")]
+        return [(99, "dallinger", "gunicorn", "idle", None, -1, None)]
 
     _stub_drop_all_session(monkeypatch)
     monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)
@@ -337,18 +337,28 @@ def test_drop_all_retries_deadlock_without_refusing_other_clients(monkeypatch):
 def test_populate_db_from_zip_file_refuses_listed_clients(
     monkeypatch, tmp_path, no_idle_drain
 ):
+    from datetime import datetime
+
     from psynet import data as data_mod
 
     dropped = []
+    since = datetime(2026, 1, 1, 9, 12)
     monkeypatch.setattr(
         "psynet.db.list_other_database_clients",
-        lambda release_local=True: [(123, "dallinger", "gunicorn", "idle")],
+        lambda release_local=True: [
+            (123, "dallinger", "gunicorn", "idle", "127.0.0.1", 54321, since),
+            (124, "dallinger", "", "active", None, -1, since),
+        ],
     )
     monkeypatch.setattr(
         data_mod, "init_db", lambda drop_all=False: dropped.append(drop_all)
     )
     monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: dropped.append(path))
-    with pytest.raises(data_mod.DatabaseInUseError, match="pid 123"):
+    with pytest.raises(
+        data_mod.DatabaseInUseError,
+        match=r"pid 123 \(gunicorn, idle, 127\.0\.0\.1:54321, since 09:12\), "
+        r"Postgres backend pid 124 \(active, local socket, since 09:12\)",
+    ):
         data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
     assert dropped == []
 
@@ -362,7 +372,7 @@ def test_assert_database_idle_drains_then_succeeds(monkeypatch):
         calls["n"] += 1
         calls["release_local"].append(release_local)
         if calls["n"] == 1:
-            return [(1, "dallinger", "", "idle")]
+            return [(1, "dallinger", "", "idle", None, -1, None)]
         return []
 
     monkeypatch.setattr("psynet.db.list_other_database_clients", fake_list)

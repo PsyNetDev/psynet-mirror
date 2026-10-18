@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -11,6 +12,7 @@ pytest_plugins = ["pytest_dallinger", "pytest_psynet"]
 def db_client_in_other_process():
     """Hold a connection to the local database from another process; yield its backend pid."""
     import dallinger.db
+    from sqlalchemy import text
 
     hold_connection = (
         "import sys, psycopg2; c = psycopg2.connect(sys.argv[1]); "
@@ -22,7 +24,21 @@ def db_client_in_other_process():
         stdout=subprocess.PIPE,
         text=True,
     )
+    pid = None
     try:
-        yield int(process.stdout.readline())
+        pid = int(process.stdout.readline())
+        yield pid
     finally:
-        process.communicate()
+        process.communicate(timeout=10)
+        # Later tests must not see the backend while it shuts down.
+        deadline = time.monotonic() + 2
+        while pid is not None and time.monotonic() < deadline:
+            # A new transaction each time, as pg_stat_activity is a snapshot.
+            with dallinger.db.engine.connect() as con:
+                still_there = con.execute(
+                    text("SELECT 1 FROM pg_stat_activity WHERE pid = :pid"),
+                    {"pid": pid},
+                ).first()
+            if not still_there:
+                break
+            time.sleep(0.05)

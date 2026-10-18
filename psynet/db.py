@@ -27,6 +27,7 @@ there.
 import copy
 import logging
 import threading
+import weakref
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -45,8 +46,8 @@ _OTHER_DATABASE_CLIENTS_WHERE = (
     "AND usename = current_user"
 )
 OTHER_DATABASE_CLIENTS_SQL = text(
-    "SELECT pid, usename, application_name, state, client_port "
-    f"FROM pg_stat_activity WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+    "SELECT pid, usename, application_name, state, client_addr, client_port, "
+    f"backend_start FROM pg_stat_activity WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
 )
 TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -132,6 +133,22 @@ def _install_gevent_wait_callback_on_connect(dbapi_connection, connection_record
     install_gevent_wait_callback()
 
 
+# Backend pids of the engine's DBAPI connections. Connections checked out
+# when the pool is disposed are closed later without pool events, so
+# ``_own_backend_pids`` checks whether each connection is still open.
+_backend_pids = weakref.WeakKeyDictionary()
+
+
+@event.listens_for(dallinger.db.engine, "connect")
+def _record_backend_pid(dbapi_connection, connection_record):
+    _backend_pids[dbapi_connection] = dbapi_connection.get_backend_pid()
+
+
+def _own_backend_pids():
+    """Return the backend pids of this process's open engine connections."""
+    return {pid for conn, pid in list(_backend_pids.items()) if not conn.closed}
+
+
 # Also covers pooled connections opened before this module was imported,
 # since the callback is process-wide.
 install_gevent_wait_callback()
@@ -180,23 +197,11 @@ def release_local_database_connections():
     dallinger.db.engine.dispose()
 
 
-def _own_tcp_ports():
-    """Return the local ports of this process's TCP connections."""
-    import psutil
-
-    return {
-        conn.laddr.port
-        for conn in psutil.Process().net_connections("tcp")
-        if conn.raddr
-    }
-
-
 def list_other_database_clients(*, release_local=True):
     """Return other same-role backends connected to this database.
 
-    Backends whose TCP client port belongs to this process are left out, so
-    connections it still holds, which disposing the pool doesn't close, are
-    not reported as other clients.
+    Backends of connections that this process's engine still holds, which
+    disposing the pool doesn't close, are not reported as other clients.
 
     Parameters
     ----------
@@ -209,8 +214,8 @@ def list_other_database_clients(*, release_local=True):
         release_local_database_connections()
     with dallinger.db.engine.connect() as con:
         rows = list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
-    own_ports = _own_tcp_ports()
-    return [row for row in rows if row.client_port not in own_ports]
+    own_pids = _own_backend_pids()
+    return [row for row in rows if row.pid not in own_pids]
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)

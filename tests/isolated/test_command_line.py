@@ -4761,7 +4761,10 @@ def test_remote_update_keeps_local_data(remote_launch):
     [
         ({}, None),
         ({"workers": 1}, "1 local PsyNet server process(es)"),
-        ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
+        (
+            {"clients": [(4321, "u", "flask", "idle", None, -1, None)]},
+            "pid 4321 (flask, idle, local socket)",
+        ),
         ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
         ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
     ],
@@ -4881,7 +4884,7 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     )
     monkeypatch.setattr(
         "psynet.db.list_other_database_clients",
-        lambda release_local=True: [(1, "dallinger", "pytest", "idle")],
+        lambda release_local=True: [(1, "dallinger", "pytest", "idle", None, -1, None)],
     )
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
     monkeypatch.setattr(

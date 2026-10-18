@@ -645,13 +645,16 @@ _IDLE_CLIENT_POLL_SEC = 0.05
 
 
 def _format_other_database_clients(clients):
+    """Describe ``list_other_database_clients`` rows for an error message."""
     labels = []
-    for row in clients:
-        pid = row[0]
-        app = (row[2] or "").strip()
-        state = (row[3] or "").strip() or "unknown"
-        detail = f"{app}, {state}" if app else state
-        labels.append(f"Postgres backend pid {pid} ({detail})")
+    for pid, _user, app, state, addr, port, since in clients:
+        details = [(app or "").strip(), (state or "").strip() or "unknown"]
+        details.append(f"{addr}:{port}" if addr else "local socket")
+        if since:
+            details.append(f"since {since:%H:%M}")
+        labels.append(
+            f"Postgres backend pid {pid} ({', '.join(d for d in details if d)})"
+        )
     return ", ".join(labels)
 
 
