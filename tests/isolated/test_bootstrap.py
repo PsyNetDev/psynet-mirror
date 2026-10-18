@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import sys
 from hashlib import md5
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -79,6 +80,14 @@ def test_bootstrap_install_preserves_vcs_commit_provenance(monkeypatch):
     expected = f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@{commit}"
     assert installed_psynet_direct_requirement() == expected
     assert _same_psynet_install_args() == [expected]
+
+    dallinger_source = Path("/home/someone/Dallinger")
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    assert _same_psynet_install_args()[-2:] == ["-e", str(dallinger_source)]
+    assert _same_psynet_install_args(psynet_source="commit") == [expected]
 
 
 def test_bootstrap_install_ignores_vcs_metadata_for_editable_checkout(monkeypatch):

@@ -2051,22 +2051,23 @@ def test_scripts_scaffold_regenerates_empty_constraints(tmp_path):
     assert (tmp_path / "constraints.txt").read_text() == GENERATED_CONSTRAINTS
 
 
-def _assume_git_repository(monkeypatch, check_folder=False):
-    """Treat setup tests as already inside a git work tree.
+def _isolate_setup_test(monkeypatch, check_folder=False):
+    """Isolate a setup test from the developer's machine.
 
-    Also isolates them from an editable Dallinger in the developer's
-    environment and, unless ``check_folder``, from the unrelated-files check,
-    because many tests put fixture directories next to the experiment.
+    Treats the test as inside a git work tree and ignores any editable
+    Dallinger in the developer's environment. The unrelated-files check is
+    skipped unless ``check_folder``, because many tests put fixture
+    directories next to the experiment.
     """
     monkeypatch.setattr(
         "psynet.experiment_setup.git_repository_available",
         lambda: True,
     )
-    if not check_folder:
-        monkeypatch.setattr("psynet.experiment_setup._unrelated_entries", lambda: [])
     monkeypatch.setattr(
         "psynet.experiment_setup.get_editable_dallinger_source", lambda: None
     )
+    if not check_folder:
+        monkeypatch.setattr("psynet.experiment_setup._unrelated_entries", lambda: [])
 
 
 def _stub_new_venv_delegation(monkeypatch, tmp_path):
@@ -2099,7 +2100,7 @@ def _stub_new_venv_delegation(monkeypatch, tmp_path):
 
 def _mock_dedicated_experiment_venv(monkeypatch, check_folder=False):
     """Treat setup tests as using a dedicated experiment venv, not the shared one."""
-    _assume_git_repository(monkeypatch, check_folder=check_folder)
+    _isolate_setup_test(monkeypatch, check_folder=check_folder)
     monkeypatch.setattr(
         "psynet.experiment_setup._is_psynet_checkout_virtualenv",
         lambda: False,
@@ -2119,7 +2120,7 @@ def _mock_dedicated_experiment_venv(monkeypatch, check_folder=False):
 
 def _mock_foreign_experiment_venv(monkeypatch, foreign_venv):
     """Active interpreter is a non-experiment, non-shared virtualenv."""
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
@@ -2485,8 +2486,8 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
     assert (tmp_path / "requirements.txt").read_text() == f"{requirement}\n"
     assert [args[:2] for args in uv_calls] == [["pip", "sync"], ["pip", "check"]]
     assert (
-        f"--psynet-source commit replaces the editable Dallinger at {dallinger_source}"
-        in result.output
+        f"pinning PsyNet to a commit replaces the editable Dallinger at "
+        f"{dallinger_source}" in result.output
     )
 
 
@@ -2520,6 +2521,33 @@ def test_setup_keeps_editable_dallinger(tmp_path, monkeypatch):
     assert "dallinger" not in (tmp_path / "requirements.txt").read_text().lower()
 
 
+def test_setup_explains_incompatible_editable_dallinger(tmp_path, monkeypatch):
+    """A failing dependency check names the editable Dallinger as the suspect."""
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_dedicated_experiment_venv(monkeypatch)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+
+    def fake_run_uv(args, description, quiet=False):
+        if args == ["pip", "check"]:
+            raise click.ClickException(f"Failed to {description}.")
+
+    monkeypatch.setattr("psynet.experiment_setup._run_uv", fake_run_uv)
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup"])
+
+    assert result.exit_code == 1, result.output
+    assert f"The editable Dallinger at {dallinger_source}" in result.output
+    assert "uv pip uninstall dallinger" in result.output
+
+
 def test_setup_refuses_folder_with_unrelated_files(tmp_path, monkeypatch):
     """Setup won't scaffold into an unrelated folder unless told to."""
     (tmp_path / "notes.txt").write_text("not an experiment\n")
@@ -2538,6 +2566,34 @@ def test_setup_refuses_folder_with_unrelated_files(tmp_path, monkeypatch):
         accepted = CliRunner().invoke(psynet, ["setup", "--no-install", "--yes"])
     assert accepted.exit_code == 0, accepted.output
     assert (tmp_path / "experiment.py").exists()
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        ["experiment.py", "static/", "tests/", "audit/"],
+        ["audit/", "LICENSE"],
+    ],
+)
+def test_setup_accepts_experiment_folders(tmp_path, monkeypatch, entries):
+    """Experiment work and repository files don't trigger the folder check."""
+    for entry in entries:
+        if entry.endswith("/"):
+            (tmp_path / entry).mkdir()
+        else:
+            (tmp_path / entry).write_text(
+                "import psynet.experiment\n" if entry == "experiment.py" else ""
+            )
+    _mock_dedicated_experiment_venv(monkeypatch, check_folder=True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup", "--no-install"])
+
+    assert result.exit_code == 0, result.output
+    assert "don't belong to a PsyNet experiment" not in result.output
 
 
 def test_setup_editable_source_scaffolds_without_commit_pin_warning(
@@ -2627,7 +2683,7 @@ def test_setup_rejects_no_install_with_force_shared_env(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._is_psynet_checkout_virtualenv",
         lambda: True,
@@ -2649,7 +2705,7 @@ def test_setup_shared_env_noninteractive_requires_explicit_flag(tmp_path, monkey
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2678,7 +2734,7 @@ def test_setup_shared_env_no_install_skips_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2713,7 +2769,7 @@ def test_setup_shared_env_force_syncs_with_warning(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2810,7 +2866,7 @@ def test_setup_shared_env_interactive_cancel_makes_no_changes(tmp_path, monkeypa
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2844,7 +2900,7 @@ def test_setup_shared_env_interactive_no_install(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2878,7 +2934,7 @@ def test_setup_no_install_skips_editable_source_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2917,7 +2973,7 @@ def test_setup_no_install_keeps_existing_explicit_pin(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2952,7 +3008,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3006,7 +3062,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
 
 
 def test_setup_detects_psynet_running_from_other_virtualenv(tmp_path, monkeypatch):
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3056,7 +3112,7 @@ def test_setup_shared_env_interactive_new_venv_suggests_editable_install(
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3097,7 +3153,7 @@ def test_delegated_setup_does_not_inherit_pythonpath(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services", lambda **kwargs: None
     )
@@ -3126,7 +3182,7 @@ def test_setup_delegated_run_does_not_create_another_venv(tmp_path, monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services", lambda **kwargs: None
     )
@@ -3156,7 +3212,7 @@ def test_setup_shared_env_interactive_new_venv_default(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3193,7 +3249,7 @@ def test_setup_shared_env_interactive_new_venv_rejects_existing_venv(
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3228,7 +3284,7 @@ def test_setup_shared_env_interactive_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,

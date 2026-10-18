@@ -11,9 +11,9 @@ Create an experiment
 --------------------
 
 Each experiment lives in its own folder. The folder name becomes the
-experiment's default label and must not be the name of an existing Python
-module such as ``code`` or ``test``. Letters, digits and underscores are the
-safest choice.
+experiment's default label and its Docker image tag, and must not be the name
+of an existing Python module such as ``code`` or ``test``. Lowercase letters,
+digits and underscores, with no spaces, are the safest choice.
 
 .. code-block:: bash
 

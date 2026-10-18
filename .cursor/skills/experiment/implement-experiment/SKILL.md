@@ -133,7 +133,9 @@ psynet setup                   # scaffolds files, pins, constraints, install
 `psynet setup` is the default path: it creates missing boilerplate (including
 `.cursor/skills/psynet/` when absent), pins PsyNet, ensures `constraints.txt`,
 installs the experiment runtime (`psynet[experiment]`), and initializes Git when
-needed. After setup, use `psynet debug local --docker`
+needed. Without a terminal, setup stops if the folder has no `experiment.py`
+and holds files other than PsyNet ones, `audit/` and licence files; if those
+files belong to this experiment, re-run with `psynet setup --yes`. After setup, use `psynet debug local --docker`
 when the experiment should run in Docker mode.
 
 When splitting logic out of `experiment.py`, follow
