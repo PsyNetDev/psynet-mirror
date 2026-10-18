@@ -568,7 +568,7 @@ def test_bootstrap_cli_shortens_experiment_import_errors(
 def test_bootstrap_cli_does_not_shorten_runtime_errors(monkeypatch, tmp_path):
     with pytest.raises(ZeroDivisionError):
         _run_cli_importing(
-            monkeypatch, tmp_path, "def run():\n    exec('1 / 0')\n", then_call="run"
+            monkeypatch, tmp_path, "def run():\n    return 1 / 0\n", then_call="run"
         )
 
 

@@ -158,8 +158,9 @@ def _experiment_import_error_message(
         if frames[-1] is not author_frames[-1]:
             author_frames.append(frames[-1])
 
-    if Path(culprit).resolve().is_relative_to(experiment_dir):
-        culprit = Path(culprit).resolve().relative_to(experiment_dir)
+    resolved = Path(culprit).resolve()
+    if resolved.is_relative_to(experiment_dir):
+        culprit = resolved.relative_to(experiment_dir)
     details = _format_shortened(exc, author_frames)
     return (
         f"Error: Couldn't load the experiment because of an error in "
