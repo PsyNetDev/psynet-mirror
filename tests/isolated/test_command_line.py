@@ -5632,14 +5632,7 @@ def test_destroy_ssh_without_a_terminal_asks_for_yes(monkeypatch):
     assert destroyed == []
 
 
-def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
-    from psynet.command_line import export__docker_ssh
-
-    executor = Mock()
-    executor.run.return_value = (
-        "dogfood-dbg\n/home/dallinger/dallinger/dogfood-dep/docker-compose.yml\n"
-        "/home/dallinger/dallinger/dogfood-cf/secrets/cloudflare-tunnel-token\n"
-    )
+def _patch_ssh_listing(monkeypatch, executor):
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
@@ -5647,6 +5640,32 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
         "psynet.command_line._awaken_ssh_app",
         lambda server, app: pytest.fail("woke an app"),
     )
+
+
+def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch):
+    executor = Mock()
+    executor.run.return_value = "psynet-app-listing-exit=124\n"
+    _patch_ssh_listing(monkeypatch, executor)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one", "--yes"])
+    assert result.exit_code == 1, result.output
+    assert (
+        "Couldn't list the apps on musix (timed out after 30 s); check the SSH "
+        "connection and try again." in result.output
+    )
+    assert "no apps" not in result.output
+
+
+def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
+    from psynet.command_line import export__docker_ssh
+
+    executor = Mock()
+    executor.run.return_value = (
+        "dogfood-dbg\n/home/dallinger/dallinger/dogfood-dep/docker-compose.yml\n"
+        "/home/dallinger/dallinger/dogfood-cf/secrets/cloudflare-tunnel-token\n"
+        "psynet-app-listing-exit=0\n"
+    )
+    _patch_ssh_listing(monkeypatch, executor)
 
     for command, args in [
         (psynet, ["destroy", "ssh", "--app", "dogfood-dpe"]),

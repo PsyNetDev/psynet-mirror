@@ -4649,17 +4649,45 @@ def _ssh_app_names(server):
     An app counts if Dallinger's ``destroy`` would find it: it has a Caddy
     configuration, a compose file or, after a failed Cloudflare deploy, just
     a tunnel token.
+
+    Raises
+    ------
+    click.ClickException
+        If the listing fails or times out, so that it isn't mistaken for a
+        server without apps.
     """
+    import paramiko
+    from dallinger.command_line.docker_ssh import ExecuteException
+
     cmd = (
         "ls -1 ~/dallinger/caddy.d 2>/dev/null; "
         "ls -1d ~/dallinger/*/docker-compose.yml "
         "~/dallinger/*/secrets/cloudflare-tunnel-token 2>/dev/null; true"
     )
-    listing = _ssh_executor(server).run(
-        _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S), raise_=False
-    )
+    marker = "psynet-app-listing-exit="
+    timeout_s = _PENDING_JOB_CHECK_TIMEOUT_S
+    try:
+        output = _ssh_executor(server).run(
+            f"{_with_remote_timeout(cmd, timeout_s)}; echo {marker}$?",
+            raise_=False,
+        )
+    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
+        problem = str(e)
+    else:
+        listing, _, status = (output or "").rpartition(marker)
+        status = status.strip()
+        problem = {
+            "0": None,
+            "124": f"timed out after {timeout_s} s",
+            "": "no answer from the server",
+        }.get(status, f"exit code {status}")
+    if problem:
+        raise click.ClickException(
+            f"Couldn't list the apps on {server} ({problem}); check the SSH "
+            "connection and try again."
+        )
     names = set()
-    for entry in (listing or "").split():
+    for entry in listing.split():
         match = re.search(
             r"/([^/]+)/(?:docker-compose\.yml|secrets/cloudflare-tunnel-token)$",
             entry,
