@@ -541,6 +541,23 @@ def get_editable_psynet_source() -> Path | None:
     return _editable_source(_psynet_direct_url_info())
 
 
+def get_editable_dallinger_source() -> Path | None:
+    """Return the source path when Dallinger is installed in editable mode.
+
+    Falls back to Dallinger's own detection for legacy ``.egg-link`` installs,
+    which do not record ``direct_url.json``.
+    """
+    source = get_editable_source("dallinger")
+    if source is not None:
+        return source
+    try:
+        from dallinger.utils import get_editable_dallinger_path
+    except ImportError:
+        return None
+    legacy_source = get_editable_dallinger_path()
+    return Path(legacy_source).resolve() if legacy_source else None
+
+
 def get_editable_source(package: str) -> Path | None:
     """Return the source path when ``package`` is installed in editable mode.
 

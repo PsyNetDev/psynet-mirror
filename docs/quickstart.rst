@@ -10,9 +10,10 @@ the tools in :doc:`install` are in place.
 Create an experiment
 --------------------
 
-Each experiment lives in its own folder. The folder name must contain only
-letters, digits and underscores, must not start with a digit, and must not be
-the name of an existing Python module such as ``code`` or ``test``.
+Each experiment lives in its own folder. The folder name becomes the
+experiment's default label and must not be the name of an existing Python
+module such as ``code`` or ``test``. Letters, digits and underscores are the
+safest choice.
 
 .. code-block:: bash
 

@@ -1,0 +1,1 @@
+`psynet setup` now asks before setting up an experiment in a folder that contains unrelated files, and stops when it cannot ask; pass `--yes` to set it up anyway. The docs now state the real folder-name rule: the name must not clash with an existing Python module such as `code`.

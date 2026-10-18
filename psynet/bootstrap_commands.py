@@ -47,8 +47,17 @@ from psynet.experiment_scaffold import (
         "experiment's ./.venv."
     ),
 )
+@click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help="Set up here even if the folder contains files unrelated to PsyNet.",
+)
 @click.pass_context
-def setup(ctx, psynet_source, no_install, force_shared_env, force_foreign_env):
+def setup(
+    ctx, psynet_source, no_install, force_shared_env, force_foreign_env, assume_yes
+):
     """Scaffold and synchronize an experiment's dedicated virtual environment."""
     from psynet.experiment_setup import setup_experiment
 
@@ -58,6 +67,7 @@ def setup(ctx, psynet_source, no_install, force_shared_env, force_foreign_env):
         no_install=no_install,
         force_shared_env=force_shared_env,
         force_foreign_env=force_foreign_env,
+        assume_yes=assume_yes,
     )
 
 

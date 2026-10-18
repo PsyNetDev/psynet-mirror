@@ -2051,11 +2051,21 @@ def test_scripts_scaffold_regenerates_empty_constraints(tmp_path):
     assert (tmp_path / "constraints.txt").read_text() == GENERATED_CONSTRAINTS
 
 
-def _assume_git_repository(monkeypatch):
-    """Treat setup tests as already inside a git work tree."""
+def _assume_git_repository(monkeypatch, check_folder=False):
+    """Treat setup tests as already inside a git work tree.
+
+    Also isolates them from an editable Dallinger in the developer's
+    environment and, unless ``check_folder``, from the unrelated-files check,
+    because many tests put fixture directories next to the experiment.
+    """
     monkeypatch.setattr(
         "psynet.experiment_setup.git_repository_available",
         lambda: True,
+    )
+    if not check_folder:
+        monkeypatch.setattr("psynet.experiment_setup._unrelated_entries", lambda: [])
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source", lambda: None
     )
 
 
@@ -2087,9 +2097,9 @@ def _stub_new_venv_delegation(monkeypatch, tmp_path):
     return uv_calls, delegated
 
 
-def _mock_dedicated_experiment_venv(monkeypatch):
+def _mock_dedicated_experiment_venv(monkeypatch, check_folder=False):
     """Treat setup tests as using a dedicated experiment venv, not the shared one."""
-    _assume_git_repository(monkeypatch)
+    _assume_git_repository(monkeypatch, check_folder=check_folder)
     monkeypatch.setattr(
         "psynet.experiment_setup._is_psynet_checkout_virtualenv",
         lambda: False,
@@ -2455,7 +2465,15 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
         lambda path: False,
     )
     _mock_dedicated_experiment_venv(monkeypatch)
-    monkeypatch.setattr("psynet.experiment_setup._run_uv", lambda *args: None)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    uv_calls = []
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv", lambda args, *_: uv_calls.append(args)
+    )
 
     with working_directory(tmp_path):
         result = CliRunner().invoke(
@@ -2465,6 +2483,61 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "requirements.txt").read_text() == f"{requirement}\n"
+    assert [args[:2] for args in uv_calls] == [["pip", "sync"], ["pip", "check"]]
+    assert (
+        f"--psynet-source commit replaces the editable Dallinger at {dallinger_source}"
+        in result.output
+    )
+
+
+def test_setup_keeps_editable_dallinger(tmp_path, monkeypatch):
+    """Setup reinstalls an editable Dallinger after syncing, without pinning it."""
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_dedicated_experiment_venv(monkeypatch)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    uv_calls = []
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv", lambda args, *_: uv_calls.append(args)
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup"])
+
+    assert result.exit_code == 0, result.output
+    assert f"Dallinger is installed editable from {dallinger_source}" in result.output
+    assert uv_calls == [
+        ["pip", "sync", "constraints.txt", "--strict"],
+        ["pip", "install", "-e", str(dallinger_source)],
+        ["pip", "check"],
+    ]
+    assert "dallinger" not in (tmp_path / "requirements.txt").read_text().lower()
+
+
+def test_setup_refuses_folder_with_unrelated_files(tmp_path, monkeypatch):
+    """Setup won't scaffold into an unrelated folder unless told to."""
+    (tmp_path / "notes.txt").write_text("not an experiment\n")
+    _mock_dedicated_experiment_venv(monkeypatch, check_folder=True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+
+    with working_directory(tmp_path):
+        refused = CliRunner().invoke(psynet, ["setup", "--no-install"])
+        assert refused.exit_code == 1, refused.output
+        assert "notes.txt" in refused.output
+        assert "--yes" in refused.output
+        assert not (tmp_path / "experiment.py").exists()
+
+        accepted = CliRunner().invoke(psynet, ["setup", "--no-install", "--yes"])
+    assert accepted.exit_code == 0, accepted.output
+    assert (tmp_path / "experiment.py").exists()
 
 
 def test_setup_editable_source_scaffolds_without_commit_pin_warning(
@@ -2924,7 +2997,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
     command, env = delegated[0]
     assert command[0] == str(tmp_path / ".venv" / "bin" / "psynet")
     assert command[1] == "setup"
-    assert command[2:] == ["--psynet-source", "editable"]
+    assert command[2:] == ["--yes", "--psynet-source", "editable"]
     assert env["VIRTUAL_ENV"] == str((tmp_path / ".venv").resolve())
     assert env["PSYNET_SETUP_DELEGATED"] == "1"
     # The outer process must not scaffold or repin; the inner run owns that.

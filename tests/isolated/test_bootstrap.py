@@ -70,6 +70,9 @@ def test_bootstrap_install_preserves_vcs_commit_provenance(monkeypatch):
             "vcs_info": {"vcs": "git", "commit_id": commit},
         },
     )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source", lambda: None
+    )
     from psynet.experiment_scaffold import installed_psynet_direct_requirement
     from psynet.experiment_setup import _same_psynet_install_args
 

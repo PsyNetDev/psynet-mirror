@@ -9,6 +9,7 @@ Click commands stay in ``command_line`` and call into these helpers.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,11 +21,13 @@ import click
 from .experiment_scaffold import (
     commit_psynet_requirement,
     editable_psynet_requirement,
+    get_editable_dallinger_source,
     get_editable_psynet_source,
     get_psynet_requirement,
     installed_psynet_direct_requirement,
     pin_unpinned_psynet_requirement,
     scaffold_experiment_directory,
+    scaffold_managed_paths,
     set_psynet_requirement,
 )
 from .light_utils import (
@@ -460,13 +463,16 @@ def _same_psynet_install_args():
 
     editable_source = get_editable_psynet_source()
     if editable_source is not None:
-        return ["-e", str(editable_source)]
+        args = ["-e", str(editable_source)]
+    elif (direct_requirement := installed_psynet_direct_requirement()) is not None:
+        args = [direct_requirement]
+    else:
+        args = [f"psynet=={psynet_version}"]
 
-    direct_requirement = installed_psynet_direct_requirement()
-    if direct_requirement is not None:
-        return [direct_requirement]
-
-    return [f"psynet=={psynet_version}"]
+    dallinger_source = get_editable_dallinger_source()
+    if dallinger_source is not None:
+        args += ["-e", str(dallinger_source)]
+    return args
 
 
 def _create_dedicated_experiment_virtualenv(*, psynet_source):
@@ -522,7 +528,8 @@ def _delegate_setup_to_venv(venv_path, *, psynet_source):
             "installing into the dedicated environment, but it is missing."
         )
 
-    command = [str(psynet_executable), "setup"]
+    # The outer run already checked the folder for unrelated files.
+    command = [str(psynet_executable), "setup", "--yes"]
     if psynet_source is not None:
         command += ["--psynet-source", psynet_source]
 
@@ -770,11 +777,17 @@ def _resolve_delegated_psynet_source(psynet_source):
 
 
 def _choose_editable_psynet_requirement(source, requested_source):
-    """Resolve how setup should represent an active editable PsyNet checkout."""
+    """Resolve how setup should represent an active editable PsyNet checkout.
+
+    Returns
+    -------
+    tuple[str, str]
+        The chosen ``--psynet-source`` value and the requirement to record.
+    """
     editable_requirement = editable_psynet_requirement(source)
     existing_requirement, choices = _editable_source_context(source)
     if choices is None and requested_source is None:
-        return editable_requirement
+        return "editable", editable_requirement
     if choices is None:
         choices = ["editable", "commit"]
 
@@ -793,9 +806,9 @@ def _choose_editable_psynet_requirement(source, requested_source):
         )
 
     if requested_source == "editable":
-        return editable_requirement
+        return requested_source, editable_requirement
     if requested_source == "existing":
-        return existing_requirement
+        return requested_source, existing_requirement
 
     try:
         requirement = commit_psynet_requirement(source)
@@ -807,7 +820,7 @@ def _choose_editable_psynet_requirement(source, requested_source):
             "PsyNet checkout.",
             err=True,
         )
-    return requirement
+    return requested_source, requirement
 
 
 def _default_no_install_psynet_source():
@@ -881,6 +894,113 @@ def _handle_setup_services(*, mode):
     raise ValueError(f"Unknown setup services mode: {mode}")
 
 
+_ENTRIES_ALLOWED_BEFORE_SETUP = frozenset(
+    {
+        ".DS_Store",
+        ".cursor",
+        ".git",
+        ".idea",
+        ".python-version",
+        ".venv",
+        ".vscode",
+        "constraints.txt",
+        "requirements.txt",
+    }
+)
+_MAX_LISTED_UNRELATED_ENTRIES = 5
+
+
+def _unrelated_entries():
+    """Return sorted names in this folder that don't belong to a PsyNet experiment.
+
+    A folder with ``experiment.py`` is already an experiment, so nothing counts
+    as unrelated there.
+    """
+    if Path("experiment.py").exists():
+        return []
+    allowed = _ENTRIES_ALLOWED_BEFORE_SETUP | {
+        Path(path).parts[0] for path in scaffold_managed_paths()
+    }
+    return sorted(
+        entry.name for entry in Path.cwd().iterdir() if entry.name not in allowed
+    )
+
+
+def _confirm_folder_is_for_experiment(*, assume_yes):
+    """Return whether setup may scaffold here, asking if the folder holds other files.
+
+    Raises
+    ------
+    click.ClickException
+        If the folder holds unrelated files, ``assume_yes`` is false, and
+        setup cannot prompt.
+    """
+    entries = _unrelated_entries()
+    if not entries or assume_yes:
+        return True
+
+    listed = entries[:_MAX_LISTED_UNRELATED_ENTRIES]
+    if len(entries) > len(listed):
+        listed.append("…")
+    summary = (
+        "This folder already contains files that don't belong to a PsyNet "
+        f"experiment ({', '.join(listed)})."
+    )
+    if not _is_interactive():
+        raise click.ClickException(
+            f"{summary} Create a new folder for the experiment (for example "
+            "'mkdir my_experiment && cd my_experiment'), or re-run with --yes "
+            "to set it up here anyway."
+        )
+    click.echo(
+        f"{summary} psynet setup will add about 15 files here and create a Git "
+        "repository."
+    )
+    if click.confirm("Set up an experiment in this folder?", default=False):
+        return True
+    click.echo("Cancelled setup; no files were changed.")
+    return False
+
+
+def _constraints_dallinger_pin():
+    """Return the Dallinger requirement recorded in ``constraints.txt``, if any."""
+    constraints_path = Path("constraints.txt")
+    if not constraints_path.is_file():
+        return None
+    for line in constraints_path.read_text().splitlines():
+        if re.match(r"dallinger\b(?!-)", line.strip(), flags=re.IGNORECASE):
+            return line.strip()
+    return None
+
+
+def _editable_dallinger_to_reinstall(psynet_source):
+    """Return the editable Dallinger checkout setup should keep, if any.
+
+    ``uv pip sync`` replaces an editable Dallinger with the version pinned in
+    ``constraints.txt``. Setup reinstalls the checkout afterwards so local
+    Dallinger development continues, unless a commit pin was requested.
+    """
+    source = get_editable_dallinger_source()
+    if source is None:
+        return None
+    if psynet_source == "commit":
+        click.echo(
+            "Warning: --psynet-source commit replaces the editable Dallinger at "
+            f"{source} with the version in constraints.txt. Run "
+            f"`uv pip install -e {source}` to resume local development.",
+            err=True,
+        )
+        return None
+    pin = _constraints_dallinger_pin()
+    pin_description = f" ({pin})" if pin else ""
+    click.echo(
+        f"Dallinger is installed editable from {source}. Setup will reinstall it "
+        "after synchronizing; constraints.txt keeps PsyNet's Dallinger "
+        f"pin{pin_description} for deployment."
+    )
+    return source
+
+
 def setup_experiment(
     ctx,
     *,
@@ -888,6 +1008,7 @@ def setup_experiment(
     no_install,
     force_shared_env,
     force_foreign_env=False,
+    assume_yes=False,
 ):
     """Scaffold and synchronize an experiment's dedicated virtual environment."""
     if is_in_repo_experiment():
@@ -895,6 +1016,8 @@ def setup_experiment(
         _echo_in_repo_setup_success()
         return
 
+    if not _confirm_folder_is_for_experiment(assume_yes=assume_yes):
+        return
     _ensure_active_virtualenv()
     mismatch = _psynet_command_env_mismatch_error()
     if mismatch is not None:
@@ -928,7 +1051,7 @@ def setup_experiment(
             )
         _scaffold_experiment(ctx, skip_constraints=False)
     else:
-        requirement = _choose_editable_psynet_requirement(
+        psynet_source, requirement = _choose_editable_psynet_requirement(
             editable_source,
             psynet_source,
         )
@@ -946,6 +1069,7 @@ def setup_experiment(
     ):
         return
 
+    dallinger_source = _editable_dallinger_to_reinstall(psynet_source)
     _run_uv(
         [
             "pip",
@@ -955,6 +1079,11 @@ def setup_experiment(
         ],
         "synchronize experiment dependencies",
     )
+    if dallinger_source is not None:
+        _run_uv(
+            ["pip", "install", "-e", str(dallinger_source)],
+            "reinstall the editable Dallinger checkout",
+        )
     _run_uv(["pip", "check"], "verify experiment dependencies")
     git_status = _ensure_git_repository()
     click.echo("Setup complete.")
