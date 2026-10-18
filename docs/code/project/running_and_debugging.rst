@@ -40,9 +40,9 @@ another experiment, and run several test sessions at once.
 
 By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
-``/tmp/dallinger_develop`` folder, so only one can run at a time: a second
-one refuses to start while another uses the same port or database. To run
-another one alongside it, for example when several coding agents test
+``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. To run
+another alongside it, for example when several coding agents test
 different experiments on one machine, give the second terminal its own
 database, Redis server, port and development folder:
 
