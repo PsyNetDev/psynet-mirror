@@ -426,7 +426,7 @@ def test_dirty_state_warnings_name_the_files():
         {
             "experiment_label": "d",
             "git_dirty": True,
-            "git_dirty_paths": ["Dockertag"],
+            "git_dirty_paths": ["config.txt"],
             "export_format_version": 1,
         }
     )
@@ -435,7 +435,7 @@ def test_dirty_state_warnings_name_the_files():
     confirm_project_identity(
         local, remote, confirm=lambda message: True, emit=warnings.append
     )
-    assert any("uncommitted changes in:\n  Dockertag" in m for m in warnings)
+    assert any("uncommitted changes in:\n  config.txt" in m for m in warnings)
     assert any("uncommitted changes in:\n  experiment.py" in m for m in warnings)
 
 

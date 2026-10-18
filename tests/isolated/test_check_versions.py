@@ -190,6 +190,20 @@ def test_dallinger_is_compared_with_constraints_pin(
             assert "--use-local-dallinger" in str(error.value)
 
 
+@patch("psynet.experiment_scaffold.get_editable_source", new=lambda name: None)
+@patch("psynet.version._get_dallinger_version", new=lambda: "12.3.0")
+def test_non_editable_mismatch_hint_names_the_pin_file(tmp_path):
+    (tmp_path / "requirements.txt").write_text("dallinger\n")
+    (tmp_path / "constraints.txt").write_text("dallinger==12.4.0\n")
+
+    with working_directory(tmp_path), pytest.raises(ValueError) as error:
+        check_core_dependency_versions_match_requirements(skip=("psynet",))
+    assert (
+        "Install the Dallinger version pinned in constraints.txt with `psynet setup`."
+        in str(error.value)
+    )
+
+
 # PsyNet tests
 def test_skip_version_check_key_error():
     with pytest.raises(KeyError, match="'SKIP_VERSION_CHECK'"):

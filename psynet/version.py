@@ -48,7 +48,7 @@ def check_core_dependency_versions_match_requirements(skip=()):
         )
         return
 
-    with _spinner("Comparing installed PsyNet and Dallinger with their pins..."):
+    with spinner("Comparing installed PsyNet and Dallinger with their pins..."):
         with open("requirements.txt", "r") as file:
             requirements = file.read()
         constraints_path = Path("constraints.txt")
@@ -92,8 +92,12 @@ def check_core_dependency_versions_match_requirements(skip=()):
             click.secho(f"Warning: {info['warning']}", fg="yellow", err=True)
 
 
-def _spinner(text):
-    """Return a yaspin spinner on a terminal, or a no-op context manager otherwise."""
+def spinner(text):
+    """Return a green yaspin spinner on a terminal, or a no-op context manager otherwise.
+
+    Off a terminal the context manager yields ``None``, so callers must check
+    before calling ``ok`` or ``fail``.
+    """
     if not sys.stdout.isatty():
         return contextlib.nullcontext()
     # yaspin lives in psynet[experiment]; keep this import lazy so thin
@@ -117,8 +121,8 @@ def _mismatch_hint(package_name, info):
     source = get_editable_source(package_name)
     if source is None:
         return (
-            "\n\nInstall the pinned versions with `psynet setup` "
-            "(or `uv pip sync constraints.txt`)."
+            f"\n\nInstall the {package_name} version pinned in {info['source']} "
+            "with `psynet setup`."
         )
     return (
         f"\n\nThe deployment will run {package_name} {_short(info['specified'])} "

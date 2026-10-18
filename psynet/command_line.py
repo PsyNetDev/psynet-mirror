@@ -51,6 +51,7 @@ from psynet.version import (
     check_installed_dallinger_version_is_recommended,
     is_release_version_specifier,
     specified_version,
+    spinner,
 )
 
 from . import deployment_info
@@ -3133,20 +3134,18 @@ def check_psynet_requirement_is_unambiguous():
         )
         return
 
-    with yaspin(
-        text="Verifying PsyNet version in requirements.txt...",
-        color="green",
-    ) as spinner:
+    with spinner("Verifying PsyNet version in requirements.txt...") as sp:
         requirement = get_psynet_requirement()
         valid = requirement is not None and is_unambiguous_psynet_requirement(
             requirement
         )
 
-        if valid:
-            spinner.ok("✔")
-        else:
-            spinner.color = "red"
-            spinner.fail("✗")
+        if sp is not None:
+            if valid:
+                sp.ok("✔")
+            else:
+                sp.color = "red"
+                sp.fail("✗")
 
         if not valid:
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
@@ -3206,16 +3205,17 @@ def check_psynet_requirement_includes_experiment_extra():
         )
         return
 
-    with yaspin(
-        text="Verifying that requirements.txt installs psynet[experiment]...",
-        color="green",
-    ) as spinner:
+    with spinner(
+        "Verifying that requirements.txt installs psynet[experiment]..."
+    ) as sp:
         requirement = get_psynet_requirement()
         if requirement is None or requirement_includes_experiment_extra(requirement):
-            spinner.ok("✔")
+            if sp is not None:
+                sp.ok("✔")
             return
-        spinner.color = "red"
-        spinner.fail("✗")
+        if sp is not None:
+            sp.color = "red"
+            sp.fail("✗")
 
     suggested = _requirement_with_experiment_extra(requirement)
     raise ValueError(
