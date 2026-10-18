@@ -1046,7 +1046,7 @@ def _editable_dallinger_to_reinstall(psynet_source):
         click.echo(
             "Warning: pinning PsyNet to a commit replaces the editable Dallinger at "
             f"{source} with the version in constraints.txt. Run "
-            f"`uv pip install -e {source}` to resume local development.",
+            f"'uv pip install -e {source}' to resume local development.",
             err=True,
         )
         return None
