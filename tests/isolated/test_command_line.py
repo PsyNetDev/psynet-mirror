@@ -322,6 +322,22 @@ class TestCommandLine(object):
         ]
         assert "secret" not in result.output.split("Ready:")[1]
         assert launch_info.stat().st_mode & 0o777 == 0o600
+        assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
+
+    @pytest.mark.parametrize(
+        "recruitment_msg",
+        [
+            None,
+            "Initial recruitment list:\nhttps://my-app.example.org/ad?workerId=bot1\n"
+            "Additional details:\nBot recruitment started using BotBase",
+        ],
+    )
+    def test_participant_link_needs_a_single_recruitment_link(self, recruitment_msg):
+        from psynet.command_line import _participant_link
+
+        printed = "Single recruitment link: https://my-app.example.org/ad"
+        result = {"recruitment_msg": recruitment_msg}
+        assert _participant_link(result, printed) is None
 
     def test_reset_console_is_silent_without_a_terminal(self):
         result = subprocess.run(

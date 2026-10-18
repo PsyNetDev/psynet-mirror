@@ -1974,18 +1974,14 @@ def _invoke_docker_ssh_deploy(
 
 
 def _participant_link(result, output):
-    """Return the participant link from a Dallinger deploy, or ``None``.
+    """Return the single recruitment link from a Dallinger deploy, or ``None``.
 
     Dallinger versions that return ``recruitment_msg`` (``None`` for an
     update) are read from it; older ones only print it, to ``output``.
+    Other URLs in the message, such as a bot's own link, aren't shareable.
     """
-    url = r"https?://[^\s\x1b]+"
-    single = rf"Single recruitment link: ({url})"
-    if "recruitment_msg" not in result:
-        match = re.search(single, output)
-        return match and match.group(1)
-    message = result["recruitment_msg"] or ""
-    match = re.search(single, message) or re.search(f"({url})", message)
+    message = result.get("recruitment_msg", output) or ""
+    match = re.search(r"Single recruitment link: (https?://[^\s\x1b]+)", message)
     return match and match.group(1)
 
 
@@ -2200,18 +2196,25 @@ def export_launch_data(deployment_id, **kwargs):
 def _export_launch_info(directory, dashboard_user, dashboard_password, **kwargs):
     """Save launch details, including the dashboard password, readable only by this user."""
     file = directory.joinpath("launch-info.json")
-    fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.fchmod(fd, 0o600)
-    with open(fd, "w") as f:
-        json.dump(
-            {
-                "dashboard_user": dashboard_user,
-                "dashboard_password": dashboard_password,
-                **kwargs,
-            },
-            f,
-            indent=4,
-        )
+    # Replacing the file atomically means a failed write can't leave a
+    # half-written file that breaks later commands reading it.
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".launch-info-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            os.fchmod(f.fileno(), 0o600)
+            json.dump(
+                {
+                    "dashboard_user": dashboard_user,
+                    "dashboard_password": dashboard_password,
+                    **kwargs,
+                },
+                f,
+                indent=4,
+            )
+        os.replace(tmp_path, file)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
     return file
 
 
