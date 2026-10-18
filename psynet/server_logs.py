@@ -45,12 +45,19 @@ def _home_relative(path) -> str:
 
     The command reaches Slack and exports, which shouldn't reveal the local
     user name; ``~`` stays outside the quotes so that the shell expands it.
+    ``~`` expands to the home directory of whoever runs it, so teammates need
+    the key at the same place under their own home.
     """
     path = Path(path).expanduser()
-    try:
-        return "~/" + quote(str(path.relative_to(Path.home())))
-    except ValueError:
-        return quote(str(path))
+    for candidate, home in (
+        (path, Path.home()),
+        (path.resolve(), Path.home().resolve()),
+    ):
+        try:
+            return "~/" + quote(str(candidate.relative_to(home)))
+        except ValueError:
+            pass
+    return quote(str(path))
 
 
 def logs_command(server_info: dict, app: str) -> str:
