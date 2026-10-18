@@ -75,6 +75,41 @@ _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
 
+def local_base_port(environ=None):
+    """Return Dallinger's ``base_port`` without importing the experiment.
+
+    Follows Dallinger's precedence: the ``base_port`` environment variable,
+    then ``config.txt`` in the current directory, then ``~/.dallingerconfig``,
+    then 5000. Like Dallinger, a later section of a file overrides an earlier
+    one. A ``base_port`` set in the experiment class's ``config`` dictionary is
+    not seen.
+
+    Raises
+    ------
+    ValueError
+        If a configuration file can't be parsed or ``base_port`` isn't a number.
+    """
+    import configparser
+
+    environ = os.environ if environ is None else environ
+    if "base_port" in environ:
+        return int(environ["base_port"])
+    for path in ("config.txt", os.path.expanduser("~/.dallingerconfig")):
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path)
+        except configparser.Error as e:
+            raise ValueError(f"Could not read {path}: {e}") from e
+        values = [
+            parser[s]["base_port"]
+            for s in parser.sections()
+            if "base_port" in parser[s]
+        ]
+        if values:
+            return int(values[-1])
+    return _DEFAULT_BASE_PORT
+
+
 def should_isolate(environ=None):
     """Return whether a new test session should start an isolated environment.
 
@@ -258,7 +293,7 @@ class IsolatedEnvironment:
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
-        shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
+        shared_base_port = local_base_port(environ)
         shared_redis_port = urlsplit(redis_url).port or 6379
 
         def redis_port(web_port):
@@ -496,14 +531,16 @@ def try_lock(path):
     -------
     file or None
         The open lock file, which holds the lock until it is closed, or None
-        if another process holds the lock or the file can't be opened.
+        if another process holds the lock.
+
+    Raises
+    ------
+    OSError
+        If the file can't be opened, for example because another user owns it.
     """
-    try:
-        # Not following symlinks or truncating, so a link planted in /tmp
-        # can't make this empty someone's file.
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
-    except OSError:
-        return None
+    # Not following symlinks or truncating, so a link planted in /tmp
+    # can't make this empty someone's file.
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
     lock = os.fdopen(fd, "r+")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -523,7 +560,11 @@ def _claim_port(start, also_free=None):
     also be free, such as the session's Redis port.
     """
     for port in range(start, start + 1000, 10):
-        lock = try_lock(port_lock_path(port))
+        try:
+            lock = try_lock(port_lock_path(port))
+        except OSError:
+            # Such as another user's claim, which counts as taken.
+            continue
         if lock is None:
             continue
         if _port_is_free(port) and (

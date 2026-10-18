@@ -804,12 +804,12 @@ class _PreLaunchReached(Exception):
 def debug_local(tmp_path, monkeypatch):
     """Run ``psynet debug local`` in ``tmp_path``, stopping where it would launch."""
     from psynet.command_line import debug__local
-    from psynet.isolated_environment import ENV_VAR, READY_ENV_VAR
+    from psynet.isolated_environment import READY_ENV_VAR
 
     monkeypatch.chdir(tmp_path)
+    Path("experiment.py").write_text("raise RuntimeError('experiment imported')\n")
     monkeypatch.delenv(READY_ENV_VAR, raising=False)
-    monkeypatch.delenv(ENV_VAR, raising=False)
-    monkeypatch.setattr("psynet.command_line.get_config", lambda: Mock(ready=False))
+    monkeypatch.setattr("dallinger.config.config", None)
     monkeypatch.setattr(
         "psynet.isolated_environment.lock_path",
         lambda name: str(tmp_path / f"{name}.lock"),
@@ -822,47 +822,89 @@ def debug_local(tmp_path, monkeypatch):
     return lambda: CliRunner().invoke(debug__local, ["--no-browsers"])
 
 
-@pytest.mark.parametrize("port_source", ["environment", "config.txt"])
-@pytest.mark.parametrize("ready", [False, True])
-def test_debug_local_refuses_a_busy_port(debug_local, monkeypatch, port_source, ready):
+@pytest.fixture
+def busy_port():
+    """Return a listening socket on a free port."""
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))
         server.listen()
-        port = server.getsockname()[1]
-        if port_source == "environment":
-            monkeypatch.setenv("base_port", str(port))
-        else:
-            monkeypatch.delenv("base_port", raising=False)
-            Path("config.txt").write_text(f"[Server]\nbase_port = {port}\n")
-        if ready:
-            monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+        yield server
 
-        result = debug_local()
 
-    if ready:
-        assert isinstance(result.exception, _PreLaunchReached)
+def _free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+@pytest.mark.parametrize("source", ["environment", "config.txt", "~/.dallingerconfig"])
+def test_debug_local_refuses_a_busy_port(
+    debug_local, busy_port, monkeypatch, tmp_path, source
+):
+    port = busy_port.getsockname()[1]
+    sections = f"[Server]\nbase_port = 1\n[Later]\nbase_port = {port}\n"
+    if source == "environment":
+        monkeypatch.setenv("base_port", str(port))
     else:
-        assert result.exit_code == 1
-        assert f"Port {port} is already in use" in result.output
-        assert "base_port" in result.output
+        monkeypatch.delenv("base_port", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        Path(os.path.expanduser(source)).write_text(sections)
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert f"Port {port} is already in use" in result.output
+    assert "base_port" in result.output
+
+
+def test_test_sessions_skip_the_check(debug_local, busy_port, monkeypatch):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
+
+
+def test_debug_local_stops_leftover_workers_on_its_port(
+    debug_local, busy_port, monkeypatch
+):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setattr(
+        "psynet.command_line.list_psynet_worker_processes", lambda: ["leftover"]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", busy_port.close
+    )
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
 
 
 def test_debug_local_refuses_a_database_in_use(debug_local, monkeypatch, tmp_path):
     from psynet.command_line import _database_url_tag
     from psynet.isolated_environment import try_lock
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        monkeypatch.setenv("base_port", str(probe.getsockname()[1]))
-    lock = try_lock(str(tmp_path / f"psynet-debug-db-{_database_url_tag()}.lock"))
-    with lock:
+    monkeypatch.setenv("base_port", str(_free_port()))
+    name = f"psynet-debug-db-{os.getuid()}-{_database_url_tag()}.lock"
+    with try_lock(str(tmp_path / name)) as lock:
         lock.write("4242")
         lock.flush()
         result = debug_local()
 
     assert result.exit_code == 1
     assert "(PID 4242) is using the database" in result.output
-    assert "Nothing was reset or stopped." in result.output
+    assert "Nothing was reset." in result.output
+
+
+def test_debug_local_reports_an_unopenable_lock_file(
+    debug_local, monkeypatch, tmp_path
+):
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    (tmp_path / f"psynet-debug-{os.getuid()}-{port}.lock").mkdir()
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert "Could not open the lock file" in result.output
 
 
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)

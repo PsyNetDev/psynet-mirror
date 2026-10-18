@@ -54,10 +54,15 @@ in another terminal or IDE window.
 
 By default, ``psynet debug local`` sessions share port 5000, the PostgreSQL
 database, Redis and Dallinger's development folder. A second ``psynet debug
-local`` therefore refuses to start, without touching the running one, while
-another session uses the same port, or the same database on another port.
-Stop the other experiment (Ctrl+C in its terminal) first; to see what is
-using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. To keep both
+local`` or ``psynet deploy local`` therefore refuses to start, without
+touching the running one, while another uses the same port, or the same
+database on another port. (Leftover worker processes from a server that was
+killed are stopped automatically.) Stop the other experiment (Ctrl+C in its
+terminal) first; to see what is using the port, run
+``lsof -nP -iTCP:5000 -sTCP:LISTEN``. The check reads ``base_port`` from the
+environment, ``config.txt`` and ``~/.dallingerconfig``, not from the
+experiment class's ``config`` dictionary, and ``--docker`` always uses port
+5000. To keep both
 running, give one of them its own database, Redis server and port as
 described in :ref:`running_several_local_experiments`. ``psynet test local``
 already uses its own, so it can run alongside.

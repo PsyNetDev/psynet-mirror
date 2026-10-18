@@ -57,7 +57,9 @@ database, Redis server, port and development folder:
     export dallinger_develop_directory=/tmp/dallinger_develop_2
 
 ``psynet debug local`` in that terminal then serves on port 5010 and leaves
-the other experiment's processes and browsers alone.
+the other experiment's processes and browsers alone. Change all four
+settings: the startup check only catches a shared port or database, and two
+runs that share a development folder overwrite each other's files.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two
