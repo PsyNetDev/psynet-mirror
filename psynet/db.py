@@ -45,8 +45,8 @@ _OTHER_DATABASE_CLIENTS_WHERE = (
     "AND usename = current_user"
 )
 OTHER_DATABASE_CLIENTS_SQL = text(
-    "SELECT pid, usename, application_name, state FROM pg_stat_activity "
-    f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+    "SELECT pid, usename, application_name, state, client_port "
+    f"FROM pg_stat_activity WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
 )
 TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -180,20 +180,37 @@ def release_local_database_connections():
     dallinger.db.engine.dispose()
 
 
+def _own_tcp_ports():
+    """Return the local ports of this process's TCP connections."""
+    import psutil
+
+    return {
+        conn.laddr.port
+        for conn in psutil.Process().net_connections("tcp")
+        if conn.raddr
+    }
+
+
 def list_other_database_clients(*, release_local=True):
     """Return other same-role backends connected to this database.
+
+    Backends whose TCP client port belongs to this process are left out, so
+    connections it still holds, which disposing the pool doesn't close, are
+    not reported as other clients.
 
     Parameters
     ----------
     release_local : bool
-        If True (default), close this process's pooled connections first so
-        they are not counted as another client. This disposes the SQLAlchemy
-        engine pool and should only be used from destructive load/reset paths.
+        If True (default), close this process's pooled connections first.
+        This disposes the SQLAlchemy engine pool and should only be used from
+        destructive load/reset paths.
     """
     if release_local:
         release_local_database_connections()
     with dallinger.db.engine.connect() as con:
-        return list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
+        rows = list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
+    own_ports = _own_tcp_ports()
+    return [row for row in rows if row.client_port not in own_ports]
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)

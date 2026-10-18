@@ -399,10 +399,8 @@ def test_populate_db_from_zip_file_runs_when_idle(monkeypatch, tmp_path):
 
 
 def test_populate_db_from_zip_file_refuses_a_live_backend(
-    monkeypatch, tmp_path, no_idle_drain
+    monkeypatch, tmp_path, no_idle_drain, db_client_in_other_process
 ):
-    from sqlalchemy import create_engine, text
-
     from psynet import data as data_mod
 
     dropped = []
@@ -411,13 +409,6 @@ def test_populate_db_from_zip_file_refuses_a_live_backend(
     )
     monkeypatch.setattr("dallinger.data.ingest_zip", lambda path: dropped.append(path))
 
-    other = create_engine(data_mod.db.engine.url)
-    conn = other.connect()
-    try:
-        conn.execute(text("SELECT 1"))
-        with pytest.raises(data_mod.DatabaseInUseError, match="other clients"):
-            data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
-    finally:
-        conn.close()
-        other.dispose()
+    with pytest.raises(data_mod.DatabaseInUseError, match="other clients"):
+        data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
     assert dropped == []

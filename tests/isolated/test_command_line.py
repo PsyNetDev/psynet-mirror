@@ -4810,11 +4810,31 @@ def test_other_redis_clients_are_counted_but_not_this_process():
     redis_conn.ping()
     before = _count_other_redis_clients()
     other = redis.Redis.from_url(_redis_url())
+    own_db = other.connection_pool.connection_kwargs.get("db", 0)
+    other_db = redis.Redis.from_url(_redis_url(), db=(int(own_db) + 1) % 16)
     other.ping()
+    other_db.ping()
     try:
         assert _count_other_redis_clients() == before + 1
     finally:
         other.close()
+        other_db.close()
+
+
+def test_other_database_clients_are_listed_but_not_this_process(
+    db_client_in_other_process,
+):
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import list_other_database_clients
+
+    # A checked-out connection survives the engine.dispose() in the lister.
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        pids = [row[0] for row in list_other_database_clients()]
+    assert db_client_in_other_process in pids
+    assert own_pid not in pids
 
 
 @pytest.mark.parametrize(
