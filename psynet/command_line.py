@@ -625,16 +625,11 @@ def _refuse_if_local_server_running(docker=False):
                 time.sleep(0.2)
         if _port_in_use(port):
             raise click.ClickException(_port_in_use_message(port, stopped_leftovers))
-        for lock in (port_lock, database_lock):
-            if lock.writable():
-                lock.truncate(0)
-                lock.write(str(os.getpid()))
-                lock.flush()
         yield
 
 
 def _hold_run_lock(stack, path):
-    """Lock the file at ``path`` until ``stack`` closes.
+    """Lock the file at ``path`` until ``stack`` closes and record this PID in it.
 
     Returns
     -------
@@ -650,7 +645,13 @@ def _hold_run_lock(stack, path):
             f"Could not open the lock file {path} ({e}). Remove it if no local "
             "PsyNet server is running."
         ) from e
-    return None if lock is None else stack.enter_context(lock)
+    if lock is None:
+        return None
+    if lock.writable():
+        lock.truncate(0)
+        lock.write(str(os.getpid()))
+        lock.flush()
+    return stack.enter_context(lock)
 
 
 def _lock_owner(path):

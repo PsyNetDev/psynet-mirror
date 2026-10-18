@@ -167,6 +167,10 @@ def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
     assert target.read_text() == "keep me"
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root can open read-only files for writing",
+)
 def test_read_only_lock_files_still_lock(tmp_path):
     """Another user's lock file can't be opened for writing, but still locks."""
     path = tmp_path / "other-user.lock"
