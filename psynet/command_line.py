@@ -591,22 +591,24 @@ def _refuse_if_local_server_running(docker=False):
         port = 5000 if docker else _local_base_port()
     except ValueError as e:
         raise click.ClickException(str(e)) from e
+    from .isolated_environment import lock_path, port_lock_path
+
     with ExitStack() as stack:
-        port_lock, path = _hold_run_lock(stack, f"psynet-debug-{port}")
+        path = lock_path(f"psynet-debug-{port}")
+        port_lock = _hold_run_lock(stack, path)
         if port_lock is None:
             raise click.ClickException(
                 f"Another local PsyNet server{_lock_owner(path)} is using port "
                 f"{port}. Stop it with Ctrl+C in its terminal. "
                 f"{_several_experiments_advice()}"
             )
-        if _hold_run_lock(stack, f"psynet-test-{port}")[0] is None:
+        if _hold_run_lock(stack, port_lock_path(port)) is None:
             raise click.ClickException(
                 f"A PsyNet test session is using port {port}. Wait for it to "
                 f"finish. {_several_experiments_advice()}"
             )
-        database_lock, path = _hold_run_lock(
-            stack, f"psynet-debug-db-{_database_url_tag()}"
-        )
+        path = lock_path(f"psynet-debug-db-{_database_url_tag()}")
+        database_lock = _hold_run_lock(stack, path)
         if database_lock is None:
             database = _url_without_password(_current_database_url())
             raise click.ClickException(
@@ -631,17 +633,16 @@ def _refuse_if_local_server_running(docker=False):
         yield
 
 
-def _hold_run_lock(stack, name):
-    """Lock ``<name>.lock`` until ``stack`` closes.
+def _hold_run_lock(stack, path):
+    """Lock the file at ``path`` until ``stack`` closes.
 
     Returns
     -------
-    tuple
-        The open lock file (None if another process holds the lock) and its path.
+    file or None
+        The open lock file, or None if another process holds the lock.
     """
-    from .isolated_environment import lock_path, try_lock
+    from .isolated_environment import try_lock
 
-    path = lock_path(name)
     try:
         lock = try_lock(path)
     except OSError as e:
@@ -649,7 +650,7 @@ def _hold_run_lock(stack, name):
             f"Could not open the lock file {path} ({e}). Remove it if no local "
             "PsyNet server is running."
         ) from e
-    return (None if lock is None else stack.enter_context(lock)), path
+    return None if lock is None else stack.enter_context(lock)
 
 
 def _lock_owner(path):
