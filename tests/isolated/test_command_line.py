@@ -1049,6 +1049,24 @@ class TestExport:
         assert "secret" not in result.output
         assert "Traceback" not in result.output
 
+    @pytest.mark.parametrize(
+        "location, expected", [("local", "psynet debug local"), ("ssh", "'my-app'")]
+    )
+    def test_experiment_variables_explains_an_empty_experiment_table(
+        self, location, expected
+    ):
+        import psycopg2
+
+        from psynet.command_line import _experiment_variables, db
+
+        connection = psycopg2.connect(dsn=db.db_url)
+        try:
+            connection.cursor().execute("CREATE TEMP TABLE experiment (vars text)")
+            with pytest.raises(click.ClickException, match=expected):
+                _experiment_variables(connection, location=location, app="my-app")
+        finally:
+            connection.close()
+
 
 @pytest.fixture
 def stub_ssh_connection():
