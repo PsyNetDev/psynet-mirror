@@ -565,6 +565,19 @@ def test_bootstrap_cli_shortens_experiment_import_errors(
     assert "bootstrap_cli.py" not in err
 
 
+def test_bootstrap_cli_names_the_experiment_module_that_failed(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.delenv("PSYNET_SHOW_TRACEBACK", raising=False)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "broken_helper.py").write_text("x = 1\ny = Timline\n")
+    with pytest.raises(SystemExit):
+        _run_cli_importing(monkeypatch, tmp_path, "import broken_helper\n")
+    err = capsys.readouterr().err
+    assert "error in broken_helper.py" in err
+    assert "import broken_helper" in err
+
+
 def test_bootstrap_cli_does_not_shorten_runtime_errors(monkeypatch, tmp_path):
     with pytest.raises(ZeroDivisionError):
         _run_cli_importing(

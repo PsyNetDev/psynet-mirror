@@ -21,6 +21,11 @@ The ``main()`` function inspects ``sys.argv`` to decide which CLI to run:
   and directs the user to run ``psynet setup`` or install
   ``psynet[experiment]``. Other import defects propagate unchanged.
 
+- If the full CLI fails because ``experiment.py`` or a module in the
+  experiment folder failed to import, the traceback is cut down to the
+  experiment's frames plus the frame that raised the error. Set
+  ``PSYNET_SHOW_TRACEBACK=1`` to see the full traceback.
+
 This pattern means that bootstrap commands are always fast and never require
 the experiment runtime, while full-featured experiment commands are still
 available whenever the runtime is installed.
@@ -114,7 +119,7 @@ def _is_author_file(filename: str | None, experiment_dir: Path) -> bool:
     )
 
 
-def _format_shortened(exc: BaseException, frames: list) -> str:
+def _format_shortened(exc: BaseException, frames: list[traceback.FrameSummary]) -> str:
     """Format ``exc`` with only ``frames``, dropping the frames of chained exceptions."""
     shortened = traceback.TracebackException.from_exception(exc)
     shortened.stack = traceback.StackSummary.from_list(frames)
@@ -193,7 +198,8 @@ def main() -> None:
     --version`` / ``psynet -V``) are handled without importing the experiment
     runtime.  Every other invocation delegates to the full
     ``psynet.command_line.psynet`` group, printing a helpful message if the
-    ``[experiment]`` extra is not installed.
+    ``[experiment]`` extra is not installed, and shortening the traceback if
+    the experiment's own code fails to import.
     """
     first = _first_user_arg()
     use_bootstrap = first in _BOOTSTRAP_COMMANDS or _has_version_flag()
