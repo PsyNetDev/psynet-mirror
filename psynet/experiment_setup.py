@@ -960,7 +960,11 @@ _ENTRIES_ALLOWED_BEFORE_SETUP = frozenset(
         "audit",
         "constraints.txt",
         "env",
+        "main.py",  # uv init
+        "pyproject.toml",  # uv init
         "requirements.txt",
+        "static",
+        "uv.lock",  # uv init
         "venv",
     }
 )

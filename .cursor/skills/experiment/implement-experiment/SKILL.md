@@ -134,8 +134,8 @@ psynet setup                   # scaffolds files, pins, constraints, install
 `.cursor/skills/psynet/` when absent), pins PsyNet, ensures `constraints.txt`,
 installs the experiment runtime (`psynet[experiment]`), and initializes Git when
 needed. Without a terminal, setup stops if the folder has no `experiment.py`
-and contains files that aren't part of a PsyNet experiment (`audit/`, licence
-files and caches are fine); if those files belong to this experiment, re-run
+and contains files that aren't part of a PsyNet experiment (`static/`,
+`audit/`, `uv init` files, licence files and caches are fine); if those files belong to this experiment, re-run
 with `psynet setup --yes`. After setup, use `psynet debug local --docker`
 when the experiment should run in Docker mode.
 

@@ -2573,6 +2573,8 @@ def test_setup_refuses_folder_with_unrelated_files(tmp_path, monkeypatch):
     [
         ["experiment.py", "static/", "tests/", "audit/"],
         ["audit/", "LICENSE"],
+        ["static/"],
+        [".python-version", "README.md", "main.py", "pyproject.toml", "uv.lock"],
     ],
 )
 def test_setup_accepts_experiment_folders(tmp_path, monkeypatch, entries):

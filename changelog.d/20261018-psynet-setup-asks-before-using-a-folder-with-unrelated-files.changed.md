@@ -1,1 +1,1 @@
-`psynet setup` now asks before setting up an experiment in a folder that contains unrelated files, and stops when it cannot ask; pass `--yes` to set it up anyway. An `audit/` folder, licence files, editor settings and caches don't count as unrelated.
+`psynet setup` now asks before setting up an experiment in a folder that contains unrelated files, and stops when it cannot ask; pass `--yes` to set it up anyway. A `static/` or `audit/` folder, the files `uv init` creates, licence files, editor settings and caches don't count as unrelated.
