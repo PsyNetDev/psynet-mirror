@@ -12,6 +12,7 @@ the server, which knows neither; deployments without a record count as
 classic.
 """
 
+from pathlib import Path
 from shlex import quote
 from typing import Optional
 
@@ -39,6 +40,19 @@ def dozzle_url(server: str, ingress: Optional[str]) -> Optional[str]:
     return f"https://logs.{server}"
 
 
+def _home_relative(path) -> str:
+    """Return ``path`` quoted for a shell, as ``~/...`` when it is under the home directory.
+
+    The command reaches Slack and exports, which shouldn't reveal the local
+    user name; ``~`` stays outside the quotes so that the shell expands it.
+    """
+    path = Path(path).expanduser()
+    try:
+        return "~/" + quote(str(path.relative_to(Path.home())))
+    except ValueError:
+        return quote(str(path))
+
+
 def logs_command(server_info: dict, app: str) -> str:
     """Return the ``ssh`` command that follows an app's Compose logs, as Dallinger prints it.
 
@@ -59,7 +73,7 @@ def logs_command(server_info: dict, app: str) -> str:
     if port != 22:
         parts += ["-p", str(port)]
     try:
-        parts += ["-i", quote(str(get_server_pem_path()))]
+        parts += ["-i", _home_relative(get_server_pem_path())]
     except FileNotFoundError:
         pass  # Without server_pem, ssh falls back to the user's own keys.
     parts.append(quote(f"{user}@{host}" if user else host))
