@@ -1,9 +1,12 @@
 import os
+import re
 import tempfile
 from pathlib import Path
 
+import click
 import pytest
 
+import psynet
 from psynet.command_line import (
     check_psynet_requirement_includes_experiment_extra,
     check_psynet_requirement_is_unambiguous,
@@ -79,7 +82,7 @@ def test_check_psynet_requirement_is_unambiguous_missing_version():
                 file.flush()
 
                 with pytest.raises(
-                    ValueError,
+                    click.ClickException,
                     match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                     "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                     "or a commit hash.",
@@ -102,7 +105,7 @@ def test_check_psynet_requirement_is_unambiguous_extension():
                     file.flush()
 
                     with pytest.raises(
-                        ValueError,
+                        click.ClickException,
                         match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                         "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                         "or a commit hash.",
@@ -122,7 +125,7 @@ def test_check_psynet_requirement_is_unambiguous_master_branch():
                         file.flush()
 
                     with pytest.raises(
-                        ValueError,
+                        click.ClickException,
                         match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                         "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                         "or a commit hash.",
@@ -237,8 +240,30 @@ def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
             Path("requirements.txt").write_text(f"{requirement}\n")
-            with pytest.raises(ValueError, match="psynet setup --psynet-source commit"):
+            with pytest.raises(click.ClickException) as error:
                 check_psynet_requirement_is_unambiguous()
+    message = error.value.message
+    assert message.startswith("requirements.txt installs PsyNet from a local path")
+    assert "branch name" not in message
+    assert "psynet setup --psynet-source commit" in message
+    release = re.match(r"\d+\.\d+\.\d+", psynet.__version__)[0]
+    assert f"psynet[experiment]=={release}" in message
+
+
+def test_remote_deploy_reports_a_local_psynet_pin_before_stale_constraints(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import run_pre_checks
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", raising=False)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
+    Path("requirements.txt").write_text(
+        "-e file:///tmp/PsyNet#egg=psynet[experiment]\n"
+    )
+
+    with pytest.raises(click.ClickException, match="from a local path"):
+        run_pre_checks(mode="live", local_=False, app="my-app")
 
 
 @pytest.mark.parametrize(
