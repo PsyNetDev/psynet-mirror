@@ -518,6 +518,68 @@ def test_bootstrap_cli_does_not_mask_internal_import_error(monkeypatch):
         main()
 
 
+def _run_cli_importing(monkeypatch, tmp_path, source):
+    """Run ``main()`` with a full CLI that imports ``source`` from ``tmp_path``."""
+    import runpy
+
+    (tmp_path / "experiment.py").write_text(source)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["psynet", "debug", "local"])
+    monkeypatch.setattr(
+        "psynet.bootstrap_cli._load_full_psynet_cli",
+        lambda: lambda **_: runpy.run_path(str(tmp_path / "experiment.py")),
+    )
+    from psynet.bootstrap_cli import main
+
+    main()
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("x = (\n", "SyntaxError"),
+        ("x = Timline\n", "NameError: name 'Timline' is not defined"),
+        ("import json\njson.loads('{')\n", "decoder.py"),
+        (
+            "try:\n    import no_such_module\n"
+            "except ImportError as e:\n    raise RuntimeError('wrapped') from e\n",
+            "No module named 'no_such_module'",
+        ),
+    ],
+)
+def test_bootstrap_cli_shortens_experiment_import_errors(
+    monkeypatch, tmp_path, capsys, source, expected
+):
+    monkeypatch.delenv("PSYNET_SHOW_TRACEBACK", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        _run_cli_importing(monkeypatch, tmp_path, source)
+    err = capsys.readouterr().err
+    assert exc.value.code == 1
+    assert "error in experiment.py" in err
+    assert expected in err
+    assert "bootstrap_cli.py" not in err
+
+
+def test_bootstrap_cli_does_not_shorten_other_errors(monkeypatch, tmp_path):
+    (tmp_path / "experiment.py").write_text("")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["psynet", "debug", "local"])
+    monkeypatch.setattr(
+        "psynet.bootstrap_cli._load_full_psynet_cli",
+        lambda: lambda **_: exec("1 / 0"),
+    )
+    from psynet.bootstrap_cli import main
+
+    with pytest.raises(ZeroDivisionError):
+        main()
+
+
+def test_bootstrap_cli_shows_full_traceback_on_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("PSYNET_SHOW_TRACEBACK", "1")
+    with pytest.raises(NameError):
+        _run_cli_importing(monkeypatch, tmp_path, "x = Timline\n")
+
+
 def test_runtime_initialization_retries_after_failure(monkeypatch):
     """A failed initialization attempt must not poison later calls."""
     from psynet import runtime_init

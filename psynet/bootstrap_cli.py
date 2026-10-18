@@ -28,7 +28,10 @@ available whenever the runtime is installed.
 
 from __future__ import annotations
 
+import os
 import sys
+import traceback
+from pathlib import Path
 
 import click
 
@@ -95,6 +98,108 @@ def _load_full_psynet_cli():
     return _full_psynet
 
 
+def _is_author_file(filename: str | None, experiment_dir: Path) -> bool:
+    """Return True if ``filename`` is a source file in the experiment folder.
+
+    Files in a virtual environment inside the experiment folder don't count.
+    """
+    if not filename or filename.startswith("<"):
+        return False
+    path = Path(filename).resolve()
+    return (
+        path.is_file()
+        and path.is_relative_to(experiment_dir)
+        and not path.is_relative_to(Path(sys.prefix).resolve())
+        and "site-packages" not in path.parts
+    )
+
+
+def _exception_chain_lines(exc: BaseException) -> list[str]:
+    """Format the one-line summaries of ``exc`` and the exceptions it chains to."""
+    chain = []
+    current = traceback.TracebackException.from_exception(exc)
+    while current is not None:
+        chain.append(current)
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+
+    chain.reverse()
+    lines = list(chain[0].format_exception_only())
+    for older, newer in zip(chain, chain[1:]):
+        if newer.__cause__ is older:
+            lines.append(
+                "\nThe above exception was the direct cause of the following exception:\n\n"
+            )
+        else:
+            lines.append(
+                "\nDuring handling of the above exception, another exception occurred:\n\n"
+            )
+        lines.extend(newer.format_exception_only())
+    return lines
+
+
+def _experiment_import_error_message(
+    exc: BaseException, experiment_dir: Path
+) -> str | None:
+    """Summarise an error raised while importing the experiment's own code.
+
+    The summary keeps the frames from the experiment folder plus the frame
+    that raised the error. Returns None if ``exc`` didn't come from importing
+    a module in ``experiment_dir``.
+    """
+    if not (experiment_dir / "experiment.py").is_file() or isinstance(
+        exc, BaseExceptionGroup
+    ):
+        return None
+
+    frames = traceback.extract_tb(exc.__traceback__)
+    author_frames = [f for f in frames if _is_author_file(f.filename, experiment_dir)]
+    if not any(f.name == "<module>" for f in author_frames):
+        if not (
+            isinstance(exc, SyntaxError)
+            and _is_author_file(exc.filename, experiment_dir)
+        ):
+            return None
+
+    if isinstance(exc, SyntaxError) and exc.filename and exc.filename[0] != "<":
+        culprit = Path(exc.filename).resolve()
+    else:
+        culprit = Path(author_frames[-1].filename).resolve()
+        if frames[-1] is not author_frames[-1]:
+            author_frames.append(frames[-1])
+
+    if culprit.is_relative_to(experiment_dir):
+        culprit = culprit.relative_to(experiment_dir)
+    details = "".join(
+        traceback.format_list(author_frames) + _exception_chain_lines(exc)
+    )
+    return (
+        f"Error: Couldn't load the experiment because of an error in "
+        f"{culprit}:\n\n{details}\n"
+        "Fix the error and run the command again. "
+        "To see the full traceback, set PSYNET_SHOW_TRACEBACK=1."
+    )
+
+
+def _run_full_cli(full_psynet) -> None:
+    """Run the full CLI, shortening tracebacks from the experiment's own code."""
+    try:
+        full_psynet(standalone_mode=True)
+    except Exception as exc:
+        show_traceback = os.environ.get("PSYNET_SHOW_TRACEBACK", "")
+        if show_traceback.lower() not in ("", "0", "false", "no"):
+            raise
+        message = _experiment_import_error_message(exc, Path.cwd().resolve())
+        if message is None:
+            raise
+        click.echo(message, err=True)
+        raise SystemExit(1) from exc
+
+
 def main() -> None:
     """Dispatcher: run bootstrap CLI or full experiment CLI.
 
@@ -143,4 +248,4 @@ def main() -> None:
             raise SystemExit(1) from exc
         return
 
-    _full_psynet(standalone_mode=True)
+    _run_full_cli(_full_psynet)
