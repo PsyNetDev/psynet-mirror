@@ -796,6 +796,75 @@ def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
         _legacy_debug_gunicorn_threads()
 
 
+class _PreLaunchReached(Exception):
+    pass
+
+
+@pytest.fixture
+def debug_local(tmp_path, monkeypatch):
+    """Run ``psynet debug local`` in ``tmp_path``, stopping where it would launch."""
+    from psynet.command_line import debug__local
+    from psynet.isolated_environment import ENV_VAR, READY_ENV_VAR
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(READY_ENV_VAR, raising=False)
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: Mock(ready=False))
+    monkeypatch.setattr(
+        "psynet.isolated_environment.lock_path",
+        lambda name: str(tmp_path / f"{name}.lock"),
+    )
+
+    def pre_launch(*args, **kwargs):
+        raise _PreLaunchReached
+
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
+    return lambda: CliRunner().invoke(debug__local, ["--no-browsers"])
+
+
+@pytest.mark.parametrize("port_source", ["environment", "config.txt"])
+@pytest.mark.parametrize("ready", [False, True])
+def test_debug_local_refuses_a_busy_port(debug_local, monkeypatch, port_source, ready):
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        port = server.getsockname()[1]
+        if port_source == "environment":
+            monkeypatch.setenv("base_port", str(port))
+        else:
+            monkeypatch.delenv("base_port", raising=False)
+            Path("config.txt").write_text(f"[Server]\nbase_port = {port}\n")
+        if ready:
+            monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+
+        result = debug_local()
+
+    if ready:
+        assert isinstance(result.exception, _PreLaunchReached)
+    else:
+        assert result.exit_code == 1
+        assert f"Port {port} is already in use" in result.output
+        assert "base_port" in result.output
+
+
+def test_debug_local_refuses_a_database_in_use(debug_local, monkeypatch, tmp_path):
+    from psynet.command_line import _database_url_tag
+    from psynet.isolated_environment import try_lock
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        monkeypatch.setenv("base_port", str(probe.getsockname()[1]))
+    lock = try_lock(str(tmp_path / f"psynet-debug-db-{_database_url_tag()}.lock"))
+    with lock:
+        lock.write("4242")
+        lock.flush()
+        result = debug_local()
+
+    assert result.exit_code == 1
+    assert "(PID 4242) is using the database" in result.output
+    assert "Nothing was reset or stopped." in result.output
+
+
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
 # @pytest.mark.usefixtures("in_experiment_directory")
 # class TestDeploy:

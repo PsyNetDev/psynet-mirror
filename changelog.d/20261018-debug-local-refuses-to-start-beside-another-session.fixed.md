@@ -1,0 +1,1 @@
+`psynet debug local` now refuses to start, with exit status 1 and before resetting anything, while another `psynet debug local` uses the same port or database or another program listens on the port. Previously a second session stopped the first one's workers and emptied its database before failing, and a busy port exited with status 0.

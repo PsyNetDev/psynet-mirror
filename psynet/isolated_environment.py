@@ -473,15 +473,44 @@ def _port_is_free(port):
         return True
 
 
-def port_lock_path(port):
-    """Return the lock file that a session holds while it uses ``port``.
+def lock_path(name):
+    """Return the path of the lock file ``<name>.lock``.
 
-    In ``/tmp`` rather than ``TMPDIR``, so that sessions with different
+    In ``/tmp`` rather than ``TMPDIR``, so that processes with different
     temporary directories still see each other's claims, like the
     development folders that are also in ``/tmp``.
     """
     root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
-    return os.path.join(root, f"psynet-test-{port}.lock")
+    return os.path.join(root, f"{name}.lock")
+
+
+def port_lock_path(port):
+    """Return the lock file that a test session holds while it uses ``port``."""
+    return lock_path(f"psynet-test-{port}")
+
+
+def try_lock(path):
+    """Take an exclusive lock on the file at ``path`` without waiting.
+
+    Returns
+    -------
+    file or None
+        The open lock file, which holds the lock until it is closed, or None
+        if another process holds the lock or the file can't be opened.
+    """
+    try:
+        # Not following symlinks or truncating, so a link planted in /tmp
+        # can't make this empty someone's file.
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+    except OSError:
+        return None
+    lock = os.fdopen(fd, "r+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        return None
+    return lock
 
 
 def _claim_port(start, also_free=None):
@@ -494,19 +523,8 @@ def _claim_port(start, also_free=None):
     also be free, such as the session's Redis port.
     """
     for port in range(start, start + 1000, 10):
-        try:
-            # Not following symlinks or truncating, so a link planted in /tmp
-            # can't make this empty someone's file.
-            fd = os.open(
-                port_lock_path(port), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644
-            )
-        except OSError:
-            continue
-        lock = os.fdopen(fd, "r+")
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
+        lock = try_lock(port_lock_path(port))
+        if lock is None:
             continue
         if _port_is_free(port) and (
             also_free is None or _port_is_free(also_free(port))
