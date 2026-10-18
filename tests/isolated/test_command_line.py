@@ -4840,6 +4840,23 @@ def test_other_database_clients_are_listed_but_not_this_process(
     assert own_pid not in pids
 
 
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_forked_child_does_not_claim_parent_database_connections():
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import _own_backend_pids
+
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        assert own_pid in _own_backend_pids()
+        child = os.fork()
+        if child == 0:
+            os._exit(int(own_pid in _own_backend_pids()))
+        _, status = os.waitpid(child, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
+
+
 @pytest.mark.parametrize(
     "command, args",
     [

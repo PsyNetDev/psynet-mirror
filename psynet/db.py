@@ -26,6 +26,7 @@ there.
 
 import copy
 import logging
+import os
 import threading
 import weakref
 from contextlib import contextmanager
@@ -133,20 +134,33 @@ def _install_gevent_wait_callback_on_connect(dbapi_connection, connection_record
     install_gevent_wait_callback()
 
 
-# Backend pids of the engine's DBAPI connections. Connections checked out
-# when the pool is disposed are closed later without pool events, so
-# ``_own_backend_pids`` checks whether each connection is still open.
+# Backend pids of the engine's DBAPI connections, keyed weakly by connection
+# and stamped with the OS pid that opened them, so a forked child doesn't
+# claim its parent's backends. Connections checked out when the pool is
+# disposed are closed later without pool events, so ``_own_backend_pids``
+# checks whether each connection is still open.
 _backend_pids = weakref.WeakKeyDictionary()
+_backend_pids_lock = threading.Lock()
 
 
 @event.listens_for(dallinger.db.engine, "connect")
 def _record_backend_pid(dbapi_connection, connection_record):
-    _backend_pids[dbapi_connection] = dbapi_connection.get_backend_pid()
+    with _backend_pids_lock:
+        _backend_pids[dbapi_connection] = (
+            os.getpid(),
+            dbapi_connection.get_backend_pid(),
+        )
 
 
 def _own_backend_pids():
     """Return the backend pids of this process's open engine connections."""
-    return {pid for conn, pid in list(_backend_pids.items()) if not conn.closed}
+    with _backend_pids_lock:
+        entries = list(_backend_pids.items())
+    return {
+        backend_pid
+        for conn, (os_pid, backend_pid) in entries
+        if os_pid == os.getpid() and not conn.closed
+    }
 
 
 # Also covers pooled connections opened before this module was imported,
