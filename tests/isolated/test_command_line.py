@@ -270,6 +270,71 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
+    def test_deploy_ssh_ends_with_a_ready_block(self, monkeypatch, tmp_path, capsys):
+        from psynet.command_line import psynet
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "experiment.py").touch()
+
+        @click.command()
+        def dallinger_deploy(**kwargs):
+            print("Dashboard password: secret")
+            print("Launching experiment")
+            print(
+                "Initial recruitment list:\n\nAdditional details:\n\n"
+                "Single recruitment link: https://my-app.example.org/ad?mode=live\n"
+            )
+            return {
+                "dashboard_user": "admin",
+                "dashboard_password": "secret",
+                "dashboard_link": "https://my-app.example.org/dashboard",
+                "log_command": "ssh host 'docker compose logs -f'",
+                "app": "my-app",
+                "server": "host",
+            }
+
+        with (
+            patch("psynet.command_line._pre_launch"),
+            patch("psynet.command_line._cleanup_exp_directory"),
+            patch("psynet.command_line.reset_console"),
+            patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
+            patch("dallinger.command_line.docker_ssh.deploy", dallinger_deploy),
+            patch(
+                "dallinger.command_line.docker_ssh.get_configured_hosts",
+                return_value={"host": {}},
+            ),
+        ):
+            result = CliRunner().invoke(
+                psynet, ["deploy", "ssh", "--server", "host", "--app", "my-app"]
+            )
+
+        assert result.exit_code == 0, result.output
+        launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
+        assert result.output.split("Single recruitment link")[1].splitlines()[-5:] == [
+            "Ready: my-app on host",
+            "  Participant link: https://my-app.example.org/ad?mode=live",
+            "  Dashboard:        https://my-app.example.org/dashboard (user: admin)",
+            f"  Password:         saved in {launch_info}",
+            "  Logs:             ssh host 'docker compose logs -f'",
+        ]
+        assert result.output.count("secret") == 1
+
+    def test_reset_console_is_silent_without_a_terminal(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from psynet.command_line import reset_console; reset_console()",
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "stty" not in result.stderr
+
     def test_export_launch_info_records_public_origin(self, tmp_path):
         from psynet.command_line import _export_launch_info
 
@@ -5146,36 +5211,19 @@ def test_performance_test_options_reject_out_of_range_values(option, value):
     assert "Invalid value" in result.output
 
 
-def test_performance_log_directory_works_without_a_user_name(tmp_path, monkeypatch):
+def test_performance_logs_are_kept_under_psynet_data(tmp_path, monkeypatch):
     from psynet.command_line import _performance_log_directory
 
-    def no_user_name():
-        raise OSError("No username set in the environment")
-
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
-    monkeypatch.setattr("psynet.command_line.getpass.getuser", no_user_name)
-
+    monkeypatch.setenv("HOME", str(tmp_path))
     directory = _performance_log_directory()
-    assert directory == tmp_path / f"psynet-performance-logs-{os.getuid()}"
+    assert directory == tmp_path / "psynet-data" / "performance-logs"
     assert directory.is_dir()
-
-
-def test_performance_log_directory_avoids_a_folder_others_may_write(
-    tmp_path, monkeypatch
-):
-    from psynet.command_line import _performance_log_directory
-
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
-    shared = _performance_log_directory()
-    shared.chmod(0o777)
-    directory = _performance_log_directory()
-    assert directory != shared and directory.is_dir()
 
 
 def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
     from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
 
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
     directory = _performance_log_directory()
     server_logs = []
     for i in range(_KEPT_PERFORMANCE_LOGS + 5):

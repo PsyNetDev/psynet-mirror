@@ -1,23 +1,22 @@
 import collections
 import datetime
 import functools
-import getpass
 import hashlib
 import importlib
+import io
 import json
 import os
 import re
 import shlex
 import shutil
 import signal
-import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import zipfile
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -241,6 +240,9 @@ def reset_console():
     # The 'read' command is a UNIX command that takes an arbitrary input from the user.
     import subprocess
 
+    # Without a terminal there is nothing to repair, and stty would complain.
+    if sys.stdin is None or not sys.stdin.isatty():
+        return
     try:
         # It seems that the timeout must be at least 1.0 s for this to work reliably
         subprocess.call("read NULL", timeout=1.0, shell=True)
@@ -1918,7 +1920,7 @@ def deploy__docker_ssh(
             update=update,
         )
 
-        _post_deploy(result)
+        _print_ssh_ready(result, _post_deploy(result))
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -1961,7 +1963,32 @@ def _invoke_docker_ssh_deploy(
     params = getattr(command, "params", ())
     if any(getattr(param, "name", None) == "ingress" for param in params):
         kwargs["ingress"] = ingress
-    return ctx.invoke(command, **kwargs)
+    output = io.StringIO()
+    with redirect_stdout(_OutputTee(sys.stdout, output)):
+        result = ctx.invoke(command, **kwargs)
+    # Dallinger prints the recruitment message but doesn't return it.
+    link = re.search(r"Single recruitment link: (\S+)", output.getvalue())
+    if link and isinstance(result, dict):
+        result["participant_link"] = link.group(1)
+    return result
+
+
+def _print_ssh_ready(result, launch_info):
+    """End an SSH deployment with the links and commands the user needs next.
+
+    The password is only saved to ``launch_info``, because Dallinger has
+    already printed it.
+    """
+    rows = [
+        ("Participant link", result.get("participant_link")),
+        ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
+        ("Password", f"saved in {launch_info}"),
+        ("Logs", result.get("log_command")),
+    ]
+    click.echo(f"\nReady: {result['app']} on {result['server']}")
+    for label, value in rows:
+        if value:
+            click.echo(f"  {label + ':':<18}{value}")
 
 
 def _configure_dallinger_image_source(use_local_dallinger=False):
@@ -1977,6 +2004,7 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
+    user_set = bool(source)
     if not source:
         from dallinger.utils import get_editable_dallinger_path
 
@@ -1992,7 +2020,11 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
     os.environ["DALLINGER_SOURCE"] = source
-    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+    message = f"Baking local Dallinger from {source} into the experiment image."
+    if not user_set:
+        # Dallinger goes on to say that DALLINGER_SOURCE is set.
+        message += " PsyNet passes this checkout to Dallinger as DALLINGER_SOURCE."
+    click.echo(message)
 
 
 def _reject_leftover_local_image_files():
@@ -2133,7 +2165,7 @@ def _post_deploy(result):
     assert isinstance(result, dict)
     assert "dashboard_user" in result
     assert "dashboard_password" in result
-    export_launch_data(
+    return export_launch_data(
         deployment_id=deployment_info.read("deployment_id"),
         **result,
     )
@@ -2142,11 +2174,11 @@ def _post_deploy(result):
 def export_launch_data(deployment_id, **kwargs):
     """
     Retrieves dashboard credentials from the current config and
-    saves them to disk.
+    saves them to disk, returning the path of the saved file.
     """
     directory = Path("~/psynet-data/launch-data").expanduser() / deployment_id
     directory.mkdir(parents=True, exist_ok=True)
-    _export_launch_info(directory, **kwargs)
+    return _export_launch_info(directory, **kwargs)
 
 
 def _export_launch_info(directory, dashboard_user, dashboard_password, **kwargs):
@@ -2161,6 +2193,7 @@ def _export_launch_info(directory, dashboard_user, dashboard_password, **kwargs)
             f,
             indent=4,
         )
+    return file
 
 
 ##############
@@ -2614,7 +2647,9 @@ def _debug_ssh(
                 config_options=config_options,
             )
 
-        _post_deploy(result)
+        launch_info = _post_deploy(result)
+        if not performance_test_app:
+            _print_ssh_ready(result, launch_info)
     finally:
         _cleanup_exp_directory()
 
@@ -5450,29 +5485,18 @@ _KEPT_PERFORMANCE_LOGS = 20
 
 
 def _performance_log_directory():
-    """Return this user's folder for performance-test logs, pruning old logs.
+    """Return the folder for performance-test logs, pruning old logs.
 
-    Each run writes a server log and a bot log; only the newest
-    ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept. If the shared temporary
-    folder already holds that folder but another user owns it or may write
-    to it, a new private folder is used instead.
+    Logs go to ``~/psynet-data/performance-logs``, because the OS may purge
+    its temporary folder (macOS does). Each run writes a server log and a bot
+    log; only the newest ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
     """
+    directory = Path("~/psynet-data/performance-logs").expanduser()
     try:
-        user = getpass.getuser()
-    except (KeyError, OSError):
-        # Containers run as the host uid, which may have no account or USER.
-        user = str(os.getuid())
-    directory = Path(tempfile.gettempdir()) / f"psynet-performance-logs-{user}"
-    directory.mkdir(mode=0o700, exist_ok=True)
-    info = directory.lstat()
-    if (
-        directory.is_symlink()
-        or info.st_uid != os.getuid()
-        or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-    ):
-        logger.warning(
-            f"{directory} isn't private to this user, so the logs go to a new folder."
-        )
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as err:
+        # Containers may run as a uid whose home directory isn't writable.
+        logger.warning(f"Can't create {directory} ({err}); using a temporary folder.")
         return Path(tempfile.mkdtemp(prefix="psynet-performance-logs-"))
     for prefix in ("psynet_server_", "psynet_bots_"):
         logs = []
@@ -5950,8 +5974,13 @@ def _check_no_real_participants(force, resetting=False):
 
 
 class _OutputTee:
+    """Write to several streams, behaving otherwise like the first (e.g. ``isatty``)."""
+
     def __init__(self, *streams):
         self.streams = streams
+
+    def __getattr__(self, name):
+        return getattr(self.streams[0], name)
 
     def write(self, data):
         for stream in self.streams:

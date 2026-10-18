@@ -1,0 +1,1 @@
+Performance-test server and bot logs are now saved under `~/psynet-data/performance-logs` instead of the system temporary folder, which macOS purges, and the progress line shows `Avg: -` until the first bot finishes instead of `Avg: 0.0s`.

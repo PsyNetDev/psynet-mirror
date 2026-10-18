@@ -179,7 +179,8 @@ trials), then launch a debug deployment:
 
 The experiment is available at
 ``https://my-study-pilot.your-server.example.org`` within a minute or two.
-The terminal prints a *Single recruitment link*; take the experiment
+The command ends with a *Ready* summary whose *Participant link* is the
+single recruitment link; take the experiment
 through it yourself and send it to a few colleagues. Check:
 
 - the median completion time against your estimate;
