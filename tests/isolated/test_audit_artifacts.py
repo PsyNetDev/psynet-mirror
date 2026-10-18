@@ -36,6 +36,14 @@ def test_redaction_keeps_the_server_log_password_placeholder() -> None:
     message = LoggerNotifier.format_credentials("Dashboard", "http://x", None, "pw")
     assert redact_known_credentials(message) == message
     assert redact_known_credentials("Password: `pw`") == "Password: `[REDACTED]`"
+    assert (
+        redact_known_credentials("Opening dashboard: http://admin:pw@127.0.0.1:5000/")
+        == "Opening dashboard: http://admin:[REDACTED]@127.0.0.1:5000/"
+    )
+    assert (
+        redact_known_credentials("Log in using this password pw and the username")
+        == "Log in using this password [REDACTED] and the username"
+    )
 
 
 def test_monitor_static_href_prefix_matches_blob_layout() -> None:

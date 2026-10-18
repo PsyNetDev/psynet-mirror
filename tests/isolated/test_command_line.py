@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -1023,7 +1024,7 @@ class TestExport:
 
     @pytest.mark.parametrize("over_unix_socket", [False, True])
     def test_export_local_explains_a_stopped_database(
-        self, monkeypatch, import_local_experiment, over_unix_socket
+        self, monkeypatch, request, import_local_experiment, over_unix_socket
     ):
         from psynet.command_line import psynet
 
@@ -1032,6 +1033,7 @@ class TestExport:
             port = sock.getsockname()[1]
         if over_unix_socket:
             socket_dir = tempfile.mkdtemp(dir="/tmp")  # Socket paths must be short.
+            request.addfinalizer(lambda: shutil.rmtree(socket_dir, ignore_errors=True))
             db_url = f"postgresql://dallinger:secret@/dallinger?host={socket_dir}"
         else:
             db_url = f"postgresql://dallinger:secret@127.0.0.1:{port}/dallinger"
@@ -1039,8 +1041,6 @@ class TestExport:
         monkeypatch.setattr("psynet.command_line.db.db_url", db_url)
 
         result = CliRunner().invoke(psynet, ["export", "local"])
-        if over_unix_socket:
-            os.rmdir(socket_dir)
 
         assert result.exit_code == 1, result.output
         assert over_unix_socket or f"127.0.0.1:{port}" in result.output
