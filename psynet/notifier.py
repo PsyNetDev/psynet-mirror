@@ -9,6 +9,7 @@ from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
+from .server_logs import dozzle_url, logs_command
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
@@ -120,11 +121,15 @@ class Notifier:
 
     @property
     def logs_message(self):
+        info = self.deployment_information
+        logs_url = dozzle_url(info["server"], info.get("ingress"))
+        if logs_url is None:
+            command = logs_command(info["app"], info["ssh_host"], info.get("ssh_user"))
+            return self.combine(self.bold("Server logs"), f"`{command}`")
         config = get_config()
         dashboard_password = config.get("dashboard_password", secrets.token_urlsafe(8))
-        logs_url = f"https://logs.{self.deployment_information['server']}"
         return self.format_credentials(
-            "Server logs",
+            "Server logs (Dozzle)",
             logs_url,
             "dallinger",
             dashboard_password,

@@ -82,6 +82,7 @@ from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
+from .server_logs import server_ingress, where_to_read_logs
 from .utils import (
     format_bytes,
     get_args,
@@ -1649,12 +1650,14 @@ def _pre_launch(
     local_packages=(),
     assume_yes=False,
     performance_test_app=False,
+    ingress=None,
 ):
     """Check and prepare the experiment directory before a launch.
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page.
+    experiment needn't have a consent page. ``ingress`` is the SSH deploy's
+    ``--ingress`` option; the resolved ingress is recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
@@ -1689,7 +1692,11 @@ def _pre_launch(
         ssh_host = server_info["host"]
         ssh_user = server_info.get("user")
 
-        deployment_info.write(ssh_host=ssh_host, ssh_user=ssh_user)
+        deployment_info.write(
+            ssh_host=ssh_host,
+            ssh_user=ssh_user,
+            ingress=server_ingress(server_info, ingress),
+        )
 
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
@@ -1900,6 +1907,7 @@ def deploy__docker_ssh(
             app=app,
             update=update,
             assume_yes=assume_yes,
+            ingress=ingress,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -2596,6 +2604,7 @@ def _debug_ssh(
             local_packages=local_packages,
             assume_yes=assume_yes,
             performance_test_app=performance_test_app,
+            ingress=ingress,
         )
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
@@ -4389,7 +4398,8 @@ def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs)
         f"{problem} Not destroying {app}, because destroying it would lose the "
         "results of any jobs still running. If its web container isn't "
         f"running, start it (see 'psynet apps ssh --server {server}' or its "
-        "logs in Dozzle) and run this command again. Otherwise check in its "
+        f"logs {where_to_read_logs(server, app)}) and run this command again. "
+        "Otherwise check in its "
         "logs that its async jobs have finished, then pass "
         "--discard-pending-jobs to destroy it anyway."
     )
