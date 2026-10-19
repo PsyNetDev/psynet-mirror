@@ -4845,16 +4845,36 @@ def test_forked_child_does_not_claim_parent_database_connections():
     import dallinger.db
     from sqlalchemy import text
 
-    from psynet.db import _own_backend_pids
+    from psynet.db import _own_backends
+
+    def own_pids():
+        return {pid for pid, _ in _own_backends()}
 
     with dallinger.db.engine.connect() as own:
         own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
-        assert own_pid in _own_backend_pids()
+        assert own_pid in own_pids()
         child = os.fork()
         if child == 0:
-            os._exit(int(own_pid in _own_backend_pids()))
+            os._exit(int(own_pid in own_pids()))
         _, status = os.waitpid(child, 0)
     assert os.waitstatus_to_exitcode(status) == 0
+
+
+def test_own_pid_with_another_backend_start_is_another_client(monkeypatch):
+    """A backend that reused the pid of a dead own connection is not hidden."""
+    from datetime import timedelta
+
+    import dallinger.db
+
+    from psynet import db as psynet_db
+
+    with dallinger.db.engine.connect() as own:
+        conn = own.connection.dbapi_connection
+        os_pid, (pid, start) = psynet_db._backends[conn]
+        reused = (os_pid, (pid, start - timedelta(seconds=1)))
+        monkeypatch.setitem(psynet_db._backends, conn, reused)
+        clients = psynet_db.list_other_database_clients(release_local=False)
+    assert pid in [row.pid for row in clients]
 
 
 @pytest.mark.parametrize(

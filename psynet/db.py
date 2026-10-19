@@ -134,31 +134,52 @@ def _install_gevent_wait_callback_on_connect(dbapi_connection, connection_record
     install_gevent_wait_callback()
 
 
-# Backend pids of the engine's DBAPI connections, keyed weakly by connection
-# and stamped with the OS pid that opened them, so a forked child doesn't
-# claim its parent's backends. Connections checked out when the pool is
-# disposed are closed later without pool events, so ``_own_backend_pids``
-# checks whether each connection is still open.
-_backend_pids = weakref.WeakKeyDictionary()
-_backend_pids_lock = threading.Lock()
+# (backend pid, backend_start) of the engine's DBAPI connections, keyed
+# weakly by connection and stamped with the OS pid that opened them, so a
+# forked child doesn't claim its parent's backends. backend_start tells a
+# backend that reused one of our pids from ours, because a connection that
+# Postgres terminated still looks open until it is next used. Connections
+# checked out when the pool is disposed are closed later without pool events,
+# so ``_own_backends`` checks whether each connection is still open.
+_backends = weakref.WeakKeyDictionary()
+_backends_lock = threading.Lock()
 
 
 @event.listens_for(dallinger.db.engine, "connect")
-def _record_backend_pid(dbapi_connection, connection_record):
-    with _backend_pids_lock:
-        _backend_pids[dbapi_connection] = (
-            os.getpid(),
-            dbapi_connection.get_backend_pid(),
-        )
+def _record_backend(dbapi_connection, connection_record):
+    """Record the new connection's backend, or nothing if it can't be read.
+
+    An unrecorded connection counts as another client, so the local data
+    reset check fails closed.
+    """
+    # Autocommit, so neither success nor failure leaves a transaction open.
+    autocommit = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pid, backend_start FROM pg_stat_activity "
+                "WHERE pid = pg_backend_pid()"
+            )
+            backend = cursor.fetchone()
+    except psycopg2.Error as error:
+        logger.debug("Couldn't record this connection's backend: %s", error)
+        return
+    finally:
+        dbapi_connection.autocommit = autocommit
+    if backend is None or backend[1] is None:
+        return
+    with _backends_lock:
+        _backends[dbapi_connection] = (os.getpid(), tuple(backend))
 
 
-def _own_backend_pids():
-    """Return the backend pids of this process's open engine connections."""
-    with _backend_pids_lock:
-        entries = list(_backend_pids.items())
+def _own_backends():
+    """Return ``(pid, backend_start)`` of this process's open engine connections."""
+    with _backends_lock:
+        entries = list(_backends.items())
     return {
-        backend_pid
-        for conn, (os_pid, backend_pid) in entries
+        backend
+        for conn, (os_pid, backend) in entries
         if os_pid == os.getpid() and not conn.closed
     }
 
@@ -228,8 +249,8 @@ def list_other_database_clients(*, release_local=True):
         release_local_database_connections()
     with dallinger.db.engine.connect() as con:
         rows = list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
-    own_pids = _own_backend_pids()
-    return [row for row in rows if row.pid not in own_pids]
+    own = _own_backends()
+    return [row for row in rows if (row.pid, row.backend_start) not in own]
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)
