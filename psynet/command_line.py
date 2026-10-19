@@ -4350,8 +4350,8 @@ _COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
 def _read_ssh_compose_file(server, app):
     """Return an SSH app's compose file, or ``None`` if it can't be read.
 
-    It is read rather than the app's config in its web container, which may
-    be what failed.
+    The compose file is read rather than the app's config in its web
+    container, which may be what failed.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException

@@ -14,10 +14,13 @@ the ingress that the command read from the app's compose file, else that
 record, and only guess from ``default_ingress`` without either.
 """
 
+import logging
 import re
 from pathlib import Path
 from shlex import quote
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 INGRESS_CLASSIC = "classic"
 INGRESS_CLOUDFLARE = "cloudflare"
@@ -105,6 +108,9 @@ def _recorded_ingress(server: str, app: str) -> Optional[str]:
     try:
         info = deployment_info.read_all()
     except FileNotFoundError:
+        return None
+    except (OSError, ValueError, AssertionError) as e:
+        logger.warning(f"Could not read {deployment_info.path}: {e}")
         return None
     if (info.get("server"), info.get("app")) == (server, app):
         return info.get("ingress")
