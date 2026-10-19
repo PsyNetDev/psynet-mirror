@@ -54,6 +54,13 @@ TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
     f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
 )
+# 16384 is Postgres's FirstNormalObjectId: relations at or above it are user
+# objects, so a backend locking one could block dropping the tables.
+_USER_RELATION_LOCK_PIDS_SQL = text(
+    "SELECT DISTINCT pid FROM pg_locks WHERE locktype = 'relation' "
+    "AND relation >= 16384 AND database = "
+    "(SELECT oid FROM pg_database WHERE datname = current_database())"
+)
 
 
 def _gevent_wait_callback(conn, timeout=None):
@@ -236,7 +243,10 @@ def list_other_database_clients(*, release_local=True):
     """Return other same-role backends connected to this database.
 
     Backends of connections that this process's engine still holds, which
-    disposing the pool doesn't close, are not reported as other clients.
+    disposing the pool doesn't close, are not reported as other clients,
+    unless they lock a user table and so could block dropping it. This
+    assumes a direct connection: behind a transaction-pooling proxy such as
+    pgbouncer, other clients' sessions are invisible anyway.
 
     Parameters
     ----------
@@ -249,8 +259,13 @@ def list_other_database_clients(*, release_local=True):
         release_local_database_connections()
     with dallinger.db.engine.connect() as con:
         rows = list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
+        locking = {pid for (pid,) in con.execute(_USER_RELATION_LOCK_PIDS_SQL)}
     own = _own_backends()
-    return [row for row in rows if (row.pid, row.backend_start) not in own]
+    return [
+        row
+        for row in rows
+        if (row.pid, row.backend_start) not in own or row.pid in locking
+    ]
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)

@@ -946,7 +946,12 @@ def _count_other_redis_clients():
     except ResponseError as error:
         logger.warning("Couldn't list local Redis clients: %s", error)
         return None
-    own_db = next(client["db"] for client in clients if int(client["id"]) == own_id)
+    own_db = next(
+        (client["db"] for client in clients if int(client["id"]) == own_id), None
+    )
+    if own_db is None:
+        logger.warning("Local Redis didn't list this connection among its clients.")
+        return None
     return sum(
         1
         for client in clients

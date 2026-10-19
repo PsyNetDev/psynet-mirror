@@ -4804,6 +4804,8 @@ def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
 
 
 def test_other_redis_clients_are_counted_but_not_this_process():
+    from urllib.parse import urlsplit
+
     import redis
     from dallinger.db import redis_conn
 
@@ -4813,8 +4815,10 @@ def test_other_redis_clients_are_counted_but_not_this_process():
     redis_conn.ping()
     before = _count_other_redis_clients()
     other = redis.Redis.from_url(_redis_url())
-    own_db = other.connection_pool.connection_kwargs.get("db", 0)
-    other_db = redis.Redis.from_url(_redis_url(), db=(int(own_db) + 1) % 16)
+    # Set the index in the URL path, which from_url prefers to a db argument.
+    own_db = int(other.connection_pool.connection_kwargs.get("db", 0))
+    other_db_url = urlsplit(_redis_url())._replace(path=f"/{(own_db + 1) % 16}")
+    other_db = redis.Redis.from_url(other_db_url.geturl())
     other.ping()
     other_db.ping()
     try:
@@ -4836,8 +4840,13 @@ def test_other_database_clients_are_listed_but_not_this_process(
     with dallinger.db.engine.connect() as own:
         own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
         pids = [row[0] for row in list_other_database_clients()]
+        transaction = own.begin()
+        own.execute(text("CREATE TEMP TABLE locked_by_own_connection (x int)"))
+        locking_pids = [row[0] for row in list_other_database_clients()]
+        transaction.rollback()
     assert db_client_in_other_process in pids
     assert own_pid not in pids
+    assert own_pid in locking_pids
 
 
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")

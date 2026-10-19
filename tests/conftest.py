@@ -29,7 +29,11 @@ def db_client_in_other_process():
         pid = int(process.stdout.readline())
         yield pid
     finally:
-        process.communicate(timeout=10)
+        try:
+            process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
         # Later tests must not see the backend while it shuts down.
         deadline = time.monotonic() + 2
         while pid is not None and time.monotonic() < deadline:

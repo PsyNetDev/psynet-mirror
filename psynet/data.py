@@ -649,9 +649,13 @@ def _format_other_database_clients(clients):
     labels = []
     for pid, _user, app, state, addr, port, since in clients:
         details = [(app or "").strip(), (state or "").strip() or "unknown"]
-        details.append(f"{addr}:{port}" if addr else "local socket")
+        if addr:
+            host = f"[{addr}]" if ":" in str(addr) else addr
+            details.append(f"{host}:{port}")
+        else:
+            details.append("local socket")
         if since:
-            details.append(f"since {since:%H:%M}")
+            details.append(f"since {since.astimezone():%H:%M}")
         labels.append(
             f"Postgres backend pid {pid} ({', '.join(d for d in details if d)})"
         )
