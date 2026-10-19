@@ -88,6 +88,13 @@ from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
 from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
+from .capacity import (
+    count_active_participants,
+    is_valid_participant_limit,
+    recruiter_supports_participant_limits,
+    refuse_new_participant_if_full,
+    usable_participant_limit,
+)
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
@@ -134,6 +141,7 @@ from .recruiters import (  # noqa: F401
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
     configured_recruiter_class,
+    named_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -506,6 +514,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     big_base_payment : `bool`
         Set this to `True` if you REALLY want to set `base_payment` to a value > 20.
+
+    max_concurrent_participants : `int` or `None`
+        The maximum number of participants taking the study at once; newcomers
+        over the limit wait on the start page until there is space (see
+        :meth:`is_at_capacity`). Only supported with the ``generic`` and
+        ``hotair`` recruiters. ``0`` admits nobody new. Default: `None` (no
+        limit).
 
     There are also a few experiment variables that are set automatically and that should,
     in general, not be changed manually:
@@ -1066,6 +1081,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
+        return refuse_new_participant_if_full()
 
     @staticmethod
     def after_request(request, response):
@@ -2331,6 +2347,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "hard_max_experiment_payment": 1100.0,
             "soft_max_experiment_payment": 1000.0,
             "max_participant_payment": 25.0,
+            "max_concurrent_participants": None,
         }
 
     @experiment_route("/api/<endpoint>", methods=["GET", "POST"])
@@ -2560,6 +2577,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config = get_config()
 
         cls.check_recruiter_support(config)
+        cls.check_max_concurrent_participants_support(config)
 
         if not config.get("clock_on"):
             # We force the clock to be on because it's necessary for the check_networks functionality.
@@ -2610,6 +2628,87 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+
+    @classmethod
+    def check_max_concurrent_participants_support(cls, config):
+        """Reject participant limits for recruiters that send paid participants.
+
+        Raises
+        ------
+        ValueError
+            If the class sets an invalid ``max_concurrent_participants``.
+        RuntimeError
+            If the recruiter named in the configuration (ignoring the
+            debug-mode stand-in) is missing, unknown or doesn't support
+            participant limits.
+        """
+        limit = cls.variables.get("max_concurrent_participants")
+        if not is_valid_participant_limit(limit):
+            raise ValueError(
+                "max_concurrent_participants must be a whole number of at least 0, "
+                f"or None for no limit, not {limit!r}."
+            )
+        limits_participants = (
+            limit is not None or cls.is_at_capacity is not Experiment.is_at_capacity
+        )
+        if not limits_participants:
+            return
+        # The named recruiter, not the debug-mode stand-in, decides: deploy
+        # commands run this check while the config is still in debug mode.
+        if not recruiter_supports_participant_limits(named_recruiter_class(config)):
+            recruiter = config.get("recruiter", None)
+            if not recruiter:
+                raise RuntimeError(
+                    "max_concurrent_participants and is_at_capacity need a named "
+                    "recruiter that supports them: set recruiter = generic (or "
+                    "hotair) in config.txt or Experiment.config."
+                )
+            raise RuntimeError(
+                f"The {recruiter!r} recruiter doesn't support "
+                "max_concurrent_participants or is_at_capacity: only generic and "
+                "hotair do, because other recruiters send participants who have "
+                "accepted a place and should not be kept waiting. Remove "
+                "max_concurrent_participants from Experiment.variables (or set it "
+                "to None) and remove any is_at_capacity override. With Prolific, "
+                "limit simultaneous participants through initial_recruitment_size "
+                "instead."
+            )
+
+    def is_at_capacity(self):
+        """Return whether the study is too busy to admit a newcomer right now.
+
+        While this returns ``True``, newcomers wait on the start page, which
+        tells them that many people are taking part and retries every 20 to
+        40 seconds. It is called before each new participant is created,
+        including those retries, so keep it cheap; after it returns ``True``,
+        each web process skips it for 2 seconds. Returning participants are
+        never refused. Use it only for load: the waiting message and retries
+        don't suit closing the study (for example outside certain hours).
+
+        By default, the study is at capacity once the experiment variable
+        ``max_concurrent_participants`` participants are active (see
+        :func:`psynet.capacity.count_active_participants`). Because it is an
+        experiment variable, the limit can change while the study runs, for
+        example ``experiment.var.max_concurrent_participants = 80``. Override
+        this method to measure load differently, for example to count
+        participants as active for 30 minutes after their last page::
+
+            from psynet.capacity import count_active_participants
+
+            def is_at_capacity(self):
+                limit = self.var.max_concurrent_participants
+                return limit is not None and count_active_participants(1800) >= limit
+
+        Only supported with the ``generic`` and ``hotair`` recruiters.
+
+        Returns
+        -------
+        bool
+        """
+        limit = usable_participant_limit(
+            self.var.get("max_concurrent_participants", None)
+        )
+        return limit is not None and count_active_participants() >= limit
 
     @staticmethod
     def check_recruiter_support(config):
