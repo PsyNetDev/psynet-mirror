@@ -2027,12 +2027,13 @@ def _pre_launch(
 
 
 def _check_ssh_deploy_credentials(server, ingress):
-    """Stop an SSH deploy before it contacts the server if credentials are missing.
+    """Stop an SSH launch early if the deploy's credentials are missing.
 
-    Dallinger versions with ``check_deploy_credentials`` check that a
-    Cloudflare-ingress deploy can load its Cloudflare API token. Older
-    versions lack it, so the check is skipped and Dallinger's deploy checks
-    the token later.
+    Run before the launch starts local services, contacts the server, resets
+    local data or runs ``prepare``. Dallinger versions with
+    ``check_deploy_credentials`` check that a Cloudflare-ingress deploy can
+    load its Cloudflare API token. Older versions lack it, so the check is
+    skipped and Dallinger's deploy checks the token later.
 
     Parameters
     ----------
@@ -2040,6 +2041,13 @@ def _check_ssh_deploy_credentials(server, ingress):
         The configured server to deploy to.
     ingress : str or None
         The ``--ingress`` option; ``None`` uses the server's default ingress.
+
+    Raises
+    ------
+    click.ClickException
+        If the deploy uses Cloudflare ingress and the token can't be loaded.
+    click.UsageError
+        If Dallinger doesn't know the server or the ingress.
     """
     try:
         from dallinger.command_line.docker_ssh import check_deploy_credentials
