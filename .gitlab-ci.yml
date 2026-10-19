@@ -395,9 +395,10 @@ asv_benchmarks:
   # only offers this job manually.
   interruptible: false
   resource_group: benchmark-results
-  # A healthy run takes ~45 min. A stalled run is retried once instead of
-  # holding the runner for the 3-hour project default.
-  timeout: 90m
+  # A healthy run takes ~45 min, plus up to an hour if a slow benchmark hits
+  # its 30-minute setup_cache timeout on both commits. A stalled run is
+  # retried once instead of holding the runner for the 3-hour project default.
+  timeout: 2h
   retry:
     max: 1
     when:
