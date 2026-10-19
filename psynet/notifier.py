@@ -263,10 +263,21 @@ class LoggerNotifier(Notifier):
 
     @classmethod
     def format_credentials(cls, label, url, username, password):
-        """Format credentials for the server log, redacting the password."""
+        """Format credentials for the server log, leaving out the password."""
+        msg = super().format_credentials(label, url, username, None)
         if password is not None:
-            password = "<redacted>"
-        return super().format_credentials(label, url, username, password)
+            msg += (
+                "\nPassword: not shown in logs "
+                "(printed by the command that launched the experiment)"
+            )
+        return msg
+
+    def on_launch(self):
+        """Log the launch, leaving local dashboard details to the launch banner."""
+        if self.deployment_information["is_local_deployment"]:
+            self.notify(self.launch_message)
+        else:
+            super().on_launch()
 
     @staticmethod
     def bold(msg: str):

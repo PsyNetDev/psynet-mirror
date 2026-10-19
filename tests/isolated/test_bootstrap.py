@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import sys
 from hashlib import md5
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -70,12 +71,23 @@ def test_bootstrap_install_preserves_vcs_commit_provenance(monkeypatch):
             "vcs_info": {"vcs": "git", "commit_id": commit},
         },
     )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source", lambda: None
+    )
     from psynet.experiment_scaffold import installed_psynet_direct_requirement
     from psynet.experiment_setup import _same_psynet_install_args
 
     expected = f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@{commit}"
     assert installed_psynet_direct_requirement() == expected
     assert _same_psynet_install_args() == [expected]
+
+    dallinger_source = Path("/home/someone/Dallinger")
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    assert _same_psynet_install_args()[-2:] == ["-e", str(dallinger_source)]
+    assert _same_psynet_install_args(psynet_source="commit") == [expected]
 
 
 def test_bootstrap_install_ignores_vcs_metadata_for_editable_checkout(monkeypatch):
@@ -307,7 +319,7 @@ def test_dallinger_constraints_github_ref_tracks_pyproject_declaration():
     assert ref.lstrip("v") in declared or ref in declared
 
 
-def test_bootstrap_core_depends_only_on_click():
+def test_bootstrap_core_depends_only_on_click_and_packaging():
     """Core install stays free of experiment-runtime packages."""
     import tomllib
     from pathlib import Path
@@ -317,7 +329,7 @@ def test_bootstrap_core_depends_only_on_click():
             encoding="utf-8"
         )
     )
-    assert pyproject["project"]["dependencies"] == ["click"]
+    assert pyproject["project"]["dependencies"] == ["click", "packaging"]
     assert "yaspin" in pyproject["project"]["optional-dependencies"]["experiment"]
 
 
@@ -516,6 +528,79 @@ def test_bootstrap_cli_does_not_mask_internal_import_error(monkeypatch):
 
     with pytest.raises(ImportError, match="missing internal symbol"):
         main()
+
+
+def _run_cli_importing(monkeypatch, tmp_path, source, then_call=None):
+    """Run ``main()`` with a full CLI that imports ``source`` from ``tmp_path``.
+
+    If ``then_call`` is given, the CLI then calls that function from the module.
+    """
+    import runpy
+
+    def full_cli(**_):
+        module = runpy.run_path(str(tmp_path / "experiment.py"))
+        if then_call:
+            module[then_call]()
+
+    (tmp_path / "experiment.py").write_text(source)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["psynet", "debug", "local"])
+    monkeypatch.setattr("psynet.bootstrap_cli._load_full_psynet_cli", lambda: full_cli)
+    from psynet.bootstrap_cli import main
+
+    main()
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("x = (\n", "SyntaxError"),
+        ("x = Timline\n", "NameError: name 'Timline' is not defined"),
+        ("import json\njson.loads('{')\n", "decoder.py"),
+        (
+            "try:\n    import no_such_module\n"
+            "except ImportError as e:\n    raise RuntimeError('wrapped') from e\n",
+            "No module named 'no_such_module'",
+        ),
+    ],
+)
+def test_bootstrap_cli_shortens_experiment_import_errors(
+    monkeypatch, tmp_path, capsys, source, expected
+):
+    monkeypatch.delenv("PSYNET_SHOW_TRACEBACK", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        _run_cli_importing(monkeypatch, tmp_path, source)
+    err = capsys.readouterr().err
+    assert exc.value.code == 1
+    assert "error in experiment.py" in err
+    assert expected in err
+    assert "bootstrap_cli.py" not in err
+
+
+def test_bootstrap_cli_names_the_experiment_module_that_failed(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.delenv("PSYNET_SHOW_TRACEBACK", raising=False)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "broken_helper.py").write_text("x = 1\ny = Timline\n")
+    with pytest.raises(SystemExit):
+        _run_cli_importing(monkeypatch, tmp_path, "import broken_helper\n")
+    err = capsys.readouterr().err
+    assert "error in broken_helper.py" in err
+    assert "import broken_helper" in err
+
+
+def test_bootstrap_cli_does_not_shorten_runtime_errors(monkeypatch, tmp_path):
+    with pytest.raises(ZeroDivisionError):
+        _run_cli_importing(
+            monkeypatch, tmp_path, "def run():\n    return 1 / 0\n", then_call="run"
+        )
+
+
+def test_bootstrap_cli_shows_full_traceback_on_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("PSYNET_SHOW_TRACEBACK", "1")
+    with pytest.raises(NameError):
+        _run_cli_importing(monkeypatch, tmp_path, "x = Timline\n")
 
 
 def test_runtime_initialization_retries_after_failure(monkeypatch):

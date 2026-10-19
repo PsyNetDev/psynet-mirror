@@ -6,7 +6,7 @@ state, and can start Docker containers that publish the host ports PsyNet
 debug expects.
 
 Probes intentionally avoid requiring ``psycopg2`` or the ``redis`` package so
-the thin bootstrap CLI can keep core dependencies click-only. Redis is checked
+the thin bootstrap CLI can keep its core dependencies minimal. Redis is checked
 with a stdlib RESP ``PING``. PostgreSQL prefers an installed ``psycopg2`` when
 present (after ``psynet[experiment]``), otherwise ``pg_isready``, otherwise a
 stdlib startup-protocol fingerprint. That fingerprint only verifies the peer

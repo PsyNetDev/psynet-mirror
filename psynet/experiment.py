@@ -1050,6 +1050,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.var.label = self.label
         self.var.git_commit_sha = deployment_info.read("git_commit_sha")
         self.var.git_dirty = deployment_info.read("git_dirty")
+        self.var.git_dirty_paths = deployment_info.read_all().get("git_dirty_paths")
         if deployment_info.read("is_local_deployment"):
             # This is necessary because the local deployment command is blocking and therefore we can't
             # get the launch data from the command-line invocation.
@@ -7247,8 +7248,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             return
         extra_deps = self.notifier.python_dependencies
-        with open("constraints.txt", "r") as f:
-            constraints = f.readlines()
+        if not extra_deps:
+            return
+        constraints_path = Path("constraints.txt")
+        constraints = (
+            constraints_path.read_text().splitlines()
+            if constraints_path.exists()
+            else []
+        )
         for dep in extra_deps:
             self.check_python_dependency(dep, constraints)
 
