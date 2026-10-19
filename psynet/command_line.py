@@ -1499,7 +1499,7 @@ def _stop_child_processes_on_signal():
 
 
 def _reloader_exclude_patterns():
-    """Return reloader exclusions for the demos, tests and docs of source checkouts.
+    """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
 
     Flask's reloader watches every ``.py`` file under each non-system
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
