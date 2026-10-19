@@ -144,3 +144,16 @@ def test_the_shared_redis_server_is_listed_once():
         pytest.skip("no Redis server on localhost:6379")
     servers = find_redis_servers(ports={6379})
     assert [s.port for s in servers].count(6379) == 1
+
+
+def test_services_list_reports_a_database_server_it_cannot_reach(monkeypatch):
+    from click.testing import CliRunner
+
+    from psynet.command_line import psynet
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger:dallinger@127.0.0.1:1/x")
+    result = CliRunner().invoke(psynet, ["services", "list"])
+    assert result.exit_code == 0, result.output
+    sections = ["Sessions", "Redis servers:", "Databases:", "could not list them"]
+    positions = [result.output.index(section) for section in sections]
+    assert positions == sorted(positions)

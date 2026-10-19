@@ -26,6 +26,7 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import stat
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -259,11 +260,14 @@ def find_databases():
 
 def _port_is_claimed(port):
     """Return whether a session holds the lock of ``port``."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
-        lock = os.fdopen(os.open(port_lock_path(port), os.O_RDONLY | os.O_NOFOLLOW))
+        lock = os.fdopen(os.open(port_lock_path(port), flags))
     except OSError:
         return False
     with lock:
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            return False
         try:
             fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         except OSError:

@@ -88,7 +88,7 @@ test at once, or to debug twice, use a separate copy (such as a git worktree)
 of the experiment.
 
 ``psynet services list`` shows which ports, databases and Redis servers the
-sessions running on your machine already use.
+sessions you are running already use.
 
 Set a breakpoint
 ----------------
