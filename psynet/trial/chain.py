@@ -96,7 +96,7 @@ def _count_viable_trials_for_nodes(node_ids: Iterable[int]) -> dict[int, int]:
     if not ids:
         return {}
     rows = (
-        db.session.query(Trial.node_id, func.count(Trial.id))
+        db.session.query(Trial.node_id, func.count())
         .filter(
             Trial.node_id.in_(ids),
             Trial.is_repeat_trial.is_(False),
@@ -216,11 +216,34 @@ def _uses_planned_order(setting):
     return any(_is_planned_order(value) for value in _order_setting_values(setting))
 
 
+def _network_needs_trials(network):
+    """Return whether a busy network will still need trials once it is free.
+
+    The in-memory form of the check in
+    :meth:`ChainTrialMaker._busy_candidates_need_trials`.
+    """
+    head = network.head
+    if network.async_post_grow_network_pending or (
+        head is not None and head.async_on_deploy_pending
+    ):
+        return True
+    return (
+        head is not None
+        and bool(head.can_spawn)
+        and (network.max_size is None or head.degree + 1 < network.max_size)
+    )
+
+
 def _viable_trial_count_expression(node_id):
-    """Return a correlated expression counting viable trials for a node ID."""
+    """Return a correlated expression counting viable trials for a node ID.
+
+    ``count(*)`` keeps the count answerable from ``ix_trial_viable_node_id``
+    alone; balanced selection evaluates it once per candidate node.
+    """
 
     return (
-        select(func.count(Trial.id))
+        select(func.count())
+        .select_from(Trial)
         .where(
             Trial.node_id == node_id,
             Trial.is_repeat_trial.is_(False),
@@ -365,9 +388,6 @@ class ChainNetwork(TrialNetwork):
     target_n_trials : int or None
         Indicates the target number of trials for that network.
         Left empty by default, but can be set by custom ``__init__`` functions.
-
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
 
     var : :class:`~psynet.field.VarStore`
         A repository for arbitrary variables; see :class:`~psynet.field.VarStore` for details.
@@ -984,7 +1004,7 @@ class ChainNode(TrialNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment
@@ -1189,9 +1209,6 @@ class ChainTrial(Trial):
         The user should not typically change this directly.
         Stored in ``details`` in the database.
 
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
-
     propagate_failure : bool
         Whether failure of a trial should be propagated to other
         parts of the experiment depending on that trial
@@ -1283,6 +1300,12 @@ class ChainTrialMakerState(NetworkTrialMakerState):
     # block's order is "listed" or a callable; None otherwise.
     planned_network_ids = Column(PythonList)
     plan_position = Column(Integer)
+    # Blocks the participant finished early because every eligible chain or
+    # node was busy, one still needed trials, and wait_for_networks=False;
+    # performance tests report it.
+    blocks_ended_busy = Column(Integer, default=0)
+    # Set during one selection when discovery found every candidate busy.
+    _candidates_were_busy = False
 
     @property
     def block(self):
@@ -1474,7 +1497,7 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     wait_for_networks
         If ``True``, then the participant will be made to wait if there are
-        still more networks to participate in, but these networks are pending asynchronous processes.
+        still more networks to participate in, but these networks are pending async jobs.
 
     allow_revisiting_networks_in_across_chains : bool
         If this is set to ``True``, then participants can revisit the same network
@@ -1538,7 +1561,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -1561,7 +1586,7 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
     """
 
@@ -2213,7 +2238,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Find eligible chains for the participant's next trial.
 
         This method applies PsyNet's built-in eligibility checks (the
-        participant's current block, capacity, asynchronous processes, and
+        participant's current block, capacity, async jobs, and
         :meth:`~psynet.trial.chain.ChainTrialMaker.custom_chain_filter`).
         Override ``select_chain`` to change which eligible chain is assigned.
         To wait, exit, or drop candidates after those built-in checks, override
@@ -2377,13 +2402,16 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._warn_if_many_candidates(len(networks))
         return [self._candidate_value(network) for network in networks]
 
-    def _when_candidates_are_busy(self, participant, experiment):
+    def _when_candidates_are_busy(self, participant, experiment, busy_networks=None):
         """Decide between waiting and finishing the block when every candidate is busy.
 
-        Candidates are busy when they await an asynchronous process or, in
+        Candidates are busy when they await an async job or, in
         chains, have no trial capacity left for now. A participant committed
         to one chain or planned node waits for it; otherwise
-        ``wait_for_networks`` decides.
+        ``wait_for_networks`` decides. Finishing the block is noted for
+        :meth:`_select_in_block` if a busy candidate still needs trials (see
+        :meth:`_busy_candidates_need_trials`). ``busy_networks`` are the busy
+        candidates' networks when discovery loaded them for a Python filter.
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
@@ -2398,7 +2426,52 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._candidate_label,
             state.block,
         )
+        # Assigned rather than set, because a Python filter's discovery can
+        # reach here twice, first with a partial pool and then with every
+        # candidate.
+        state._candidates_were_busy = self._busy_candidates_need_trials(
+            participant, experiment, busy_networks
+        )
         return []
+
+    def _note_candidates_busy(self, participant):
+        """Note that discovery found every candidate busy, for :meth:`_select_in_block`.
+
+        The note lives on the module state for this request only. The block
+        counts towards ``blocks_ended_busy`` only if it then finishes, so an
+        overridden ``find_chains`` or ``find_nodes`` that returns ``"wait"``
+        instead does not.
+        """
+        participant.module_state._candidates_were_busy = True
+
+    def _busy_candidates_need_trials(self, participant, experiment, busy_networks=None):
+        """Return whether a busy candidate will still need trials once it is free.
+
+        A candidate awaiting an asynchronous process does. One that is only
+        out of trial capacity does unless its head is the chain's last node
+        to take trials, since once those trials finish the chain is full:
+        near the end of data collection the participant would get nothing
+        from it anyway.
+
+        With ``busy_networks``, the networks that passed the Python filter,
+        they are checked in memory, so chains the filter rejected don't count.
+        Otherwise discovery applied no Python filter, and the SQL candidate
+        query is the participant's whole eligibility; an overridden
+        ``find_chains`` only sees the empty result, not the busy chains.
+        """
+        if busy_networks is not None:
+            return any(_network_needs_trials(n) for n in busy_networks)
+        network, node = self.network_class, self.node_class
+        still_growing = and_(
+            node.can_spawn.is_(True),
+            or_(network.max_size.is_(None), node.degree + 1 < network.max_size),
+        )
+        busy_with_demand = and_(
+            not_(self._candidate_is_available()),
+            or_(not_(self._candidate_is_not_pending()), still_growing),
+        )
+        query = self._candidate_query(participant, experiment).filter(busy_with_demand)
+        return db.session.query(query.exists()).scalar()
 
     def _focus_network_id(self, state):
         """Return the network the participant is committed to in this block, if any."""
@@ -2464,7 +2537,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         return self._filter_candidate_query(query, participant, experiment)
 
     def _candidate_is_not_pending(self):
-        """Return a SQL condition for candidates not awaiting an asynchronous process."""
+        """Return a SQL condition for candidates not awaiting an async job."""
         return and_(
             # The pending flags are nullable; NULL means not pending.
             self.network_class.async_post_grow_network_pending.is_not(True),
@@ -2635,7 +2708,11 @@ class ChainTrialMaker(NetworkTrialMaker):
         if selectable:
             return selectable
         if candidates:
-            return self._when_candidates_are_busy(participant, experiment)
+            return self._when_candidates_are_busy(
+                participant,
+                experiment,
+                busy_networks=[candidate.network for candidate in candidates],
+            )
         return []
 
     def _warn_if_many_candidates(self, n_candidates):
@@ -2731,6 +2808,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             and self._focus_network_id(state) is None
         ):
             return None
+        state._candidates_were_busy = False
         if self._uses_list_selection_hooks():
             discovered = getattr(self, self._find_hook_name)(participant, experiment)
         else:
@@ -2750,6 +2828,12 @@ class ChainTrialMaker(NetworkTrialMaker):
                 "'wait', or 'exit'; it must not return None"
             )
         if not discovered:
+            if state._candidates_were_busy:
+                # Sync-group followers copy the leader's decision.
+                for member_state in self._group_states(participant):
+                    member_state.blocks_ended_busy = (
+                        member_state.blocks_ended_busy or 0
+                    ) + 1
             return None
         selection = self._coerce_selection(
             getattr(self, self._select_hook_name)(discovered, participant, experiment),

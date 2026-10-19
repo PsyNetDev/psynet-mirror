@@ -34,10 +34,15 @@ deployed, use ``psynet debug local --docker``.
 Run several experiments at once
 -------------------------------
 
-By default every local experiment uses port 5000, the ``dallinger``
+``psynet test local`` runs in its own database, Redis server and port
+automatically, so you can run tests while ``psynet debug local`` is serving
+another experiment, and run several test sessions at once.
+
+By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
-``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
-another one alongside it, for example when several coding agents test
+``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. To run
+another alongside it, for example when several coding agents test
 different experiments on one machine, give the second terminal its own
 database, Redis server, port and development folder:
 
@@ -51,8 +56,10 @@ database, Redis server, port and development folder:
     export base_port=5010
     export dallinger_develop_directory=/tmp/dallinger_develop_2
 
-``psynet debug local`` and ``psynet test local`` in that terminal then serve
-on port 5010 and leave the other experiment's processes and browsers alone.
+``psynet debug local`` in that terminal then serves on port 5010 and leaves
+the other experiment's processes and browsers alone. Change all four
+settings: the startup check only catches a shared port or database, and two
+runs that share a development folder overwrite each other's files.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two
@@ -60,8 +67,9 @@ experiments sharing one would wake each other's participants.
 
 Two runs in the same experiment directory still conflict, because each
 creates and removes generated files there. Tests wait for each other
-automatically; for ``psynet debug local``, use a separate copy (such as a git
-worktree) of the experiment.
+automatically and refuse to start while ``psynet debug`` serves the same
+directory; to debug and test at once, or to debug twice, use a separate copy
+(such as a git worktree) of the experiment.
 
 Set a breakpoint
 ----------------
@@ -96,6 +104,13 @@ Errors appear in the terminal running ``psynet debug local``, with a
 traceback showing where they happened. If the traceback ends in PsyNet code,
 read that part of the PsyNet source to see what it expected. A breakpoint
 just before the failing line shows the values of the local variables.
+
+If ``experiment.py`` or a module it imports fails to load, PsyNet prints a
+shorter traceback: the lines from your experiment folder, plus the line where
+the error was raised. To see the full traceback, run the command again with
+``PSYNET_SHOW_TRACEBACK=1`` (any value other than ``0``, ``false`` or ``no``
+works), for example
+``PSYNET_SHOW_TRACEBACK=1 psynet debug local``.
 
 If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the

@@ -34,7 +34,7 @@ Benchmarks are split by directory:
   damp that noise. Because the ``master`` job is allowed to fail (see below),
   slow-tier results are tracked in the published history rather than gating
   merges. The slow ASV history focuses on median request latency and median
-  async-process queue delay; participant failures and incomplete bots are left
+  async-job queue delay; participant failures and incomplete bots are left
   in the performance-test output instead of being tracked as ASV metrics.
 
 Merge-request checks
@@ -48,7 +48,9 @@ non-zero when ASV detects a regression larger than ``--factor 1.25``. Docs,
 changelog, and skill-only merge requests skip this job. Merge-train pipelines
 also skip it when the merge request's last merged-results pipeline passed it
 on identical files, because it would benchmark the same two commits again;
-see :doc:`running_tests`.
+see :doc:`running_tests`. Merge requests stacked on another feature branch
+(whose target is neither ``master`` nor a ``release-`` branch) offer the job
+as a manual action instead of running it.
 
 Export performance is not included in the ASV suite. End-to-end exports depend
 on mutable database fixtures, filesystem caches, and subprocess startup, which

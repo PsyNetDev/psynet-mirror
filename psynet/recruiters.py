@@ -331,6 +331,34 @@ def configured_recruiter_class(config=None):
     return dallinger.recruiters.MTurkRecruiter
 
 
+def recruits_real_participants(config=None):
+    """Return why the configured recruitment may bring real participants, or ``None``.
+
+    Live mode and any recruiter other than the test ones (development and
+    mock recruiters, Hot Air, generic, bots and simulated participants) may
+    bring real participants.
+    """
+    config = config or get_config()
+    if config.get("mode", None) == "live":
+        return "the experiment runs in live mode"
+    recruiter_class = configured_recruiter_class(config)
+    if recruiter_class is None:
+        return "the experiment's recruiter could not be identified"
+    if issubclass(
+        recruiter_class,
+        (
+            DevRecruiter,
+            MockRecruiter,
+            dallinger.recruiters.HotAirRecruiter,
+            dallinger.recruiters.BotRecruiter,
+            dallinger.recruiters.SimulatedRecruiter,
+            GenericRecruiter,
+        ),
+    ):
+        return None
+    return f"the experiment recruits with {recruiter_class.__name__}"
+
+
 def _abandon_overdue_participants(participants):
     """Mark participants abandoned from Dallinger's clock and commit.
 

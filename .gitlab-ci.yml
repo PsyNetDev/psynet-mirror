@@ -50,7 +50,7 @@ variables:
   REDIS_URL: redis://redis:6379
   HEADLESS: "TRUE"
   DOCKER_LOCAL_TAG: psynet-build
-  PYTHON_VERSION: "3.13"
+  PYTHON_VERSION: "3.14"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
@@ -72,7 +72,7 @@ before_script: &docker_setup
 # and never to jobs that publish or deploy. Master push pipelines still run
 # everything, so they catch that drift and keep a full record of each merge.
 check_already_tested:
-  image: python:3.13-alpine
+  image: python:3.14-alpine
   stage: .pre
   services: []
   before_script: []
@@ -86,6 +86,18 @@ check_already_tested:
     - if: $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"
       when: always
     - when: never
+
+# Merge requests stacked on another feature branch get pushed often and are
+# fully tested again once retargeted to the default branch, so they run only
+# the fast checks and offer the expensive jobs as manual actions. Put this
+# rule before any rule that would run an expensive job (first match wins),
+# with the job's `changes` list if it has one, so stacked MRs offer only the
+# jobs that would otherwise run. allow_failure keeps unplayed manual jobs from
+# blocking the pipeline and the merge. Merge trains keep their usual jobs.
+.stacked_mr_manual_rule: &stacked_mr_manual
+  if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE != "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME != $CI_DEFAULT_BRANCH && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME !~ /^release-/
+  when: manual
+  allow_failure: true
 
 # The nightly benchmark schedule sets NIGHTLY_BENCHMARKS=1. Its pipelines only
 # run `asv_benchmarks` (and `pages`, which republishes the results), so every
@@ -114,10 +126,8 @@ check_already_tested:
 # exclude paths, so "everything except docs/" cannot be written instead.
 .docker_test_rules: &docker_test_rules
   rules:
-    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
-      when: never
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
+    - <<: *stacked_mr_manual
+      changes: &docker_test_changes
         - .gitlab-ci.yml
         - .cursor/skills/experiment/**/*
         - Dockerfile
@@ -141,6 +151,10 @@ check_already_tested:
         - run-ci-tests.sh
         - scripts/**/*
         - tests/**/*
+    - if: $NIGHTLY_BENCHMARKS == "1" || $WEEKLY_LINKCHECK == "1"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: *docker_test_changes
       when: always
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: never
@@ -152,7 +166,7 @@ check_already_tested:
       when: always
 
 pre_commit:
-  image: python:3.13
+  image: python:3.14
   <<: *default_rules
   services: []
   before_script:
@@ -161,7 +175,7 @@ pre_commit:
     - pre-commit run --all-files
 
 validate_agent_skills:
-  image: python:3.13
+  image: python:3.14
   <<: *default_rules
   services: []
   before_script:
@@ -170,7 +184,7 @@ validate_agent_skills:
     - python scripts/validate_agent_skills.py
 
 changelog_check:
-  image: python:3.13
+  image: python:3.14
   stage: test
   services: []
   # Importing ``psynet.dev.changelog`` from the checkout needs only ``click``
@@ -255,25 +269,25 @@ changelog_check:
     paths:
       - public/
 
-tests_python_3_13:
+tests_python_3_14:
   extends: .test_suite
   # Stated explicitly rather than inherited from the global default, so this
-  # job keeps testing 3.13 even if the default Python version changes.
+  # job keeps testing 3.14 even if the default Python version changes.
   variables:
-    PYTHON_VERSION: "3.13"
+    PYTHON_VERSION: "3.14"
 
-# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.14) are
+# To reduce CI cost, non-recommended Python versions (3.11, 3.12, 3.13) are
 # only verified on release branches: day-to-day MRs rarely affect version
 # compatibility. Note that regular pipelines validate dependency resolution
 # only for the default Python version (via the Docker build's `uv pip
 # compile`); all supported versions are resolution-checked when maintainers
 # run `psynet dev ci update-dallinger-constraints`, and fully tested on
 # release-branch pipelines.
-tests_python_3_14:
+tests_python_3_13:
   extends: .test_suite
   <<: *release_branch_only
   variables:
-    PYTHON_VERSION: "3.14"
+    PYTHON_VERSION: "3.13"
     SKIP_PYTHON_VERSION_CHECK: "1"
 
 # GitLab does not allow combining `parallel: N` with a matrix, so the shard is
@@ -339,16 +353,16 @@ playwright_e2e_default:
     PLAYWRIGHT_GREP: "@both|@inplace-only"
 
 merge_test_results:
-  image: python:3.13-alpine
+  image: python:3.14-alpine
   stage: test
   # Must match the jobs it needs, or skipped test jobs break pipeline creation.
   <<: *docker_test_rules
   services: []
   needs:
-    - "tests_python_3_13"
-    # tests_python_3_14 and compatibility_tests only exist on
+    - "tests_python_3_14"
+    # tests_python_3_13 and compatibility_tests only exist on
     # release-branch pipelines.
-    - job: "tests_python_3_14"
+    - job: "tests_python_3_13"
       optional: true
     - job: "compatibility_tests"
       optional: true
@@ -507,14 +521,16 @@ asv_regression:
       when: never
     # Fast ASV only measures PsyNet hot paths. Skip the job when the MR
     # cannot change those results.
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      changes:
+    - <<: *stacked_mr_manual
+      changes: &asv_regression_changes
         - psynet/**/*
         - benchmarks/**/*
         - asv.conf.json
         - pyproject.toml
         - Dockerfile
         - .gitlab-ci.yml
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: *asv_regression_changes
       when: always
     - when: never
 
@@ -553,7 +569,7 @@ benchmark_load_sweep:
 # Shared setup for docs CI. Replaces the global Docker before_script
 # and opts out of Docker-in-Docker, Postgres, and Redis.
 .docs_ci:
-  image: python:3.13
+  image: python:3.14
   stage: test
   <<: *default_rules
   services: []
@@ -568,6 +584,9 @@ benchmark_load_sweep:
 # branch and release tags.
 docs:
   extends: .docs_ci
+  rules:
+    - *stacked_mr_manual
+    - !reference [.default_rules, rules]
   script:
     - psynet dev docs make --strict
     - psynet dev docs linkcheck --no-clean
@@ -604,7 +623,7 @@ docs_linkcheck_strict:
 # wrapper that supplies the image, cache, artifacts, and rules.
 # ``services: []`` opts out of Docker-in-Docker, Postgres, and Redis.
 pages:
-  image: python:3.13
+  image: python:3.14
   stage: deploy
   variables:
     # Single absolute URL so every versioned subdir loads the same JSON.

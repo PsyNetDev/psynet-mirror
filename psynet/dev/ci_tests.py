@@ -14,8 +14,9 @@ Two things make this faster than running items one after another:
   local PsyNet environment: its own Postgres database, Redis server, web
   port and Dallinger develop directory. A Redis server (not just a database
   number) is needed because Redis pub/sub channels are shared across
-  database numbers. Slot 0 uses the caller's environment unchanged, so
-  ``--slots 1`` behaves like a plain serial run.
+  database numbers. Slot 0 uses the caller's environment, so ``--slots 1``
+  behaves like a plain serial run (outside CI, its pytest sessions still
+  isolate themselves; see :mod:`psynet.isolated_environment`).
 
 Items that share an experiment directory are serialized by
 :func:`psynet.testing.locks.experiment_directory_lock`.
@@ -43,10 +44,10 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
 import click
 
+from psynet.isolated_environment import IsolatedEnvironment, IsolationError
 from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
@@ -147,108 +148,32 @@ def load_durations():
 
 
 class _Slot:
-    """An isolated local environment (database, Redis, port) for one worker."""
+    """An isolated local environment (database, Redis, port) for one worker.
 
-    def __init__(self, index, workspace):
+    Slots other than 0 claim their port with the same lock as other isolated
+    sessions, so they never collide with a test session or debug server.
+    """
+
+    def __init__(self, index):
         self.index = index
-        self.env = dict(os.environ)
-        self._redis = None
-        self._redis_log = None
+        self._environment = None
         if index == 0:
+            self.env = dict(os.environ)
             return
-
-        database_url = os.environ.get(
-            "DATABASE_URL", "postgresql://dallinger:dallinger@localhost/dallinger"
-        )
-        base_port, redis_port = _slot_ports(
-            _caller_base_port(), os.environ.get("REDIS_URL", ""), index
-        )
-        self.env["DATABASE_URL"] = _create_slot_database(database_url, index)
-        self.env["REDIS_URL"] = self._start_redis(redis_port, workspace)
-        self.env["base_port"] = str(base_port)
-        self.env["dallinger_develop_directory"] = (
-            f"/tmp/dallinger_develop_{base_port}_slot{index}"
-        )
-
-    def _start_redis(self, port, workspace):
         if shutil.which("redis-server") is None:
             raise click.ClickException(
                 "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
             )
-        self._redis_log = open(workspace / f"redis_slot{self.index}.log", "w")
-        self._redis = subprocess.Popen(
-            ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
-            + ["--dir", str(workspace), "--dbfilename", f"redis_slot{self.index}.rdb"]
-            + ["--save", "", "--appendonly", "no"],
-            stdout=self._redis_log,
-            stderr=subprocess.STDOUT,
-        )
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            probe = subprocess.run(
-                ["redis-cli", "-p", str(port), "ping"], capture_output=True, text=True
-            )
-            if probe.stdout.strip() == "PONG":
-                return f"redis://127.0.0.1:{port}"
-            time.sleep(0.2)
-        self.close()
-        raise click.ClickException(f"Redis for slot {self.index} did not start.")
+        try:
+            self._environment = IsolatedEnvironment.start()
+        except IsolationError as e:
+            raise click.ClickException(f"Slot {index}: {e}") from e
+        self.env = self._environment.env
 
     def close(self):
-        if self._redis is not None:
-            self._redis.terminate()
-            try:
-                self._redis.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._redis.kill()
-                self._redis.wait()
-            self._redis = None
-        if self._redis_log is not None:
-            self._redis_log.close()
-            self._redis_log = None
-
-
-def _caller_base_port():
-    """Return the caller's ``base_port``, from the environment or Dallinger's config files."""
-    if "base_port" in os.environ:
-        return int(os.environ["base_port"])
-    from dallinger.config import get_config
-
-    config = get_config()
-    if not config.ready:
-        config.load()
-    return config.get("base_port")
-
-
-def _slot_ports(base_port, redis_url, index):
-    """Return ``(base_port, redis_port)`` for slot ``index``, offset from the caller's."""
-    redis_port = (urlsplit(redis_url).port or 6379) + 100 * index
-    return base_port + 10 * index, redis_port
-
-
-def _create_slot_database(database_url, index):
-    """Create a fresh ``<database>_slot<index>`` next to ``database_url``."""
-    import psycopg2
-    from psycopg2 import sql
-
-    parts = urlsplit(database_url)
-    name = f"{parts.path.lstrip('/') or 'dallinger'}_slot{index}"
-    connection = psycopg2.connect(database_url)
-    connection.autocommit = True
-    with connection.cursor() as cursor:
-        # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-        # `psynet services ensure` starts PostgreSQL 12.
-        cursor.execute(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = %s AND pid <> pg_backend_pid()",
-            (name,),
-        )
-        cursor.execute(
-            sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name))
-        )
-        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    connection.close()
-    return urlunsplit(parts._replace(path=f"/{name}"))
+        if self._environment is not None:
+            self._environment.close()
+            self._environment = None
 
 
 def _junit_args(item, junit_dir, python_version):
@@ -352,7 +277,7 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
     threads = []
     try:
         for index in range(n_slots):
-            slots.append(_Slot(index, log_dir))
+            slots.append(_Slot(index))
         threads = [threading.Thread(target=worker, args=(slot,)) for slot in slots]
         for thread in threads:
             thread.start()

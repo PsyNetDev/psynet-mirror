@@ -1,0 +1,1 @@
+Added `--use-local-psynet` to `psynet performance-test ssh`, which builds your editable PsyNet checkout into the app it deploys, as `psynet debug ssh --use-local-psynet` does. Use it to test bundled demos, whose `requirements.txt` doesn't pin PsyNet.

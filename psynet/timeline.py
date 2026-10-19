@@ -32,6 +32,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.collections import attribute_mapped_collection
 
 from . import templates
+from .async_job import _deprecated_async_processes
 from .data import SQLBase, SQLMixin, register_table
 from .db import forbid_commits
 from .field import PythonObject
@@ -292,6 +293,25 @@ class Trigger(dict):
         super().__init__(triggering_event=triggering_event, delay=float(delay))
 
 
+def _earliest_event_time(events, event_id, visiting=frozenset()):
+    """Return the earliest time, in seconds after the page loads, at which ``event_id`` can fire.
+
+    Unknown events, events without triggers (fired by JavaScript) and cycles
+    count as immediate.
+    """
+    event = events.get(event_id)
+    if event is None or event_id in visiting:
+        return 0.0
+    visiting = visiting | {event_id}
+    times = [
+        _earliest_event_time(events, trigger["triggering_event"], visiting)
+        + (trigger.get("delay") or 0.0)
+        for trigger in event.get("is_triggered_by") or []
+    ]
+    combine = min if event.get("trigger_condition") == "any" else max
+    return combine(times, default=0.0) + (event.get("delay") or 0.0)
+
+
 def get_template(name):
     assert isinstance(name, str)
     path_all_templates = resources.files(templates)
@@ -497,6 +517,11 @@ class AsyncCodeBlock(EltCollection):
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
+
+    priority:
+        Priority of the function's :class:`~psynet.async_job.WorkerAsyncJob`,
+        ``"high"`` or ``"low"``. Defaults to ``"high"`` if ``wait=True``,
+        because the participant is waiting for it, and ``"low"`` otherwise.
     """
 
     def __init__(
@@ -508,7 +533,14 @@ class AsyncCodeBlock(EltCollection):
         content: Optional[str] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
+        priority: Optional[str] = None,
     ):
+        from psynet.async_job import check_priority
+
+        if priority is None:
+            priority = "high" if wait else "low"
+        check_priority(priority)
+
         if is_lambda_function(function):
             raise ValueError(
                 "Asynchronous code blocks require named functions rather than lambda functions."
@@ -532,6 +564,7 @@ class AsyncCodeBlock(EltCollection):
         self.content = content
         self.max_wait_time = max_wait_time
         self.on_timeout = on_timeout
+        self.priority = priority
 
     def resolve(self):
         return join(
@@ -541,55 +574,56 @@ class AsyncCodeBlock(EltCollection):
         )
 
     def initiate(self, participant, code_block):
-        from psynet.process import WorkerAsyncProcess
+        from psynet.async_job import WorkerAsyncJob
 
         code_block_id = code_block.id
-        stale = participant.awaited_async_code_block_process
+        stale = participant.awaited_async_code_block_job
         if stale is not None:
             if stale.pending and not stale.failed:
-                if self.wait and self.matches_pending_process(stale, code_block_id):
+                if self.wait and self.matches_pending_job(stale, code_block_id):
                     logger.warning(
-                        "Participant %s already has an async code block process "
-                        "(id=%s) pending; waiting for the existing process instead "
+                        "Participant %s already has an async code block job "
+                        "(id=%s) pending; waiting for the existing job instead "
                         "of starting a duplicate.",
                         participant.id,
                         stale.id,
                     )
                     return
                 raise RuntimeError(
-                    "Participant already has an async code block process pending, this shouldn't happen."
+                    "Participant already has an async code block job pending, this shouldn't happen."
                 )
-            # The previous process finished (successfully or with failure) but its
+            # The previous job finished (successfully or with failure) but its
             # ``wrap_up`` was never executed -- e.g. the participant was rerouted
             # off the wait page (back button, dashboard force_advance, recruiter
             # rejection flow re-entering an AsyncCodeBlock, ...). Rather than
             # leaving the participant permanently stuck, clear the stale
-            # reference and start a fresh process.
+            # reference and start a fresh job.
             logger.warning(
-                "Participant %s already had a %s async code block process "
+                "Participant %s already had a %s async code block job "
                 "(id=%s) attached when initiating a new one; clearing the "
                 "stale reference and continuing.",
                 participant.id,
                 "failed" if stale.failed else "finished",
                 stale.id,
             )
-            participant.awaited_async_code_block_process = None
+            participant.awaited_async_code_block_job = None
 
-        participant.awaited_async_code_block_process = WorkerAsyncProcess(
+        participant.awaited_async_code_block_job = WorkerAsyncJob(
             call_function_with_context,
             label="AsyncCodeBlock",
             participant=participant,
+            priority=self.priority,
             arguments=dict(
                 function=self.function,
                 participant=participant,
                 code_block_id=code_block_id,
             ),
-        )
+        ).enqueue()
 
-    def matches_pending_process(self, process, code_block_id):
+    def matches_pending_job(self, job, code_block_id):
         try:
-            pending_function = process.arguments["function"]
-            pending_code_block_id = process.arguments["code_block_id"]
+            pending_function = job.arguments["function"]
+            pending_code_block_id = job.arguments["code_block_id"]
         except (KeyError, TypeError):
             return False
 
@@ -607,7 +641,7 @@ class AsyncCodeBlock(EltCollection):
 
         return join(
             wait_while(
-                condition=lambda participant: not self.process_is_finished(participant),
+                condition=lambda participant: not self.job_is_finished(participant),
                 expected_wait=self.expected_wait,
                 check_interval=self.check_interval,
                 max_wait_time=self.max_wait_time,
@@ -625,20 +659,20 @@ class AsyncCodeBlock(EltCollection):
 
         A failed function has already been reported through ``handle_error``.
         """
-        process = participant.awaited_async_code_block_process
-        if process is not None and (process.finished or process.failed):
+        job = participant.awaited_async_code_block_job
+        if job is not None and (job.finished or job.failed):
             return
         call_function_with_context(self.on_timeout, participant=participant)
 
-    def process_is_finished(self, participant):
-        process = participant.awaited_async_code_block_process
-        if process.failed:
-            raise RuntimeError("The awaited async code block process failed.")
-        assert process.finished or process.pending
-        return process.finished
+    def job_is_finished(self, participant):
+        job = participant.awaited_async_code_block_job
+        if job.failed:
+            raise RuntimeError("The awaited async code block job failed.")
+        assert job.finished or job.pending
+        return job.finished
 
     def wrap_up(self, participant):
-        participant.awaited_async_code_block_process = None
+        participant.awaited_async_code_block_job = None
 
 
 class StartFixElt(Elt):
@@ -1338,9 +1372,12 @@ class Page(Elt):
         or by calling `psynet.trial.registerEvent("trialPrepare")` in JS).
 
     bot_response
-        Optional function to call when this page is consumed by a bot.
-        This will override any ``bot_response`` function specified in the class's
-        ``bot_response`` method.
+        Optional fixed answer, function, or :class:`~psynet.bot.BotResponse` defining how bots
+        respond to this page, in the same forms as for :class:`~psynet.modular_page.Control`.
+        If set, it overrides the page's :meth:`~psynet.timeline.Page.get_bot_response` method
+        (and, on a :class:`~psynet.modular_page.ModularPage`, the control's bot response).
+        ``bot_response=None`` makes bots submit an answer of ``None``;
+        leave it unset to use the default bot response.
 
     validate
         Optional validation function to use for the participant's response.
@@ -1706,6 +1743,19 @@ class Page(Elt):
             "trialStop": Event(is_triggered_by=None),  # only called at premature end
             "trialStopped": Event(is_triggered_by="trialStop"),
         }
+
+    @property
+    def min_duration(self):
+        """Return the shortest time, in seconds, before a participant can submit this page.
+
+        This is the earliest time at which the page's ``submitEnable`` event can
+        fire, following the delays of its triggers (see :class:`Event`), for
+        example a recording's duration or an audio meter's ``min_time``.
+        Events that only the page's JavaScript fires, such as the end of a
+        media prompt, count as immediate, so this is a lower bound. Bots that
+        simulate page times (``time_factor`` above 0) never submit sooner.
+        """
+        return _earliest_event_time(self.events, "submitEnable")
 
     def __json__(self, participant):
         return {
@@ -3041,7 +3091,8 @@ class Response(_Response):
     def metadata(self, metadata):
         self.metadata_ = metadata
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
     # assets = relationship(
     #     "Asset", collection_class=attribute_mapped_collection("label_or_key")
     # )

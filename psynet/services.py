@@ -6,7 +6,7 @@ state, and can start Docker containers that publish the host ports PsyNet
 debug expects.
 
 Probes intentionally avoid requiring ``psycopg2`` or the ``redis`` package so
-the thin bootstrap CLI can keep core dependencies click-only. Redis is checked
+the thin bootstrap CLI can keep its core dependencies minimal. Redis is checked
 with a stdlib RESP ``PING``. PostgreSQL prefers an installed ``psycopg2`` when
 present (after ``psynet[experiment]``), otherwise ``pg_isready``, otherwise a
 stdlib startup-protocol fingerprint. That fingerprint only verifies the peer
@@ -39,6 +39,9 @@ _REDIS_CONTAINER = "dallinger_redis"
 _POSTGRES_CONTAINER = "dallinger_postgres"
 _READY_WAIT_SECONDS = 30
 _READY_POLL_INTERVAL_SECONDS = 0.5
+#: Set for a command that a parent process re-runs after checking the services
+#: it points the command at, so that the command doesn't check them again.
+SERVICES_CHECKED_ENV_VAR = "_PSYNET_LOCAL_SERVICES_CHECKED"
 
 
 @dataclass(frozen=True)
@@ -312,11 +315,18 @@ def report_service_checks(checks: list[ServiceCheck]) -> bool:
     return all_ok
 
 
-def _missing_services_message(checks: list[ServiceCheck]) -> str:
+def _missing_services_message(
+    checks: list[ServiceCheck], *, remote_launch: bool = False
+) -> str:
     missing = [check.name for check in checks if not check.ok]
     names = " and ".join(missing)
+    purpose = (
+        "on this computer to prepare a remote launch"
+        if remote_launch
+        else "for local PsyNet experiments"
+    )
     return (
-        f"{names} must be running for local PsyNet experiments.\n\n"
+        f"{names} must be running {purpose}.\n\n"
         "Start them with Docker:\n"
         "  psynet services ensure\n\n"
         "Or install/start PostgreSQL and Redis on this machine, then re-run:\n"
@@ -429,6 +439,10 @@ def start_local_services_via_docker() -> None:
             "-v",
             "dallinger_postgres:/var/lib/postgresql/data",
             "postgres:12",
+            # Matches Dallinger's Docker PostgreSQL: JIT slows experiments' short queries.
+            "postgres",
+            "-c",
+            "jit=off",
         ],
     )
 
@@ -469,7 +483,9 @@ def verify_local_services(*, strict: bool) -> bool:
     return False
 
 
-def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> bool:
+def ensure_local_services(
+    *, assume_yes: bool = False, strict: bool = True, remote_launch: bool = False
+) -> bool:
     """Check local services and optionally start them with Docker.
 
     Parameters
@@ -478,8 +494,22 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
         If True, start Docker services without prompting when needed.
     strict :
         If True, raise when services remain unavailable after any start attempt.
+    remote_launch :
+        If True, explain that the services prepare a remote launch rather
+        than run the experiment locally.
     """
-    click.echo("Checking local PostgreSQL and Redis...")
+    from .isolated_environment import READY_ENV_VAR
+
+    # Only within an isolated session, so a stray export can't hide stopped services.
+    if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
+        return True
+    if remote_launch:
+        click.echo(
+            "Checking PostgreSQL and Redis on this computer "
+            "(needed to prepare the remote launch)..."
+        )
+    else:
+        click.echo("Checking local PostgreSQL and Redis...")
     checks = check_local_services()
     all_ok = report_service_checks(checks)
     if all_ok:
@@ -488,7 +518,7 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
     if not assume_yes:
         if not _is_interactive():
             message = (
-                _missing_services_message(checks)
+                _missing_services_message(checks, remote_launch=remote_launch)
                 + "\n\nNon-interactive session: re-run with "
                 "'psynet services ensure --yes' to start Docker services "
                 "without prompting."
@@ -501,7 +531,7 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
             "Start PostgreSQL and Redis with Docker now?",
             default=True,
         ):
-            message = _missing_services_message(checks)
+            message = _missing_services_message(checks, remote_launch=remote_launch)
             if strict:
                 raise click.ClickException(message)
             click.echo(f"Warning: {message}", err=True)
@@ -526,7 +556,7 @@ def ensure_local_services(*, assume_yes: bool = False, strict: bool = True) -> b
         "Started Docker containers, but services are still unreachable.\n"
         "If port 5432 or 6379 is already used by another install, stop that "
         "service or point PsyNet/Dallinger at the correct URLs.\n\n"
-        + _missing_services_message(checks)
+        + _missing_services_message(checks, remote_launch=remote_launch)
     )
     if strict:
         raise click.ClickException(message)

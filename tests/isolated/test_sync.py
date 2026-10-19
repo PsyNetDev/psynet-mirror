@@ -15,6 +15,7 @@ from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.inspection import inspect as sa_inspect
 
+from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
     barrier_from_spec_json,
@@ -33,7 +34,6 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
-from psynet.process import AsyncProcess, LocalAsyncProcess, WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.serialize import SerializedCallable
 from psynet.sqlalchemy_profiling import assert_query_count
@@ -46,6 +46,7 @@ from psynet.sync import (
     GroupBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
+    SyncGroup,
     _advance_released_hold_waiters_after_commit,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
@@ -67,7 +68,7 @@ from psynet.sync import (
     check_sync_groups,
     pending_arrival_notice_for,
 )
-from psynet.timeline import Page, Timeline
+from psynet.timeline import Page, PageMaker, Response, Timeline
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -107,7 +108,7 @@ def get_random_id():
     return str(uuid.uuid4())
 
 
-def async_process_noop():
+def async_job_noop():
     return None
 
 
@@ -136,6 +137,11 @@ class RecordingBarrier(Barrier):
 class ReleaseAllBarrier(Barrier):
     def choose_who_to_release(self, waiting_participants):
         return waiting_participants
+
+
+class SpecErrorBarrier(Barrier):
+    def choose_who_to_release(self, waiting_participants):
+        raise BarrierSpecError("broken")
 
 
 class BlockingReleaseBarrier(ReleaseAllBarrier):
@@ -692,6 +698,206 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
     assert first.sync_group is not None
     assert second.sync_group.id == first.sync_group.id
     assert len(first.sync_group.participants) == 2
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_leftover_waiter_joins_an_open_group(
+    in_experiment_directory, db_session
+):
+    """A waiter left over from a burst joins the group formed without them."""
+    exp = get_experiment()
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+    participants = _working_participants(exp, 3)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    leftover = next(p for p in participants if p.sync_group is None)
+
+    check_barriers()
+
+    db_session.refresh(leftover)
+    assert grouper.can_participant_exit(leftover)
+    assert len(leftover.sync_group.participants) == 3
+
+
+@pytest.mark.parametrize("accepts_top_ups", [True, False])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_grouper_does_not_join_a_group_without_active_members(
+    in_experiment_directory, db_session, accepts_top_ups
+):
+    """A group whose members all left stays open (top-ups) or closes; neither is joined."""
+    exp = get_experiment()
+    (member,), group = _sync_group_of(exp, db_session, 1, group_type="quorum")
+    group.accepts_top_ups = accepts_top_ups
+    member.fail("left")
+    (newcomer,) = _working_participants(exp, 1)
+    grouper = SimpleGrouper(
+        group_type="quorum",
+        initial_group_size=2,
+        max_group_size=None,
+        join_existing_groups=True,
+    )
+
+    assert grouper.choose_who_to_release([newcomer]) == []
+    assert newcomer.sync_group is None
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_simultaneous_joins_do_not_overfill_a_group(
+    in_experiment_directory, db_session
+):
+    """Two participants racing for a group's last place cannot both get it."""
+    exp = get_experiment()
+    _members, group = _sync_group_of(exp, db_session, 2, group_type="top_up")
+    group.accepts_top_ups = True
+    group.max_group_size = 3
+    first, second = _working_participants(exp, 2)
+    group_id, joiner_ids = group.id, (first.id, second.id)
+    db.session.commit()
+    db.session.remove()
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=3,
+        join_existing_groups=True,
+    )
+    first_joined, first_may_commit = threading.Event(), threading.Event()
+    errors, second_pid = [], []
+
+    def join(participant_id, joined=None, may_commit=None):
+        try:
+            if joined is None:
+                second_pid.append(
+                    db.session.execute(text("SELECT pg_backend_pid()")).scalar()
+                )
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            grouper.choose_who_to_release([participant])
+            db.session.flush()
+            if joined is not None:
+                joined.set()
+                assert may_commit.wait(60)
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    racers = [
+        threading.Thread(
+            target=join, args=(joiner_ids[0], first_joined, first_may_commit)
+        ),
+        threading.Thread(target=join, args=(joiner_ids[1],)),
+    ]
+    racers[0].start()
+    assert first_joined.wait(30)
+    racers[1].start()
+    # Commit the first join only once the second has finished or is blocked on it.
+    deadline = time.monotonic() + 30
+    while racers[1].is_alive() and time.monotonic() < deadline:
+        if (
+            second_pid
+            and db.session.execute(
+                text(
+                    "SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :p"
+                ),
+                {"p": second_pid[0]},
+            ).scalar()
+        ):
+            break
+        db.session.rollback()
+        time.sleep(0.05)
+    first_may_commit.set()
+    for racer in racers:
+        racer.join(30)
+
+    assert not any(racer.is_alive() for racer in racers)
+    assert errors == []
+    group = SimpleSyncGroup.query.get(group_id)
+    assert len(group.participants) == 3
+    assert group.n_active_participants == 3
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_join_skips_a_group_that_another_request_is_changing(
+    in_experiment_directory, db_session
+):
+    """A joiner takes the next open group instead of waiting for a busy one."""
+    exp = get_experiment()
+    groups = [
+        _sync_group_of(exp, db_session, 2, group_type="top_up")[1] for _ in range(2)
+    ]
+    for group in groups:
+        group.accepts_top_ups = True
+        group.max_group_size = 3
+    (joiner,) = _working_participants(exp, 1)
+    db.session.commit()
+    busy, free = groups
+    grouper = SimpleGrouper(
+        group_type="top_up",
+        initial_group_size=2,
+        max_group_size=3,
+        join_existing_groups=True,
+    )
+
+    with db.engine.connect() as other, other.begin():
+        other.execute(
+            text("SELECT id FROM sync_group WHERE id = :id FOR UPDATE"), {"id": busy.id}
+        )
+        _set_transaction_lock_timeout(1)
+        assert grouper.choose_who_to_release([joiner]) == [joiner]
+        assert joiner.active_sync_groups["top_up"].id == free.id
+
+
+@pytest.mark.parametrize("request_kind", ["response", "timeline"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_partner_leaving_sends_participant_to_unsuccessful_end(
+    in_experiment_directory, db_session, request_kind
+):
+    """The open page is not rebuilt after the partner leaves and the group closes."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        PageMaker(
+            lambda participant: InfoPage(f"Group {participant.sync_group.id}"),
+            time_estimate=1,
+        ),
+    )
+    try:
+        (stayer, leaver), _ = _pair_sync_group(exp, db_session)
+        assert _json_timeline(exp, stayer).status_code == 200
+        leaver.fail("returned the study")
+        db_session.commit()
+        assert stayer.failed
+
+        if request_kind == "response":
+            result = _process_response(exp, stayer, stayer.page_uuid)
+            assert result.payload["submission"] == "approved"
+            assert Response.query.filter_by(participant_id=stayer.id).count() == 0
+        else:
+            assert _json_timeline(exp, stayer).status_code == 200
+        assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
 
 
 def test_sync_group_dashboard_waiting_barrier_indexes():
@@ -3077,6 +3283,61 @@ def test_check_instance_does_not_reactivate_ungrouped_when_another_pool_is_activ
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_leftover_check_defers_to_an_arrival_creating_the_pool(
+    in_experiment_directory, db_session
+):
+    """Reactivating a leftover must not race an arrival that is opening the pool."""
+    exp = get_experiment()
+    first = new_participant(exp)
+    first.status = "working"
+    db.session.commit()
+    grouper = SimpleGrouper(group_type="race_ungrouped", initial_group_size=3)
+    _arrive_at_group_barrier(exp, grouper, first)
+    db.session.commit()
+    leftover = BarrierInstance.query.filter_by(barrier_id=grouper.id).one()
+    leftover.active = False
+    db.session.commit()
+    leftover_id, spec, behavior_hash = (
+        leftover.id,
+        leftover.spec,
+        leftover.behavior_hash,
+    )
+    newer_id = str(uuid.uuid4())
+
+    with db.engine.connect() as arrival, arrival.begin() as arrival_txn:
+        # What ``BarrierInstance.for_arrival`` does before it opens a new pool.
+        arrival.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": grouper.id},
+        )
+        arrival.execute(
+            BarrierInstance.__table__.insert().values(
+                id=newer_id,
+                type=sa_inspect(BarrierInstance).polymorphic_identity,
+                barrier_id=grouper.id,
+                active=True,
+                spec=spec,
+                behavior_hash=behavior_hash,
+            )
+        )
+        _set_transaction_lock_timeout(1)
+        leftover = BarrierInstance.query.get(leftover_id)
+        assert _check_claimed_barrier_instance(leftover, already_claimed=True) is False
+        db.session.commit()
+        arrival_txn.commit()
+
+    leftover = BarrierInstance.query.get(leftover_id)
+    assert leftover.active is False
+    assert _check_claimed_barrier_instance(leftover, already_claimed=True) is True
+    db.session.commit()
+    first = Participant.query.get(first.id)
+    assert BarrierInstance.query.get(leftover_id).active is False
+    assert first.active_barriers[grouper.id].barrier_instance_id == newer_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_leftover_ungrouped_waiter_joins_the_active_pool_and_can_proceed(
     in_experiment_directory, db_session
 ):
@@ -3144,6 +3405,189 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     instance = BarrierInstance.query.get(instance_id)
     assert instance.active is True
     assert _barrier_link_released(first_id, barrier_id) is False
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_times_out_waiters_past_their_deadline(
+    in_experiment_directory, db_session, action
+):
+    """A waiter who left is timed out at their deadline, with the usual knock-on."""
+    exp = get_experiment()
+    overdue, partner = _pair_sync_group(exp, db_session)[0]
+    patient, _ = _pair_sync_group(exp, db_session)[0]
+    barrier = GroupBarrier(
+        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+    )
+    for participant in (overdue, patient):
+        _arrive_at_group_barrier(exp, barrier, participant)
+    db.session.commit()
+    TimelineHoldRecord.query.filter_by(participant_id=overdue.id).update(
+        {"deadline_at": timenow() - timedelta(seconds=1)}
+    )
+    db.session.commit()
+    ids = overdue.id, partner.id, patient.id
+
+    check_barriers()
+
+    db.session.expire_all()
+    overdue, partner, patient = (Participant.query.get(i) for i in ids)
+    if action == "fail":
+        assert overdue.failed and "fail_on_timeout" in overdue.failure_tags
+    else:
+        assert not overdue.failed and not overdue.active_sync_groups
+    assert _barrier_link_released(overdue.id, barrier.id)
+    assert partner.failure_tags == ["sync group below minimum size"]
+    assert not patient.failed
+    assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_dissolution_leaves_a_busy_member_to_the_poller(
+    in_experiment_directory, db_session
+):
+    """A partner busy in their own request is failed by the next poll, not waited for."""
+    exp = get_experiment()
+    leaving, busy = _pair_sync_group(exp, db_session)[0]
+    busy_id, group_id = busy.id, busy.sync_group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leaving.fail("left")
+        db.session.commit()
+    assert not Participant.query.get(busy_id).failed
+
+    check_barriers()
+
+    db.session.expire_all()
+    assert Participant.query.get(busy_id).failure_tags == [
+        "sync group below minimum size"
+    ]
+    assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_two_members_failing_at_once_do_not_deadlock(
+    in_experiment_directory, db_session
+):
+    """Each holds their own row, as their requests do, then fails at the same time."""
+    exp = get_experiment()
+    members, group = _sync_group_of(exp, db_session, 3)
+    ids, group_id = [p.id for p in members], group.id
+    db.session.remove()
+    both_locked = threading.Barrier(2)
+    errors = []
+
+    def fail_self(participant_id):
+        try:
+            _set_transaction_lock_timeout(5)
+            participant = (
+                Participant.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
+            both_locked.wait(5)
+            participant.fail("timeout")
+            db.session.commit()
+        except Exception as err:  # pragma: no cover - surfaced below
+            errors.append(err)
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+    threads = [threading.Thread(target=fail_self, args=(i,)) for i in ids[1:]]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(15)
+    check_barriers()
+
+    assert errors == []
+    db.session.expire_all()
+    tags = [Participant.query.get(i).failure_tags for i in ids]
+    assert tags[0] == ["sync group below minimum size"]
+    assert all("timeout" in t for t in tags[1:])
+    assert SyncGroup.query.get(group_id).active is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_new_leader_is_a_member_who_is_not_busy(in_experiment_directory, db_session):
+    """Re-electing a leader skips a member whose own request holds their row."""
+    exp = get_experiment()
+    (leader, busy, free), group = _sync_group_of(exp, db_session, 3)
+    group.min_group_size = 1
+    db.session.commit()
+    busy_id, free_id, group_id = busy.id, free.id, group.id
+
+    with db.engine.connect() as busy_request, busy_request.begin():
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": busy_id},
+        )
+        _set_transaction_lock_timeout(1)
+        leader.fail("left")
+        db.session.commit()
+
+    assert SyncGroup.query.get(group_id).leader_id == free_id
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_does_not_let_a_failing_visit_starve_others(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A visit whose check keeps failing queues behind the other visits."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    for barrier in (SpecErrorBarrier(id_="broken"), ReleaseAllBarrier(id_="healthy")):
+        participant = new_participant(exp)
+        participant.status = "working"
+        db.session.commit()
+        _arrive_at_group_barrier(exp, barrier, participant)
+        db.session.commit()
+    healthy_id = participant.id
+
+    for _ in range(2):
+        check_barriers()
+    assert _barrier_link_released(healthy_id, "healthy")
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_barriers_spreads_idle_visits_over_sweeps(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Past its time budget a sweep stops; later sweeps reach the other visits."""
+    monkeypatch.setattr("psynet.sync._POLLER_SWEEP_BUDGET_SECONDS", 0)
+    exp = get_experiment()
+    waiters = []
+    for i in range(3):
+        participant = new_participant(exp)
+        participant.status = "working"
+        db.session.commit()
+        _arrive_at_group_barrier(exp, ReleaseAllBarrier(id_=f"idle_{i}"), participant)
+        db.session.commit()
+        waiters.append((participant.id, f"idle_{i}"))
+
+    released = []
+    for _ in waiters:
+        check_barriers()
+        released.append(sum(_barrier_link_released(*waiter) for waiter in waiters))
+    assert released == [1, 2, 3]
 
 
 def _arrival_hold_messages(publications, participant_id):
@@ -5835,11 +6279,10 @@ def test_deleted_orm_callback_receiver_is_rejected(in_experiment_directory, db_s
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_async_process_events_wake_timeline_holds(
-    in_experiment_directory, db_session, monkeypatch
+def test_async_job_events_wake_timeline_holds(
+    in_experiment_directory, db_session, monkeypatch, caplog
 ):
     wakes = []
-    monkeypatch.setattr(AsyncProcess, "add_to_launch_queue", lambda self: None)
     monkeypatch.setattr(
         "psynet.timeline_hold._queue_timeline_hold_wake",
         lambda participant_id, reason=None, **kwargs: wakes.append(reason),
@@ -5847,25 +6290,27 @@ def test_async_process_events_wake_timeline_holds(
 
     participant = new_participant(get_experiment())
     db_session.flush()
-    finished = LocalAsyncProcess(async_process_noop, participant=participant)
-    timed_out = WorkerAsyncProcess(
-        async_process_noop, participant=participant, timeout=30
-    )
-    cancelled = WorkerAsyncProcess(async_process_noop, participant=participant)
+    # Saved without enqueue() so that the test runs the jobs itself.
+    finished = LocalAsyncJob(async_job_noop, participant=participant)
+    timed_out = WorkerAsyncJob(async_job_noop, participant=participant, timeout=30)
+    cancelled = WorkerAsyncJob(async_job_noop, participant=participant)
+    db_session.add_all([finished, timed_out, cancelled])
     timed_out.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db_session.flush()
     finished_id = finished.id
     cancelled_id = cancelled.id
-    db_session.commit()
+    with caplog.at_level("WARNING", logger="psynet"):
+        db_session.commit()
+    assert caplog.text.count("never enqueued") == 3
 
-    LocalAsyncProcess.call_function(finished_id)
-    WorkerAsyncProcess.check_timeouts()
-    WorkerAsyncProcess.query.get(cancelled_id).cancel()
+    LocalAsyncJob.call_function(finished_id)
+    WorkerAsyncJob.check_timeouts()
+    WorkerAsyncJob.query.get(cancelled_id).cancel()
 
     assert wakes == [
-        "async_process_finished",
-        "async_process_timed_out",
-        "async_process_cancelled",
+        "async_job_finished",
+        "async_job_timed_out",
+        "async_job_cancelled",
     ]
 
 

@@ -1,0 +1,1 @@
+Fixed `psynet db ssh` crashing when `--server` was omitted or named an unknown server; it now selects the server the same way as other SSH commands, using your only configured server automatically or asking you to choose one.

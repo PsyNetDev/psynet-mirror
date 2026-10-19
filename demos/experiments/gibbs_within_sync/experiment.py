@@ -294,7 +294,7 @@ class Exp(psynet.experiment.Experiment):
 
     #     n_bots = Bot.query.filter_by(status="working").count()
     #     if is_experiment_launched() and n_bots < 3:  # allow only fixed number of bots
-    #         WorkerAsyncProcess(
+    #         WorkerAsyncJob(
     #             function=get_experiment().run_bot, arguments={"time_factor": 0.9}
-    #         )
+    #         ).enqueue()
     #         db.session.commit()
