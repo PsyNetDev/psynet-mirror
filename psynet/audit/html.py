@@ -413,6 +413,8 @@ def render_data_exports(
 ) -> str:
     """Render the real-data export download link."""
 
+    if evidence.data_file is None:
+        return '<p class="missing-artifact">No real data yet.</p>'
     items = [
         evidence_action_item(
             "Data export",
@@ -595,7 +597,7 @@ def render_design_simulation(
             notebook_file,
             evidence.simulation_notebook,
             section_id="simulation-notebook",
-            heading="Design simulation notebook",
+            heading="Power analysis notebook",
             standalone=standalone,
             url_transform=url_transform,
         )
@@ -653,12 +655,14 @@ def render_notebook_cell(cell: dict[str, object]) -> str:
         if cell_type == "markdown":
             return render_markdown_block(source)
         if cell_type == "code":
-            return (
-                '<div class="notebook-code">'
+            code = (
+                '<details class="notebook-code"><summary>Show code</summary>'
                 f"{render_code_block(source, 'python')}"
-                "</div>"
-                f"{render_notebook_outputs(cell.get('outputs'))}"
+                "</details>"
+                if source.strip()
+                else ""
             )
+            return f"{code}{render_notebook_outputs(cell.get('outputs'))}"
         return f"<pre><code>{html.escape(source)}</code></pre>"
 
     body = safe_section_html(f"notebook-cell-{cell_type}", render_body)
@@ -828,6 +832,15 @@ def render_performance_result(
 
     Set ``standalone`` when the result is its own top-level audit section.
     """
+    # psynet.perf_test needs rich, which only the ``experiment`` extra installs.
+    from psynet.perf_test import (
+        CapacityLimits,
+        PerformanceTestResult,
+        capacity_advice,
+        format_capacity_summary,
+        queue_wait_p95,
+    )
+    from psynet.perf_test.results import capacity_failure_causes
 
     if evidence.performance_file is None:
         return "<p>No performance test result was found.</p>" if standalone else ""
@@ -845,21 +858,60 @@ def render_performance_result(
             "tabular result rows.</p></section>"
         )
 
+    options_data = evidence.performance_data.get("options")
+    options_data = options_data if isinstance(options_data, dict) else {}
+    limits = CapacityLimits.from_options(
+        options_data.get("max_p95_s"), options_data.get("max_queue_p95_s")
+    )
     body: list[str] = []
     for row in evidence.performance_results:
+        result = PerformanceTestResult.from_dict(row)
         errors = int(row.get("request_errors") or 0) + int(row.get("bot_errors") or 0)
+        causes = capacity_failure_causes(result, limits)
+        failures = ", ".join(reason for reason, _ in causes)
+        if not causes:
+            verdict = "Yes"
+        elif any(server_limit for _, server_limit in causes):
+            verdict = f"No: {failures}"
+        else:
+            verdict = f"Untested: {failures}"
+        target = str(row.get("n_bots", "")) + (
+            " (validation test)" if result.confirmation else ""
+        )
         body.append(
             "<tr>"
-            f"<td>{html.escape(str(row.get('n_bots', '')))}</td>"
+            f"<td>{html.escape(target)}</td>"
             f"<td>{html.escape(str(row.get('total_bots_started', '')))}</td>"
             f"<td>{html.escape(str(row.get('bots_succeeded', '')))}</td>"
             f"<td>{html.escape(str(row.get('total_requests', '')))}</td>"
             f"<td>{format_metric(row.get('median_response_time'))}</td>"
             f"<td>{format_metric(row.get('p95_response_time'))}</td>"
-            f"<td>{format_metric(row.get('q_delay_p95'))}</td>"
+            f"<td>{format_metric(queue_wait_p95(result))}</td>"
             f"<td>{errors}</td>"
+            f"<td>{int(row.get('busy_responses') or 0)}</td>"
+            f"<td>{html.escape(verdict)}</td>"
             "</tr>"
         )
+    summary = [
+        line.strip().removeprefix("- ")
+        for line in format_capacity_summary(
+            [
+                PerformanceTestResult.from_dict(row)
+                for row in evidence.performance_results
+                if isinstance(row.get("n_bots"), int)
+            ],
+            limits,
+            options_data.get("time_factor", 1.0),
+            terminal=False,
+        )
+        if line.strip() not in ("", "Notes")
+    ]
+    notes = summary + capacity_advice(
+        capacity_search=bool(options_data.get("capacity_search"))
+    )
+    notes_html = "".join(
+        f'<p class="artifact-note">{html.escape(note)}</p>' for note in notes
+    )
     return (
         f'<section class="{section_class}">'
         f"{render_performance_header(evidence.performance_file, url_transform, standalone=standalone)}"
@@ -872,9 +924,13 @@ def render_performance_result(
         f"{performance_heading('Requests', 'HTTP requests observed for key participant endpoints such as timeline and response routes.')}"
         f"{performance_heading('Resp Med (s)', 'Median HTTP response time, in seconds, for key participant endpoints.')}"
         f"{performance_heading('Resp P95 (s)', '95th percentile HTTP response time, in seconds, for key participant endpoints; higher values show slower tail latency.')}"
-        f"{performance_heading('Q P95 all (s)', '95th percentile async-process queue delay across trial makers, when queue metrics are available.')}"
-        f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run.')}"
-        "</tr></thead><tbody>" + "\n".join(body) + "</tbody></table></div></section>"
+        f"{performance_heading('Q P95 high (s)', '95th percentile queue delay of high-priority async jobs, which participants wait for, or the wait of the oldest one still queued when the test ended if that is longer.')}"
+        f"{performance_heading('Errors', 'Request errors plus bot errors recorded during the run, not counting busy or stale responses.')}"
+        f"{performance_heading('Busy/stale', 'Responses to key participant endpoints with HTTP 409 or 503, which PsyNet sends when the experiment is busy or a page went stale.')}"
+        f"{performance_heading('Within limits', f'Whether the run kept {limits.describe()}.')}"
+        "</tr></thead><tbody>"
+        + "\n".join(body)
+        + f"</tbody></table></div>{notes_html}</section>"
     )
 
 
@@ -888,8 +944,8 @@ def render_performance_header(
 
     explanation = (
         '<span class="info-popover-content" role="tooltip">'
-        "A performance test starts a local PsyNet server, repeatedly launches automated bot participants, "
-        "and records how many complete the experiment, how many requests they make, and how quickly key "
+        "A performance test repeatedly launches automated bot participants against a PsyNet server "
+        "(one it starts locally, or one already running), and records how many complete the experiment, how many requests they make, and how quickly key "
         "pages respond under load."
         "</span>"
     )
@@ -923,7 +979,12 @@ def render_performance_options(options: object) -> str:
     rows = [
         ("Target concurrent bots", n_bots_text),
         ("Duration", format_minutes(options.get("duration_minutes"))),
+        (
+            "Estimated session",
+            format_minutes(options.get("estimated_duration_minutes")),
+        ),
         ("Start stagger", format_seconds(options.get("stagger_interval_s"))),
+        ("Arrivals over", format_minutes(options.get("arrival_minutes"))),
         ("Time factor", str(options.get("time_factor") or "")),
     ]
     return (

@@ -27,8 +27,6 @@ The experiment uses participant.var to track the route taken through the timelin
 which is then verified in the test_check_bot method.
 """
 
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.consent import NoConsent

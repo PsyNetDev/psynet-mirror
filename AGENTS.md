@@ -6,6 +6,32 @@ Start by following `psynet/resources/experiment_scripts/AGENTS.md`.
 
 Then act on the following PsyNet developer instructions:
 
+## Source checkout setup
+
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+
+Demo directories contain only the authored experiment files; their unpinned
+`requirements.txt` files and missing constraints are intentional. Running
+`psynet debug local` or `psynet test local` in a bundled demo generates the
+ignored boilerplate. Pytest scaffolds demos temporarily via the
+`in_experiment_directory` fixture, which on teardown removes only paths that
+were absent when it started.
+
+If a user asks for the X demo, list the child directories of
+`demos/experiments`, `demos/features` and `demos/pipelines` to see which they mean.
+
+## Agent Skills authoring
+
+The canonical skill format spec is `.cursor/skills/create-skill/SKILL.md`.
+Experiment skills live under `.cursor/skills/experiment/`; repo meta skills
+live under `.cursor/skills/`. After editing skills, run
+`python scripts/validate_agent_skills.py` and refresh experiment copies with
+`psynet scripts update`. Then reread the result using the "After writing"
+section of that skill.
+
+The PsyNetSkills workshop repository adds a thin `create-skill` addendum for
+challenge/attempt workflows and `psynetsk-validate`.
+
 ## Sandbox reminder
 
 When running PsyNet commands from Cursor, disable sandboxing by setting
@@ -20,19 +46,29 @@ If a change is needed in Dallinger, make it there and submit a PR .
 
 ### Dallinger repo instructions
 
-Cloud Agents push to a Dallinger fork at `DALLINGER_FORK_URL` using the PAT `DALLINGER_GH_TOKEN`.
+Cloud Agents use the PAT `DALLINGER_GH_TOKEN` and a Dallinger fork at `DALLINGER_FORK_URL`.
+When the token can push to `Dallinger/Dallinger`, push feature branches there instead of to
+the fork: CI on PRs from a fork runs without the repository's secrets, so tests that call
+live services (such as the Prolific tests) fail.
 If these environment variables are not present, tell the user to follow these user instructions:
 
 #### User instructions
 
-1. Create a fine-grained GitHub PAT via the GitHub website.
-   - Scope it to the agent's fork of Dallinger only, with the following permissions:
-      - Contents: Read and write
-      - Pull requests: Read and write
-   - Set an expiry of 1 year or less (required for interacting with Dallinger organization).
+1. Create a fine-grained GitHub PAT via the GitHub website, with these permissions and
+   an expiry of 1 year or less (required for interacting with Dallinger organization):
+   - Contents: Read and write
+   - Pull requests: Read and write
+   - Workflows: Read and write, only if agents may change `.github/workflows/`
+
+   A fine-grained PAT has a single resource owner, so choose one of:
+   - If you have write access to `Dallinger/Dallinger` (preferred): resource owner
+     `Dallinger`, repository `Dallinger/Dallinger` only. An organization owner may need
+     to approve the token; until then, pushes to `Dallinger/Dallinger` are refused.
+   - Otherwise: resource owner your account, repository your Dallinger fork only.
 2. Save this token as a Cloud Agent secret named `DALLINGER_GH_TOKEN` via the Cursor website.
 3. Create a Dallinger fork on the GitHub website (e.g., `https://github.com/<your-username>/Dallinger`).
 4. Save the fork URL as a Cloud Agent secret named `DALLINGER_FORK_URL` via the Cursor website.
+   Agents clone the fork even when the token is owned by `Dallinger`, so both secrets are needed.
 
 #### Cloud Agent instructions
 
@@ -64,16 +100,26 @@ development headers (e.g. `libpq-dev`) and retry.
 
 Make changes and commit locally.
 
-Push: `git push -u origin <branch-name>`
+Push to the main repository: `git push -u upstream <branch-name>`.
+If GitHub refuses it with a permission error (HTTP 403), the token cannot write there,
+so push to the fork instead: `git push -u origin <branch-name>`. Other push failures,
+such as network errors, are not a reason to fall back to the fork. If the fork also
+refuses the push, stop and tell the user: the token is still waiting for organization
+approval or cannot write to either repository.
 
-Open a PR to upstream: `gh pr create --base master --head <your-username>:<branch-name>`
+Open a PR to upstream, writing the description to a file first:
+
+- branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
+- branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
 If your PsyNet PR depends on this new unmerged change to Dallinger,
-specify your fork in `pyproject.toml` (use a literal URL; environment
-variables are not expanded in `pyproject.toml`):
+specify the repository that holds the branch in `pyproject.toml` (use a
+literal URL; environment variables are not expanded in `pyproject.toml`):
 
 ```toml
 # In [project].dependencies
+"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<branch-name>",
+# or, for a branch on the fork:
 "dallinger[docker] @ git+https://github.com/<your-username>/Dallinger.git@<branch-name>",
 ```
 
@@ -81,16 +127,20 @@ Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via
 `gh auth login --with-token` above or by setting `GH_TOKEN` in the command).
 
-1. List recent runs:
-   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
-2. View logs for a specific run:
-   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
-3. If the run is against upstream, use the canonical repo:
-   - `gh run list --repo https://github.com/Dallinger/Dallinger --limit 10`
+1. PR checks run on the canonical repo, including for PRs from a fork:
+   - `gh pr checks <pr-number> --repo https://github.com/Dallinger/Dallinger`
+2. Runs for a branch pushed to the main repository:
+   - `gh run list --repo https://github.com/Dallinger/Dallinger --branch <branch-name> --limit 10`
+3. View logs for a specific run:
    - `gh run view <run-id> --repo https://github.com/Dallinger/Dallinger --log-failed`
+4. Runs triggered by pushing to the fork run on the fork:
+   - `gh run list --repo "$DALLINGER_FORK_URL" --limit 10`
+   - `gh run view <run-id> --repo "$DALLINGER_FORK_URL" --log-failed`
 
 Local agents use a similar approach, but `~/Dallinger` should be created already by the user,
-and it may be a clone of the original repository, not a fork.
+and it may be a clone of the original repository, not a fork. In that case `origin` is
+`Dallinger/Dallinger`: skip adding an `upstream` remote, sync with `origin/master`, push with
+`git push -u origin <branch-name>` and use the main-repository form of `gh pr create`.
 
 ## CI status checks (GitLab)
 
@@ -117,6 +167,20 @@ GET https://gitlab.com/api/v4/projects/<project_id>/jobs/<job_id>/trace
 ```
 
 This is the preferred approach for agents when verifying CI status or logs.
+
+Merge requests stacked on another branch (target branch neither `master` nor
+a `release-` branch) run only the fast checks; the pytest, Playwright, `docs`
+and `asv_regression` jobs wait as manual jobs. Start them when a full run is
+useful, for example before asking for review of a risky stacked change, with
+the play button in the GitLab UI or through the API with `GITLAB_TOKEN`. Each
+shard is its own job, so play every shard of a job. `merge_test_results`
+can only be played after all pytest and Playwright shards have run; play it
+then for the combined test report. These jobs are allowed to fail, so check
+their own results rather than the pipeline status:
+
+```http
+POST https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet/jobs/<job_id>/play
+```
 
 ## Playwright flakiness guardrails
 
@@ -168,7 +232,11 @@ When adding or updating Playwright E2E tests, follow these rules to reduce CI fl
     - After each action, wait for the exact intended effect (expected text, expected control state, expected URL/page transition).
     - Prefer short bounded waits on deterministic invariants over long generic polls.
 
-12. **Assert playback/recording via the actual implementation path**:
+12. **Do not assert performance budgets**:
+ - CI load routinely doubles request and page times, so per-request or per-page duration limits flake.
+ - Log timings in failure messages, assert behaviour structurally, and keep at most a generous hang cap (e.g. 30 s) that fails a deadlock before the step timeout.
+
+13. **Assert playback/recording via the actual implementation path**:
     - For `AudioPrompt`, verify PsyNet sound-state/event transitions instead of DOM `<audio>` elements.
     - For `VideoPrompt`, verify `video#prompt` playback behavior.
     - Align assertions with how that step is implemented in experiment/template code.
@@ -281,9 +349,9 @@ When you make changes to the PsyNet codebase:
    `psynet/locales` (`.po` / `.pot` files). Refresh them on the release
    branch with `psynet translate`, where `test_psynet_translations_up_to_date`
    runs. Until then a missing PsyNet catalog entry falls back to English with
-   a warning during test runs; `psynet debug` and experiment-owned catalogs
-   still raise. Tests that pin translated PsyNet copy should use
-   `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
+   a warning during test runs and `psynet debug local`; sandbox deployments,
+   release-branch CI and experiment-owned catalogs still raise. Tests that
+   pin translated PsyNet copy should use `is_release_branch()` from `psynet.utils`, or `release_branch_only` from
    `psynet.pytest_psynet`.
 
 4. **Commit and push**: Commit all changes including changelog fragments (but not a regenerated `CHANGELOG.md`) and any pre-commit formatting fixes.

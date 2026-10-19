@@ -9,7 +9,9 @@ const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
 const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
-const DEBUG_PORT = Number(process.env.PSYNET_DEBUG_PORT || 5000);
+const DEBUG_PORT = Number(
+  process.env.PSYNET_DEBUG_PORT || process.env.base_port || 5000
+);
 
 function parseBoolEnv(name, defaultValue = false) {
   if (process.env[name] === undefined) {
@@ -58,7 +60,7 @@ function extractRecruitmentUrlFromLine(line) {
 }
 
 function getPsynetDebugArgs() {
-  const args = ["debug", "local"];
+  const args = ["debug", "local", "--no-browsers"];
 
   // Optional compatibility switch for local troubleshooting. We do not force legacy mode.
   if (parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
@@ -219,7 +221,11 @@ function startExperiment(experimentDir, options = {}) {
     outputLines.push(line);
     logStream.write(`${line}\n`);
 
-    if (line.includes("Address already in use")) {
+    if (
+      line.includes("Address already in use") ||
+      /Port \d+ is already in use/.test(line) ||
+      line.includes("Another local PsyNet server")
+    ) {
       rejectUrl(
         new Error(
           `Startup failed because port ${DEBUG_PORT} is already in use.\n` +
@@ -1071,15 +1077,11 @@ function requestTimingDetail(record, fallbackMs) {
   return extra ? `${wallLabel} ${extra}` : wallLabel;
 }
 
-function unexpectedBlockingRequests(records, maxDurationMs, options = {}) {
-  const busyMs = options.busyMs ?? 500;
-  return records.filter((record) => {
-    const handlerMs = requestHandlerMs(record);
-    if (handlerMs >= maxDurationMs) {
-      return true;
-    }
-    return Boolean(record.busy) && (record.durationMs ?? 0) >= busyMs;
-  });
+function unexpectedBlockingRequests(records, maxDurationMs) {
+  // Busy 503s are judged by the same hang cap as other requests. That
+  // hold-resume uses NOWAIT is pinned by
+  // test_process_response_ready_hold_resume_locks_with_nowait.
+  return records.filter((record) => requestHandlerMs(record) >= maxDurationMs);
 }
 
 async function enterTimelineAfterGateway(page, timeout = 120000) {

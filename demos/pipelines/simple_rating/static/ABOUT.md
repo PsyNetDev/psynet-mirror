@@ -1,26 +1,21 @@
 # The static directory
 
-The static directory contains static files that are publicly accessible when the experiment
-is deployed. This provides a simple way to expose files to the frontend.
-A file placed in the static directory (for example, `static/{your-file-name}`) 
-can be accessed at the relative URL `/static/{your-file-name}`.
+Files in the `static` directory are deployed with the experiment and served
+to participants' browsers. A file at `static/{your-file-name}` is available
+at the URL `/static/{your-file-name}`.
 
-The static directory also contains a symbolic link to the `assets` directory,
-which is maintained by PsyNet. The `assets` directory contains static files
-that are registered using PsyNet's asset management system.
-See the following code example, which defines a node that is linked to an audio asset:
+This is the recommended place for experiment stimuli. This demo keeps its
+sounds in `static/instrument_sounds` and stores each file's URL in the node
+definition:
 
 ```python
 StaticNode(
     definition={
-        "stimulus_name": "audio_stimulus",
-    },
-    assets={
-        "stimulus_audio": asset("data/audio_stimulus.mp3)
+        "stimulus_name": "clarinet",
+        "audio_url": "/static/instrument_sounds/clarinet.mp3",
     },
 )
 ```
 
-You can get away with the simple approach (just placing files in the `static` directory)
-if you are just using a small number of static files, but for substantial collections
-(e.g. experimental stimuli) it is recommended to use PsyNet's asset management system.
+The trial then passes that URL to the page, for example
+`AudioPrompt(self.definition["audio_url"], ...)`.

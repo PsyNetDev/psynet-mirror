@@ -6,7 +6,14 @@ import pytest
 from click import Context
 from dallinger import db
 
-from psynet.asset import Asset, ExperimentAsset, ExternalAsset, OnDemandAsset
+from psynet.asset import (
+    Asset,
+    ExternalAsset,
+    FileAsset,
+    GeneratedAsset,
+    OnDemandAsset,
+    _preparing_for_deployment,
+)
 from psynet.bot import BotDriver
 from psynet.command_line import export__local
 from psynet.pytest_psynet import path_to_test_experiment
@@ -62,10 +69,10 @@ class TestAssetExport:
         # Creating experiment assets with different keys
         with tempfile.NamedTemporaryFile("w") as file:
             file.write("Test asset")
-            asset = ExperimentAsset(local_key="test_marked_asset", input_path=file.name)
+            asset = FileAsset(local_key="test_marked_asset", input_path=file.name)
             asset.deposit()
 
-            asset_2 = ExperimentAsset(
+            asset_2 = FileAsset(
                 local_key="test_public_asset",
                 input_path=file.name,
             )
@@ -83,14 +90,24 @@ class TestAssetExport:
             )
             asset_4.deposit()
 
-            with pytest.raises(TypeError, match="personal"):
-                ExperimentAsset(
-                    local_key="should_fail", input_path=file.name, personal=True
+            with _preparing_for_deployment():
+                asset_5 = FileAsset(
+                    local_key="test_prepared_file_asset", input_path=file.name
                 )
+                asset_5.deposit()
+
+            asset_6 = GeneratedAsset(
+                function=generate_text_file,
+                local_key="test_generated_asset",
+            )
+            asset_6.deposit()
+
+            with pytest.raises(TypeError, match="personal"):
+                FileAsset(local_key="should_fail", input_path=file.name, personal=True)
 
         db.session.commit()
 
-        assert Asset.query.count() == 4
+        assert Asset.query.count() == 6
 
         self._test_asset_export_modes(ctx)
 
@@ -143,6 +160,8 @@ class TestAssetExport:
             assert "test_public_asset" in labels
             assert "test_external_asset" not in labels
             assert "test_on_demand_asset" not in labels
+            assert "test_prepared_file_asset" not in labels
+            assert "test_generated_asset" in labels
             for row in rows:
                 export_path = row["export_path"]
                 assert export_path

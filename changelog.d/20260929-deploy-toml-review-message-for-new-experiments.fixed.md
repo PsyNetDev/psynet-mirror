@@ -1,0 +1,1 @@
+Fixed the one-time `deploy.toml` review message describing a migration from `.gitignore` for brand-new experiments. New experiments now get a short neutral message; the migration wording is kept for existing experiments that previously relied on `.gitignore`.

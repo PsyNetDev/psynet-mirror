@@ -1,12 +1,15 @@
+import io
 import json
 import re
 import uuid
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy
 from dallinger import db
 from flask import Flask
 from sqlalchemy import inspect
+from werkzeug.test import EnvironBuilder
 
 from psynet.exit import (
     EarlyExitConfirmation,
@@ -299,6 +302,52 @@ def test_response_handler_skips_unused_participant_relationships(
     assert "process;dur=" in timing
     assert "barriers;dur=" in timing
     assert "render;dur=" in timing
+
+
+def test_response_reads_upload_before_first_sql_statement(
+    db_session, request_participant
+):
+    """A slow upload must not hold a database transaction open."""
+    experiment = get_experiment()
+    with _timeline_request(request_participant):
+        experiment.route_timeline()
+    participant = Participant.query.filter_by(unique_id=request_participant).one()
+    payload = {
+        "participant_id": participant.id,
+        "page_uuid": participant.page_uuid,
+        "raw_answer": True,
+        "metadata": {"time_taken": 1},
+        "include_timeline_fragment": False,
+    }
+    db.session.remove()
+
+    environ = EnvironBuilder(
+        "/response",
+        method="POST",
+        data={
+            "json": json.dumps(payload),
+            "recording": (io.BytesIO(b"x" * 1_000_000), "recording.wav"),
+        },
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ).get_environ()
+    body = environ["wsgi.input"]
+    body_size = int(environ["CONTENT_LENGTH"])
+    unread_bytes_at_statements = []
+
+    def record_unread_bytes(*_args):
+        unread_bytes_at_statements.append(body_size - body.tell())
+
+    sqlalchemy.event.listen(db.engine, "before_cursor_execute", record_unread_bytes)
+    try:
+        with _REQUEST_APP.request_context(environ):
+            response = experiment.route_response()
+    finally:
+        sqlalchemy.event.remove(db.engine, "before_cursor_execute", record_unread_bytes)
+        body.close()
+
+    assert response.status_code == 200
+    assert unread_bytes_at_statements
+    assert set(unread_bytes_at_statements) == {0}
 
 
 def test_timeline_redirects_finished_participants_to_the_exit_page(

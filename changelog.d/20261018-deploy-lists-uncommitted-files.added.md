@@ -1,0 +1,1 @@
+`psynet deploy ssh` and `psynet deploy heroku` now list deployed files with uncommitted changes and, in a terminal, ask whether to continue (default no); non-interactive deploys only warn. Deployments record the names of up to 20 such files, and `psynet export` names the uncommitted files when it reports a project mismatch.

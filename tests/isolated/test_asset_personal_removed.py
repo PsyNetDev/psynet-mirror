@@ -2,17 +2,17 @@
 
 import pytest
 
-from psynet.asset import ExperimentAsset, asset
+from psynet.asset import FileAsset, asset
 from psynet.modular_page import AudioRecordControl, VideoRecordControl
 
 
-def test_experiment_asset_rejects_personal_argument(tmp_path):
+def test_file_asset_rejects_personal_argument(tmp_path):
     path = tmp_path / "a.txt"
     path.write_text("x")
     with pytest.raises(TypeError, match="personal"):
-        ExperimentAsset(input_path=str(path), local_key="a", personal=True)
+        FileAsset(input_path=str(path), local_key="a", personal=True)
     with pytest.raises(TypeError, match="personal"):
-        ExperimentAsset(input_path=str(path), local_key="a", personal=False)
+        FileAsset(input_path=str(path), local_key="a", personal=False)
 
 
 def test_asset_helper_rejects_personal_argument(tmp_path):

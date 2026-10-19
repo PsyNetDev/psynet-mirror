@@ -1,0 +1,1 @@
+When the local PostgreSQL server runs out of connections ("sorry, too many clients already"), local test sessions, `psynet test local` and `psynet performance-test local` now explain that every local session shares the server's `max_connections` limit and suggest running fewer bots or sessions, stopping other local experiments, or raising `max_connections`.

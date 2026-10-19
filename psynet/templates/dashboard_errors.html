@@ -22,9 +22,11 @@
                 <tr>
                     <td>
                         <code>{{ error.token }}</code>
-                        <a class="btn btn-primary mt-3" href="{{ url_for('dashboard.dashboard_logger', start=error.log_line_number - 10, end=error.log_line_number + 10, highlight=error.log_line_number) }}">
+                        {% if error.log_line_number %}
+                        <a class="btn btn-primary mt-3" href="{{ url_for('dashboard.dashboard_logger', start=[error.log_line_number - 10, 0]|max, end=error.log_line_number + 10, highlight=error.log_line_number) }}">
                             View in logs
                         </a>
+                        {% endif %}
                     </td>
                     <td>{{ error.creation_time }}</td>
                     <td><pre>{{ error.traceback }}</pre></td>

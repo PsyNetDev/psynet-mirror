@@ -54,6 +54,8 @@ class ProjectIdentity:
     deployment_id: Optional[str] = None
     git_commit_sha: Optional[str] = None
     git_dirty: Optional[bool] = None
+    #: Uncommitted files behind ``git_dirty``; ``None`` if not recorded.
+    git_dirty_paths: Optional[tuple[str, ...]] = None
     psynet_version: Optional[str] = None
     dallinger_version: Optional[str] = None
     export_format_version: Optional[int] = None
@@ -65,9 +67,9 @@ class ProjectIdentity:
         """Build an identity from a preflight response or export manifest."""
         known = {f.name for f in fields(cls)}
         values = {key: value for key, value in (payload or {}).items() if key in known}
-        modes = values.get("incremental_asset_modes")
-        if modes is not None:
-            values["incremental_asset_modes"] = tuple(modes)
+        for name in ("incremental_asset_modes", "git_dirty_paths"):
+            if values.get(name) is not None:
+                values[name] = tuple(values[name])
         version = values.get("export_format_version")
         if isinstance(version, str) and version.isdigit():
             values["export_format_version"] = int(version)
@@ -77,7 +79,7 @@ class ProjectIdentity:
 def local_project_identity(experiment_class) -> ProjectIdentity:
     """Describe the experiment directory the command is running in."""
     from psynet import __version__ as psynet_version
-    from psynet.deployment_info import _get_git_provenance
+    from psynet.deployment_info import _git_commit_and_uncommitted_paths
 
     try:
         from dallinger.version import __version__ as dallinger_version
@@ -85,19 +87,20 @@ def local_project_identity(experiment_class) -> ProjectIdentity:
         dallinger_version = None
 
     try:
-        git_commit_sha, git_dirty = _get_git_provenance()
+        git_commit_sha, git_dirty_paths = _git_commit_and_uncommitted_paths()
     except Exception:
         logger.warning(
             "Could not determine the local Git provenance for the export "
             "identity check.",
             exc_info=True,
         )
-        git_commit_sha, git_dirty = None, None
+        git_commit_sha, git_dirty_paths = None, None
 
     return ProjectIdentity(
         experiment_label=experiment_class.label,
         git_commit_sha=git_commit_sha,
-        git_dirty=git_dirty,
+        git_dirty=None if git_dirty_paths is None else bool(git_dirty_paths),
+        git_dirty_paths=None if git_dirty_paths is None else tuple(git_dirty_paths),
         psynet_version=psynet_version,
         dallinger_version=dallinger_version,
     )
@@ -122,6 +125,7 @@ def server_project_identity() -> dict:
         "deployment_id": experiment.deployment_id,
         "git_commit_sha": experiment.var.get("git_commit_sha", None),
         "git_dirty": experiment.var.get("git_dirty", None),
+        "git_dirty_paths": experiment.var.get("git_dirty_paths", None),
         "psynet_version": psynet_version,
         "dallinger_version": dallinger_version,
         "export_format_version": EXPORT_FORMAT_VERSION,
@@ -197,15 +201,19 @@ def describe_identity_problems(
         warnings.append(
             f"The deployment was launched from Git commit "
             f"{remote.git_commit_sha[:12]}, but this directory is on "
-            f"{local.git_commit_sha[:12]}."
+            f"{local.git_commit_sha[:12]}. 'git diff --stat "
+            f"{remote.git_commit_sha[:12]} HEAD -- .' lists the changed files."
         )
     if remote.git_dirty:
         warnings.append(
             "The deployment was launched from a Git working tree with "
-            "uncommitted changes."
+            "uncommitted changes" + _path_list_suffix(remote.git_dirty_paths)
         )
     if local.git_dirty:
-        warnings.append("This experiment directory has uncommitted changes.")
+        warnings.append(
+            "This experiment directory has uncommitted changes"
+            + _path_list_suffix(local.git_dirty_paths)
+        )
 
     for label, remote_version, local_version in (
         ("PsyNet", remote.psynet_version, local.psynet_version),
@@ -219,6 +227,15 @@ def describe_identity_problems(
             )
 
     return blocking, warnings, notes
+
+
+def _path_list_suffix(paths) -> str:
+    """End a dirty-state warning with the files it concerns, when known."""
+    from psynet.deployment_info import format_path_list
+
+    if not paths:
+        return "."
+    return " in:\n" + format_path_list(list(paths))
 
 
 def confirm_project_identity(

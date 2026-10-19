@@ -1,121 +1,77 @@
 ---
 name: develop-experiment-back-end
-description: Develop PsyNet experiment back-end logic.
+description: Choose the trial architecture (static, chain, or graph trial maker, or Trial.cue) and write the timeline, trials, stimulus manifests, and experiment logic of a PsyNet experiment faithfully to its design. Use when writing or changing experiment.py logic.
 ---
 
 # Develop experiment back end
 
-## Approach
+## Read first
 
-PsyNet experiments centre on the `Timeline` component,
-which chains together `Page`s, `Module`s, `TrialMaker`s, and `CodeBlock`s.
-Most experiment logic should go through these components.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
-A `Trial` typically constitutes the core repeating unit of the experiment.
-It is parametrized by a `definition` attribute, and produces a front-end interface
-via the `show_trial` method.
+- `design/trials` and `design/chains`: trials, nodes, and chains as design concepts
+- `code/writing_a_timeline`: timelines, code blocks, loops, and variables
+- `code/writing_a_trial_maker`: static trial makers, scoring, and `Trial.cue`
+- `code/writing_a_chain_experiment`: chain and graph trial makers
+- `code/project/experiment_directory`: experiment files and importing sibling modules
+- `code/using_stimuli`: `static/` files and assets
+- `code/participants/prescreening_and_questionnaires`: volume calibration, headphone tests, and questionnaires
+- `test/backend`: bots and `test_check_bot`
 
-There are several ways to organize the presentation of `Trial`s.
-In particular, various forms of `TrialMaker` are available for facilitating
-certain standard scenarios.
-The `StaticTrialMaker` is appropriate when trials are generated from a fixed bank
-of available sources, called nodes (e.g. a collection of stimuli to evaluate).
-It facilitates a particularly common requirement, to ensure that all
-stimuli/nodes receive an approximately equal number of responses.
-The `ChainTrialMaker` is a generalization of the `StaticTrialMaker` where the nodes
-evolve through time in response to prior responses; this is used to implement paradigms
-such as serial reproduction and Markov Chain Monte Carlo with People.
-The `GraphChainTrialMaker` is a generalization of `ChainTrialMaker` that
-supports causal dependencies between nodes.
+## Choose the trial architecture
 
-An alternative method is to use `Trial.cue`, which gives direct control over the
-sequence of trial administration. This is particularly helpful in experiments with
-complex ordering requirements, or in adaptive experiments where item selection
-is performed by a custom algorithm, or in experiments where the theoretical number
-of possible trial configurations is too large to represent effectively in the database
-(e.g. experiments where each trial involves presenting the participant with several
-randomly chosen items from a large item bank).
+Decide how trials are chosen before writing code, and record the choice and
+its reason in the plan:
 
-Inspect relevant PsyNet demos and trial-maker implementations before choosing
-an architecture.
+- `StaticTrialMaker`: a fixed bank of nodes whose responses should be
+  balanced across participants.
+- `ChainTrialMaker` or one of its built-in paradigms (imitation chains,
+  Gibbs, MCMCP): nodes that evolve from earlier responses. Use
+  `GraphChainTrialMaker` when chains form a graph of vertices and edges
+  rather than a single line.
+- `Trial.cue` inside timeline loops: complex ordering, custom adaptive
+  selection, or a space of trial configurations too large to store as nodes
+  (for example, random draws of several items from a large bank). For
+  adaptive designs, also read `make-experiment-adaptive/SKILL.md`.
 
-## Python modules beside ``experiment.py``
+Inspect the closest demo and the trial maker's source before committing to
+one (`explore-psynet-repository/SKILL.md`). When participants are grouped or
+wait for each other, also read `synchronous-experiments/SKILL.md`.
 
-Keep ``experiment.py`` as the timeline and experiment class. Put substantial
-helpers in sibling files (for example ``adaptive_logic.py``).
-
-Dallinger imports the experiment directory as the package
-``dallinger_experiment`` and then loads ``experiment.py`` as
-``dallinger_experiment.experiment``. Sibling imports must be relative:
-
-```python
-from . import adaptive_logic
-from .adaptive_logic import select_item
-```
-
-Do not run ``python experiment.py`` to check that this works. That executes the
-file as a script, so there is no parent package and the relative import fails.
-``psynet test local`` and ``psynet debug`` load the experiment the same way
-Dallinger does.
-
-Standalone scripts such as ``simulate_procedure.py`` and
-``python -m audit.simulate.design.core`` are not that package. They import the
-same helpers as top-level names (``from adaptive_logic import select_item``).
-Run the design command from the experiment root. Keep runtime helpers beside
-``experiment.py``; stock ``deploy.toml`` excludes ``audit/``.
-
-See ``docs/experiment_development/experiment_directory.rst``
-("Importing other Python files").
-
-## Internationalization
-
-If the experiment is cross-cultural, cross-national, multilingual,
-international, or compares cultures/regions/language groups, read
-`prepare-for-translation/SKILL.md` and mark participant-facing strings as you
-implement them.
-
-## Testing
-
-Test throughout the implementation process.
-Use `psynet test local` as the main workhorse; this runs a participant through
-the experiment end to end. Override `Experiment` methods like `test_check_bot`
-to assert that behavior is as expected.
-For participant screenshots or video evidence, use `record-participant-video/SKILL.md`.
-Use video review sparingly as it is time-consuming.
+Keep `experiment.py` for the timeline and experiment class, and put
+substantial logic in sibling modules imported as described in
+`code/project/experiment_directory`.
 
 ## Fidelity
 
-It is very important that the back-end logic is faithful to the experiment design.
-If something seems very hard to achieve, stop and ask the user rather than deviate.
+The back-end logic must implement the experiment design exactly. If
+something seems very hard to achieve, stop and ask the user rather than
+deviate.
 
-## Misc. guidance
+## Design defaults
 
-- For nontrivial participant tasks, include a brief training or practice phase
-  before scored/main trials unless the prompt explicitly excludes it.
-- For memory tasks, avoid replay controls unless the prompt explicitly asks for
-  replay; relistening can change the cognitive demands of the task.
-- For nontrivial stimulus sets, prefer a deterministic manifest such as a
-  committed JSON file generated by a separate script. The runtime experiment
-  should read the manifest rather than sampling or hardcoding all stimuli in
-  `experiment.py`.
-- In audio experiments, make sure you start with a volume calibration page,
-  and generally you should only activate the 'Next' button when the participant
-  has finished listening to the trial stimulus.
-- For audio experiments, treat sound playback as a first-class behavior to test:
-  use local committed or generated demo audio, document how real stimuli replace
-  the demo set, check that each audio asset duration matches the task, and add
-  assertions or exported-data checks that prove audio trials ran and responses
-  were saved against the correct stimulus IDs.
-- When an audio task depends on listening quality, include the relevant
-  prescreening or quality-control pages from PsyNet demos, such as volume
-  calibration, headphone screening, and comprehension checks, unless the prompt
-  explicitly excludes them.
-- For participant-facing instructions, payoff tables, lists, headings, and other
-  ordinary page structure, prefer `dominate.tags` over raw HTML. Use
-  `markupsafe.Markup` only for trusted, static HTML snippets passed directly as
-  page content; do not nest raw markup strings inside `dominate` containers.
-  Avoid interpolating participant- or user-provided data into `Markup`.
-- For repeated tasks, choose between a trial maker and `Trial.cue` with the rule
-  under "Approach" above. Read
-  `synchronous-experiments/SKILL.md` as well when participant
-  grouping, barriers, cohorts, or waiting rooms are involved.
+Apply these unless the user's specification says otherwise:
+
+- Add a brief practice phase before scored trials of a nontrivial task.
+- Do not add replay controls to memory tasks; relistening changes the task.
+- For nontrivial stimulus sets, commit a deterministic manifest (for example
+  a JSON file produced by a separate generation script) and read it at
+  runtime, rather than sampling or hard-coding stimuli in `experiment.py`.
+- For audio tasks, start with volume calibration, enable Next only after the
+  stimulus has finished playing, and add the headphone or comprehension checks
+  that the task's listening demands call for.
+- Build instructions, tables, and lists with `dominate` tags; see
+  `code/writing_pages` for how they interact with `Markup`.
+- For cross-cultural, multilingual, or international studies, mark
+  participant-facing text as you write it (`prepare-for-translation/SKILL.md`).
+
+## Testing
+
+Test throughout. `psynet test local` runs bots end to end; override
+`test_check_bot` to assert that the data the design needs was saved. For
+audio experiments, test with the real stimuli or a stand-in set (committed or
+generated files, or `JSSynth` sequences; see "Synthesizing stimuli" in
+`code/using_stimuli`), check that each stimulus's duration matches the task,
+document how real stimuli replace a stand-in set, and assert that responses
+are saved against the correct stimulus IDs.
+For screenshots or video, use `record-participant-video/SKILL.md` sparingly.

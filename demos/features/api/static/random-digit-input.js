@@ -15,7 +15,7 @@ export async function activate({root, trial, psynet}) {
         ]);
         const [digitData, name, pageUuidData] = await Promise.all([
             digitResponse.json(),
-            nameResponse.json(),
+            nameResponse.text(),
             pageUuidResponse.json(),
         ]);
 

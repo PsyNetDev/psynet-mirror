@@ -7,10 +7,9 @@ from dallinger import db
 
 import psynet.experiment  # noqa -- Need to import this for SQLAlchemy registrations to work properly
 from psynet.asset import (
-    CachedAsset,
-    CachedFunctionAsset,
-    ExperimentAsset,
     ExternalAsset,
+    FileAsset,
+    GeneratedAsset,
     LocalStorage,
     OnDemandAsset,
     asset,
@@ -47,7 +46,7 @@ class FinalizeDefinitionTrial(StaticTrial):
         raise NotImplementedError
 
 
-class MultiplyAsset(ExperimentAsset):
+class MultiplyAsset(FileAsset):
     def after_deposit(self):
         with open(self.input_path, "r") as f:
             self.var.x = int(f.read())
@@ -80,7 +79,7 @@ def folder_asset(debug_storage):
         with open(path_3, "w") as f:
             f.write("File 3")
 
-        asset = ExperimentAsset(
+        asset = FileAsset(
             "test_folder_asset",
             tempdir,
             is_folder=True,
@@ -110,7 +109,7 @@ def folder_asset_clone(debug_storage):
         with open(path_3, "w") as f:
             f.write("File 3")
 
-        asset = ExperimentAsset(
+        asset = FileAsset(
             "test_folder_asset_2",
             tempdir,
             is_folder=True,
@@ -127,7 +126,7 @@ def folder_asset_clone(debug_storage):
 class AssetTests:
     def test_lambda_function(self):
         with pytest.raises(ValueError) as e:
-            CachedFunctionAsset(function=lambda path, x: x + 1)
+            GeneratedAsset(function=lambda path, x: x + 1)
         assert (
             str(e.value)
             == "'function' cannot be a lambda function, please provide a named function instead"
@@ -137,8 +136,8 @@ class AssetTests:
         def f(path):
             pass
 
-        asset_1 = CachedFunctionAsset(function=f)
-        asset_2 = CachedFunctionAsset(function=f, key="asset_2")
+        asset_1 = GeneratedAsset(function=f)
+        asset_2 = GeneratedAsset(function=f, key="asset_2")
 
         assert not asset_1.has_key
         assert asset_2.has_key
@@ -153,13 +152,13 @@ class AssetTests:
             with open(file_path, "w") as file:
                 file.write("Hello!")
 
-                asset = ExperimentAsset(
+                asset = FileAsset(
                     local_key="test",
                     input_path=file_path,
                 )
                 assert isinstance(asset.is_folder, bool) and not asset.is_folder
 
-                asset_2 = ExperimentAsset(
+                asset_2 = FileAsset(
                     local_key="test_2",
                     input_path=tempdir,
                 )
@@ -259,7 +258,7 @@ def test_access_assets(
         f.write("Hello!")
         f.flush()
 
-        node_asset = ExperimentAsset(
+        node_asset = FileAsset(
             local_key="node_asset",
             input_path=f.name,
             parent=node,
@@ -267,7 +266,7 @@ def test_access_assets(
         node_asset.deposit(debug_storage)
 
         for t in trials:
-            trial_asset = ExperimentAsset(
+            trial_asset = FileAsset(
                 local_key="trial_asset",
                 input_path=f.name,
                 parent=t,
@@ -277,13 +276,13 @@ def test_access_assets(
     db.session.commit()
 
     assert len(node.assets) == 1
-    assert isinstance(node.assets["node_asset"], ExperimentAsset)
+    assert isinstance(node.assets["node_asset"], FileAsset)
     assert node.assets["node_asset"].export_path.endswith(".txt")
     assert not node.assets["node_asset"].key_within_experiment.endswith(".txt")
 
     for t in trials:
         assert len(t.assets) == 1
-        assert isinstance(t.assets["trial_asset"], ExperimentAsset)
+        assert isinstance(t.assets["trial_asset"], FileAsset)
         assert t.assets["trial_asset"].export_path.endswith(".txt")
 
 
@@ -296,7 +295,7 @@ def test_add_asset_does_not_reobfuscate_deposited_asset(trial, launched_experime
         f.write("Hello!")
         f.flush()
 
-        cached_asset = CachedAsset(
+        cached_asset = FileAsset(
             local_key="cached_asset",
             input_path=f.name,
         )
@@ -361,7 +360,7 @@ def test_add_asset_relink_deposited_asset_across_trials(
         f.write("Hello!")
         f.flush()
 
-        cached_asset = CachedAsset(
+        cached_asset = FileAsset(
             local_key="cached_asset",
             input_path=f.name,
         )
@@ -469,7 +468,7 @@ def test_chain_node_stage_assets_overwrites_undeposited_metadata(
         f.write("Hello!")
         f.flush()
 
-        staged_asset = ExperimentAsset(
+        staged_asset = FileAsset(
             input_path=f.name,
             local_key="original_key",
             parent=participant,
@@ -498,7 +497,7 @@ def test_update_metadata_clears_module_id_when_parent_missing(launched_experimen
         f.write("Hello!")
         f.flush()
 
-        staged_asset = ExperimentAsset(
+        staged_asset = FileAsset(
             input_path=f.name,
             local_key="original_key",
             module_id="stale_module",
@@ -523,7 +522,7 @@ def test_add_asset_sets_missing_metadata_for_new_assets(trial, participant):
         f.write("Hello!")
         f.flush()
 
-        new_asset = ExperimentAsset(
+        new_asset = FileAsset(
             input_path=f.name,
             local_key="original_key",
             parent=participant,
@@ -603,28 +602,24 @@ def test_asset_constructor():
         f.write(b"test content")
         f.flush()
         file_asset = asset(f.name, description="A local file")
-        assert isinstance(file_asset, ExperimentAsset)
+        assert isinstance(file_asset, FileAsset)
         assert file_asset.input_path == f.name
         assert file_asset.description == "A local file"
 
         # Test Path object input
         path_asset = asset(Path(f.name), description="A path object file")
-        assert isinstance(path_asset, ExperimentAsset)
+        assert isinstance(path_asset, FileAsset)
         assert str(path_asset.input_path) == f.name
 
-        # Test cached file asset
-        cached_asset = asset(f.name, cache=True, description="A cached file asset")
-        assert isinstance(cached_asset, CachedAsset)
-        assert cached_asset.input_path == f.name
-        assert cached_asset.description == "A cached file asset"
+        # The deprecated cache argument is ignored
+        with pytest.warns(DeprecationWarning, match="cache"):
+            assert isinstance(asset(f.name, cache=True), FileAsset)
 
-    # Test cached function asset
-    cached_asset = asset(
-        placeholder_function, cache=True, description="A cached function asset"
-    )
-    assert isinstance(cached_asset, CachedFunctionAsset)
-    assert cached_asset.function == placeholder_function
-    assert cached_asset.description == "A cached function asset"
+    # Test generated asset
+    generated_asset = asset(placeholder_function, description="A generated asset")
+    assert isinstance(generated_asset, GeneratedAsset)
+    assert generated_asset.function == placeholder_function
+    assert generated_asset.description == "A generated asset"
 
     # Test function asset - on demand
     on_demand_asset = asset(
@@ -644,18 +639,13 @@ def test_asset_constructor():
     assert isinstance(args_asset, OnDemandAsset)
     assert args_asset.arguments == {"param": "value"}
 
-    # Test invalid combinations
-    with pytest.raises(
-        ValueError,
-        match="Sorry, currently function assets can't be both cached and on-demand.",
-    ):
-        asset(placeholder_function, cache=True, on_demand=True)
 
-    with pytest.raises(
-        ValueError,
-        match=(
-            "Sorry, currently function assets must be marked as either cached or on-demand. "
-            "Select the former if you want to pre-generate your assets, or the latter otherwise."
-        ),
-    ):
-        asset(placeholder_function)
+def test_renamed_asset_classes_are_deprecated_aliases():
+    import psynet.asset
+
+    with pytest.warns(DeprecationWarning, match="renamed to FileAsset"):
+        assert psynet.asset.ExperimentAsset is FileAsset
+    with pytest.warns(DeprecationWarning, match="renamed to FileAsset"):
+        assert psynet.asset.CachedAsset is FileAsset
+    with pytest.warns(DeprecationWarning, match="renamed to GeneratedAsset"):
+        assert psynet.asset.CachedFunctionAsset is GeneratedAsset

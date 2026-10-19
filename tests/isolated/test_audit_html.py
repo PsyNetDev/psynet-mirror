@@ -1,8 +1,11 @@
 import json
+import subprocess
+import sys
 
 from psynet.audit.constants import MAX_AUDIT_NOTEBOOK_BYTES
 from psynet.audit.html import (
     render_analysis_notebook,
+    render_data_exports,
     render_design_simulation,
     render_evidence_section,
     render_file_grid,
@@ -10,6 +13,7 @@ from psynet.audit.html import (
     render_markdown_document,
     render_notebook_output,
     render_notebook_panel,
+    render_performance_result,
     render_timeline_section,
     safe_section_html,
 )
@@ -37,6 +41,35 @@ def unpublished_file(path: str) -> AuditFile:
         published=False,
         publication_note="Excluded from publication.",
     )
+
+
+def test_performance_result_judges_each_run_and_advises_next_steps() -> None:
+    def performance(capacity_search):
+        options = {"capacity_search": capacity_search, "max_p95_s": 1.0}
+        results = [
+            {"n_bots": 8, "p95_response_time": 0.2},
+            {"n_bots": 16, "p95_response_time": 3.0},
+            {"n_bots": 32, "p95_response_time": 0.2, "slots_started": 20},
+        ]
+        view = classify_audit_evidence(
+            [
+                file(
+                    "performance.json",
+                    json.dumps({"options": options, "results": results}),
+                )
+            ]
+        )
+        return render_performance_result(view)
+
+    html = performance(capacity_search=False)
+    assert "<td>Yes</td>" in html
+    assert "<td>No: p95 response time 3000 ms</td>" in html
+    assert "<td>Untested: only 20 of 32 bots started" in html
+    assert "Largest passing test: 8 bots at once. At 16, " in html
+    assert ">Notes<" not in html
+    assert "performance-test ssh" in html and "debug ssh" not in html
+    assert "--n-bots auto" in html
+    assert "--n-bots auto" not in performance(capacity_search=True)
 
 
 def test_safe_section_html_returns_body_on_success() -> None:
@@ -74,6 +107,7 @@ def test_render_evidence_section_uses_shared_dashboard_markup() -> None:
                         "options": {
                             "n_bots_sweep": [2, 4],
                             "duration_minutes": 1.5,
+                            "estimated_duration_minutes": 3,
                             "stagger_interval_s": 0.2,
                             "time_factor": 2,
                         },
@@ -132,6 +166,7 @@ def test_render_evidence_section_uses_shared_dashboard_markup() -> None:
     assert "<h1>Analysis</h1>" in html
     assert "<td>0.123</td>" in html
     assert "<td>3</td>" in html
+    assert "<dt>Estimated session</dt><dd>3.00 min</dd>" in html
     assert "PLAN.md <span>present</span>" in html
 
 
@@ -174,6 +209,15 @@ def test_render_design_simulation_reports_absence() -> None:
     assert "No design simulation" in render_design_simulation(view)
 
 
+def test_render_data_exports_reports_absence() -> None:
+    view = classify_audit_evidence([])
+
+    assert "No real data yet" in render_data_exports(view)
+    assert "Download data export" in render_data_exports(
+        classify_audit_evidence([file("data.zip", None)])
+    )
+
+
 def test_render_design_simulation_renders_notebook_and_provenance() -> None:
     view = classify_audit_evidence(
         [
@@ -208,7 +252,9 @@ def test_render_design_simulation_renders_notebook_and_provenance() -> None:
     )
 
     html = render_design_simulation(view)
+    nested_html = render_design_simulation(view, standalone=False)
 
+    assert "Power analysis notebook" in nested_html
     assert "precision-estimation" in html
     assert "1000" in html
     assert "Precision by design" in html
@@ -321,7 +367,10 @@ def test_render_evidence_section_renders_notebook_rich_outputs() -> None:
     assert "<h2>Results</h2>" in html
     assert "<ul>" in html
     assert "<li>passed</li>" in html
-    assert '<div class="notebook-code"><pre class="highlight">' in html
+    assert (
+        '<details class="notebook-code"><summary>Show code</summary>'
+        '<pre class="highlight">'
+    ) in html
     assert '<div class="notebook-html">' in html
     assert "<table>" in html
     assert "<th>n</th>" in html
@@ -548,3 +597,12 @@ def test_render_notebook_output_rejects_invalid_png_payload() -> None:
     assert "notebook-image" not in non_png
     assert "data:image/png;base64," not in non_png
     assert empty == ""
+
+
+def test_audit_html_imports_without_rich() -> None:
+    code = (
+        "import sys; sys.modules['rich'] = None; "
+        "import psynet.audit.html; "
+        "assert 'psynet.perf_test' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

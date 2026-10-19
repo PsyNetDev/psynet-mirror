@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 import random
 from collections import Counter
 
@@ -125,7 +123,7 @@ class MCMCPNode(ChainNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment
@@ -153,9 +151,6 @@ class MCMCPNode(ChainNode):
             "proposal": self.get_proposal(seed, experiment, participant),
         }
 
-    def create_initial_seed(self, experiment, participant):
-        raise NotImplementedError
-
 
 class MCMCPTrialMaker(ChainTrialMaker):
     """
@@ -173,7 +168,6 @@ class MCMCPTrialMaker(ChainTrialMaker):
         * The role of the chosen stimulus (``"current_state"`` or ``"proposal"``);
         * The value of the parameters underlying the chosen stimulus.
         """
-        # pylint: disable=unused-argument,no-self-use
         position = int(answer)
         answer = {
             "position": position,

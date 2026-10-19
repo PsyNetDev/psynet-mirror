@@ -1,0 +1,1 @@
+Fixed error reporting so that a missing translation in a live experiment no longer breaks page rendering or saves a timeline step's half-finished work, and so that errors raised by a failed database write are recorded with the IDs of the participant, trial and other objects involved.

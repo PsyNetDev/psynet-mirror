@@ -28,11 +28,11 @@ logger = get_logger()
 
 
 all_assets = {
-    "flower": asset("local_only/flower.mp4", cache=True),
-    "birds": asset("local_only/birds.mp4", cache=True),
-    "funk-game-loop": asset("local_only/funk-game-loop.mp3", cache=True),
-    "sync-test-video": asset("local_only/video-sync-test.mp4", cache=True),
-    "sync-test-audio": asset("local_only/video-sync-test.wav", cache=True),
+    "flower": asset("local_only/flower.mp4"),
+    "birds": asset("local_only/birds.mp4"),
+    "funk-game-loop": asset("local_only/funk-game-loop.mp3"),
+    "sync-test-video": asset("local_only/video-sync-test.mp4"),
+    "sync-test-audio": asset("local_only/video-sync-test.wav"),
 }
 
 

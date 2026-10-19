@@ -1,10 +1,13 @@
+import logging
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from dallinger import db
+from dallinger.utils import attach_json_logger
 
+from psynet.async_job import WorkerAsyncJob
 from psynet.error import ErrorRecord
 from psynet.exit import (
     EarlyExitConfirmation,
@@ -16,7 +19,6 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment
-from psynet.process import WorkerAsyncProcess
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.recruiters import DevLucidRecruiter
 
@@ -745,6 +747,28 @@ def test_handled_error_page_delegates_lucid_recovery():
     error_page.assert_called_once_with(participant=participant, recruiter=recruiter)
 
 
+def test_report_error_records_the_log_line_of_the_error(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = logging.getLogger()
+    attach_json_logger(root)
+    handler = root.handlers[-1]
+    logging.getLogger("psynet").error("an earlier log line")
+    log_to_db = MagicMock()
+    try:
+        with (
+            patch.object(Experiment, "log_to_db", log_to_db),
+            patch.object(Experiment, "log_to_notifier"),
+        ):
+            Experiment.report_error(ValueError("failed"))
+    finally:
+        root.removeHandler(handler)
+        handler.close()
+
+    token, log_line_number = log_to_db.call_args.args[1:3]
+    assert log_line_number == 2
+    assert token in (tmp_path / "logs.jsonl").read_text().splitlines()[1]
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
@@ -778,14 +802,14 @@ def test_handle_error_rollback_and_record(db_session, launched_experiment, trial
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_handle_error_async_process(db_session, launched_experiment, trial):
-    process = WorkerAsyncProcess(function=task, trial=trial)
+def test_handle_error_async_job(db_session, launched_experiment, trial):
+    job = WorkerAsyncJob(function=task, trial=trial).enqueue()
     db.session.commit()
 
     time.sleep(1)
 
-    assert process.failed
+    assert job.failed
 
     error_record = ErrorRecord.query.one()
-    assert error_record.process_id == process.id
+    assert error_record.async_job_id == job.id
     assert error_record.trial_id == trial.id

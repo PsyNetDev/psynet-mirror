@@ -114,9 +114,9 @@ def report_lucid():
 
         last_status["status_list"] = status_list
 
-        last_status["api_call"] = (
-            datetime.now() - pd.to_datetime(last_status["timestamp"])
-        ).seconds
+        last_status["api_call"] = int(
+            (datetime.now() - pd.to_datetime(last_status["timestamp"])).total_seconds()
+        )
         params["last_status"] = last_status
 
     if len(all_entrants) == 0:

@@ -50,6 +50,33 @@ function installTimelineHoldWakeCounter() {
   });
 }
 
+function installQuietTimelineHold() {
+  // Disables outside wakes (websocket, timers) by swallowing
+  // psynet.resumeTimelineHold, waits for an in-flight resume to settle and
+  // drains its 0ms "queued hold wake", then clears the safety-poll and
+  // busy-retry timers.
+  // Returns the real resumeTimelineHold; the probe must restore it.
+  window.__quietTimelineHold = async (probeName) => {
+    const controller = psynet.timelineHold;
+    const originalResume = psynet.resumeTimelineHold;
+    psynet.resumeTimelineHold = async () => false;
+    const deadline = Date.now() + 5000;
+    while (controller.resumeInFlight && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (controller.resumeInFlight) {
+      psynet.resumeTimelineHold = originalResume;
+      throw new Error(`hold resume still in flight before the ${probeName}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.resumeRequested = false;
+    clearTimeout(controller.safetyTimer);
+    clearTimeout(controller.busyRetryTimer);
+    controller.busyRetryTimer = null;
+    return originalResume;
+  };
+}
+
 async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
   await completeInitialGateway(page);
   await expect(page.locator("#main-body")).toContainText(
@@ -137,6 +164,11 @@ async function probeTimelineHoldClientBehavior(page) {
       document.getElementById("psynet-arrival-notice") === null;
 
     psynet.arrivalUpdates = fakeArrival();
+    const hopChanges = [];
+    const hopChangedListener = (event) => {
+      hopChanges.push(event.detail);
+    };
+    window.addEventListener("timelineHoldChanged", hopChangedListener);
     const hold = { ...controller.hold };
     psynet.beginTimelineHold(hold);
     const closedOnBeginHold =
@@ -152,11 +184,17 @@ async function probeTimelineHoldClientBehavior(page) {
     window.addEventListener("timelineHoldEnded", hopEndedListener);
     psynet.beginTimelineHold({
       ...hold,
+      hold_id: "hop-hold-id",
       page_uuid: "hop-page-uuid",
       wake_token: "hop-wake-token",
       message: "Updated wait copy"
     });
     window.removeEventListener("timelineHoldEnded", hopEndedListener);
+    window.removeEventListener("timelineHoldChanged", hopChangedListener);
+    const hopChanged =
+      hopChanges.length === 1 &&
+      hopChanges[0].holdId === "hop-hold-id" &&
+      hopChanges[0].previousHoldId === hold.hold_id;
     const hopReusedChip =
       document.getElementById("psynet-timeline-hold-indicator") ===
       reusedIndicator;
@@ -290,6 +328,7 @@ async function probeTimelineHoldClientBehavior(page) {
       noticeClearedWithoutChannel,
       closedOnBeginHold,
       hopEnded,
+      hopChanged,
       hopReusedChip,
       hopKeptPageInert,
       hopPreservedCommentStash,
@@ -614,6 +653,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       noticeClearedWithoutChannel: true,
       closedOnBeginHold: true,
       hopEnded: 0,
+      hopChanged: true,
       hopReusedChip: true,
       hopKeptPageInert: true,
       hopPreservedCommentStash: true,
@@ -687,37 +727,25 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       reloads: 1
     });
 
+    await experimentPage.evaluate(installQuietTimelineHold);
     const busyHoldEffects = await experimentPage.evaluate(async () => {
       const originalAlert = psynet.alert;
       const originalResponseEnable = psynet.response.enable;
       const originalSubmitEnable = psynet.submit.enable;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
+      const originalNextPage = psynet.nextPage;
+      const originalSetTimeout = window.setTimeout;
       const effects = {
         alerts: 0,
         responseEnables: 0,
         submitEnables: 0,
         scheduleCalls: 0
       };
-      // The client-behavior probe reconnects the hold websocket. Wait for
-      // that onOpen resume to settle; swallowing resumeTimelineHold so a
-      // late open cannot start another in-flight POST during the probe.
-      const controller = psynet.timelineHold;
-      const originalResume = psynet.resumeTimelineHold;
+      // The client-behavior probe reconnects the hold websocket, so its
+      // onOpen resume may still be in flight.
+      const originalResume = await window.__quietTimelineHold("busy probe");
       const pendingBefore = psynet.nextPagePending;
-      psynet.resumeTimelineHold = async () => false;
       try {
-        if (controller) {
-          const deadline = Date.now() + 5000;
-          while (controller.resumeInFlight && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 25));
-          }
-          if (controller.resumeInFlight) {
-            throw new Error("hold resume still in flight before the busy probe");
-          }
-          controller.resumeRequested = false;
-          clearTimeout(controller.busyRetryTimer);
-          controller.busyRetryTimer = null;
-        }
         psynet.nextPagePending = false;
         psynet.alert = () => {
           effects.alerts += 1;
@@ -741,21 +769,50 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         };
         const isBusy = psynet.isBusyResponse(request);
         await psynet.handleBusyResponse(request, { timelineHoldResume: true });
-        const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
         const busyRetryUsed = Boolean(psynet.timelineHold?.busyRetryUsed);
         const delayedWakeMs = psynet.timelineHoldBusyRetryMs;
         clearTimeout(psynet.timelineHold?.busyRetryTimer);
         if (psynet.timelineHold) {
           psynet.timelineHold.busyRetryTimer = null;
         }
+        // A second busy 503 must not arm another retry. Neither busy 503 may
+        // set resumeRequested, or the resume's finally would wake at once.
+        await psynet.handleBusyResponse(request, { timelineHoldResume: true });
+        const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
+        const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
+
+        // A real resume that gets a busy 503 must reach nextPage, then
+        // schedule one check and queue no immediate wake. Timers are counted
+        // but never run, so the probe arms nothing that outlives it.
+        const resumeEffects = { nextPageCalls: 0, scheduleCalls: 0, timers: 0 };
+        psynet.nextPage = async (_button, _answer, _metadata, _blobs, options) => {
+          resumeEffects.nextPageCalls += 1;
+          await psynet.handleBusyResponse(request, options);
+          return false;
+        };
+        psynet.scheduleTimelineHoldCheck = () => {
+          resumeEffects.scheduleCalls += 1;
+        };
+        window.setTimeout = () => {
+          resumeEffects.timers += 1;
+          return 0;
+        };
+        try {
+          await originalResume.call(psynet, "busy probe");
+        } finally {
+          window.setTimeout = originalSetTimeout;
+        }
         return {
           isBusy,
           resumeRequested,
           busyRetryUsed,
+          secondBusyRetryArmed,
           delayedWakeMs,
-          ...effects
+          ...effects,
+          resume: resumeEffects
         };
       } finally {
+        psynet.nextPage = originalNextPage;
         psynet.alert = originalAlert;
         psynet.response.enable = originalResponseEnable;
         psynet.submit.enable = originalSubmitEnable;
@@ -768,8 +825,10 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       isBusy: true,
       resumeRequested: false,
       busyRetryUsed: true,
+      secondBusyRetryArmed: false,
       delayedWakeMs: 250,
       scheduleCalls: 0,
+      resume: { nextPageCalls: 1, scheduleCalls: 1, timers: 0 },
       alerts: 0,
       responseEnables: 0,
       submitEnables: 0
@@ -823,101 +882,28 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       errorPages: 0
     });
 
-    const busyLivelock = await experimentPage.evaluate(async () => {
-      const controller = psynet.timelineHold;
-      const originalNextPage = psynet.nextPage;
-      const originalSchedule = psynet.scheduleTimelineHoldCheck;
-      const originalResume = psynet.resumeTimelineHold;
-      const request = {
-        status: 503,
-        response: JSON.stringify({
-          status: "busy",
-          submission: "busy",
-          message: "The experiment is temporarily busy. Please try again."
-        })
-      };
-      const effects = { queuedWakes: 0, scheduleCalls: 0 };
-      // Websocket onOpen from the client-behavior probe can leave a resume
-      // in flight. Swallow new resumes, wait for that POST to settle, then
-      // measure handleBusyResponse rather than the resumeInFlight
-      // early-return that only sets resumeRequested.
-      const pendingBefore = psynet.nextPagePending;
-      psynet.resumeTimelineHold = async () => false;
-      try {
-        const deadline = Date.now() + 5000;
-        while (controller.resumeInFlight && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        if (controller.resumeInFlight) {
-          throw new Error(
-            "hold resume still in flight before the busy livelock probe"
-          );
-        }
-        controller.resumeRequested = false;
-        clearTimeout(controller.safetyTimer);
-        controller.busyRetryUsed = true;
-        clearTimeout(controller.busyRetryTimer);
-        controller.busyRetryTimer = null;
-        psynet.nextPagePending = false;
-        psynet.scheduleTimelineHoldCheck = () => {
-          effects.scheduleCalls += 1;
-        };
-        psynet.resumeTimelineHold = async function (reason) {
-          if (reason === "queued hold wake") {
-            effects.queuedWakes += 1;
-          }
-          return originalResume.apply(this, arguments);
-        };
-        psynet.nextPage = async function (
-          _button,
-          _answer,
-          _metadata,
-          _blobs,
-          options
-        ) {
-          await psynet.handleBusyResponse(request, options);
-          return false;
-        };
-        await originalResume.call(psynet, "busy livelock");
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        return {
-          queuedWakes: effects.queuedWakes,
-          scheduleCalls: effects.scheduleCalls,
-          resumeRequested: Boolean(psynet.timelineHold?.resumeRequested),
-          busyRetryUsed: Boolean(psynet.timelineHold?.busyRetryUsed)
-        };
-      } finally {
-        clearTimeout(controller.busyRetryTimer);
-        controller.busyRetryTimer = null;
-        psynet.nextPage = originalNextPage;
-        psynet.scheduleTimelineHoldCheck = originalSchedule;
-        psynet.resumeTimelineHold = originalResume;
-        psynet.nextPagePending = pendingBefore;
-      }
-    });
-    expect(busyLivelock).toEqual({
-      queuedWakes: 0,
-      scheduleCalls: 1,
-      resumeRequested: false,
-      busyRetryUsed: true
-    });
-
     const pendingEffects = await experimentPage.evaluate(async () => {
-      const controller = psynet.timelineHold;
       const originalNextPage = psynet.nextPage;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
       const effects = { nextPageCalls: 0, scheduleCalls: 0 };
-      clearTimeout(controller.safetyTimer);
-      psynet.nextPage = () => {
-        effects.nextPageCalls += 1;
-      };
-      psynet.scheduleTimelineHoldCheck = () => {
-        effects.scheduleCalls += 1;
-      };
+      // An in-flight resume would make the probe return before scheduling.
+      const originalResume = await window.__quietTimelineHold(
+        "pending request probe"
+      );
       try {
+        psynet.nextPage = () => {
+          effects.nextPageCalls += 1;
+        };
+        psynet.scheduleTimelineHoldCheck = () => {
+          effects.scheduleCalls += 1;
+        };
         psynet.nextPagePending = true;
-        effects.result = await psynet.resumeTimelineHold("test pending request");
+        effects.result = await originalResume.call(
+          psynet,
+          "test pending request"
+        );
       } finally {
+        psynet.resumeTimelineHold = originalResume;
         psynet.nextPagePending = false;
         psynet.nextPage = originalNextPage;
         psynet.scheduleTimelineHoldCheck = originalSchedule;
@@ -929,6 +915,38 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       scheduleCalls: 1,
       result: false
     });
+
+    // A resume POST can consume the next stacked hold, and that hold's
+    // release can arrive on the socket before the response carries its token.
+    const earlyWakeRequests = await experimentPage.evaluate(() => {
+      const originalConnect = PsyNetWebSocketChannel.connect;
+      let onMessage = null;
+      PsyNetWebSocketChannel.connect = (options) => {
+        onMessage = options.onMessage;
+        return { close() {} };
+      };
+      const stub = {
+        hold: { channel: "early-wake", wake_token: "current-token" },
+        resumeInFlight: false,
+        resumeRequested: false,
+        stopped: false
+      };
+      try {
+        psynet._connectTimelineHoldSocket(stub);
+      } finally {
+        PsyNetWebSocketChannel.connect = originalConnect;
+      }
+      const wake = {
+        type: "timeline_hold_wake",
+        targets: [{ wake_token: "next-hold-token", reason: "barrier_released" }]
+      };
+      onMessage(wake);
+      const whileIdle = stub.resumeRequested;
+      stub.resumeInFlight = true;
+      onMessage(wake);
+      return { whileIdle, whileInFlight: stub.resumeRequested };
+    });
+    expect(earlyWakeRequests).toEqual({ whileIdle: false, whileInFlight: true });
     await experimentPage.evaluate(() => {
       if (psynet.timelineHold) {
         psynet.resumeTimelineHold("test after pending probe");

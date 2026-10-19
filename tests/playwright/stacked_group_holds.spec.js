@@ -65,17 +65,15 @@ test("two late trio members arriving together release every waiter", { tag: "@bo
   // In legacy mode that clear can reload the document while the probe is
   // attaching or while waitForHeldParticipantToResume is waiting for the hold
   // chip to leave; treat a destroyed execution context (including Playwright
-  // toHaveCount Received: undefined) as a cleared hold. Concurrent POST
-  // /participant calls serialize in Dallinger and retry with expovariate
-  // sleep, so overlapping signup wall time uses SERIALIZED_SIGNUP_MAX_MS, not
-  // the GET /timeline handler budget. A skipper filled the barrier; a slower
-  // first-paint hold is a waiter. A late member who only resumes via websocket
+  // toHaveCount Received: undefined) as a cleared hold. A skipper filled the
+  // barrier; a slower first-paint hold is a waiter. A late member who only
+  // resumes via websocket
   // reconnect is still a last arriver, not a waiter that must show a partner
   // wake→end clock. Poller and last-arriver GET /timeline can both publish the
   // same waiting token, then a stacked-hold reload posts once more on websocket
   // onOpen; a still-on-hold server notification can post a fourth before
   // ModularPage. Allow four hold-resume POSTs. Overlay linger is logged and
-  // fails only past 30000ms; GET /timeline handler stays 3000ms.
+  // fails only past the hang cap.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_wait",
     "trio_late_a",
@@ -175,7 +173,7 @@ test("last of four releases waiters and they catch up", { tag: "@both" }, async 
   // Members 1-3 must stay held until member 4 lands, then overlay-hop the
   // remaining stacked waits. Each hop can need its own hold-resume POST
   // (grouper, then init, then prepare). Overlay linger is logged and
-  // fails only past 30000ms.
+  // fails only past the hang cap.
   const { experiment, sessions } = await startHoldExperiment(
     browser,
     TRIO_DIR,
@@ -221,7 +219,7 @@ test("two late choices complete a trio without a safety poll", { tag: "@both" },
   // once more on websocket onOpen; a still-on-hold server notification can
   // post a fourth before ModularPage. Allow four hold-resume POSTs on
   // grouping as well as on the later concurrent choices. Overlay linger is
-  // logged and fails only past 30000ms; GET /timeline handler stays 3000ms.
+  // logged and fails only past the hang cap.
   const { experiment, sessions } = await startHoldExperiment(browser, TRIO_DIR, [
     "trio_choice_wait",
     "trio_choice_late_a",

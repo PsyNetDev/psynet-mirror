@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+from psynet.asset import _PREPARING_FOR_DEPLOYMENT
 from psynet.experiment import Experiment
+from psynet.timeline import PreDeployRoutine
 
 
 class MockExperiment(Experiment):
@@ -50,6 +52,48 @@ def test_pre_deploy_archive_deployment():
         # Verify that asset preparation and database snapshot are NOT called
         mock_assets.prepare_for_deployment.assert_not_called()
         mock_db.assert_not_called()
+
+
+def test_pre_deploy_update_prepares_only_the_image():
+    experiment = MockExperiment()
+    experiment.timeline.modules = {"module": MagicMock()}
+    with (
+        patch.object(experiment, "update_deployment_id") as update_id,
+        patch.object(experiment, "setup_experiment_config") as setup_config,
+        patch("psynet.experiment._write_pre_deploy_constant_registry") as registry,
+        patch.object(experiment, "create_database_snapshot") as snapshot,
+    ):
+        experiment.pre_deploy(update=True)
+
+    update_id.assert_called_once()
+    registry.assert_called_once()
+    setup_config.assert_not_called()
+    experiment.timeline.modules["module"].prepare_for_deployment.assert_not_called()
+    experiment.assets.prepare_for_deployment.assert_not_called()
+    snapshot.assert_not_called()
+
+
+def test_pre_deploy_marks_deposits_as_prepared_before_launch():
+    """Asset preparation and pre-deploy routines run with the preparation flag on."""
+    experiment = MockExperiment()
+    seen = []
+
+    def routine():
+        seen.append(_PREPARING_FOR_DEPLOYMENT.get())
+
+    experiment.pre_deploy_routines = [PreDeployRoutine("record_flag", routine)]
+    with (
+        patch.object(experiment, "update_deployment_id"),
+        patch.object(experiment, "setup_experiment_config"),
+        patch.object(experiment, "setup_experiment_variables"),
+        patch("psynet.experiment._write_pre_deploy_constant_registry"),
+        patch.object(experiment, "create_database_snapshot"),
+    ):
+        experiment.assets.prepare_for_deployment.side_effect = routine
+        experiment.pre_deploy()
+
+    assert seen == [True, True]
+    assert _PREPARING_FOR_DEPLOYMENT.get() is False
 
 
 def test_source_code_archive_functionality_is_removed():
