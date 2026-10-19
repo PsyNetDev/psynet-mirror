@@ -4515,7 +4515,9 @@ def _dallinger_hibernation_command(name):
 
 
 @destroy.command("ssh")
-@click.option("--app", default=None, help="Experiment id")
+@click.option(
+    "--app", default=None, help="Experiment id; same as giving it as an argument."
+)
 @click.argument("apps", required=False, nargs=-1)
 @option_server
 @click.option(
@@ -4536,7 +4538,10 @@ def _dallinger_hibernation_command(name):
 @click.pass_context
 def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     """
-    Destroy the experiment on a remote server via SSH.
+    Destroy one or more experiments on a remote server via SSH.
+
+    Give the apps as arguments, with --app, or both. Several apps are
+    confirmed once, then destroyed in turn; failures don't stop the rest.
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
@@ -4546,56 +4551,47 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     """
     from dallinger.command_line.docker_ssh import destroy
 
-    example_usage = "`psynet destroy ssh <app> <app> [--server <server>]`"
-    if not app and not apps:
-        raise click.UsageError(f"Provide an app name. Example: {example_usage}")
-    if app:
-        assert len(apps) == 0, "You cannot provide both --app and a list of apps."
-        click.echo(f"Consider using the batch syntax: {example_usage}")
-        if not _destroy(
-            ctx,
-            destroy,
-            app=app,
-            server=server,
-            ask_for_confirmation=not yes,
-            discard_pending_jobs=discard_pending_jobs,
-        ):
-            raise click.Abort()
-    if len(apps) > 0:
-        assert app is None, "You cannot provide both --app and a list of apps."
-        confirmation = f"""
-            Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
-            """
-        if yes or click.confirm(confirmation, abort=True):
-            failed = []
-            for app in apps:
-                try:
-                    if not _destroy(
-                        ctx,
-                        destroy,
-                        app=app,
-                        server=server,
-                        ask_for_confirmation=False,
-                        discard_pending_jobs=discard_pending_jobs,
-                    ):
-                        failed.append(app)
-                except click.Abort:
-                    click.echo(
-                        f"Failed to destroy {app}. "
-                        "Maybe it was already destroyed, or the app name was wrong?"
-                    )
-                    failed.append(app)
-                except Exception:
-                    logger.exception(
-                        "Failed to destroy app %s; continuing with remaining apps.",
-                        app,
-                    )
-                    click.echo(
-                        f"Failed to destroy {app}; continuing with remaining apps."
-                    )
-                    failed.append(app)
-            if failed:
-                raise click.Abort()
+    apps = list(dict.fromkeys(((app,) if app else ()) + tuple(apps)))
+    if not apps:
+        raise click.UsageError(
+            "Provide an app name. Example: "
+            "`psynet destroy ssh <app> [<app> ...] [--server <server>]`"
+        )
+    batch = len(apps) > 1
+    if batch and not yes:
+        click.confirm(
+            f"Would you like to delete {len(apps)} apps from {server} "
+            f"({', '.join(apps)})?",
+            abort=True,
+        )
+    failed = []
+    for name in apps:
+        try:
+            if not _destroy(
+                ctx,
+                destroy,
+                app=name,
+                server=server,
+                ask_for_confirmation=not (yes or batch),
+                discard_pending_jobs=discard_pending_jobs,
+            ):
+                failed.append(name)
+        except Exception as e:
+            if not batch:
+                raise
+            if isinstance(e, click.Abort):
+                click.echo(
+                    f"Failed to destroy {name}. "
+                    "Maybe it was already destroyed, or the app name was wrong?"
+                )
+            else:
+                logger.exception(
+                    "Failed to destroy app %s; continuing with remaining apps.", name
+                )
+                click.echo(f"Failed to destroy {name}; continuing with remaining apps.")
+            failed.append(name)
+    if failed:
+        raise click.Abort()
 
 
 @psynet.group("apps")

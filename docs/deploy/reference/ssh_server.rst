@@ -182,8 +182,16 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. It asks you to confirm first; add
-``--yes`` to skip the confirmation in scripts. It also wakes the app if it is
+name is deployed, which replaces it. Give it one or more app names, as
+arguments or with ``--app`` (the two are equivalent and can be combined):
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app my-other-app --server my-server.example.org
+
+It asks you to confirm first, once for all the apps; add ``--yes`` to skip the
+confirmation in scripts. If one of several apps fails to be destroyed, it
+carries on with the rest and then exits with status 1. It also wakes the app if it is
 asleep and asks it for pending async jobs, and does not destroy an app that
 has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
 not skip this check. If the check cannot run, for example because the app's

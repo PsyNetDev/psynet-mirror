@@ -5576,11 +5576,39 @@ def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
     return destroyed
 
 
-def test_destroy_ssh_confirmation_names_the_app_and_server(monkeypatch):
+@pytest.mark.parametrize("answer, expected", [("n", []), ("y", [("one", "musix")])])
+def test_destroy_ssh_confirmation_names_the_app_and_server(
+    monkeypatch, answer, expected
+):
     destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one"], input="n\n")
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "--app", "one"], input=f"{answer}\n"
+    )
     assert "Would you like to delete one from musix?" in result.output
+    assert "batch syntax" not in result.output
+    assert destroyed == expected
+
+
+def test_destroy_ssh_combines_app_option_and_arguments(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "--app", "one", "two", "one"], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Would you like to delete") == 1
+    assert "Would you like to delete 2 apps from musix (one, two)?" in result.output
+    assert destroyed == [("one", "musix"), ("two", "musix")]
+
+
+def test_destroy_ssh_requires_an_app_name(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh"])
+    assert result.exit_code == 2, result.output
+    assert "Provide an app name" in result.output
+    assert "psynet destroy ssh <app>" in result.output
     assert destroyed == []
 
 
@@ -5858,19 +5886,6 @@ def test_export_warns_about_pending_jobs(capsys):
     )
 
 
-def test_destroy_ssh_requires_an_app_name(monkeypatch):
-    @click.command()
-    @click.option("--app")
-    @click.option("--server")
-    def fake_destroy(app, server):
-        raise AssertionError("should not destroy")
-
-    result = _invoke_destroy_ssh(monkeypatch, fake_destroy)
-    assert result.exit_code != 0, result.output
-    assert "Provide an app name" in result.output
-    assert "psynet destroy ssh" in result.output
-
-
 def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     destroyed = []
 
@@ -5925,21 +5940,6 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit)
     assert "Failed to destroy broken; continuing with remaining apps." in result.output
-
-
-def test_destroy_ssh_batch_succeeds(monkeypatch):
-    destroyed = []
-
-    @click.command()
-    @click.option("--app", required=True)
-    @click.option("--server")
-    def fake_destroy(app, server):
-        destroyed.append(app)
-
-    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("kept-1", "kept-2"))
-    assert destroyed == ["kept-1", "kept-2"], result.output
-    assert result.exception is None, result.output
-    assert result.exit_code == 0, result.output
 
 
 def test_signalled_debug_process_stops_its_child_processes(tmp_path):
