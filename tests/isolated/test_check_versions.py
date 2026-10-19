@@ -9,6 +9,7 @@ import pytest
 from psynet.utils import working_directory
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
+    collect_core_dependency_version_info_from_requirements,
     get_installed_commit_or_version,
 )
 
@@ -154,6 +155,55 @@ def test_commit_pin_warns_about_uncommitted_editable_changes(
     assert ("uncommitted changes" in capsys.readouterr().err) == warns
 
 
+@pytest.mark.parametrize("pin_matches", [True, False])
+def test_dallinger_is_compared_with_constraints_pin(
+    tmp_path, monkeypatch, capsys, pin_matches
+):
+    source = tmp_path / "Dallinger"
+    _git(tmp_path, "init", "-q", str(source))
+    _git(source, "commit", "-q", "--allow-empty", "-m", "a")
+    installed = _git(source, "rev-parse", "HEAD")
+    _install_fake_distribution(
+        tmp_path, monkeypatch, _editable(source), name="dallinger", version="12.5.0a1"
+    )
+    pinned = installed if pin_matches else "406f3c147354477fc11d1247403b65577c7a349f"
+    (tmp_path / "requirements.txt").write_text("dallinger~=12.4\n")
+    (tmp_path / "constraints.txt").write_text(
+        f"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@{pinned}\n"
+        "    # via psynet\n"
+    )
+
+    with working_directory(tmp_path):
+        if pin_matches:
+            check_core_dependency_versions_match_requirements(skip=("psynet",))
+            assert (
+                f"✔ Dallinger: installed commit {installed[:12]} matches "
+                f"constraints.txt (commit {installed[:12]})"
+            ) in capsys.readouterr().out
+        else:
+            with pytest.raises(ValueError) as error:
+                check_core_dependency_versions_match_requirements(skip=("psynet",))
+            assert "specified in constraints.txt do not match" in str(error.value)
+            assert f"editable Dallinger at commit {installed[:12]} ({source})" in str(
+                error.value
+            )
+            assert "--use-local-dallinger" in str(error.value)
+
+
+@patch("psynet.experiment_scaffold.get_editable_source", new=lambda name: None)
+@patch("psynet.version._get_dallinger_version", new=lambda: "12.3.0")
+def test_non_editable_mismatch_hint_names_the_pin_file(tmp_path):
+    (tmp_path / "requirements.txt").write_text("dallinger\n")
+    (tmp_path / "constraints.txt").write_text("dallinger==12.4.0\n")
+
+    with working_directory(tmp_path), pytest.raises(ValueError) as error:
+        check_core_dependency_versions_match_requirements(skip=("psynet",))
+    assert (
+        "Install the Dallinger version pinned in constraints.txt with `psynet setup`."
+        in str(error.value)
+    )
+
+
 # PsyNet tests
 def test_skip_version_check_key_error():
     with pytest.raises(KeyError, match="'SKIP_VERSION_CHECK'"):
@@ -214,7 +264,7 @@ def test_check_core_dependency_versions_psynet_editable_commit_hash(
             # Raise an error if commit hashes specified and installed differ
             with open("requirements.txt", "w") as file:
                 file.write(
-                    "psynet@git+https://gitlab.com/PsyNetDev/PsyNet@COMMIT_HASH_FROM_REQUIREMENTS#egg=psynet\n"
+                    "psynet@git+https://gitlab.com/PsyNetDev/PsyNet@c0ffee0c0ffee0c0ffee#egg=psynet\n"
                 )
                 file.flush()
 
@@ -222,7 +272,7 @@ def test_check_core_dependency_versions_psynet_editable_commit_hash(
                     ValueError,
                     match="The PsyNet versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
                     "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
-                    "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
+                    "Version specified in requirements.txt: c0ffee0c0ffee0c0ffee",
                 ):
                     check_core_dependency_versions_match_requirements()
 
@@ -299,7 +349,7 @@ def test_check_core_dependency_versions_commit_pin_matches_installed_commit(
 
 
 @patch("psynet.version.get_installed_commit_or_version")
-def test_check_core_dependency_versions_branch_pin_skips_development_install(
+def test_check_core_dependency_versions_commit_pin_skips_development_install(
     mock_installed, capsys
 ):
     mock_installed.return_value = "13.4.0a0"
@@ -307,11 +357,47 @@ def test_check_core_dependency_versions_branch_pin_skips_development_install(
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
             with open("requirements.txt", "w") as file:
-                file.write("psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master")
+                file.write(
+                    f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{'a' * 40}"
+                )
 
             check_core_dependency_versions_match_requirements()
 
     assert "Skipped version check for PsyNet" in capsys.readouterr().out
+
+
+def test_branch_pin_defers_to_constraints_commit():
+    commit = "a" * 40
+    versions = collect_core_dependency_version_info_from_requirements(
+        "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@master\n",
+        skip=("dallinger",),
+        constraints_content=f"psynet @ git+https://gitlab.com/PsyNetDev/PsyNet@{commit}\n",
+    )
+    assert versions["PsyNet"]["source"] == "constraints.txt"
+    assert versions["PsyNet"]["specified"] == commit
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "dallinger==12.4.0",
+        "dallinger[docker]==12.4 \\",
+        "dallinger==12.4.0    # via psynet",
+    ],
+)
+@patch("psynet.version._get_dallinger_version", new=lambda: "12.4.0")
+def test_constraints_version_pin_matching_installed_dallinger_passes(
+    tmp_path, capsys, constraint
+):
+    (tmp_path / "requirements.txt").write_text("dallinger\n")
+    (tmp_path / "constraints.txt").write_text(f"{constraint}\n    # via psynet\n")
+
+    with working_directory(tmp_path):
+        check_core_dependency_versions_match_requirements(skip=("psynet",))
+
+    assert "✔ Dallinger: installed 12.4.0 matches constraints.txt" in (
+        capsys.readouterr().out
+    )
 
 
 @patch("psynet.__version__", "10.0.0rc1")
@@ -432,7 +518,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_with_egg(
             with open("requirements.txt", "w") as file:
                 file.write(
                     "psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.0.0#egg=psynet\n"
-                    "dallinger@git+https://github.com/Dallinger/Dallinger@COMMIT_HASH_FROM_REQUIREMENTS#egg=dallinger"
+                    "dallinger@git+https://github.com/Dallinger/Dallinger@c0ffee0c0ffee0c0ffee#egg=dallinger"
                 )
                 file.flush()
 
@@ -440,7 +526,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_with_egg(
                     ValueError,
                     match="The Dallinger versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
                     "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
-                    "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
+                    "Version specified in requirements.txt: c0ffee0c0ffee0c0ffee",
                 ):
                     check_core_dependency_versions_match_requirements()
 
@@ -458,7 +544,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_without_e
             with open("requirements.txt", "w") as file:
                 file.write(
                     "psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.0.0\n"
-                    "dallinger@git+https://github.com/Dallinger/Dallinger@COMMIT_HASH_FROM_REQUIREMENTS"
+                    "dallinger@git+https://github.com/Dallinger/Dallinger@c0ffee0c0ffee0c0ffee"
                 )
                 file.flush()
 
@@ -466,7 +552,7 @@ def test_check_core_dependency_versions_dallinger_editable_commit_hash_without_e
                     ValueError,
                     match="The Dallinger versions installed on your local computer and specified in requirements.txt do not match.[\\n\\r\\s]+"
                     "Version installed locally: INSTALLED_COMMIT_HASH[\\n\\r\\s]+"
-                    "Version specified in requirements.txt: COMMIT_HASH_FROM_REQUIREMENTS",
+                    "Version specified in requirements.txt: c0ffee0c0ffee0c0ffee",
                 ):
                     check_core_dependency_versions_match_requirements()
 

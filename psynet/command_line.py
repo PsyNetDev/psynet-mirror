@@ -52,6 +52,7 @@ from psynet.version import (
     check_installed_dallinger_version_is_recommended,
     is_release_version_specifier,
     specified_version,
+    spinner,
 )
 
 from . import deployment_info
@@ -70,7 +71,6 @@ from .experiment_scaffold import (
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
-    dockertag_contents,
     ensure_deployment_policy,
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
@@ -204,10 +204,6 @@ def clean_sys_modules():
     to_clear = [k for k in sys.modules if k.startswith("dallinger_experiment")]
     for key in to_clear:
         del sys.modules[key]
-
-
-def update_docker_tag():
-    Path("Dockertag").write_text(dockertag_contents())
 
 
 @click.group()
@@ -347,7 +343,6 @@ def _prepare(archive=None):
     experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()
     clean_sys_modules()
-    update_docker_tag()
 
     db.session.commit()
 
@@ -1130,7 +1125,6 @@ def _prepare_image_for_update():
 
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
-    update_docker_tag()
 
 
 def _stop_leftover_debug_processes():
@@ -1659,6 +1653,9 @@ def run_pre_checks_deploy(local_, recruiter):
     check_core_dependency_versions_match_requirements()
     if not local_:
         confirm_deploying_development_psynet()
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm=user_confirms if _stdin_is_interactive() else None
+        )
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -2062,8 +2059,9 @@ def deploy__docker_ssh(
     Deploy the experiment to a remote server via Docker and SSH.
 
     The image always installs the PsyNet and Dallinger versions pinned in
-    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
-    ``--use-local-psynet`` or ``--use-local-dallinger``.
+    constraints.txt (requirements.txt if there is none). To try local
+    checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
+    ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
@@ -3310,20 +3308,18 @@ def check_psynet_requirement_is_unambiguous():
         )
         return
 
-    with yaspin(
-        text="Verifying PsyNet version in requirements.txt...",
-        color="green",
-    ) as spinner:
+    with spinner("Verifying PsyNet version in requirements.txt...") as sp:
         requirement = get_psynet_requirement()
         valid = requirement is not None and is_unambiguous_psynet_requirement(
             requirement
         )
 
-        if valid:
-            spinner.ok("✔")
-        else:
-            spinner.color = "red"
-            spinner.fail("✗")
+        if sp is not None:
+            if valid:
+                sp.ok("✔")
+            else:
+                sp.color = "red"
+                sp.fail("✗")
 
         if not valid:
             raise ValueError(_ambiguous_psynet_requirement_message(requirement))
@@ -3383,16 +3379,17 @@ def check_psynet_requirement_includes_experiment_extra():
         )
         return
 
-    with yaspin(
-        text="Verifying that requirements.txt installs psynet[experiment]...",
-        color="green",
-    ) as spinner:
+    with spinner(
+        "Verifying that requirements.txt installs psynet[experiment]..."
+    ) as sp:
         requirement = get_psynet_requirement()
         if requirement is None or requirement_includes_experiment_extra(requirement):
-            spinner.ok("✔")
+            if sp is not None:
+                sp.ok("✔")
             return
-        spinner.color = "red"
-        spinner.fail("✗")
+        if sp is not None:
+            sp.color = "red"
+            sp.fail("✗")
 
     suggested = _requirement_with_experiment_extra(requirement)
     raise ValueError(

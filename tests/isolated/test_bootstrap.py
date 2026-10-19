@@ -319,7 +319,7 @@ def test_dallinger_constraints_github_ref_tracks_pyproject_declaration():
     assert ref.lstrip("v") in declared or ref in declared
 
 
-def test_bootstrap_core_depends_only_on_click():
+def test_bootstrap_core_depends_only_on_click_and_packaging():
     """Core install stays free of experiment-runtime packages."""
     import tomllib
     from pathlib import Path
@@ -329,7 +329,7 @@ def test_bootstrap_core_depends_only_on_click():
             encoding="utf-8"
         )
     )
-    assert pyproject["project"]["dependencies"] == ["click"]
+    assert pyproject["project"]["dependencies"] == ["click", "packaging"]
     assert "yaspin" in pyproject["project"]["optional-dependencies"]["experiment"]
 
 
