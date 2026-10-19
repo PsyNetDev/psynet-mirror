@@ -1607,18 +1607,31 @@ def in_python_package():
     Returns
     -------
     bool
-        True if the current directory contains either pyproject.toml or setup.py,
-        indicating it is likely a Python package root directory.
+        See :func:`is_a_package`.
     """
     return is_a_package(".")
 
 
 def is_a_package(path):
+    """
+    Test whether a directory is the root of a Python package rather than an experiment.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to inspect.
+
+    Returns
+    -------
+    bool
+        True if the directory contains ``pyproject.toml`` or ``setup.py`` and no
+        ``experiment.py``. Experiment directories may carry their own
+        ``pyproject.toml`` (for example from ``uv init``).
+    """
     path = Path(path)
-    files_to_check = ["pyproject.toml", "setup.py"]
-    for file in files_to_check:
-        if path.joinpath(file).exists():
-            return True
+    if (path / "experiment.py").exists():
+        return False
+    return any((path / file).exists() for file in ["pyproject.toml", "setup.py"])
 
 
 def get_package_name(path="."):
