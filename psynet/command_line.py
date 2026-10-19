@@ -928,7 +928,8 @@ def _count_other_redis_clients():
     """Return the number of connections to local Redis from other programs.
 
     Keys left behind by a stopped experiment don't count, so a launch after
-    ``psynet debug local`` has stopped doesn't ask. This process's pooled
+    ``psynet debug local`` has stopped doesn't ask. Only clients of the
+    Redis database index in ``REDIS_URL`` count. This process's pooled
     connections are closed first, so only the connection running the query
     belongs to it. Returns ``None`` if Redis refuses ``CLIENT LIST``, for
     example because of an ACL or a renamed command.
@@ -945,7 +946,17 @@ def _count_other_redis_clients():
     except ResponseError as error:
         logger.warning("Couldn't list local Redis clients: %s", error)
         return None
-    return sum(1 for client in clients if int(client["id"]) != own_id)
+    own_db = next(
+        (client["db"] for client in clients if int(client["id"]) == own_id), None
+    )
+    if own_db is None:
+        logger.warning("Local Redis didn't list this connection among its clients.")
+        return None
+    return sum(
+        1
+        for client in clients
+        if int(client["id"]) != own_id and client["db"] == own_db
+    )
 
 
 def _url_without_password(url):
