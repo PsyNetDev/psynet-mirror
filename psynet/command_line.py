@@ -607,13 +607,18 @@ _SEVERAL_EXPERIMENTS_DOCS_PAGE = "code/project/running_and_debugging"
 
 @contextmanager
 def _refuse_if_local_server_running(docker=False):
-    """Refuse to start while another local server uses this port or database.
+    """Refuse to start while another local server uses this port, database or directory.
 
     Starting resets the database, Redis and development folder and stops
     worker processes, so it must fail before any of that happens. Lock files,
     shared by all users and held for the whole run, catch a server that
-    hasn't bound its port yet, and a test session that has claimed the port;
-    the connection test catches other programs on the port.
+    hasn't bound its port yet, and a test session or ``--isolated`` debug
+    server that has claimed the port; the connection test catches other
+    programs on the port. The experiment directory's lock
+    (:func:`psynet.testing.locks.experiment_directory_lock`), held as a
+    server, refuses a test session or another server, such as an
+    ``--isolated`` one, in the same directory, because both replace its
+    generated files.
     Leftover workers that use this database, for example from a server that
     was killed, are stopped first, as starting would stop them anyway. Test
     sessions skip the checks: their environment is their own.
@@ -626,7 +631,8 @@ def _refuse_if_local_server_running(docker=False):
     Raises
     ------
     click.ClickException
-        If the port or the database is in use, or a lock file can't be opened.
+        If the port or the database is in use, ``psynet debug`` serves this
+        directory, or a lock file can't be opened.
     """
     from .isolated_environment import READY_ENV_VAR
 
@@ -651,9 +657,12 @@ def _refuse_if_local_server_running(docker=False):
             )
         if _hold_run_lock(stack, port_lock_path(port)) is None:
             raise click.ClickException(
-                f"A PsyNet test session is using port {port}. Wait for it to "
-                f"finish. {_several_experiments_advice()}"
+                f"A PsyNet test session or isolated debug server is using port "
+                f"{port}. Wait for it to finish. {_several_experiments_advice()}"
             )
+        from .testing.locks import SERVER
+
+        _hold_experiment_directory(stack, SERVER)
         path = lock_path(f"psynet-debug-db-{_database_url_tag()}")
         database_lock = _hold_run_lock(stack, path)
         if database_lock is None:
@@ -730,9 +739,11 @@ def _several_experiments_advice(stopped_leftovers=False):
         "#running-several-local-experiments"
     )
     return (
-        "To run both at once, give this terminal its own port (base_port), "
-        "database (DATABASE_URL), Redis server (REDIS_URL) and development folder "
-        "(dallinger_develop_directory) as described in "
+        "To debug alongside it, use psynet debug local --isolated, which gives "
+        "this server a temporary database, Redis and port. Otherwise, to run "
+        "both at once, give this terminal its own port (base_port), database (DATABASE_URL), Redis "
+        "server (REDIS_URL) and development folder (dallinger_develop_directory) "
+        "as described in "
         f'"Run several experiments at once": {docs_url}. Nothing was reset'
         + ("; only leftover workers were stopped." if stopped_leftovers else ".")
     )
@@ -1006,6 +1017,33 @@ def sql_profiled_command(func):
     return wrapper
 
 
+def _debug_in_isolated_environment_if_requested(func):
+    """With ``--isolated``, re-run ``psynet debug local`` in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import READY_ENV_VAR
+
+        if kwargs["isolated"] and not os.environ.get(READY_ENV_VAR):
+            if kwargs["docker"]:
+                raise click.UsageError(
+                    "--isolated does not work with --docker, which always uses port 5000."
+                )
+            from .testing.locks import SERVER
+
+            with ExitStack() as stack:
+                # Held here so that the child inherits it; see HELD_LOCK_ENV_VAR.
+                _hold_experiment_directory(stack, SERVER)
+                _rerun_in_isolated_environment("debug")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @debug.command("local")
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
@@ -1015,8 +1053,18 @@ def sql_profiled_command(func):
     help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
 )
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
+@click.option(
+    "--isolated",
+    is_flag=True,
+    help=(
+        "Run with a free port and a fresh database and Redis of its own, removed "
+        "when the server stops, so that it runs alongside other local servers "
+        "and tests."
+    ),
+)
 @_add_sql_profile_options
 @click.pass_context
+@_debug_in_isolated_environment_if_requested
 @sql_profiled_command
 def debug__local(
     ctx,
@@ -1024,6 +1072,7 @@ def debug__local(
     archive,
     legacy,
     no_browsers,
+    isolated,
     sql_profile,
     sql_profile_options,
     sql_profile_dir,
@@ -1423,20 +1472,27 @@ def _stop_child_processes_on_signal():
 
 
 @contextmanager
-def _exit_on_sigterm():
-    """Raise ``SystemExit(128 + SIGTERM)`` on SIGTERM, so that ``finally`` blocks clean up.
+def _exit_on_termination_signal():
+    """Raise ``SystemExit(128 + signal)`` on SIGTERM or SIGHUP, so that ``finally`` blocks clean up.
 
-    Must be entered from the main thread.
+    SIGHUP arrives when the terminal closes. Signals that are already ignored,
+    as under ``nohup``, stay ignored. Must be entered from the main thread.
     """
 
     def handler(signum, frame):
         raise SystemExit(128 + signum)
 
-    previous = signal.signal(signal.SIGTERM, handler)
+    signals = [
+        sig
+        for sig in (signal.SIGTERM, signal.SIGHUP)
+        if signal.getsignal(sig) is not signal.SIG_IGN
+    ]
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
     try:
         yield
     finally:
-        signal.signal(signal.SIGTERM, previous)
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
@@ -5298,7 +5354,7 @@ def _in_isolated_test_environment(func):
             except ValueError as e:
                 raise click.ClickException(str(e)) from e
             if isolate:
-                _rerun_in_isolated_test_environment()
+                _rerun_in_isolated_environment()
             warning = shared_environment_warning()
             if warning:
                 log(warning)
@@ -5390,7 +5446,7 @@ def test__local(
         sys.exit(exit_code)
 
 
-def _rerun_in_isolated_test_environment():
+def _rerun_in_isolated_environment(mode="test"):
     """Re-run this command in a child process with its own database, Redis and port.
 
     Dallinger connected to the shared database when this module was imported,
@@ -5398,32 +5454,48 @@ def _rerun_in_isolated_test_environment():
     The child re-runs the whole original command line (for example
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
-    0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM is passed on to the
-    child, which gets Ctrl+C from the terminal anyway. A second signal kills
-    the child.
+    0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
+    reach the child as SIGTERM; it gets Ctrl+C from the terminal anyway. A second signal kills
+    the child. The database and Redis are removed when the child exits.
+
+    Parameters
+    ----------
+    mode : str
+        ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
+        ``"debug"`` also prints how to reach the server's data and when it has
+        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
-    _check_no_debug_server_here()
+    _check_no_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
     # set up fails without advice about services it won't use.
-    _check_experiment_directory("test")
+    _check_experiment_directory(mode)
     ensure_local_services(assume_yes=False, strict=True)
     try:
         environment = IsolatedEnvironment.start()
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
+    env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
     exit_code = 130
     interrupted = None
-    with environment, _exit_on_sigterm():
+    with _exit_on_termination_signal(), environment:
         log(environment.describe())
+        if mode == "debug":
+            log(
+                "To use this server's data from another terminal (for example with "
+                "psynet export local), first run: export "
+                + " ".join(
+                    f"{key}={shlex.quote(env[key])}"
+                    for key in ("DATABASE_URL", "REDIS_URL", "base_port")
+                ),
+                chevrons=False,
+            )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
-        process = subprocess.Popen(
-            [sys.executable, *sys.orig_argv[1:]],
-            env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
-        )
+        process = subprocess.Popen([sys.executable, *sys.orig_argv[1:]], env=env)
         while True:
             try:
                 exit_code = process.wait()
@@ -5435,19 +5507,54 @@ def _rerun_in_isolated_test_environment():
                 elif isinstance(e, SystemExit):
                     process.terminate()
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
+        # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)
+    if mode == "debug":
+        log(
+            "The isolated debug server has stopped and its database and Redis "
+            "were removed. If you ran its export line in another terminal, run "
+            "'unset DATABASE_URL REDIS_URL base_port' there."
+        )
     # A child killed by signal N reports -N; shells report 128 + N.
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
 
 
-def _check_no_debug_server_here():
-    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
-    from .isolated_environment import check_no_debug_server
+def _check_no_server_here():
+    """Raise ``click.ClickException`` if a local server holds the current directory."""
+    from .testing.locks import check_no_server
 
     try:
-        check_no_debug_server(os.getcwd())
-    except RuntimeError as e:
+        check_no_server(os.getcwd())
+    except (OSError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _hold_experiment_directory(stack, kind):
+    """Hold the current directory's lock until ``stack`` closes.
+
+    Parameters
+    ----------
+    stack : contextlib.ExitStack
+        The stack that releases the lock.
+    kind : str
+        :data:`psynet.testing.locks.SERVER` or
+        :data:`psynet.testing.locks.TEST_SESSION`; see
+        :func:`psynet.testing.locks.experiment_directory_lock`.
+
+    Raises
+    ------
+    click.ClickException
+        If the lock is held by a server, or ``kind`` is a server and the lock
+        is held at all, or the lock file can't be opened.
+    """
+    from .testing.locks import experiment_directory_lock
+
+    try:
+        stack.enter_context(experiment_directory_lock(os.getcwd(), kind=kind))
+    except (OSError, RuntimeError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -5950,7 +6057,7 @@ def performance_test__local(existing=False, json_output=None, debug=False, **opt
     This command never updates an experiment audit. Use
     ``psynet audit performance-test`` to collect audit evidence.
     """
-    with _exit_on_sigterm():
+    with _exit_on_termination_signal():
         return _run_performance_test_local(
             existing=existing, json_output=json_output, debug=debug, **options
         )
@@ -6752,23 +6859,26 @@ def _stop_server(server_info):
 
 def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
     """Run performance test after starting a new experiment server."""
-    _check_no_debug_server_here()
-    # Prefer legacy debug: gunicorn with several workers is closer to a deployed
-    # server than the auto-reload develop path used by normal
-    # ``psynet debug local``.
-    server_info = _start_local_server_and_wait_for_ready(
-        ["debug", "local", "--legacy", "--no-browsers"],
-        debug=debug,
-        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
-    )
-    try:
-        all_results = _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+    from .testing.locks import TEST_SESSION
+
+    with ExitStack() as stack:
+        _hold_experiment_directory(stack, TEST_SESSION)
+        # Prefer legacy debug: gunicorn with several workers is closer to a deployed
+        # server than the auto-reload develop path used by normal
+        # ``psynet debug local``.
+        server_info = _start_local_server_and_wait_for_ready(
+            ["debug", "local", "--legacy", "--no-browsers"],
+            debug=debug,
+            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
         )
-        print("✓ Performance test completed")
-        return all_results
-    finally:
-        _stop_server(server_info)
+        try:
+            all_results = _run_performance_test_with_existing_server(
+                debug=debug, json_output=json_output, **options
+            )
+            print("✓ Performance test completed")
+            return all_results
+        finally:
+            _stop_server(server_info)
 
 
 def _performance_test_app_info():
@@ -7120,7 +7230,7 @@ def _run_ssh_performance_test(
         estimated_duration_minutes=experiment["estimated_duration_minutes"],
         arrival_minutes=arrival_minutes,
     )
-    with bot_log_file, _exit_on_sigterm():
+    with bot_log_file, _exit_on_termination_signal():
         return _run_performance_suite(
             tester,
             bot_counts,
