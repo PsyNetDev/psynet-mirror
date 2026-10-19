@@ -5136,7 +5136,7 @@ def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
     question = f"{action[0].upper()}{action[1:]}?"
     if remove_data:
         whose = "the app's" if len(apps) == 1 else "each app's"
-        question += f" This deletes {whose} {_SSH_APP_DATA} and cannot be undone."
+        question += f" This deletes {whose} {_SSH_APP_DATA}. It cannot be undone."
     if not click.confirm(question, default=False):
         raise click.Abort()
 

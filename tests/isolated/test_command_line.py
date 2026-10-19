@@ -6318,13 +6318,15 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     )
 
     result = CliRunner().invoke(
-        psynet, ["destroy", "ssh", "twoo", "gone", "one", "-y", "--remove-data"]
+        psynet,
+        ["destroy", "ssh", "twoo", "gone", "empty", "one", "-y", "--remove-data"],
     )
     assert result.exit_code == 0, result.output
     assert "did you mean" not in result.output
     assert "Nothing left to delete for gone on musix." in result.output
+    assert result.output.count("Nothing left to delete") == 2
     assert "run this command again" not in result.output
-    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "one"]
+    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "empty", "one"]
     assert woken == ["one"]
 
     for name in "gone", "empty":
@@ -6343,9 +6345,10 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     assert (
         "Destroy 1 app on musix (one) and delete its data, and delete the "
         "leftover data of twoo? This deletes each app's database, Redis and "
-        "Postgres volumes, ~/dallinger-data/<app> and cannot be undone. [y/N]"
+        "Postgres volumes, ~/dallinger-data/<app>. It cannot be undone. [y/N]"
         in result.output
     )
+    assert "Export the data of one" in result.output
     assert "Export the data of twoo" not in result.output
     assert "Deleting any leftover data of twoo..." in result.output
 
