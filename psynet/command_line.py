@@ -1467,13 +1467,18 @@ def _stop_child_processes_on_signal():
 def _exit_on_termination_signal():
     """Raise ``SystemExit(128 + signal)`` on SIGTERM or SIGHUP, so that ``finally`` blocks clean up.
 
-    SIGHUP arrives when the terminal closes. Must be entered from the main thread.
+    SIGHUP arrives when the terminal closes. Signals that are already ignored,
+    as under ``nohup``, stay ignored. Must be entered from the main thread.
     """
 
     def handler(signum, frame):
         raise SystemExit(128 + signum)
 
-    signals = (signal.SIGTERM, signal.SIGHUP)
+    signals = [
+        sig
+        for sig in (signal.SIGTERM, signal.SIGHUP)
+        if signal.getsignal(sig) is not signal.SIG_IGN
+    ]
     previous = {sig: signal.signal(sig, handler) for sig in signals}
     try:
         yield
@@ -5326,7 +5331,9 @@ def _rerun_in_isolated_environment(mode="test"):
     Parameters
     ----------
     mode : str
-        ``"test"`` or ``"debug"``, passed to :func:`_check_experiment_directory`.
+        ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
+        ``"debug"`` also keeps other servers' Chrome windows open and prints how
+        to reach the server's data and when it has stopped.
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
@@ -5346,7 +5353,7 @@ def _rerun_in_isolated_environment(mode="test"):
         env["KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE"] = "1"
     exit_code = 130
     interrupted = None
-    with environment, _exit_on_termination_signal():
+    with _exit_on_termination_signal(), environment:
         log(environment.describe())
         if mode == "debug":
             log(
@@ -5372,10 +5379,14 @@ def _rerun_in_isolated_environment(mode="test"):
                 elif isinstance(e, SystemExit):
                     process.terminate()
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
+        # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)
     if mode == "debug":
         log(
             "The isolated debug server has stopped and its database and Redis "
-            "were removed."
+            "were removed. If you ran its export line in another terminal, run "
+            "'unset DATABASE_URL REDIS_URL base_port' there."
         )
     # A child killed by signal N reports -N; shells report 128 + N.
     if exit_code < 0:

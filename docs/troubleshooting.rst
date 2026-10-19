@@ -58,7 +58,8 @@ local`` or ``psynet deploy local`` therefore refuses to start, without
 touching the running one, while another uses the same port, or the same
 database on another port, even when another user started it. It also refuses
 while a PsyNet test session (``psynet test local`` or pytest) has claimed the
-port or an ``--isolated`` debug server serves the same directory. (Leftover
+port, or while another ``psynet debug`` (for example an ``--isolated`` one)
+serves the same directory. (Leftover
 worker processes from a server that was killed are stopped
 automatically.) Stop the other experiment (Ctrl+C in its terminal) first; to
 see what is using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. The

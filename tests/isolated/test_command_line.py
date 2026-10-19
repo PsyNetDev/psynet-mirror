@@ -1058,7 +1058,7 @@ def test_debug_local_refuses_a_directory_that_another_debug_server_serves(
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             result = debug_local()
-            if result.exit_code == 1:
+            if "is serving" in result.output:
                 break
             time.sleep(0.1)
     finally:
@@ -4847,14 +4847,22 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
-def test_isolated_launchers_clean_up_when_terminated_or_hung_up(signum):
-    """Closing the terminal must drop an isolated session's database, like SIGTERM."""
+def test_termination_signals_exit_through_cleanup_unless_ignored(signum):
+    """Closing the terminal runs ``finally`` blocks like SIGTERM, but not under nohup."""
     from psynet.command_line import _exit_on_termination_signal
 
     with pytest.raises(SystemExit, match=str(128 + signum)):
         with _exit_on_termination_signal():
             os.kill(os.getpid(), signum)
             time.sleep(5)
+
+    previous = signal.signal(signum, signal.SIG_IGN)
+    try:
+        with _exit_on_termination_signal():
+            os.kill(os.getpid(), signum)
+            time.sleep(0.1)
+    finally:
+        signal.signal(signum, previous)
 
 
 def test_pre_launch_checks_directory_before_redis():
