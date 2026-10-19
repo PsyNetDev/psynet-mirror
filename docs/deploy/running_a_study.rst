@@ -479,7 +479,9 @@ When the target number of participants is reached:
       psynet destroy ssh --app my-study --server your-server.example.org
 
    This stops the experiment's containers and removes its folder from the
-   server. It first wakes the app if it is asleep. If async jobs are still
+   server, then asks whether to delete the experiment's data too (see
+   :ref:`ssh_server_files`); pass ``--remove-data`` or ``--keep-data`` to
+   answer in advance. It first wakes the app if it is asleep. If async jobs are still
    pending, the command says how many and asks you to confirm, or refuses
    when it cannot ask (for example in a script, or when destroying several
    apps at once). Pass ``--discard-pending-jobs`` only if you accept losing

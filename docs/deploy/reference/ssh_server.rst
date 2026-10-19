@@ -165,6 +165,8 @@ hibernation controller.
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
 
+.. _ssh_server_files:
+
 Files on the server
 ^^^^^^^^^^^^^^^^^^^
 
@@ -181,8 +183,7 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. Give it one or more app names, as
+uses it. Give it one or more app names, as
 arguments or with ``--app`` (the two are equivalent and can be combined):
 
 .. code-block:: bash
@@ -200,6 +201,26 @@ the app without ``--discard-pending-jobs``, except for apps deployed with
 ``psynet debug ssh`` or ``psynet performance-test ssh``, which it destroys
 anyway.
 See :doc:`/reference/api/async_job`.
+
+It then asks whether to delete the apps' data as well: the database and
+Postgres user in the shared PostgreSQL, the app's Redis and Postgres volumes,
+and ``~/dallinger-data/<app>``. It asks once for all the apps, after reminding
+you to export any app it finds no export of in ``exports/`` of the current
+directory. Answer no, or pass ``--keep-data``, to keep the data; each app's
+kept data is then listed with the command that deletes it later. Pass
+``--remove-data`` to delete it without asking. ``--yes`` does not answer this
+question, so scripts and other non-interactive runs must pass one of the two
+flags:
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app --server my-server.example.org --yes --keep-data
+
+The data question and the two flags need a Dallinger version whose
+``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
+With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
+as before: a classic app's database stays in PostgreSQL until an app with the
+same name is deployed, which replaces it.
 
 Updating a running app
 ----------------------

@@ -84,7 +84,6 @@ from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .utils import (
     format_bytes,
-    get_args,
     get_experiment_url,
     get_logger,
     get_package_name,
@@ -3706,7 +3705,7 @@ def _normalize_public_origin(value):
 
 
 def _latest_launch_record(app, server):
-    """Return the newest local launch note for this app on this server."""
+    """Return the newest local launch note for this app on this server, with its ``deployment_id``."""
     root = Path("~/psynet-data/launch-data").expanduser()
     if not root.is_dir():
         return None
@@ -3721,7 +3720,7 @@ def _latest_launch_record(app, server):
         if payload.get("app") != app or payload.get("server") != server:
             continue
         if mtime >= chosen_mtime:
-            chosen = payload
+            chosen = {"deployment_id": path.parent.name, **payload}
             chosen_mtime = mtime
     return chosen
 
@@ -4403,12 +4402,17 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
     discard_pending_jobs=False,
+    destroy_kwargs=dict,
 ):
     """Destroy a single app.
 
     For docker-ssh apps (``server`` given), first wake the app and check for
     pending async jobs with :func:`_confirm_destroy_with_pending_jobs`, or
     :func:`_destroy_without_pending_job_check` if the check can't run.
+    ``destroy_kwargs`` is called once the destruction is confirmed and returns
+    extra options for ``f_destroy``, so it may ask questions of its own.
+    Dallinger's output isn't covered by a spinner, as it may prompt or report
+    what it kept.
     """
     target = app or "the app"
     if server:
@@ -4432,37 +4436,70 @@ def _destroy(
         else True
     )
 
-    if confirmed:
-        with yaspin(f"Destroying {app}...") as spinner:
-            try:
-                kwargs = {"app": app}
-                kwargs = {**kwargs, "server": server} if server else kwargs
-                # Dallinger still exposes this retired-platform option. Keep
-                # it disabled until the upstream command removes it.
-                if "expire_hit" in get_args(f_destroy):
-                    ctx.invoke(
-                        f_destroy,
-                        expire_hit=False,
-                        **kwargs,
-                    )
-                else:
-                    ctx.invoke(
-                        f_destroy,
-                        **kwargs,
-                    )
-                spinner.ok("✔")
-            except subprocess.CalledProcessError:
-                spinner.fail("✗")
-                click.echo(
-                    f"Failed to destroy {app}. "
-                    "Maybe it was already destroyed, or the app name was wrong?"
-                )
-                return False
-            except click.Abort:
-                spinner.fail("✗")
-                raise
-        return True
-    return False
+    if not confirmed:
+        return False
+    kwargs = {"app": app, **({"server": server} if server else {})}
+    # Dallinger still exposes this retired-platform option. Keep it disabled
+    # until the upstream command removes it.
+    if "expire_hit" in _command_params(f_destroy):
+        kwargs["expire_hit"] = False
+    kwargs.update(destroy_kwargs())
+    log(f"Destroying {app}...")
+    try:
+        ctx.invoke(f_destroy, **kwargs)
+    except subprocess.CalledProcessError:
+        click.echo(
+            f"Failed to destroy {app}. "
+            "Maybe it was already destroyed, or the app name was wrong?"
+        )
+        return False
+    return True
+
+
+def _command_params(command):
+    """Return the parameter names of a Click command."""
+    return {param.name for param in command.params}
+
+
+def _ssh_data_options(apps, server, remove_data, keep_data):
+    """Return the data options for Dallinger's ``docker-ssh destroy``.
+
+    Without ``remove_data`` or ``keep_data``, asks once whether to delete the
+    data of all ``apps``, after warning about apps without a local export.
+    """
+    if keep_data:
+        return {"keep_data": True}
+    for app in apps:
+        _warn_if_not_exported(app, server)
+    if not remove_data:
+        remove_data = click.confirm(
+            f"Also delete the data of {', '.join(apps)} on {server} (database, "
+            "Redis and Postgres volumes, ~/dallinger-data/<app>)? This cannot "
+            "be undone. Answer no to keep it.",
+            default=False,
+        )
+    return {"remove_data": True, "yes": True} if remove_data else {"keep_data": True}
+
+
+def _warn_if_not_exported(app, server):
+    """Warn unless ``./exports`` holds an export of the app's newest local deployment."""
+    command = f"psynet export ssh --app {app} --server {server}"
+    record = _latest_launch_record(app, server)
+    if record is None:
+        log(f"Export the data of {app} first if you haven't: {command}")
+        return
+    exports = Path("exports")
+    for folder in [exports / "latest", *exports.glob("history/*")]:
+        try:
+            exported = json.loads((folder / "manifest.json").read_text("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if exported.get("deployment_id") == record["deployment_id"]:
+            return
+    log(
+        f"WARNING: Found no export of {app} in {exports.resolve()}. Export its "
+        f"data first if you haven't: {command}"
+    )
 
 
 @psynet.group("hibernate")
@@ -4535,13 +4572,30 @@ def _dallinger_hibernation_command(name):
         "they can't be checked for them, losing those jobs' results."
     ),
 )
+@click.option(
+    "--remove-data",
+    is_flag=True,
+    help=(
+        "Also delete the apps' data on the server (database, Redis and Postgres "
+        "volumes, ~/dallinger-data/<app>) without asking."
+    ),
+)
+@click.option("--keep-data", is_flag=True, help="Keep the apps' data on the server.")
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
+def destroy__docker_ssh(
+    ctx, app, apps, server, yes, discard_pending_jobs, remove_data, keep_data
+):
     """
     Destroy one or more experiments on a remote server via SSH.
 
     Give the apps as arguments, with --app, or both. Several apps are
     confirmed once, then destroyed in turn; failures don't stop the rest.
+
+    Without --remove-data or --keep-data, asks whether to delete the apps'
+    data, once for all of them; --yes does not answer this. Non-interactive
+    runs must pass one of the two. Both need a Dallinger whose
+    `dallinger docker-ssh destroy` has them; older versions destroy apps as
+    before.
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
@@ -4557,13 +4611,35 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
             "Provide an app name. Example: "
             "`psynet destroy ssh <app> [<app> ...] [--server <server>]`"
         )
-    batch = len(apps) > 1
-    if batch and not yes:
-        click.confirm(
-            f"Would you like to delete {len(apps)} apps from {server} "
-            f"({', '.join(apps)})?",
-            abort=True,
+    if remove_data and keep_data:
+        raise click.UsageError("Pass only one of --remove-data and --keep-data.")
+    data_choice = "remove_data" in _command_params(destroy)
+    if (remove_data or keep_data) and not data_choice:
+        raise click.UsageError(
+            "--remove-data and --keep-data need a newer Dallinger, whose "
+            "`dallinger docker-ssh destroy` has these options."
         )
+    if data_choice and not (remove_data or keep_data or _stdin_is_interactive()):
+        raise click.UsageError(
+            "Choose what happens to the experiment data: pass --remove-data or "
+            "--keep-data in non-interactive sessions."
+        )
+
+    @functools.cache
+    def data_options():
+        if not data_choice:
+            return {}
+        return _ssh_data_options(apps, server, remove_data, keep_data)
+
+    batch = len(apps) > 1
+    if batch:
+        if not yes:
+            click.confirm(
+                f"Would you like to delete {len(apps)} apps from {server} "
+                f"({', '.join(apps)})?",
+                abort=True,
+            )
+        data_options()
     failed = []
     for name in apps:
         try:
@@ -4574,12 +4650,15 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
                 server=server,
                 ask_for_confirmation=not (yes or batch),
                 discard_pending_jobs=discard_pending_jobs,
+                destroy_kwargs=data_options,
             ):
                 failed.append(name)
         except Exception as e:
             if not batch:
                 raise
-            if isinstance(e, click.Abort):
+            if isinstance(e, click.ClickException):
+                click.echo(f"Failed to destroy {name}: {e.format_message()}")
+            elif isinstance(e, click.Abort):
                 click.echo(
                     f"Failed to destroy {name}. "
                     "Maybe it was already destroyed, or the app name was wrong?"
