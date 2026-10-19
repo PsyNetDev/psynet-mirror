@@ -82,7 +82,12 @@ from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .server_logs import logs_command, server_ingress, where_to_read_logs
+from .server_logs import (
+    compose_ingress,
+    logs_command,
+    server_ingress,
+    where_to_read_logs,
+)
 from .utils import (
     format_bytes,
     get_args,
@@ -4342,12 +4347,11 @@ def _confirm_destroy_with_pending_jobs(
 _COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
 
 
-def _is_debug_ssh_app(server, app):
-    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
+def _read_ssh_compose_file(server, app):
+    """Return an SSH app's compose file, or ``None`` if it can't be read.
 
-    The compose file is read rather than the app's config in its web
-    container, which may be what failed. Apps whose compose file can't be
-    read count as not deployed by ``psynet debug ssh``.
+    It is read rather than the app's config in its web container, which may
+    be what failed.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException
@@ -4359,7 +4363,12 @@ def _is_debug_ssh_app(server, app):
         )
     except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
         log(f"Could not read {app}'s compose file on {server}: {e}")
-        return False
+        return None
+    return compose or None
+
+
+def _is_debug_ssh_app(compose):
+    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file."""
     match = re.search(_COMPOSE_SETTING.format("debug_ssh_app"), compose or "")
     return bool(match) and match[1].strip().lower() == "true"
 
@@ -4393,13 +4402,15 @@ def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs)
             "--discard-pending-jobs was passed."
         )
         return True
-    if _is_debug_ssh_app(server, app):
+    compose = _read_ssh_compose_file(server, app)
+    if _is_debug_ssh_app(compose):
         return True
+    ingress = compose_ingress(compose) if compose else None
     log(
         f"{problem} Not destroying {app}, because destroying it would lose the "
         "results of any jobs still running. If its web container isn't "
         f"running, start it (see 'psynet apps ssh --server {server}' or its "
-        f"logs {where_to_read_logs(server, app)}) and run this command again. "
+        f"logs {where_to_read_logs(server, app, ingress)}) and run this command again. "
         "Otherwise check in its "
         "logs that its async jobs have finished, then pass "
         "--discard-pending-jobs to destroy it anyway."

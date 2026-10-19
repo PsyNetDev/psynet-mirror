@@ -5690,7 +5690,7 @@ def test_destroy_ssh_batch_destroys_only_the_apps_it_could_check(monkeypatch):
         return {"total": 0}
 
     monkeypatch.setattr(
-        "psynet.command_line._is_debug_ssh_app", lambda server, app: False
+        "psynet.command_line._read_ssh_compose_file", lambda server, app: None
     )
     fake_destroy, destroyed = _recording_destroy()
     result = _invoke_destroy_ssh(
@@ -5763,6 +5763,31 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
         "Not destroying one" in result.output
     )
     assert "pass --discard-pending-jobs to destroy it anyway" in result.output
+
+
+@pytest.mark.parametrize(
+    "default_ingress, services, logs",
+    [
+        ("cloudflare", "  web:\n", "its logs in Dozzle at https://logs.musix)"),
+        ("classic", "  web:\n  cloudflared:\n", "its logs with 'ssh -i /k.pem lab "),
+    ],
+)
+def test_destroy_ssh_points_to_the_logs_of_the_apps_own_ingress(
+    monkeypatch, default_ingress, services, logs
+):
+    monkeypatch.setitem(
+        importlib.import_module("dallinger.command_line.docker_ssh").CONFIGURED_HOSTS,
+        "musix",
+        {"host": "lab", "default_ingress": default_ingress},
+    )
+    monkeypatch.setattr(
+        "dallinger.command_line.utils.get_server_pem_path", lambda: "/k.pem"
+    )
+    result, *_ = _destroy_unchecked_ssh_apps(
+        monkeypatch, ["--app", "one"], compose=f"services:\n{services}"
+    )
+
+    assert logs in result.output
 
 
 @pytest.mark.parametrize(

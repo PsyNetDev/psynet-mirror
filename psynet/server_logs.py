@@ -9,9 +9,12 @@ The ingress of a new app comes from ``--ingress`` or the server registry's
 ``psynet debug ssh`` record it and the logs command in ``deployment_info``,
 because the app's own messages, such as Slack notifications, are built on
 the server, which knows neither; deployments without a record count as
-classic.
+classic. Messages printed on this computer (:func:`where_to_read_logs`) use
+the ingress that the command read from the app's compose file, else that
+record, and only guess from ``default_ingress`` without either.
 """
 
+import re
 from pathlib import Path
 from shlex import quote
 from typing import Optional
@@ -88,19 +91,51 @@ def logs_command(server_info: dict, app: str) -> str:
     return " ".join(parts)
 
 
-def where_to_read_logs(server: str, app: str) -> str:
+def compose_ingress(compose: str) -> str:
+    """Return the ingress of an app from its ``docker-compose.yml``, whose ``cloudflared`` service only Cloudflare apps have."""
+    if re.search(r"(?m)^  cloudflared:", compose):
+        return INGRESS_CLOUDFLARE
+    return INGRESS_CLASSIC
+
+
+def _recorded_ingress(server: str, app: str) -> Optional[str]:
+    """Return the ingress in ``deployment_info`` if this directory last deployed ``app`` to ``server``."""
+    from . import deployment_info
+
+    try:
+        info = deployment_info.read_all()
+    except FileNotFoundError:
+        return None
+    if (info.get("server"), info.get("app")) == (server, app):
+        return info.get("ingress")
+    return None
+
+
+def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> str:
     """Describe where to read ``app``'s logs, for messages printed on this computer.
 
-    The ingress is a best guess from the server's ``default_ingress``: an app
-    deployed with an explicit ``--ingress`` may differ, and finding out would
-    take another SSH round trip.
+    Parameters
+    ----------
+    server : str
+        The configured server name.
+    app : str
+        The app name.
+    ingress : str, optional
+        The app's ingress, if the caller read it from the server. Otherwise
+        it comes from ``deployment_info`` when this directory deployed the
+        app, and failing that is guessed, with a "probably", from the
+        server's ``default_ingress``.
     """
     from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
     server_info = CONFIGURED_HOSTS.get(server, {})
-    url = dozzle_url(server, server_ingress(server_info))
+    ingress = ingress or _recorded_ingress(server, app)
+    hedge = ""
+    if ingress is None:
+        ingress, hedge = server_ingress(server_info), "probably "
+    url = dozzle_url(server, ingress)
     if url:
-        return f"in Dozzle at {url}"
+        return f"{hedge}in Dozzle at {url}"
     if "host" not in server_info:
-        return "with 'docker compose logs' on the server"
-    return f"with '{logs_command(server_info, app)}'"
+        return f"{hedge}with 'docker compose logs' on the server"
+    return f"{hedge}with '{logs_command(server_info, app)}'"
