@@ -190,11 +190,14 @@ arguments or with ``--app`` (the two are equivalent and can be combined):
 
     psynet destroy ssh my-app my-other-app --server my-server.example.org
 
-It asks you to confirm first, once for all the apps; add ``--yes`` to skip the
-confirmation in scripts. If one of several apps fails to be destroyed, it
-carries on with the rest and then exits with status 1. It also wakes each app
-if it is asleep and asks it for pending async jobs, and does not destroy an app
-that has some unless you pass ``--discard-pending-jobs`` or, when destroying a
+It first checks that the apps are on the server; if one isn't, it stops and
+lists the apps that are, suggesting the closest name. It then asks you to
+confirm, once for all the apps (pressing Enter answers no); add ``--yes`` to
+skip the confirmation in scripts, where it is required because there is no
+terminal to ask in. If one of several apps fails to be destroyed, it carries
+on with the rest and then exits with status 1. It also wakes each app if it is
+asleep and asks it for pending async jobs, and does not destroy an app that
+has some unless you pass ``--discard-pending-jobs`` or, when destroying a
 single app, confirm; ``--yes`` does not skip this check. If the check cannot
 run, for example because the app's web container is down, it does not destroy
 the app without ``--discard-pending-jobs``, except for apps deployed with
@@ -231,8 +234,9 @@ Updating a running app
 To ship a fix to an app that is already running, add ``--update`` to the
 command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
-was deployed with. PsyNet asks you to confirm, then rebuilds the image and
-restarts the app. The update keeps:
+was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
+the existing app and prints the update command for it. PsyNet asks you to
+confirm, then rebuilds the image and restarts the app. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
