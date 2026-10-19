@@ -1326,61 +1326,6 @@
       }
     };
 
-    /**
-     * Move timeline chrome that page HTML has pulled out of #timeline-root back into it.
-     *
-     * An unclosed inline tag in page HTML (e.g. a stray <b>) is reopened by
-     * the HTML parser after #main-body closes, wrapping the modals and the
-     * footer or standalone media bar that follow. The footer then sits just
-     * below the content, the standalone bar loses its window-bottom rules,
-     * and modal text inherits the stray formatting. Inplace swaps replace
-     * these elements where they stand, so one repair on full-page load is
-     * enough. timeline-page.html calls this before body scripts load, when
-     * dallinger.post is not yet defined, so the warning waits for
-     * DOMContentLoaded.
-     */
-    psynet.repairTimelineRoot = function () {
-      const root = document.getElementById("timeline-root");
-      if (root === null) {
-        return;
-      }
-      // The chrome timeline-page.html renders after #main-body, in template
-      // order. participant.css styles these as direct children of the root.
-      const tailIds = [
-        "early-exit-modal",
-        "comment-modal",
-        "alert-modal",
-        "resume-modal",
-        "footer",
-        "media-download-progress-bar",
-      ];
-      const misplaced = tailIds.map((id) => document.getElementById(id)).filter(
-        (element) =>
-          element !== null &&
-          element.parentElement !== root &&
-          element.parentElement.id !== "footer",
-      );
-      if (misplaced.length === 0) {
-        return;
-      }
-      const wrapper = misplaced[0].parentElement.tagName.toLowerCase();
-      misplaced.forEach((element) => root.appendChild(element));
-      const warn = () =>
-        psynet.log.warn(
-          "Timeline chrome (" +
-            misplaced.map((element) => "#" + element.id).join(", ") +
-            ") was nested in <" +
-            wrapper +
-            ">, probably because of an unclosed tag in the page HTML. " +
-            "Moved it back into #timeline-root.",
-        );
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", warn, { once: true });
-      } else {
-        warn();
-      }
-    };
-
     psynet.preloadTimelineFragmentAssets = async function (fragment) {
       await psynet.preloadStylesheetLinks(fragment.stylesheetLinks);
     };

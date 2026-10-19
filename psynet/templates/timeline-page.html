@@ -256,9 +256,6 @@
 
             {{ timeline_footer() }}
         </div>
-        {# Inline so that the repair lands before the parser-blocking body
-           scripts below can let a misplaced layout paint. #}
-        <script>psynet.repairTimelineRoot();</script>
     {% endif %}
 
 {% endblock %}
