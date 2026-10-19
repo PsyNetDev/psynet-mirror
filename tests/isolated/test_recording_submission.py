@@ -281,6 +281,19 @@ def test_bots_declare_recordings_for_upload_after_acceptance(submission):
     assert set(response.blobs) == {"cameraRecording", "screenRecording"}
 
 
+def test_custom_record_controls_keep_uploading_with_the_answer(submission):
+    """A subclass that does not opt in renders and submits as before."""
+    from psynet.modular_page import RecordControl
+
+    class CustomRecordControl(RecordControl):
+        macro = "audio_record"
+
+    exp, _, _, _ = submission
+    control = CustomRecordControl(duration=1)
+    assert not control._uses_async_upload(exp)
+    assert control.get_js_vars()["asynchronousUploadSources"] is None
+
+
 @pytest.mark.parametrize("size, uploads", [(1000, 1), (8 * 1024**2, 0)])
 def test_audio_answers_upload_after_acceptance(submission, monkeypatch, size, uploads):
     """Audio answers use the same deferred path as video, as WAV files."""

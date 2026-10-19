@@ -3557,10 +3557,12 @@ class RecordControl(Control):
     file_extension = None
     # Asynchronous upload: in-place LocalStorage experiments accept the answer
     # first and receive its recordings afterwards (see psynet.media_upload).
-    # Bots, legacy navigation and other storage keep uploading with the answer.
-    # Subclasses describe their recordings through recording_sources,
-    # _upload_format, _answer_metadata and _answer_reference_keys.
-    _async_upload = True
+    # Legacy navigation and other storage keep uploading with the answer.
+    # Subclasses opt in and describe their recordings through
+    # recording_sources, _upload_format, _answer_metadata and
+    # _answer_reference_keys. Other subclasses, including authors' own, keep
+    # uploading with the answer.
+    _async_upload = False
     _async_upload_max_bytes = 128 * 1024 * 1024
     _upload_format = None
 
@@ -3817,6 +3819,7 @@ class AudioRecordControl(RecordControl):
 
     macro = "audio_record"
     file_extension = ".wav"
+    _async_upload = True
     _upload_format = "wav"
     # recorder.js writes 16-bit PCM at the browser's sample rate, which some
     # audio interfaces set as high as 192 kHz.
@@ -4004,6 +4007,7 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
+    _async_upload = True
     _upload_format = "webm"
 
     def __init__(
