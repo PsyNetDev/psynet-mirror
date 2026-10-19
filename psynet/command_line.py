@@ -6128,6 +6128,7 @@ def _run_performance_suite(
     limits = _performance_limits(max_p95_ms, max_queue_p95_s)
     options = {
         **_performance_json_options(tester, limits, capacity_search=find_capacity),
+        "open_link_recruiter": _open_link_recruiter(),
         **(ssh_options or {}),
     }
     if find_capacity:
@@ -6153,6 +6154,7 @@ def _run_performance_suite(
         label=label,
         after_test=save_json,
         local=ssh_options is None,
+        open_link=options["open_link_recruiter"],
     )
     restore_error = cleanup_error = None
     try:
@@ -6318,6 +6320,17 @@ def _check_arrival_options(
             "--arrival-minutes must be shorter than --duration-minutes, so that "
             "every bot starts during the test."
         )
+
+
+def _open_link_recruiter():
+    """Return whether the configured recruiter supports ``max_concurrent_participants``."""
+    from psynet.capacity import recruiter_supports_participant_limits
+    from psynet.recruiters import named_recruiter_class
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    return recruiter_supports_participant_limits(named_recruiter_class(config))
 
 
 def _write_suite_json(

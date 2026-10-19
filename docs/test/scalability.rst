@@ -198,14 +198,16 @@ example, from a static rating study on an SSH server (some rows left out)::
       Bots finished is - where the test was shorter than one participant session (11 min), so no bot could finish.
 
     Recommended: at most 416 participants at once.
-      To enforce it in an open-link study, set max_concurrent_participants = 416 in Experiment.variables.
+      To enforce it, set max_concurrent_participants = 416 in Experiment.variables.
     Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) failed, over the 1% limit.
       Errors at 560: 5 x HTTP 500 on /participant_status, 3 x OperationalError, 2 x HTTP 500 on /response.
     Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
 
 Nothing holds participants to the recommended number unless the study
-enforces it; for open-link studies, see
-:ref:`limiting_simultaneous_participants`.
+enforces it. With the ``generic`` or ``hotair`` recruiter, the summary
+suggests the ``max_concurrent_participants`` setting that does so (see
+:ref:`limiting_simultaneous_participants`); with other recruiters it leaves
+that line out.
 
 *Notes* follow with advice, for example on errors, worker processes and
 database growth. If the validation test fails, the summary suggests a lower

@@ -93,6 +93,7 @@ from .capacity import (
     is_valid_participant_limit,
     recruiter_supports_participant_limits,
     refuse_new_participant_if_full,
+    usable_participant_limit,
 )
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
@@ -2704,17 +2705,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         -------
         bool
         """
-        limit = self.var.get("max_concurrent_participants", None)
-        if limit is None:
-            return False
-        if not is_valid_participant_limit(limit):
-            logger.warning(
-                "Ignoring max_concurrent_participants=%r: it must be a whole number "
-                "of at least 0, or None for no limit.",
-                limit,
-            )
-            return False
-        return count_active_participants() >= limit
+        limit = usable_participant_limit(
+            self.var.get("max_concurrent_participants", None)
+        )
+        return limit is not None and count_active_participants() >= limit
 
     @staticmethod
     def check_recruiter_support(config):

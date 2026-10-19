@@ -59,6 +59,7 @@ _PARTICIPANT_CREATION_ENDPOINTS = {"post_participant", "create_participant"}
 DEFAULT_IDLE_TIMEOUT_S = 600
 
 _full_until = 0.0
+_warned_invalid_limits = set()
 
 
 def is_valid_participant_limit(value):
@@ -70,6 +71,24 @@ def is_valid_participant_limit(value):
     return value is None or (
         isinstance(value, int) and not isinstance(value, bool) and value >= 0
     )
+
+
+def usable_participant_limit(value):
+    """Return ``value`` if it is a valid ``max_concurrent_participants``, else ``None``.
+
+    An invalid value, for example one set by experiment code while the study
+    runs, is ignored with a warning, logged once per web process and value.
+    """
+    if is_valid_participant_limit(value):
+        return value
+    if repr(value) not in _warned_invalid_limits:
+        _warned_invalid_limits.add(repr(value))
+        logger.warning(
+            "Ignoring max_concurrent_participants=%r: it must be a whole number "
+            "of at least 0, or None for no limit.",
+            value,
+        )
+    return None
 
 
 def recruiter_supports_participant_limits(recruiter_class):

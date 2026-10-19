@@ -98,8 +98,12 @@ def test_newcomers_are_refused_only_while_the_study_is_full(
     assert before_request() is None
     experiment.var.max_concurrent_participants = 0
     assert before_request().status_code == 503
+    monkeypatch.setattr(capacity, "_warned_invalid_limits", set())
     experiment.var.max_concurrent_participants = "150"
+    caplog.clear()
     assert before_request() is None
+    assert before_request() is None
+    assert caplog.text.count("Ignoring max_concurrent_participants='150'") == 1
 
     def broken():
         raise RuntimeError("database unavailable")
