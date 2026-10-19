@@ -418,6 +418,27 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
     confirm_project_identity(local, remote, allow_mismatch=True, emit=warnings.append)
 
 
+def test_dirty_state_warnings_name_the_files():
+    local = ProjectIdentity(
+        experiment_label="d", git_dirty=True, git_dirty_paths=("experiment.py",)
+    )
+    remote = ProjectIdentity.from_dict(
+        {
+            "experiment_label": "d",
+            "git_dirty": True,
+            "git_dirty_paths": ["config.txt"],
+            "export_format_version": 1,
+        }
+    )
+
+    warnings = []
+    confirm_project_identity(
+        local, remote, confirm=lambda message: True, emit=warnings.append
+    )
+    assert any("uncommitted changes in:\n  config.txt" in m for m in warnings)
+    assert any("uncommitted changes in:\n  experiment.py" in m for m in warnings)
+
+
 def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
     local = ProjectIdentity(experiment_label="d", git_dirty=True)
     remote = ProjectIdentity(experiment_label="d", export_format_version=1)

@@ -221,7 +221,11 @@ function startExperiment(experimentDir, options = {}) {
     outputLines.push(line);
     logStream.write(`${line}\n`);
 
-    if (line.includes("Address already in use")) {
+    if (
+      line.includes("Address already in use") ||
+      /Port \d+ is already in use/.test(line) ||
+      line.includes("Another local PsyNet server")
+    ) {
       rejectUrl(
         new Error(
           `Startup failed because port ${DEBUG_PORT} is already in use.\n` +

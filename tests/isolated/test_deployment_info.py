@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import click
 import jsonpickle
 import pytest
 
@@ -97,6 +98,66 @@ def test_deployment_info_records_git_provenance(tmp_path):
         _initialize_deployment_info()
 
         assert deployment_info.read("git_dirty") is True
+        assert "experiment.py" in deployment_info.read("git_dirty_paths")
+
+
+def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
+    with working_directory(tmp_path):
+        _git("init", "--quiet")
+        _git("config", "user.email", "test@example.com")
+        _git("config", "user.name", "Test User")
+        Path("deploy.toml").write_text('version = 1\n[exclude]\nnames = [".env"]\n')
+        _git("add", ".")
+        _git("commit", "--quiet", "-m", "Initial commit")
+        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
+        assert "uncommitted" not in capsys.readouterr().err
+
+        Path(".env").write_text("excluded")
+        for i in range(12):
+            Path(f"stimulus_{i:02}.txt").write_text("new")
+        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
+        err = capsys.readouterr().err
+        assert "  stimulus_00.txt" in err and "... and 2 more" in err
+        assert ".env" not in err
+
+        with pytest.raises(click.Abort):
+            deployment_info.warn_about_uncommitted_deployment_changes(
+                confirm=lambda question: False
+            )
+
+
+@pytest.mark.parametrize(
+    "mode, tty, prompted",
+    [("live", True, True), ("live", False, False), ("sandbox", True, False)],
+)
+def test_uncommitted_files_prompt_only_interactive_live_deploys(
+    tmp_path, monkeypatch, capsys, mode, tty, prompted
+):
+    from psynet import command_line
+
+    questions = []
+    monkeypatch.setenv("SKIP_VERSION_CHECK", "1")
+    monkeypatch.setattr(command_line, "_stdin_is_interactive", lambda: tty)
+    monkeypatch.setattr(
+        command_line, "user_confirms", lambda q: questions.append(q) or True
+    )
+    with working_directory(tmp_path):
+        _git("init", "--quiet")
+        _git("config", "user.email", "test@example.com")
+        _git("config", "user.name", "Test User")
+        Path("requirements.txt").write_text("psynet[experiment]==14.0.0\n")
+        Path("deploy.toml").write_text("version = 1\n[exclude]\n")
+        _git("add", ".")
+        _git("commit", "--quiet", "-m", "Initial commit")
+        Path("experiment.py").write_text("uncommitted")
+
+        if mode == "live":
+            command_line.run_pre_checks_deploy(local_=False, recruiter=None)
+        else:
+            command_line.run_pre_checks_sandbox()
+
+    assert bool(questions) == prompted
+    assert ("  experiment.py" in capsys.readouterr().err) == (mode == "live")
 
 
 def test_git_dirty_is_scoped_to_experiment_directory(tmp_path):
