@@ -17,11 +17,18 @@ env/
 # Automatically generated server log file
 server.log
 
+# Files staged by `psynet debug ssh --use-local-psynet` / `--use-local-dallinger`
+psynet-*.whl
+local-image-pins.txt
+
 # Automatically generated resources for running experiments with assets
 static/assets
 
 # Local data exports
 exports/
+
+# Generated audit HTML preview (the rest of audit/ may still be tracked)
+audit/site/
 
 # Legacy experiment source snapshot (no longer generated)
 source_code.zip

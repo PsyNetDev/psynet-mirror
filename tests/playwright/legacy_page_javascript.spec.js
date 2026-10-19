@@ -66,6 +66,22 @@ test("deprecated scripts and js_links force full reloads with classic globals", 
       STEP_TIMEOUT_MS
     );
 
+    // The marker's text ships in the page's initial HTML, while its dataset is
+    // written by js_page_code once the page is activated. Waiting on the text
+    // alone can therefore read the dataset before it exists, so wait for the
+    // evidence this test actually asserts.
+    await expect
+      .poll(
+        () =>
+          experimentPage.evaluate(
+            () =>
+              document.getElementById("legacy-checkpoint-marker")?.dataset
+                .legacyGlobal ?? null
+          ),
+        { timeout: STEP_TIMEOUT_MS }
+      )
+      .not.toBeNull();
+
     const checkpoint = await experimentPage.evaluate(() => ({
       token: window.__documentToken,
       legacyGlobal:

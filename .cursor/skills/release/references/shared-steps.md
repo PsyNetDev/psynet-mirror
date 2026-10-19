@@ -24,7 +24,7 @@ end with a period.
 
 Then commit. Note that `git add changelog.d` stages untracked fragments
 too, so make sure any fragments belonging to unmerged work have been moved
-aside first (see [Pre-existing local changes](#pre-existing-local-changes)):
+aside first (see [Pre-existing local changes](../SKILL.md#pre-existing-local-changes)):
 
 ```bash
 git add CHANGELOG.md changelog.d
@@ -62,6 +62,25 @@ migration manuals.
 Skip this step only for patch-only releases with nothing meaningful to say
 there. Commit What's new changes with the other release-preparation commits
 or as their own commit on the release branch.
+
+### Update package translations
+
+Feature merge requests do not update ``psynet/locales``. On the release
+branch, refresh the catalogs so ``test_psynet_translations_up_to_date``
+can pass:
+
+```bash
+psynet translate
+```
+
+This requires translator credentials in ``~/.dallingerconfig``
+(``openai_api_key`` or ``google_translate_json_path``). Then:
+
+```bash
+CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translations.py::test_psynet_translations_up_to_date
+```
+
+Commit the resulting ``psynet/locales`` changes before tagging.
 
 ### Update experiment templates (no longer required)
 
@@ -139,13 +158,17 @@ Once CI passes, build the package and upload it to PyPI:
 ```bash
 git checkout vX.Y.Z
 rm -rf dist/ build/ *.egg-info
+psynet dev docs bundle
 python -m build
+unzip -p dist/psynet-X.Y.Z-*.whl psynet/resources/docs_text/VERSION
 twine upload dist/psynet-X.Y.Z.tar.gz dist/psynet-X.Y.Z-*.whl
 rm -rf dist/ build/ *.egg-info
 ```
 
-This builds both the sdist (`.tar.gz`) and wheel (`.whl`) into the `dist/`
-directory, then uploads them to PyPI. The pre-build `rm -rf` ensures we
+`psynet dev docs bundle` builds the plain-text documentation that
+`psynet docs` reads in release installs; the `unzip` check must print
+`X.Y.Z` and the tagged commit. The build then puts both the sdist (`.tar.gz`) and wheel (`.whl`)
+into the `dist/` directory, and `twine` uploads them to PyPI. The pre-build `rm -rf` ensures we
 start from a clean slate; the upload glob is intentionally narrow because
 `dist/psynet-X.Y.Z*` would also match leftover RC artifacts such as
 `psynet-X.Y.Zrc1*`. The post-upload `rm -rf` removes generated files.
@@ -164,7 +187,7 @@ Verify the release is live at `https://pypi.org/project/psynet/X.Y.Z/`.
 
 This step applies to **final releases only**. Release candidates and
 other prereleases are tag-only on GitLab — see
-[Release candidates](#release-candidates-minor-releases) for why.
+[Release candidates](release-candidates.md) for why.
 
 Compose a release-notes file (e.g. `release-notes-X.Y.Z.md`) that
 mirrors the corresponding section of `CHANGELOG.md` and points at the
@@ -258,12 +281,12 @@ file, e.g. `/tmp/release-highlights-X.Y.Z.md`:
   - Link concrete class/API names to their API reference anchor whenever
     one exists, including names mentioned inside Documentation or Fixed
     bullets (e.g. `AsyncCodeBlock`, `AudioForcedChoiceTest`,
-    `SyncGroup`). Check the defining module against `docs/api/` and
+    `SyncGroup`). Check the defining module against `docs/reference/api/` and
     confirm the anchor is present on the rendered page before linking.
   - Link new or moved demos to their directory in the repo at the tag
     (`https://gitlab.com/PsyNetDev/PsyNet/-/tree/vX.Y.Z/demos/...`),
-    and also to the demo's docs page when one exists (check
-    `docs/demos/` for a matching `.rst`).
+    and also to the demo catalog (`docs/demos/index.rst`) if the
+    demo is new, after adding it to the catalog.
   - Link to external sources when a change is driven by a third-party
     platform — e.g. a Prolific or Lucid announcement or documentation
     page explaining an API change that motivated a removal or new

@@ -1,0 +1,1 @@
+Made deployment preparation and launch faster for experiments with many nodes or assets: launch now marks nodes as deployed in one database statement (25 s down to 3 s for 100,000 nodes), and preparing new assets does less database and file work per asset (39 s down to 19 s for 10,000 file assets).

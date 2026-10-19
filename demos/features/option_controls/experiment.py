@@ -92,4 +92,17 @@ class Exp(psynet.experiment.Experiment):
             ),
             time_estimate=5,
         ),
+        # A list too long for the window grows the page instead of scrolling
+        # inside the control, so the page declares expect_scrolling.
+        ModularPage(
+            "response",
+            prompt="This is an example of a radiobutton page with more options than fit the window.",
+            control=RadioButtonControl(
+                [f"option_{i}" for i in range(1, 17)],
+                [f"Option {i}" for i in range(1, 17)],
+                name="long_list",
+            ),
+            time_estimate=5,
+            expect_scrolling=True,
+        ),
     )

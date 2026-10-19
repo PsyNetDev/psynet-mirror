@@ -31,8 +31,11 @@ def test_classify_audit_evidence_matches_dashboard_conventions() -> None:
             file("performance.json", json.dumps({"results": [{"n_bots": 4}]})),
             file("monitor.html", "<html></html>"),
             file("data.zip", None),
-            file("simulated_data.zip", None),
-            file("analyses/analysis.ipynb", json.dumps({"cells": []})),
+            file("simulate/analysis/simulated_export/trials.csv", None),
+            file(
+                "simulate/analysis/analysis.ipynb",
+                json.dumps({"cells": []}),
+            ),
             file("logs/debug.log", "debug"),
         ]
     )
@@ -45,7 +48,7 @@ def test_classify_audit_evidence_matches_dashboard_conventions() -> None:
     assert view.performance_results == [{"n_bots": 4}]
     assert view.monitor_file is not None
     assert view.data_file is not None
-    assert view.simulated_data_file is not None
+    assert len(view.simulated_export_files) == 1
     assert view.has_analysis_notebook
     assert [file.path for file in view.visible_files] == [
         "logs/debug.log",
@@ -72,8 +75,14 @@ def test_classify_audit_evidence_accepts_standalone_artifact_paths() -> None:
             ),
             file("artifacts/monitor.html", "<html></html>"),
             file("artifacts/data.zip", None),
-            file("artifacts/simulated_data.zip", None),
-            file("analyses/analysis.ipynb", json.dumps({"cells": []})),
+            file(
+                "simulate/analysis/simulated_export/trials.csv",
+                None,
+            ),
+            file(
+                "simulate/analysis/analysis.ipynb",
+                json.dumps({"cells": []}),
+            ),
         ]
     )
 
@@ -83,7 +92,7 @@ def test_classify_audit_evidence_accepts_standalone_artifact_paths() -> None:
     assert view.performance_file is not None
     assert view.monitor_file is not None
     assert view.data_file is not None
-    assert view.simulated_data_file is not None
+    assert len(view.simulated_export_files) == 1
     assert view.analysis_notebook_file is not None
     assert {item.key: item.present for item in view.completeness} == {
         "participant_video": True,
@@ -91,6 +100,6 @@ def test_classify_audit_evidence_accepts_standalone_artifact_paths() -> None:
         "performance": True,
         "monitor": True,
         "data": True,
-        "simulated_data": True,
-        "analyses": True,
+        "simulated_export": True,
+        "analysis": True,
     }

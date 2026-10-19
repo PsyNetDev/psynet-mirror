@@ -6,6 +6,12 @@ compatibility: Requires Playwright, ffmpeg, ffprobe, and on Linux/PulseAudio set
 
 # Record participant visual evidence
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/frontend` — participant walks, screenshots, and video
+
 ## Goal
 
 Create an MP4 recording of the participant-facing PsyNet flow that includes:
@@ -48,21 +54,19 @@ errors, completion pages, and edge-case states. Save targeted screenshots under
 `audit/artifacts/screenshots/`, using ordered descriptive names such as
 `01-instructions.png` or `03-masked-trial.png`.
 Capture the participant viewport only. In Playwright, set `fullPage: false`
-explicitly so the image matches what fits on screen:
+explicitly so the image matches what fits on screen. Full-page captures stitch
+content below the fold and mislead reviewers about the experimental interface.
 
-```js
-await page.screenshot({
-  path: "audit/artifacts/screenshots/01-instructions.png",
-  fullPage: false,
-});
-```
-
-Full-page captures stitch content below the fold and mislead reviewers about
-the experimental interface.
+Run the layout check from `playwright-testing/SKILL.md` **before** each
+screenshot, so a passing image cannot hide overflow or footer occlusion.
 
 When screenshots need review-facing captions, add
 `audit/artifacts/screenshots/manifest.json` with a `captions` object that maps
-screenshot paths to concise descriptions of what each image demonstrates.
+each screenshot's path relative to `audit/artifacts/` to a concise description
+of what the image demonstrates, for example
+`{"captions": {"screenshots/01-instructions.png": "Task instructions."}}`.
+Keys relative to the manifest (`"01-instructions.png"`) are ignored; see the
+screenshots panel in `test/audit_reference`.
 
 Use video for behavior that screenshots cannot prove well: audio playback,
 timing-sensitive displays, animation, masking, continuous interaction, live
@@ -72,23 +76,14 @@ trial type rather than analyzing a long full-flow video.
 
 For Playwright evidence scripts:
 
-- Use JavaScript Playwright when practical, because it is easy to install and
-  run locally with the experiment.
+- Write the walk with `playwright-testing/SKILL.md`. Reuse that script for
+  screenshots and the participant recording when possible.
 - When recording video with Playwright's built-in `recordVideo`, install
   Playwright's own ffmpeg binary first with `npx playwright install ffmpeg`. It is
   separate from the system `ffmpeg`; without it the first recorded run fails with
   "Video rendering requires ffmpeg binary". Playwright records `.webm`, so
   re-encode to the canonical `audit/artifacts/participant.mp4` (H.264, ≤1280x720,
   `+faststart`) afterwards.
-- Store the Playwright participant-flow test with the experiment code, typically
-  `tests/participant-flow.spec.js`, and commit the corresponding
-  `package.json`/lockfile when the test depends on npm packages.
-- Reuse one script for screenshots, assertions, and the participant recording
-  when possible.
-- Include behavioral assertions in the Playwright flow. The test should prove
-  important participant behavior such as disabled/enabled controls, trial
-  transitions, validation or feedback text, completion state, and saved response
-  data, not only click through pages.
 - Pace the recording with explicit waits, `slowMo`, or experiment `time_factor`
   settings so the actions remain understandable. Do not blast through the flow,
   but do not wait for agent-speed browser control either.
@@ -106,9 +101,11 @@ For Playwright evidence scripts:
 ## Workflow
 
 1. Start the PsyNet experiment and capture the generated ad page URL.
-2. Write or reuse a Playwright runner that completes the participant path and
-   captures the targeted screenshots needed for review.
-3. Confirm the browser viewport is sized reasonably, usually 1280x720 or larger.
+2. Write or reuse a Playwright runner as in `playwright-testing/SKILL.md` that
+   completes the participant path and captures the targeted screenshots needed
+   for review.
+3. Confirm the viewports from that skill's layout checks. Larger sizes hide
+   overflow that still produces a scrollbar on a typical laptop.
 4. For multi-participant flows, use separate browser profiles or Playwright
    contexts for each participant, for example separate Chrome `--user-data-dir`
    directories. Do not rely on multiple windows from one shared profile; shared
@@ -121,9 +118,12 @@ For Playwright evidence scripts:
 9. Play the MP4 back, or otherwise inspect it, before treating it as valid
    evidence.
 
-If recording fails or audio is missing, do not imply the participant video is
-complete. Record the failure and the missing evidence as an audit blocker (and
-in `audit/REPORT.md` or `audit/TIMELINE.md` as appropriate).
+If recording fails, do not imply the participant video is complete. Record the
+failure as an audit blocker with `"severity": "error"` (and in
+`audit/REPORT.md` or `audit/TIMELINE.md` as appropriate). If only the audio is
+missing, for example in a headless run, keep the video and record the missing
+audio as a `"warning"` blocker on the video artifact (see "Checks and
+blockers" in `test/audit_reference`).
 
 For audio-sensitive evidence, do not rely on a shared desktop/audio session
 without calibration. Use the calibrated Linux workflow below, or record and
@@ -148,8 +148,5 @@ player to hear the audio.
   automated validation or exported data to prove completeness.
 - Keep participant videos at or below 3 minutes and 1280x720. Re-encode or trim
   before committing if the recording exceeds either limit.
-- If system audio capture cannot be configured, include the visual recording if
-  possible and explicitly document the missing audio as an audit blocker (and in
-  `audit/REPORT.md` when relevant).
 - For audio-focused experiments, add supporting evidence such as generated
   stimulus files, event logs, exported data, or command logs.

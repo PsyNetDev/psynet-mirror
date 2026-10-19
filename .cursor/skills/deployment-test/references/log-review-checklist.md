@@ -27,6 +27,7 @@ assignment_returned|AssignmentReturned|AssignmentAbandoned|approve_participant_s
 
 Interpretation shortcuts:
 
+- `UniqueViolation` / `Key (typname, typnamespace)=(participant_status, 2200) already exists` during `CREATE TYPE participant_status` is a **local** Postgres race from two `psynet deploy ssh` prepares on the same developer database. It is not a remote initdb failure. Stagger starts (see "Stagger Local Prepare, Then Overlap Remote Builds" in `deploy-from-test-branch.md`) and retry only the failed deploy.
 - `TypeError: sequence item 0: expected str instance, list found` in `Experiment.run_recruiter_checks` points to a PsyNet notifier combine/list bug.
 - `We found no assignment data for participant <id> with assignment ID <assignment_id> on Prolific!` should be cross-checked against the participant dashboard row for `status`, `failed`, `failed_reason`, and `failure_tags`.
 - `Prolific session not yet submitted (current status is 'ACTIVE')` during `approve_participant_submission` can be non-fatal if the worker continues to pay bonuses and later state is consistent.

@@ -253,7 +253,6 @@ class Exp(psynet.experiment.Experiment):
             chains_per_participant=CHAINS_PER_PARTICIPANT,  # set to None if chain_type="across"
             chains_per_experiment=None,  # set to None if chain_type="within"
             trials_per_node=1,
-            balance_across_chains=False,
             check_performance_at_end=False,
             check_performance_every_trial=False,
             propagate_failure=False,
@@ -264,13 +263,13 @@ class Exp(psynet.experiment.Experiment):
     )
 
     def test_check_bot(self, bot: Bot, **kwargs):
-        trial_1_html = str(self.node_visualization_html("Info", 1))
+        trial_1_html = str(self.node_visualization_html("Trial", 1))
 
         assert "response-visualization" in trial_1_html
         assert "visualize-audio-response" in trial_1_html
-        img = re.search(r'img src="(.*\.png)"', trial_1_html).group(1)
-        assert img is not None
-        assert Asset.query.filter_by(url=img).count() == 1
+        plot_src = re.search(r'img src="([^"]+)"', trial_1_html)
+        assert plot_src is not None
+        assert Asset.query.filter_by(url=plot_src.group(1)).count() == 1
 
         trials = CustomTrial.query.filter_by(participant_id=bot.id).all()
         assert len(trials) == NUM_TRIALS_PARTICIPANT

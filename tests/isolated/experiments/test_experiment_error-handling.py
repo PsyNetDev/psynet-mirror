@@ -2,9 +2,9 @@ import time
 
 import pytest
 import requests
+from dallinger.utils import get_base_url
 
 from psynet.error import ErrorRecord
-from psynet.participant import Participant
 from psynet.pytest_psynet import (
     assert_text,
     bot_class,
@@ -49,8 +49,6 @@ class TestExp(object):
                 driver=driver,
             )
 
-            participant = Participant.query.filter_by(id=bot.participant_id).one()
-
             assert_text(driver, "main-body", "Welcome to the experiment! Next")
 
             if bot.participant_id == 1:
@@ -63,12 +61,13 @@ class TestExp(object):
                 assert_text(
                     driver,
                     "error-text",
-                    "There has been an error and so you are unable to continue, sorry!",
+                    "Something went wrong, so the experiment cannot continue. "
+                    "We're sorry.",
                 )
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 1, 'worker_id': '{participant.worker_id}'",
+                        "'participant_id': 1",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -97,12 +96,13 @@ class TestExp(object):
                 assert_text(
                     driver,
                     "error-text",
-                    "There has been an error and so you are unable to continue, sorry!",
+                    "Something went wrong, so the experiment cannot continue. "
+                    "We're sorry.",
                 )
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 2, 'worker_id': '{participant.worker_id}'",
+                        "'participant_id': 2",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -123,12 +123,12 @@ class TestExp(object):
             elif bot.participant_id == 3:
                 next_page(driver, "next-button")
 
-                # The third participant triggers an error in a worker asynchronous process'
+                # The third participant triggers an error in a worker async job
                 click_finish_button(driver)
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 3, 'worker_id': '{participant.worker_id}', 'process_id': ",
+                        "'participant_id': 3",
                         timeout=5,
                     )
                     debug_server_process.expect_exact(
@@ -145,17 +145,17 @@ class TestExp(object):
                 assert error.message == "Error code 48473"
                 assert error.traceback
                 assert error.participant_id == 3
-                assert error.process_id == 1
+                assert error.async_job_id == 1
 
             elif bot.participant_id == 4:
                 next_page(driver, "next-button")
 
-                # The third participant triggers an error in a worker asynchronous process'
+                # The third participant triggers an error in a worker async job
                 click_finish_button(driver)
 
                 with log_pexpect_errors(debug_server_process):
                     debug_server_process.expect_exact(
-                        f"'participant_id': 4, 'worker_id': '{participant.worker_id}', 'process_id': ",
+                        "'participant_id': 4",
                         timeout=20,
                     )
                     debug_server_process.expect_exact(
@@ -172,12 +172,12 @@ class TestExp(object):
                 assert error.message == "Error code 73722"
                 assert error.traceback
                 assert error.participant_id == 4
-                assert error.process_id == 2
+                assert error.async_job_id == 2
 
             # The built-in Dallinger.complete_experiment doesn't work because it mistakenly
             # uses a GET request instead of a POST request
             requests.post(
-                f"http://localhost:5000/worker_complete?participant_id={bot.participant_id}"
+                f"{get_base_url()}/worker_complete?participant_id={bot.participant_id}"
             )
 
             bot.driver.quit()

@@ -8,10 +8,16 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 
 from typing import List, Literal, Optional, Union
 
-from psynet.trial.chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
+from psynet.trial.chain import (
+    Candidate,
+    ChainNetwork,
+    ChainNode,
+    ChainTrial,
+    ChainTrialMaker,
+    _reject_removed_balance_argument,
+)
 
 from ..utils import get_logger, is_method_overridden
-from .main import Selection, Trial
 
 logger = get_logger()
 
@@ -47,9 +53,6 @@ class StaticTrial(ChainTrial):
         The user should not typically change this directly.
         Stored in ``details`` in the database.
 
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
-
     definition
         A dictionary of parameters defining the trial,
         inherited from the respective :class:`~psynet.trial.static.Stimulus` object.
@@ -60,8 +63,6 @@ class StaticTrial(ChainTrial):
     block
         The block in which the trial is situated.
     """
-
-    __extra_vars__ = Trial.__extra_vars__.copy()
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
@@ -77,21 +78,17 @@ class StaticTrialMaker(ChainTrialMaker):
 
     The user may also override the following methods, if desired:
 
-    * :meth:`~psynet.trial.static.StaticTrialMaker.choose_block_order`;
-      chooses the order of blocks in the experiment. By default the blocks
-      are ordered randomly.
-
     * :meth:`~psynet.trial.static.StaticTrialMaker.choose_participant_group`;
         Only relevant if the trial maker uses nodes with non-default participant groups.
         In this case the experimenter is expected to supply a function that takes participant as an argument
         and returns the chosen participant group for that trial maker.
         For example, to randomly assign participants to one of two groups called g1 and g2, one could write::
 
-            choose_participant_group=lambda(participant): random.choice(["g1", "g2"])
+            choose_participant_group=lambda participant: random.choice(["g1", "g2"])
 
         Similarly, to alternate participants between two groups, one could write::
 
-            choose_participant_group=lambda(participant): ["g1", "g2"][participant.id % 2]
+            choose_participant_group=lambda participant: ["g1", "g2"][participant.id % 2]
 
     * :meth:`~psynet.trial.static.StaticTrialMaker.select_node`;
       selects one of the eligible nodes for the participant's next trial.
@@ -130,29 +127,47 @@ class StaticTrialMaker(ChainTrialMaker):
         Expected number of trials that each participant will complete.
         This is used for timeline/progress estimation purposes.
         This can either be an integer, or the string ``"n_nodes"``,
-        which will be read as referring to the number of nodes in ``start_nodes``.
+        which will be read as referring to the number of nodes in ``nodes``.
 
     max_trials_per_participant
         Maximum number of trials that each participant may complete (optional);
         once this number is reached, the participant will move on
         to the next stage in the timeline.
         This can either be an integer, or the string ``"n_nodes"``,
-        which will be read as referring to the number of nodes in ``start_nodes``.
+        which will be read as referring to the number of nodes in ``nodes``.
 
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
         another participant. The built-in criteria are ``"n_participants"``
-        and ``"n_trials"``.
+        and ``"n_trials"``. ``"n_participants"`` needs
+        ``target_n_participants``, and ``"n_trials"`` needs
+        ``target_trials_per_node``; giving a target without its mode raises an
+        error. Defaults to ``None``, which leaves recruitment to the rest of the
+        experiment, for example for a practice trial maker.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     target_trials_per_node
-        Target number of trials to recruit for each node in the experiment. This target is only relevant if
-        ``recruit_mode="n_trials"``.
+        Target number of trials to recruit for each node. ``None`` (the
+        default) means unlimited. When set, it must be a positive number;
+        ``0`` is rejected. Requires ``recruit_mode="n_trials"``; passing it
+        with any other mode raises an error. It does not cap selection: a node can
+        receive more trials than its target, for example when participants
+        recruited together finish at the same time.
 
     max_trials_per_block
         Determines the maximum number of trials that a participant will be allowed to experience in each block,
@@ -161,15 +176,22 @@ class StaticTrialMaker(ChainTrialMaker):
     allow_repeated_nodes
         Determines whether the participant can be administered the same node more than once.
 
-    max_unique_nodes_per_block
-        Determines the maximum number of unique nodes that a participant will be allowed to experience
-        in each block. Once this quota is reached, the participant will be forced to repeat
-        previously experienced nodes.
+    block_order
+        The order in which the participant works through blocks: ``"random"``
+        (the default), ``"listed"`` (the order in which blocks first appear in
+        ``nodes``), a list of block names, or a function returning such a list.
+        The function may take any of ``participant``, ``experiment`` and
+        ``blocks``. See :ref:`trial_order`.
 
-    balance_across_nodes
-        If ``True`` (default), active balancing across participants is enabled, meaning that
-        node selection favours nodes that have been presented fewest times to any participant
-        in the experiment, excluding failed trials.
+    node_order
+        The order in which the participant receives nodes within a block:
+        ``"balanced"`` (the default; nodes with the fewest trials from any
+        participant first, excluding failed trials), ``"random"``,
+        ``"listed"`` (the order of ``nodes``), a function returning the
+        planned nodes, or a dict giving one of these values for every block.
+        A function may take any of ``participant``, ``experiment``, ``block``
+        and ``nodes``; returning fewer nodes than it was given also filters
+        them. See :ref:`trial_order`.
 
     check_performance_at_end
         If ``True``, the participant's performance
@@ -204,17 +226,21 @@ class StaticTrialMaker(ChainTrialMaker):
         and returns the chosen participant group for that trial maker.
         For example, to randomly assign participants to one of two groups called g1 and g2, one could write::
 
-            choose_participant_group=lambda(participant): random.choice(["g1", "g2"])
+            choose_participant_group=lambda participant: random.choice(["g1", "g2"])
 
         Similarly, to alternate participants between two groups, one could write::
 
-            choose_participant_group=lambda(participant): ["g1", "g2"][participant.id % 2]
+            choose_participant_group=lambda participant: ["g1", "g2"][participant.id % 2]
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
         When this is set, then the ordinary node allocation logic will only apply to the 'leader'
         of each SyncGroup. The other members of this SyncGroup will follow that leader around,
         so that in every given trial the SyncGroup works on the same node together.
+
+    sync_group_wait_content
+        Message shown by the trial maker's own sync-group waits. See
+        :class:`~psynet.trial.main.TrialMaker`.
 
     Attributes
     ----------
@@ -232,7 +258,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -249,13 +277,14 @@ class StaticTrialMaker(ChainTrialMaker):
         Returns the networks owned by the trial maker.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``,
+        defaults to -1.0. The participant passes when the score (the summed trial scores,
+        the proportion of non-failed trials, or the consistency) is at least this value.
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending async jobs, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
     """
 
     def __init__(
@@ -268,10 +297,13 @@ class StaticTrialMaker(ChainTrialMaker):
         max_trials_per_participant: Optional[int | str] = None,
         recruit_mode: Optional[str] = None,
         target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         target_trials_per_node: Optional[int] = None,
         max_trials_per_block: Optional[int] = None,
         allow_repeated_nodes: bool = False,
-        balance_across_nodes: bool = True,
+        block_order: Union[str, list, callable] = "random",
+        node_order: Union[str, callable, dict] = "balanced",
+        balance_across_nodes=None,
         check_performance_at_end: bool = False,
         check_performance_every_trial: bool = False,
         fail_trials_on_premature_exit: bool = False,
@@ -284,15 +316,11 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        sync_group_wait_content=None,
     ):
-        # balance_across_chains = (
-        #     active_balancing_across_participants or active_balancing_within_participants
-        # )
-        # balance_strategy = set()
-        # if active_balancing_within_participants:
-        #     balance_strategy.add("within")
-        # if active_balancing_across_participants:
-        #     balance_strategy.add("across")
+        _reject_removed_balance_argument(
+            "balance_across_nodes", balance_across_nodes, "node_order"
+        )
 
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -333,12 +361,32 @@ class StaticTrialMaker(ChainTrialMaker):
             # set chains_per_experiment at all if start_nodes is being provided explicitly.
             # chains_per_experiment = len(nodes)
 
+        if target_trials_per_node is not None and target_trials_per_node <= 0:
+            raise ValueError(
+                "target_trials_per_node must be a positive number, or None for unlimited."
+            )
+        target_argument = self._target_trials_argument
+        if recruit_mode == "n_trials" and target_trials_per_node is None:
+            raise ValueError(
+                f"recruit_mode='n_trials' needs {target_argument}, the number "
+                "of trials to recruit for each node."
+            )
+        if recruit_mode in (None, "n_participants") and target_trials_per_node:
+            raise ValueError(
+                f"{target_argument} only takes effect with "
+                f"recruit_mode='n_trials', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_trials' to recruit until every node has this "
+                f"many trials, or remove {target_argument}."
+            )
+
         chains_per_experiment = None
 
-        if allow_repeated_nodes:
-            assert (
-                max_trials_per_participant is not None
-                or max_trials_per_block is not None
+        if allow_repeated_nodes and (
+            max_trials_per_participant is None and max_trials_per_block is None
+        ):
+            raise ValueError(
+                "allow_repeated_nodes=True needs max_trials_per_participant or "
+                "max_trials_per_block, so that participants do not repeat nodes forever."
             )
 
         super().__init__(
@@ -349,6 +397,7 @@ class StaticTrialMaker(ChainTrialMaker):
             node_class=StaticNode,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             expected_trials_per_participant=expected_trials_per_participant,
             max_trials_per_participant=max_trials_per_participant,
             max_trials_per_block=max_trials_per_block,
@@ -356,9 +405,13 @@ class StaticTrialMaker(ChainTrialMaker):
             chains_per_participant=None,
             chains_per_experiment=chains_per_experiment,
             max_nodes_per_chain=1,
-            trials_per_node=target_trials_per_node if target_trials_per_node else 1e6,
-            balance_across_chains=balance_across_nodes,
-            # balance_strategy=balance_strategy,
+            trials_per_node=(
+                target_trials_per_node
+                if target_trials_per_node is not None
+                else 1_000_000
+            ),
+            block_order=block_order,
+            chain_order=node_order,
             allow_revisiting_networks_in_across_chains=allow_repeated_nodes,
             check_performance_at_end=check_performance_at_end,
             check_performance_every_trial=check_performance_every_trial,
@@ -372,6 +425,7 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_max_wait_action=sync_group_max_wait_action,
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
+            sync_group_wait_content=sync_group_wait_content,
         )
 
     def _selection_hook_overrides(self):
@@ -400,6 +454,16 @@ class StaticTrialMaker(ChainTrialMaker):
                 "custom_chain_filter",
                 "Static trial makers use custom_node_filter(nodes, participant, experiment).",
             ),
+            (
+                StaticTrialMaker,
+                "filter_chains_query",
+                "Static trial makers use filter_nodes_query(query, participant, experiment).",
+            ),
+            (
+                StaticTrialMaker,
+                "chain_priority",
+                "Static trial makers use node_priority(participant, experiment).",
+            ),
         ]
 
     def _deprecated_selection_hooks(self):
@@ -418,48 +482,129 @@ class StaticTrialMaker(ChainTrialMaker):
         To wait, exit, or drop candidates after built-in availability checks,
         override this method, call ``super().find_nodes``, then filter or
         return ``"wait"`` / ``"exit"``. ``select_node`` cannot return those
-        outcomes.
+        outcomes. Overriding this method loads every eligible node on each
+        trial; :meth:`~psynet.trial.chain.ChainTrialMaker.before_selection`
+        and :meth:`~psynet.trial.static.StaticTrialMaker.filter_nodes_query`
+        keep selection in the database. An empty list finishes the
+        participant's current block; ``"exit"`` leaves the trial maker,
+        skipping any remaining blocks.
         """
         return self._find_eligible_candidates(participant, experiment)
 
     _candidate_label = "node"
+    _list_selection_hooks = ("find_nodes", "select_node")
+    _python_filter_hooks = ("custom_node_filter", "custom_network_filter")
+    _query_hooks = ("filter_nodes_query", "node_priority")
+
+    def filter_nodes_query(self, query, participant, experiment):
+        """Narrow the database query that finds candidate nodes.
+
+        Override this to remove nodes in SQL rather than in Python. ``query``
+        selects each node's ``self.network_class`` joined to the node
+        (``self.node_class``) and already applies PsyNet's built-in checks.
+        Add conditions with ``query.filter(...)``, typically on columns of your
+        node class (``self.node_class`` is always ``StaticNode``, so use your
+        own subclass, e.g. ``ColorNode.difficulty``), and return the result. Unlike
+        :meth:`~psynet.trial.static.StaticTrialMaker.custom_node_filter`,
+        this keeps selection fast when there are many nodes.
+        """
+        return query
+
+    def node_priority(self, participant, experiment):
+        """Return SQL expressions that rank eligible nodes.
+
+        PsyNet only considers nodes in the participant's current block. It
+        orders them by these expressions (ascending; use ``.desc()`` to
+        reverse), then by balancing when ``node_order="balanced"`` (the
+        default), then randomly. The default ``select_node`` takes the first
+        node in that order. Expressions may use columns of your node class
+        (e.g. ``ColorNode.difficulty``) and ``self.network_class``. Planned
+        node orders (``"listed"`` or a function) cannot be combined with this
+        hook. Defining it stops balanced selection from giving simultaneous
+        requests different nodes, so they may share the top-ranked node.
+        """
+        return []
+
+    def _filter_candidate_query(self, query, participant, experiment):
+        return self.filter_nodes_query(query, participant, experiment)
+
+    def _candidate_priority(self, participant, experiment):
+        return self.node_priority(participant, experiment)
+
+    def _candidate_value(self, network):
+        if network.head is None:
+            raise RuntimeError(f"Static network {network.id} has no head node.")
+        return network.head
+
+    def _hook_is_overridden(self, method_name):
+        """Return whether this trial maker or its class overrides ``method_name``."""
+        return method_name in vars(self) or is_method_overridden(
+            self, StaticTrialMaker, method_name
+        )
 
     def _filter_eligible_candidates(self, chains, participant, experiment):
         """Apply node eligibility before wait/exit checks."""
-        headless_chain_ids = [chain.id for chain in chains if chain.head is None]
-        if headless_chain_ids:
-            logger.warning(
-                "Ignoring StaticNetwork objects without head nodes: %s.",
-                headless_chain_ids,
+        nodes = [self._candidate_value(chain) for chain in chains]
+        if not is_method_overridden(
+            self,
+            StaticTrialMaker,
+            "custom_node_filter",
+        ) and is_method_overridden(
+            self,
+            ChainTrialMaker,
+            "custom_network_filter",
+        ):
+            # This helper validates what the deprecated filter returned, and
+            # names custom_network_filter in any error it raises.
+            filtered_networks = self._apply_deprecated_network_filter(
+                chains,
+                participant,
+                replacement_method="custom_node_filter",
             )
-        nodes = [chain.head for chain in chains if chain.head is not None]
+            filtered_nodes = [
+                network.head
+                for network in filtered_networks
+                if network.head is not None
+            ]
+        else:
+            filtered_nodes = self.custom_node_filter(nodes, participant, experiment)
         return self._validate_selection_subset(
-            self.custom_node_filter(nodes, participant, experiment),
+            filtered_nodes,
             allowed_values=nodes,
             method_name="custom_node_filter",
         )
 
-    @staticmethod
-    def _candidate_network(candidate):
-        """Return the one-node network backing a static candidate."""
-        return candidate.network
+    def _build_candidates(self, discovered_chains, participant, experiment):
+        """Build internal records exposing nodes without losing their networks."""
+
+        nodes = self._filter_eligible_candidates(
+            discovered_chains,
+            participant=participant,
+            experiment=experiment,
+        )
+        networks_by_head_id = {
+            chain.head_id: chain for chain in discovered_chains if chain.head_id
+        }
+        try:
+            return [
+                Candidate(value=node, network=networks_by_head_id[node.id])
+                for node in nodes
+            ]
+        except KeyError as error:
+            raise RuntimeError(
+                f"Static candidate node {error.args[0]} has no discovered network."
+            ) from error
 
     def custom_node_filter(self, nodes, participant, experiment):
         """Filter eligible static nodes before selection.
 
         Override this to remove nodes the participant must not receive.
-        The default returns the original list, or applies a deprecated
-        ``custom_network_filter`` override when that is the only filter present.
-        Ranking among eligible nodes belongs in ``select_node``.
+        The default returns ``nodes`` unchanged. Ranking among eligible
+        nodes belongs in ``select_node``.
+
+        If you override this method, a deprecated ``custom_network_filter``
+        on the same maker is not applied.
         """
-        if is_method_overridden(self, ChainTrialMaker, "custom_network_filter"):
-            networks = [node.network for node in nodes]
-            eligible_networks = self._apply_deprecated_network_filter(
-                networks,
-                participant,
-                replacement_method="custom_node_filter",
-            )
-            return [network.head for network in eligible_networks]
         return nodes
 
     def select_node(self, nodes, participant, experiment):
@@ -492,19 +637,33 @@ class StaticTrialMaker(ChainTrialMaker):
         """
         self._raise_unsupported_selection_hook("custom_chain_filter")
 
-    def _select_trial_node(self, participant, experiment):
-        selection = self._select_from_discovered(
-            self.find_nodes(participant, experiment),
-            participant,
-            experiment,
-            self.select_node,
-            "select_node",
-        )
-        if not isinstance(selection, Selection):
-            return selection
+    def filter_chains_query(self, query, participant, experiment):
+        """Wrong-paradigm selection hook.
 
-        self._advance_to_selected_block(selection.value.block, participant)
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("filter_chains_query")
+
+    def chain_priority(self, participant, experiment):
+        """Wrong-paradigm selection hook.
+
+        :meta private:
+        """
+        self._raise_unsupported_selection_hook("chain_priority")
+
+    _plan_entries_are_single_trials = True
+    _enforces_node_capacity = False
+    _target_trials_argument = "target_trials_per_node"
+    _find_hook_name = "find_nodes"
+    _select_hook_name = "select_node"
+    _order_argument = "node_order"
+    _order_items_name = "nodes"
+
+    def _selection_to_node(self, selection):
         return selection
+
+    def _candidate_network_id(self, value):
+        return value.network_id
 
     def _start_nodes_param_name(self) -> str:
         return "nodes"

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -16,7 +18,13 @@ from psynet.audit.artifacts import (
     write_hashed_artifact,
     write_shared_monitor_static_assets,
 )
-from psynet.audit.constants import AUDIT_CSS_OUTPUT, AuditValidationError
+from psynet.audit.constants import (
+    AUDIT_CSS_OUTPUT,
+    AUDIT_JS_OUTPUT,
+    AUDIT_MATHJAX_JS_OUTPUT,
+    AUDIT_PLOTLY_JS_OUTPUT,
+    AuditValidationError,
+)
 from psynet.audit.content import (
     read_audit_artifact_content,
     section_text,
@@ -27,6 +35,7 @@ from psynet.audit.html import (
     render_analysis_notebook,
     render_completeness,
     render_data_exports,
+    render_design_simulation,
     render_evidence_section,
     render_file_grid,
     render_json_block,
@@ -44,6 +53,9 @@ from psynet.audit.html import (
 from psynet.audit.manifest import (
     audit_css_path,
     audit_display_title,
+    audit_js_path,
+    audit_mathjax_js_path,
+    audit_plotly_js_path,
     display_implementation_summary,
     read_audit_manifest,
     starter_section,
@@ -98,32 +110,41 @@ def publish_audit_artifacts(
             relative_path,
             f"artifact {artifact.get('id')!r}",
         )
-        if path_problems or source_file is None or not source_file.is_file():
+        if path_problems or source_file is None or not source_file.exists():
+            continue
+        if source_file.is_dir():
+            published_any = False
+            for child in sorted(
+                path
+                for path in source_file.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            ):
+                child_relative = (
+                    Path(relative_path) / child.relative_to(source_file)
+                ).as_posix()
+                rendered.append(
+                    publish_audit_artifact_file(
+                        child,
+                        child_relative,
+                        target_root,
+                        site_dir,
+                    )
+                )
+                published_paths.add(child_relative)
+                published_any = True
+            if published_any:
+                published_paths.add(relative_path)
             continue
         if (
             artifact.get("kind") == "video" or source_file.suffix.lower() == ".mp4"
         ) and is_git_lfs_pointer(source_file):
             continue
-        published_url = write_hashed_artifact(
-            source_file,
-            target_root,
-            HASHED_ARTIFACTS_DIR,
-        )
-        artifact_url = artifact_output_url(published_url)
-        published_path = published_blob_path(site_dir, published_url)
-        content, truncated = read_audit_artifact_content(source_file)
         rendered.append(
-            AuditFile(
-                path=relative_path,
-                url=artifact_url,
-                content=content,
-                size_bytes=(
-                    published_path.stat().st_size
-                    if published_path.is_file()
-                    else source_file.stat().st_size
-                ),
-                kind=file_kind(relative_path),
-                truncated=truncated,
+            publish_audit_artifact_file(
+                source_file,
+                relative_path,
+                target_root,
+                site_dir,
             )
         )
         published_paths.add(relative_path)
@@ -136,7 +157,78 @@ def publish_audit_artifacts(
                     published_paths,
                 )
             )
+    rendered.extend(
+        _publish_analysis_supporting_files(
+            audit_dir,
+            target_root,
+            site_dir,
+            rendered,
+        )
+    )
     return rendered
+
+
+def _publish_analysis_supporting_files(
+    audit_dir: Path,
+    target_root: Path,
+    site_dir: Path,
+    rendered: list[AuditFile],
+) -> list[AuditFile]:
+    """Publish extra files beside a present analysis notebook."""
+
+    published_paths = {item.path for item in rendered}
+    if "simulate/analysis/analysis.ipynb" not in published_paths:
+        return []
+    parent = audit_dir / "simulate" / "analysis"
+    if not parent.is_dir():
+        return []
+    extras: list[AuditFile] = []
+    for child in sorted(parent.iterdir()):
+        if not child.is_file() or child.is_symlink():
+            continue
+        child_relative = f"simulate/analysis/{child.name}"
+        if child_relative in published_paths:
+            continue
+        extras.append(
+            publish_audit_artifact_file(
+                child,
+                child_relative,
+                target_root,
+                site_dir,
+            )
+        )
+        published_paths.add(child_relative)
+    return extras
+
+
+def publish_audit_artifact_file(
+    source_file: Path,
+    relative_path: str,
+    target_root: Path,
+    site_dir: Path,
+) -> AuditFile:
+    """Publish one artifact file and return its render metadata."""
+
+    published_url = write_hashed_artifact(
+        source_file,
+        target_root,
+        HASHED_ARTIFACTS_DIR,
+    )
+    artifact_url = artifact_output_url(published_url)
+    published_path = published_blob_path(site_dir, published_url)
+    content, truncated = read_audit_artifact_content(source_file)
+    return AuditFile(
+        path=relative_path,
+        url=artifact_url,
+        content=content,
+        size_bytes=(
+            published_path.stat().st_size
+            if published_path.is_file()
+            else source_file.stat().st_size
+        ),
+        kind=file_kind(relative_path),
+        truncated=truncated,
+    )
 
 
 def publish_screenshot_manifest_files(
@@ -221,6 +313,30 @@ def render_metadata_value(value: object, fallback: str = "-") -> str:
     return html.escape(str(value))
 
 
+def experiment_git_commit() -> str | None:
+    """Return the experiment's short Git commit, or ``None`` outside Git.
+
+    Appends ``-dirty`` when experiment files have uncommitted changes. The
+    ``audit/`` folder is ignored, because the audit itself is usually edited
+    after the experiment is committed.
+    """
+
+    def git(*args: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", *args], capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    commit = git("rev-parse", "--short", "HEAD")
+    if not commit:
+        return None
+    status = git("status", "--porcelain", "--", ".", ":(exclude)audit")
+    return f"{commit}-dirty" if status else commit
+
+
 def render_metadata_code(value: object, fallback: str = "-") -> str:
     """Render one metadata value as code."""
 
@@ -237,8 +353,84 @@ def write_audit_static_assets(site_dir: Path) -> str:
     return f"static/{AUDIT_CSS_OUTPUT}"
 
 
-def display_sections(manifest: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return displayable section records, adding source for older packets."""
+def write_audit_copied_asset(site_dir: Path, source: Path, relative_output: str) -> str:
+    """Copy one packaged runtime file into a rendered audit site."""
+
+    target = site_dir / "static" / relative_output
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return f"static/{relative_output}"
+
+
+def write_audit_plotly_asset(site_dir: Path) -> str:
+    """Copy the vendored Plotly runtime into a rendered audit site."""
+
+    return write_audit_copied_asset(
+        site_dir, audit_plotly_js_path(), AUDIT_PLOTLY_JS_OUTPUT
+    )
+
+
+def write_audit_mathjax_asset(site_dir: Path) -> str:
+    """Copy the vendored MathJax runtime into a rendered audit site."""
+
+    return write_audit_copied_asset(
+        site_dir, audit_mathjax_js_path(), AUDIT_MATHJAX_JS_OUTPUT
+    )
+
+
+def write_audit_scripts(site_dir: Path, *, rendered_body: str) -> list[str]:
+    """Copy the runtimes a rendered audit needs, and return their script URLs.
+
+    Plotly and MathJax are several megabytes each, so an audit that uses
+    neither should not carry them. Plotly is copied only when a figure was
+    rendered; MathJax only when the body could contain an equation. The
+    returned order matters: Plotly must be defined before ``audit.js`` draws
+    figures, and ``audit.js`` configures ``window.MathJax`` before MathJax
+    typesets the page.
+    """
+
+    urls = []
+    if _body_may_contain_plotly_figure(rendered_body):
+        urls.append(write_audit_plotly_asset(site_dir))
+    urls.append(write_audit_js_asset(site_dir))
+    if _body_may_contain_equation(rendered_body):
+        urls.append(write_audit_mathjax_asset(site_dir))
+    return urls
+
+
+def _body_may_contain_plotly_figure(body: str) -> bool:
+    """Return whether rendered audit content contains an interactive figure."""
+
+    return "data-plotly-spec" in body
+
+
+def _body_may_contain_equation(body: str) -> bool:
+    """Return whether rendered audit content plausibly contains an equation.
+
+    MathJax's own scanner decides what to typeset, so this only looks for
+    delimiters that could open one: a display delimiter, or two dollar signs
+    that could bracket inline mathematics. Being over-inclusive costs a copy of
+    the runtime; being under-inclusive would leave equations unrendered.
+    """
+
+    return "$$" in body or "\\[" in body or "\\(" in body or body.count("$") >= 2
+
+
+def write_audit_js_asset(site_dir: Path) -> str:
+    """Copy audit-page behavior into a rendered audit site."""
+
+    return write_audit_copied_asset(site_dir, audit_js_path(), AUDIT_JS_OUTPUT)
+
+
+def display_sections(
+    manifest: dict[str, Any],
+    *,
+    evidence: Any = None,
+) -> list[dict[str, Any]]:
+    """Return displayable sections, adding source or simulation when missing.
+
+    Backfill looks at every manifest section, including hidden sections.
+    """
 
     sections = manifest.get("sections")
     if not isinstance(sections, list):
@@ -278,6 +470,30 @@ def display_sections(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             else len(displayable)
         )
         displayable.insert(insert_at, source_section)
+    has_simulation = any(
+        isinstance(section, dict)
+        and (
+            section.get("id") == "design_simulation"
+            or section.get("kind") == "simulation"
+        )
+        for section in sections
+    )
+    if (
+        not has_simulation
+        and evidence is not None
+        and getattr(evidence, "has_design_simulation", False)
+    ):
+        positions = {
+            section.get("id"): index
+            for index, section in enumerate(displayable)
+            if isinstance(section, dict)
+        }
+        anchor = positions.get("plan", positions.get("prompt"))
+        insert_at = anchor + 1 if anchor is not None else 0
+        displayable.insert(
+            insert_at,
+            starter_section("design_simulation", "Power analysis", "simulation"),
+        )
     return displayable
 
 
@@ -359,8 +575,70 @@ def experiment_entry_point(
     return source_file, entry_point
 
 
+_SOURCE_EXCLUDED_DIRS = {"audit", "static", "tests"}
+_MAX_SOURCE_MODULES = 30
+_STOCK_DEPLOYMENT_POLICY = (
+    Path(__file__).resolve().parents[1] / "resources/experiment_scripts/deploy.toml"
+)
+
+
+def experiment_python_modules(source_root: Path, entry_file: Path) -> list[Path]:
+    """
+    List the experiment's deployed Python modules other than the entry point.
+
+    Covers modules beside ``experiment.py`` and in its packages, such as a
+    ``response_model/`` package, but only those that the experiment's
+    ``deploy.toml`` selects for deployment. Without a ``deploy.toml``, PsyNet's
+    stock policy is applied, because PsyNet creates that file before the
+    experiment is launched. Hidden directories, virtual environments (detected
+    by ``pyvenv.cfg``), the audit folder, tests, static files, the scaffolded
+    ``test.py`` and empty ``__init__.py`` files are also skipped.
+
+    Raises
+    ------
+    dallinger.deployment_plan.DeploymentPolicyError
+        If the experiment's ``deploy.toml`` is invalid.
+    """
+    from dallinger.deployment_plan import parse_deployment_policy
+
+    from psynet.deployment_info import policy_selects_path
+
+    policy_path = source_root / "deploy.toml"
+    policy = parse_deployment_policy(
+        policy_path if policy_path.is_file() else _STOCK_DEPLOYMENT_POLICY
+    )
+
+    modules = []
+    for root, directories, filenames in os.walk(source_root):
+        relative_root = Path(root).relative_to(source_root)
+        directories[:] = sorted(
+            directory
+            for directory in directories
+            if not directory.startswith(".")
+            and directory not in _SOURCE_EXCLUDED_DIRS
+            and not (Path(root) / directory / "pyvenv.cfg").is_file()
+            and policy_selects_path((relative_root / directory).as_posix(), policy)
+        )
+        for filename in filenames:
+            if filename.endswith(".py") and policy_selects_path(
+                (relative_root / filename).as_posix(), policy
+            ):
+                modules.append(Path(root) / filename)
+    modules.sort(key=lambda path: path.relative_to(source_root).as_posix())
+
+    included = []
+    for path in modules:
+        relative = path.relative_to(source_root)
+        if path == entry_file or relative == Path("test.py"):
+            continue
+        if path.name == "__init__.py" and path.stat().st_size == 0:
+            continue
+        included.append(path)
+    return included
+
+
 def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
-    """Render the experiment entry point from the experiment directory."""
+    """Render the experiment entry point and the experiment's other Python modules."""
 
     source_file, entry_point = experiment_entry_point(audit_dir, manifest)
     if source_file is None or not source_file.is_file():
@@ -368,34 +646,66 @@ def render_source_section(audit_dir: Path, manifest: dict[str, Any]) -> str:
             '<p class="missing">Experiment entry point missing: '
             f"<code>{html.escape(entry_point)}</code>.</p>"
         )
-    content, truncated = read_audit_artifact_content(source_file)
-    if content is None:
+    from dallinger.deployment_plan import DeploymentPolicyError
+
+    source_root = experiment_source_root(audit_dir)
+    try:
+        modules = experiment_python_modules(source_root, source_file)
+    except DeploymentPolicyError as error:
         return (
-            '<p class="missing">Experiment entry point could not be read: '
-            f"<code>{html.escape(entry_point)}</code>.</p>"
+            '<p class="missing">Experiment code could not be listed because '
+            f"<code>deploy.toml</code> is invalid: {html.escape(str(error))}</p>"
         )
-    return render_file_grid(
-        [
+    omitted = len(modules) - _MAX_SOURCE_MODULES
+    files = []
+    for path in [source_file, *modules[:_MAX_SOURCE_MODULES]]:
+        content, truncated = read_audit_artifact_content(path)
+        if content is None:
+            if path == source_file:
+                return (
+                    '<p class="missing">Experiment entry point could not be read: '
+                    f"<code>{html.escape(entry_point)}</code>.</p>"
+                )
+            continue
+        relative = (
+            entry_point
+            if path == source_file
+            else path.relative_to(source_root).as_posix()
+        )
+        files.append(
             AuditFile(
-                path=entry_point,
+                path=relative,
                 url="",
                 content=content,
-                size_bytes=source_file.stat().st_size,
-                kind=file_kind(entry_point),
+                size_bytes=path.stat().st_size,
+                kind=file_kind(relative),
                 truncated=truncated,
             )
-        ],
-        empty_message="Experiment entry point was not found.",
+        )
+    grid = render_file_grid(
+        files, empty_message="Experiment entry point was not found."
     )
+    if omitted > 0:
+        grid += (
+            f'<p class="missing">{omitted} more Python '
+            f"module{'s' if omitted != 1 else ''} omitted; this section shows "
+            f"at most {_MAX_SOURCE_MODULES}.</p>"
+        )
+    return grid
 
 
-def section_paths(manifest: dict[str, Any]) -> set[str]:
-    """Return paths rendered by markdown sections."""
+def section_paths(manifest: dict[str, Any], evidence: Any = None) -> set[str]:
+    """Return paths already rendered by a dedicated section."""
 
     paths: set[str] = set()
-    for section in display_sections(manifest):
+    for section in display_sections(manifest, evidence=evidence):
         if section.get("kind") == "markdown" and isinstance(section.get("path"), str):
             paths.add(section["path"])
+        if section.get("kind") == "simulation" and evidence is not None:
+            paths.update(file.path for file in evidence.simulation_files)
+        if section.get("kind") == "analysis" and evidence is not None:
+            paths.update(file.path for file in evidence.analysis_files)
+            paths.update(file.path for file in evidence.simulated_export_files)
     return paths
 
 
@@ -436,11 +746,13 @@ def render_audit_section(
             return render_data_exports(evidence)
         if kind == "analysis":
             return render_analysis_notebook(evidence, standalone=True)
+        if kind == "simulation":
+            return render_design_simulation(evidence, standalone=True)
         if kind == "source":
             return render_source_section(audit_dir, manifest)
         if kind == "files":
             return render_visible_artifacts(
-                evidence, exclude_paths=section_paths(manifest)
+                evidence, exclude_paths=section_paths(manifest, evidence)
             )
         if kind == "json":
             return render_json_section(audit_dir, section)
@@ -647,6 +959,12 @@ def render_audit_site(
     site_dir.mkdir(parents=True, exist_ok=True)
     rendered_artifacts = publish_audit_artifacts(audit_dir, site_dir, manifest)
     published_paths = {artifact.path for artifact in rendered_artifacts}
+    for artifact in manifest.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        path = str(artifact.get("path") or "").rstrip("/")
+        if path and any(item.startswith(f"{path}/") for item in published_paths):
+            published_paths.add(path)
 
     title = audit_display_title(audit_dir, manifest)
     summary = display_implementation_summary(manifest)
@@ -657,7 +975,7 @@ def render_audit_site(
         completeness=completeness_from_manifest(manifest, published_paths),
     )
     css_url = write_audit_static_assets(site_dir)
-    sections = display_sections(manifest)
+    sections = display_sections(manifest, evidence=evidence)
     experiment = manifest.get("experiment", {})
     environment = manifest.get("environment", {})
     checks = manifest.get("checks", [])
@@ -668,9 +986,17 @@ def render_audit_site(
     blocker_count = len(blockers) if isinstance(blockers, list) else 0
     metadata = render_metadata_grid(
         [
-            ("Entry point", render_metadata_code(experiment.get("entry_point"))),
+            (
+                "Entry point",
+                render_metadata_code(experiment.get("entry_point") or "experiment.py"),
+            ),
             ("PsyNet version", render_metadata_value(experiment.get("psynet_version"))),
-            ("Git commit", render_metadata_code(experiment.get("git_commit"))),
+            (
+                "Git commit",
+                render_metadata_code(
+                    experiment.get("git_commit") or experiment_git_commit()
+                ),
+            ),
             ("OS", render_metadata_value(environment.get("os"))),
             ("Python", render_metadata_value(environment.get("python_version"))),
             ("Sections", render_metadata_value(len(sections))),
@@ -689,6 +1015,13 @@ def render_audit_site(
     )
 
     summary_html = f"<p>{html.escape(summary)}</p>" if summary else ""
+    script_urls = write_audit_scripts(
+        site_dir,
+        rendered_body=section_panels + summary_html,
+    )
+    scripts = "".join(
+        f'\n  <script src="{html.escape(url)}"></script>' for url in script_urls
+    )
     html_text = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -724,31 +1057,7 @@ def render_audit_site(
       </div>
     </div>
   </article>
-  <script>
-    document.querySelectorAll("[data-screenshot-gallery]").forEach((gallery) => {{
-      const cards = Array.from(gallery.querySelectorAll("[data-screenshot-card]"));
-      const panel = gallery.closest(".screenshot-gallery");
-      const counter = panel.querySelector("[data-screenshot-counter]");
-      const previous = panel.querySelector("[data-screenshot-prev]");
-      const next = panel.querySelector("[data-screenshot-next]");
-      const caption = panel.querySelector("[data-screenshot-caption]");
-      const show = (index) => {{
-        cards.forEach((card, cardIndex) => {{ card.hidden = cardIndex !== index; }});
-        caption.textContent = cards[index]?.dataset.screenshotCaptionText || "";
-        counter.textContent = `${{index + 1}} / ${{cards.length}}`;
-        gallery.dataset.screenshotIndex = String(index);
-      }};
-      const step = (offset) => {{
-        const current = Number(gallery.dataset.screenshotIndex || 0);
-        show((current + offset + cards.length) % cards.length);
-      }};
-      if (cards.length > 0) {{
-        show(0);
-        previous.addEventListener("click", () => step(-1));
-        next.addEventListener("click", () => step(1));
-      }}
-    }});
-  </script>
+{scripts}
 </body>
 </html>
 """

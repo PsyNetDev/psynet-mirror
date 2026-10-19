@@ -21,6 +21,11 @@ _BABEL_JINJA_CONFIG = """[jinja2: **.html]
 encoding = utf-8
 keywords = _:1 _p:1c,2 pgettext:1c,2 gettext:1
 """
+# ``docs_text`` holds the release docs bundle, including copies of the demos,
+# whose strings belong to the demos rather than to the PsyNet catalog.
+_BUNDLED_DOCS_DIRNAME = "docs_text"
+# pybabel's defaults (".* ._") plus the docs bundle.
+_PYBABEL_IGNORE_DIRS = f".* ._ {_BUNDLED_DOCS_DIRNAME}"
 
 
 def new_pot(fpath):
@@ -70,6 +75,7 @@ def _build_pybabel_extract_command(cfg_file, pot_file, input_path):
     return (
         "pybabel extract "
         "-k gettext:1 -k pgettext:1c,2 -k _:1 -k _p:1c,2 "
+        f"--ignore-dirs {shlex.quote(_PYBABEL_IGNORE_DIRS)} "
         f"-F {shlex.quote(cfg_file)} "
         f"-o {shlex.quote(pot_file)} "
         f"{shlex.quote(input_path)}"
@@ -247,6 +253,7 @@ def _get_py_entries_from_dir(input_path, sp):
         "node_modules",
         "site-packages",
         "dist-packages",
+        _BUNDLED_DOCS_DIRNAME,
     }
 
     entries = []

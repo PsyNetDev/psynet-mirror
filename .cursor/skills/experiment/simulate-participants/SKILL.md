@@ -5,6 +5,14 @@ description: Design, implement, and validate simulated participants for PsyNet e
 
 # PsyNet simulated participants
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/backend` — bots and how they answer
+- `test/audits` — simulation evidence in an audit
+- `test/scalability` — performance tests with many bots
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general experiment
@@ -13,7 +21,7 @@ description: Design, implement, and validate simulated participants for PsyNet e
   details, `run_bot` pitfalls, and performance-test expectations.
 - Read `participant-quality-telemetry/SKILL.md` when profiles exercise
   attention, paste, disclosure, or AI-assistance review signals.
-- Read `prepare-experiment-tunnel/SKILL.md` when a temporary public preview is
+- Read `public-tunnel/SKILL.md` ("Preview a running experiment") when a temporary public preview is
   needed for live manual or human review. Do not replace live review with
   simulated data.
 - Read `verify-ai-model-usability/SKILL.md` before any real LLM-in-the-loop
@@ -24,7 +32,7 @@ description: Design, implement, and validate simulated participants for PsyNet e
 ## Choose the simulation type
 
 - PsyNet bots: framework-driven local participants run by `psynet test local` or
-  `psynet simulate`; use them for default trial flow, export, and performance
+  `psynet audit simulate`; use them for default trial flow, export, and performance
   validation.
 - Deterministic scripted profiles: fixed answers, timings, checks, and metadata;
   use them for reproducible edge cases and regression tests.
@@ -78,8 +86,9 @@ participants whenever possible.
 4. For stochastic profiles, seed runs when reproducibility matters and report the
    seed or run id.
 5. For browser-only JavaScript, focus, paste, keyboard, audio, websocket, or
-   display behavior, add browser/Playwright evidence with
-   `record-participant-video/SKILL.md`; PsyNet bots alone may bypass these paths.
+   display behavior, add a Playwright walk with `playwright-testing/SKILL.md`;
+   PsyNet bots alone may bypass these paths. Use `record-participant-video/SKILL.md`
+   when you also need a recording.
 
 ## LLM simulation rules
 
@@ -98,11 +107,11 @@ participants whenever possible.
 
 - Run `psynet test local` with enough bots to cover each required group, profile,
   condition, prescreener branch, and check failure path.
-- Run `psynet simulate --audit` and inspect `data/simulated_data/` plus
-  `artifacts/simulated_data.zip`. Verify trial answers, trial data,
+- Run `psynet audit simulate` and inspect
+  `audit/simulate/analysis/simulated_export/`. Verify trial answers, trial data,
   participant vars, profile metadata, telemetry fields, and analysis inputs are
   present and typed as expected.
-- Run `psynet performance-test local --audit` when profile logic changes timing,
+- Run `psynet audit performance-test` when profile logic changes timing,
   grouping, concurrency, AI calls, or trial generation load.
 - Compare at least one bot/profile run with a real browser participant path when
   browser-only code or participant-facing UI matters.

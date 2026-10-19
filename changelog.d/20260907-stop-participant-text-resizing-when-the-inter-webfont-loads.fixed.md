@@ -1,0 +1,1 @@
+Participant pages no longer resize their text when the Inter webfont finishes loading. The theme now falls back to a metric-matched face while the font is in flight, and preloads the bold weight that headings use.

@@ -13,6 +13,10 @@ Array.from(document.querySelectorAll("a"))
   .filter((a) => a.href.includes("/download"));
 ```
 
+Find the Dozzle username and password from the `psynet deploy ssh` output
+as described in `browser-and-dashboard.md` (Credentials). Do not ask the
+user to paste them, and do not print the values.
+
 If direct `curl -u <dozzle-username>:<dozzle-password>` returns `401`, fetch the ZIP through the authenticated browser session instead; Dozzle uses the browser login session. The download is a ZIP containing one log file per container. For post-completion downloads, save it in the deployment folder's `local/` subfolder:
 
 ```text

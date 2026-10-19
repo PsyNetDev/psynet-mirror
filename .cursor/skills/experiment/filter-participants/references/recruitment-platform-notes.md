@@ -57,15 +57,6 @@ policies change.
 - Within-study screening should use early branching, clear exit messaging, and
   partial payment for the time spent on the screener.
 
-## MTurk
-
-- MTurk eligibility is controlled with qualification requirements on HITs or HIT
-  types. Qualifications can be system-provided or requester-defined.
-- Requester-defined qualifications can represent previous performance, custom
-  qualification tests, inclusion lists, or exclusion from repeated participation.
-- When using MTurk-style qualifications, keep the external qualification state
-  synchronized with PsyNet participant IDs and previous participation records.
-
 ## Lab and custom recruiters
 
 - Custom recruiters often receive only status, failure reason, or failure tags.

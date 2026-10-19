@@ -1,16 +1,23 @@
 {% extends "layout.html" %}
-{% include "macros/browser-detect.html" %}
+{% import "macros/browser-detect.html" as browser_detect with context %}
+{# This page extends Dallinger's layout rather than psynet_layout.html, so it
+   needs the viewport meta directly. #}
+{% import "macros/head.html" as psynet_head %}
 
+{% block head %}
+    {{ super() }}
+    {{ psynet_head.viewport() }}
+    {{ browser_detect.head() }}
+{% endblock %}
 
 {% block stylesheets %}
+    {{ super() }}
     {% include "theme.html" %}
-    <style>
-
-    </style>
 {% endblock %}
 
 {% block body %}
-    <div class="container my-5" id="container-not-an-ad">
+    {{ browser_detect.body() }}
+    <div class="container my-5 psynet-surface" id="container-not-an-ad">
         <div id="ad">
             <div class="row overflow-hidden mb-3" style="height: 73px;">
                 <img id="adlogo" style="display: none" alt="Lab Logo" />
@@ -27,72 +34,24 @@
                         {% endblock sandbox_or_debug %}
                     {% endif %}
 
-                    {% if assignmentid == "ASSIGNMENT_ID_NOT_AVAILABLE" %}
-                        {% block no_assignment %}
-                            <h1>{{ pgettext("ad", "Call for participants") }}</h1>
+                    {% block live %}
+                        {% if not experiment.with_lucid_recruitment() %}
+                            <h1>{{ pgettext("ad", "Thanks for your interest in this experiment.") }}</h1>
                             <p>
-                                {{ experiment.description|safe }}
+                                {{ pgettext("ad", "By clicking the following URL link, you will be taken to the experiment, including complete instructions and an informed consent agreement.") }}
                             </p>
-                            <p>
-                                <span class="fw-bold">{{ pgettext("ad", "The requirements to participate are as follows") }}</span>:
-                            </p>
-                            <ul>
-                                {% for requirement in experiment.ad_requirements %}
-                                    <li>{{ requirement|safe }}</li>
-                                {% endfor %}
-                            </ul>
-                            <p>
-                                {{ experiment.ad_payment_information|safe }}
-                            </p>
-                            <p>
-                                {{ pgettext("ad", 'Please click the "Accept HIT" button on the Amazon site above to begin the task.') }}
-                            </p>
-                        {% endblock no_assignment %}
-                    {% else %}
-                        {% block live %}
-                            {% if not experiment.with_lucid_recruitment() %}
-                                {% if experiment.recruiter.nickname == "mturk" %}
-                                    <h1>{{ pgettext("ad", "Thanks for accepting this HIT.") }}</h1>
-                                {% else %}
-                                    <h1>{{ pgettext("ad", "Thanks for your interest in this experiment.") }}</h1>
-                                {% endif %}
-                                <p>
-                                    {{ pgettext("ad", "By clicking the following URL link, you will be taken to the experiment, including complete instructions and an informed consent agreement.") }}
-                                </p>
 
-                                {% if not config.force_incognito_mode %}
-                                    <div class="alert alert-warning">
-                                        <span class="fw-bold">{{ pgettext("ad", "Warning") }}</span>: {{ pgettext("ad", "Please disable pop-up blockers before continuing.") }}
-                                    </div>
-                                {% endif %}
-
-                                <button type="button" id="begin-button" class="btn btn-primary btn-lg">
-                                    {{ pgettext("ad", "Begin Experiment") }}
-                                </button>
-                            {% endif %}
-
-                            {% if config.show_abort_button %}
-                                <button type="button" id="abort-button" class="btn btn-danger btn-lg" style="float: right;" disabled>
-                                    {{ gettext("Abort experiment") }}
-                                </button>
-                                <div style="width: 200px; text-align: right; clear: both; float: right; margin-top: 7px;">
-                                    <span class="alert-danger text-disabled">{{ gettext("Click the above button to be compensated in case of an error.") }}</span>
+                            {% if not config.force_incognito_mode %}
+                                <div class="alert alert-warning">
+                                    <span class="fw-bold">{{ pgettext("ad", "Warning") }}</span>: {{ pgettext("ad", "Please disable pop-up blockers before continuing.") }}
                                 </div>
-                                <script>
-                                    function abortExperiment(event) {
-                                        var windowFeatures = "menubar=no,location=no,resizable=no,scrollbars=no,status=no";
-                                        let windowObjectReference = window.open("/abort/" + "{{assignmentid}}", "Abort window", windowFeatures);
-                                    }
-
-                                    function enableAbortButton(event) {
-                                        document.getElementById("abort-button").disabled = false;
-                                    }
-
-                                    document.getElementById("abort-button").onclick = abortExperiment;
-                                </script>
                             {% endif %}
-                        {% endblock live %}
-                    {% endif %}
+
+                            <button type="button" id="begin-button" class="btn btn-primary btn-lg">
+                                {{ pgettext("ad", "Begin Experiment") }}
+                            </button>
+                        {% endif %}
+                    {% endblock live %}
                 {% endblock ad %}
                 </div>
             </div>
@@ -123,7 +82,8 @@
             + ",height={{config.window_height}}");
             event.target.setAttribute("disabled", "");
           } else{
-            window.location = url;
+            // Replace so Back from the timeline does not return to this splash.
+            window.location.replace(url);
           }
         }
         {% if experiment.with_lucid_recruitment() %}

@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.pytest_psynet import AnimalTrial, ColorTrial, trial_maker_1, trial_maker_2

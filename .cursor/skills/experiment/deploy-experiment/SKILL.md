@@ -5,12 +5,28 @@ description: Audit PsyNet experiment folders for deployment readiness, deploymen
 
 # PsyNet Deployment Ops
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `deploy/how_deployment_works` — what gets deployed and how `deploy.toml` selects files
+- `deploy/setting_up_a_server` — provisioning and registering servers
+- `deploy/running_a_study` — launching, monitoring, and closing a study
+- `data/exporting_data` — exporting data before teardown
+
 ## Safety rules
 
 - Do not run paid recruitment, app destruction, EC2 teardown, or other
   irreversible commands unless the user explicitly asks.
 - Before any destroy/teardown recommendation, verify whether data has been
   exported and record the export path or blocker.
+- Export and destroy only once no async jobs are pending. `psynet export ssh`
+  and `psynet export local` end with a warning that the export misses
+  pending jobs (`psynet export heroku` does not check); `psynet destroy ssh`
+  refuses when it cannot ask. Wait for the jobs, then export again; never
+  add `--discard-pending-jobs` unless the user accepts losing those results.
+  If destroy prints "Skipped the check for pending async jobs", it destroys
+  the app without the check, so confirm the export first.
 - Do not commit or publish real AWS credentials, recruiter tokens, dashboard
   passwords, `.env` files, private keys, or participant data.
 - Prefer command generation and readiness reports over live operations unless
@@ -24,11 +40,12 @@ Check that the experiment folder has:
 - `config.txt`
 - `requirements.txt`
 - `constraints.txt`
-- `Dockerfile` and/or `Dockertag` when the template expects them
-- `deploy.toml` with reviewed `[exclude]` rules; if PsyNet just created it,
-  the first debug/test/deploy command stops once so you can review. Then run
+- `Dockerfile`
+- `deploy.toml` with reviewed `[exclude]` rules. Run
   `dallinger deployment-files list` to inspect every file that PsyNet will copy.
-  Git-ignored files may still be deployed after that review.
+  Git-ignored files are deployed unless `deploy.toml` excludes them. Confirm `audit/`
+  is excluded. Stock templates include it; existing `deploy.toml` files are
+  not overwritten, so add `audit` to `[exclude].paths` if it is missing.
 - `.gitignore` excluding `.venv/`, `.deploy/`, `.pytest_cache/`, `exports/`,
   `deploy_logs/`, source archives, generated logs, and the managed
   `.cursor/skills/psynet/` bundle
@@ -36,7 +53,8 @@ Check that the experiment folder has:
 - qualification files and recruiter settings that match any in-experiment
   prescreeners; use `filter-participants/SKILL.md` when the
   mapping is unclear
-- local assets or manifests present and deployable
+- local `static/` stimulus files present and deployable when the experiment
+  plays pregenerated media
 - no broken symlinks to local user paths
 - no stale app/server/study names copied from another template
 - a `DEPLOYMENT_LOG.md` or clear deployment metadata
@@ -83,7 +101,7 @@ source .venv/bin/activate
 psynet debug local
 ```
 
-Provision:
+Provision (choose `worker_processes` with `plan-server-resources/SKILL.md`):
 
 ```bash
 dallinger ec2 provision \
@@ -133,8 +151,6 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
 - Export exists for one app but teardown is being planned for another.
 - SSL/TLS errors during first launch can be transient cold-start issues; retry
   after a short wait before changing code.
-- Concurrent legacy exports can interfere with local Postgres state; prefer
-  sequential exports unless the workflow has been tested.
 - Relative export paths are easy to lose track of; prefer absolute `--path`
   values in export commands and logs.
 - Large asset exports may fail even when anonymized tabular exports are usable;

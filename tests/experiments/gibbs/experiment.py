@@ -10,14 +10,14 @@ from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 import psynet.experiment
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
+from psynet.async_job import AsyncJob
 from psynet.bot import Bot
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.demography.general import ExperimentFeedback
 from psynet.modular_page import ModularPage, Prompt, PushButtonControl, SliderControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.process import AsyncProcess
 from psynet.timeline import CodeBlock, Timeline
 from psynet.trial.gibbs import GibbsNetwork, GibbsNode, GibbsTrial, GibbsTrialMaker
 from psynet.utils import get_logger
@@ -132,7 +132,7 @@ class CustomTrial(GibbsTrial):
         with tempfile.NamedTemporaryFile("w") as file:
             file.write(f"completed async_post_trial for trial {self.id}")
             file.flush()
-            asset = ExperimentAsset(
+            asset = FileAsset(
                 local_key="async_post_trial",
                 input_path=file.name,
                 extension=".txt",
@@ -191,14 +191,14 @@ trial_maker = CustomTrialMaker(
     chains_per_participant=None,  # set to None if chain_type="across"
     chains_per_experiment=8,  # set to None if chain_type="within"
     trials_per_node=2,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,
     recruit_mode="n_trials",
     target_n_participants=None,
     n_repeat_trials=3,
-    wait_for_networks=True,  # wait for asynchronous processes to complete before continuing to the next trial
+    wait_for_networks=True,  # wait for async jobs to complete before continuing to the next trial
     choose_participant_group=lambda participant: participant.var.participant_group,
 )
 
@@ -283,7 +283,7 @@ class Exp(psynet.experiment.Experiment):
             assert len(b.alive_trials) == 7  # 4 normal trials + 3 repeat trials
             assert all([t.finalized for t in b.alive_trials])
 
-        processes = AsyncProcess.query.all()
-        assert all([not p.failed for p in processes])
+        async_jobs = AsyncJob.query.all()
+        assert all([not job.failed for job in async_jobs])
 
         super().test_check_bots(bots)

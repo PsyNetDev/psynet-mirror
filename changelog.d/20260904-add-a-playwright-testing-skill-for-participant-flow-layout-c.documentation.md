@@ -1,0 +1,1 @@
+Added a `playwright-testing` experiment skill that owns participant-flow Playwright walks and `psynetLayout.check()` layout checks. Experiment authors find it under `.cursor/skills/psynet/playwright-testing` after `psynet scripts update`.

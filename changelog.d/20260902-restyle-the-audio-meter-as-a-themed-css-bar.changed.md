@@ -1,0 +1,1 @@
+The audio meter is a themed CSS track rather than a 50px canvas brick. Level and status colour follow the participant palette (including the named red/green/blue mapping), the track matches the trial progress bar, and the microphone name is shown when the browser provides it.

@@ -1,12 +1,27 @@
 import json
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import dallinger.db
 import dallinger.experiment
 import dallinger.recruiters
 import pytest
+import requests
 from dallinger.prolific import ProlificServiceException
 
+from psynet.db import forbid_commits
+from psynet.exit import (
+    EarlyExitConfirmation,
+    ErrorRecoveryPresentation,
+    ExitContext,
+    ExitPath,
+    ExitPlan,
+    PaymentDecision,
+    PaymentState,
+)
+from psynet.lucid import LucidService
 from psynet.participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -19,17 +34,25 @@ from psynet.participant import (
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
+    clear_platform_base_unpaid,
     display_bonus_status,
+    platform_base_unpaid,
+    record_platform_base_unpaid,
     review_bonus_pay_in_progress,
 )
 from psynet.recruiters import (
+    PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE,
+    PROLIFIC_PLATFORM_BASE_RETRY_LIMIT,
     PROLIFIC_SCREEN_OUT_ACTION,
     PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
     BaseLabRecruiter,
-    PaymentDecision,
+    BaseLucidRecruiter,
+    DevProlificRecruiter,
+    HotAirRecruiter,
     ProlificRecruiter,
     PsyNetProlificRecruiterMixin,
     PsyNetRecruiterMixin,
+    _fetch_prolific_submission,
 )
 
 
@@ -80,16 +103,21 @@ def prolific_error(status):
     )
 
 
-@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+@pytest.mark.parametrize(
+    "error",
+    [prolific_error(status) for status in (408, 429, 500, 502, 503, 504)]
+    + [
+        requests.Timeout("slow"),
+        ProlificServiceException('{"URL": "/submissions/1/", "error": "Timeout()"}'),
+    ],
+)
 def test_check_assignment_return_status_handles_retriable_prolific_lookup_failure(
-    status,
+    error,
     caplog,
 ):
     participant = make_participant()
     experiment = MagicMock()
-    experiment.recruiter.prolificservice.get_participant_submission.side_effect = (
-        prolific_error(status)
-    )
+    experiment.recruiter.prolificservice.get_participant_submission.side_effect = error
 
     with patch("psynet.experiment.get_experiment", return_value=experiment):
         result = PsyNetProlificRecruiterMixin.check_assignment_return_status(
@@ -158,10 +186,13 @@ def test_prolific_run_checks_combines_unread_message_notifications():
         new_callable=PropertyMock,
         return_value="study-1",
     ):
-        with patch("psynet.redis.redis_vars.get", return_value=None):
-            with patch("psynet.redis.redis_vars.set") as mark_seen:
-                with patch("psynet.experiment.get_experiment", return_value=experiment):
-                    recruiter.run_checks()
+        with patch.object(Participant, "needing_platform_base_retry", return_value=[]):
+            with patch("psynet.redis.redis_vars.get", return_value=None):
+                with patch("psynet.redis.redis_vars.set") as mark_seen:
+                    with patch(
+                        "psynet.experiment.get_experiment", return_value=experiment
+                    ):
+                        recruiter.run_checks()
 
     mark_seen.assert_called_once()
     notifier.combine.assert_called_once()
@@ -197,10 +228,13 @@ def test_prolific_run_checks_handles_current_unread_message_shape():
         new_callable=PropertyMock,
         return_value="study-1",
     ):
-        with patch("psynet.redis.redis_vars.get", return_value=None):
-            with patch("psynet.redis.redis_vars.set") as mark_seen:
-                with patch("psynet.experiment.get_experiment", return_value=experiment):
-                    recruiter.run_checks()
+        with patch.object(Participant, "needing_platform_base_retry", return_value=[]):
+            with patch("psynet.redis.redis_vars.get", return_value=None):
+                with patch("psynet.redis.redis_vars.set") as mark_seen:
+                    with patch(
+                        "psynet.experiment.get_experiment", return_value=experiment
+                    ):
+                        recruiter.run_checks()
 
     mark_seen.assert_called_once()
     notifier.combine.assert_called_once()
@@ -232,9 +266,24 @@ def make_config(**overrides):
         "prolific_completion_config": "{}",
         "initial_recruitment_size": 7,
         "base_payment": 1.00,
+        "currency": "$",
+        "min_reward_for_paid_early_exit": 0.20,
+        "prolific_pay_unsuccessful": True,
+        "prolific_unsuccessful_base_payment": 0.25,
+        "prolific_unsuccessful_topup": True,
     }
     values.update(overrides)
     return FakeConfig(**values)
+
+
+@contextmanager
+def patched_early_exit_config(config):
+    """Patch config access on both sides of the recruiter/domain boundary."""
+    with (
+        patch("psynet.recruiters.get_config", return_value=config),
+        patch("psynet.exit.get_config", return_value=config),
+    ):
+        yield
 
 
 def make_prolific_recruiter(config):
@@ -250,7 +299,14 @@ def test_completion_codes_unchanged_when_unsuccessful_payment_disabled():
     with patch("psynet.recruiters.get_config", return_value=config):
         codes = recruiter.completion_codes_and_actions
 
-    assert [code["code_type"] for code in codes] == ["DEFAULT"]
+    assert [code["code_type"] for code in codes] == [
+        "DEFAULT",
+        PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE,
+    ]
+    assert codes[0]["actor"] == "participant"
+    assert codes[1]["actor"] == "researcher"
+    assert codes[1]["actions"] == [{"action": "AUTOMATICALLY_APPROVE"}]
+    assert codes[0]["code"] != codes[1]["code"]
 
 
 def test_completion_codes_include_unsuccessful_code_with_default_payment():
@@ -263,6 +319,7 @@ def test_completion_codes_include_unsuccessful_code_with_default_payment():
 
     assert [code["code_type"] for code in codes] == [
         "DEFAULT",
+        PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE,
         PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
     ]
     assert codes[-1]["actions"][0]["fixed_screen_out_reward"] == 25
@@ -288,10 +345,11 @@ def test_completion_codes_include_unsuccessful_screen_out_code():
 
     assert [code["code_type"] for code in codes] == [
         "DEFAULT",
+        PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE,
         PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
     ]
     unsuccessful = codes[-1]
-    assert unsuccessful["actor"] == "participant"
+    assert unsuccessful["actor"] == "researcher"
     assert unsuccessful["actions"] == [
         {
             "action": PROLIFIC_SCREEN_OUT_ACTION,
@@ -384,68 +442,694 @@ def test_release_participant_branching(failed, payment_configured, expected):
         submit.assert_not_called()
 
 
+@pytest.mark.parametrize("status", ["submitted", "approved", "screened_out"])
+def test_prolific_screen_out_release_confirms_when_submission_already_recorded(status):
+    """After Submit, SCREEN_OUT must not send them through Submit to Prolific again."""
+    from psynet.end import RecordedSubmissionPage
+
+    recruiter = make_prolific_recruiter(make_config())
+    participant = MagicMock(
+        early_exited=True,
+        status=status,
+        exit_plan=_early_exit_test_plan(ExitPath.SCREEN_OUT).mark_committed().to_dict(),
+    )
+
+    with (
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        patch.object(recruiter, "submit_assignment") as submit,
+    ):
+        page = recruiter.release_participant(MagicMock(), participant)
+
+    submit.assert_not_called()
+    assert isinstance(page, RecordedSubmissionPage)
+    assert page.show_early_exit_button is False
+    heading, body = recruiter._recorded_submission_copy()
+    assert heading == "Your submission has been sent to Prolific."
+    assert body == "You may close this page."
+    assert "You left early" not in heading
+    assert "An error occurred" not in heading
+    assert "An error occurred" not in body
+
+
 @pytest.mark.parametrize(
-    "status,expect_skipped",
+    "path,expected_method",
     [
-        ("screened_out", True),
-        ("returned", True),
-        ("approved", False),
-        ("submitted", False),
+        (ExitPath.SCREEN_OUT, "submit_assignment"),
+        (ExitPath.RETURN_FOR_BONUS, "request_return_for_bonus"),
+        (
+            ExitPath.RETURN_WITHOUT_PAYMENT,
+            "release_early_exit_without_payment",
+        ),
     ],
 )
-def test_approve_hit_skips_when_status_is_not_approvable(status, expect_skipped):
-    config = make_config(prolific_unsuccessful_base_payment=0.50)
-    recruiter = make_prolific_recruiter(config)
-    participant = MagicMock(status=status)
+def test_prolific_release_follows_the_executed_plan(path, expected_method):
+    recruiter = make_prolific_recruiter(make_config())
+    participant = MagicMock(
+        early_exited=True,
+        status="working",
+        exit_plan=_early_exit_test_plan(path).mark_committed().to_dict(),
+    )
 
+    with (
+        patch.object(recruiter, "submit_assignment") as submit,
+        patch.object(recruiter, "request_return_for_bonus") as return_for_bonus,
+        patch.object(
+            recruiter, "release_early_exit_without_payment"
+        ) as without_payment,
+    ):
+        recruiter.release_participant(MagicMock(), participant)
+
+    methods = {
+        "submit_assignment": submit,
+        "request_return_for_bonus": return_for_bonus,
+        "release_early_exit_without_payment": without_payment,
+    }
+    for name, method in methods.items():
+        assert method.call_count == (1 if name == expected_method else 0)
+
+
+def _approve_hit_participant(**attrs):
+    values = dict(
+        id=24,
+        status="approved",
+        failed=False,
+        complete=True,
+        assignment_id="assignment-1",
+        worker_id="worker-1",
+        bonus_status=BONUS_STATUS_NOT_DUE_YET,
+        issued_completion_code_type="DEFAULT",
+    )
+    values.update(attrs)
+    return MagicMock(**values)
+
+
+def _run_approve_hit(
+    participant,
+    submission_status,
+    config=None,
+    *,
+    submission=True,
+    experiment=None,
+    super_approve_return=_UNSET,
+):
+    config = config or make_config(prolific_screen_out_slots=70)
+    recruiter = make_prolific_recruiter(config)
+    recruiter.prolificservice = MagicMock()
     query = MagicMock()
     query.filter_by.return_value.order_by.return_value.first.return_value = participant
-
+    fetched = {"status": submission_status} if submission else None
     with patch.object(Participant, "query", query):
-        with patch.object(
-            dallinger.recruiters.ProlificRecruiter, "approve_hit"
-        ) as super_approve:
-            result = recruiter.approve_hit("assignment-1")
+        with patch(
+            "psynet.recruiters._fetch_prolific_submission", return_value=fetched
+        ):
+            with patch("psynet.recruiters.get_config", return_value=config):
+                with patch(
+                    "psynet.experiment.get_experiment",
+                    return_value=experiment or MagicMock(),
+                ):
+                    with patch.object(
+                        dallinger.recruiters.ProlificRecruiter, "approve_hit"
+                    ) as super_approve:
+                        if super_approve_return is not _UNSET:
+                            super_approve.return_value = super_approve_return
+                        result = recruiter.approve_hit("assignment-1")
+    return recruiter, result, super_approve
 
-    if expect_skipped:
-        super_approve.assert_not_called()
-        assert result is True
-    else:
-        super_approve.assert_called_once_with("assignment-1")
+
+def _complete_payload(recruiter):
+    recruiter.prolificservice._req.assert_called_once()
+    kwargs = recruiter.prolificservice._req.call_args.kwargs
+    assert kwargs["method"] == "POST"
+    assert kwargs["endpoint"] == "/submissions/assignment-1/transition/"
+    return kwargs["json"]
+
+
+def test_approve_hit_completes_active_submission_with_researcher_default():
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), "ACTIVE", config
+    )
+    assert result is True
+    super_approve.assert_not_called()
+    with patch("psynet.recruiters.get_config", return_value=config):
+        expected = recruiter.completion_code_map[PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE]
+    assert _complete_payload(recruiter) == {
+        "action": "COMPLETE",
+        "completion_code": expected,
+    }
+
+
+def test_approve_hit_completes_timed_out_submission_with_researcher_default():
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), "TIMED-OUT"
+    )
+    assert result is True
+    super_approve.assert_not_called()
+    assert _complete_payload(recruiter)["action"] == "COMPLETE"
+
+
+def test_approve_hit_completes_screened_out_with_unsuccessful_never_default():
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(
+            status="screened_out",
+            failed=True,
+            issued_completion_code_type=PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
+        ),
+        "ACTIVE",
+        config,
+    )
+    assert result is True
+    super_approve.assert_not_called()
+    with patch("psynet.recruiters.get_config", return_value=config):
+        expected = recruiter.completion_code_map[PROLIFIC_UNSUCCESSFUL_CODE_TYPE]
+        default = recruiter.completion_code_map[PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE]
+    payload = _complete_payload(recruiter)
+    assert payload == {"action": "COMPLETE", "completion_code": expected}
+    assert payload["completion_code"] != default
+
+
+def test_approve_hit_keeps_first_issuance_default_even_if_later_failed():
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter, result, _ = _run_approve_hit(
+        _approve_hit_participant(failed=True, issued_completion_code_type="DEFAULT"),
+        "ACTIVE",
+        config,
+    )
+    assert result is True
+    with patch("psynet.recruiters.get_config", return_value=config):
+        expected = recruiter.completion_code_map[PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE]
+        unsuccessful = recruiter.completion_code_map[PROLIFIC_UNSUCCESSFUL_CODE_TYPE]
+    assert _complete_payload(recruiter)["completion_code"] == expected
+    assert expected != unsuccessful
+
+
+def test_approve_hit_completes_failed_participant_with_unsuccessful():
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter, result, _ = _run_approve_hit(
+        _approve_hit_participant(
+            status="submitted",
+            failed=True,
+            issued_completion_code_type=None,
+        ),
+        "ACTIVE",
+        config,
+    )
+    assert result is True
+    with patch("psynet.recruiters.get_config", return_value=config):
+        expected = recruiter.completion_code_map[PROLIFIC_UNSUCCESSFUL_CODE_TYPE]
+    assert _complete_payload(recruiter)["completion_code"] == expected
+
+
+def test_approve_hit_approves_only_when_awaiting_review():
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(),
+        "AWAITING REVIEW",
+        super_approve_return={"status": "APPROVED"},
+    )
+    assert result is True
+    super_approve.assert_called_once_with("assignment-1")
+    recruiter.prolificservice._req.assert_not_called()
+
+
+def test_approve_hit_reports_failure_when_awaiting_review_approve_returns_none():
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), "AWAITING REVIEW", super_approve_return=None
+    )
+    assert result is False
+    super_approve.assert_called_once_with("assignment-1")
+    recruiter.prolificservice._req.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["APPROVED", "SCREENED OUT"])
+def test_approve_hit_skips_paid_rows(status):
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), status
+    )
+    assert result is True
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["REJECTED", "RETURNED"])
+def test_approve_hit_reports_unpayable_rows_as_unpaid(status):
+    """A returned/rejected row will never pay the base.
+
+    Reporting it as unpaid flags the participant, so the retry sweep stops
+    with a reason and notifies the researcher, instead of the base looking
+    paid forever. No request is sent and no notification fires here: that
+    is the sweep's job.
+    """
+    experiment = MagicMock()
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), status, experiment=experiment
+    )
+    assert result is False
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_approve_hit_reports_missing_researcher_code_as_unpaid():
+    """No usable code (failed participant, screen-out disabled) means no COMPLETE.
+
+    The submission stays unpaid, so this must be reported as a failure and
+    flagged rather than silently looking paid.
+    """
+    experiment = MagicMock()
+    config = make_config(prolific_pay_unsuccessful=False)
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(
+            status="submitted", failed=True, issued_completion_code_type=None
+        ),
+        "ACTIVE",
+        config,
+        experiment=experiment,
+    )
+    assert result is False
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_approve_hit_skips_returned_local_status():
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(status="returned"), "ACTIVE"
+    )
+    assert result is True
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
 
 
 @pytest.mark.parametrize(
     "bonus_status,expect_skipped",
     [
-        (BONUS_STATUS_NOT_DUE_YET, False),  # first pass: approve normally
-        (BONUS_STATUS_UNCONFIRMED, True),  # replay: payment already handled
+        (BONUS_STATUS_NOT_DUE_YET, False),
+        (BONUS_STATUS_UNCONFIRMED, True),
         (BONUS_STATUS_SUCCESS, True),
         (BONUS_STATUS_CAPPED, True),
         (BONUS_STATUS_DISMISSED, True),
     ],
 )
 def test_approve_hit_skips_submission_complete_replays(bonus_status, expect_skipped):
-    """A submission-complete replay must not approve an already-approved
-    submission: Prolific rejects it, producing spurious recruitment errors.
-    """
-    config = make_config(prolific_unsuccessful_base_payment=0.50)
-    recruiter = make_prolific_recruiter(config)
-    participant = MagicMock(status="submitted", bonus_status=bonus_status)
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(bonus_status=bonus_status), "ACTIVE"
+    )
+    if expect_skipped:
+        assert result is True
+        super_approve.assert_not_called()
+        recruiter.prolificservice._req.assert_not_called()
+    else:
+        assert result is True
+        recruiter.prolificservice._req.assert_called_once()
 
+
+def test_approve_hit_does_not_complete_when_participant_row_is_missing():
+    recruiter, result, super_approve = _run_approve_hit(None, "ACTIVE")
+    assert result is True
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
+
+
+def test_approve_hit_does_not_notify_when_complete_fails():
+    experiment = MagicMock()
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter = make_prolific_recruiter(config)
+    recruiter.prolificservice = MagicMock()
+    recruiter.prolificservice._req.side_effect = ProlificServiceException("denied")
+    participant = _approve_hit_participant()
+    query = MagicMock()
+    query.filter_by.return_value.order_by.return_value.first.return_value = participant
+    with patch.object(Participant, "query", query):
+        with patch(
+            "psynet.recruiters._fetch_prolific_submission",
+            return_value={"status": "ACTIVE"},
+        ):
+            with patch("psynet.recruiters.get_config", return_value=config):
+                with patch("psynet.experiment.get_experiment", return_value=experiment):
+                    with patch.object(
+                        dallinger.recruiters.ProlificRecruiter, "approve_hit"
+                    ) as super_approve:
+                        result = recruiter.approve_hit("assignment-1")
+    assert result is False
+    super_approve.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_approve_hit_reports_failure_when_the_request_cannot_be_sent():
+    """A transport error means the study reward was not paid.
+
+    ``ProlificService._req`` raises ``ProlificServiceException`` for an
+    error payload but lets transport errors through raw, so this must be
+    reported as a failure rather than escaping and killing the
+    submission-complete worker before the bonus is paid.
+    """
+    experiment = MagicMock()
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter = make_prolific_recruiter(config)
+    recruiter.prolificservice = MagicMock()
+    recruiter.prolificservice._req.side_effect = requests.ConnectionError("no route")
+    participant = _approve_hit_participant()
+    query = MagicMock()
+    query.filter_by.return_value.order_by.return_value.first.return_value = participant
+    with patch.object(Participant, "query", query):
+        with patch(
+            "psynet.recruiters._fetch_prolific_submission",
+            return_value={"status": "ACTIVE"},
+        ):
+            with patch("psynet.recruiters.get_config", return_value=config):
+                with patch("psynet.experiment.get_experiment", return_value=experiment):
+                    result = recruiter.approve_hit("assignment-1")
+    assert result is False
+    experiment.notifier.notify.assert_not_called()
+
+
+def _unpaid_participant(**attrs):
+    values = dict(
+        id=24,
+        assignment_id="assignment-1",
+        platform_base_unpaid=True,
+        platform_base_unpaid_detail="owed",
+        platform_base_retry_count=None,
+        issued_completion_code_type="DEFAULT",
+        failed=False,
+        status="approved",
+    )
+    values.update(attrs)
+    return MagicMock(**values)
+
+
+def _run_retry(
+    participant,
+    submission_status,
+    *,
+    complete_ok=True,
+    approve_ok=True,
+    experiment=None,
+    config=None,
+):
+    config = config or make_config(prolific_screen_out_slots=70)
+    recruiter = make_prolific_recruiter(config)
+    recruiter.prolificservice = MagicMock()
+    if not complete_ok:
+        recruiter.prolificservice._req.side_effect = ProlificServiceException("denied")
+    fetched = None if submission_status is None else {"status": submission_status}
+    experiment = experiment or MagicMock()
+    with patch("psynet.recruiters._fetch_prolific_submission", return_value=fetched):
+        with patch("psynet.recruiters.get_config", return_value=config):
+            with patch("psynet.experiment.get_experiment", return_value=experiment):
+                with patch.object(
+                    dallinger.recruiters.ProlificRecruiter, "approve_hit"
+                ) as super_approve:
+                    if not approve_ok:
+                        super_approve.return_value = None
+                    recruiter._retry_unpaid_platform_base(participant)
+    return recruiter, super_approve, experiment
+
+
+def test_platform_base_unpaid_reads_the_flag_not_the_detail():
+    participant = SimpleNamespace(
+        platform_base_unpaid=None,
+        platform_base_unpaid_detail="stale leftover",
+        platform_base_retry_count=2,
+    )
+    assert not platform_base_unpaid(participant)
+    record_platform_base_unpaid(participant, "owed")
+    assert participant.platform_base_unpaid is True
+    assert platform_base_unpaid(participant)
+    assert participant.platform_base_unpaid_detail == "owed"
+    clear_platform_base_unpaid(participant)
+    assert participant.platform_base_unpaid is None
+    assert not platform_base_unpaid(participant)
+    assert participant.platform_base_unpaid_detail is None
+    assert participant.platform_base_retry_count is None
+
+
+def test_retry_clears_flag_when_prolific_already_settled():
+    participant = _unpaid_participant()
+    recruiter, super_approve, experiment = _run_retry(participant, "APPROVED")
+    assert participant.platform_base_unpaid is None
+    assert participant.platform_base_unpaid_detail is None
+    assert participant.platform_base_retry_count is None
+    recruiter.prolificservice._req.assert_not_called()
+    super_approve.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_retry_completes_active_and_clears_flag():
+    participant = _unpaid_participant()
+    recruiter, super_approve, experiment = _run_retry(participant, "ACTIVE")
+    assert participant.platform_base_unpaid is None
+    assert participant.platform_base_unpaid_detail is None
+    assert _complete_payload(recruiter)["action"] == "COMPLETE"
+    super_approve.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_retry_increments_count_when_complete_fails():
+    participant = _unpaid_participant()
+    recruiter, _, experiment = _run_retry(participant, "ACTIVE", complete_ok=False)
+    assert participant.platform_base_unpaid is True
+    assert participant.platform_base_unpaid_detail == "owed"
+    assert participant.platform_base_retry_count == 1
+    experiment.notifier.notify.assert_not_called()
+    recruiter.prolificservice._req.assert_called_once()
+
+
+def test_retry_notifies_and_stops_at_limit():
+    participant = _unpaid_participant(
+        platform_base_retry_count=PROLIFIC_PLATFORM_BASE_RETRY_LIMIT - 1
+    )
+    _, _, experiment = _run_retry(participant, "ACTIVE", complete_ok=False)
+    assert participant.platform_base_retry_count == PROLIFIC_PLATFORM_BASE_RETRY_LIMIT
+    assert "after 5 attempts" in participant.platform_base_unpaid_detail
+    experiment.notifier.notify.assert_called_once()
+
+
+def test_retry_stops_immediately_when_no_code_exists():
+    """Retrying cannot help when no researcher code exists for the participant."""
+    participant = _unpaid_participant(
+        failed=True, status="submitted", issued_completion_code_type=None
+    )
+    recruiter, super_approve, experiment = _run_retry(
+        participant, "ACTIVE", config=make_config(prolific_pay_unsuccessful=False)
+    )
+    recruiter.prolificservice._req.assert_not_called()
+    super_approve.assert_not_called()
+    assert participant.platform_base_retry_count == PROLIFIC_PLATFORM_BASE_RETRY_LIMIT
+    assert "No researcher-actor completion code" in (
+        participant.platform_base_unpaid_detail
+    )
+    experiment.notifier.notify.assert_called_once()
+
+
+def test_retry_stops_immediately_on_returned_status():
+    participant = _unpaid_participant()
+    recruiter, super_approve, experiment = _run_retry(participant, "RETURNED")
+    recruiter.prolificservice._req.assert_not_called()
+    super_approve.assert_not_called()
+    assert participant.platform_base_retry_count == PROLIFIC_PLATFORM_BASE_RETRY_LIMIT
+    assert "RETURNED" in participant.platform_base_unpaid_detail
+    experiment.notifier.notify.assert_called_once()
+
+
+def test_retry_approves_awaiting_review():
+    participant = _unpaid_participant()
+    recruiter, super_approve, experiment = _run_retry(participant, "AWAITING REVIEW")
+    super_approve.assert_called_once_with("assignment-1")
+    recruiter.prolificservice._req.assert_not_called()
+    assert participant.platform_base_unpaid is None
+    assert participant.platform_base_unpaid_detail is None
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_retry_does_not_clear_flag_when_awaiting_review_approve_fails():
+    participant = _unpaid_participant()
+    recruiter, super_approve, experiment = _run_retry(
+        participant, "AWAITING REVIEW", approve_ok=False
+    )
+    super_approve.assert_called_once_with("assignment-1")
+    recruiter.prolificservice._req.assert_not_called()
+    assert participant.platform_base_unpaid is True
+    assert participant.platform_base_unpaid_detail == "owed"
+    assert participant.platform_base_retry_count == 1
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_retry_unpaid_platform_bases_retries_each_flagged_participant():
+    recruiter = make_prolific_recruiter(make_config())
+    first = _unpaid_participant(id=1)
+    second = _unpaid_participant(id=2)
+    with patch.object(
+        Participant, "needing_platform_base_retry", return_value=[first, second]
+    ):
+        with patch.object(recruiter, "_retry_unpaid_platform_base") as retry_one:
+            recruiter.retry_unpaid_platform_bases()
+    assert retry_one.call_args_list == [((first,),), ((second,),)]
+
+
+def test_run_checks_retries_unpaid_bases():
+    recruiter = make_prolific_recruiter(make_config())
+    recruiter.prolificservice = MagicMock()
+    recruiter.prolificservice.get_unread_messages.return_value = []
+    with patch.object(recruiter, "retry_unpaid_platform_bases") as retry:
+        recruiter.run_checks()
+    retry.assert_called_once()
+
+
+def test_dev_run_checks_retries_unpaid_bases():
+    recruiter = object.__new__(DevProlificRecruiter)
+    with patch.object(recruiter, "retry_unpaid_platform_bases") as retry:
+        recruiter.run_checks()
+    retry.assert_called_once()
+
+
+def test_approve_hit_does_not_notify_when_submission_status_cannot_be_read():
+    experiment = MagicMock()
+    recruiter, result, super_approve = _run_approve_hit(
+        _approve_hit_participant(), "ACTIVE", submission=False, experiment=experiment
+    )
+    assert result is False
+    super_approve.assert_not_called()
+    recruiter.prolificservice._req.assert_not_called()
+    experiment.notifier.notify.assert_not_called()
+
+
+def test_dev_prolific_open_recruitment_says_study_is_simulated():
+    recruiter = object.__new__(DevProlificRecruiter)
+    created = {"items": ["https://example.com/ad"], "message": "Study created"}
+    with patch.object(
+        dallinger.recruiters.ProlificRecruiter, "open_recruitment", return_value=created
+    ):
+        response = recruiter.open_recruitment(n=1)
+    assert response["items"] == ["https://example.com/ad"]
+    assert "simulated" in response["message"]
+    assert "nothing was created" in response["message"]
+
+
+def test_dev_prolific_reports_active_without_reading_the_api():
+    """Dev mode must report the status a local submit really sees.
+
+    ``ACTIVE`` is the production state at local submit, so dev mode
+    exercises the COMPLETE path rather than the Approve path. The dev
+    service's canned submission GET still says ``AWAITING REVIEW``, which
+    describes the superseded redirect-and-enter-a-code design.
+    """
+    recruiter = object.__new__(DevProlificRecruiter)
+    # No prolificservice set: an API read would raise AttributeError.
+    assert recruiter._live_submission_status("assignment-1") == "ACTIVE"
+
+
+def test_dev_prolific_approve_hit_completes_without_http_calls():
+    """Dev mode issues COMPLETE through the dev service, sending nothing.
+
+    This covers the completion-code choice end to end while asserting no
+    HTTP request leaves the process.
+    """
+    config = make_config(prolific_screen_out_slots=70)
+    recruiter = object.__new__(DevProlificRecruiter)
+    recruiter.config = config
+    recruiter.prolificservice = MagicMock()
+    participant = _approve_hit_participant()
     query = MagicMock()
     query.filter_by.return_value.order_by.return_value.first.return_value = participant
 
     with patch.object(Participant, "query", query):
-        with patch.object(
-            dallinger.recruiters.ProlificRecruiter, "approve_hit"
-        ) as super_approve:
-            result = recruiter.approve_hit("assignment-1")
+        with patch("psynet.recruiters.get_config", return_value=config):
+            with patch("psynet.recruiters.requests") as http:
+                result = recruiter.approve_hit("assignment-1")
 
-    if expect_skipped:
-        super_approve.assert_not_called()
-        assert result is True
-    else:
-        super_approve.assert_called_once_with("assignment-1")
+    assert result is True
+    assert http.mock_calls == []
+    with patch("psynet.recruiters.get_config", return_value=config):
+        expected = recruiter.completion_code_map[PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE]
+    assert _complete_payload(recruiter) == {
+        "action": "COMPLETE",
+        "completion_code": expected,
+    }
+
+
+def test_dev_prolific_payment_view_uses_get_participant_submission():
+    """The dashboard reads through Dallinger, so the dev service can mock it."""
+    recruiter = object.__new__(DevProlificRecruiter)
+    recruiter.prolificservice = MagicMock()
+    recruiter.prolificservice.get_participant_submission.return_value = {
+        "status": "AWAITING REVIEW",
+        "bonus_payments": [],
+    }
+    with patch("psynet.recruiters.requests.get") as get:
+        view = recruiter.platform_payment_view(MagicMock(assignment_id="assignment-1"))
+    get.assert_not_called()
+    recruiter.prolificservice.get_participant_submission.assert_called_once_with(
+        "assignment-1", translate=False
+    )
+    assert view.supported is True
+    assert view.submission_status == "AWAITING REVIEW"
+    assert view.bonus == 0.0
+
+
+def test_fetch_prolific_submission_delegates_to_dallinger():
+    service = MagicMock()
+    service.get_participant_submission.return_value = {
+        "status": "ACTIVE",
+        "bonus_payments": [20],
+    }
+    assert _fetch_prolific_submission(service, "assignment-1") == {
+        "status": "ACTIVE",
+        "bonus_payments": [20],
+    }
+    service.get_participant_submission.assert_called_once_with(
+        "assignment-1", translate=False
+    )
+
+
+def test_exit_response_stays_on_psynet_confirmation_page():
+    recruiter = make_prolific_recruiter(make_config())
+    participant = MagicMock(assignment_id="assignment-1", id=7, status="working")
+    experiment = MagicMock()
+    with (
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        patch(
+            "psynet.recruiters.render_template_with_translations", return_value="html"
+        ) as render,
+    ):
+        assert recruiter.exit_response(experiment, participant) == "html"
+    experiment.recruiter_exit_info.assert_called_once_with(participant)
+    render.assert_called_once_with(
+        "exit_recruiter_prolific_submitted.html",
+        assignment_id="assignment-1",
+        participant_id=7,
+        submission_recorded=False,
+        confirmation_heading="Your submission has been sent to Prolific.",
+        confirmation_body="You may close this page.",
+        failure_message=(
+            "We could not send your submission to Prolific. Please try again. "
+            "If this keeps happening, message the researcher through Prolific."
+        ),
+    )
+
+
+def test_prolific_exit_template_does_not_redirect_to_completion_code():
+    from pathlib import Path
+
+    import psynet
+
+    text = (
+        Path(psynet.__file__).parent
+        / "templates"
+        / "exit_recruiter_prolific_submitted.html"
+    ).read_text()
+    assert "You will not need to enter a completion code" in text
+    assert "Click below to send your submission to Prolific" in text
+    assert "window.location.replace" in text
+    assert "prolific.co" not in text
+    assert "prolific-exit-done" in text
+    assert "prolific-exit-pending" in text
+    assert "prolific-exit-failure" in text
+    assert "prolific-exit-retry" in text
+    assert "/prolific-submission-listener" in text
+    assert "psynetEarlyExit" not in text
+    assert "execute_early_exit_plan" not in text
 
 
 def make_participant_with_recruiter(config, failed=True, status="working"):
@@ -465,189 +1149,37 @@ def make_participant_with_recruiter(config, failed=True, status="working"):
     return participant
 
 
-@pytest.mark.parametrize(
-    "payment_enabled,failed,complete,expect_fail",
-    [
-        (True, False, False, True),  # errored mid-experiment: mark failed
-        (True, True, False, False),  # already failed: leave as is
-        (True, False, True, False),  # already complete: leave as is
-        (False, False, False, False),  # feature disabled: leave as is
-    ],
-)
-def test_on_error_page_marks_participant_failed(
-    payment_enabled, failed, complete, expect_fail
-):
-    config = make_config(
-        **(
-            {"prolific_unsuccessful_base_payment": 0.20}
-            if payment_enabled
-            else {"prolific_pay_unsuccessful": False}
-        )
+def test_prolific_tracked_error_page_without_a_plan_does_not_claim_an_unknown_session():
+    recruiter = make_prolific_recruiter(make_config())
+    participant = SimpleNamespace(id=42, assignment_id="assignment-1")
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = recruiter.error_page_presentation(participant=participant)
+
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. Please message the "
+        "researcher through Prolific and describe what led to this error."
     )
-    recruiter = make_prolific_recruiter(config)
-    participant = MagicMock(failed=failed, complete=complete)
-
-    with patch("psynet.recruiters.get_config", return_value=config):
-        recruiter.on_error_page(participant)
-
-    if expect_fail:
-        participant.fail.assert_called_once_with("error_page")
-    else:
-        participant.fail.assert_not_called()
+    assert "could not continue from this page" not in presentation.message
+    assert presentation.action_post_url is None
 
 
 def _identity_translator(context, message):
     return message
 
 
-def make_error_page_participant(id=42, complete=False, issued=None):
-    return MagicMock(id=id, complete=complete, issued_completion_code_type=issued)
+def test_prolific_untracked_error_page_uses_structured_platform_support():
+    recruiter = make_prolific_recruiter(make_config())
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = recruiter.error_page_presentation()
 
-
-def render_error_page_html(recruiter, config, assignment_id, participant):
-    with patch("psynet.recruiters.get_config", return_value=config):
-        with patch(
-            "psynet.recruiters.get_translator", return_value=_identity_translator
-        ):
-            with patch(
-                "psynet.recruiters.latest_participant_for_assignment",
-                return_value=participant,
-            ):
-                with patch.object(
-                    recruiter,
-                    "external_submission_url",
-                    return_value="https://app.prolific.com/submissions/complete?cc=UNSUCCESSFUL-CODE",
-                ) as external_url:
-                    html = recruiter.error_page_content(assignment_id=assignment_id)
-    return str(html), external_url
-
-
-def test_error_page_content_offers_submit_button_when_screen_out_enabled():
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-    participant = make_error_page_participant()
-
-    html, external_url = render_error_page_html(
-        recruiter, config, assignment_id="assignment-1", participant=participant
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "If you had already started, message the researcher through Prolific."
     )
-
-    assert 'id="prolific-unsuccessful-submit"' in html
-    assert "Submit to Prolific" in html
-    assert "/prolific-submission-listener" in html
-    assert "assignment-1" in html
-    assert "42" in html
-    assert "https://app.prolific.com/submissions/complete?cc=UNSUCCESSFUL-CODE" in html
-    assert "send the researcher a message" not in html
-    assert participant.issued_completion_code_type is None
-    external_url.assert_called_once_with(code_type=PROLIFIC_UNSUCCESSFUL_CODE_TYPE)
-
-
-def test_error_page_content_asks_to_message_when_screen_out_disabled():
-    config = make_config(prolific_pay_unsuccessful=False)
-    recruiter = make_prolific_recruiter(config)
-
-    html, external_url = render_error_page_html(
-        recruiter,
-        config,
-        assignment_id="assignment-1",
-        participant=make_error_page_participant(),
-    )
-
-    assert "prolific-unsuccessful-submit" not in html
-    assert "send the researcher a message" in html
-    external_url.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "assignment_id,participant",
-    [
-        (None, make_error_page_participant()),
-        ("", make_error_page_participant()),
-        ("assignment-1", None),
-    ],
-)
-def test_error_page_content_falls_back_without_assignment_or_participant(
-    assignment_id, participant
-):
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-
-    html, external_url = render_error_page_html(
-        recruiter, config, assignment_id=assignment_id, participant=participant
-    )
-
-    assert "prolific-unsuccessful-submit" not in html
-    assert "send the researcher a message" in html
-    external_url.assert_not_called()
-
-
-def test_error_page_content_does_not_reclassify_complete_participant():
-    """Rendering the error page for a complete participant must not offer the
-    screen-out submit button or overwrite the issued completion code, which
-    would reclassify a successful participant as screened-out on a
-    submission-complete replay.
-    """
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-    participant = make_error_page_participant(complete=True, issued="DEFAULT")
-
-    html, external_url = render_error_page_html(
-        recruiter, config, assignment_id="assignment-1", participant=participant
-    )
-
-    assert "prolific-unsuccessful-submit" not in html
-    assert "send the researcher a message" in html
-    assert participant.issued_completion_code_type == "DEFAULT"
-    external_url.assert_not_called()
-
-
-def test_error_page_content_does_not_overwrite_other_issued_code():
-    # First issuance wins even for incomplete participants: whoever already
-    # exited with the auto-approving code must not be re-stamped.
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-    participant = make_error_page_participant(complete=False, issued="DEFAULT")
-
-    html, _ = render_error_page_html(
-        recruiter, config, assignment_id="assignment-1", participant=participant
-    )
-
-    assert "prolific-unsuccessful-submit" not in html
-    assert participant.issued_completion_code_type == "DEFAULT"
-
-
-def test_error_page_content_keeps_button_on_rerender():
-    # A participant who already submitted with UNSUCCESSFUL (e.g. reloading
-    # the error page after the listener stamped the code) still sees the
-    # submit button.
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-    participant = make_error_page_participant(issued=PROLIFIC_UNSUCCESSFUL_CODE_TYPE)
-
-    html, _ = render_error_page_html(
-        recruiter, config, assignment_id="assignment-1", participant=participant
-    )
-
-    assert 'id="prolific-unsuccessful-submit"' in html
-    assert participant.issued_completion_code_type == PROLIFIC_UNSUCCESSFUL_CODE_TYPE
-
-
-def test_error_page_render_does_not_change_decide_payment():
-    config = make_config(prolific_unsuccessful_base_payment=0.20)
-    recruiter = make_prolific_recruiter(config)
-    participant = make_participant_with_recruiter(config, failed=False)
-    participant.id = 42
-    participant.complete = False
-
-    html, _ = render_error_page_html(
-        recruiter, config, assignment_id="assignment-1", participant=participant
-    )
-
-    assert 'id="prolific-unsuccessful-submit"' in html
-    assert participant.issued_completion_code_type is None
-    decision = decide_for(participant, config)
-    assert decision.status == "approved"
-    assert decision.platform_base == 1.00
+    assert "could not continue from this page" not in presentation.message
+    assert presentation.action_post_url is None
+    assert presentation.destination_url is None
 
 
 def test_issue_unsuccessful_completion_code_stamps_failed_participant():
@@ -658,6 +1190,1447 @@ def test_issue_unsuccessful_completion_code_stamps_failed_participant():
     with patch("psynet.recruiters.get_config", return_value=config):
         assert recruiter.issue_unsuccessful_completion_code(participant) is True
     assert participant.issued_completion_code_type == PROLIFIC_UNSUCCESSFUL_CODE_TYPE
+
+
+def _early_exit_test_plan(
+    path=ExitPath.END_SESSION,
+    context=ExitContext.VOLUNTARY,
+):
+    returned = path in {
+        ExitPath.RETURN_FOR_BONUS,
+        ExitPath.RETURN_WITHOUT_PAYMENT,
+    }
+    payment = (
+        None
+        if path is ExitPath.TERMINATE_PANEL_SESSION
+        else PaymentDecision(
+            status=(
+                "screened_out"
+                if path is ExitPath.SCREEN_OUT
+                else "returned"
+                if returned
+                else "approved"
+            ),
+            platform_base=0.25
+            if path is ExitPath.SCREEN_OUT
+            else 0.0
+            if returned
+            else 1.0,
+            bonus=0.0,
+        )
+    )
+    return ExitPlan.create(
+        context=context,
+        path=path,
+        payment=payment,
+        confirmation=(
+            EarlyExitConfirmation(
+                title="Leave?",
+                message="Your responses are saved.",
+                confirm_label="Leave",
+                cancel_label="Continue",
+            )
+            if context is ExitContext.VOLUNTARY
+            else None
+        ),
+    )
+
+
+def test_exit_response_renders_recorded_submission_confirmation():
+    recruiter = make_prolific_recruiter(make_config())
+    participant = MagicMock(assignment_id="assignment-1", id=7, status="submitted")
+    experiment = MagicMock()
+    with (
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        patch(
+            "psynet.recruiters.render_template_with_translations", return_value="html"
+        ) as render,
+    ):
+        assert recruiter.exit_response(experiment, participant) == "html"
+    render.assert_called_once_with(
+        "exit_recruiter_prolific_submitted.html",
+        assignment_id="assignment-1",
+        participant_id=7,
+        submission_recorded=True,
+        confirmation_heading="Your submission has been sent to Prolific.",
+        confirmation_body="You may close this page.",
+        failure_message=(
+            "We could not send your submission to Prolific. Please try again. "
+            "If this keeps happening, message the researcher through Prolific."
+        ),
+    )
+
+
+def test_execute_early_exit_plan_marks_early_exited_and_fails():
+    participant = MagicMock()
+    participant.failed = False
+    PsyNetRecruiterMixin().execute_early_exit_plan(
+        MagicMock(), participant, _early_exit_test_plan()
+    )
+    assert participant.early_exited is True
+    participant.module_state.mark_early_exited.assert_called_once()
+    participant.fail.assert_called_once_with("early_exit", redirect_to_end=False)
+
+
+def test_execute_error_recovery_plan_records_the_error_context():
+    participant = MagicMock(failed=False)
+    PsyNetRecruiterMixin().execute_early_exit_plan(
+        MagicMock(),
+        participant,
+        _early_exit_test_plan(context=ExitContext.ERROR_RECOVERY),
+    )
+
+    participant.fail.assert_called_once_with("error_recovery", redirect_to_end=False)
+
+
+def test_default_error_recovery_page_is_terminal():
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = PsyNetRecruiterMixin().error_page_presentation(
+            participant=SimpleNamespace(id=42, assignment_id="assignment-1"),
+            plan=_early_exit_test_plan(context=ExitContext.ERROR_RECOVERY),
+            contact_address="researcher@example.test",
+        )
+
+    assert presentation.button_label is None
+    assert presentation.preparation_post_url is None
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. You may close this page."
+    )
+    assert presentation.failure_message is None
+    assert presentation.researcher_contact_message == (
+        "If you need to contact the researcher about this error, write to "
+        "researcher@example.test and quote reference code assignment-1."
+    )
+
+
+def test_default_error_recovery_omits_contact_without_an_address():
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = PsyNetRecruiterMixin().error_page_presentation(
+            participant=SimpleNamespace(id=42, assignment_id="assignment-1"),
+            plan=_early_exit_test_plan(context=ExitContext.ERROR_RECOVERY),
+            contact_address=None,
+        )
+
+    assert presentation.researcher_contact_message is None
+
+
+def test_default_tracked_error_page_without_a_plan_stays_terminal():
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = PsyNetRecruiterMixin().error_page_presentation(
+            participant=SimpleNamespace(id=42, assignment_id="assignment-1"),
+            contact_address="researcher@example.test",
+        )
+
+    assert "could not continue from this page" not in presentation.message
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. You may close this page."
+    )
+    assert presentation.preparation_post_url is None
+    assert presentation.researcher_contact_message == (
+        "If you need to contact the researcher about this error, write to "
+        "researcher@example.test and quote reference code assignment-1."
+    )
+
+
+def test_generic_untracked_error_page_explains_we_cannot_continue():
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = PsyNetRecruiterMixin().error_page_presentation()
+
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue."
+    )
+    assert presentation.button_label is None
+    assert "could not continue from this page" not in presentation.message
+
+
+def test_unpaid_leave_release_uses_the_shared_close_page_sentence():
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        generic = PsyNetRecruiterMixin().release_early_exit_without_payment(
+            SimpleNamespace()
+        )
+        prolific = make_prolific_recruiter(
+            make_config()
+        ).release_early_exit_without_payment(SimpleNamespace())
+
+    assert generic.content == "You may close this page."
+    assert "Your responses have been saved" not in generic.content
+    assert "recruitment platform" not in generic.content
+    assert "payment through PsyNet" not in generic.content
+    assert prolific.content.endswith("You may close this page.")
+    assert "Please return your submission on Prolific" in prolific.content
+
+
+def test_generic_recruiters_skip_the_error_recovery_page():
+    plan = _early_exit_test_plan(context=ExitContext.ERROR_RECOVERY)
+    assert PsyNetRecruiterMixin().shows_error_recovery_page(plan) is False
+
+
+def test_custom_recruiter_must_opt_in_to_show_the_error_recovery_page():
+    class RecruiterWithRecoveryButton(PsyNetRecruiterMixin):
+        def error_page_presentation(self, **kwargs):
+            return ErrorRecoveryPresentation(
+                message="Something went wrong.",
+                failure_message="The session failed.",
+                button_label="Continue",
+                destination_url="/custom-exit",
+            )
+
+    plan = _early_exit_test_plan(context=ExitContext.ERROR_RECOVERY)
+    recruiter = RecruiterWithRecoveryButton()
+    presentation = recruiter.error_page_presentation()
+    assert presentation.button_label == "Continue"
+    assert recruiter.shows_error_recovery_page(plan) is False
+
+
+def test_prolific_and_lucid_show_the_error_recovery_page():
+    plan = _early_exit_test_plan(context=ExitContext.ERROR_RECOVERY)
+    prolific = object.__new__(PsyNetProlificRecruiterMixin)
+    lucid = object.__new__(BaseLucidRecruiter)
+    assert prolific.shows_error_recovery_page(plan) is True
+    assert lucid.shows_error_recovery_page(plan) is True
+
+
+def test_error_page_presentation_rejects_a_stale_recruiter_override():
+    class RecruiterWithStaleOverride(PsyNetRecruiterMixin):
+        def error_page_content(self):
+            return "custom"
+
+    with pytest.raises(RuntimeError, match="error_page_presentation"):
+        RecruiterWithStaleOverride().error_page_presentation()
+
+
+def test_prolific_error_recovery_explains_payment_and_submits_directly():
+    recruiter = make_prolific_recruiter(make_config())
+    participant = SimpleNamespace(id=42, assignment_id="assignment-1")
+    plan = ExitPlan.create(
+        context=ExitContext.ERROR_RECOVERY,
+        path=ExitPath.SCREEN_OUT,
+        payment=PaymentDecision(
+            status="screened_out",
+            platform_base=0.25,
+            bonus=0.35,
+        ),
+        currency="£",
+    )
+
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        presentation = recruiter.error_page_presentation(
+            participant=participant, plan=plan
+        )
+
+    assert presentation.button_label == "Submit to Prolific"
+    assert presentation.action_post_url == "/prolific-submission-listener"
+    assert presentation.action_post_data == {
+        "assignmentId": "assignment-1",
+        "participantId": "42",
+    }
+    assert presentation.destination_url is None
+    assert presentation.failure_message == (
+        "We could not send your submission to Prolific. Please try again. "
+        "If this keeps happening, message the researcher through Prolific."
+    )
+    assert presentation.researcher_contact_message is None
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. We will pay you for "
+        "your progress so far: you will receive £0.25 through Prolific. We "
+        "will also pay £0.35 as a bonus, bringing your total payment to £0.60."
+    )
+    assert presentation.action_instruction == (
+        "Select Submit to Prolific to complete your submission."
+    )
+
+
+def test_prolific_return_for_bonus_recovery_introduces_the_required_steps():
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    plan = ExitPlan.create(
+        context=ExitContext.ERROR_RECOVERY,
+        path=ExitPath.RETURN_FOR_BONUS,
+        payment=PaymentDecision(
+            status="returned",
+            platform_base=0.0,
+            bonus=0.60,
+        ),
+        currency="£",
+    )
+
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = recruiter.error_page_presentation(
+            participant=MagicMock(), plan=plan
+        )
+
+    assert presentation.button_label == "Continue to payment instructions"
+    assert presentation.destination_url is None
+    assert presentation.action_post_url is None
+    assert presentation.failure_message == (
+        "We could not open the payment instructions. Please try again. If this "
+        "keeps happening, message the researcher through Prolific."
+    )
+    assert presentation.researcher_contact_message is None
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. To receive £0.60 for "
+        "the work you completed, you will need to return your submission on "
+        "Prolific."
+    )
+    assert presentation.action_instruction == (
+        "Select Continue to payment instructions to complete these steps."
+    )
+
+
+def test_lucid_error_recovery_explains_the_panel_redirect():
+    recruiter = object.__new__(BaseLucidRecruiter)
+    participant = MagicMock()
+    with (
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        patch.object(
+            recruiter,
+            "external_submit_url",
+            return_value="https://lucid.test/terminate",
+        ),
+    ):
+        presentation = recruiter.error_page_presentation(
+            participant=participant,
+            plan=_early_exit_test_plan(
+                path=ExitPath.TERMINATE_PANEL_SESSION,
+                context=ExitContext.ERROR_RECOVERY,
+            ),
+        )
+
+    assert presentation.button_label == "Return to your panel"
+    assert presentation.destination_url == "https://lucid.test/terminate"
+    assert presentation.auto_redirect_delay_ms == 5000
+    assert "in a few seconds" in presentation.message
+    assert presentation.failure_message == (
+        "We could not return you to your panel. Please try again. If this keeps "
+        "happening, contact your panel provider."
+    )
+    assert presentation.researcher_contact_message is None
+    assert "panel provider will determine any payment" not in presentation.message
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "However, your responses so far have been saved. We will return you to "
+        "your panel in a few seconds."
+    )
+
+
+def test_lucid_untracked_error_page_uses_the_same_structured_delay():
+    recruiter = object.__new__(BaseLucidRecruiter)
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = recruiter.error_page_presentation(
+            assignment_id="rid-1",
+            external_submit_url="https://lucid.test/terminate",
+        )
+
+    assert presentation.message == (
+        "Unfortunately an error occurred and we cannot continue. "
+        "We will return you to your panel in a few seconds."
+    )
+    assert "However, your responses so far have been saved" not in presentation.message
+    assert presentation.auto_redirect_delay_ms == 5000
+    assert presentation.destination_url == "https://lucid.test/terminate"
+    assert presentation.button_label == "Return to your panel"
+
+
+def test_execute_early_exit_plan_skips_fail_when_already_failed():
+    participant = MagicMock()
+    participant.failed = True
+    PsyNetRecruiterMixin().execute_early_exit_plan(
+        MagicMock(), participant, _early_exit_test_plan()
+    )
+    assert participant.early_exited is True
+    participant.fail.assert_not_called()
+
+
+def _participant_for_early_exit(reward=0.50, performance_reward=0.0):
+    participant = MagicMock()
+    participant.calculate_reward.return_value = reward
+    participant.performance_reward = performance_reward
+    participant.failed = False
+    participant.exit_plan = None
+    return participant
+
+
+@pytest.mark.parametrize(
+    "recruiter_class,context,config_overrides,expected_path,expected_payment",
+    [
+        (
+            PsyNetRecruiterMixin,
+            ExitContext.SUCCESSFUL,
+            {},
+            ExitPath.END_SESSION,
+            PaymentDecision("approved", 1.0, 0.0),
+        ),
+        (
+            PsyNetProlificRecruiterMixin,
+            ExitContext.UNSUCCESSFUL,
+            {},
+            ExitPath.SCREEN_OUT,
+            PaymentDecision("screened_out", 0.25, 0.55),
+        ),
+        (
+            PsyNetProlificRecruiterMixin,
+            ExitContext.UNSUCCESSFUL,
+            {"prolific_pay_unsuccessful": False},
+            ExitPath.RETURN_FOR_BONUS,
+            PaymentDecision("returned", 0.0, 0.80),
+        ),
+        (
+            BaseLucidRecruiter,
+            ExitContext.REJECTED_CONSENT,
+            {},
+            ExitPath.TERMINATE_PANEL_SESSION,
+            None,
+        ),
+    ],
+)
+def test_recruiters_plan_terminal_exit_outcomes(
+    recruiter_class,
+    context,
+    config_overrides,
+    expected_path,
+    expected_payment,
+):
+    recruiter = object.__new__(recruiter_class)
+    participant = _participant_for_early_exit(reward=0.80)
+    participant.status = "working"
+    participant.failed = context is not ExitContext.SUCCESSFUL
+    participant.issued_completion_code_type = None
+    experiment = MagicMock(base_payment=1.0)
+
+    with (
+        patched_early_exit_config(make_config(**config_overrides)),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, context)
+
+    assert plan.context is context
+    assert plan.path is expected_path
+    assert plan.payment == expected_payment
+    assert plan.confirmation is None
+    assert plan.status == "committed"
+    participant.exit_plan = plan.to_dict()
+    participant.calculate_reward.return_value = 99.0
+    if expected_payment is not None:
+        assert (
+            recruiter.decide_payment(
+                participant,
+                experiment=experiment,
+            )
+            == expected_payment
+        )
+
+
+def test_prolific_terminal_planning_does_not_build_voluntary_confirmation_copy():
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    participant = _participant_for_early_exit(reward=0.80)
+    participant.status = "working"
+    participant.failed = True
+    participant.issued_completion_code_type = None
+    experiment = MagicMock(base_payment=1.0)
+
+    with (
+        patched_early_exit_config(make_config(prolific_pay_unsuccessful=False)),
+        patch.object(
+            recruiter,
+            "_early_exit_confirmation",
+            side_effect=AssertionError("voluntary copy should not be built"),
+        ),
+    ):
+        plan = recruiter.plan_exit(
+            experiment,
+            participant,
+            ExitContext.UNSUCCESSFUL,
+        )
+
+    assert plan.path is ExitPath.RETURN_FOR_BONUS
+    assert plan.confirmation is None
+
+
+@pytest.mark.parametrize(
+    "recruiter_class, expected_path, expected_message",
+    [
+        (
+            PsyNetRecruiterMixin,
+            ExitPath.END_SESSION,
+            "responses so far will still be saved",
+        ),
+        (
+            PsyNetProlificRecruiterMixin,
+            ExitPath.SCREEN_OUT,
+            "fixed 'screen-out' payment",
+        ),
+        (
+            BaseLucidRecruiter,
+            ExitPath.TERMINATE_PANEL_SESSION,
+            "panel provider",
+        ),
+    ],
+)
+def test_recruiters_plan_their_early_exit_consequences(
+    recruiter_class, expected_path, expected_message
+):
+    recruiter = object.__new__(recruiter_class)
+    participant = _participant_for_early_exit()
+    experiment = MagicMock()
+    experiment.early_exit_allowed.return_value = True
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+
+    assert plan.path is expected_path
+    confirmation = plan.confirmation
+    assert isinstance(confirmation, EarlyExitConfirmation)
+    assert expected_message in confirmation.message
+    assert confirmation.title == "Leave without finishing?"
+    assert confirmation.confirm_label == "Leave"
+    assert confirmation.cancel_label == "Cancel"
+    assert plan.status == "prepared"
+    assert plan.plan_id
+
+
+def test_participant_has_dedicated_exit_plan_column():
+    assert "exit_plan" in Participant.__table__.columns
+
+
+def test_early_exit_reward_threshold_does_not_block_lucid_termination():
+    participant = MagicMock()
+    participant.calculate_reward.return_value = 0.0
+    with patch(
+        "psynet.recruiters.get_config",
+        return_value=make_config(min_reward_for_paid_early_exit=0.2),
+    ):
+        assert PsyNetRecruiterMixin().early_exit_allowed(participant) is False
+    lucid = object.__new__(BaseLucidRecruiter)
+    assert lucid.early_exit_allowed(participant) is True
+
+
+def test_unpaid_recruiters_always_allow_early_exit():
+    participant = _participant_for_early_exit(reward=0.0)
+    hot_air = object.__new__(HotAirRecruiter)
+    assert hot_air.early_exit_allowed(participant) is True
+
+
+def test_prolific_early_exit_messages_cover_payment_pathways():
+    participant = _participant_for_early_exit(reward=0.80)
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock()
+    experiment.early_exit_allowed.return_value = True
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        topped_up = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+    assert topped_up.path is ExitPath.SCREEN_OUT
+    assert topped_up.payment == PaymentDecision(
+        status="screened_out",
+        platform_base=0.25,
+        bonus=0.55,
+    )
+    topped_up_confirmation = topped_up.confirmation
+    assert "£" not in topped_up_confirmation.message
+    assert (
+        "$0.25" in topped_up_confirmation.message
+        and "$0.80" in topped_up_confirmation.message
+    )
+    assert "a further $0.55 will be paid as a bonus" in topped_up_confirmation.message
+
+    with (
+        patched_early_exit_config(make_config(prolific_unsuccessful_topup=False)),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        participant.performance_reward = 0.05
+        no_topup = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+    assert no_topup.path is ExitPath.SCREEN_OUT
+    assert "not be paid for additional time" in no_topup.confirmation.message
+    assert "$0.05" in no_topup.confirmation.message
+
+    with (
+        patched_early_exit_config(make_config(prolific_pay_unsuccessful=False)),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        returned = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+    assert returned.path is ExitPath.RETURN_FOR_BONUS
+    assert "return your Prolific submission" in returned.confirmation.message
+    assert "$0.80" in returned.confirmation.message
+
+
+def test_executed_plan_uses_the_amounts_shown_in_confirmation():
+    participant = _participant_for_early_exit(reward=0.80)
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock(base_payment=1.00)
+    experiment.early_exit_allowed.return_value = True
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+    assert plan.path is ExitPath.SCREEN_OUT
+    assert "a further $0.55 will be paid as a bonus" in (plan.confirmation.message)
+
+    participant.early_exited = True
+    participant.exit_plan = plan.mark_committed().to_dict()
+    participant.calculate_reward.return_value = 99.00
+
+    assert recruiter.decide_payment(
+        participant, experiment=experiment
+    ) == PaymentDecision(status="screened_out", platform_base=0.25, bonus=0.55)
+
+
+def test_execute_early_exit_plan_rejects_a_path_the_recruiter_cannot_run():
+    with pytest.raises(ValueError, match="terminate_panel_session"):
+        PsyNetRecruiterMixin().execute_early_exit_plan(
+            MagicMock(),
+            MagicMock(),
+            _early_exit_test_plan(ExitPath.TERMINATE_PANEL_SESSION),
+        )
+
+
+@pytest.mark.parametrize(
+    "reason,expected",
+    [
+        ("early_exit", True),
+        ("terminate-button", True),
+        ("inactivity-timeout-60s", False),
+    ],
+)
+def test_lucid_only_records_an_early_exit_for_leave_reasons(reason, expected):
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(assignment_id="rid-1", module_state=None)
+    participant.early_exited = False
+
+    with patch("psynet.recruiters.db.session.commit"):
+        recruiter.terminate_participant(participant=participant, reason=reason)
+
+    assert participant.early_exited is expected
+
+
+def test_return_for_bonus_uses_the_planned_reward():
+    participant = _participant_for_early_exit(reward=0.80)
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock()
+    experiment.early_exit_allowed.return_value = True
+    config = make_config(prolific_pay_unsuccessful=False)
+    with (
+        patched_early_exit_config(config),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+
+    participant.early_exited = True
+    participant.exit_plan = plan.mark_committed().to_dict()
+    participant.calculate_reward.return_value = 99.00
+
+    assert recruiter.decide_payment(
+        participant, experiment=experiment
+    ) == PaymentDecision(status="returned", platform_base=0.0, bonus=0.80)
+
+
+def test_below_threshold_offers_unpaid_leave_with_amounts():
+    participant = _participant_for_early_exit(reward=0.10)
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock()
+    experiment.early_exit_allowed.return_value = False
+    with (
+        patched_early_exit_config(
+            make_config(
+                currency="£",
+                min_reward_for_paid_early_exit=0.20,
+            )
+        ),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.VOLUNTARY)
+    assert plan.path is ExitPath.RETURN_WITHOUT_PAYMENT
+    assert plan.payment == PaymentDecision(
+        status="returned",
+        platform_base=0.0,
+        bonus=0.0,
+    )
+    assert plan.currency == "£"
+    confirmation = plan.confirmation
+    assert confirmation.title == "Leave without finishing?"
+    assert confirmation.confirm_label == "Leave without payment"
+    assert confirmation.cancel_label == "Cancel"
+    assert "£0.10" in confirmation.message
+    assert "£0.20" in confirmation.message
+
+
+def test_error_recovery_plan_skips_reward_eligibility():
+    participant = _participant_for_early_exit(reward=0.05)
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock()
+    experiment.early_exit_allowed.side_effect = RuntimeError("reward boom")
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.ERROR_RECOVERY)
+    assert plan.path is ExitPath.SCREEN_OUT
+    assert plan.confirmation is None
+    experiment.early_exit_allowed.assert_not_called()
+
+
+def test_error_recovery_plan_survives_reward_calculation_failure(caplog):
+    participant = _participant_for_early_exit()
+    participant.calculate_reward.side_effect = RuntimeError("reward boom")
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock(base_payment=1.00)
+
+    with (
+        patched_early_exit_config(make_config()),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.ERROR_RECOVERY)
+        participant.calculate_reward.side_effect = None
+        participant.calculate_reward.return_value = 0.80
+        participant.early_exited = True
+        participant.exit_plan = plan.mark_committed().to_dict()
+        decision = recruiter.decide_payment(participant, experiment=experiment)
+
+    assert plan.path is ExitPath.SCREEN_OUT
+    assert plan.payment_state is PaymentState.DEFERRED
+    assert "without a reward quote" in caplog.text
+    assert decision == PaymentDecision(
+        status="screened_out", platform_base=0.25, bonus=0.55
+    )
+
+
+def test_prolific_return_for_bonus_recovery_survives_reward_failure():
+    participant = _participant_for_early_exit()
+    participant.calculate_reward.side_effect = RuntimeError("reward boom")
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    experiment = MagicMock()
+    config = make_config(prolific_pay_unsuccessful=False)
+
+    with (
+        patched_early_exit_config(config),
+        patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+    ):
+        plan = recruiter.plan_exit(experiment, participant, ExitContext.ERROR_RECOVERY)
+        participant.calculate_reward.side_effect = None
+        participant.calculate_reward.return_value = 0.80
+        participant.early_exited = True
+        participant.exit_plan = plan.mark_committed().to_dict()
+        decision = recruiter.decide_payment(participant, experiment=experiment)
+
+    assert plan.path is ExitPath.RETURN_FOR_BONUS
+    assert plan.payment_state is PaymentState.DEFERRED
+    assert decision == PaymentDecision(status="returned", platform_base=0.0, bonus=0.80)
+
+
+def test_early_exit_route_executes_the_stored_plan():
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    plan = _early_exit_test_plan(ExitPath.SCREEN_OUT)
+    participant = MagicMock()
+    participant.early_exited = False
+    participant.complete = False
+    participant.unique_id = "unique-1"
+    participant.exit_plan = plan.to_dict()
+    experiment = MagicMock()
+    experiment.timeline.participant_is_in_end_logic.return_value = False
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/assign-1",
+            method="POST",
+            json={"plan_id": plan.plan_id},
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            return_value=participant,
+        ),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.experiment.success_response", return_value="ok") as success,
+    ):
+        assert Experiment.route_execute_early_exit_plan("assign-1") == "ok"
+
+    success.assert_called_once_with(release_url="/timeline?unique_id=unique-1")
+    experiment.recruiter.execute_early_exit_plan.assert_called_once()
+    called_experiment, called_participant, executed_plan = (
+        experiment.recruiter.execute_early_exit_plan.call_args.args
+    )
+    assert called_experiment is experiment
+    assert called_participant is participant
+    assert executed_plan.path is ExitPath.SCREEN_OUT
+    assert participant.pending_redirect == "early_exit_release"
+    assert participant.exit_plan["status"] == "committed"
+    experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
+
+
+@pytest.mark.parametrize("payload", [{"plan_id": "stale-offer"}, []])
+def test_early_exit_route_rejects_an_invalid_offer(payload):
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    plan = _early_exit_test_plan(ExitPath.SCREEN_OUT)
+    participant = MagicMock(
+        early_exited=False, complete=False, exit_plan=plan.to_dict()
+    )
+    experiment = MagicMock()
+    experiment.timeline.participant_is_in_end_logic.return_value = False
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/assign-1",
+            method="POST",
+            json=payload,
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            return_value=participant,
+        ),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.experiment.error_response", return_value="stale") as error,
+    ):
+        assert Experiment.route_execute_early_exit_plan("assign-1") == "stale"
+
+    error.assert_called_once()
+    experiment.recruiter.execute_early_exit_plan.assert_not_called()
+
+
+@pytest.mark.parametrize("complete,in_end_logic", [(True, False), (False, True)])
+def test_early_exit_route_refuses_a_participant_who_is_finishing(
+    complete, in_end_logic
+):
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    plan = _early_exit_test_plan(ExitPath.SCREEN_OUT)
+    participant = MagicMock(
+        early_exited=False, complete=complete, exit_plan=plan.to_dict()
+    )
+    experiment = MagicMock()
+    experiment.timeline.participant_is_in_end_logic.return_value = in_end_logic
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/assign-1",
+            method="POST",
+            json={"plan_id": plan.plan_id},
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            return_value=participant,
+        ),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.experiment.error_response", return_value="refused") as error,
+    ):
+        assert Experiment.route_execute_early_exit_plan("assign-1") == "refused"
+
+    assert error.call_args.kwargs["error_code"] == "stale_early_exit_offer"
+    experiment.recruiter.execute_early_exit_plan.assert_not_called()
+
+
+def test_error_recovery_route_survives_a_queued_unsuccessful_redirect():
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    plan = _early_exit_test_plan(
+        ExitPath.SCREEN_OUT,
+        context=ExitContext.ERROR_RECOVERY,
+    )
+    participant = MagicMock(
+        early_exited=False,
+        complete=False,
+        unique_id="unique-1",
+        exit_plan=plan.to_dict(),
+        elt_id=["early_exit_release", 0, 0],
+        pending_redirect=None,
+    )
+    experiment = MagicMock()
+    experiment.timeline.participant_is_in_end_logic.return_value = True
+    experiment.timeline.get_participant_branch.return_value = "early_exit_release"
+    experiment.recruiter.shows_error_recovery_page.return_value = True
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/assign-1",
+            method="POST",
+            json={"plan_id": plan.plan_id},
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            return_value=participant,
+        ),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.experiment.success_response", return_value="ok"),
+    ):
+        assert Experiment.route_execute_early_exit_plan("assign-1") == "ok"
+
+    experiment.recruiter.execute_early_exit_plan.assert_called_once()
+    assert participant.exit_plan["context"] == "error_recovery"
+    assert participant.exit_plan["status"] == "committed"
+    assert participant.pending_redirect == "early_exit_release"
+    experiment.timeline.advance_page.assert_called_once_with(experiment, participant)
+
+
+def test_early_exit_route_reports_an_unknown_assignment():
+    from flask import Flask
+    from sqlalchemy.orm.exc import NoResultFound
+
+    from psynet.experiment import Experiment
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/nobody",
+            method="POST",
+            json={"plan_id": "irrelevant"},
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            side_effect=NoResultFound,
+        ),
+        patch("psynet.experiment.error_response", return_value="missing") as error,
+    ):
+        assert Experiment.route_execute_early_exit_plan("nobody") == "missing"
+
+    assert error.call_args.kwargs["status"] == 404
+
+
+def test_early_exit_route_is_idempotent_after_execution():
+    from flask import Flask
+
+    from psynet.experiment import Experiment
+
+    participant = MagicMock(early_exited=True)
+    experiment = MagicMock()
+
+    with (
+        Flask(__name__).test_request_context(
+            "/execute_early_exit_plan/assign-1",
+            method="POST",
+            json={"plan_id": "already-executed"},
+        ),
+        patch.object(
+            Experiment,
+            "get_participant_from_assignment_id",
+            return_value=participant,
+        ),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.experiment.success_response", return_value="ok"),
+    ):
+        assert Experiment.route_execute_early_exit_plan("assign-1") == "ok"
+
+    experiment.recruiter.execute_early_exit_plan.assert_not_called()
+
+
+def test_return_without_payment_plan_skips_payment():
+    participant = _participant_for_early_exit()
+    participant.failed = False
+    plan = _early_exit_test_plan(ExitPath.RETURN_WITHOUT_PAYMENT)
+    participant.exit_plan = plan.to_dict()
+
+    PsyNetRecruiterMixin().execute_early_exit_plan(MagicMock(), participant, plan)
+
+    participant.fail.assert_called_once_with(
+        "early_exit_without_payment", redirect_to_end=False
+    )
+    participant.exit_plan = plan.mark_committed().to_dict()
+    decision = PsyNetRecruiterMixin().decide_payment(
+        participant, experiment=MagicMock(base_payment=1.0)
+    )
+    assert decision.status == "returned"
+    assert decision.platform_base == 0.0
+    assert decision.bonus == 0.0
+
+
+def test_prolific_unpaid_early_exit_skips_screen_out_code():
+    config = make_config()
+    recruiter = make_prolific_recruiter(config)
+    participant = MagicMock()
+    participant.failed = True
+    participant.status = "working"
+    participant.issued_completion_code_type = None
+    participant.early_exited = True
+    participant.exit_plan = (
+        ExitPlan.create(
+            context=ExitContext.VOLUNTARY,
+            path=ExitPath.RETURN_WITHOUT_PAYMENT,
+            payment=PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=0.0,
+            ),
+            confirmation=EarlyExitConfirmation(
+                title="Leave?",
+                message="No payment.",
+                confirm_label="Leave without payment",
+                cancel_label="Continue",
+            ),
+        )
+        .mark_committed()
+        .to_dict()
+    )
+    with patch("psynet.recruiters.get_config", return_value=config):
+        assert recruiter.completion_status(participant) == "returned"
+        assert recruiter.exit_code_type(participant) is None
+
+
+def test_offered_plan_does_not_reclassify_a_normal_prolific_completion():
+    config = make_config()
+    recruiter = make_prolific_recruiter(config)
+    participant = MagicMock(
+        failed=False,
+        status="working",
+        issued_completion_code_type=None,
+        early_exited=False,
+        exit_plan=_early_exit_test_plan(ExitPath.SCREEN_OUT).to_dict(),
+    )
+
+    with patch("psynet.recruiters.get_config", return_value=config):
+        assert recruiter.completion_status(participant) == "approved"
+        assert recruiter.exit_code_type(participant) is None
+
+
+def _lucid_recruiter_with_service():
+    recruiter = object.__new__(BaseLucidRecruiter)
+    recruiter.lucidservice = MagicMock()
+    return recruiter
+
+
+class _FakeRedisStore(dict):
+    def set(self, key, value):
+        self[key] = str(value)
+
+
+def _lucid_recruiter_with_live_survey(quantity=10, completes=1):
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(id="exp")
+    recruiter.store = _FakeRedisStore()
+    recruiter._record_current_survey_number(123)
+    service = recruiter.lucidservice
+    service.get_survey_status.return_value = "live"
+    service.get_survey_quantity_and_completes.return_value = (quantity, completes)
+    return recruiter
+
+
+def test_lucid_close_recruitment_pauses_entry_until_nobody_is_working():
+    """Closing the survey while people work would return their completes as 136."""
+    recruiter = _lucid_recruiter_with_live_survey(quantity=10, completes=1)
+    service = recruiter.lucidservice
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=9):
+        recruiter.close_recruitment()
+        recruiter.close_recruitment()
+    service.set_survey_quantity.assert_called_once_with("123", 1)
+    service.change_status.assert_not_called()
+
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_called_with("123", 10)
+
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=2):
+        recruiter.close_recruitment()
+    with patch.object(BaseLucidRecruiter, "_n_working_participants", return_value=0):
+        recruiter.close_recruitment()
+    service.change_status.assert_called_once_with("123", "complete")
+
+    service.set_survey_quantity.reset_mock()
+    recruiter.recruit(n=1)
+    service.set_survey_quantity.assert_not_called()
+
+
+def test_lucid_run_checks_reevaluates_recruitment_while_entry_is_paused():
+    """A participant who times out never submits, so the clock must re-decide."""
+    recruiter = _lucid_recruiter_with_live_survey()
+    recruiter.lucidservice.get_submissions.return_value = []
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        recruiter.run_checks()
+        experiment.recruit.assert_not_called()
+
+        with patch.object(
+            BaseLucidRecruiter, "_n_working_participants", return_value=3
+        ):
+            recruiter.close_recruitment()
+        recruiter.run_checks()
+    experiment.recruit.assert_called_once_with()
+
+
+def test_lucid_clock_times_out_working_participants_who_closed_the_tab():
+    """Only the browser enforces the overall limit, so a closed tab stays working."""
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(
+        lucid_recruitment_config=json.dumps({"termination_time_in_s": 600})
+    )
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(minutes=12))
+    working = SimpleNamespace(id=19, status="working")
+    approved = SimpleNamespace(id=20, status="approved")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        reason = recruiter._clock_termination_reason
+        assert reason(entrant, working, now) == "overall-timeout-600s"
+        assert reason(entrant, working, now - timedelta(minutes=2)) is None
+        assert reason(entrant, approved, now) is None
+
+        response.query.filter_by.return_value.first.return_value = None
+        assert reason(entrant, working, now) == "first-response-timeout"
+
+    entrant.lucid_status = recruiter.IN_SURVEY
+    assert reason(entrant, None, now) == "never-entered-experiment"
+    entrant.lucid_status = recruiter.MARKETPLACE_CODE
+    assert reason(entrant, None, now) is None
+
+
+def test_lucid_clock_skips_overall_timeout_without_a_limit():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.config = FakeConfig(lucid_recruitment_config=json.dumps({}))
+    now = datetime(2026, 9, 30, 12, 0)
+    entrant = SimpleNamespace(registered_at=now - timedelta(days=2))
+    working = SimpleNamespace(id=19, status="working")
+
+    with patch("psynet.recruiters.Response") as response:
+        response.query.filter_by.return_value.first.return_value = object()
+        assert recruiter._clock_termination_reason(entrant, working, now) is None
+
+
+def test_lucid_time_limit_does_not_reset_after_a_day():
+    service = object.__new__(LucidService)
+    service.recruitment_config = {"termination_time_in_s": 600}
+    registered_at = datetime.now() - timedelta(days=1, minutes=5)
+
+    def entrant(progress):
+        participant = SimpleNamespace(progress=progress)
+        return SimpleNamespace(
+            registered_at=registered_at,
+            terminated_at=None,
+            resolve_participant=lambda: participant,
+        )
+
+    assert service.can_be_terminated(entrant(progress=0))
+    with patch("psynet.lucid.get_lucid_rid", return_value=entrant(progress=0.5)):
+        assert service.time_until_termination_in_s("rid") < 0
+
+
+def test_lucid_uses_cached_submissions_only_shortly_after_a_rate_limit():
+    service = object.__new__(LucidService)
+    service.headers = {}
+    cached = MagicMock()
+    cached.get.return_value = "cached"
+    experiment = MagicMock()
+    experiment.get_last_n_from_class.return_value = [cached]
+    redis_conn = MagicMock()
+
+    def rate_limited(minutes_ago):
+        timestamp = datetime.now() - timedelta(minutes=minutes_ago)
+        redis_conn.get.return_value = timestamp.isoformat().encode()
+
+    with (
+        patch("psynet.lucid.session") as session,
+        patch("dallinger.db.redis_conn", redis_conn),
+        patch("psynet.experiment.get_experiment", return_value=experiment),
+        patch("psynet.lucid.requests.get") as api_get,
+    ):
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        api_get.return_value = SimpleNamespace(ok=False, status_code=500)
+
+        rate_limited(minutes_ago=1)
+        assert service.get_submissions(1) == "cached"
+        api_get.assert_not_called()
+
+        rate_limited(minutes_ago=10)
+        assert service.get_submissions(1) is None
+        api_get.assert_called_once()
+
+
+def _lucid_submit_url(ris, rid):
+    return f"https://lucid.test/callback?RIS={ris}&RID={rid}"
+
+
+def test_lucid_terminated_exit_redirects_without_worker_complete():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.external_submit_url = MagicMock(
+        return_value="https://lucid.test/terminate"
+    )
+    plan = _early_exit_test_plan(
+        path=ExitPath.TERMINATE_PANEL_SESSION,
+    ).mark_committed()
+    participant = MagicMock(
+        assignment_id="rid-1",
+        exit_plan=plan.to_dict(),
+        status="returned",
+    )
+
+    page = recruiter.release_participant(MagicMock(), participant)
+
+    script = page.js_vars["execute_front_end_js"]
+    assert "https://lucid.test/terminate" in script
+    assert "worker_complete" not in script
+    assert participant.status == "returned"
+
+
+def test_lucid_terminated_exit_keeps_ris_20_when_progress_is_one():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.generate_submit_url.side_effect = _lucid_submit_url
+    plan = _early_exit_test_plan(
+        path=ExitPath.TERMINATE_PANEL_SESSION,
+    ).mark_committed()
+    participant = SimpleNamespace(
+        assignment_id="rid-1",
+        exit_plan=plan.to_dict(),
+        status="returned",
+        progress=1,
+        failure_tags=[],
+    )
+
+    page = recruiter.release_participant(MagicMock(), participant)
+
+    recruiter.lucidservice.generate_submit_url.assert_called_once_with(
+        ris=20, rid="rid-1"
+    )
+    assert "RIS=20" in page.js_vars["execute_front_end_js"]
+    assert "RIS=10" not in page.js_vars["execute_front_end_js"]
+
+
+def test_lucid_terminated_exit_keeps_security_ris_when_progress_is_one():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.generate_submit_url.side_effect = _lucid_submit_url
+    plan = _early_exit_test_plan(
+        path=ExitPath.TERMINATE_PANEL_SESSION,
+    ).mark_committed()
+    participant = SimpleNamespace(
+        assignment_id="rid-1",
+        exit_plan=plan.to_dict(),
+        status="returned",
+        progress=1,
+        failure_tags=["performance_check"],
+    )
+
+    page = recruiter.release_participant(MagicMock(), participant)
+
+    recruiter.lucidservice.generate_submit_url.assert_called_once_with(
+        ris=30, rid="rid-1"
+    )
+    assert "RIS=30" in page.js_vars["execute_front_end_js"]
+
+
+def test_lucid_error_page_does_not_complete_when_progress_is_one():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.generate_submit_url.side_effect = _lucid_submit_url
+    plan = _early_exit_test_plan(
+        path=ExitPath.TERMINATE_PANEL_SESSION,
+        context=ExitContext.ERROR_RECOVERY,
+    ).mark_committed()
+    participant = SimpleNamespace(
+        assignment_id="rid-1",
+        exit_plan=plan.to_dict(),
+        progress=1,
+        failure_tags=[],
+    )
+
+    with patch("psynet.recruiters.get_translator", return_value=_identity_translator):
+        presentation = recruiter.error_page_presentation(
+            participant=participant, plan=plan
+        )
+
+    assert presentation.destination_url == _lucid_submit_url(20, "rid-1")
+
+
+def test_lucid_complete_submit_url_still_uses_ris_10_at_progress_one():
+    recruiter = _lucid_recruiter_with_service()
+    participant = SimpleNamespace(
+        assignment_id="rid-1",
+        progress=1,
+        failure_tags=[],
+        exit_plan=None,
+    )
+
+    assert recruiter.data_for_submit_url(participant, None) == {
+        "rid": "rid-1",
+        "ris": 10,
+    }
+
+
+def test_lucid_early_exit_terminates_the_panel_session():
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(assignment_id="rid-1", module_state=None, failed=False)
+    recruiter.external_submit_url = MagicMock(
+        return_value="https://lucid.test/terminate"
+    )
+    plan = _early_exit_test_plan(ExitPath.TERMINATE_PANEL_SESSION)
+
+    with patch("psynet.recruiters.db.session.commit"):
+        recruiter.execute_early_exit_plan(
+            MagicMock(),
+            participant,
+            plan,
+        )
+    participant.exit_plan = plan.mark_committed().to_dict()
+    participant.early_exited = True
+    release_page = recruiter.release_participant(MagicMock(), participant)
+
+    recruiter.lucidservice.terminate_respondent.assert_called_once_with(
+        "rid-1", "early_exit", None
+    )
+    assert "worker_complete" not in release_page.js_vars["execute_front_end_js"]
+    assert participant.status == "returned"
+    assert recruiter.decide_payment(
+        participant, experiment=MagicMock()
+    ) == PaymentDecision(status="returned", platform_base=0.0, bonus=0.0)
+    assert recruiter.report_submission_outcome(participant, 0.0, "settlement") is True
+    recruiter.lucidservice.terminate_respondent.assert_called_once()
+    # Lucid exits fail incomplete trials like every other recruiter's exit.
+    participant.fail.assert_called_once_with("early_exit", redirect_to_end=False)
+    assert participant.early_exited is True
+
+
+def test_lucid_error_recovery_preserves_redirect_owned_termination():
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(assignment_id="rid-1", module_state=None, failed=False)
+
+    recruiter.execute_early_exit_plan(
+        MagicMock(),
+        participant,
+        _early_exit_test_plan(
+            ExitPath.TERMINATE_PANEL_SESSION,
+            context=ExitContext.ERROR_RECOVERY,
+        ),
+    )
+
+    recruiter.lucidservice.terminate_respondent.assert_not_called()
+    participant.fail.assert_called_once_with("error_recovery", redirect_to_end=False)
+    assert participant.early_exited is True
+
+
+def test_lucid_prepares_error_recovery_without_an_external_termination_request():
+    recruiter = _lucid_recruiter_with_service()
+    participant = SimpleNamespace(assignment_id="rid-1")
+
+    recruiter.prepare_error_recovery(participant)
+
+    recruiter.lucidservice.set_termination_details.assert_called_once_with(
+        "rid-1", "error-page_route"
+    )
+    recruiter.lucidservice.terminate_respondent.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "lucid_terminate",
+        "lucid_outcome",
+        "lucid_status",
+        "prolific_reward_bonus",
+        "lab_outcome",
+        "hotair_reward_bonus",
+        "zero_outcome",
+        "experiment_pay",
+        "lucid_service_complete",
+        "lucid_service_terminate",
+        "lucid_service_submissions",
+        "prolific_approve",
+    ],
+)
+def test_payment_and_panel_calls_raise_inside_a_timeline_step_before_any_request(
+    call,
+):
+    from psynet.experiment import Experiment
+
+    participant = MagicMock(
+        assignment_id="rid-1", module_state=None, failed=False, progress=1
+    )
+    lucid = _lucid_recruiter_with_service()
+    prolific = object.__new__(ProlificRecruiter)
+    prolific.prolificservice = MagicMock()
+    calls = {
+        "lucid_terminate": lambda: lucid.terminate_participant(
+            participant=participant, reason="timeout"
+        ),
+        "lucid_outcome": lambda: lucid.report_submission_outcome(
+            participant, 0.0, "bonus"
+        ),
+        "lucid_status": lambda: lucid.change_lucid_status("live"),
+        "prolific_reward_bonus": lambda: prolific.reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+        "lab_outcome": lambda: object.__new__(
+            BaseLabRecruiter
+        ).report_submission_outcome(participant, 1.0, "bonus"),
+        "hotair_reward_bonus": lambda: object.__new__(HotAirRecruiter).reward_bonus(
+            participant, 1.0, "bonus"
+        ),
+        "zero_outcome": lambda: object.__new__(
+            HotAirRecruiter
+        ).report_submission_outcome(participant, 0.0, "bonus"),
+        "experiment_pay": lambda: object.__new__(Experiment).pay_decided_bonus(
+            participant, MagicMock()
+        ),
+        "lucid_service_complete": lambda: object.__new__(
+            LucidService
+        ).complete_respondent("rid-1"),
+        "lucid_service_terminate": lambda: object.__new__(
+            LucidService
+        ).terminate_respondent("rid-1", "timeout"),
+        "lucid_service_submissions": lambda: object.__new__(
+            LucidService
+        ).get_submissions(1),
+        "prolific_approve": lambda: prolific.approve_hit("rid-1"),
+    }
+
+    with (
+        patch("psynet.recruiters.get_lucid_service") as lucid_service,
+        patch("psynet.recruiters.requests.post") as post,
+        patch.object(dallinger.recruiters.HotAirRecruiter, "reward_bonus") as hotair,
+        forbid_commits("CodeBlock 'pay'"),
+        pytest.raises(RuntimeError, match="from an AsyncCodeBlock"),
+    ):
+        calls[call]()
+
+    assert not lucid.lucidservice.method_calls
+    assert not lucid_service.called
+    assert not prolific.prolificservice.method_calls
+    assert not post.called
+    assert not hotair.called
+    assert participant.failed is False
+
+
+def test_lucid_plan_execution_propagates_termination_failure_without_commit():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.terminate_respondent.side_effect = RuntimeError(
+        "Lucid unavailable"
+    )
+    participant = MagicMock(assignment_id="rid-1", module_state=None, failed=False)
+
+    with (
+        patch("psynet.recruiters.db.session.commit") as commit,
+        pytest.raises(RuntimeError, match="Lucid unavailable"),
+    ):
+        recruiter.execute_early_exit_plan(
+            MagicMock(),
+            participant,
+            _early_exit_test_plan(ExitPath.TERMINATE_PANEL_SESSION),
+        )
+
+    commit.assert_not_called()
+
+
+def test_prolific_treats_a_failed_early_exit_as_screen_out():
+    config = make_config(prolific_unsuccessful_base_payment=0.20)
+    recruiter = make_prolific_recruiter(config)
+    participant = make_participant_with_recruiter(config, failed=True)
+    with patch("psynet.recruiters.get_config", return_value=config):
+        assert recruiter.completion_status(participant) == "screened_out"
 
 
 @pytest.mark.parametrize(
@@ -764,6 +2737,7 @@ class PaymentHarness:
     dismiss_review_bonus = _Experiment.dismiss_review_bonus
     _record_payment_outcome_success = _Experiment._record_payment_outcome_success
     _notify_payment_outcome_failed = _Experiment._notify_payment_outcome_failed
+    _record_platform_base_refused = _Experiment._record_platform_base_refused
     on_recruiter_submission_complete = _Experiment.on_recruiter_submission_complete
 
     def _lock_participant_for_payment(self, participant):
@@ -818,6 +2792,8 @@ def prepare_payout_participant(participant):
     participant.bonus_status = BONUS_STATUS_NOT_DUE_YET
     participant.planned_bonus = 0.0
     participant.bonus_attempt_detail = None
+    participant.platform_base_unpaid = None
+    participant.platform_base_unpaid_detail = None
     participant.worker_id = "worker-1"
     participant.recruiter.nickname = "prolific"
     participant.recruiter.approve_hit = MagicMock(return_value=True)
@@ -1043,6 +3019,47 @@ def test_on_recruiter_submission_complete_pays_successful_participant():
     participant.recruiter.reward_bonus.assert_called_once()
 
 
+def test_on_recruiter_submission_complete_flags_refused_platform_base():
+    config = make_config(prolific_unsuccessful_base_payment=0.25)
+    participant = prepare_payout_participant(
+        make_participant_with_recruiter(config, failed=False, status="submitted")
+    )
+    participant.recruiter.approve_hit = MagicMock(return_value=False)
+    harness = PaymentHarness()
+
+    with patch("psynet.recruiters.get_config", return_value=config):
+        harness.on_recruiter_submission_complete(participant, event=None)
+
+    # The base stays reserved (amount_spent is a reservation figure and the
+    # money is still owed), but it is no longer reported as paid.
+    assert participant.base_payment == 1.00
+    assert participant.base_pay == 1.00
+    assert participant.platform_base_unpaid is True
+    assert platform_base_unpaid(participant)
+    assert "did not pay the decided study base of 1.0" in (
+        participant.platform_base_unpaid_detail
+    )
+    # The top-up is still owed and still paid; the base is not reconstructed
+    # as a bonus.
+    assert participant.bonus == 1.50
+
+
+def test_on_recruiter_submission_complete_keeps_base_unflagged_on_success():
+    config = make_config(prolific_unsuccessful_base_payment=0.25)
+    participant = prepare_payout_participant(
+        make_participant_with_recruiter(config, failed=False, status="submitted")
+    )
+    # Dallinger's approve_hit returns None on paths PsyNet treats as success.
+    participant.recruiter.approve_hit = MagicMock(return_value=None)
+
+    with patch("psynet.recruiters.get_config", return_value=config):
+        PaymentHarness().on_recruiter_submission_complete(participant, event=None)
+
+    assert participant.base_payment == 1.00
+    assert participant.platform_base_unpaid is None
+    assert not platform_base_unpaid(participant)
+
+
 def test_on_recruiter_submission_complete_skips_unexpected_status():
     config = make_config(prolific_unsuccessful_base_payment=0.25)
     participant = prepare_payout_participant(
@@ -1249,6 +3266,32 @@ def test_reward_and_set_bonus_leaves_unsettled_when_transfer_fails():
     assert PsyNetProlificRecruiterMixin._return_for_bonus_credited(participant) is False
 
 
+def test_return_for_bonus_payment_wait_timeout_notifies_the_researcher():
+    recruiter = object.__new__(PsyNetProlificRecruiterMixin)
+    payment_hold = next(
+        elt
+        for elt in recruiter.assignment_returned_logic()
+        if getattr(elt, "is_timeline_hold", False) and elt.on_timeout is not None
+    )
+    participant = SimpleNamespace(
+        id=7,
+        assignment_id="A7",
+        worker_id="W7",
+        failed=True,
+        module_state=None,
+        awaited_async_code_block_job=MagicMock(finished=False, failed=False),
+    )
+    experiment = MagicMock()
+
+    with patch("psynet.experiment.get_experiment", return_value=experiment):
+        payment_hold.apply_timeout(participant)
+        experiment.notifier.notify.assert_not_called()
+        dallinger.db.session.commit()
+
+    (message,), _ = experiment.notifier.notify.call_args
+    assert "participant 7" in message and "stalled" in message
+
+
 def test_return_for_bonus_credited_when_hard_cap_paid_a_remainder():
     participant = SimpleNamespace(bonus_status=BONUS_STATUS_CAPPED, bonus=0.50)
     assert PsyNetProlificRecruiterMixin._return_for_bonus_credited(participant) is True
@@ -1298,18 +3341,40 @@ def test_check_screen_out_config_requires_screen_out_slots():
     PsyNetProlificRecruiterMixin.check_screen_out_config(make_config())
 
 
-def test_check_config_rejects_stale_error_page_override():
+@pytest.mark.parametrize(
+    "method_name",
+    ["error_page_content", "error_page_content__prolific"],
+)
+def test_check_config_rejects_stale_error_page_override(method_name):
     from psynet.experiment import Experiment
 
-    class ExpWithStaleOverride(Experiment):
-        def error_page_content__prolific(self):
-            return "custom"
+    ExpWithStaleOverride = type(
+        "ExpWithStaleOverride",
+        (Experiment,),
+        {method_name: lambda self: "custom"},
+    )
 
     with pytest.raises(RuntimeError, match="no longer supported"):
         ExpWithStaleOverride.check_stale_error_page_override()
 
     # The base class (no override) passes.
     Experiment.check_stale_error_page_override()
+
+
+@pytest.mark.parametrize("method_name", ["ad_requirements", "ad_payment_information"])
+def test_check_config_rejects_stale_ad_page_override(method_name):
+    from psynet.experiment import Experiment
+
+    ExpWithStaleOverride = type(
+        "ExpWithStaleOverride",
+        (Experiment,),
+        {method_name: property(lambda self: "custom")},
+    )
+
+    with pytest.raises(RuntimeError, match="templates/ad.html"):
+        ExpWithStaleOverride.check_stale_ad_page_override()
+
+    Experiment.check_stale_ad_page_override()
 
 
 def test_check_unused_dallinger_quality_checks_rejects_overrides():
@@ -1745,46 +3810,38 @@ def test_bonus_payments_total_converts_pence_to_currency():
     assert _bonus_payments_total(None) == 0.0
 
 
-def _mock_prolific_service():
+def _mock_prolific_service(submission=None):
     service = MagicMock()
-    service.api_token = "tok"
-    service.api_root = "https://api.prolific.com/api/v1"
-    service.referer_header = "https://example.com"
+    service.get_participant_submission.return_value = submission
     return service
 
 
 def test_prolific_apparent_bonus_paid_sums_submission_bonus_payments():
     recruiter = make_prolific_recruiter(make_config())
-    recruiter.prolificservice = _mock_prolific_service()
+    recruiter.prolificservice = _mock_prolific_service(
+        {"bonus_payments": [150, 25], "status": "APPROVED"}
+    )
     participant = MagicMock(assignment_id="submission-1")
-    response = MagicMock(ok=True, status_code=200)
-    response.json.return_value = {
-        "bonus_payments": [150, 25],
-        "status": "APPROVED",
-    }
 
-    with patch("psynet.recruiters.requests.get", return_value=response) as get:
+    with patch("psynet.recruiters.requests.get") as get:
         view = recruiter.platform_payment_view(participant)
 
     assert view.supported is True
     assert view.bonus == 1.75
     assert view.submission_status == "APPROVED"
-    get.assert_called_once()
-    assert get.call_args.args[0].endswith("/submissions/submission-1/")
-    recruiter.prolificservice._req.assert_not_called()
+    get.assert_not_called()
+    recruiter.prolificservice.get_participant_submission.assert_called_once_with(
+        "submission-1", translate=False
+    )
 
 
 def _screen_out_platform_view(bonus_payments, config, participant):
     recruiter = make_prolific_recruiter(config)
-    recruiter.prolificservice = _mock_prolific_service()
-    response = MagicMock(ok=True, status_code=200)
-    response.json.return_value = {
-        "bonus_payments": bonus_payments,
-        "status": "AWAITING REVIEW",
-    }
+    recruiter.prolificservice = _mock_prolific_service(
+        {"bonus_payments": bonus_payments, "status": "AWAITING REVIEW"}
+    )
     with patch("psynet.recruiters.get_config", return_value=config):
-        with patch("psynet.recruiters.requests.get", return_value=response):
-            return recruiter.platform_payment_view(participant)
+        return recruiter.platform_payment_view(participant)
 
 
 def test_prolific_platform_view_excludes_screen_out_reward_for_screened_out():
@@ -1850,13 +3907,14 @@ def test_prolific_platform_view_keeps_full_total_for_non_screened_out():
 
 def test_prolific_apparent_bonus_paid_returns_none_when_lookup_fails():
     recruiter = make_prolific_recruiter(make_config())
-    recruiter.prolificservice = _mock_prolific_service()
+    recruiter.prolificservice = _mock_prolific_service(None)
     participant = MagicMock(assignment_id="submission-1", id=9)
-    response = MagicMock(ok=False, status_code=404)
-
-    with patch("psynet.recruiters.requests.get", return_value=response):
+    with patch("psynet.recruiters.requests.get") as get:
         assert recruiter.apparent_bonus_paid(participant) is None
-    recruiter.prolificservice._req.assert_not_called()
+    get.assert_not_called()
+    recruiter.prolificservice.get_participant_submission.assert_called_once_with(
+        "submission-1", translate=False
+    )
 
 
 def test_dashboard_participants_polls_platform_when_opening_a_participant():
@@ -1911,6 +3969,438 @@ def test_generic_recruiter_has_no_external_bonus_payment():
 
     recruiter = object.__new__(GenericRecruiter)
     assert recruiter.has_external_bonus_payment() is False
+
+
+def test_generic_custom_exit_uses_the_translated_template_renderer():
+    from psynet.recruiters import GenericRecruiter
+
+    experiment = MagicMock()
+    experiment.render_exit_message.return_value = "Goodbye"
+    participant = SimpleNamespace()
+    recruiter = object.__new__(GenericRecruiter)
+
+    with patch(
+        "psynet.recruiters.render_template_with_translations",
+        return_value="rendered",
+    ) as render:
+        assert recruiter.exit_response(experiment, participant) == "rendered"
+
+    render.assert_called_once_with(
+        "custom_html.html",
+        html="<p>Goodbye</p>",
+    )
+
+
+def test_submit_assignment_page_shows_a_spinner():
+    from psynet.recruiters import GenericRecruiter
+
+    page = object.__new__(GenericRecruiter).submit_assignment()
+
+    assert "spinner-border" in page.content
+    assert page.js_vars["execute_front_end_js"] == "psynet.finishAndGoToExit()"
+
+
+def _resolve_show_reward(recruiter_cls, configured):
+    from psynet.experiment import Experiment
+
+    exp = object.__new__(Experiment)
+    # recruiter is a cached_property, so seeding the instance dict is enough.
+    exp.__dict__["recruiter"] = object.__new__(recruiter_cls)
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: (
+        configured if key == "show_reward" else default
+    )
+    with patch("psynet.experiment.get_config", return_value=config):
+        return exp.show_reward
+
+
+@pytest.mark.parametrize(
+    "settings, expected, lucid, prolific",
+    [
+        ({"recruiter": "prolific", "mode": "live"}, "ProlificRecruiter", False, True),
+        (
+            {"recruiter": "prolific", "mode": "debug"},
+            "DevProlificRecruiter",
+            False,
+            True,
+        ),
+        (
+            {"recruiter": "lucid-recruiter", "mode": "live"},
+            "LucidRecruiter",
+            True,
+            False,
+        ),
+        (
+            {
+                "recruiter": "lucid-recruiter",
+                "mode": "debug",
+                "debug_recruiter": "DevLucidRecruiter",
+            },
+            "DevLucidRecruiter",
+            True,
+            False,
+        ),
+        ({"recruiter": "generic", "mode": "live"}, "GenericRecruiter", False, False),
+        ({"recruiter": "generic", "mode": "debug"}, "HotAirRecruiter", False, False),
+    ],
+)
+def test_recruitment_checks_do_not_build_a_recruiter(
+    settings, expected, lucid, prolific
+):
+    from psynet.experiment import Experiment
+    from psynet.recruiters import configured_recruiter_class
+
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: settings.get(key, default)
+    exp = object.__new__(Experiment)
+    with (
+        patch("psynet.recruiters.get_config", return_value=config),
+        patch.object(
+            dallinger.recruiters.Recruiter, "__init__", side_effect=AssertionError
+        ),
+    ):
+        assert configured_recruiter_class().__name__ == expected
+        assert exp.with_lucid_recruitment() is lucid
+        assert exp.with_prolific_recruitment() is prolific
+
+
+def test_show_reward_defaults_to_the_recruiter():
+    from psynet.recruiters import GenericRecruiter, HotAirRecruiter, ProlificRecruiter
+
+    # Unset in config: recruiters that cannot pay do not quote a reward.
+    assert _resolve_show_reward(GenericRecruiter, None) is False
+    assert _resolve_show_reward(HotAirRecruiter, None) is False
+    assert _resolve_show_reward(ProlificRecruiter, None) is True
+
+
+def test_explicit_show_reward_config_wins():
+    from psynet.recruiters import GenericRecruiter, ProlificRecruiter
+
+    assert _resolve_show_reward(GenericRecruiter, True) is True
+    assert _resolve_show_reward(ProlificRecruiter, False) is False
+
+
+def test_all_recruiter_exit_pages_are_owned_by_psynet():
+    """Platform submit pages keep their behavior in PsyNet-themed wrappers."""
+    from psynet.recruiters import (
+        GenericRecruiter,
+        HotAirRecruiter,
+        LabRecruiter,
+        ProlificRecruiter,
+        PsyNetExitPageMixin,
+    )
+
+    def owner(cls):
+        return next(c for c in cls.__mro__ if "exit_response" in c.__dict__)
+
+    assert owner(HotAirRecruiter) is PsyNetExitPageMixin
+    assert owner(LabRecruiter) is PsyNetExitPageMixin
+    assert owner(ProlificRecruiter).__name__ == "PsyNetProlificRecruiterMixin"
+    # GenericRecruiter checks render_exit_message first, then defers to PsyNet's.
+    assert owner(GenericRecruiter) is GenericRecruiter
+    assert PsyNetExitPageMixin in GenericRecruiter.__mro__
+
+
+def test_psynet_exit_page_says_nothing_about_payment():
+    import re
+    from importlib import resources
+
+    source = (
+        resources.files("psynet") / "templates/psynet_exit_recruiter.html"
+    ).read_text(encoding="utf-8")
+    body = re.sub(r"\{#.*?#\}", "", source, flags=re.DOTALL)
+
+    for term in ("reward", "Bonus", "Base Pay", "currency", "compensation"):
+        assert term not in body, f"exit page should not mention {term!r}"
+
+
+def test_psynet_exit_page_keeps_back_on_the_thank_you_screen():
+    """Back from exit must not revive /start for a finished assignment."""
+    from importlib import resources
+
+    source = (
+        resources.files("psynet") / "templates/psynet_exit_recruiter.html"
+    ).read_text(encoding="utf-8")
+    assert "history.pushState" in source
+    assert "popstate" in source
+
+
+@pytest.mark.parametrize(
+    "recruiter_class_name", ["GenericRecruiter", "HotAirRecruiter", "LabRecruiter"]
+)
+def test_psynet_exit_page_renders_for_recruiters_without_platform_exit_pages(
+    recruiter_class_name,
+):
+    """Render the final HTML through each recruiter that owns this page."""
+    from importlib import resources
+
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    from psynet import recruiters
+
+    app = Flask("psynet_exit_page")
+    app.jinja_env.globals.update(
+        gettext=lambda text: text,
+        pgettext=lambda _context, text: text,
+    )
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader(
+                {
+                    "base/layout.html": (
+                        "<!doctype html><html><head>"
+                        "<title>{% block title %}{% endblock %}</title>"
+                        "{% block stylesheets %}{% endblock %}"
+                        "{% block scripts %}{% endblock %}"
+                        "</head><body>{% block body %}{% endblock %}</body></html>"
+                    )
+                }
+            ),
+        ]
+    )
+    experiment = MagicMock()
+    experiment.psynet_logo = ""
+    experiment.logos = []
+    experiment.render_exit_message.return_value = "default_exit_message"
+    participant = SimpleNamespace(assignment_id="assignment-123")
+
+    def render_exit_template(template_name, **kwargs):
+        return render_template(
+            template_name,
+            experiment=experiment,
+            config=SimpleNamespace(color_mode="light"),
+            **kwargs,
+        )
+
+    recruiter_class = getattr(recruiters, recruiter_class_name)
+    recruiter = object.__new__(recruiter_class)
+    with app.test_request_context("/recruiter-exit"):
+        with patch(
+            "psynet.recruiters.render_template_with_translations",
+            side_effect=render_exit_template,
+        ):
+            html = recruiter.exit_response(experiment, participant)
+
+    assert html.lstrip().lower().startswith("<!doctype html>")
+    assert "<title>Thank you for taking part.</title>" in html
+    assert "Thank you for taking part." in html
+    assert "You chose to leave." not in html
+    assert "Your responses have been saved. You may close this page." in html
+    assert "Reference" in html
+    assert "assignment-123" in html
+    assert "Bonus" not in html
+    assert "Base Pay" not in html
+
+
+@pytest.mark.parametrize(
+    "recruiter_class_name", ["GenericRecruiter", "HotAirRecruiter", "LabRecruiter"]
+)
+def test_psynet_exit_page_uses_early_leave_copy_when_early_exited(recruiter_class_name):
+    """Early leave only needs a close instruction; the modal already covered data."""
+    from importlib import resources
+
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    from psynet import recruiters
+
+    app = Flask("psynet_exit_page_early")
+    app.jinja_env.globals.update(
+        gettext=lambda text: text,
+        pgettext=lambda _context, text: text,
+    )
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader(
+                {
+                    "base/layout.html": (
+                        "<!doctype html><html><head>"
+                        "<title>{% block title %}{% endblock %}</title>"
+                        "{% block stylesheets %}{% endblock %}"
+                        "{% block scripts %}{% endblock %}"
+                        "</head><body>{% block body %}{% endblock %}</body></html>"
+                    )
+                }
+            ),
+        ]
+    )
+    experiment = MagicMock()
+    experiment.psynet_logo = ""
+    experiment.logos = []
+    experiment.render_exit_message.return_value = "default_exit_message"
+    participant = SimpleNamespace(assignment_id="assignment-123", early_exited=True)
+
+    def render_exit_template(template_name, **kwargs):
+        return render_template(
+            template_name,
+            experiment=experiment,
+            config=SimpleNamespace(color_mode="light"),
+            **kwargs,
+        )
+
+    recruiter_class = getattr(recruiters, recruiter_class_name)
+    recruiter = object.__new__(recruiter_class)
+    with app.test_request_context("/recruiter-exit"):
+        with patch(
+            "psynet.recruiters.render_template_with_translations",
+            side_effect=render_exit_template,
+        ):
+            html = recruiter.exit_response(experiment, participant)
+
+    assert "<title>You chose to leave.</title>" in html
+    assert "You chose to leave." in html
+    assert "Thank you for taking part." not in html
+    assert "Your responses have been saved" not in html
+    assert "You may close this page." in html
+    assert "You left early" not in html
+    assert "You have finished" not in html
+
+
+def test_prolific_exit_page_renders_with_psynet_layout():
+    """The stay-on-PsyNet Prolific confirmation uses the shared theme."""
+    from importlib import resources
+
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    app = Flask("psynet_platform_exit")
+    app.jinja_env.globals.update(
+        gettext=lambda text: text,
+        pgettext=lambda _context, text: text,
+    )
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader(
+                {
+                    "base/layout.html": (
+                        "<!doctype html><html><head>"
+                        "<title>{% block title %}{% endblock %}</title>"
+                        "{% block head %}{% endblock %}"
+                        "{% block stylesheets %}{% endblock %}"
+                        "</head><body>{% block body %}{% endblock %}"
+                        "{% block scripts %}{% endblock %}</body></html>"
+                    )
+                }
+            ),
+        ]
+    )
+    experiment = MagicMock(psynet_logo="", logos=[])
+    participant = SimpleNamespace(
+        id=7,
+        assignment_id="assignment-123",
+        hit_id="hit-456",
+        unique_id="worker-789:assignment-123",
+        worker_id="worker-789",
+    )
+
+    with app.test_request_context("/recruiter-exit"):
+        html = render_template(
+            "exit_recruiter_prolific_submitted.html",
+            experiment=experiment,
+            participant=participant,
+            config=SimpleNamespace(color_mode="light"),
+            assignment_id="assignment-123",
+            participant_id=7,
+            submission_recorded=False,
+            confirmation_heading="Your submission has been sent to Prolific.",
+            confirmation_body="You may close this page.",
+            failure_message=(
+                "We could not send your submission to Prolific. Please try again. "
+                "If this keeps happening, message the researcher through Prolific."
+            ),
+        )
+
+    assert '<meta name="viewport"' in html
+    assert "css/participant.css" in html
+    assert "scripts/psynet.layout.js" in html
+    assert "<title>Submit to Prolific</title>" in html
+    assert "Submit to Prolific" in html
+    assert "Click below to send your submission to Prolific" in html
+    assert "You will not need to enter a completion code" in html
+    assert "Prolific Study Submission" not in html
+    assert "/prolific-submission-listener" in html
+    assert "window.location.replace" in html
+    assert "prolific-exit-done" not in html
+    assert "prolific-exit-pending" in html
+    assert "prolific-exit-failure" in html
+    assert "prolific-exit-retry" in html
+    assert "js-exit-button" in html
+    assert "btn-primary" in html
+    assert "btn-success" not in html
+    assert "btn-large" not in html
+    assert 'class="well"' not in html
+    assert "psynet-surface" in html
+    assert "psynetEarlyExit" not in html
+
+
+def test_prolific_exit_page_reloads_confirmation_after_submit():
+    """After Submit, recruiter-exit is a new document, not a rewritten heading."""
+    from importlib import resources
+
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    app = Flask("psynet_platform_exit_done")
+    app.jinja_env.globals.update(
+        gettext=lambda text: text,
+        pgettext=lambda _context, text: text,
+    )
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader(
+                {
+                    "base/layout.html": (
+                        "<!doctype html><html><head>"
+                        "<title>{% block title %}{% endblock %}</title>"
+                        "{% block head %}{% endblock %}"
+                        "{% block stylesheets %}{% endblock %}"
+                        "</head><body>{% block body %}{% endblock %}"
+                        "{% block scripts %}{% endblock %}</body></html>"
+                    )
+                }
+            ),
+        ]
+    )
+    experiment = MagicMock(psynet_logo="", logos=[])
+    participant = SimpleNamespace(
+        id=7,
+        assignment_id="assignment-123",
+        hit_id="hit-456",
+        unique_id="worker-789:assignment-123",
+        worker_id="worker-789",
+    )
+
+    with app.test_request_context("/recruiter-exit"):
+        html = render_template(
+            "exit_recruiter_prolific_submitted.html",
+            experiment=experiment,
+            participant=participant,
+            config=SimpleNamespace(color_mode="light"),
+            assignment_id="assignment-123",
+            participant_id=7,
+            submission_recorded=True,
+            confirmation_heading="Your submission has been sent to Prolific.",
+            confirmation_body="You may close this page.",
+            failure_message=(
+                "We could not send your submission to Prolific. Please try again. "
+                "If this keeps happening, message the researcher through Prolific."
+            ),
+        )
+
+    assert "prolific-exit-done" in html
+    assert "<title>Your submission has been sent to Prolific.</title>" in html
+    assert "Your submission has been sent to Prolific." in html
+    assert "You may close this page." in html
+    assert "js-exit-button" not in html
+    assert "Submit to Prolific" not in html
+    assert "/prolific-submission-listener" not in html
+    assert 'class="well"' not in html
+    assert "psynet-surface" in html
 
 
 def _review_participant(apparent=0.0, planned=1.50):
@@ -2208,19 +4698,6 @@ def test_prolific_reward_bonus_returns_false_on_exception():
             assert participant.bonus_attempt_detail == "no"
 
 
-def test_mturk_reward_bonus_returns_false_when_grant_bonus_returns_false():
-    from psynet.recruiters import MTurkRecruiter
-
-    recruiter = object.__new__(MTurkRecruiter)
-    recruiter.mturkservice = MagicMock()
-    recruiter.mturkservice.grant_bonus.return_value = False
-    participant = MagicMock(assignment_id="a")
-    with patch("psynet.recruiters.handle_recruitment_error") as handle:
-        assert recruiter.reward_bonus(participant, 1.0, "r") is False
-        handle.assert_called_once()
-        assert "assignment a" in participant.bonus_attempt_detail
-
-
 def test_hotair_reward_bonus_returns_true():
     from psynet.recruiters import HotAirRecruiter
 
@@ -2228,7 +4705,7 @@ def test_hotair_reward_bonus_returns_true():
     assert recruiter.reward_bonus(MagicMock(assignment_id="a"), 1.0, "thanks") is True
 
 
-def test_lucid_reward_bonus_terminates_when_responses_empty():
+def test_lucid_report_submission_outcome_terminates_when_responses_empty():
     from psynet.recruiters import BaseLucidRecruiter
 
     recruiter = object.__new__(BaseLucidRecruiter)
@@ -2238,12 +4715,66 @@ def test_lucid_reward_bonus_terminates_when_responses_empty():
 
     with patch("psynet.recruiters.Response") as response_cls:
         response_cls.query.filter_by.return_value.order_by.return_value.all.return_value = []
-        assert recruiter.reward_bonus(participant, 0.0, "thanks") is True
+        assert recruiter.report_submission_outcome(participant, 0.0, "thanks") is True
 
     recruiter.complete_participant.assert_not_called()
     recruiter.terminate_participant.assert_called_once_with(
-        participant=participant, reason="participant-did-not-complete"
+        participant=participant,
+        reason="participant-did-not-complete",
+        raise_on_error=True,
     )
+
+
+def test_lucid_report_submission_outcome_returns_false_when_terminate_fails():
+    recruiter = _lucid_recruiter_with_service()
+    recruiter.lucidservice.terminate_respondent.side_effect = RuntimeError(
+        "Lucid timeout"
+    )
+    participant = MagicMock(assignment_id="rid-1", progress=0.5, id=1, exit_plan=None)
+
+    with (
+        patch("psynet.recruiters.Response") as response_cls,
+        patch("psynet.recruiters.record_bonus_attempt_detail") as record_detail,
+    ):
+        response_cls.query.filter_by.return_value.order_by.return_value.all.return_value = []
+        assert recruiter.report_submission_outcome(participant, 0.0, "bonus") is False
+
+    record_detail.assert_called_once_with(participant, "Lucid timeout")
+
+
+def test_lucid_reward_bonus_raises():
+    from psynet.recruiters import BaseLucidRecruiter
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    participant = MagicMock(progress=1, id=1)
+
+    with pytest.raises(RuntimeError, match="report_submission_outcome"):
+        recruiter.reward_bonus(participant, 0.0, "thanks")
+
+
+def test_lucid_submission_reports_complete_to_lucid_without_a_bonus():
+    """Lucid pays no PsyNet bonus, but the server-side complete must still run."""
+    recruiter = _lucid_recruiter_with_service()
+    participant = MagicMock(
+        id=7,
+        assignment_id="rid-1",
+        status="submitted",
+        failed=False,
+        complete=True,
+        progress=1,
+        exit_plan=None,
+        recruiter=recruiter,
+        bonus=None,
+        bonus_status=BONUS_STATUS_NOT_DUE_YET,
+        planned_bonus=0.0,
+        end_time=None,
+    )
+
+    PaymentHarness().on_recruiter_submission_complete(participant, event=None)
+
+    recruiter.lucidservice.complete_respondent.assert_called_once_with("rid-1")
+    assert participant.status == "approved"
+    assert participant.bonus_status == BONUS_STATUS_SUCCESS
 
 
 def test_experiment_bonus_raises():
@@ -2604,7 +5135,7 @@ def test_lab_recruiter_consent_rejection_failure_stays_unconfirmed():
     assert not experiment.notify_calls
 
 
-def test_rejected_consent_dispatches_recruiter_hook():
+def test_rejected_consent_calls_recruiter_hook_in_async_code_block():
     from psynet.end import RejectedConsentLogic
 
     recruiter = make_lab_recruiter()
@@ -2614,8 +5145,74 @@ def test_rejected_consent_dispatches_recruiter_hook():
     experiment.with_lucid_recruitment.return_value = False
     participant = MagicMock()
     participant.recruiter = recruiter
+    logic = RejectedConsentLogic()
 
-    RejectedConsentLogic().before_debrief(experiment, participant)
+    logic.before_debrief(experiment, participant)
 
     participant.fail.assert_called_once_with()
+    recruiter.after_rejected_consent.assert_not_called()
+
+    logic.report_rejected_consent(experiment=experiment, participant=participant)
     recruiter.after_rejected_consent.assert_called_once_with(experiment, participant)
+
+
+@pytest.mark.parametrize(
+    "recruiter_class, lucid, expected",
+    [
+        (BaseLabRecruiter, False, True),
+        (DevProlificRecruiter, False, False),
+        (DevProlificRecruiter, True, True),
+    ],
+)
+def test_rejected_consent_is_reported_only_when_the_recruiter_needs_it(
+    recruiter_class, lucid, expected
+):
+    from psynet.end import RejectedConsentLogic
+
+    experiment = MagicMock()
+    experiment.with_lucid_recruitment.return_value = lucid
+    participant = MagicMock()
+    participant.recruiter = object.__new__(recruiter_class)
+
+    assert (
+        RejectedConsentLogic.has_rejected_consent_to_report(experiment, participant)
+        is expected
+    )
+
+
+def test_lucid_rejected_consent_uses_a_terminate_callback():
+    from psynet.end import RejectedConsentLogic
+
+    recruiter = MagicMock()
+    recruiter.external_submit_url.return_value = "https://lucid.test/terminate"
+    experiment = MagicMock()
+    experiment.recruiter = recruiter
+    experiment.with_lucid_recruitment.return_value = True
+    experiment.show_reward = False
+    participant = MagicMock()
+
+    with patch(
+        "psynet.end.get_translator",
+        side_effect=lambda *args, **kwargs: lambda *a: a[-1],
+    ):
+        RejectedConsentLogic().debrief_participant(experiment, participant)
+
+    recruiter.external_submit_url.assert_called_once_with(
+        participant=participant,
+        allow_complete=False,
+    )
+
+
+def test_status_check_without_study_id_warns_once_and_skips_api(caplog, monkeypatch):
+    monkeypatch.setattr(PsyNetProlificRecruiterMixin, "_warned_missing_study_id", False)
+    recruiter = object.__new__(DevProlificRecruiter)
+    recruiter.prolificservice = MagicMock()
+    with patch.object(
+        DevProlificRecruiter, "current_study_id", new_callable=PropertyMock
+    ) as study_id:
+        study_id.return_value = None
+        recruiter.verify_status_of([make_participant()])
+        recruiter.verify_status_of([make_participant()])
+    recruiter.prolificservice.get_assignments_for_study.assert_not_called()
+    warnings = [r for r in caplog.records if "no Prolific study ID" in r.getMessage()]
+    assert len(warnings) == 1

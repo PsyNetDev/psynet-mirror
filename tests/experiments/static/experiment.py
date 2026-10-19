@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method
 import random
 
 from markupsafe import Markup
@@ -106,7 +105,6 @@ trial_maker = AnimalTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=True,
     check_performance_every_trial=True,
     target_n_participants=1,
@@ -119,6 +117,12 @@ trial_maker = AnimalTrialMaker(
 class Exp(psynet.experiment.Experiment):
     label = "Static experiment demo"
     test_n_bots = 2
+
+    config = {
+        # Asserted by the end-to-end tests; generic recruitment now hides
+        # rewards unless the experiment opts in.
+        "show_reward": True,
+    }
 
     timeline = Timeline(
         trial_maker,

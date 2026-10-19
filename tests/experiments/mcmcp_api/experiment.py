@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import random
 import time
 
@@ -137,7 +135,7 @@ class Exp(psynet.experiment.Experiment):
             chains_per_experiment=None,  # set to None if chain_type="within"
             max_nodes_per_chain=3,
             trials_per_node=1,
-            balance_across_chains=True,
+            chain_order="balanced",
             check_performance_at_end=False,
             check_performance_every_trial=False,
             fail_trials_on_participant_performance_check=True,
@@ -150,7 +148,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_experiment(self):
         super().test_experiment()
-        time.sleep(1)  # Wait for any async processes to complete
+        time.sleep(1)  # Wait for any async jobs to complete
         nodes = CustomNode.query.all()
         assert len(nodes) > 0
         for n in nodes:

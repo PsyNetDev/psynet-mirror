@@ -1,5 +1,6 @@
 """SPA contract errors should be visible during local testing."""
 
+import json
 import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -12,6 +13,7 @@ from psynet.modular_page import Control, ModularPage, Prompt
 from psynet.participant import (
     _extract_server_error_details,
     _raise_for_status_with_server_details,
+    _retry_busy_http,
 )
 from psynet.timeline import (
     _SPA_INCOMPATIBILITY_MARKER,
@@ -105,3 +107,129 @@ def test_raise_for_status_includes_server_error_details():
         + re.escape(_SPA_INCOMPATIBILITY_MARKER),
     ):
         _raise_for_status_with_server_details(response)
+
+
+def _http_response(status_code, body=None, text=""):
+    response = SimpleNamespace(status_code=status_code, text=text)
+    if body is not None:
+        response.json = lambda: body
+        if not text:
+            response.text = json.dumps(body)
+    else:
+
+        def _no_json():
+            raise ValueError("No JSON")
+
+        response.json = _no_json
+    response.raise_for_status = lambda: None
+    return response
+
+
+def test_retry_busy_http_retries_once_on_structured_busy_503():
+    responses = [
+        _http_response(503, {"status": "busy", "submission": "busy"}),
+        _http_response(200),
+    ]
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return responses[calls["n"] - 1]
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 200
+    assert calls["n"] == 2
+
+
+def test_retry_busy_http_does_not_retry_generic_503():
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return _http_response(503, text="gateway timeout")
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 503
+    assert calls["n"] == 1
+
+
+def test_retry_busy_http_does_not_retry_malformed_503():
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return _http_response(503, text="{not-json")
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 503
+    assert calls["n"] == 1
+
+
+def test_retry_busy_http_does_not_retry_success():
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return _http_response(200)
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 200
+    assert calls["n"] == 1
+
+
+def test_retry_busy_http_honors_extra_attempts():
+    responses = [
+        _http_response(503, {"status": "busy", "submission": "busy"}),
+        _http_response(503, {"status": "busy", "submission": "busy"}),
+        _http_response(200),
+    ]
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return responses[calls["n"] - 1]
+
+    result = _retry_busy_http(send, delay_s=0, attempts=3)
+
+    assert result.status_code == 200
+    assert calls["n"] == 3
+
+
+def test_retry_busy_http_retries_stale_timeline_409():
+    responses = [
+        _http_response(409, {"status": "stale", "message": "advanced"}),
+        _http_response(200),
+    ]
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return responses[calls["n"] - 1]
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 200
+    assert calls["n"] == 2
+
+
+def test_retry_busy_http_does_not_retry_stale_early_exit_409():
+    calls = {"n": 0}
+
+    def send():
+        calls["n"] += 1
+        return _http_response(
+            409,
+            {
+                "status": "error",
+                "error_code": "stale_early_exit_offer",
+            },
+        )
+
+    result = _retry_busy_http(send, delay_s=0)
+
+    assert result.status_code == 409
+    assert calls["n"] == 1

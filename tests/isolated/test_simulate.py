@@ -1,35 +1,41 @@
 import shutil
-from glob import glob
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from psynet.command_line import simulate
+from psynet.audit.cli import init_audit
+from psynet.command_line import psynet
 from psynet.pytest_psynet import path_to_demo_experiment
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_demo_experiment("static")], indirect=True
 )
-@pytest.mark.usefixtures("in_experiment_directory", "simulated_data_directory")
+@pytest.mark.usefixtures("in_experiment_directory", "audit_directory")
 def test_simulate():
     runner = CliRunner()
-    result = runner.invoke(simulate, [], catch_exceptions=False)
+    result = runner.invoke(
+        psynet,
+        ["audit", "simulate"],
+        catch_exceptions=False,
+    )
     print(result.output)
     assert result.exit_code == 0
 
-    print("Contents of data/simulated_data:")
-    for path in glob("data/simulated_data/**", recursive=True):
-        print(path)
-
-    assert Path("data/simulated_data").exists()
-    assert Path("data/simulated_data/regular/data/AnimalTrial.csv").exists()
+    export = Path("audit/simulate/analysis/simulated_export")
+    assert export.is_dir()
+    assert (export / "database" / "participant.csv").is_file()
+    assert (export / "participant_identifiers.csv").is_file()
+    assert (export / "manifest.json").is_file()
+    assert not (export / "source_code.zip").exists()
+    assert not Path("data/simulated_data").exists()
+    assert not Path("exports").exists()
 
 
 @pytest.fixture
-def simulated_data_directory():
-    path = Path("data/simulated_data")
-    shutil.rmtree(path, ignore_errors=True)
+def audit_directory():
+    path = Path("audit")
+    init_audit(path)
     yield path
-    shutil.rmtree(path, ignore_errors=True)
+    shutil.rmtree(path)

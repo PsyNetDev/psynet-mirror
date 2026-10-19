@@ -1,5 +1,3 @@
-# pylint: disable=abstract-method
-
 from typing import TYPE_CHECKING, Type
 
 if TYPE_CHECKING:
@@ -12,6 +10,7 @@ import json
 import random
 import re
 import time
+import uuid
 import warnings
 from collections import Counter
 from datetime import datetime
@@ -33,16 +32,18 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.collections import attribute_mapped_collection
 
 from . import templates
+from .async_job import _deprecated_async_processes
 from .data import SQLBase, SQLMixin, register_table
+from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
+from .static_resources import version_static_urls
 from .utils import (
     NoArgumentProvided,
     call_function,
     call_function_with_context,
     format_datetime,
     get_args,
-    get_language_dict,
     get_locale,
     get_logger,
     log_time_taken,
@@ -152,6 +153,30 @@ def _warn_js_var_window_collisions(js_vars):
     )
 
 
+# Named CSS colours that experiments pass to ProgressStage and Event.
+# Mapped to theme tokens so they follow the participant palette and dark
+# mode instead of the browser's primary red, green, and blue.
+# Keep in sync with psynet.theme.namedColors in psynet/resources/scripts/psynet.js.
+# "white" is intentionally omitted: it must remain CSS white so captions
+# stay visible against the content surface in dark mode.
+_PARTICIPANT_NAMED_COLORS = {
+    "red": "var(--psynet-danger)",
+    "green": "var(--psynet-success)",
+    "blue": "var(--psynet-accent)",
+    "orange": "var(--psynet-warning)",
+    "grey": "var(--psynet-text-muted)",
+    "gray": "var(--psynet-text-muted)",
+    "black": "var(--psynet-text)",
+}
+
+
+def _resolve_participant_color(color):
+    """Map a named CSS colour onto a participant-theme token when one exists."""
+    if not isinstance(color, str):
+        return color
+    return _PARTICIPANT_NAMED_COLORS.get(color.strip().lower(), color)
+
+
 class Event(dict):
     """
     Defines an event that occurs on the front-end for a given page.
@@ -207,7 +232,12 @@ class Event(dict):
         Optional message to display when this event occurs (default = ``""``).
 
     message_color:
-        CSS color specification for the message (default = ``"black"``).
+        CSS colour for the message. Named colours such as ``red``,
+        ``green``, ``blue``, ``orange``, ``grey``, and ``black`` are
+        mapped to participant-theme tokens so they follow the palette
+        and dark mode. ``white`` is left as CSS white. Other values
+        (hex, ``var(...)``) are used as-is. Default ``"black"``, which
+        resolves to ``--psynet-text``.
 
     js:
         Optional Javascript code to execute when the event occurs (default = ``None``).
@@ -239,7 +269,7 @@ class Event(dict):
             delay=delay,
             once=once,
             message=message,
-            message_color=message_color,
+            message_color=_resolve_participant_color(message_color),
             js=js,
         )
 
@@ -263,12 +293,38 @@ class Trigger(dict):
         super().__init__(triggering_event=triggering_event, delay=float(delay))
 
 
+def _earliest_event_time(events, event_id, visiting=frozenset()):
+    """Return the earliest time, in seconds after the page loads, at which ``event_id`` can fire.
+
+    Unknown events, events without triggers (fired by JavaScript) and cycles
+    count as immediate.
+    """
+    event = events.get(event_id)
+    if event is None or event_id in visiting:
+        return 0.0
+    visiting = visiting | {event_id}
+    times = [
+        _earliest_event_time(events, trigger["triggering_event"], visiting)
+        + (trigger.get("delay") or 0.0)
+        for trigger in event.get("is_triggered_by") or []
+    ]
+    combine = min if event.get("trigger_condition") == "any" else max
+    return combine(times, default=0.0) + (event.get("delay") or 0.0)
+
+
 def get_template(name):
     assert isinstance(name, str)
     path_all_templates = resources.files(templates)
     path_template = path_all_templates.joinpath(name)
     with open(path_template, "r") as file:
         return file.read()
+
+
+def _timeline_step_name(elt):
+    """Name a timeline element for error messages, e.g. ``CodeBlock 'save'``."""
+    function = getattr(elt, "function", None)
+    detail = getattr(elt, "label", None) or getattr(function, "__qualname__", None)
+    return f"{type(elt).__name__} {detail!r}" if detail else type(elt).__name__
 
 
 class Elt:
@@ -288,7 +344,6 @@ class Elt:
         raise NotImplementedError
 
     def multiply_expected_repetitions(self, factor):
-        # pylint: disable=unused-argument
         if self.expected_repetitions is not None:
             self.expected_repetitions *= factor
 
@@ -445,7 +500,28 @@ class AsyncCodeBlock(EltCollection):
         Only relevant if ``wait=True``; corresponds to the time we expect the participant to wait on the wait page.
 
     check_interval:
-        Only relevant if ``wait=True``; corresponds to the time between checks we make to see if the function has finished.
+        Only relevant if ``wait=True``; corresponds to the fallback interval
+        between checks when no completion wake arrives. Default: 2.0 seconds.
+
+    max_wait_time:
+        Only relevant if ``wait=True``; the participant is failed if the
+        function has not finished after this many seconds. Default: 20.0 seconds.
+
+    on_timeout:
+        Only relevant if ``wait=True``; a function called with
+        ``participant=...`` when the participant's page next checks in after
+        ``max_wait_time``, unless the function has finished or failed by
+        then. The function keeps running in the background. ``on_timeout``
+        must not commit the database session.
+
+    content:
+        Only relevant if ``wait=True``; overlay message while waiting.
+        Markup is allowed. Omit to keep the stock wait copy.
+
+    priority:
+        Priority of the function's :class:`~psynet.async_job.WorkerAsyncJob`,
+        ``"high"`` or ``"low"``. Defaults to ``"high"`` if ``wait=True``,
+        because the participant is waiting for it, and ``"low"`` otherwise.
     """
 
     def __init__(
@@ -453,8 +529,18 @@ class AsyncCodeBlock(EltCollection):
         function: Callable,
         wait: bool = True,
         expected_wait: Optional[float] = None,
-        check_interval: float = 0.5,
+        check_interval: float = 2.0,
+        content: Optional[str] = None,
+        max_wait_time: float = 20.0,
+        on_timeout: Optional[Callable] = None,
+        priority: Optional[str] = None,
     ):
+        from psynet.async_job import check_priority
+
+        if priority is None:
+            priority = "high" if wait else "low"
+        check_priority(priority)
+
         if is_lambda_function(function):
             raise ValueError(
                 "Asynchronous code blocks require named functions rather than lambda functions."
@@ -475,6 +561,10 @@ class AsyncCodeBlock(EltCollection):
         self.wait = wait
         self.expected_wait = expected_wait
         self.check_interval = check_interval
+        self.content = content
+        self.max_wait_time = max_wait_time
+        self.on_timeout = on_timeout
+        self.priority = priority
 
     def resolve(self):
         return join(
@@ -484,55 +574,56 @@ class AsyncCodeBlock(EltCollection):
         )
 
     def initiate(self, participant, code_block):
-        from psynet.process import WorkerAsyncProcess
+        from psynet.async_job import WorkerAsyncJob
 
         code_block_id = code_block.id
-        stale = participant.awaited_async_code_block_process
+        stale = participant.awaited_async_code_block_job
         if stale is not None:
             if stale.pending and not stale.failed:
-                if self.wait and self.matches_pending_process(stale, code_block_id):
+                if self.wait and self.matches_pending_job(stale, code_block_id):
                     logger.warning(
-                        "Participant %s already has an async code block process "
-                        "(id=%s) pending; waiting for the existing process instead "
+                        "Participant %s already has an async code block job "
+                        "(id=%s) pending; waiting for the existing job instead "
                         "of starting a duplicate.",
                         participant.id,
                         stale.id,
                     )
                     return
                 raise RuntimeError(
-                    "Participant already has an async code block process pending, this shouldn't happen."
+                    "Participant already has an async code block job pending, this shouldn't happen."
                 )
-            # The previous process finished (successfully or with failure) but its
+            # The previous job finished (successfully or with failure) but its
             # ``wrap_up`` was never executed -- e.g. the participant was rerouted
             # off the wait page (back button, dashboard force_advance, recruiter
             # rejection flow re-entering an AsyncCodeBlock, ...). Rather than
             # leaving the participant permanently stuck, clear the stale
-            # reference and start a fresh process.
+            # reference and start a fresh job.
             logger.warning(
-                "Participant %s already had a %s async code block process "
+                "Participant %s already had a %s async code block job "
                 "(id=%s) attached when initiating a new one; clearing the "
                 "stale reference and continuing.",
                 participant.id,
                 "failed" if stale.failed else "finished",
                 stale.id,
             )
-            participant.awaited_async_code_block_process = None
+            participant.awaited_async_code_block_job = None
 
-        participant.awaited_async_code_block_process = WorkerAsyncProcess(
+        participant.awaited_async_code_block_job = WorkerAsyncJob(
             call_function_with_context,
             label="AsyncCodeBlock",
             participant=participant,
+            priority=self.priority,
             arguments=dict(
                 function=self.function,
                 participant=participant,
                 code_block_id=code_block_id,
             ),
-        )
+        ).enqueue()
 
-    def matches_pending_process(self, process, code_block_id):
+    def matches_pending_job(self, job, code_block_id):
         try:
-            pending_function = process.arguments["function"]
-            pending_code_block_id = process.arguments["code_block_id"]
+            pending_function = job.arguments["function"]
+            pending_code_block_id = job.arguments["code_block_id"]
         except (KeyError, TypeError):
             return False
 
@@ -550,23 +641,38 @@ class AsyncCodeBlock(EltCollection):
 
         return join(
             wait_while(
-                condition=lambda participant: not self.process_is_finished(participant),
+                condition=lambda participant: not self.job_is_finished(participant),
                 expected_wait=self.expected_wait,
                 check_interval=self.check_interval,
+                max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
+                content=self.content,
+                on_timeout=None
+                if self.on_timeout is None
+                else self._call_on_timeout_unless_finished,
             ),
             CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
         )
 
-    def process_is_finished(self, participant):
-        process = participant.awaited_async_code_block_process
-        if process.failed:
-            raise RuntimeError("The awaited async code block process failed.")
-        assert process.finished or process.pending
-        return process.finished
+    def _call_on_timeout_unless_finished(self, participant):
+        """Call ``on_timeout`` unless the function finished or failed before the timeout was noticed.
+
+        A failed function has already been reported through ``handle_error``.
+        """
+        job = participant.awaited_async_code_block_job
+        if job is not None and (job.finished or job.failed):
+            return
+        call_function_with_context(self.on_timeout, participant=participant)
+
+    def job_is_finished(self, participant):
+        job = participant.awaited_async_code_block_job
+        if job.failed:
+            raise RuntimeError("The awaited async code block job failed.")
+        assert job.finished or job.pending
+        return job.finished
 
     def wrap_up(self, participant):
-        participant.awaited_async_code_block_process = None
+        participant.awaited_async_code_block_job = None
 
 
 class StartFixElt(Elt):
@@ -650,7 +756,6 @@ class GoTo(Elt):
         self.target = target
 
     def get_target(self, experiment, participant):
-        # pylint: disable=unused-argument
         return self.target
 
     def consume(self, experiment, participant):
@@ -673,7 +778,6 @@ class ReactiveGoTo(GoTo):
         function,  # function taking experiment, participant and returning a key
         targets,  # dict of possible target elements
     ):
-        # pylint: disable=super-init-not-called
         super().__init__(target=None)
         self.function = function
         self.targets = targets
@@ -872,11 +976,23 @@ class MediaSpec:
 
 
 class ProgressStage(dict):
+    """A timed segment of a :class:`~psynet.timeline.ProgressDisplay`.
+
+    ``color`` is a CSS colour for the bar segment and caption. Named
+    colours such as ``red``, ``green``, ``blue``, ``orange``, and
+    ``grey`` are mapped to participant-theme tokens so they follow the
+    palette and dark mode. ``white`` is left as CSS white. Other values
+    (hex, ``var(...)``) are used as-is. The default is
+    ``var(--psynet-accent)``.
+    """
+
     def __init__(
         self,
         time: Union[float, int, List],
         caption: str = "",
-        color: str = "rgb(49, 124, 246)",
+        # Resolved by the browser, so the default tracks the participant theme
+        # (including dark mode) instead of hard-coding a colour of its own.
+        color: str = "var(--psynet-accent)",
         persistent: bool = False,
     ):
         if isinstance(time, list):
@@ -887,7 +1003,7 @@ class ProgressStage(dict):
         self["time"] = time
         self["duration"] = duration
         self["caption"] = caption
-        self["color"] = color
+        self["color"] = _resolve_participant_color(color)
         self["persistent"] = persistent
 
 
@@ -1019,6 +1135,69 @@ _SPA_CLEANUP_RETURN_RE = re.compile(
 )
 
 
+def _loaded_active_sync_groups(participant):
+    """Return active sync groups only when the collection is already loaded.
+
+    ``None`` means membership is unknown. An empty mapping means this
+    participant is ungrouped. ``Participant.active_sync_groups`` lazy-loads
+    ``sync_group_links``; ungrouped pages must not pay that query.
+    """
+    from sqlalchemy.exc import NoInspectionAvailable
+    from sqlalchemy.inspection import inspect as sa_inspect
+
+    try:
+        unloaded = sa_inspect(participant).unloaded
+    except NoInspectionAvailable:
+        groups = getattr(participant, "active_sync_groups", None)
+        return {} if not groups else groups
+    if "sync_group_links" in unloaded:
+        return None
+    groups = getattr(participant, "active_sync_groups", None)
+    return {} if not groups else groups
+
+
+def _is_timeline_hold(page):
+    """Return whether ``page`` is a timeline hold overlay."""
+    return bool(getattr(page, "is_timeline_hold", False))
+
+
+def new_page_uuid():
+    """Return a page uuid that does not depend on seeded ``random``.
+
+    ``Experiment.make_uuid()`` draws from the process RNG, which bots seed.
+    Timeline hold records have a global unique constraint on ``page_uuid``.
+    """
+    return str(uuid.uuid4())
+
+
+def _arrival_updates_for(page, participant):
+    """Return partner-ready websocket config, or None when it cannot be used.
+
+    Hold pages already subscribe to the same channel. Participants with no
+    sync group can never receive a ``GroupBarrier`` arrival notice. When
+    membership is not already loaded, a cheap existence check decides
+    whether to open the websocket.
+    """
+    if _is_timeline_hold(page):
+        return None
+    groups = _loaded_active_sync_groups(participant)
+    if groups is not None:
+        in_group = bool(groups)
+    else:
+        from psynet.sync import _has_active_sync_group
+
+        in_group = _has_active_sync_group(participant)
+    if not in_group:
+        return None
+    from psynet.sync import pending_arrival_notice_for
+    from psynet.timeline_hold import _timeline_hold_channel
+
+    return {
+        "channel": _timeline_hold_channel(participant.id),
+        "notice": pending_arrival_notice_for(participant),
+    }
+
+
 class Page(Elt):
     """
     The base class for pages, customised by passing values to the ``__init__``
@@ -1054,11 +1233,25 @@ class Page(Elt):
         shell and lifecycle; experiment-authored complete templates should use
         ``template_fragment_path`` or ``template_fragment_str`` for SPA.
 
+    delegated_render:
+        If ``True``, this page is a thin timeline wrapper whose ``render``
+        method supplies the response. It cannot be combined with a template.
+
     requires_full_page_reload:
         If ``True``, this page always uses a full browser reload rather than an
         in-place transition. Use this as a per-page opt-out while migrating
         older custom frontends. Deprecated ``js_links`` / ``scripts`` also set
         this automatically. Default: ``False``.
+
+    expect_scrolling:
+        Declares whether the page is expected to be taller than the browser
+        window. When ``False`` (default), PsyNet's front-end tests require the
+        page not to scroll at all, which catches stimuli that grow large enough
+        to push content off screen or underneath the footer. Set it to ``True``
+        for pages that legitimately need scrolling, such as long consent forms.
+        Subclasses may also declare it as a class attribute; passing ``True`` or
+        ``False`` to the constructor overrides that default. It has no effect on
+        how the page behaves for participants.
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
@@ -1161,9 +1354,16 @@ class Page(Elt):
     progress_display
         Optional :class:`~psynet.timeline.ProgressDisplay` object.
 
+    show_early_exit_button:
+        If ``True`` or ``False``, force the footer Leave control on or off for
+        this page. If omitted, Leave follows ``show_early_exit_button`` in the
+        experiment config or the recruiter default (on for Lucid).
+
+    show_abort_button:
+        Deprecated alias for ``show_early_exit_button``.
+
     show_termination_button:
-        If ``True``, a button is displayed allowing the participant to terminate the experiment, Defaults to ``recruiter.show_termination_button``
-        which can be ``False`` for all recruiters except for the Lucid recruiter where it should be ``True``.
+        Deprecated alias for ``show_early_exit_button``.
 
     start_trial_automatically
         If ``True`` (default), the trial starts automatically, e.g. by the playing
@@ -1172,9 +1372,12 @@ class Page(Elt):
         or by calling `psynet.trial.registerEvent("trialPrepare")` in JS).
 
     bot_response
-        Optional function to call when this page is consumed by a bot.
-        This will override any ``bot_response`` function specified in the class's
-        ``bot_response`` method.
+        Optional fixed answer, function, or :class:`~psynet.bot.BotResponse` defining how bots
+        respond to this page, in the same forms as for :class:`~psynet.modular_page.Control`.
+        If set, it overrides the page's :meth:`~psynet.timeline.Page.get_bot_response` method
+        (and, on a :class:`~psynet.modular_page.ModularPage`, the control's bot response).
+        ``bot_response=None`` makes bots submit an answer of ``None``;
+        leave it unset to use the default bot response.
 
     validate
         Optional validation function to use for the participant's response.
@@ -1211,9 +1414,11 @@ class Page(Elt):
     """
 
     returns_time_credit = True
+    is_timeline_hold = False
     dynamically_update_progress_bar_and_reward = False
     is_unity_page = False
     requires_full_page_reload = False
+    expect_scrolling = False
     skip_beforeunload = False
 
     def __init__(
@@ -1241,12 +1446,16 @@ class Page(Elt):
         events: Optional[Dict] = None,
         progress_display: Optional[ProgressDisplay] = None,
         start_trial_automatically: bool = True,
+        show_early_exit_button: bool = None,
+        show_abort_button: bool = None,
         show_termination_button: bool = None,
         aggressive_termination_on_no_focus: bool = False,
         bot_response=NoArgumentProvided,
         validate: Optional[callable] = None,
         framework_owned_template: bool = False,
         requires_full_page_reload: bool = False,
+        expect_scrolling: Optional[bool] = None,
+        delegated_render: bool = False,
     ):
         super().__init__()
 
@@ -1282,35 +1491,44 @@ class Page(Elt):
             template_fragment_path is not None or template_fragment_str is not None
         )
 
-        if not complete_template_provided and not fragment_template_provided:
+        if delegated_render:
+            if complete_template_provided or fragment_template_provided:
+                raise ValueError("delegated_render cannot be combined with a template.")
+            template_str = ""
+            template_kind = "delegated"
+            template_contract_source = ""
+            framework_owned_template = True
+        elif not complete_template_provided and not fragment_template_provided:
             raise ValueError(
                 "Must provide either template_path/template_str or "
                 "template_fragment_path/template_fragment_str."
             )
-        if template_path is not None and template_str is not None:
-            raise ValueError("Cannot provide both template_path and template_str.")
-        if template_fragment_path is not None and template_fragment_str is not None:
-            raise ValueError(
-                "Cannot provide both template_fragment_path and template_fragment_str."
-            )
-        if complete_template_provided and fragment_template_provided:
-            raise ValueError(
-                "Cannot provide both a complete template and a template fragment."
-            )
+        if not delegated_render:
+            if template_path is not None and template_str is not None:
+                raise ValueError("Cannot provide both template_path and template_str.")
+            if template_fragment_path is not None and template_fragment_str is not None:
+                raise ValueError(
+                    "Cannot provide both template_fragment_path and "
+                    "template_fragment_str."
+                )
+            if complete_template_provided and fragment_template_provided:
+                raise ValueError(
+                    "Cannot provide both a complete template and a template fragment."
+                )
 
-        if template_path is not None:
-            with open(template_path, "r") as file:
-                template_str = file.read()
+            if template_path is not None:
+                with open(template_path, "r") as file:
+                    template_str = file.read()
 
-        template_kind = "complete"
-        template_contract_source = template_str
-        if fragment_template_provided:
-            template_kind = "fragment"
-            if template_fragment_path is not None:
-                with open(template_fragment_path, "r") as file:
-                    template_fragment_str = file.read()
-            template_contract_source = template_fragment_str
-            template_str = self._wrap_template_fragment(template_fragment_str)
+            template_kind = "complete"
+            template_contract_source = template_str
+            if fragment_template_provided:
+                template_kind = "fragment"
+                if template_fragment_path is not None:
+                    with open(template_fragment_path, "r") as file:
+                        template_fragment_str = file.read()
+                template_contract_source = template_fragment_str
+                template_str = self._wrap_template_fragment(template_fragment_str)
 
         assert len(label) <= 250
         assert isinstance(template_arg, dict)
@@ -1353,6 +1571,11 @@ class Page(Elt):
             # emulated across in-place transitions; force a clean document instead.
             # Authors may also opt in explicitly via requires_full_page_reload=True.
             self.requires_full_page_reload = True
+        # Subclasses may declare this as a class attribute; the constructor
+        # argument overrides that default when it is passed explicitly.
+        if expect_scrolling is not None:
+            self.expect_scrolling = expect_scrolling
+
         overlapping_javascript = set(self.js_dependencies) & set(self.js_page_modules)
         if overlapping_javascript:
             raise ValueError(
@@ -1374,7 +1597,39 @@ class Page(Elt):
         self.session_id = session_id
         self.save_answer = save_answer
         self.start_trial_automatically = start_trial_automatically
-        self.show_termination_button = show_termination_button
+        if show_abort_button is not None:
+            warnings.warn(
+                "Page(show_abort_button=...) is deprecated; "
+                "use show_early_exit_button=... instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            if show_early_exit_button is None:
+                show_early_exit_button = show_abort_button
+            elif show_early_exit_button != show_abort_button:
+                raise ValueError(
+                    "show_early_exit_button and show_abort_button disagree; "
+                    "pass only show_early_exit_button."
+                )
+        if show_termination_button is not None:
+            warnings.warn(
+                "Page(show_termination_button=...) is deprecated; "
+                "use show_early_exit_button=... instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            if show_early_exit_button is None:
+                show_early_exit_button = show_termination_button
+            elif show_early_exit_button != show_termination_button:
+                raise ValueError(
+                    "show_early_exit_button and show_termination_button disagree; "
+                    "pass only show_early_exit_button."
+                )
+        if show_early_exit_button is None and getattr(self, "is_consent", False):
+            show_early_exit_button = False
+        self.show_early_exit_button = show_early_exit_button
+        self.show_abort_button = show_early_exit_button
+        self.show_termination_button = show_early_exit_button
         self.aggressive_termination_on_no_focus = aggressive_termination_on_no_focus
 
         self.events = {
@@ -1399,6 +1654,24 @@ class Page(Elt):
             f"{template_fragment_str}\n"
             "{% endblock %}"
         )
+
+    @staticmethod
+    def _template_string_for_render(template_str, partial_mode):
+        """Use the layout-free fragment parent for inplace ``/response`` renders.
+
+        Child templates still extend ``timeline-page.html`` at authoring time.
+        Partial mode rewrites that parent so Jinja does not compile Dallinger's
+        document shell and discard it. Complete templates that do not extend
+        the timeline page still render the full layout, then extract.
+        """
+        if not partial_mode or not template_str:
+            return template_str
+        rewritten, count = Page._TIMELINE_PAGE_EXTENDS.subn(
+            '{% extends "timeline-fragment.html" %}',
+            template_str,
+            count=1,
+        )
+        return rewritten if count else template_str
 
     def call__get_bot_response(self, experiment, bot, response=NoArgumentProvided):
         """
@@ -1471,6 +1744,19 @@ class Page(Elt):
             "trialStopped": Event(is_triggered_by="trialStop"),
         }
 
+    @property
+    def min_duration(self):
+        """Return the shortest time, in seconds, before a participant can submit this page.
+
+        This is the earliest time at which the page's ``submitEnable`` event can
+        fire, following the delays of its triggers (see :class:`Event`), for
+        example a recording's duration or an audio meter's ``min_time``.
+        Events that only the page's JavaScript fires, such as the end of a
+        media prompt, count as immediate, so this is a lower bound. Bots that
+        simulate page times (``time_factor`` above 0) never submit sooner.
+        """
+        return _earliest_event_time(self.events, "submitEnable")
+
     def __json__(self, participant):
         return {
             "attributes": self.attributes(participant),
@@ -1479,18 +1765,26 @@ class Page(Elt):
 
     def attributes(self, participant):
         """
-        Returns a dictionary containing the `session_id`, the page `type`, and the `page_uuid` .
+        Returns a dictionary of page metadata for the browser, including
+        ``session_id``, ``type``, and ``page_uuid``. Partner-ready
+        ``arrival_updates`` are included only when this participant is in an
+        active sync group and the page is not already a timeline hold.
         """
         from psynet.page import UnityPage
 
-        return {
+        attributes = {
             "session_id": self.session_id,
             "type": type(self).__name__,
             "unique_id": participant.unique_id,
             "page_uuid": participant.page_uuid,
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
+            "expect_scrolling": self.expect_scrolling,
         }
+        arrival_updates = _arrival_updates_for(self, participant)
+        if arrival_updates is not None:
+            attributes["arrival_updates"] = arrival_updates
+        return attributes
 
     @property
     def contents(self):
@@ -1511,7 +1805,7 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = experiment.make_uuid()
+        participant.page_uuid = new_page_uuid()
         participant.page_count += 1
 
     def on_complete(self, experiment, participant):
@@ -1525,7 +1819,7 @@ class Page(Elt):
         metadata,
         experiment,
         participant,
-        client_ip_address,
+        client_ip_address=None,
         answer=NoArgumentProvided,
     ):
         from psynet.trial.main import Trial
@@ -1541,7 +1835,6 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            client_ip_address=client_ip_address,
         )
         db.session.add(resp)
 
@@ -1578,13 +1871,19 @@ class Page(Elt):
             else:
                 trial.time_taken += resp.metadata["time_taken"]
 
+        participant.browser_platform = metadata.get(
+            "platform", "Browser platform info could not be retrieved."
+        )
+
+        return resp
+
+    def _accept_response(self, resp, experiment, participant):
+        """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
-            if len(participant.answer_accumulators) > 0:
-                page_label = self.label
-                accumulator = participant.answer_accumulators[-1]
-                answer_label = self._find_answer_label(page_label, accumulator)
-                accumulator[answer_label] = resp.answer
-                flag_modified(participant, "answer_accumulators")
+            if participant.answer_accumulation_depth:
+                answers = participant.answer
+                answers[self._find_answer_label(self.label, answers)] = resp.answer
+                flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
             participant.answer_is_fresh = True
@@ -1593,13 +1892,7 @@ class Page(Elt):
         else:
             participant.answer_is_fresh = False
 
-        participant.browser_platform = metadata.get(
-            "platform", "Browser platform info could not be retrieved."
-        )
-
         self.on_complete(experiment=experiment, participant=participant)
-
-        return resp
 
     def _find_answer_label(self, page_label, accumulator):
         if page_label not in accumulator:
@@ -1685,11 +1978,9 @@ class Page(Elt):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check
@@ -1742,8 +2033,37 @@ class Page(Elt):
         """
         pass
 
+    def early_exit_available(self, experiment, participant) -> bool:
+        """Return whether this page may offer the participant an early exit.
+
+        Leaving early costs the participant the difference between the
+        completion payment and the recruiter's early-exit payment, so it is
+        never offered once the participant has nothing left to lose by
+        finishing: end-of-experiment pages, release pages, and participants
+        who have already left.
+        """
+        from .utils import get_config
+
+        if (
+            participant.complete
+            or participant.early_exited
+            or experiment.timeline.participant_is_in_end_logic(participant)
+        ):
+            return False
+        if self.show_early_exit_button is not None:
+            return bool(self.show_early_exit_button)
+        return bool(
+            experiment.recruiter_class.show_early_exit_button
+            or get_config().get("show_early_exit_button", False)
+        )
+
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
+
+        if self.template_kind == "delegated":
+            raise NotImplementedError(
+                f"{type(self).__name__} delegates rendering and must override render()."
+            )
 
         # Architecture: docs/developer/page_lifecycle.rst
         # `partial_mode` is an internal render shape used for inplace
@@ -1755,7 +2075,6 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
         locale = get_locale()
-        language_dict = get_language_dict(locale)
         config = get_config()
         # The SPA template contract applies to author-provided template source,
         # not to PsyNet's generated timeline shell or supported page assets.
@@ -1764,6 +2083,16 @@ class Page(Elt):
         )
         js_vars = {**self.js_vars, **internal_js_vars}
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
+        show_early_exit_button = self.early_exit_available(experiment, participant)
+        if show_early_exit_button:
+            early_exit_plan = experiment.prepared_voluntary_exit_plan(participant)
+        else:
+            early_exit_plan = None
+
+        css_links = version_static_urls(self.css_links + experiment.css_links)
+        legacy_js_links = version_static_urls(self.legacy_js_links)
+        js_dependencies = version_static_urls(self.js_dependencies)
+        js_page_modules = version_static_urls(self.js_page_modules)
 
         all_template_args = {
             **self.template_arg,
@@ -1781,29 +2110,35 @@ class Page(Elt):
             "participant": participant,
             "unique_id": participant.unique_id,
             "worker_id": participant.worker_id,
-            "legacy_js_links": self.legacy_js_links,
+            "legacy_js_links": legacy_js_links,
             "legacy_scripts": self.legacy_scripts,
-            "js_dependencies": self.js_dependencies,
+            "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
-            "js_page_modules": self.js_page_modules,
+            "js_page_modules": js_page_modules,
             "css": self.css + experiment.css,
-            "css_links": self.css_links + experiment.css_links,
+            "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
-            "supported_language_dict": {
-                iso: language_dict[iso] for iso in experiment.supported_locales
-            },
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
             "start_experiment_in_popup_window": experiment.start_experiment_in_popup_window,
-            "show_termination_button": self.show_termination_button,
+            "show_early_exit_button": show_early_exit_button,
+            "show_abort_button": show_early_exit_button,
+            "show_termination_button": show_early_exit_button,
+            "early_exit_confirmation": (
+                early_exit_plan.confirmation if early_exit_plan else None
+            ),
+            "early_exit_offer_id": early_exit_plan.plan_id if early_exit_plan else None,
             "aggressive_termination_on_no_focus": self.aggressive_termination_on_no_focus,
         }
         rendered = render_string_with_translations(
-            template_string=self.template_str, **all_template_args
+            template_string=self._template_string_for_render(
+                self.template_str, partial_mode
+            ),
+            **all_template_args,
         )
         if partial_mode:
             rendered = self._extract_partial_render(rendered)
@@ -1901,38 +2236,201 @@ class Page(Elt):
         # prohibition still applies to author-provided page/prompt/control
         # templates, which should route page JavaScript through
         # js_dependencies, js_page_code, and js_page_modules.
+        #
+        # Skip BeautifulSoup when the markup has no script, style, or link
+        # tags. Prompt HTML is usually a short fragment; parsing it on every
+        # render was measurable noise, not the hold-resume bottleneck.
         codes = []
         markup_source = markup_source or ""
-        soup = BeautifulSoup(markup_source, "html.parser")
+        if Page._SPA_MARKUP_TAG.search(markup_source):
+            soup = BeautifulSoup(markup_source, "html.parser")
 
-        if not allow_scripts and soup.find_all("script"):
-            codes.append("embedded_script")
+            if not allow_scripts and soup.find_all("script"):
+                codes.append("embedded_script")
 
-        if soup.find_all("style"):
-            codes.append("style_tag")
+            if soup.find_all("style"):
+                codes.append("style_tag")
 
-        if soup.find_all("link", rel=lambda value: value and "stylesheet" in value):
-            codes.append("stylesheet_link")
+            if soup.find_all("link", rel=lambda value: value and "stylesheet" in value):
+                codes.append("stylesheet_link")
 
         codes.extend(Page._collect_spa_javascript_contract_codes(markup_source))
 
         return codes
 
+    _SPA_MARKUP_TAG = re.compile(r"<(script|style|link)\b", re.IGNORECASE)
+    _TIMELINE_PAGE_EXTENDS = re.compile(
+        r"""\{%-?\s*extends\s+(['"])timeline-page\.html\1\s*-?%\}""",
+    )
+    _RAW_TEXT_ELEMENT_OPEN = re.compile(
+        r"<(script|style|template)\b",
+        re.IGNORECASE,
+    )
+    _DIV_OPEN = re.compile(r"<div\b", re.IGNORECASE)
+    _DIV_CLOSE = re.compile(r"</div\s*>", re.IGNORECASE)
+    _SCRIPT_OPEN = re.compile(r"<script(\s[^>]*)?>", re.IGNORECASE)
+    _SCRIPT_TYPE_ATTR = re.compile(
+        r"""type\s*=\s*(?:(['"])(.*?)\1|([^\s>]+))""",
+        re.IGNORECASE,
+    )
+    _EXECUTABLE_SCRIPT_TYPES = {
+        "",
+        "application/ecmascript",
+        "application/javascript",
+        "text/ecmascript",
+        "text/javascript",
+    }
+
+    @staticmethod
+    def _skip_raw_text_element(html, pos):
+        """Return the index after a script, style, template, or HTML comment at ``pos``.
+
+        Comments are skipped like raw-text elements so a commented-out
+        ``</div>`` cannot close the fragment. This scanner still does not
+        handle CDATA or processing instructions; those fall through to
+        BeautifulSoup when fragment matching fails.
+        """
+        if html.startswith("<!--", pos):
+            end = html.find("-->", pos + 4)
+            if end < 0:
+                return len(html)
+            return end + 3
+        match = Page._RAW_TEXT_ELEMENT_OPEN.match(html, pos)
+        if match is None:
+            return None
+        tag = match.group(1)
+        close = re.search(rf"</{re.escape(tag)}\s*>", html[pos:], re.IGNORECASE)
+        if close is None:
+            return len(html)
+        return pos + close.end()
+
+    @staticmethod
+    def _timeline_fragment_inner_html(html):
+        """Return the inner HTML of ``#psynet-timeline-fragment`` without parsing.
+
+        Partial-mode templates emit that wrapper as the document root. Nested
+        ``div`` matching skips ``script``, ``style``, and ``template`` bodies
+        and HTML comments so JSON or markup inside those regions cannot close
+        the fragment early.
+        """
+        marker = 'id="psynet-timeline-fragment"'
+        marker_idx = html.find(marker)
+        if marker_idx < 0:
+            marker = "id='psynet-timeline-fragment'"
+            marker_idx = html.find(marker)
+        if marker_idx < 0:
+            return None
+        tag_start = html.rfind("<", 0, marker_idx)
+        tag_end = html.find(">", marker_idx)
+        if tag_start < 0 or tag_end < 0:
+            return None
+        inner_start = tag_end + 1
+        depth = 1
+        pos = inner_start
+        length = len(html)
+        while pos < length and depth:
+            next_lt = html.find("<", pos)
+            if next_lt < 0:
+                return None
+            skip_to = Page._skip_raw_text_element(html, next_lt)
+            if skip_to is not None:
+                pos = skip_to
+                continue
+            open_match = Page._DIV_OPEN.match(html, next_lt)
+            close_match = Page._DIV_CLOSE.match(html, next_lt)
+            if close_match is not None:
+                depth -= 1
+                if depth == 0:
+                    return html[inner_start : close_match.start()]
+                pos = close_match.end()
+                continue
+            if open_match is not None:
+                depth += 1
+                pos = open_match.end()
+                continue
+            pos = next_lt + 1
+        return None
+
+    @staticmethod
+    def _inert_script_opening(match):
+        """Return an executable ``<script>`` opening tag marked inert."""
+        attrs = match.group(1) or ""
+        type_match = Page._SCRIPT_TYPE_ATTR.search(attrs)
+        if type_match is None:
+            script_type = ""
+        else:
+            script_type = (type_match.group(2) or type_match.group(3) or "").strip()
+            script_type = script_type.lower()
+        if script_type not in Page._EXECUTABLE_SCRIPT_TYPES:
+            return match.group(0)
+        if type_match is not None:
+            attrs = Page._SCRIPT_TYPE_ATTR.sub(
+                'type="text/psynet-script"', attrs, count=1
+            )
+            return f"<script{attrs}>"
+        return f'<script{attrs} type="text/psynet-script">'
+
+    @staticmethod
+    def _inert_executable_script_tags(html):
+        """Mark executable ``<script>`` tags inert without parsing the document.
+
+        Script, style, and template bodies are copied unchanged so JSON or
+        markup inside those tags is not rewritten as if it were a real tag.
+        """
+        html = html or ""
+        parts = []
+        pos = 0
+        length = len(html)
+        while pos < length:
+            next_lt = html.find("<", pos)
+            if next_lt < 0:
+                parts.append(html[pos:])
+                break
+            parts.append(html[pos:next_lt])
+            skip_to = Page._skip_raw_text_element(html, next_lt)
+            if skip_to is None:
+                parts.append("<")
+                pos = next_lt + 1
+                continue
+            open_end = html.find(">", next_lt)
+            if open_end < 0 or open_end >= skip_to:
+                parts.append(html[next_lt:skip_to])
+                pos = skip_to
+                continue
+            opening = html[next_lt : open_end + 1]
+            match = Page._SCRIPT_OPEN.match(opening)
+            if match is not None:
+                opening = Page._inert_script_opening(match)
+            parts.append(opening)
+            parts.append(html[open_end + 1 : skip_to])
+            pos = skip_to
+        return "".join(parts)
+
     @staticmethod
     def _extract_partial_render(rendered_html):
+        Page._check_embedded_script_contract(rendered_html)
+        inner = Page._timeline_fragment_inner_html(rendered_html or "")
+        if inner is not None:
+            return Page._inert_executable_script_tags(inner)
         soup = BeautifulSoup(rendered_html, "html.parser")
         Page._check_embedded_script_contract(soup)
         Page._make_embedded_scripts_inert(soup)
         return Page._extract_partial_body(soup)
 
+    _MODULE_SCRIPT_TYPE = re.compile(
+        r"""type\s*=\s*(?:(['"])module\1|module)(?=[\s>/])""",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _check_embedded_script_contract(html):
         """Reject embedded modules in favor of managed page modules."""
-        soup = (
-            html
-            if isinstance(html, BeautifulSoup)
-            else BeautifulSoup(html, "html.parser")
-        )
+        if not isinstance(html, BeautifulSoup):
+            if not Page._MODULE_SCRIPT_TYPE.search(html or ""):
+                return
+            soup = BeautifulSoup(html, "html.parser")
+        else:
+            soup = html
         for script in soup.find_all("script"):
             script_type = (script.get("type") or "").strip().lower()
             if script_type == "module":
@@ -1947,24 +2445,15 @@ class Page(Elt):
     @staticmethod
     def _make_embedded_scripts_inert(soup):
         """Make rendered HTML scripts inert until the fragment is activated."""
-        parsed_from_string = isinstance(soup, str)
-        if parsed_from_string:
-            soup = BeautifulSoup(soup, "html.parser")
+        if isinstance(soup, str):
+            return Page._inert_executable_script_tags(soup)
 
-        executable_script_types = {
-            "",
-            "application/ecmascript",
-            "application/javascript",
-            "text/ecmascript",
-            "text/javascript",
-        }
+        executable_script_types = Page._EXECUTABLE_SCRIPT_TYPES
         for script in soup.find_all("script"):
             script_type = (script.get("type") or "").strip().lower()
             if script_type not in executable_script_types:
                 continue
             script["type"] = "text/psynet-script"
-        if parsed_from_string:
-            return str(soup)
         return soup
 
     @staticmethod
@@ -2062,6 +2551,13 @@ class PageMaker(Elt):
         ``time_estimate`` values, then these ``time_estimate`` values will be imputed by dividing
         the parent :class:`psynet.timeline.PageMaker`'s ``time_estimate``
         by the number of produced elements.
+
+    accumulate_answers:
+        If ``True``, ``participant.answer`` becomes a dict when the page maker
+        starts, and each page saves its answer under its label as soon as it
+        is submitted, so later pages can read earlier answers. A repeated
+        label is saved as ``label_1``, ``label_2`` and so on. Answers from
+        nested accumulating page makers or trials go into the same dict.
     """
 
     returns_time_credit = True
@@ -2171,6 +2667,7 @@ class Timeline:
         from collections import OrderedDict
 
         from psynet.end import (
+            ImmediateExitLogic,
             RejectedConsentLogic,
             SuccessfulEndLogic,
             UnsuccessfulEndLogic,
@@ -2181,10 +2678,12 @@ class Timeline:
             [
                 ("successful_end", SuccessfulEndLogic()),
                 ("unsuccessful_end", UnsuccessfulEndLogic()),
+                ("early_exit_release", ImmediateExitLogic()),
                 ("rejected_consent", RejectedConsentLogic()),
             ]
         )
         default_branches.update(branch_kwargs)
+        self.terminal_branch_names = frozenset(default_branches)
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
@@ -2208,7 +2707,7 @@ class Timeline:
 
     def participant_is_in_end_logic(self, participant):
         """Return True if the participant is in any end logic branch."""
-        return self.get_participant_branch(participant) != "main"
+        return self.get_participant_branch(participant) in self.terminal_branch_names
 
     def redirect_to_branch(self, experiment, participant, branch_name):
         """Redirect a participant to the start of a named branch.
@@ -2244,6 +2743,35 @@ class Timeline:
         assert len(self.elts["main"]) > 0
         self.check_for_time_estimate()
         self.check_modules()
+        self.check_barrier_ids()
+
+    def check_barrier_ids(self):
+        """Reject one barrier ID used with different release behavior.
+
+        Sequential groupers may share an ID after the first pool deactivates,
+        but only when their persisted behavior hashes match. Overlapping
+        definitions in the same timeline must use distinct IDs.
+        """
+        from .barrier_spec import behavior_hash
+        from .sync import Barrier
+
+        seen = {}
+        hashes = {}
+        for elt in self.all_elts:
+            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+            if not isinstance(barrier, Barrier):
+                continue
+            digest = hashes.get(id(barrier))
+            if digest is None:
+                digest = behavior_hash(barrier)
+                hashes[id(barrier)] = digest
+            previous = seen.get(barrier.id)
+            if previous is not None and previous != digest:
+                raise ValueError(
+                    f"Barrier ID '{barrier.id}' is used with different behavior. "
+                    "Give each distinct waiting pool its own id_."
+                )
+            seen[barrier.id] = digest
 
     def check_for_time_estimate(self):
         for elt in self.all_elts:
@@ -2360,7 +2888,8 @@ class Timeline:
                     if index_max is not None and index > index_max:
                         raise IndexError
                     position = participant.elt_id[0:depth]
-                    selected = selected.resolve(experiment, participant, position)
+                    with forbid_commits(_timeline_step_name(selected)):
+                        selected = selected.resolve(experiment, participant, position)
                     if index_max is None:
                         participant.elt_id_max.append(len(selected) - 1)
                 except IndexError:
@@ -2397,7 +2926,8 @@ class Timeline:
                     participant.elt_id.append(-1)
                     continue
 
-                new_elt.consume(experiment, participant)
+                with forbid_commits(_timeline_step_name(new_elt)):
+                    new_elt.consume(experiment, participant)
 
                 if isinstance(new_elt, Page):
                     finished = True
@@ -2531,12 +3061,7 @@ class Response(_Response):
     successful_validation: bool
         Whether the response validation was successful,
         allowing the participant to advance to the next page.
-
-    client_ip_address : str
-        The participant's IP address as reported by Flask.
     """
-
-    __extra_vars__ = {}
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(
@@ -2549,7 +3074,6 @@ class Response(_Response):
     answer = Column(PythonObject)
     page_type = Column(String)
     successful_validation = Column(Boolean)
-    client_ip_address = Column(String)
 
     # metadata is a protected attribute in SQLAlchemy, hence the underscore
     # and the functional setter/getter.
@@ -2567,7 +3091,8 @@ class Response(_Response):
     def metadata(self, metadata):
         self.metadata_ = metadata
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
     # assets = relationship(
     #     "Asset", collection_class=attribute_mapped_collection("label_or_key")
     # )
@@ -2579,7 +3104,6 @@ class Response(_Response):
         participant,
         label,
         page_type,
-        client_ip_address,
         answer=None,
         metadata=None,
     ):
@@ -2587,7 +3111,6 @@ class Response(_Response):
         self.question = label
         self.page_type = page_type
         self.metadata = metadata
-        self.client_ip_address = client_ip_address
         self.answer = answer
         self.metadata = metadata
 
@@ -2646,6 +3169,34 @@ class EndWhile(NullElt):
     def __init__(self, label):
         super().__init__()
         self.label = label
+
+
+def _while_loop_state_key(label, key):
+    """Return the bug-compatible participant-var key for while-loop state."""
+    # Keep the duplicated suffix so in-progress participants and existing
+    # experiment code continue to resolve the same stored keys.
+    prefix = f"__{label}__{key}"
+    return f"{prefix}__{key}"
+
+
+def _get_while_loop_start_time(participant, label):
+    """Return the authoritative server start time for a while loop."""
+    value = participant.var.get(
+        _while_loop_state_key(label, "loop_start_time"), default=None
+    )
+    return None if value is None else unserialise_datetime(value)
+
+
+def _while_loop_timed_out(participant, label, max_loop_time, now=None):
+    """Return whether a while loop has reached its maximum duration."""
+    if max_loop_time is None:
+        return False
+    if now is None:
+        now = datetime.now()
+    started_at = _get_while_loop_start_time(participant, label)
+    return (
+        started_at is not None and (now - started_at).total_seconds() >= max_loop_time
+    )
 
 
 def while_loop(
@@ -2720,21 +3271,10 @@ def while_loop(
 
     conditional_logic = join(logic, GoTo(start_while))
 
-    def with_namespace(x=None):
-        prefix = f"__{label}__{x}"
-        if x is None:
-            return prefix
-        return f"{prefix}__{x}"
-
     if max_loop_time is not None:
 
         def max_loop_time_condition(participant, experiment):
-            return (
-                datetime.now()
-                - unserialise_datetime(
-                    participant.var.get(with_namespace("loop_start_time"))
-                )
-            ).seconds > max_loop_time
+            return _while_loop_timed_out(participant, label, max_loop_time)
 
     else:
 
@@ -2768,7 +3308,8 @@ def while_loop(
     elts = join(
         CodeBlock(
             lambda participant: participant.var.set(
-                with_namespace("loop_start_time"), serialise(datetime.now())
+                _while_loop_state_key(label, "loop_start_time"),
+                serialise(datetime.now()),
             )
         ),
         start_while,
@@ -3108,10 +3649,10 @@ class ModuleState(SQLBase, SQLMixin):
 
     time_started = Column(DateTime)
     time_finished = Column(DateTime)
-    time_aborted = Column(DateTime)
+    time_early_exited = Column(DateTime)
     started = Column(Boolean, default=False)
     finished = Column(Boolean, default=False)
-    aborted = Column(Boolean, default=False)
+    early_exited = Column(Boolean, default=False)
 
     asset_links = relationship(
         "AssetModuleState",
@@ -3145,9 +3686,12 @@ class ModuleState(SQLBase, SQLMixin):
         self.time_finished = datetime.now()
         self.finished = True
 
-    def abort(self):
-        self.time_finished = datetime.now()
-        self.aborted = True
+    def mark_early_exited(self):
+        """Mark this module as left unfinished by an early exit."""
+        now = datetime.now()
+        self.time_finished = now
+        self.time_early_exited = now
+        self.early_exited = True
 
     # def get(self, module_id: str):
     #     return self.participant.get_module_state(module_id)
@@ -3298,7 +3842,7 @@ class Module(EltCollection):
         logs = cls.state_class.query.filter_by(module_id=module_id, finished=True).all()
         return [
             {"time_started": log.time_started, "time_finished": log.time_finished}
-            # "time_aborted": log.time_aborted,
+            # "time_early_exited": log.time_early_exited,
             for log in logs
         ]
 
@@ -3333,17 +3877,19 @@ class Module(EltCollection):
         )
 
     @property
-    def aborted_participants(self):
+    def early_exited_participants(self):
         from .participant import Participant
 
-        aborted_participants = (
+        early_exited_participants = (
             db.session.query(Participant)
-            .filter(self.state_class.module_id == self.id, self.state_class.aborted)
+            .filter(
+                self.state_class.module_id == self.id, self.state_class.early_exited
+            )
             .all()
         )
         return sorted(
-            [p for p in aborted_participants if self.id in p.aborted_modules],
-            key=lambda p: p.module_states[self.id][0].time_aborted,
+            [p for p in early_exited_participants if self.id in p.early_exited_modules],
+            key=lambda p: p.module_states[self.id][0].time_early_exited,
         )
 
     @property
@@ -3393,9 +3939,11 @@ class Module(EltCollection):
             median_finish_time_in_min_and_s = Module.median_finish_time_in_min_and_s(
                 self.finished_participants, self.id
             )
-        if self.aborted_participants:
-            time_aborted_last = (
-                self.aborted_participants[-1].module_states[self.id][0].time_aborted
+        if self.early_exited_participants:
+            time_early_exited_last = (
+                self.early_exited_participants[-1]
+                .module_states[self.id][0]
+                .time_early_exited
             )
 
         div = tags.div()
@@ -3412,9 +3960,9 @@ class Module(EltCollection):
                     tags.li(
                         f"{len(self.finished_participants)} finished (last at {format_datetime(time_finished_last)})"
                     )
-                if self.aborted_participants:
+                if self.early_exited_participants:
                     tags.li(
-                        f"{len(self.aborted_participants)} aborted (last at {format_datetime(time_aborted_last)})"
+                        f"{len(self.early_exited_participants)} left early (last at {format_datetime(time_early_exited_last)})"
                     )
 
                 if self.finished_participants:
@@ -3439,7 +3987,7 @@ class Module(EltCollection):
                 f"{len(self.started_participants)} started, {len(self.finished_participants)} finished,"
             )
             tags.br()
-            tags.span(f"{len(self.aborted_participants)} aborted")
+            tags.span(f"{len(self.early_exited_participants)} left early")
             if self.finished_participants:
                 tags.br()
                 tags.span(f"{median_finish_time_in_min_and_s} (median)")
@@ -3463,7 +4011,7 @@ class Module(EltCollection):
             self.id: {
                 "started_n_participants": participant_counts["started"],
                 "finished_n_participants": participant_counts["finished"],
-                "aborted_n_participants": participant_counts["aborted"],
+                "early_exited_n_participants": participant_counts["early_exited"],
                 "target_n_participants": target_n_participants,
                 "progress": progress,
             }
@@ -3494,14 +4042,24 @@ class EndModule(NullElt):
 
 
 class StartAccumulateAnswers(NullElt):
+    """Start collecting page answers into the dict ``participant.answer``.
+
+    Nested blocks share the outermost block's dict, so their answers are
+    flattened into it.
+    """
+
     def consume(self, experiment, participant):
-        participant.answer_accumulators = participant.answer_accumulators + [{}]
+        if not participant.answer_accumulation_depth:
+            participant.answer = {}
+            participant.answer_is_fresh = False
+        participant.answer_accumulation_depth = (
+            participant.answer_accumulation_depth or 0
+        ) + 1
 
 
 class EndAccumulateAnswers(NullElt):
     def consume(self, experiment, participant):
-        participant.answer = participant.answer_accumulators[-1]
-        participant.answer_accumulators = participant.answer_accumulators[:-1]
+        participant.answer_accumulation_depth -= 1
 
 
 class DatabaseCheck(NullElt):
@@ -3559,6 +4117,19 @@ class PreDeployRoutine(NullElt):
 
 
 class ParticipantFailRoutine(NullElt):
+    """
+    Runs a function whenever a participant is failed.
+
+    Place it in the timeline; it does not show anything to the participant.
+
+    Parameters
+    ----------
+    label
+        Label identifying the routine in the logs.
+    function
+        Function to run. It can take ``participant`` and ``experiment`` as arguments.
+    """
+
     def __init__(self, label, function):
         super().__init__()
         self.label = label

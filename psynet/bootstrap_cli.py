@@ -2,7 +2,7 @@
 
 This module provides the ``psynet`` entry point.  It is intentionally slim so
 that running ``psynet setup``, ``psynet scripts …``, ``psynet services …``,
-and ``psynet generate-constraints`` works with only the minimal ``psynet``
+``psynet generate-constraints`` and ``psynet docs …`` works with only the minimal ``psynet``
 distribution (i.e. without the ``[experiment]`` extra installed).
 
 Dispatch strategy
@@ -10,7 +10,7 @@ Dispatch strategy
 The ``main()`` function inspects ``sys.argv`` to decide which CLI to run:
 
 - If the first user-visible argument is one of the *bootstrap commands*
-  (``setup``, ``scripts``, ``services``, ``generate-constraints``), or the
+  (``setup``, ``scripts``, ``services``, ``generate-constraints``, ``docs``), or the
   entire argument list is exactly a version flag (``psynet --version`` /
   ``psynet -V``), the lightweight bootstrap group is invoked directly without
   importing experiment-runtime code.
@@ -21,6 +21,11 @@ The ``main()`` function inspects ``sys.argv`` to decide which CLI to run:
   and directs the user to run ``psynet setup`` or install
   ``psynet[experiment]``. Other import defects propagate unchanged.
 
+- If the full CLI fails because ``experiment.py`` or a module in the
+  experiment folder failed to import, the traceback is cut down to the
+  experiment's frames plus the frame that raised the error. Set
+  ``PSYNET_SHOW_TRACEBACK=1`` to see the full traceback.
+
 This pattern means that bootstrap commands are always fast and never require
 the experiment runtime, while full-featured experiment commands are still
 available whenever the runtime is installed.
@@ -28,7 +33,10 @@ available whenever the runtime is installed.
 
 from __future__ import annotations
 
+import os
 import sys
+import traceback
+from pathlib import Path
 
 import click
 
@@ -41,6 +49,7 @@ _BOOTSTRAP_COMMANDS = frozenset(
         "scripts",
         "services",
         "generate-constraints",
+        "docs",
     }
 )
 
@@ -94,15 +103,103 @@ def _load_full_psynet_cli():
     return _full_psynet
 
 
+def _is_author_file(filename: str | None, experiment_dir: Path) -> bool:
+    """Return True if ``filename`` is a source file in the experiment folder.
+
+    Files in a virtual environment inside the experiment folder don't count.
+    """
+    if not filename or filename.startswith("<"):
+        return False
+    path = Path(filename).resolve()
+    return (
+        path.is_file()
+        and path.is_relative_to(experiment_dir)
+        and not path.is_relative_to(Path(sys.prefix).resolve())
+        and "site-packages" not in path.parts
+    )
+
+
+def _format_shortened(exc: BaseException, frames: list[traceback.FrameSummary]) -> str:
+    """Format ``exc`` with only ``frames``, dropping the frames of chained exceptions."""
+    shortened = traceback.TracebackException.from_exception(exc)
+    shortened.stack = traceback.StackSummary.from_list(frames)
+    pending, seen = [shortened.__cause__, shortened.__context__], set()
+    while pending:
+        chained = pending.pop()
+        if chained is None or id(chained) in seen:
+            continue
+        seen.add(id(chained))
+        chained.stack = traceback.StackSummary()
+        pending += [chained.__cause__, chained.__context__]
+    return "".join(shortened.format())
+
+
+def _experiment_import_error_message(
+    exc: BaseException, experiment_dir: Path
+) -> str | None:
+    """Summarise an error raised while importing the experiment's own code.
+
+    The summary keeps the frames from the experiment folder plus the frame
+    that raised the error. Returns None if ``exc`` didn't come from importing
+    a module in ``experiment_dir``.
+    """
+    if not (experiment_dir / "experiment.py").is_file() or isinstance(
+        exc, BaseExceptionGroup
+    ):
+        return None
+
+    frames = traceback.extract_tb(exc.__traceback__)
+    author_frames = [f for f in frames if _is_author_file(f.filename, experiment_dir)]
+    syntax_error_here = isinstance(exc, SyntaxError) and _is_author_file(
+        exc.filename, experiment_dir
+    )
+    if not (syntax_error_here or any(f.name == "<module>" for f in author_frames)):
+        return None
+
+    if isinstance(exc, SyntaxError) and exc.filename and Path(exc.filename).is_file():
+        culprit = exc.filename
+    else:
+        culprit = author_frames[-1].filename
+        if frames[-1] is not author_frames[-1]:
+            author_frames.append(frames[-1])
+
+    resolved = Path(culprit).resolve()
+    if resolved.is_relative_to(experiment_dir):
+        culprit = resolved.relative_to(experiment_dir)
+    details = _format_shortened(exc, author_frames)
+    return (
+        f"Error: Couldn't load the experiment because of an error in "
+        f"{culprit}:\n\n{details}\n"
+        "Fix the error and run the command again. "
+        "To see the full traceback, set PSYNET_SHOW_TRACEBACK=1."
+    )
+
+
+def _run_full_cli(full_psynet) -> None:
+    """Run the full CLI, shortening tracebacks from the experiment's own code."""
+    try:
+        full_psynet(standalone_mode=True)
+    except Exception as exc:
+        show_traceback = os.environ.get("PSYNET_SHOW_TRACEBACK", "")
+        if show_traceback.lower() not in ("", "0", "false", "no"):
+            raise
+        message = _experiment_import_error_message(exc, Path.cwd().resolve())
+        if message is None:
+            raise
+        click.echo(message, err=True)
+        raise SystemExit(1) from exc
+
+
 def main() -> None:
     """Dispatcher: run bootstrap CLI or full experiment CLI.
 
     Bootstrap commands (``setup``, ``scripts``, ``services``,
-    ``generate-constraints``) and bare version invocations (``psynet
+    ``generate-constraints``, ``docs``) and bare version invocations (``psynet
     --version`` / ``psynet -V``) are handled without importing the experiment
     runtime.  Every other invocation delegates to the full
     ``psynet.command_line.psynet`` group, printing a helpful message if the
-    ``[experiment]`` extra is not installed.
+    ``[experiment]`` extra is not installed, and shortening the traceback if
+    the experiment's own code fails to import.
     """
     first = _first_user_arg()
     use_bootstrap = first in _BOOTSTRAP_COMMANDS or _has_version_flag()
@@ -123,7 +220,7 @@ def main() -> None:
             click.echo(
                 "PsyNet bootstrap CLI "
                 f"(full runtime module {missing_module!r} is unavailable).\n\n"
-                "Available commands: setup, scripts, services, generate-constraints\n\n"
+                "Available commands: setup, scripts, services, generate-constraints, docs\n\n"
                 "To access full experiment commands:\n"
                 "  psynet setup          (installs psynet[experiment] via constraints)\n"
                 "  uv pip install 'psynet[experiment]'\n"
@@ -142,4 +239,4 @@ def main() -> None:
             raise SystemExit(1) from exc
         return
 
-    _full_psynet(standalone_mode=True)
+    _run_full_cli(_full_psynet)

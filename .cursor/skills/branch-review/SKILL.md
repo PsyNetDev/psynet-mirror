@@ -1,28 +1,43 @@
 ---
 name: branch-review
-description: Review branch changes against `master` using a diff-to-master workflow that emphasizes correctness, regressions, API breaks, side effects, and missing tests. Use when the user asks to review a branch against `master`, compare branch changes, perform pre-merge code review, or review a merge request.
+description: >-
+  PsyNet pre-merge review: merge the GitLab MR target, review
+  origin/<target>...HEAD, then update the GitLab title and description.
+  Use for /branch-review in PsyNet, not for other repos.
 ---
 
 # Branch Review
 
-Use this skill when reviewing a feature branch against `master`.
+Use this skill when reviewing a PsyNet feature branch against the
+open merge request's target.
+
+Start by following `.cursor/skills/update-onto-target/SKILL.md` so
+the reviewed tree is the real merge with the MR target. Then review.
+Always update the GitLab merge request title and description.
 
 ## Prerequisites
 
-1. Verify you are not already on `master`:
+1. Verify you are not on the MR target:
    - `git rev-parse --abbrev-ref HEAD`
-   - If the result is `master`, ask the user which branch to review.
-2. Refresh the base branch:
-   - `git fetch origin master`
+   - If that is `master` (or you already know it is the target), ask
+     which feature branch to review.
+2. Run `/update-onto-target`: read and follow
+   `.cursor/skills/update-onto-target/SKILL.md` in full. Remember the
+   target branch name it resolved. If that skill says the branch
+   already contains the current target, continue. If it stops on a
+   product-level conflict, stop this review too.
+3. Confirm `origin/<target>` is now an ancestor of `HEAD` before
+   scoping the diff.
 
 ## 1) Scope the change
 
-The review scope is the committed branch diff in `origin/master...HEAD`.
-Do not treat uncommitted local changes as part of the branch review.
+The review scope is the committed branch diff in
+`origin/<target>...HEAD`. Do not treat uncommitted local changes as
+part of the branch review.
 
-- `git rev-parse --abbrev-ref HEAD` — confirm you are on the feature branch, not `master`
-- `git diff --name-status origin/master...HEAD`
-- `git diff --stat origin/master...HEAD`
+- `git rev-parse --abbrev-ref HEAD` — confirm you are on the feature branch
+- `git diff --name-status origin/<target>...HEAD`
+- `git diff --stat origin/<target>...HEAD`
 - `git status --short` — if non-empty, note that uncommitted work exists locally and was not included in the review
 
 ## 2) Inspect code diffs deeply
@@ -69,22 +84,7 @@ Flag:
 - Run focused tests for changed areas when practical.
 - If tests cannot run, say why and state the residual risk.
 
-## 6) Check the merge request description
-
-If the branch has an open merge request, verify that its description is
-up to date with the actual branch diff:
-
-- Fetch it with `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
-  (find the IID with `glab mr list --source-branch <branch>` if needed).
-- Compare each section (Motivation, Summary of changes, Behavior changes,
-  Testing, Automatic code review) against the reviewed diff. Look for
-  stale claims: changes that were later reverted or reworked, CI/test
-  statements that no longer hold, and new commits not yet reflected.
-- If the description is stale, update it (with the user's approval) via
-  `glab mr update <iid> --description ...`, or list the needed corrections
-  in the review report.
-
-## 7) Report format
+## 6) Report format
 
 Present findings first, ordered by severity.
 
@@ -96,3 +96,20 @@ Use this structure:
 4. Residual risks / assumptions
 
 Keep summaries brief and make the primary feedback actionable.
+
+## 7) Update the merge request
+
+Always update the open merge request title and description to match the committed
+branch diff. Do this even if the current title or description looks close.
+
+- Find the MR: `glab mr view` or
+  `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
+  (find the IID with `glab mr list --source-branch <branch>` if needed).
+- Title: a concise, accurate summary of the committed change.
+- Description: follow `.gitlab/merge_request_templates/Default.md` and keep
+  every section current (Motivation, Summary of changes, Behavior changes,
+  Testing, Automatic code review). Compare each section against the reviewed
+  diff. Look for stale claims: changes that were later reverted or reworked,
+  CI/test statements that no longer hold, and new commits not yet reflected.
+- Record that `/branch-review` was run in **Automatic code review**.
+- If no merge request exists, say so and skip this step.

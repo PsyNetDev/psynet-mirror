@@ -16,8 +16,13 @@ from psynet.audit.constants import (
     DEFAULT_AUDIT_PROFILE,
     PLACEHOLDER_IMPLEMENTATION_SUMMARY,
 )
-from psynet.audit.content import validate_present_artifact_file
+from psynet.audit.content import (
+    artifact_allows_directory,
+    artifact_path_is_ready,
+    validate_present_artifact_file,
+)
 from psynet.audit.paths import relative_audit_path
+from psynet.version import psynet_version
 
 
 def count_blockers(manifest: dict[str, Any]) -> int:
@@ -61,11 +66,35 @@ def init_success_messages(audit_dir: Path, prog: str = CLI_NAME) -> list[str]:
     ]
 
 
-def audit_css_path() -> Path:
-    """Return the packaged audit stylesheet path."""
+def _audit_resource_path(*parts: str) -> Path:
+    """Return a packaged file under ``psynet/resources/audit``."""
     from importlib import resources
 
-    return Path(resources.files("psynet") / "resources" / "audit" / "audit.css")
+    return Path(resources.files("psynet") / "resources" / "audit" / Path(*parts))
+
+
+def audit_css_path() -> Path:
+    """Return the packaged audit stylesheet path."""
+
+    return _audit_resource_path("audit.css")
+
+
+def audit_plotly_js_path() -> Path:
+    """Return the packaged Plotly.js runtime path."""
+
+    return _audit_resource_path("plotly.min.js")
+
+
+def audit_mathjax_js_path() -> Path:
+    """Return the packaged MathJax runtime path."""
+
+    return _audit_resource_path("mathjax-tex-svg.min.js")
+
+
+def audit_js_path() -> Path:
+    """Return the packaged audit-page JavaScript path."""
+
+    return _audit_resource_path("audit.js")
 
 
 STARTER_PROMPT = """# Prompt
@@ -86,7 +115,7 @@ Use one list item per event. The actor tag must be one of `agent-start`,
 `agent`, `agent-stop`, `manual`, or `system`:
 
 `- T+00:00:00 [agent-start] Started implementation.`
-`- T+00:05:12 [agent] Ran psynet simulate --audit.`
+`- T+00:05:12 [agent] Ran psynet audit simulate.`
 """
 STARTER_REPORT = """# Experiment audit report
 
@@ -229,7 +258,7 @@ def starter_audit_manifest() -> dict[str, object]:
         "updated_at": timestamp,
         "profile": DEFAULT_AUDIT_PROFILE,
         "extensions": [],
-        "experiment": {},
+        "experiment": {"psynet_version": psynet_version},
         "implementation": {
             "summary": PLACEHOLDER_IMPLEMENTATION_SUMMARY,
         },
@@ -240,6 +269,7 @@ def starter_audit_manifest() -> dict[str, object]:
         "sections": [
             starter_section("prompt", "Prompt", "markdown", path="PROMPT.md"),
             starter_section("plan", "Plan", "markdown", path="PLAN.md"),
+            starter_section("design_simulation", "Power analysis", "simulation"),
             starter_section(
                 "timeline",
                 "Implementation timeline",
@@ -303,22 +333,51 @@ def starter_audit_manifest() -> dict[str, object]:
                 status="blocked",
             ),
             starter_artifact(
-                "simulation_export",
+                "simulate_export",
                 "data_export",
-                "artifacts/simulated_data.zip",
-                "Simulated data export",
-                "Data export produced by simulated participants.",
+                "simulate/analysis/simulated_export",
+                "Simulated export",
+                "Data directory produced by simulated participants.",
                 required=True,
                 status="blocked",
             ),
             starter_artifact(
                 "analysis_notebook",
                 "notebook",
-                "analyses/analysis.ipynb",
+                "simulate/analysis/analysis.ipynb",
                 "Analysis notebook",
                 "Executed notebook that reads the simulated export and summarizes results.",
                 required=True,
                 status="blocked",
+            ),
+            starter_artifact(
+                "simulation_notebook",
+                "notebook",
+                "simulate/design/simulation.ipynb",
+                "Design simulation notebook",
+                "Executed design-simulation notebook; optional, with power analysis "
+                "and adaptive-procedure sections when applicable.",
+                required=False,
+                status="missing",
+            ),
+            starter_artifact(
+                "simulation_run",
+                "report",
+                "simulate/design/run.json",
+                "Design simulation run record",
+                "Provenance for the design-simulation run, including method, seed, and "
+                "replicate count.",
+                required=False,
+                status="missing",
+            ),
+            starter_artifact(
+                "simulation_results",
+                "report",
+                "simulate/design/results.csv",
+                "Design simulation results",
+                "Per-scenario results consumed by the design-simulation notebook.",
+                required=False,
+                status="missing",
             ),
         ],
         "checks": [],
@@ -331,7 +390,7 @@ def starter_audit_manifest() -> dict[str, object]:
             starter_blocker(
                 "performance_result",
                 "Performance test has not been run yet.",
-                "Run psynet performance-test local … --audit.",
+                "Run psynet audit performance-test ….",
             ),
             starter_blocker(
                 "monitor_snapshot",
@@ -339,14 +398,14 @@ def starter_audit_manifest() -> dict[str, object]:
                 "Capture a static PsyNet monitor snapshot at artifacts/monitor.html.",
             ),
             starter_blocker(
-                "simulation_export",
+                "simulate_export",
                 "Simulation export has not been produced yet.",
-                "Run psynet simulate --audit.",
+                "Run psynet audit simulate.",
             ),
             starter_blocker(
                 "analysis_notebook",
                 "Analysis notebook has not been executed yet.",
-                "Create and execute analyses/analysis.ipynb.",
+                "Create and execute simulate/analysis/analysis.ipynb.",
             ),
         ],
         "render": {
@@ -373,8 +432,9 @@ def init_audit(audit_dir: Path, force: bool = False) -> None:
         audit_dir,
         audit_dir / "artifacts",
         audit_dir / "artifacts" / "screenshots",
-        audit_dir / "analyses",
         audit_dir / "logs",
+        audit_dir / "simulate" / "analysis",
+        audit_dir / "simulate" / "design",
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -435,17 +495,24 @@ def mark_artifact_present(
             raise ValueError("; ".join(path_problems))
 
     assert resolved is not None
-    if not resolved.is_file():
+    allow_directory = artifact_allows_directory(artifact_id)
+    if resolved.is_dir() and not allow_directory:
+        raise ValueError(f"{resolved}: artifact must be a file, not a directory")
+    if not artifact_path_is_ready(resolved, allow_directory=allow_directory):
         raise FileNotFoundError(
-            f"{resolved}: file missing; create it before marking present"
+            f"{resolved}: artifact is missing or empty; create it before marking present"
         )
 
-    problems = validate_present_artifact_file(
-        resolved,
-        artifact_kind=(
-            str(target.get("kind")) if isinstance(target.get("kind"), str) else None
-        ),
-        require_video_probe=True,
+    problems = (
+        validate_present_artifact_file(
+            resolved,
+            artifact_kind=(
+                str(target.get("kind")) if isinstance(target.get("kind"), str) else None
+            ),
+            require_video_probe=True,
+        )
+        if resolved.is_file()
+        else []
     )
     if problems:
         raise ValueError("; ".join(problems))
@@ -475,6 +542,9 @@ __all__ = [
     "STARTER_TIMELINE",
     "audit_css_path",
     "audit_display_title",
+    "audit_js_path",
+    "audit_mathjax_js_path",
+    "audit_plotly_js_path",
     "audit_profile",
     "count_blockers",
     "display_implementation_summary",

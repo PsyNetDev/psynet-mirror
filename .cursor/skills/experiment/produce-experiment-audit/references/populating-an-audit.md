@@ -36,7 +36,8 @@ Initialize the packet before meaningful runs. From the first useful command
 onward, write outputs into the audit layout even when they are interim:
 
 - Prefer canonical paths such as `artifacts/performance.json`,
-  `artifacts/simulated_data.zip`, and `analyses/analysis.ipynb`.
+  `simulate/analysis/simulated_export/`, and
+  `simulate/analysis/analysis.ipynb`.
 - Overwrite the same path when a later run supersedes an interim result.
 - Mark artifacts `present` when the file is the evidence you intend to hand
   off (including smoke runs used for infrastructure testing).
@@ -97,10 +98,11 @@ section. That warning is expected for retrospective audits.
      rendered page. Leave the starter TODO only until you have a real summary;
      validate warns, and the page omits it until rewritten.
 3. Collect reviewable outputs under:
-   - `artifacts/` for participant flow, exports, monitor snapshots, performance
+   - `artifacts/` for participant flow, real-data exports, monitor snapshots, performance
      results, and other primary evidence;
-   - `analyses/` for notebooks and analysis outputs;
-   - `logs/` for concise command logs.
+   - `logs/` for concise command logs;
+   - `simulate/analysis/` for the simulated export and its analysis;
+   - `simulate/design/` for an optional design-simulation campaign.
 4. Keep evidence-generation scripts with the implementation source. Evidence
    should be reproducible, not just a manually assembled folder.
 5. After an artifact exists, run:
@@ -110,9 +112,10 @@ section. That warning is expected for retrospective audits.
    ```
 
    Add a manifest entry first when the artifact is not already declared.
-6. Record checks and blockers honestly in `audit.json`. A coherent packet may
-   still have blockers; validate success means structure is OK, not that the
-   experiment is ready.
+6. Record checks and blockers honestly in `audit.json` (fields, statuses and
+   severities: "Checks and blockers" in `test/audit_reference`). A coherent
+   packet may still have blockers; validate success means structure is OK, not
+   that the experiment is ready.
 7. Before handoff, run:
 
    ```bash
@@ -126,21 +129,34 @@ Choose evidence that matches the experiment. Common artifacts are:
 
 - `artifacts/participant.mp4`: concise participant walkthrough;
 - `artifacts/screenshots/*.png`: targeted participant-facing states;
-- `artifacts/screenshots/manifest.json`: optional screenshot captions;
+- `artifacts/screenshots/manifest.json`: optional screenshot captions, keyed by
+  paths relative to `artifacts/` (`"screenshots/01-consent.png"`);
 - `artifacts/performance.json`: sustained performance-test output;
 - `artifacts/monitor.html`: static monitor snapshot;
 - `artifacts/data.zip`: exported local or real-run data;
-- `artifacts/simulated_data.zip`: simulated-participant export;
-- `analyses/analysis.ipynb`: executed, self-contained analysis notebook;
+- `simulate/analysis/simulated_export/`: simulated-participant export;
+- `simulate/analysis/analysis.ipynb`: executed analysis of that export;
+- `simulate/design/simulation.ipynb` and `simulate/design/run.json`: optional
+  design simulation;
 - `logs/*.log`: concise logs that explain commands and failures.
+  `psynet debug local` prints the dashboard password; replace it (for example
+  with `<redacted>`) before saving that output.
 
 Use `record-participant-video` for screenshot and video production. Keep videos
-at most 3 minutes and 1280×720. Keep rendered notebooks small enough for typical
-review tooling (normally under about 100 KB).
+at most 3 minutes and 1280×720. Audit notebooks may be up to 10 MB, but avoid
+unnecessary inline output so the rendered audit remains quick to load.
 
 Rendering gives screenshots, participant video, monitor snapshot, performance
-test, and analysis their own top-level sections, so each of those artifacts is
-reviewed on its own rather than inside one combined evidence panel.
+test, design simulation, and analysis their own top-level sections, so each of
+those artifacts is reviewed on its own rather than inside one combined evidence
+panel.
+
+### Power analysis
+
+The Power analysis section follows the Plan. The optional `simulate/design/simulation.ipynb` contains a **Power analysis**
+section and, for adaptive experiments, may contain an **Adaptive procedure**
+section. Follow `power-analysis/SKILL.md`, then mark `simulation_notebook`,
+`simulation_run`, and `simulation_results` present.
 
 ### Monitor snapshot
 
@@ -175,43 +191,44 @@ There is no dedicated `psynet audit` subcommand for N/A yet; set
 `status: not_applicable` on the artifact in `audit.json`, remove its required
 blocker (or replace it with an N/A note in `REPORT.md`), then re-validate.
 
-### Simulation export packaging
+### Simulated export
 
-`psynet simulate` writes `data/simulated_data/` (a directory). Prefer `--audit`
-so PsyNet also zips that tree to the canonical audit path. From the experiment
-root:
+Run from the experiment root:
 
 ```bash
-psynet simulate --audit
+psynet audit simulate
 ```
 
-`--audit` writes `<experiment>/audit/artifacts/simulated_data.zip`
-and marks `simulation_export` present. Use `--no-mark-present` to write the zip
-without updating `audit.json`. Overwrite the same zip when a later simulation
-supersedes an interim run.
+Add `--n-bots N` to override `Exp.test_n_bots` for this run. The command writes the only copy to
+`audit/simulate/analysis/simulated_export/` and marks `simulate_export`
+present.
 
 ### Performance evidence
 
 For review-ready performance evidence, prefer a sustained test (typically
-`--n-bots 40 --duration-minutes 5`). Prefer `--audit` so PsyNet writes the
-canonical path. From the experiment root:
+`--n-bots 40 --duration-minutes 5`). Use the audit-scoped command so PsyNet
+writes the canonical path. From the experiment root:
 
 ```bash
-psynet performance-test local \
+psynet audit performance-test \
   --n-bots 40 \
   --duration-minutes 5 \
-  --time-factor 1.0 \
-  --audit
+  --time-factor 1.0
 ```
 
-`--audit` writes `<experiment>/audit/artifacts/performance.json`
-and marks `performance_result` present. Use `--json-output` only for a non-audit
-path, and `--no-mark-present` only when you want the JSON in the packet without
-updating `audit.json`.
+The command writes `<experiment>/audit/artifacts/performance.json`
+and marks `performance_result` present. Judge the run by median and p95
+`/timeline` and `/response` times, not by how many bots finished. Zero
+finished bots is expected when the window is shorter than the experiment. If
+those percentiles are high, profile SQL with `psynet test local --sql-profile`
+before changing the scientific policy. Use top-level
+`psynet performance-test local --json-output <path>` for a non-audit file.
 
-Shorter smoke runs are fine while iterating or infrastructure-testing; omit
-`--audit` (or use `--json-output`) so they do not become the packet's evidence.
-Skip an expensive re-run when a suitable `artifacts/performance.json` already
+Shorter smoke runs are fine for a first pass or infrastructure testing; use
+top-level `psynet performance-test local` so they do not become packet evidence.
+When the experiment is nearing finalizing, prefer a sustained run (and a
+window on the order of the estimated duration if you want completions). Skip
+an expensive re-run when a suitable `artifacts/performance.json` already
 exists for the current implementation.
 
 ## Manifest rules
@@ -235,17 +252,232 @@ Declare screenshots either as individual artifacts or in the `captions` map of
 the present `screenshots` manifest artifact. Rendering publishes safe image
 paths referenced by that manifest and builds the screenshot carousel.
 
+## Writing notebooks for readers
+
+The audit's notebooks (the analysis and the power analysis) are read by
+someone who knows the study but not the code or the statistics, such as the
+experimenter's supervisor. The audit collapses code behind a "Show code"
+toggle, so the reader sees prose, figures and tables.
+
+- **Answer first.** Start with a summary of what the notebook shows, then one
+  section per question, headed by the question in plain words ("How pleasant
+  is each chord?"). Put data checks, definitions and full tables last.
+- **Compute the summary.** Load the data and compute the headline numbers in
+  the first code cell, and write the summary from them with
+  `display(Markdown(f"..."))`. Numbers typed into Markdown go stale when the
+  data or simulation change. Later sections can then show the details of
+  loading and cleaning.
+
+  ```python
+  display(Markdown(f"""
+  **{n} participants passed the headphone check; {len(screened_out)} were screened out.**
+  Each chord's average is known to within ±{rms(half_width):.2f} points (95% confidence interval).
+  """))
+  ```
+
+- **Keep the numbers.** Plain words go with the values, not instead of them:
+  "noisier raters (SD 1.3)" rather than "noisier raters", in text, legends and
+  tables. Add the technical term in brackets after a plain description, such
+  as "known to within ±0.18 points (95% confidence interval)". Use readable
+  column names and round numbers in the text to two decimals.
+- **Execute before rendering.** The audit shows only the outputs saved in the
+  notebook, so run it after every change, for example with
+  `jupyter nbconvert --to notebook --execute --inplace analysis.ipynb`.
+  Neither `psynet audit validate` nor `mark-present` checks for saved outputs.
+- **Read it back.** Open the rendered section and read it as that reader
+  would. Check that every figure and table appears, that headings aren't
+  repeated, and that the summary matches the figures.
+
 ## Analysis and reporting
 
-The canonical analysis is `analyses/analysis.ipynb` unless another format is
-more appropriate. It should:
+The canonical analysis is `simulate/analysis/analysis.ipynb`. Follow "Writing
+notebooks for readers" above. It should:
 
 - read exported data directly;
-- show data loading and cleaning;
-- display useful summary tables or plots (prefer inline SVG; call
-  `plt.show()` or equivalent so figures are stored in the executed notebook);
+- describe data loading and cleaning in a section after the main results
+  (the code itself runs in the first cell, behind the summary);
+- display useful summary tables or plots. Prefer Plotly with
+  `pio.renderers.default = "plotly_mimetype"` for offline interactive figures
+  and `pio.templates.default = "plotly_white"` for consistent presentation;
+  inline SVG/PNG is also supported. Call `fig.show()`, `plt.show()`, or the
+  appropriate equivalent so figures are stored in the executed notebook;
+- write equations with normal MathJax delimiters: `$...$` or `\(...\)` inline,
+  and `$$...$$` or `\[...\]` on their own line for display mathematics. MathJax
+  is packaged with the rendered audit and works offline. Write a literal
+  currency symbol as `\$` when another dollar sign occurs later in the block;
 - distinguish technical validation from scientific conclusions.
-- distinguish technical validation from scientific conclusions.
+
+## Figure layout for rendered audits
+
+The audit renders notebooks inside a column roughly 700-900 px wide, narrower
+than a JupyterLab window. That width is deliberate: code and prose stay
+readable, and a wider page would not help because Python lines are short.
+Figures that look fine while authoring routinely collide once rendered: facet
+titles overlap each other, in-plot annotations land on the data, and long
+legends wrap into the title.
+
+Fix crowding by changing the layout, not by dropping data. A reviewer needs to
+see every condition that was simulated or measured, so hiding series to make a
+figure tidy is the wrong trade: it silently narrows the question the figure can
+answer. Two encodings in one panel (colour for one factor, `line_dash` for
+another) usually fit comfortably once the labels are short and the legend has
+its own column.
+
+Follow these rules.
+
+- **Use `plotly_white` by default.** Set
+  `pio.templates.default = "plotly_white"` beside the MIME renderer so figures
+  have a consistent, print-friendly background.
+- **Keep all the series.** Prefer one panel showing every condition over
+  several panels that each show a subset. Split a figure only when it genuinely
+  covers separate analyses, never to reduce line count.
+- **Facet by row, not by column.** `facet_col` divides the already narrow
+  width, and three columns leave about 250 px per panel, which is where facet
+  titles start overlapping. `facet_row` keeps the full width for every panel
+  and spends vertical space instead, which the page has plenty of. Use it when
+  the panels have different y ranges or would otherwise be an unreadable
+  tangle; otherwise encode the extra factor with colour or `line_dash` in one
+  panel.
+- **When faceting by row**, scale the height with the number of panels
+  (`height=260 * n_rows + 140`), strip the `variable=` prefix Plotly Express
+  puts in facet titles, and leave right margin for the rotated row labels:
+
+  ```python
+  fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+  fig.update_layout(height=260 * n_rows + 140, margin=dict(l=70, r=90, t=90, b=60))
+  ```
+
+  Row labels sit on the right edge, so pair `facet_row` with the horizontal
+  legend above the plot rather than a right-hand legend column.
+- **Shorten every label.** Map database-style ids
+  (`well_specified_2pl`) to display labels (`Matching 2PL`) before plotting,
+  and strip the `variable=` prefix Plotly Express adds to facet titles.
+  Relabel the encoding columns too, not just the axes: anything missing from
+  `labels` shows up as a raw column name in the hover text.
+- **Put explanations in Markdown, not in the plot.** A `display(Markdown(...))`
+  caption above the figure has unlimited room; an `annotation_text` inside the
+  axes does not, and will sit on top of a line.
+- **Give the legend its own space.** A horizontal legend above the plot works
+  while it fits on one row. Two encodings produce one entry per combination,
+  which wraps and pushes into the title, so those figures need a right-hand
+  legend column and a matching right margin.
+- **Set an explicit height.** A figure without one falls back to the 20 rem
+  container, which squashes it; 420 px or more is a safe floor. The audit holds
+  a figure to its authored height when the window is resized, so the height you
+  choose is the height reviewers see.
+- **Set explicit tick values** for a handful of design points, rather than
+  letting Plotly choose ticks that repeat or crowd.
+- **Use translucent confidence ribbons for dense curves.** Repeated error bars
+  become a picket fence at single-unit resolution. Draw upper and lower bounds
+  as a low-opacity filled polygon behind each line and put exact bounds in the
+  line's hover text. Keep error bars for sparse, unrelated design points.
+
+Use this reference layout, adjusting the numbers rather than inventing a new
+scheme per figure:
+
+```python
+AUDIT_FIGURE_LAYOUT = dict(
+    height=420,
+    margin=dict(l=70, r=30, t=90, b=60),
+    title=dict(x=0, xanchor="left"),
+    legend=dict(
+        orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title_text=""
+    ),
+)
+# Many series, or two encodings: move the legend into its own column.
+AUDIT_FIGURE_LAYOUT_SIDE_LEGEND = dict(
+    AUDIT_FIGURE_LAYOUT,
+    margin=dict(l=70, r=210, t=70, b=60),
+    legend=dict(
+        orientation="v", yanchor="top", y=1, xanchor="left", x=1.02, title_text=""
+    ),
+)
+
+SCENARIO_LABELS = {"well_specified_2pl": "Matching 2PL", "three_pl_guessing": "3PL guessing"}
+results["scenario"] = results["response_scenario"].map(SCENARIO_LABELS)
+# Hover text shows the raw column name unless it is relabelled here too.
+AXIS_LABELS = {"rmse": "Ability RMSE", "scenario": "Scenario", "policy": "Policy"}
+
+display(Markdown("""## Operational performance
+
+Solid lines are adaptive selection, dashed lines are random. Error bars are
+Monte Carlo 95% intervals; the dashed red line is the RMSE requirement of
+0.45."""))
+
+# Every simulated condition stays in the panel: colour separates the response
+# scenario, line_dash separates the selection policy.
+fig = px.line(
+    results, x="max_trials", y="rmse", color="scenario", line_dash="policy",
+    error_y="rmse_mc95_half_width", markers=True,
+    labels=dict(AXIS_LABELS, max_trials="Maximum CAT items"),
+    title="Operational ability recovery",
+)
+fig.add_hline(y=0.45, line_dash="dash", line_color="firebrick")
+fig.update_xaxes(tickvals=sorted(results["max_trials"].unique()))
+fig.update_layout(**AUDIT_FIGURE_LAYOUT_SIDE_LEGEND)
+fig.show()
+```
+
+Use `AUDIT_FIGURE_LAYOUT` for the simpler case of a single encoding with a few
+short labels, where a legend row above the plot reads better than a side
+column.
+
+Both layouts contain a `title` key, so set the title text in the Plotly Express
+call, as above, or in a separate `fig.update_layout(title_text=...)` call.
+`fig.update_layout(title="...", **AUDIT_FIGURE_LAYOUT)` raises `TypeError`.
+
+### Metric controls
+
+Use Plotly `updatemenus` buttons, not page-level or ipywidget tabs, when one
+diagnostic figure needs several y metrics. Tabs outside Plotly are not preserved
+by the static notebook renderer. Keep the primary decision metric in a
+permanently visible figure and put secondary views (for example correlation,
+model SEM, bias, and coverage) behind the buttons. Also render a summary table
+so printed and screenshotted audits retain the values.
+
+Keep the metric data long-form. Build one trace per scenario/policy for the
+initial metric, then have each button restyle those traces' `y`, error, and
+hover arrays. Do not add a hidden duplicate trace for every metric: Plotly
+serializes all hidden traces into the notebook, which can make the MIME bundle
+large enough to exhaust the bounded audit preview.
+
+### Check the rendered figures for overlapping text
+
+Judging a figure in the authoring window is not enough, and neither is one
+glance at a screenshot. Render the audit (`psynet audit render`, then
+`psynet audit serve`), open it, and inspect every figure at the real column
+width, in every metric-button state, and after resizing the browser window.
+Resizing matters because it forces Plotly to redraw at a new size, which is when
+a figure that was laid out generously can suddenly crowd itself.
+
+Overlapping text is the failure to watch for: facet titles running into the
+legend, y-axis titles from stacked panels colliding, tick labels merging, the
+modebar sitting on top of the metric buttons. It is easy to miss by eye when the
+labels are small, so check it directly in the browser console (or from
+Playwright) rather than trusting a visual scan:
+
+```javascript
+Array.from(document.querySelectorAll(".notebook-plotly-target")).flatMap((figure) => {
+  const labels = Array.from(figure.querySelectorAll("text"))
+    .filter((node) => node.textContent.trim() && node.getBoundingClientRect().width > 0);
+  return labels.flatMap((a, i) =>
+    labels.slice(i + 1)
+      .filter((b) => {
+        const [boxA, boxB] = [a.getBoundingClientRect(), b.getBoundingClientRect()];
+        return Math.min(boxA.right, boxB.right) - Math.max(boxA.left, boxB.left) > 1 &&
+          Math.min(boxA.bottom, boxB.bottom) - Math.max(boxA.top, boxB.top) > 1;
+      })
+      .map((b) => [a.textContent.trim(), b.textContent.trim()]),
+  );
+});
+```
+
+Open collapsed audit sections before running it: on a closed section the
+check returns an empty result without checking anything. Run it at full width
+and again in a window about 900 px wide, where legends start wrapping into
+titles. An empty result is the standard to hold each figure to. Anything reported is a
+layout bug to fix by shortening labels, adding margin, moving the legend, or
+increasing the figure height, not something to leave for the reviewer.
 
 `REPORT.md` should state:
 
@@ -276,6 +508,11 @@ remember or type that command. Use `public-tunnel` when a remote URL is needed.
 Use only safe local credentials and redact secrets from logs and artifacts.
 Never commit production tokens, custom service credentials, or participant
 secrets.
+
+Notebook HTML and SVG in the rendered audit can include executable script.
+Treat the audit as trusted author content: do not bind `psynet audit serve`
+beyond localhost unless every viewer is trusted with that notebook content.
+Markdown reports still do not interpret raw HTML.
 
 When a requirement depends on an external service, collect evidence that the
 real integration worked end to end. Mocks and simulated payloads support

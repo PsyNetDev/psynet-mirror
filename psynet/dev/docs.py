@@ -1,10 +1,13 @@
 """Build PsyNet's developer documentation from a source checkout."""
 
+import json
 import re
 import shlex
 import shutil
 import socket
 import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,22 +19,21 @@ from psynet.utils import get_psynet_root
 LIVE_PREVIEW_IGNORE_PATTERNS = ("_build", "_build/*", "_build/**/*")
 LIVE_PREVIEW_RE_IGNORE_PATTERNS = (r".*/_build($|/.*)",)
 
-LINKCHECK_WARNING_RE = re.compile(
-    r"^(?P<path>.*?):(?P<line>\d+): WARNING: broken link: "
-    r"(?P<url>\S+)(?: \((?P<reason>.*)\))?$"
-)
-LINKCHECK_STATUS_RE = re.compile(
-    r"^\(\s*(?P<source>.*?): line\s+(?P<line>\d+)\) "
-    r"(?P<status>broken|timeout)\s+(?P<url>\S+)"
-    r"(?:\s+-\s+(?P<reason>.*))?$"
-)
-LINKCHECK_PROGRESS_RE = re.compile(
-    r"^\(\s*.*?: line\s+\d+\) "
-    r"(?:ok|broken|redirected|timeout|ignored|working)\s+"
-)
+# Sphinx colours its linkcheck console output, so strip escapes before
+# matching progress lines.
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+LINKCHECK_PROGRESS_RE = re.compile(r"^\(\s*.*?: line\s+\d+\)")
 LINKCHECK_READ_PROGRESS_RE = re.compile(
     r"^reading sources\.\.\. \[\s*(?P<percent>\d+)%\]"
 )
+# Statuses that Sphinx counts as linkcheck failures.
+LINKCHECK_FAILURE_STATUSES = frozenset({"broken", "timeout"})
+# Demo files bundled for ``psynet docs demos``: authored text only. The size
+# cap leaves out vendored libraries such as jsPsych and Unity builds.
+DEMO_CODE_SUFFIXES = frozenset(
+    {".py", ".txt", ".toml", ".md", ".html", ".js", ".css", ".json", ".ini", ".cfg"}
+)
+DEMO_CODE_MAX_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -54,7 +56,7 @@ def make_command(
     jobs: str | None = "1",
     sphinx_options: tuple[str, ...] = (),
 ) -> int:
-    """Run the Sphinx Makefile target for PsyNet's documentation."""
+    """Run a Sphinx builder target for PsyNet's documentation."""
     docs_dir = assert_docs_available()
     build_dir = docs_dir / "_build"
 
@@ -76,9 +78,7 @@ def make_command(
         )
         return 0
 
-    command = ["make", target]
-    if options:
-        command.append(f"SPHINXOPTS={shlex.join(options)}")
+    command = sphinx_build_command(target, options)
 
     try:
         subprocess.run(command, cwd=docs_dir, check=True)
@@ -92,6 +92,76 @@ def make_command(
         open_html_index(target, build_dir)
 
     return 0
+
+
+def bundle_command() -> Path:
+    """Build the plain-text docs that release wheels ship for ``psynet docs``."""
+    from psynet import __version__
+    from psynet.local_docs import BUNDLED_DOCS_DIR
+
+    docs_dir = assert_docs_available()
+    with tempfile.TemporaryDirectory() as tmp:
+        text_dir = Path(tmp) / "text"
+        command = [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-b",
+            "text",
+            "-q",
+            "-W",
+            "--keep-going",
+            "-d",
+            str(Path(tmp) / "doctrees"),
+            ".",
+            str(text_dir),
+        ]
+        try:
+            subprocess.run(command, cwd=docs_dir, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Text docs build failed with exit code {exc.returncode}: "
+                f"{shlex.join(command)}"
+            ) from exc
+
+        shutil.rmtree(BUNDLED_DOCS_DIR, ignore_errors=True)
+        for source in text_dir.rglob("*.txt"):
+            target = BUNDLED_DOCS_DIR / source.relative_to(text_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    _bundle_demo_code(docs_dir.parent, BUNDLED_DOCS_DIR / "demos")
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=docs_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    (BUNDLED_DOCS_DIR / "VERSION").write_text(f"{__version__}\n{commit}\n")
+    return BUNDLED_DOCS_DIR
+
+
+def _bundle_demo_code(source_root: Path, target_dir: Path) -> None:
+    """Copy the demos' tracked text files, without media or vendored libraries."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "demos"],
+        cwd=source_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    for name in tracked:
+        source = source_root / name
+        if (
+            source.suffix not in DEMO_CODE_SUFFIXES
+            or source.name == "constraints.txt"
+            or not source.is_file()
+            or source.stat().st_size > DEMO_CODE_MAX_BYTES
+        ):
+            continue
+        target = target_dir / Path(name).relative_to("demos")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 def run_live_preview(
@@ -182,42 +252,68 @@ def linkcheck_command(
     jobs: str | None = "1",
     sphinx_options: tuple[str, ...] = (),
     show_progress: bool = True,
+    strict: bool = False,
 ) -> int:
     """Run Sphinx's linkcheck builder and print a structured summary.
 
-    This is a wrapper around `make linkcheck` in docs/. After Sphinx
+    This is a wrapper around Sphinx's ``linkcheck`` builder. After Sphinx
     finishes, broken links are reprinted grouped by failure category.
+
+    By default only :data:`LINKCHECK_BLOCKING_CATEGORIES` fail the check;
+    other failures usually come from the remote site or the network and are
+    only reported. ``strict=True`` fails on every broken link.
     """
     docs_dir = assert_docs_available()
     build_dir = docs_dir / "_build"
 
     if clean and build_dir.exists():
         shutil.rmtree(build_dir)
+    # Without this, a run that fails before linkcheck finishes would be
+    # judged on the previous run's results.
+    if (build_dir / "linkcheck").exists():
+        shutil.rmtree(build_dir / "linkcheck")
 
     options = build_sphinx_options(
         strict=False,
         jobs=jobs,
         sphinx_options=sphinx_options,
     )
-    command = ["make", "linkcheck"]
-    if options:
-        command.append(f"SPHINXOPTS={shlex.join(options)}")
+    command = sphinx_build_command("linkcheck", options)
 
     result = run_linkcheck_process(
         command,
         docs_dir=docs_dir,
         show_progress=show_progress,
     )
-    output = "\n".join(part for part in [result.stdout, result.stderr] if part)
-    issues = parse_linkcheck_issues(output, docs_dir)
+    issues = parse_linkcheck_issues(build_dir)
 
     print(format_linkcheck_summary(issues))
 
     if result.returncode != 0:
-        if issues:
-            raise ValueError(
-                f"Linkcheck found {len(issues)} broken link(s); see summary above."
+        # Sphinx exits 1 for broken links; other codes mean the run itself
+        # failed, so the parsed issues may be incomplete.
+        if issues and result.returncode == 1:
+            blocking = [
+                issue
+                for issue in issues
+                if _categorize_linkcheck_issue(issue) in LINKCHECK_BLOCKING_CATEGORIES
+            ]
+            if strict:
+                raise ValueError(
+                    f"Linkcheck found {len(issues)} broken link(s); see summary above."
+                )
+            if blocking:
+                raise ValueError(
+                    f"Linkcheck found {len(blocking)} broken link(s) to fix: "
+                    "internal links, missing anchors, or pages not found. "
+                    "See summary above."
+                )
+            print(
+                f"\nNot failing on these {len(issues)} link(s): they usually "
+                "come from the remote site or the network. Pass --strict to "
+                "fail on them."
             )
+            return 0
         raise ValueError(
             f"Linkcheck failed with exit code {result.returncode}: "
             f"{shlex.join(str(arg) for arg in command)}"
@@ -264,8 +360,9 @@ def run_linkcheck_process(
                     leave=True,
                     bar_format="{desc}: {percentage:3.0f}%|{bar}|{postfix}",
                 ) as progress:
-                    for line in process.stdout:
-                        output.append(line)
+                    for raw_line in process.stdout:
+                        output.append(raw_line)
+                        line = ANSI_ESCAPE_RE.sub("", raw_line)
                         read_match = LINKCHECK_READ_PROGRESS_RE.match(line)
                         if read_match is not None:
                             read_percent = int(read_match.group("percent"))
@@ -293,54 +390,40 @@ def run_linkcheck_process(
     )
 
 
-def parse_linkcheck_issues(output: str, docs_dir: Path) -> list[LinkcheckIssue]:
-    """Parse broken links from Sphinx linkcheck output."""
+def parse_linkcheck_issues(build_dir: Path) -> list[LinkcheckIssue]:
+    """Read failed links from Sphinx's ``linkcheck/output.json``.
+
+    Sphinx writes one JSON object per checked link. Reading that file keeps
+    the summary independent of the console format, which is coloured and
+    changes between Sphinx releases.
+    """
+    output_json = build_dir / "linkcheck" / "output.json"
+    if not output_json.exists():
+        return []
+
     issues = []
-    for line in output.splitlines():
-        issue = parse_linkcheck_warning(line, docs_dir) or parse_linkcheck_status(line)
-        if issue is not None:
-            issues.append(issue)
+    for line in output_json.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        if entry.get("status") not in LINKCHECK_FAILURE_STATUSES:
+            continue
+        issues.append(
+            LinkcheckIssue(
+                source=entry.get("filename", ""),
+                line=int(entry.get("lineno") or 0),
+                status=entry["status"],
+                url=entry.get("uri", ""),
+                reason=entry.get("info") or "",
+            )
+        )
     return issues
-
-
-def parse_linkcheck_warning(line: str, docs_dir: Path) -> LinkcheckIssue | None:
-    match = LINKCHECK_WARNING_RE.match(line)
-    if match is None:
-        return None
-
-    source = match.group("path")
-    try:
-        source = str(Path(source).resolve().relative_to(docs_dir.resolve()))
-    except ValueError:
-        pass
-
-    return LinkcheckIssue(
-        source=source,
-        line=int(match.group("line")),
-        status="broken",
-        url=match.group("url"),
-        reason=match.group("reason") or "",
-    )
-
-
-def parse_linkcheck_status(line: str) -> LinkcheckIssue | None:
-    match = LINKCHECK_STATUS_RE.match(line)
-    if match is None:
-        return None
-
-    return LinkcheckIssue(
-        source=match.group("source").strip(),
-        line=int(match.group("line")),
-        status=match.group("status"),
-        url=match.group("url"),
-        reason=match.group("reason") or "",
-    )
 
 
 LINKCHECK_CATEGORIES = (
     "Internal documentation links",
     "Missing anchors",
-    "Pages not found (404)",
+    "Pages not found (404/410)",
     "Access denied (403), possibly bot-blocked",
     "SSL/TLS errors",
     "Connection errors",
@@ -348,19 +431,33 @@ LINKCHECK_CATEGORIES = (
     "Other",
 )
 
+# Categories that mean the docs themselves are wrong, so they fail
+# linkcheck even without ``strict``.
+LINKCHECK_BLOCKING_CATEGORIES = frozenset(
+    {
+        "Internal documentation links",
+        "Missing anchors",
+        "Pages not found (404/410)",
+    }
+)
+
 
 def _categorize_linkcheck_issue(issue: LinkcheckIssue) -> str:
     """Assign a broken link to a category based on its URL, status, and reason."""
     if not re.match(r"^[a-z][a-z0-9+.-]*://", issue.url):
         return "Internal documentation links"
-    if issue.status == "timeout":
-        return "Timeouts"
     reason = issue.reason
+    # Sphinx labels timeouts "broken" when linkcheck_report_timeouts_as_broken
+    # is set, so the reason is the reliable signal.
+    if issue.status == "timeout" or "timed out" in reason.lower():
+        return "Timeouts"
     if re.search(r"\bAnchor\b.*not found", reason):
         return "Missing anchors"
-    if "404" in reason:
-        return "Pages not found (404)"
-    if "403" in reason:
+    # Match the status at the start: requests appends the URL, which may
+    # itself contain these digits.
+    if re.match(r"(404|410)\b", reason):
+        return "Pages not found (404/410)"
+    if re.match(r"403\b", reason):
         return "Access denied (403), possibly bot-blocked"
     if "SSL" in reason or "certificate" in reason.lower():
         return "SSL/TLS errors"
@@ -400,12 +497,26 @@ def assert_docs_available() -> Path:
     """Return the docs directory, or fail if not in the source checkout root."""
     root = get_psynet_root().resolve()
     docs_dir = root / "docs"
-    if Path.cwd().resolve() != root or not (docs_dir / "Makefile").exists():
+    if Path.cwd().resolve() != root or not (docs_dir / "conf.py").exists():
         raise ValueError(
             "This command must be run from the PsyNet source checkout root directory "
-            "with docs/Makefile present."
+            "with docs/conf.py present."
         )
     return docs_dir
+
+
+def sphinx_build_command(target: str, options: list[str]) -> list[str]:
+    """Build a ``python -m sphinx -M`` command for a docs/ working directory."""
+    return [
+        sys.executable,
+        "-m",
+        "sphinx",
+        "-M",
+        target,
+        ".",
+        "_build",
+        *options,
+    ]
 
 
 def build_sphinx_options(
@@ -414,7 +525,7 @@ def build_sphinx_options(
     jobs: str | None,
     sphinx_options: tuple[str, ...],
 ) -> list[str]:
-    """Compose Sphinx options to pass through the docs Makefile."""
+    """Compose extra flags for ``python -m sphinx -M``."""
     options = list(sphinx_options)
     if strict:
         options.extend(["-W", "--keep-going"])

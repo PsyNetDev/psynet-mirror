@@ -1,0 +1,1 @@
+Stopping `psynet debug local` by sending `SIGTERM`, `SIGINT` or `SIGHUP` to its process ID (for example with `kill <pid>`, from a script or an agent) now also stops the `flask run` server, worker and clock processes it started. Previously only Ctrl-C in the terminal stopped them, and a signal to the `psynet` process alone left the server running on port 5000.

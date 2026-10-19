@@ -2,8 +2,6 @@
 This demo shows how to design a custom chain trial maker.
 """
 
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import psynet.experiment
 from psynet.modular_page import (
     ModularPage,

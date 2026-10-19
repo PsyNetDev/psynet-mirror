@@ -1,0 +1,1 @@
+Fixed failed participants skipping waits in end logic, such as an `AsyncCodeBlock` with `wait=True` in the unsuccessful end; they now wait like other participants. A participant failed while waiting elsewhere in the timeline still leaves the wait for the unsuccessful end.

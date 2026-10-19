@@ -4,18 +4,22 @@ import glob
 import hashlib
 import importlib
 import inspect
+import json
 import logging
 import os
+import random
 import re
 import sys
 import time
 from _hashlib import HASH as Hash
+from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
 from os.path import join as join_path
 from pathlib import Path
-from typing import List, OrderedDict, Type, Union
+from typing import List, Type, Union
 
 import click
 import html2text
@@ -28,22 +32,25 @@ from bs4 import BeautifulSoup
 from dallinger.config import experiment_available
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import _descendent_classes
-from flask import url_for
 from flask.globals import current_app
 from flask.templating import Environment, _render
 from sqlalchemy import or_
+from urllib3.util import Retry
 
 from psynet.light_utils import (  # noqa: F401 – re-exported for backwards compat
     _IN_REPO_EXPERIMENT_ROOTS,
     ExperimentDirectoryNameError,
     _md5_update_from_dir,
     _md5_update_from_file,
+    _update_hash_from_dir,
+    _update_hash_from_file,
     ensure_experiment_directory_name_does_not_conflict,
     get_psynet_root,
     git_command_available,
     git_repository_available,
     is_in_repo_experiment,
     md5_directory,
+    strip_url_credentials,
 )
 from psynet.translation.utils import load_po
 
@@ -67,6 +74,18 @@ def psynet_source_prefixes():
 
 
 def get_logger(name="psynet"):
+    """
+    Return a standard-library logger, by default the shared ``psynet`` logger.
+
+    Parameters
+    ----------
+    name : str
+        Logger name passed to :func:`logging.getLogger`.
+
+    Returns
+    -------
+    logging.Logger
+    """
     return logging.getLogger(name)
 
 
@@ -118,6 +137,9 @@ def call_function(function, *args, **kwargs):
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.
+
+    Any credentials embedded in the remote URL are removed, because the
+    result is stored in deployment records and exports.
     """
     import subprocess
 
@@ -127,7 +149,7 @@ def find_git_repo():
             .strip()
             .decode("utf-8")
         )
-        return origin
+        return strip_url_credentials(origin)
     except subprocess.CalledProcessError:
         return None
 
@@ -211,11 +233,79 @@ config_defaults = {}
 
 
 def get_config():
+    """
+    Return the Dallinger configuration object, loading it first if needed.
+
+    Read values with ``get_config().get(key)``.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
     from dallinger.config import get_config as dallinger_get_config
 
     config = dallinger_get_config()
     if not config.ready:
         config.load()
+    return config
+
+
+def _same_directory(a, b):
+    """Return whether paths ``a`` and ``b`` name the same existing directory."""
+    try:
+        return b is not None and os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def load_runtime_server_config(config=None, deployment_id=None):
+    """
+    Return the configuration of the running server, including runtime values.
+
+    Runtime values such as dashboard credentials come from the config of the
+    running debug server, or else from the launch info of ``deployment_id``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        The configuration to extend; by default Dallinger's configuration.
+    deployment_id : str, optional
+        The deployment whose saved launch info to read when no debug server is
+        running.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
+    from .redis import redis_vars
+
+    config = config or get_config()
+    if not config.ready:
+        config.load()
+
+    # The debug server runs from Dallinger's generated development directory,
+    # whose config.txt includes runtime values such as dashboard credentials.
+    # A deployed server runs from the experiment directory itself, whose
+    # config.txt is already loaded below the environment; loading it again
+    # on top would hide the deployment's environment, such as its mode.
+    server_working_directory = redis_vars.get("server_working_directory", None)
+    if server_working_directory:
+        from dallinger.config import experiment_directory
+
+        if not _same_directory(server_working_directory, experiment_directory()):
+            config.load_from_file(os.path.join(server_working_directory, "config.txt"))
+        return config
+
+    if deployment_id:
+        launch_info_path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_id
+            / "launch-info.json"
+        )
+        if launch_info_path.exists():
+            with open(launch_info_path, encoding="utf-8") as f:
+                config.extend(json.load(f))
+
     return config
 
 
@@ -371,24 +461,41 @@ def md5_object(x):
     return str(hashed.hexdigest())
 
 
-# MD5 hashing code:
-# https://stackoverflow.com/a/54477583/8454486
+def sha256_object(x):
+    """Return a SHA-256 hex digest of a JSON-pickled object."""
+    string = jsonpickle.encode(x, keys=True).encode("utf-8")
+    return hashlib.sha256(string).hexdigest()
+
+
 def md5_update_from_file(filename: Union[str, Path], hash: Hash) -> Hash:
     """Update *hash* with the contents of *filename* and return it."""
-    _md5_update_from_file(filename, hash)
+    _update_hash_from_file(filename, hash)
     return hash
 
 
 def md5_file(filename: Union[str, Path]) -> str:
     """Return the MD5 hex digest of a single file."""
-    h = hashlib.md5()
-    _md5_update_from_file(filename, h)
-    return h.hexdigest()
+    return str(_update_hash_from_file(filename, hashlib.md5()).hexdigest())
+
+
+def sha256_file(filename: Union[str, Path]) -> str:
+    """Return a SHA-256 hex digest of a file's contents."""
+    return str(_update_hash_from_file(filename, hashlib.sha256()).hexdigest())
+
+
+def sha256_directory(directory: Union[str, Path]) -> str:
+    """Return a SHA-256 hex digest of a directory's names and file contents."""
+    return str(_update_hash_from_dir(directory, hashlib.sha256()).hexdigest())
+
+
+def content_object_path(digest: str) -> str:
+    """Return the canonical relative object path for a content digest."""
+    return f"objects/sha256/{digest}"
 
 
 def md5_update_from_dir(directory: Union[str, Path], hash: Hash) -> Hash:
     """Recursively update *hash* with all non-hidden files under *directory*."""
-    _md5_update_from_dir(directory, hash)
+    _update_hash_from_dir(directory, hash)
     return hash
 
 
@@ -476,6 +583,30 @@ def json_to_data_frame(json_data):
 def wait_until(
     condition, max_wait, poll_interval=0.5, error_message=None, *args, **kwargs
 ):
+    """
+    Poll ``condition`` until it returns a truthy value.
+
+    Parameters
+    ----------
+    condition : callable
+        Called as ``condition(*args, **kwargs)``.
+    max_wait : float
+        Maximum time to wait, in seconds.
+    poll_interval : float
+        Time between checks, in seconds.
+    error_message : str, optional
+        Message for the error raised on timeout.
+
+    Returns
+    -------
+    bool
+        ``True`` once the condition is satisfied.
+
+    Raises
+    ------
+    RuntimeError
+        If the condition is not satisfied within ``max_wait`` seconds.
+    """
     if condition(*args, **kwargs):
         return True
     else:
@@ -546,6 +677,83 @@ def require_requirements_txt(f):
     return wrapper
 
 
+_PSYNET_JINJA_LOCALES_KEY = "psynet_jinja_locale_envs"
+_PSYNET_STRING_TEMPLATE_CACHE_SIZE = 256
+
+
+def _translation_environment(app, locale):
+    """Return a locale-specific Jinja environment, cached on the Flask app.
+
+    A new Environment on every page render recompiled Dallinger's layout for
+    each ``/response``. Hold-resume ``render`` times of several hundred
+    milliseconds were that compile, not BeautifulSoup. Environments are per
+    locale so gettext catalogs do not race across concurrent requests.
+    """
+    cache = app.extensions.setdefault(_PSYNET_JINJA_LOCALES_KEY, {})
+    environment = cache.get(locale)
+    if environment is not None:
+        return environment
+
+    gettext = get_translator()
+    pgettext = get_translator(context=True)
+    from psynet.static_resources import versioned_url_for
+
+    jinja_functions = {
+        **app.jinja_env.globals,
+        "gettext": gettext,
+        "pgettext": pgettext,
+        "url_for": versioned_url_for,
+    }
+    translation = Translations.load("translations", [locale])
+    environment = Environment(
+        loader=app.jinja_env.loader, extensions=["jinja2.ext.i18n"], app=app
+    )
+    environment.install_gettext_translations(translation)
+    environment.globals.update(**jinja_functions)
+    environment.psynet_string_templates = OrderedDict()
+    cache[locale] = environment
+    return environment
+
+
+def _cached_template_from_string(environment, template_string):
+    """Compile a template string once per locale environment."""
+    cache = getattr(environment, "psynet_string_templates", None)
+    if cache is None:
+        cache = OrderedDict()
+        environment.psynet_string_templates = cache
+    template = cache.get(template_string)
+    if template is not None:
+        cache.move_to_end(template_string)
+        return template
+    template = environment.from_string(template_string)
+    cache[template_string] = template
+    while len(cache) > _PSYNET_STRING_TEMPLATE_CACHE_SIZE:
+        cache.popitem(last=False)
+    return template
+
+
+class _TemplateConfig(Mapping):
+    """Read-only template view of ``config.as_dict()`` that reads keys on access.
+
+    ``as_dict()`` looks up every registered key, which is slow to repeat on each
+    render; templates read only a few. Sensitive and unset keys stay hidden.
+    """
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getitem__(self, key):
+        if key not in self._config.types or key in self._config.sensitive:
+            raise KeyError(key)
+        return self._config.get(key)
+
+    def __iter__(self):
+        return iter(self._config.as_dict())
+
+    def __len__(self):
+        return len(self._config.as_dict())
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -555,7 +763,7 @@ def _render_with_translations(
     if all_template_args is None:
         all_template_args = {}
 
-    all_template_args["config"] = dict(get_config().as_dict().items())
+    all_template_args["config"] = _TemplateConfig(get_config())
 
     assert [template_name, template_string].count(None) == 1, (
         "Only one of template_name or template_string should be provided."
@@ -565,29 +773,12 @@ def _render_with_translations(
         locale = get_locale()
 
     app = current_app._get_current_object()  # type: ignore[attr-defined]
-    gettext = get_translator()
-    pgettext = get_translator(context=True)
-
-    jinja_functions = {
-        **app.jinja_env.globals,
-        "gettext": gettext,
-        "pgettext": pgettext,
-        "url_for": url_for,
-    }
-
-    translation = Translations.load("translations", [locale])
-
-    environment = Environment(
-        loader=app.jinja_env.loader, extensions=["jinja2.ext.i18n"], app=app
-    )
-    environment.install_gettext_translations(translation)
-
-    environment.globals.update(**jinja_functions)
+    environment = _translation_environment(app, locale)
 
     if template_name is not None:
         template = environment.get_template(template_name)
     else:
-        template = environment.from_string(template_string)
+        template = _cached_template_from_string(environment, template_string)
     return _render(app, template, all_template_args)
 
 
@@ -643,47 +834,78 @@ class TranslationNotFoundError(KeyError):
     pass
 
 
-def check_translation_is_available(message, context, locale, namespace):
-    from . import deployment_info
-    from .experiment import get_experiment, in_deployment_package
+def is_release_branch():
+    """Return whether the current CI job is on a ``release-*`` branch."""
+    return os.environ.get("CI_COMMIT_REF_NAME", "").startswith("release-")
 
-    args = locals()
+
+def _deployment_mode():
+    """Return the deployment mode (``"debug"``, ``"sandbox"`` or ``"live"``).
+
+    Returns ``None`` outside a deployment package, for example when PsyNet
+    code runs from an experiment's source folder.
+    """
+    from . import deployment_info
+    from .experiment import in_deployment_package
+
+    if not in_deployment_package():
+        return None
+    return deployment_info.read("mode")
+
+
+def _tolerate_missing_translation(namespace):
+    """
+    Return whether a missing catalog entry should be downgraded to a warning.
+
+    Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
+    so feature-branch test runs and local debug sessions must not depend on them.
+    Experiment catalogs are owned by the experiment author, so those keep
+    failing loudly.
+    """
+    if namespace == "experiment":
+        return False
+    if is_release_branch():
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _deployment_mode() in (None, "debug")
+
+
+def check_translation_is_available(message, context, locale, namespace):
+    from .experiment import get_experiment
 
     is_available = (context, message) in REGISTERED_TRANSLATIONS[namespace][locale]
 
     if not is_available:
-        message = (
-            f"Could not find a translation for message {message!r} in locale = {locale}, context = {context}, namespace = {namespace}. "
+        error_message = (
+            f"Could not find a translation for message {message!r} in locale = {locale}, "
+            f"context = {context}, namespace = {namespace}. "
             "Perhaps the translatable string was not properly captured by `psynet translate`? "
             "To mark a string as translatable, you should write e.g. _('Hello') or _p('welcome message', 'Hello'). "
-            "You cannot rename the functions _ or _p, and you must pass them strings directly, not variables or strings wrapped in parentheses."
+            "You cannot rename the functions _ or _p, and you must pass them strings directly, "
+            "not variables or strings wrapped in parentheses."
         )
-        is_live_experiment = (
-            in_deployment_package() and deployment_info.read("mode") == "live"
-        )
-        if is_live_experiment:
-            message += " Since this is a live experiment, we instead presented the untranslated text."
-        else:
-            message += " If this happened in a live experiment, we would default to presenting the untranslated text."
-
-        # We need to actually raise the TranslationNotFoundError here for it to be treated appropriately by report_error.
-        try:
-            raise TranslationNotFoundError(message)
-        except TranslationNotFoundError as e:
-            if is_live_experiment:
+        if _deployment_mode() == "live":
+            error_message += " Since this is a live experiment, we instead presented the untranslated text."
+            logger.warning(error_message)
+            try:
+                raise TranslationNotFoundError(error_message)
+            except TranslationNotFoundError as e:
                 get_experiment().report_error(e)
-            else:
-                raise e
-
-
-def report_translation_error(message, context, locale):
-    from psynet.experiment import get_experiment
-
-    exp = get_experiment()
-    error = TranslationNotFoundError(
-        f"Translation not found for message '{message}' (context: {context}) in locale '{locale}'"
-    )
-    exp.report_error(error)
+        elif _tolerate_missing_translation(namespace):
+            error_message += (
+                " The untranslated English text will be shown instead. "
+                f"Catalogs for the {namespace} package are refreshed on the release branch "
+                "with `psynet translate`, so tests and local debug sessions do not "
+                "require them to be up to date."
+            )
+            logger.warning(error_message)
+        else:
+            error_message += (
+                " If this happened in a live experiment, we would default to presenting "
+                "the untranslated text."
+            )
+            raise TranslationNotFoundError(error_message)
 
 
 def get_translator(
@@ -902,6 +1124,51 @@ def sample_from_surface_of_unit_sphere(n_dimensions):
     res = np.random.randn(n_dimensions, 1)
     res /= np.linalg.norm(res, axis=0)
     return res[:, 0].tolist()
+
+
+def shuffle_with_max_run(items, key, max_run, max_attempts=100):
+    """Return a shuffled copy of ``items`` with at most ``max_run`` consecutive items sharing a key.
+
+    Useful for planned trial orders, for example
+    ``node_order=lambda nodes: shuffle_with_max_run(nodes, key=lambda n: n.definition["condition"], max_run=2)``.
+    ``key`` must return a hashable value. The order is built item by item,
+    choosing at random among the keys allowed next, weighted by how many
+    items each has left. Raises ``ValueError`` if no order is found within
+    ``max_attempts`` attempts, which in practice means none exists.
+    """
+    if max_run < 1:
+        raise ValueError(f"max_run must be at least 1; got {max_run}.")
+    groups = {}
+    for item in items:
+        groups.setdefault(key(item), []).append(item)
+    n_items = sum(len(group) for group in groups.values())
+    for _ in range(max_attempts):
+        remaining = {k: random.sample(group, len(group)) for k, group in groups.items()}
+        result, last, run = [], None, 0
+        while len(result) < n_items:
+            allowed = [k for k in remaining if not (k == last and run >= max_run)]
+            if not allowed:
+                break
+            # A key with more items than the others can separate must go now.
+            biggest = max(remaining, key=lambda k: len(remaining[k]))
+            others = n_items - len(result) - len(remaining[biggest])
+            if biggest in allowed and len(remaining[biggest]) > others * max_run:
+                choice = biggest
+            else:
+                weights = [len(remaining[k]) for k in allowed]
+                choice = random.choices(allowed, weights)[0]
+            result.append(remaining[choice].pop())
+            if not remaining[choice]:
+                del remaining[choice]
+            run = run + 1 if choice == last else 1
+            last = choice
+        else:
+            return result
+    raise ValueError(
+        f"Could not find an order of {n_items} items with at most {max_run} "
+        f"consecutive items sharing a key after {max_attempts} attempts. "
+        "Allow longer runs or balance the keys more evenly."
+    )
 
 
 def run_subprocess_with_live_output(command, timeout=None, cwd=None):
@@ -1146,7 +1413,8 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 
 @contextlib.contextmanager
-def time_logger(label, threshold=0.01):
+def time_logger(label, threshold=0.1):
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1191,7 +1459,7 @@ def _excluded_from_ci_experiment_dirs(dir_path: str) -> bool:
     )
 
 
-def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def list_experiment_dirs(for_ci_tests=False):
     """List in-repo experiment directories under :data:`_IN_REPO_EXPERIMENT_ROOTS`.
 
     Skips hidden directories while walking so leftover virtualenvs under a demo
@@ -1211,21 +1479,10 @@ def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=N
             if for_ci_tests and _excluded_from_ci_experiment_dirs(dir_):
                 continue
             dirs.append(dir_)
-    dirs = sorted(dirs)
-
-    if ci_node_total is not None and ci_node_index is not None:
-        dirs = with_parallel_ci(dirs, ci_node_total, ci_node_index)
-
-    return dirs
+    return sorted(dirs)
 
 
-def with_parallel_ci(paths, ci_node_total, ci_node_index):
-    index = ci_node_index - 1  # 1-indexed to 0-indexed
-    assert 0 <= index < ci_node_total
-    return [paths[i] for i in range(len(paths)) if i % ci_node_total == index]
-
-
-def list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def list_isolated_tests():
     isolated_tests_root = get_psynet_root() / "tests" / "isolated"
     isolated_tests_demos = isolated_tests_root / "demos"
     isolated_tests_experiments = isolated_tests_root / "experiments"
@@ -1240,10 +1497,9 @@ def list_isolated_tests(ci_node_total=None, ci_node_index=None):
         isolated_tests_features,
         isolated_tests_translation,
     ]:
-        tests.extend(glob.glob(str(directory / "*.py")))
-
-    if ci_node_total is not None and ci_node_index is not None:
-        tests = with_parallel_ci(tests, ci_node_total, ci_node_index)
+        # Only pytest-discoverable modules; shared helper modules live
+        # alongside the tests and must not be run as empty test files.
+        tests.extend(glob.glob(str(directory / "test_*.py")))
 
     return tests
 
@@ -1317,6 +1573,18 @@ def check_todos_before_deployment():
 
 
 def as_plain_text(html):
+    """
+    Convert HTML to readable text using ``html2text``, collapsing whitespace to single spaces.
+
+    Parameters
+    ----------
+    html : str or markupsafe.Markup
+        HTML to convert.
+
+    Returns
+    -------
+    str
+    """
     text = html2text.HTML2Text().handle(str(html))
     pattern = re.compile(r"\s+")
     text = re.sub(pattern, " ", text).strip()
@@ -1339,18 +1607,31 @@ def in_python_package():
     Returns
     -------
     bool
-        True if the current directory contains either pyproject.toml or setup.py,
-        indicating it is likely a Python package root directory.
+        See :func:`is_a_package`.
     """
     return is_a_package(".")
 
 
 def is_a_package(path):
+    """
+    Test whether a directory is the root of a Python package rather than an experiment.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to inspect.
+
+    Returns
+    -------
+    bool
+        True if the directory contains ``pyproject.toml`` or ``setup.py`` and no
+        ``experiment.py``. Experiment directories may carry their own
+        ``pyproject.toml`` (for example from ``uv init``).
+    """
     path = Path(path)
-    files_to_check = ["pyproject.toml", "setup.py"]
-    for file in files_to_check:
-        if path.joinpath(file).exists():
-            return True
+    if (path / "experiment.py").exists():
+        return False
+    return any((path / file).exists() for file in ["pyproject.toml", "setup.py"])
 
 
 def get_package_name(path="."):
@@ -1650,6 +1931,12 @@ def format_timedelta(timedelta_obj):
 
 
 def get_experiment_url(app=None, server=None):
+    """Return the experiment's URL.
+
+    Without ``app`` or ``server``, this is the URL the running experiment
+    registered in Redis, unless the ``PSYNET_EXPERIMENT_URL`` environment
+    variable gives another address for this process to reach it by.
+    """
     if server:
         if app:
             return f"https://{app}.{server}"
@@ -1661,12 +1948,56 @@ def get_experiment_url(app=None, server=None):
         else:
             from .redis import redis_vars
 
-            return redis_vars.get("base_url")
+            return os.environ.get("PSYNET_EXPERIMENT_URL") or redis_vars.get("base_url")
 
 
 def generate_text_file(path, text="Lorem ipsum"):
     with open(path, "w") as file:
         file.write(text)
+
+
+# SQLAlchemy warns whenever a mapped class is registered under a name it has
+# registered before. PsyNet provokes this deliberately, because it executes
+# ``experiment.py`` more than once per process: Dallinger's config loader
+# imports it to read the experiment's extra parameters, and commands such as
+# ``psynet debug`` and ``psynet deploy`` load it again from the directory staged
+# for the server. Each execution redeclares the same mapped classes, so any
+# experiment that defines a Trial subclass or a custom table sees these
+# warnings. They name PsyNet's own reloading rather than anything an
+# experimenter can act on.
+#
+# Retiring the previous entries instead, through ``registry._dispose_cls`` and
+# the base mapper's ``polymorphic_map``, does not work: a load boundary cannot
+# tell whether the module is about to be executed again, because ``sys.modules``
+# often already holds it. Removing entries up front therefore unregisters
+# classes that stay live, which breaks string-based ``relationship()`` targets
+# and makes loading a row fail with "No such polymorphic_identity is defined".
+_EXPERIMENT_REDECLARATION_WARNINGS = (
+    "This declarative base already contains a class",
+    "Reassigning polymorphic association",
+)
+
+
+@contextlib.contextmanager
+def loading_experiment_classes():
+    """Suppress SQLAlchemy warnings about redeclaring the experiment's classes.
+
+    Wrap any call that may execute ``experiment.py``. Other warnings raised
+    while loading the experiment are left alone.
+    """
+
+    import warnings
+
+    from sqlalchemy.exc import SAWarning
+
+    with warnings.catch_warnings():
+        for message in _EXPERIMENT_REDECLARATION_WARNINGS:
+            warnings.filterwarnings(
+                "ignore",
+                message=f"{re.escape(message)}.*",
+                category=SAWarning,
+            )
+        yield
 
 
 def patch_yaspin_jupyter_detection():
@@ -1725,6 +2056,33 @@ def safe(func):
     return wrapper
 
 
+def keep_alive_session(retry_posts=False):
+    """
+    Return a ``requests.Session`` that reuses connections and retries dropped ones.
+
+    A server or proxy may close an idle keep-alive connection just as the
+    client reuses it (gunicorn's default keep-alive is 2 seconds), which shows
+    up as "Connection reset by peer". The session retries such a request once.
+    Responses with error statuses are never retried.
+
+    Parameters
+    ----------
+    retry_posts : bool
+        Also retry POST and other non-idempotent requests. The server may
+        already have handled a request whose connection then dropped, so only
+        enable this when a repeat is harmless, as for bots' ``/response``
+        POSTs, which the server rejects for a page the participant has left.
+    """
+    session = requests.Session()
+    retry = Retry(total=1, status=0)
+    if retry_posts:
+        retry = Retry(total=1, status=0, allowed_methods=None)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 def get_authenticated_session(base_url, username=None, password=None):
     """
     Returns a requests.Session authenticated with the dashboard login.
@@ -1763,19 +2121,7 @@ def get_authenticated_session(base_url, username=None, password=None):
     if password is None:
         password = config.get("dashboard_password")
 
-    session = requests.Session()
-
-    # Tell the server to close the TCP connection after each request (disable HTTP keep-alive).
-    # This should prevent "Connection reset by peer" errors caused by reusing stale keep-alive sockets,
-    # which can happen if the server or a proxy drops idle connections
-    # (see e.g. https://gitlab.com/PsyNetDev/PsyNet/-/jobs/11132444772)
-    #
-    # Trade-off: every request opens a new connection, which is less efficient.
-    # The other approach would be to to keep connections alive but configure a Retry/Timeout policy
-    # (e.g. with requests.adapters.HTTPAdapter + urllib3.util.Retry).
-    # However, retry logic might complicate the logs when we get error messages due to server logic.
-    # We therefore use `Connection: close` here for simplicity.
-    session.headers["Connection"] = "close"
+    session = keep_alive_session()
 
     login_url = f"{base_url}/dashboard/login"
 
@@ -1816,6 +2162,10 @@ def get_authenticated_session(base_url, username=None, password=None):
 
 
 def check_for_login_errors(response):
+    """Raise ``RuntimeError`` with the form's messages if a dashboard login failed."""
+    # Parsing a whole dashboard page is slow, and only failed logins show alerts.
+    if "alert-danger" not in response.text:
+        return
     soup = BeautifulSoup(response.text, "html.parser")
 
     top_level_alert = soup.find("div", class_="alert alert-danger")

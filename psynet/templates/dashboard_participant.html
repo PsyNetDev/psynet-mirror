@@ -255,10 +255,16 @@
             <td>Issued completion code</td>
             <td>{{ participant.issued_completion_code_type }}</td>
         </tr>
-        <tr>
+        <tr {% if participant.platform_base_unpaid %}class="table-warning"{% endif %}>
             <td>Base payment</td>
             <td>{{ currency }}{{ "%.2f"|format(participant.base_payment or 0) }}</td>
         </tr>
+        {% if participant.platform_base_unpaid %}
+        <tr class="table-warning">
+            <td>Base payment unpaid</td>
+            <td>{{ participant.platform_base_unpaid_detail }}</td>
+        </tr>
+        {% endif %}
         <tr {% if participant.bonus_needs_review %}class="table-warning"{% endif %}>
             <td>Planned bonus</td>
             <td>{{ currency }}{{ "%.2f"|format(participant.planned_bonus or 0) }}</td>

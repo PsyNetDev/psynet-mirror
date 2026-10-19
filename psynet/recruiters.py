@@ -1,7 +1,7 @@
 """PsyNet recruiter integrations.
 
-This module wraps Dallinger's recruiter classes (Prolific, MTurk, generic/CLI)
-and implements PsyNet-specific recruiters (Lucid, LabRecruiter). Recruiters
+This module wraps Dallinger's recruiter classes (Prolific and generic/CLI) and
+implements PsyNet-specific recruiters (Lucid and LabRecruiter). Recruiters
 own the participant lifecycle at the platform boundary: opening and closing
 recruitment, routing participants back to the platform at the end of the
 experiment, and paying base payments and bonuses.
@@ -13,12 +13,14 @@ Key design constraints for maintainers:
   Dallinger's via the MRO. Mixin overrides should call ``super()`` where the
   Dallinger implementation is still wanted.
 - End-of-experiment payment flows differ per platform. For Prolific,
-  successful participants are approved (receiving ``base_payment``) and topped
-  up with a bonus; unsuccessful (failed/errored) participants are either paid
-  via a fixed screen-out completion code (when ``prolific_pay_unsuccessful``
-  is enabled, the default; see
-  ``PsyNetProlificRecruiterMixin.completion_codes_and_actions``) or asked to
-  return their submission for a bonus (the legacy fallback when
+  local submit is the success path: PsyNet completes the submission
+  server-side (``COMPLETE`` with a researcher-actor code), Prolific pays
+  ``base_payment`` or the fixed screen-out reward, and PsyNet tops up with
+  a bonus. Unsuccessful (failed/errored) participants use the
+  ``UNSUCCESSFUL`` screen-out code when ``prolific_pay_unsuccessful`` is
+  enabled (the default; see
+  ``PsyNetProlificRecruiterMixin.completion_codes_and_actions``), or are
+  asked to return their submission for a bonus (the legacy fallback when
   ``prolific_pay_unsuccessful = false``).
 - Payment is split into decide / record / transfer. ``decide_payment``
   returns a ``PaymentDecision`` (status, platform base, bonus)
@@ -26,8 +28,9 @@ Key design constraints for maintainers:
   writes those fields onto the participant; ``report_submission_outcome``
   reports the terminal outcome and delegates real bonus transfers to
   ``reward_bonus`` by default. Recruiters with ``reports_zero_outcomes``
-  (Lab Recruiter) also report zero bonuses through that hook. ``False``
-  means the platform rejected the report or transfer.
+  (Lab Recruiter, Lucid) also report zero bonuses through that hook, and
+  implement the outcome there. Calling ``reward_bonus`` on those recruiters
+  raises. ``False`` means the platform rejected the report or transfer.
   ``Experiment.on_recruiter_submission_complete`` owns this sequence,
   always re-recording status and platform base, and uses ``bonus_status``
   to skip a repeat transfer. PsyNet posts a bonus automatically at most
@@ -41,6 +44,9 @@ Key design constraints for maintainers:
   when review is needed. ``reward_bonus`` returns ``False`` if the
   platform rejected the transfer. PsyNet does not call Dallinger's unused
   ``data_check`` / ``attention_check`` hooks.
+- After Submit, Prolific participants go to a PsyNet confirmation page
+  (timeline after error Submit, recruiter-exit after Finish). They are
+  not redirected to enter a completion code.
 """
 
 import hashlib
@@ -53,13 +59,10 @@ from math import ceil
 
 import dallinger.recruiters
 import dominate
-import flask
 import pandas as pd
 import requests
-import sqlalchemy
 from dallinger import db
 from dallinger.config import get_config
-from dallinger.db import session
 from dallinger.notifications import admin_notifier, get_mailer
 from dallinger.prolific import ProlificServiceException
 from dallinger.recruiters import (
@@ -71,15 +74,17 @@ from dallinger.recruiters import (
     handle_recruitment_error,
 )
 from dallinger.utils import get_base_url
-from dominate import tags
-from dominate.util import raw
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.sql import func
 
+from . import exit as exit_domain
 from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
+from .db import _check_external_call_allowed, _commit_external_call_state
 from .lucid import LucidService, get_lucid_service
+from .notifier import _alert_researcher
 from .page import InfoPage
 from .participant import (
     BONUS_STATUS_CAPPED,
@@ -90,7 +95,10 @@ from .participant import (
     bonus_is_settled,
     bonus_needs_review,
     bonus_transfer_already_claimed,
+    clear_platform_base_unpaid,
     record_bonus_attempt_detail,
+    record_platform_base_retry,
+    stop_platform_base_retries,
 )
 from .timeline import (
     AsyncCodeBlock,
@@ -102,7 +110,12 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import get_logger, get_translator, render_template_with_translations
+from .utils import (
+    get_descendent_class_by_name,
+    get_logger,
+    get_translator,
+    render_template_with_translations,
+)
 
 logger = get_logger()
 
@@ -113,6 +126,7 @@ PROLIFIC_MESSAGE_FIELD_ALIASES = {
 
 
 RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES = {408, 429, 500, 502, 503, 504}
+RETURN_FOR_BONUS_PAYMENT_MAX_WAIT = 60.0
 
 # Prolific completion-code type used for participants who fail or error out of
 # the experiment. See ``PsyNetProlificRecruiterMixin.completion_codes_and_actions``.
@@ -129,6 +143,13 @@ PROLIFIC_SCREEN_OUT_ACTION = "FIXED_SCREEN_OUT_PAYMENT"
 #: ``prolific_unsuccessful_base_payment`` explicitly (or disable the feature).
 PROLIFIC_DEFAULT_UNSUCCESSFUL_BASE_PAYMENT = 0.25
 
+# Researcher-actor copy of DEFAULT. COMPLETE only accepts researcher-actor codes.
+PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE = "DEFAULT_RESEARCHER"
+PROLIFIC_PAID_SUBMISSION_STATUSES = ("APPROVED", "SCREENED OUT")
+PROLIFIC_UNPAYABLE_SUBMISSION_STATUSES = ("REJECTED", "RETURNED")
+PROLIFIC_COMPLETABLE_SUBMISSION_STATUSES = ("ACTIVE", "TIMED-OUT")
+PROLIFIC_PLATFORM_BASE_RETRY_LIMIT = 5
+
 
 def _bonus_payments_total(bonus_payments) -> float:
     """Convert Prolific ``bonus_payments`` (pence/cents) to currency units."""
@@ -137,52 +158,32 @@ def _bonus_payments_total(bonus_payments) -> float:
     return round(sum(bonus_payments) / 100.0, 2)
 
 
-def _fetch_prolific_submission(prolificservice, assignment_id: str) -> dict | None:
-    """GET a Prolific submission without treating HTTP errors as recruitment failures.
+def _without_matching_bonus_entry(bonus_payments, amount):
+    """Drop one Prolific ``bonus_payments`` entry matching ``amount``.
 
-    Dashboard polling is expected to miss (for example 404) when an assignment
-    id is unknown or still propagating. Dallinger's ``ProlificService._req``
-    would log those as recruitment errors.
+    ``bonus_payments`` is in subcurrency (pence/cents); ``amount`` is in
+    currency units. Only the first match is removed.
     """
-    try:
-        headers = {
-            "Authorization": f"Token {prolificservice.api_token}",
-            "Referer": getattr(prolificservice, "referer_header", "") or "",
-        }
-        url = f"{prolificservice.api_root}/submissions/{assignment_id}/"
-        response = requests.get(url, headers=headers, timeout=15)
-    except requests.RequestException:
-        logger.warning(
-            "Could not reach Prolific for submission %s.",
-            assignment_id,
-            exc_info=True,
-        )
-        return None
-    if response.status_code == 404:
-        logger.info("Prolific submission %s was not found.", assignment_id)
-        return None
-    if not response.ok:
-        logger.warning(
-            "Prolific submission %s returned HTTP %s.",
-            assignment_id,
-            response.status_code,
-        )
-        return None
-    try:
-        parsed = response.json()
-    except ValueError:
-        logger.warning(
-            "Prolific submission %s returned a non-JSON body.",
-            assignment_id,
-        )
-        return None
-    if isinstance(parsed, dict) and "error" in parsed:
-        logger.info(
-            "Prolific submission %s returned an error payload.",
-            assignment_id,
-        )
-        return None
-    return parsed
+    if not bonus_payments or not amount:
+        return bonus_payments
+    match = int(round(float(amount) * 100))
+    remaining = list(bonus_payments)
+    for index, entry in enumerate(remaining):
+        if int(round(entry)) == match:
+            del remaining[index]
+            break
+    return remaining
+
+
+def _fetch_prolific_submission(prolificservice, assignment_id: str) -> dict | None:
+    """Quiet raw submission GET via Dallinger.
+
+    Requires ``ProlificService.get_participant_submission(..., translate=False)``
+    (Dallinger PR #9779, or the first release that includes it). That
+    path goes through ``_req``, so ``DevProlificService`` can mock it,
+    keeps ``bonus_payments``, and returns ``None`` on a miss.
+    """
+    return prolificservice.get_participant_submission(assignment_id, translate=False)
 
 
 @dataclass(frozen=True)
@@ -197,19 +198,6 @@ class PlatformPaymentView:
     supported: bool
     bonus: float | None = None
     submission_status: str | None = None
-
-
-@dataclass(frozen=True)
-class PaymentDecision:
-    """How a participant should be paid for this exit, before money moves.
-
-    ``bonus`` is ``max(0, total_owed - platform_base)`` and has not yet been
-    clipped by experiment spend caps (``Experiment.apply_payment_caps``).
-    """
-
-    status: str
-    platform_base: float
-    bonus: float
 
 
 def latest_participant_for_assignment(assignment_id):
@@ -229,6 +217,18 @@ def latest_participant_for_assignment(assignment_id):
     )
 
 
+def _latest_participant_for_worker_id(worker_id, for_update=False):
+    """Return the most recent participant with this worker id, or ``None``."""
+    if not worker_id:
+        return None
+    query = Participant.query.filter_by(worker_id=worker_id).order_by(
+        Participant.id.desc()
+    )
+    if for_update:
+        query = query.with_for_update(of=Participant).populate_existing()
+    return query.first()
+
+
 def _prolific_error_status(error: ProlificServiceException):
     try:
         payload = json.loads(str(error))
@@ -241,9 +241,143 @@ def _prolific_error_status(error: ProlificServiceException):
         return None
 
 
+def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
+    """Return whether a failed Prolific lookup is worth retrying.
+
+    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
+    from Dallinger releases without Dallinger PR #10008
+    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
+    ``ProlificServiceException`` whose payload has an ``error`` but no
+    ``response`` from releases with it. Once PsyNet's minimum Dallinger
+    version includes that PR, drop the ``requests.RequestException``
+    handling here and at the call sites that mention this function.
+    """
+    if isinstance(error, requests.RequestException):
+        return True
+    try:
+        payload = json.loads(str(error))
+    except json.JSONDecodeError:
+        return False
+    if isinstance(payload, dict) and "error" in payload and "response" not in payload:
+        return True
+    return _prolific_error_status(error) in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES
+
+
+def _recruiter_class_by_name(name):
+    try:
+        return get_descendent_class_by_name(dallinger.recruiters.Recruiter, name)
+    except AssertionError:
+        return None
+
+
+def configured_recruiter_class(config=None):
+    """Return the recruiter class that the configuration selects.
+
+    This mirrors :func:`dallinger.recruiters.from_config` without
+    instantiating the recruiter, which can be expensive (for example, building
+    a Prolific API client). Use it when only the recruiter type matters.
+
+    Parameters
+    ----------
+    config :
+        Dallinger configuration; defaults to the active configuration.
+
+    Returns
+    -------
+    class or None
+        The recruiter class, or ``None`` if the configured name is unknown
+        in debug mode (where ``from_config`` also returns ``None``).
+    """
+    config = config or get_config()
+    if config.get("replay"):
+        return dallinger.recruiters.HotAirRecruiter
+
+    name = config.get("recruiter", None)
+    recruiter_class = _recruiter_class_by_name(name) if name is not None else None
+    if recruiter_class is not None and issubclass(
+        recruiter_class,
+        (dallinger.recruiters.BotRecruiter, dallinger.recruiters.MultiRecruiter),
+    ):
+        return recruiter_class
+
+    if config.get("mode") == "debug":
+        if recruiter_class is not None:
+            if issubclass(recruiter_class, MockRecruiter):
+                return recruiter_class
+            if issubclass(recruiter_class, dallinger.recruiters.ProlificRecruiter):
+                return _recruiter_class_by_name("devprolific")
+        return _recruiter_class_by_name(
+            config.get("debug_recruiter", "HotAirRecruiter")
+        )
+
+    if recruiter_class is not None:
+        return recruiter_class
+    if name:
+        raise NotImplementedError("No such recruiter {}".format(name))
+    return dallinger.recruiters.MTurkRecruiter
+
+
+def recruits_real_participants(config=None):
+    """Return why the configured recruitment may bring real participants, or ``None``.
+
+    Live mode and any recruiter other than the test ones (development and
+    mock recruiters, Hot Air, generic, bots and simulated participants) may
+    bring real participants.
+    """
+    config = config or get_config()
+    if config.get("mode", None) == "live":
+        return "the experiment runs in live mode"
+    recruiter_class = configured_recruiter_class(config)
+    if recruiter_class is None:
+        return "the experiment's recruiter could not be identified"
+    if issubclass(
+        recruiter_class,
+        (
+            DevRecruiter,
+            MockRecruiter,
+            dallinger.recruiters.HotAirRecruiter,
+            dallinger.recruiters.BotRecruiter,
+            dallinger.recruiters.SimulatedRecruiter,
+            GenericRecruiter,
+        ),
+    ):
+        return None
+    return f"the experiment recruits with {recruiter_class.__name__}"
+
+
+def _abandon_overdue_participants(participants):
+    """Mark participants abandoned from Dallinger's clock and commit.
+
+    The clock's ``sessions_scope()`` does not commit, so the recruiter's
+    ``notify_duration_exceeded`` must, as Dallinger's own recruiters do.
+    """
+    for participant in participants:
+        participant.status = "abandoned"
+    db.session.commit()
+
+
 class PsyNetRecruiterMixin:
+    """PsyNet behavior shared by all recruiters, including payment and early exit."""
+
+    show_early_exit_button = False
+    # Deprecated aliases of ``show_early_exit_button``. Prefer the early-exit name
+    # in new code; Lucid still sets the aliases so older templates keep working.
+    show_abort_button = False
     show_termination_button = False
     reports_zero_outcomes = False
+    supported_early_exit_paths = frozenset(
+        {
+            exit_domain.ExitPath.END_SESSION,
+            exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT,
+        }
+    )
+
+    #: Whether participants are shown their accumulated reward when the
+    #: experiment does not say either way. Recruiters that disburse money
+    #: through a platform show it; local and generic recruitment does not,
+    #: because in those cases PsyNet cannot pay anyone and quoting a figure
+    #: promises something the experimenter has to honour by hand.
+    shows_reward_by_default = True
 
     def report_submission_outcome(self, participant, amount, reason):
         """Report the terminal outcome, transferring a real bonus if needed.
@@ -251,40 +385,366 @@ class PsyNetRecruiterMixin:
         Most recruiters have no separate outcome callback, so sub-cent
         amounts are a no-op and real bonuses use ``reward_bonus``. Recruiters
         whose bonus endpoint is also their terminal outcome callback can
-        override this method to report every amount, including zero.
+        override this method to report every amount, including zero. Raises
+        inside timeline steps, even for sub-cent amounts.
         """
+        _check_external_call_allowed()
         if amount < 0.01:
             return True
         return self.reward_bonus(participant, amount, reason)
 
     def after_rejected_consent(self, experiment, participant):
-        """Hook run when the participant rejects consent and never reaches submission."""
+        """Hook run when the participant rejects consent and never reaches submission.
+
+        PsyNet runs it in a worker process after the participant's request
+        commits, without making them wait, so it may call the recruitment
+        platform. It has no Flask request context.
+        """
 
     def terminate_participant(
-        self, participant=None, assignment_id=None, reason=None, details=None
+        self,
+        participant=None,
+        assignment_id=None,
+        reason=None,
+        details=None,
+        *,
+        raise_on_error=False,
     ):
         raise NotImplementedError
 
+    def execute_early_exit_plan(
+        self, experiment, participant, plan: exit_domain.ExitPlan
+    ) -> None:
+        """Execute a server-owned early-exit plan.
+
+        Marks the participant as having left and fails them without entering
+        ``unsuccessful_end``. Callers choose the terminal branch afterwards.
+        """
+        del experiment
+        if plan.path not in self.supported_early_exit_paths:
+            raise ValueError(
+                f"{self.__class__.__name__} cannot execute early-exit path "
+                f"{plan.path.value!r}."
+            )
+        participant.early_exited = True
+        if participant.module_state:
+            participant.module_state.mark_early_exited()
+        if not participant.failed:
+            if plan.context is exit_domain.ExitContext.ERROR_RECOVERY:
+                reason = "error_recovery"
+            elif plan.path is exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT:
+                reason = "early_exit_without_payment"
+            else:
+                reason = "early_exit"
+            # Leave and recovery Continue choose the terminal branch after
+            # this call. Skip-page recovery has already failed the
+            # participant without entering unsuccessful_end.
+            participant.fail(reason, redirect_to_end=False)
+
+    def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
+        """Return whether tracked fatal recovery presents a participant page.
+
+        Generic, HotAir, and lab recruiters have nothing to ask after an
+        error, so PsyNet commits the plan on the server without a Continue
+        or Submit control. The participant still sees that an error occurred.
+        Do not infer this from ``button_label is None``. Custom recruiters
+        that present recovery UI must override this method; a custom
+        ``error_page_presentation`` with a button is not enough.
+        """
+        del plan
+        return False
+
+    def _check_stale_error_page_override(self) -> None:
+        """Reject a custom recruiter that only implements the removed hook."""
+        for cls in type(self).__mro__:
+            if "error_page_presentation" in cls.__dict__:
+                return
+            if "error_page_content" in cls.__dict__:
+                raise RuntimeError(
+                    "Overriding recruiter `error_page_content` is no longer "
+                    "supported. Override `error_page_presentation` instead."
+                )
+
+    def error_page_presentation(
+        self,
+        *,
+        participant=None,
+        plan: exit_domain.ExitPlan | None = None,
+        assignment_id: str | None = None,
+        external_submit_url: str | None = None,
+        contact_address: str | None = None,
+    ) -> exit_domain.ErrorRecoveryPresentation:
+        """Describe error-page copy and any recruiter handoff."""
+        self._check_stale_error_page_override()
+        del external_submit_url
+        _p = get_translator(context=True)
+        if participant is not None:
+            assignment_id = participant.assignment_id
+        contact_message = None
+        if contact_address:
+            if assignment_id:
+                contact_message = _p(
+                    "early_exit_error",
+                    "If you need to contact the researcher about this error, write "
+                    "to {EMAIL} and quote reference code {REFERENCE_CODE}.",
+                ).format(
+                    EMAIL=contact_address,
+                    REFERENCE_CODE=assignment_id,
+                )
+            else:
+                contact_message = _p(
+                    "early_exit_error",
+                    "If you need to contact the researcher about this error, "
+                    "write to {EMAIL}.",
+                ).format(EMAIL=contact_address)
+        if participant is None:
+            return exit_domain.ErrorRecoveryPresentation(
+                message=self._error_recovery_body(responses_saved=False),
+                researcher_contact_message=contact_message,
+            )
+        return exit_domain.ErrorRecoveryPresentation(
+            message=self._error_recovery_body(
+                _p("early_exit_error", "You may close this page."),
+                responses_saved=True,
+            ),
+            researcher_contact_message=contact_message,
+        )
+
+    def _error_recovery_body(self, *continuations: str, responses_saved: bool) -> str:
+        """Build the error-page paragraph under ``An error occurred``."""
+        _p = get_translator(context=True)
+        parts = [
+            _p(
+                "early_exit_error",
+                "Unfortunately an error occurred and we cannot continue.",
+            )
+        ]
+        if responses_saved:
+            parts.append(
+                _p(
+                    "early_exit_error",
+                    "However, your responses so far have been saved.",
+                )
+            )
+        parts.extend(part for part in continuations if part)
+        return " ".join(parts)
+
+    def prepare_error_recovery(self, participant) -> None:
+        """Perform recruiter bookkeeping before rendering error recovery."""
+        del participant
+
+    def gates_early_exit_on_reward(self) -> bool:
+        """Return whether paid early exit requires the reward threshold.
+
+        Recruiters that do not pay through PsyNet never gate on reward: leaving
+        simply ends the session. Lucid overrides :meth:`early_exit_allowed`
+        instead, because termination must always be available.
+        """
+        return bool(self.shows_reward_by_default)
+
+    def plan_exit(
+        self,
+        experiment,
+        participant,
+        context: exit_domain.ExitContext,
+    ) -> exit_domain.ExitPlan:
+        """Plan one terminal participant outcome.
+
+        Voluntary Leave, error recovery, and timeline endings share this entry
+        point while retaining context-specific policy and presentation.
+        """
+        if context is exit_domain.ExitContext.VOLUNTARY:
+            return self._plan_voluntary_exit(experiment, participant)
+        if context is exit_domain.ExitContext.ERROR_RECOVERY:
+            return self._plan_error_recovery_exit(experiment, participant)
+
+        payment = self.decide_payment(participant, experiment=experiment)
+        if payment.status == "screened_out":
+            path = exit_domain.ExitPath.SCREEN_OUT
+        elif payment.status == "returned":
+            path = (
+                exit_domain.ExitPath.RETURN_FOR_BONUS
+                if payment.bonus > 0
+                else exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT
+            )
+        else:
+            path = exit_domain.ExitPath.END_SESSION
+        return exit_domain.ExitPlan.create(
+            context=context,
+            path=path,
+            payment=payment,
+            currency=get_config().get("currency", "$"),
+        ).mark_committed()
+
+    def _plan_voluntary_exit(self, experiment, participant) -> exit_domain.ExitPlan:
+        """Plan a participant-confirmed Leave outcome."""
+        if self.gates_early_exit_on_reward() and not experiment.early_exit_allowed(
+            participant
+        ):
+            return self._without_payment_voluntary_exit_plan(experiment, participant)
+        return self._standard_voluntary_exit_plan(experiment, participant)
+
+    def _plan_error_recovery_exit(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan recovery without applying voluntary paid-exit eligibility.
+
+        An error page must always offer a way out, so if the recruiter cannot
+        work out what it would pay (usually because reward calculation is what
+        failed), it falls back to copy that quotes no amounts.
+        """
+        try:
+            return self._standard_error_recovery_exit_plan(experiment, participant)
+        except Exception:
+            fallback = self._deferred_error_recovery_exit_plan(experiment, participant)
+            if fallback is None:
+                raise
+            logger.warning(
+                "Could not calculate detailed %s early-exit compensation; "
+                "using recovery copy without a reward quote.",
+                type(self).__name__,
+                exc_info=True,
+            )
+            return fallback
+
+    def _deferred_error_recovery_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan | None:
+        """Plan recovery whose complete payment must be calculated later.
+
+        Returns ``None`` for recruiters whose standard copy quotes nothing
+        anyway: there is no weaker plan to fall back to, so the original
+        failure stands.
+        """
+        return None
+
+    def _standard_error_recovery_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan error recovery for a recruiter without PsyNet payments."""
+        del experiment, participant
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.ERROR_RECOVERY,
+            path=exit_domain.ExitPath.END_SESSION,
+            payment=None,
+            payment_state=exit_domain.PaymentState.NOT_APPLICABLE,
+            currency=get_config().get("currency", "$"),
+        )
+
+    def _standard_voluntary_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan the recruiter's ordinary voluntary Leave handling.
+
+        Default recruiters do not pay through PsyNet, so the message avoids
+        payment promises. Paid recruiters override this method.
+        """
+        del experiment, participant
+        _p = get_translator(context=True)
+        confirmation = self._early_exit_confirmation(
+            _p(
+                "early_exit",
+                "If you leave now, you will not be able to continue later. "
+                "Your responses so far will still be saved.",
+            ),
+            path=exit_domain.ExitPath.END_SESSION,
+        )
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.VOLUNTARY,
+            path=exit_domain.ExitPath.END_SESSION,
+            payment=None,
+            payment_state=exit_domain.PaymentState.NOT_APPLICABLE,
+            currency=get_config().get("currency", "$"),
+            confirmation=confirmation,
+        )
+
+    def _without_payment_voluntary_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan an explicit return without payment below the threshold."""
+        del experiment
+        _p = get_translator(context=True)
+        earned = participant.calculate_reward()
+        threshold = get_config().get("min_reward_for_paid_early_exit")
+        message = _p(
+            "early_exit",
+            "You have earned {EARNED} so far. You need at least {THRESHOLD} "
+            "to leave with payment. If you leave without payment, you will "
+            "not be able to continue later. Your responses so far will still "
+            "be saved.",
+        ).format(
+            EARNED=exit_domain._format_exit_amount(earned),
+            THRESHOLD=exit_domain._format_exit_amount(threshold),
+        )
+        path = exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.VOLUNTARY,
+            path=path,
+            payment=exit_domain.PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=0.0,
+            ),
+            currency=get_config().get("currency", "$"),
+            confirmation=self._early_exit_confirmation(message, path=path),
+        )
+
+    def _early_exit_confirmation(
+        self, message: str, *, path: exit_domain.ExitPath
+    ) -> exit_domain.EarlyExitConfirmation:
+        """Build confirmation copy with PsyNet's shared labels."""
+        _p = get_translator(context=True)
+        if path is exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT:
+            confirm_label = _p("early_exit", "Leave without payment")
+        else:
+            confirm_label = _p("early_exit", "Leave")
+        return exit_domain.EarlyExitConfirmation(
+            title=_p("early_exit", "Leave without finishing?"),
+            message=message,
+            confirm_label=confirm_label,
+            cancel_label=_p("early_exit", "Cancel"),
+        )
+
+    def early_exit_allowed(self, participant) -> bool:
+        """Return whether this participant may leave with the paid outcome.
+
+        Unpaid recruiters always allow leave. Paid recruiters require the
+        configured reward threshold unless a subclass (e.g. Lucid) overrides.
+        """
+        if not self.gates_early_exit_on_reward():
+            return True
+        return participant.calculate_reward() >= get_config().get(
+            "min_reward_for_paid_early_exit"
+        )
+
+    def release_early_exit_without_payment(self, participant) -> TimelineLogic:
+        """Tell the participant how to finish without payment."""
+        _p = get_translator(context=True)
+        return InfoPage(
+            _p(
+                "early_exit_unpaid",
+                "You may close this page.",
+            ),
+            time_estimate=0.0,
+            show_next_button=False,
+        )
+
     def release_participant(self, experiment, participant) -> TimelineLogic:
+        if exit_domain._exit_returns_without_payment(participant):
+            return self.release_early_exit_without_payment(participant)
         return self.submit_assignment()
 
     def submit_assignment(self) -> TimelineLogic:
-        # This calls dallinger.submitAssignment, submitting the assignment to
-        # the recruiter. What happens next depends on the recruiter and (for
-        # Prolific) the completion code in the participant's exit URL.
+        # Hand off to PsyNet's exit helper rather than Dallinger's
+        # ``submitAssignment``: that helper uses ``location.replace`` so the
+        # finished timeline page is not left in the browser history for Back
+        # to revive. What happens next depends on the recruiter. For Prolific,
+        # ``approve_hit`` completes the submission server-side.
         # ``Experiment.on_recruiter_submission_complete`` then records the
         # payment decision and transfers any bonus.
         from .page import ExecuteFrontEndJS
 
-        _p = get_translator(context=True)
-
-        return ExecuteFrontEndJS(
-            "dallinger.submitAssignment()",
-            message=_p(
-                "recruiter_communication",
-                "Communicating with the recruiter...",
-            ),
-        )
+        return ExecuteFrontEndJS("psynet.finishAndGoToExit()")
 
     def check_consents(self, consents):
         """
@@ -326,19 +786,33 @@ class PsyNetRecruiterMixin:
         """Total compensation PsyNet intends the participant to receive."""
         return participant.calculate_reward()
 
-    def decide_payment(self, participant, *, experiment) -> PaymentDecision:
+    def decide_payment(self, participant, *, experiment) -> exit_domain.PaymentDecision:
         """Decide status, platform base, and bonus without writing or paying."""
+        plan = exit_domain._committed_exit_plan(participant)
+        if plan is not None and plan.payment_state is exit_domain.PaymentState.PLANNED:
+            return plan.payment
+        if (
+            plan is not None
+            and plan.path is exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT
+        ):
+            return exit_domain.PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=0.0,
+            )
         status = self.completion_status(participant)
         platform_base = self.platform_base_for(status, experiment)
         total_owed = self.total_owed(participant, status, platform_base)
         bonus = max(0.0, round(total_owed - platform_base, 2))
-        return PaymentDecision(
+        return exit_domain.PaymentDecision(
             status=status,
             platform_base=platform_base,
             bonus=bonus,
         )
 
-    def record_payment(self, participant, decision: PaymentDecision) -> None:
+    def record_payment(
+        self, participant, decision: exit_domain.PaymentDecision
+    ) -> None:
         """Write the payment decision onto the participant (no money transfer)."""
         participant.status = decision.status
         participant.base_pay = decision.platform_base
@@ -350,6 +824,7 @@ class PsyNetRecruiterMixin:
         Dallinger helpers often return ``None`` on success. ``None`` or any
         value other than ``False`` is treated as success.
         """
+        _check_external_call_allowed()
         result = super().reward_bonus(participant, amount, reason)
         if result is False:
             record_bonus_attempt_detail(
@@ -387,7 +862,36 @@ class PsyNetRecruiterMixin:
         return view.bonus
 
 
-class HotAirRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.HotAirRecruiter):
+class PsyNetExitPageMixin:
+    """PsyNet's final page, for recruiters that have no exit page of their own.
+
+    Dallinger's ``exit_recruiter.html`` is the one participant-facing page that
+    never picked up the participant theme, and it showed the recruiter's Python
+    class name above a table of raw payment fields, including a bare ``None``
+    bonus on recruiters that never pay one. It cannot be replaced by shipping a
+    template of the same name, because Dallinger's ``extra_files`` mechanism
+    does not overwrite templates Dallinger already provides, so PsyNet renders
+    its own template instead.
+
+    Mix this in only for recruiters that do not need a platform submission
+    control. Prolific renders a separate PsyNet-themed wrapper around its
+    submission behavior; Lucid redirects through its own flow.
+    """
+
+    def exit_response(self, experiment, participant):
+        return render_template_with_translations(
+            "psynet_exit_recruiter.html",
+            participant_reference=participant.assignment_id,
+            left_early=bool(getattr(participant, "early_exited", False)),
+        )
+
+
+class HotAirRecruiter(
+    PsyNetRecruiterMixin, PsyNetExitPageMixin, dallinger.recruiters.HotAirRecruiter
+):
+    # Local debug recruitment pays nobody, so there is no reward to report.
+    shows_reward_by_default = False
+
     def has_external_bonus_payment(self) -> bool:
         """HotAir does not pay through an external recruitment platform."""
         return False
@@ -405,6 +909,37 @@ class HotAirRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.HotAirRecruiter
 
 class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
     unsuccessful_code_type = PROLIFIC_UNSUCCESSFUL_CODE_TYPE
+    supported_early_exit_paths = frozenset(
+        {
+            exit_domain.ExitPath.SCREEN_OUT,
+            exit_domain.ExitPath.RETURN_FOR_BONUS,
+            exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT,
+        }
+    )
+
+    _warned_missing_study_id = False
+
+    def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
+        """Prolific recovery asks the participant to submit or return."""
+        return plan.context is exit_domain.ExitContext.ERROR_RECOVERY
+
+    def verify_status_of(self, participants):
+        """Sync participant statuses with Prolific, or skip if no study is recorded.
+
+        No study ID is recorded when PsyNet did not open the study itself
+        (for example with ``auto_recruit = false``, including debug runs), so
+        there are no submissions to compare against. The clock runs this check
+        every few seconds, so the skip is logged only once per process.
+        """
+        if not self.current_study_id:
+            if not PsyNetProlificRecruiterMixin._warned_missing_study_id:
+                PsyNetProlificRecruiterMixin._warned_missing_study_id = True
+                logger.warning(
+                    "Skipping Prolific participant status checks: no Prolific "
+                    "study ID is recorded for this experiment."
+                )
+            return
+        super().verify_status_of(participants)
 
     @property
     def unsuccessful_base_payment(self):
@@ -430,6 +965,312 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         """
         return self.unsuccessful_base_payment is not None
 
+    def plan_exit(
+        self,
+        experiment,
+        participant,
+        context: exit_domain.ExitContext,
+    ) -> exit_domain.ExitPlan:
+        """Plan Prolific's submission and payment outcome."""
+        if context in {
+            exit_domain.ExitContext.UNSUCCESSFUL,
+            exit_domain.ExitContext.REJECTED_CONSENT,
+        }:
+            path, payment = self._prolific_exit_payment(participant)
+            return exit_domain.ExitPlan.create(
+                context=context,
+                path=path,
+                payment=payment,
+                currency=get_config().get("currency", "$"),
+            ).mark_committed()
+        return super().plan_exit(experiment, participant, context)
+
+    def _prolific_exit_payment(
+        self, participant, earned: float | None = None
+    ) -> tuple[exit_domain.ExitPath, exit_domain.PaymentDecision]:
+        """Return Prolific's platform path and payment decision."""
+        if earned is None:
+            earned = participant.calculate_reward()
+        if self.pays_unsuccessful_participants_via_screen_out:
+            fixed = self.unsuccessful_base_payment
+            path = exit_domain.ExitPath.SCREEN_OUT
+            if self.tops_up_unsuccessful_participants:
+                bonus = max(0.0, earned - fixed)
+            else:
+                bonus = participant.performance_reward or 0.0
+        else:
+            path = exit_domain.ExitPath.RETURN_FOR_BONUS
+            fixed = 0.0
+            bonus = earned
+        return path, exit_domain.PaymentDecision(
+            status=(
+                "screened_out"
+                if path is exit_domain.ExitPath.SCREEN_OUT
+                else "returned"
+            ),
+            platform_base=fixed,
+            bonus=bonus,
+        )
+
+    def _standard_error_recovery_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan Prolific error recovery without voluntary confirmation copy."""
+        del experiment
+        path, payment = self._prolific_exit_payment(participant)
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.ERROR_RECOVERY,
+            path=path,
+            payment=payment,
+            currency=get_config().get("currency", "$"),
+        )
+
+    def _standard_voluntary_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan Prolific's voluntary Leave payment and confirmation copy."""
+        del experiment
+        _p = get_translator(context=True)
+        earned = participant.calculate_reward()
+        earned_txt = exit_domain._format_exit_amount(earned)
+        path, payment = self._prolific_exit_payment(participant, earned)
+        if path is exit_domain.ExitPath.SCREEN_OUT:
+            fixed_txt = exit_domain._format_exit_amount(payment.platform_base)
+            if self.tops_up_unsuccessful_participants:
+                if payment.bonus > 0:
+                    remainder_txt = exit_domain._format_exit_amount(payment.bonus)
+                    message = _p(
+                        "early_exit_prolific",
+                        "If you leave now, you will not be able to continue "
+                        "later. You will receive a fixed 'screen-out' payment of "
+                        "{FIXED}. Because you have earned {EARNED} so far, a "
+                        "further {REMAINDER} will be paid as a bonus. Your "
+                        "responses so far will still be saved.",
+                    ).format(
+                        FIXED=fixed_txt,
+                        EARNED=earned_txt,
+                        REMAINDER=remainder_txt,
+                    )
+                else:
+                    message = _p(
+                        "early_exit_prolific",
+                        "If you leave now, you will not be able to continue "
+                        "later. You will receive a fixed 'screen-out' payment of "
+                        "{FIXED}. Your responses so far will still be saved.",
+                    ).format(FIXED=fixed_txt)
+            elif payment.bonus > 0:
+                performance_txt = exit_domain._format_exit_amount(payment.bonus)
+                message = _p(
+                    "early_exit_prolific",
+                    "If you leave now, you will not be able to continue "
+                    "later. You will receive a fixed 'screen-out' payment of "
+                    "{FIXED} plus a performance bonus of {PERFORMANCE}. "
+                    "You will not be paid for additional time. Your "
+                    "responses so far will still be saved.",
+                ).format(FIXED=fixed_txt, PERFORMANCE=performance_txt)
+            else:
+                message = _p(
+                    "early_exit_prolific",
+                    "If you leave now, you will not be able to continue "
+                    "later. You will receive a fixed 'screen-out' payment of "
+                    "{FIXED}. You will not be paid for additional time. "
+                    "Your responses so far will still be saved.",
+                ).format(FIXED=fixed_txt)
+        else:
+            message = _p(
+                "early_exit_prolific",
+                "If you leave now, you will not be able to continue later. "
+                "You will need to return your Prolific submission. You will "
+                "then be paid {EARNED} as a bonus for the work you have "
+                "completed so far. Your responses so far will still be saved.",
+            ).format(EARNED=earned_txt)
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.VOLUNTARY,
+            path=path,
+            payment=payment,
+            currency=get_config().get("currency", "$"),
+            confirmation=self._early_exit_confirmation(message, path=path),
+        )
+
+    def _deferred_error_recovery_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Preserve Prolific's known platform outcome for later settlement."""
+        del experiment, participant
+        if self.pays_unsuccessful_participants_via_screen_out:
+            fixed = self.unsuccessful_base_payment
+            path = exit_domain.ExitPath.SCREEN_OUT
+            payment = exit_domain.PaymentDecision(
+                status="screened_out",
+                platform_base=fixed,
+                bonus=0.0,
+            )
+        else:
+            path = exit_domain.ExitPath.RETURN_FOR_BONUS
+            payment = exit_domain.PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=0.0,
+            )
+
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.ERROR_RECOVERY,
+            path=path,
+            payment=payment,
+            payment_state=exit_domain.PaymentState.DEFERRED,
+            currency=get_config().get("currency", "$"),
+        )
+
+    def error_page_presentation(
+        self,
+        *,
+        participant=None,
+        plan: exit_domain.ExitPlan | None = None,
+        assignment_id: str | None = None,
+        external_submit_url: str | None = None,
+        contact_address: str | None = None,
+    ) -> exit_domain.ErrorRecoveryPresentation:
+        """Explain Prolific's support or payment path after an error."""
+        self._check_stale_error_page_override()
+        del assignment_id, external_submit_url, contact_address
+        _p = get_translator(context=True)
+        if participant is None:
+            return exit_domain.ErrorRecoveryPresentation(
+                message=self._error_recovery_body(
+                    _p(
+                        "prolific_error",
+                        "If you had already started, message the researcher "
+                        "through Prolific.",
+                    ),
+                    responses_saved=False,
+                )
+            )
+        if plan is None:
+            return exit_domain.ErrorRecoveryPresentation(
+                message=self._error_recovery_body(
+                    _p(
+                        "prolific_error",
+                        "Please message the researcher through Prolific and describe "
+                        "what led to this error.",
+                    ),
+                    responses_saved=True,
+                )
+            )
+        if plan.path is exit_domain.ExitPath.SCREEN_OUT:
+            fixed = exit_domain._format_planned_payment_amount(plan, "platform_base")
+            payment = _p(
+                "early_exit_error_prolific",
+                "We will pay you for your progress so far: you will receive "
+                "{FIXED} through Prolific.",
+            ).format(FIXED=fixed)
+            if (
+                plan.payment_state is exit_domain.PaymentState.PLANNED
+                and plan.payment.bonus > 0
+                and self.tops_up_unsuccessful_participants
+            ):
+                remainder = exit_domain._format_planned_payment_amount(plan, "bonus")
+                total = exit_domain._format_exit_amount(
+                    plan.payment.platform_base + plan.payment.bonus,
+                    plan.currency,
+                )
+                payment += " " + _p(
+                    "early_exit_error_prolific",
+                    "We will also pay {BONUS} as a bonus, bringing your total "
+                    "payment to {TOTAL}.",
+                ).format(BONUS=remainder, TOTAL=total)
+            elif (
+                plan.payment_state is exit_domain.PaymentState.PLANNED
+                and plan.payment.bonus > 0
+            ):
+                performance = exit_domain._format_planned_payment_amount(plan, "bonus")
+                payment += " " + _p(
+                    "early_exit_error_prolific",
+                    "We will also pay your {BONUS} performance bonus.",
+                ).format(BONUS=performance)
+            elif (
+                plan.payment_state is exit_domain.PaymentState.DEFERRED
+                and self.tops_up_unsuccessful_participants
+            ):
+                payment += " " + _p(
+                    "early_exit_error_prolific",
+                    "Any additional amount you earned will be paid as a bonus.",
+                )
+
+            message = self._error_recovery_body(
+                payment,
+                responses_saved=True,
+            )
+            return exit_domain.ErrorRecoveryPresentation(
+                message=message,
+                action_instruction=_p(
+                    "early_exit_error_prolific",
+                    "Select Submit to Prolific to complete your submission.",
+                ),
+                failure_message=self._submission_failure_copy(),
+                button_label=_p("early_exit_error_prolific", "Submit to Prolific"),
+                action_post_url="/prolific-submission-listener",
+                action_post_data={
+                    "assignmentId": participant.assignment_id,
+                    "participantId": str(participant.id),
+                },
+            )
+
+        if plan.path is exit_domain.ExitPath.RETURN_FOR_BONUS:
+            if plan.payment_state is exit_domain.PaymentState.PLANNED:
+                payment = _p(
+                    "early_exit_error_prolific",
+                    "To receive {EARNED} for the work you completed, you will "
+                    "need to return your submission on Prolific.",
+                ).format(
+                    EARNED=exit_domain._format_planned_payment_amount(plan, "bonus")
+                )
+            else:
+                payment = _p(
+                    "early_exit_error_prolific",
+                    "To receive payment for the work you completed, you will "
+                    "need to return your submission on Prolific.",
+                )
+            next_step = _p(
+                "early_exit_error_prolific",
+                "Select Continue to payment instructions to complete these steps.",
+            )
+            return exit_domain.ErrorRecoveryPresentation(
+                message=self._error_recovery_body(
+                    payment,
+                    responses_saved=True,
+                ),
+                action_instruction=next_step,
+                failure_message=_p(
+                    "early_exit_error_prolific",
+                    "We could not open the payment instructions. Please try again. "
+                    "If this keeps happening, message the researcher through "
+                    "Prolific.",
+                ),
+                button_label=_p(
+                    "early_exit_error_prolific",
+                    "Continue to payment instructions",
+                ),
+            )
+
+        return super().error_page_presentation(
+            participant=participant,
+            plan=plan,
+        )
+
+    def release_early_exit_without_payment(self, participant) -> TimelineLogic:
+        """Ask the participant to return the Prolific submission without pay."""
+        _p = get_translator(context=True)
+        return InfoPage(
+            _p(
+                "early_exit_unpaid_prolific",
+                "Your responses so far have been saved. Please return your submission "
+                "on Prolific. You will not receive payment. You may close this "
+                "page.",
+            ),
+            time_estimate=0.0,
+            show_next_button=False,
+        )
+
     def completion_status(self, participant) -> str:
         """Return the payment-path status for this Prolific participant.
 
@@ -445,9 +1286,41 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             return "screened_out"
         if issued:
             return super().completion_status(participant)
+        plan = exit_domain._committed_exit_plan(participant)
+        if plan is not None and plan.path is exit_domain.ExitPath.SCREEN_OUT:
+            return "screened_out"
+        if exit_domain._exit_returns_without_payment(participant):
+            return "returned"
         if participant.failed and self.pays_unsuccessful_participants_via_screen_out:
             return "screened_out"
         return super().completion_status(participant)
+
+    def decide_payment(self, participant, *, experiment) -> exit_domain.PaymentDecision:
+        """Use the committed plan's payment decision when it is complete."""
+        plan = exit_domain._committed_exit_plan(participant)
+        if (
+            plan is not None
+            and plan.payment_state is exit_domain.PaymentState.DEFERRED
+            and plan.path is exit_domain.ExitPath.SCREEN_OUT
+        ):
+            platform_base = plan.payment.platform_base
+            total_owed = self.total_owed(participant, "screened_out", platform_base)
+            return exit_domain.PaymentDecision(
+                status="screened_out",
+                platform_base=platform_base,
+                bonus=max(0.0, round(total_owed - platform_base, 2)),
+            )
+        if (
+            plan is not None
+            and plan.payment_state is exit_domain.PaymentState.DEFERRED
+            and plan.path is exit_domain.ExitPath.RETURN_FOR_BONUS
+        ):
+            return exit_domain.PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=max(0.0, round(participant.calculate_reward(), 2)),
+            )
+        return super().decide_payment(participant, experiment=experiment)
 
     def platform_base_for(self, status: str, experiment) -> float:
         """Base amount Prolific pays for this payment status."""
@@ -495,14 +1368,19 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
 
     @property
     def completion_codes_and_actions(self) -> list[dict]:
-        """Extend Dallinger's Prolific completion codes with an UNSUCCESSFUL code.
-
-        When ``prolific_pay_unsuccessful`` is enabled (the default), failed or
-        errored participants are sent back to Prolific with this code, which
-        triggers Prolific's fixed screen-out payment instead of the full base
-        payment.
-        """
+        """Add researcher-actor DEFAULT and, when enabled, researcher-actor UNSUCCESSFUL."""
         codes = super().completion_codes_and_actions
+        experiment_id = get_config().get("id")
+        codes.append(
+            {
+                "code": alphanumeric_code(
+                    PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE + experiment_id
+                ),
+                "code_type": PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE,
+                "actor": "researcher",
+                "actions": [{"action": "AUTOMATICALLY_APPROVE"}],
+            }
+        )
         if not self.pays_unsuccessful_participants_via_screen_out:
             return codes
         for code in codes:
@@ -518,11 +1396,9 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                     )
         codes.append(
             {
-                "code": alphanumeric_code(
-                    self.unsuccessful_code_type + get_config().get("id")
-                ),
+                "code": alphanumeric_code(self.unsuccessful_code_type + experiment_id),
                 "code_type": self.unsuccessful_code_type,
-                "actor": "participant",
+                "actor": "researcher",
                 "actions": [
                     {
                         "action": PROLIFIC_SCREEN_OUT_ACTION,
@@ -539,32 +1415,25 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         )
         return codes
 
-    def on_error_page(self, participant):
-        """Mark a participant who lands on the error page as failed.
-
-        Not all error paths fail the participant before redirecting to the
-        error page (e.g. errors raised while processing a response). When
-        unsuccessful participants are paid via the screen-out completion
-        code, the participant must be marked as failed so that the exit
-        completion code and the bonus top-up logic treat them consistently.
-        """
-        should_fail = (
-            self.pays_unsuccessful_participants_via_screen_out
-            and not participant.failed
-            and not participant.complete
-        )
-        if should_fail:
-            participant.fail("error_page")
-
     def exit_code_type(self, participant):
-        """Return the completion-code type for the participant's exit URL.
+        """Return the completion-code type issued at local submit.
 
         Unsuccessful participants get the UNSUCCESSFUL code, which triggers
         Prolific's fixed screen-out payment. ``None`` selects the recruiter's
-        default (auto-approving) code. This decision is based on the
-        participant's state at exit time; ``Experiment.recruiter_exit_info``
-        persists the issued code for later payment.
+        default (auto-approving) code. The issued type is stored for later
+        payment and for the researcher-actor ``COMPLETE`` call; participants
+        are not sent to a completion-code URL.
         """
+        issued = getattr(participant, "issued_completion_code_type", None)
+        if issued == self.unsuccessful_code_type:
+            return self.unsuccessful_code_type
+        if issued:
+            return None
+        plan = exit_domain._committed_exit_plan(participant)
+        if plan is not None and plan.path is exit_domain.ExitPath.SCREEN_OUT:
+            return self.unsuccessful_code_type
+        if exit_domain._exit_returns_without_payment(participant):
+            return None
         if participant.failed and self.pays_unsuccessful_participants_via_screen_out:
             return self.unsuccessful_code_type
         return None
@@ -643,93 +1512,89 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         participant.issued_completion_code_type = self.unsuccessful_code_type
         return True
 
-    def error_page_content(self, assignment_id=None, external_submit_url=None):
-        """Error-page HTML for Prolific participants.
+    def exit_response(self, experiment, participant) -> str:
+        """Stay on a PsyNet page; stamp the issued completion code.
 
-        When unsuccessful participants are paid via the screen-out completion
-        code, the page offers a "Submit to Prolific" button that reports the
-        submission to PsyNet and redirects to the UNSUCCESSFUL completion
-        code; otherwise participants are asked to message the experimenter.
-        (``external_submit_url`` is part of the recruiter error-page hook
-        signature but is not used here: the submit URL is derived from the
-        completion code.)
+        After Submit, reload this route so the confirmation is a new document
+        rather than a rewrite of the submit heading.
         """
-        _p = get_translator(context=True)
+        if hasattr(experiment, "recruiter_exit_info"):
+            experiment.recruiter_exit_info(participant)
+        return self.render_submission_page(participant)
 
-        # The participant id is needed for the submit button's POST to
-        # /prolific-submission-listener; resolve it from the assignment id.
-        error_participant = latest_participant_for_assignment(assignment_id)
-        already_issued = getattr(error_participant, "issued_completion_code_type", None)
-        can_submit_unsuccessful = (
-            self.pays_unsuccessful_participants_via_screen_out
-            and assignment_id
-            and error_participant is not None
-            # A complete participant exits via the normal exit page with the
-            # auto-approving code; never offer them the screen-out submit
-            # button just because they hit an error page afterwards.
-            and not error_participant.complete
-            # First issuance wins: a participant who already left with
-            # another completion code (e.g. the auto-approving DEFAULT)
-            # must not be reclassified as screened-out by merely rendering
-            # this page. See ``completion_status``, which trusts this
-            # snapshot over the current ``failed`` flag.
-            and already_issued in (None, self.unsuccessful_code_type)
+    def render_submission_page(self, participant) -> str:
+        """Render the Submit/confirmation document without writing payment state.
+
+        ``RecordedSubmissionPage`` calls this from the read-only timeline
+        render, where the submission handler has already stamped the
+        completion code.
+        """
+        recorded = self._submission_already_recorded(participant)
+        heading, body = self._recorded_submission_copy()
+        return render_template_with_translations(
+            "exit_recruiter_prolific_submitted.html",
+            assignment_id=participant.assignment_id,
+            participant_id=participant.id,
+            submission_recorded=recorded,
+            confirmation_heading=heading,
+            confirmation_body=body,
+            failure_message=self._submission_failure_copy(),
         )
 
-        html = tags.div()
-        with html:
-            tags.p(
-                _p(
-                    "prolific_error",
-                    "Don't worry, your progress has been recorded.",
-                )
-            )
-            if can_submit_unsuccessful:
-                submit_url = self.external_submission_url(
-                    code_type=self.unsuccessful_code_type
-                )
-                tags.p(
-                    _p(
-                        "prolific_error",
-                        "Click the button below to submit your study to Prolific and receive compensation for your time.",
-                    )
-                )
-                tags.button(
-                    _p("prolific_error", "Submit to Prolific"),
-                    id="prolific-unsuccessful-submit",
-                    cls="btn btn-primary btn-lg",
-                )
-                tags.script(
-                    raw(
-                        """
-                        document.getElementById("prolific-unsuccessful-submit").onclick = function () {
-                            this.disabled = true;
-                            const data = new URLSearchParams();
-                            data.append("assignmentId", %s);
-                            data.append("participantId", %s);
-                            fetch("/prolific-submission-listener", {method: "POST", body: data})
-                                .finally(() => { window.location = %s; });
-                        };
-                        """
-                        % (
-                            json.dumps(assignment_id),
-                            json.dumps(str(error_participant.id)),
-                            json.dumps(submit_url),
-                        )
-                    )
-                )
-            else:
-                tags.p(
-                    _p(
-                        "prolific_error",
-                        "To enquire about compensation, please send the researcher a message via the Prolific website and describe what led to your error.",
-                    )
-                )
-        return html
+    def _submission_already_recorded(self, participant) -> bool:
+        """Return whether Prolific Submit has already posted the listener."""
+        return getattr(participant, "status", None) in {
+            "submitted",
+            "approved",
+            "screened_out",
+        }
+
+    def _recorded_submission_copy(self) -> tuple[str, str]:
+        """Return the confirmation heading and body after Prolific Submit."""
+        _p = get_translator(context=True)
+        return (
+            _p(
+                "early_exit_error_prolific",
+                "Your submission has been sent to Prolific.",
+            ),
+            _p(
+                "early_exit_error_prolific",
+                "You may close this page.",
+            ),
+        )
+
+    def _submission_failure_copy(self) -> str:
+        """Return copy when Prolific Submit cannot be sent."""
+        _p = get_translator(context=True)
+        return _p(
+            "early_exit_error_prolific",
+            "We could not send your submission to Prolific. Please try again. "
+            "If this keeps happening, message the researcher through Prolific.",
+        )
+
+    def confirm_recorded_submission(self, participant) -> TimelineLogic:
+        """Show that Prolific submission is finished; do not ask again."""
+        del participant
+        from .end import RecordedSubmissionPage
+
+        return RecordedSubmissionPage()
 
     def release_participant(
         self, experiment, participant: Participant
     ) -> TimelineLogic:
+        plan = exit_domain._committed_exit_plan(participant)
+        if plan is not None:
+            if plan.path is exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT:
+                return self.release_early_exit_without_payment(participant)
+            if plan.path is exit_domain.ExitPath.RETURN_FOR_BONUS:
+                return self.request_return_for_bonus(participant)
+            if plan.path is exit_domain.ExitPath.SCREEN_OUT:
+                # Submit posts the Prolific listener after executePlan advances
+                # the cursor. That first advance still sees status ``working``.
+                # The later ``GET /timeline`` resolves this method again.
+                if self._submission_already_recorded(participant):
+                    return self.confirm_recorded_submission(participant)
+                return self.submit_assignment()
         if (
             participant.failed
             and not self.pays_unsuccessful_participants_via_screen_out
@@ -765,39 +1630,205 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             raise
 
     def approve_hit(self, assignment_id: str):
-        """Skip Prolific approval when it would be redundant or rejected.
-
-        Screen-out submissions are never in ``AWAITING REVIEW``; returned
-        submissions are no longer the experimenter's to approve. Attempting
-        either would trigger Dallinger's retry loop and a spurious recruitment
-        error. Likewise, a submission-complete replay (Prolific's listener
-        re-fires after resetting status to ``submitted``) must not approve a
-        submission a second time: the participant's payment was already
-        handled once, and Prolific rejects approving an already-approved
-        submission, which would surface as a spurious recruitment error.
-        """
+        """COMPLETE an ACTIVE/TIMED-OUT row, or Approve one already AWAITING REVIEW."""
+        _check_external_call_allowed()
         participant = latest_participant_for_assignment(assignment_id)
-        if participant is not None:
-            if participant.status in ("screened_out", "returned"):
-                logger.info(
-                    "Skipping Prolific approval for assignment %s: status is %s.",
+        if (
+            participant is None
+            or participant.status == "returned"
+            or bonus_transfer_already_claimed(participant)
+        ):
+            logger.info(
+                "Skipping Prolific completion for assignment %s.", assignment_id
+            )
+            return True
+        outcome, _status = self._settle_prolific_submission(participant, assignment_id)
+        # "unpayable" (returned/rejected) and "no_code" cannot succeed later,
+        # but reporting them as unpaid flags the participant so the retry
+        # sweep stops with a reason and notifies the researcher, instead of
+        # leaving a base that looks paid but never will be.
+        return outcome not in ("failed", "unpayable", "no_code")
+
+    def _settle_prolific_submission(self, participant, assignment_id: str):
+        """Act on the live Prolific row.
+
+        Return ``(outcome, status)`` where outcome is one of ``paid``,
+        ``unpayable`` (returned/rejected: Prolific will never pay),
+        ``no_code`` (no researcher-actor completion code exists for this
+        participant, so COMPLETE can never be sent), ``failed`` (worth
+        retrying), or ``skipped`` (a status PsyNet does not act on).
+        """
+        status = self._live_submission_status(assignment_id)
+        if status in PROLIFIC_PAID_SUBMISSION_STATUSES:
+            return "paid", status
+        if status in PROLIFIC_UNPAYABLE_SUBMISSION_STATUSES:
+            return "unpayable", status
+        if status == "AWAITING REVIEW":
+            result = super().approve_hit(assignment_id)
+            paid = result is not None and result is not False
+            return ("paid" if paid else "failed"), status
+        if status in PROLIFIC_COMPLETABLE_SUBMISSION_STATUSES:
+            code_type = self._researcher_code_type_for(participant)
+            code = self.completion_code_map.get(code_type) if code_type else None
+            if not code:
+                logger.warning(
+                    "No researcher-actor completion code is available to "
+                    "complete Prolific submission %s for participant %s "
+                    "(issued code type %s; is `prolific_pay_unsuccessful` "
+                    "disabled?).",
                     assignment_id,
-                    participant.status,
+                    participant.id,
+                    getattr(participant, "issued_completion_code_type", None),
                 )
-                return True
-            if bonus_transfer_already_claimed(participant):
-                logger.info(
-                    "Skipping Prolific approval for assignment %s: payment was "
-                    "already handled once (bonus_status=%s), so this is a "
-                    "submission-complete replay.",
-                    assignment_id,
-                    participant.bonus_status,
+                return "no_code", status
+            return (
+                "paid"
+                if self._complete_prolific_submission(
+                    participant, assignment_id, code_type, code
                 )
-                return True
-        return super().approve_hit(assignment_id)
+                else "failed",
+                status,
+            )
+        if status is None:
+            return "failed", status
+        return "skipped", status
+
+    def _live_submission_status(self, assignment_id: str) -> str | None:
+        """Read status via the quiet GET so the dev recruiter can stub this."""
+        submission = _fetch_prolific_submission(self.prolificservice, assignment_id)
+        return None if submission is None else submission.get("status")
+
+    def _complete_prolific_submission(
+        self, participant, assignment_id: str, code_type: str, code: str
+    ) -> bool:
+        """POST COMPLETE with the given researcher-actor code."""
+        try:
+            self.prolificservice._req(
+                method="POST",
+                endpoint=f"/submissions/{assignment_id}/transition/",
+                json={"action": "COMPLETE", "completion_code": code},
+            )
+        # requests.RequestException: see _prolific_lookup_error_is_retriable.
+        except (ProlificServiceException, requests.RequestException) as ex:
+            handle_recruitment_error(ex)
+            return False
+        logger.info(
+            "Completed Prolific submission %s for participant %s with %s.",
+            assignment_id,
+            participant.id,
+            code_type,
+        )
+        return True
+
+    def _researcher_code_type_for(self, participant) -> str | None:
+        """UNSUCCESSFUL for screened-out / failed issuances, else DEFAULT_RESEARCHER."""
+        issued = getattr(participant, "issued_completion_code_type", None)
+        failed = bool(getattr(participant, "failed", False))
+        status = getattr(participant, "status", None)
+        if issued == self.unsuccessful_code_type or status == "screened_out":
+            return (
+                self.unsuccessful_code_type
+                if self.pays_unsuccessful_participants_via_screen_out
+                else None
+            )
+        if issued in (self.default_code_type, PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE):
+            return PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE
+        if failed:
+            return (
+                self.unsuccessful_code_type
+                if self.pays_unsuccessful_participants_via_screen_out
+                else None
+            )
+        if issued is None:
+            return PROLIFIC_DEFAULT_RESEARCHER_CODE_TYPE
+        return None
+
+    def _notify_complete_failed(self, participant, assignment_id, extra=""):
+        from .experiment import get_experiment
+
+        message = (
+            f"PsyNet could not complete Prolific submission {assignment_id} "
+            f"for participant {participant.id}. Please approve or screen out "
+            f"the row on Prolific.{extra}"
+        )
+        logger.warning(message)
+        get_experiment().notifier.notify(message)
+
+    def run_checks(self):
+        self.retry_unpaid_platform_bases()
+
+    def retry_unpaid_platform_bases(self) -> None:
+        """Retry COMPLETE/Approve for participants whose study base is still unpaid."""
+        for participant in Participant.needing_platform_base_retry(
+            max_attempts=PROLIFIC_PLATFORM_BASE_RETRY_LIMIT
+        ):
+            self._retry_unpaid_platform_base(participant)
+
+    def _retry_unpaid_platform_base(self, participant) -> None:
+        assignment_id = participant.assignment_id
+        outcome, status = self._settle_prolific_submission(participant, assignment_id)
+        if outcome == "paid":
+            clear_platform_base_unpaid(participant)
+            return
+        if outcome == "unpayable":
+            extra = f" Status is {status}, which Prolific will not pay."
+            stop_platform_base_retries(
+                participant,
+                (
+                    f"PsyNet could not get Prolific to pay the study base for "
+                    f"participant {participant.id}.{extra} Please settle the "
+                    f"row on Prolific if this person is still owed."
+                ),
+                attempts=PROLIFIC_PLATFORM_BASE_RETRY_LIMIT,
+            )
+            self._notify_complete_failed(participant, assignment_id, extra=extra)
+            return
+        if outcome == "no_code":
+            extra = (
+                " No researcher-actor completion code exists for this "
+                "participant, so PsyNet cannot complete the submission."
+            )
+            stop_platform_base_retries(
+                participant,
+                (
+                    f"PsyNet could not get Prolific to pay the study base for "
+                    f"participant {participant.id}.{extra} Please settle the "
+                    f"row on Prolific if this person is still owed."
+                ),
+                attempts=PROLIFIC_PLATFORM_BASE_RETRY_LIMIT,
+            )
+            self._notify_complete_failed(participant, assignment_id, extra=extra)
+            return
+        if status == "AWAITING REVIEW":
+            extra = " Approve of an AWAITING REVIEW row failed."
+        elif status in PROLIFIC_COMPLETABLE_SUBMISSION_STATUSES:
+            extra = " COMPLETE was refused again."
+        elif status is None:
+            extra = " PsyNet could not read the submission status."
+        else:
+            extra = f" Status is {status}, which PsyNet will not complete."
+        self._record_platform_base_retry_failure(participant, extra=extra)
+
+    def _record_platform_base_retry_failure(self, participant, extra="") -> None:
+        attempts = record_platform_base_retry(participant)
+        if attempts < PROLIFIC_PLATFORM_BASE_RETRY_LIMIT:
+            return
+        stop_platform_base_retries(
+            participant,
+            (
+                f"PsyNet could not get Prolific to pay the study base for "
+                f"participant {participant.id} after {attempts} attempts."
+                f"{extra} Please approve or screen out the row on Prolific."
+            ),
+            attempts=attempts,
+        )
+        self._notify_complete_failed(
+            participant, participant.assignment_id, extra=extra
+        )
 
     def reward_bonus(self, participant, amount, reason):
         """Pay a Prolific bonus. Return False if Prolific rejected the transfer."""
+        _check_external_call_allowed()
         try:
             self.prolificservice.pay_session_bonus(
                 study_id=self.current_study_id,
@@ -817,9 +1848,9 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
     def platform_payment_view(self, participant) -> PlatformPaymentView:
         """Read Prolific submission status and ``bonus_payments``.
 
-        Uses a quiet submission GET because Dallinger's translator drops
-        ``bonus_payments``, and ``ProlificService._req`` treats HTTP errors
-        as recruitment failures. Pay is asynchronous, so bonus can lag a POST.
+        Uses Dallinger's ``get_participant_submission(..., translate=False)`` so
+        ``bonus_payments`` are kept and a miss is not a recruitment error.
+        Pay is asynchronous, so bonus can lag a POST.
 
         For participants paid via the screen-out completion code, the fixed
         screen-out reward is excluded from ``bonus``, so the reported figure
@@ -876,13 +1907,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             fixed_reward = getattr(participant, "base_payment", None)
         if not fixed_reward:
             return bonus_payments
-        fixed_subcurrency = int(round(fixed_reward * 100))
-        remaining = list(bonus_payments)
-        for index, entry in enumerate(remaining):
-            if int(round(entry)) == fixed_subcurrency:
-                del remaining[index]
-                break
-        return remaining
+        return _without_matching_bonus_entry(bonus_payments, fixed_reward)
 
     def request_return_for_bonus(self, participant) -> TimelineLogic:
         """Ask the participant to return their Prolific submission and pay
@@ -904,7 +1929,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 _p(
                     "return_assignment_instructions",
                     "Please return your submission via the Prolific interface and click Next. "
-                    "We will then automatically pay you a bonus for your time.",
+                    "We will then automatically pay you a bonus.",
                 ),
                 time_estimate=0.5,
             ),
@@ -924,15 +1949,22 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                             participant.var.assignment_returned
                         ),
                         logic_if_true=join(
-                            CodeBlock(self.reward_and_set_bonus),
+                            AsyncCodeBlock(
+                                self.reward_and_set_bonus,
+                                wait=True,
+                                expected_wait=5.0,
+                                check_interval=1.0,
+                                max_wait_time=RETURN_FOR_BONUS_PAYMENT_MAX_WAIT,
+                                on_timeout=self._notify_return_for_bonus_payment_timeout,
+                            ),
                             conditional(
                                 "return_for_bonus_credited",
                                 condition=self._return_for_bonus_credited,
                                 logic_if_true=InfoPage(
                                     _p(
                                         "return_for_bonus_completed",
-                                        "That worked! You have been credited for the time spent on the experiment. "
-                                        "Thank you for participating. You can now close this browser window.",
+                                        "That worked. You have been credited for the time you spent. "
+                                        "Thank you for taking part. You may close this page.",
                                     ),
                                     show_next_button=False,
                                     time_estimate=0.0,
@@ -941,8 +1973,8 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                                     _p(
                                         "return_for_bonus_payment_failed",
                                         "Your return was recorded, but we could not complete the bonus payment automatically. "
-                                        "The experimenter has been notified and will arrange payment. "
-                                        "You can now close this browser window.",
+                                        "The researcher has been notified and will arrange payment. "
+                                        "You may close this page.",
                                     ),
                                     show_next_button=False,
                                     time_estimate=0.0,
@@ -952,9 +1984,8 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                         logic_if_false=InfoPage(
                             _p(
                                 "assignment_return_retry",
-                                "That didn't work. Are you sure you returned the submission for this study? "
-                                "Please go to the Prolific interface, make sure you have returned the submission, "
-                                "then click the 'Next' button.",
+                                "That didn't work. Are you sure you returned the submission? "
+                                "Return it on Prolific, then click Next.",
                             ),
                             time_estimate=0.5,
                         ),
@@ -965,61 +1996,32 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         )
 
     def return_for_bonus_logic(self, enable_return_for_bonus) -> TimelineLogic:
-        """Create the TimelineLogic for returning the assignment in order to receive the bonus."""
+        """Return-on-Prolific instructions, without a second intro page."""
         if not enable_return_for_bonus:
             return None
-
-        _p = get_translator(context=True)
-
-        return conditional(
-            "return_for_bonus_enabled",
-            lambda participant: enable_return_for_bonus,
-            join(
-                InfoPage(
-                    _p(
-                        "return_for_bonus_enabled",
-                        "We are sorry that you could not proceed to the main experiment, "
-                        "but we will still pay you for your time spent so far. "
-                        "To receive this payment, we need you to return this assignment "
-                        "via the Prolific interface, then click the 'Next' button below.",
-                    ),
-                    time_estimate=0.5,
-                ),
-                self.assignment_returned_logic(),
-            ),
-            None,
-        )
+        return self.assignment_returned_logic()
 
     def return_and_message_experimenter_logic(self) -> TimelineLogic:
-        """Create the TimelineLogic for returning the assignment and messaging the experimenter."""
+        """Ask them to return on Prolific and message the researcher."""
         _p = get_translator(context=True)
 
         return InfoPage(
             _p(
                 "screen_out_return_and_message_experimenter",
-                "We are sorry that you could not proceed to the main experiment. "
-                "To receive this payment for your time, please return your assignment in Prolific "
-                "and send a message to the experimenter via the Prolific messaging system. "
-                "The experimenter will review your case and arrange payment if appropriate. "
-                "Thank you for your understanding. "
-                "You can now close this browser window.",
+                "To receive payment for the time you spent, return your "
+                "submission on Prolific and message the researcher there. "
+                "They will review your case and arrange payment if it is due. "
+                "You may close this page.",
             ),
             show_next_button=False,
             time_estimate=0.5,
         )
 
     def _request_return_for_bonus(self, participant) -> TimelineLogic:
-        enable_return_for_bonus = get_config().get("prolific_enable_return_for_bonus")
-
-        logic_return_for_bonus = self.return_for_bonus_logic(enable_return_for_bonus)
-        logic_return_and_message_experimenter = (
-            self.return_and_message_experimenter_logic()
-        )
-
-        return join(
-            logic_return_for_bonus,
-            logic_return_and_message_experimenter,
-        )
+        del participant
+        if get_config().get("prolific_enable_return_for_bonus"):
+            return self.assignment_returned_logic()
+        return self.return_and_message_experimenter_logic()
 
     @staticmethod
     def check_assignment_return_status(participant) -> bool:
@@ -1039,15 +2041,15 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        except ProlificServiceException as error:
-            status = _prolific_error_status(error)
-            if status not in RETRIABLE_PROLIFIC_RETURN_LOOKUP_STATUSES:
+        # requests.RequestException: see _prolific_lookup_error_is_retriable.
+        except (ProlificServiceException, requests.RequestException) as error:
+            if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
                     "because Prolific returned a non-retriable lookup error "
                     "with status %s.",
                     participant.assignment_id,
-                    status,
+                    _prolific_error_status(error),
                     exc_info=True,
                 )
                 raise
@@ -1089,6 +2091,20 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             reason="Partial payment for incomplete participation",
         )
 
+    @staticmethod
+    def _notify_return_for_bonus_payment_timeout(participant):
+        """Tell the researcher that a return-for-bonus payment has not finished."""
+        _alert_researcher(
+            f"The return-for-bonus payment for participant {participant.id} "
+            f"(assignment {participant.assignment_id}, worker "
+            f"{participant.worker_id}) did not finish within "
+            f"{RETURN_FOR_BONUS_PAYMENT_MAX_WAIT:.0f} seconds, so the worker "
+            "queue may be stalled. The participant was told that you will "
+            "arrange payment. PsyNet still pays them if the queued job runs; "
+            "check the participant on the Participants dashboard, and pay "
+            "them through Prolific if no payment is recorded."
+        )
+
     def check_for_returned_assignment(self, participant) -> bool:
         """Check if the participant has returned the assignment."""
         try:
@@ -1119,6 +2135,7 @@ class ProlificRecruiter(
         return response
 
     def run_checks(self):
+        super().run_checks()
         logger.info("Polling Prolific API to check for unread messages")
         unread_messages = self.prolificservice.get_unread_messages()
         relevant_messages = []
@@ -1174,7 +2191,17 @@ class ProlificRecruiter(
 class DevProlificRecruiter(
     PsyNetProlificRecruiterMixin, dallinger.recruiters.DevProlificRecruiter
 ):
-    pass
+    def open_recruitment(self, n: int = 1) -> dict:
+        """Open a simulated Prolific study, saying that nothing was created."""
+        response = super().open_recruitment(n=n)
+        response["message"] = (
+            "Prolific study simulated in debug mode; nothing was created on Prolific"
+        )
+        return response
+
+    def _live_submission_status(self, assignment_id: str) -> str:
+        """Dev mode has no live row; report ACTIVE so local submit exercises COMPLETE."""
+        return "ACTIVE"
 
 
 class MockProlificRecruiter(
@@ -1183,42 +2210,15 @@ class MockProlificRecruiter(
     pass
 
 
-class MTurkRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.MTurkRecruiter):
-    def reward_bonus(self, participant, amount, reason):
-        """Pay an MTurk bonus. Return False if MTurk rejected the transfer."""
-        from dallinger.mturk import MTurkServiceException
-
-        try:
-            granted = self.mturkservice.grant_bonus(
-                participant.assignment_id, amount, reason
-            )
-        except MTurkServiceException as ex:
-            handle_recruitment_error(ex)
-            record_bonus_attempt_detail(participant, str(ex))
-            return False
-        if granted is False:
-            handle_recruitment_error(
-                MTurkServiceException(
-                    f"MTurk grant_bonus returned unsuccessful for assignment "
-                    f"{participant.assignment_id}."
-                )
-            )
-            record_bonus_attempt_detail(
-                participant,
-                f"MTurk grant_bonus returned unsuccessful for assignment "
-                f"{participant.assignment_id}.",
-            )
-            return False
-        return True
-
-
 # Lab Recruiter
 @dataclass
 class LabRecruitmentStatus(RecruitmentStatus):
     pass
 
 
-class BaseLabRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
+class BaseLabRecruiter(
+    PsyNetRecruiterMixin, PsyNetExitPageMixin, dallinger.recruiters.CLIRecruiter
+):
     """
     The LabRecruiter base class.
 
@@ -1260,10 +2260,7 @@ class BaseLabRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)
 
     def _authorization_header(self):
         """Return a DRF Token header built from the configured auth token."""
@@ -1299,6 +2296,7 @@ class BaseLabRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
 
     def report_submission_outcome(self, participant, amount, reason):
         """Report a terminal Lab Recruiter outcome, including a zero bonus."""
+        _check_external_call_allowed()
         authorization = self._authorization_header()
         if not authorization:
             if (self.config.get("mode") or "") == "debug":
@@ -1434,6 +2432,14 @@ DevCapRecruiter = DevLabRecruiter
 # Lucid Recruiter
 @register_table
 class LucidRID(SQLBase, SQLMixin):
+    """Lucid survey entrant, keyed by Lucid's respondent ID (``rid``).
+
+    Rows may exist before (or without) a PsyNet ``Participant``. When a
+    participant is created with ``worker_id == rid``, ``participant_id`` is
+    linked. Export separates identifying Lucid fields into
+    ``lucid_entrant_identifiers.csv`` for ghost entrants.
+    """
+
     __tablename__ = "lucid_rid"
 
     # These fields are removed from the database table as they are not needed.
@@ -1443,7 +2449,12 @@ class LucidRID(SQLBase, SQLMixin):
     vars = None
     creation_time = None
 
-    rid = Column(String, ForeignKey("participant.worker_id"), index=True)
+    rid = Column(String, index=True, unique=True, nullable=False)
+    participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
+    participant = relationship(
+        "psynet.participant.Participant",
+        foreign_keys=[participant_id],
+    )
     registered_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
@@ -1463,10 +2474,28 @@ class LucidRID(SQLBase, SQLMixin):
     lucid_respondent_id = Column(String)
     lucid_supplier_id = Column(Integer)
 
-    # to dict
+    def link_participant(self, participant):
+        """Associate this entrant with a Participant when one exists."""
+        if participant is None:
+            return
+        if self.participant_id != participant.id:
+            self.participant_id = participant.id
+
+    def resolve_participant(self):
+        """Return the linked participant, looking up by ``rid`` if needed.
+
+        This method is read-only: it does not persist ``participant_id``.
+        Durable linking happens at participant creation via
+        :meth:`link_participant`.
+        """
+        if self.participant_id is not None:
+            return self.participant
+        return _latest_participant_for_worker_id(self.rid)
+
     def to_dict(self):
         return {
             "rid": self.rid,
+            "participant_id": self.participant_id,
             "registered_at": self.registered_at,
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
@@ -1563,8 +2592,15 @@ class LucidRecruitmentStatus(RecruitmentStatus):
 
 
 class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
+    supported_early_exit_paths = frozenset(
+        {exit_domain.ExitPath.TERMINATE_PANEL_SESSION}
+    )
     supports_delayed_publishing = True
+    # Lucid forbids showing rewards inside the survey.
+    shows_reward_by_default = False
+    reports_zero_outcomes = True
     MARKETPLACE_CODE = "Marketplace codes"
+    CLOCK_TIMEOUT_GRACE_S = 60
     IN_SURVEY = "Currently in Client Survey or Drop"
     COMPLETED = "Returned as Complete"
     TERMINATED = "Returned as Terminate"
@@ -1648,6 +2684,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     The LucidRecruiter base class
     """
 
+    show_early_exit_button = True
+    show_abort_button = True
     show_termination_button = True
 
     required_consent_page = LucidConsent.LucidConsentPage
@@ -1656,10 +2694,32 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         OpenScienceConsent.OpenScienceConsentPage,
     )
 
+    def plan_exit(
+        self,
+        experiment,
+        participant,
+        context: exit_domain.ExitContext,
+    ) -> exit_domain.ExitPlan:
+        """Plan completion or termination of a Lucid panel session."""
+        if context in {
+            exit_domain.ExitContext.UNSUCCESSFUL,
+            exit_domain.ExitContext.REJECTED_CONSENT,
+        }:
+            return exit_domain.ExitPlan.create(
+                context=context,
+                path=exit_domain.ExitPath.TERMINATE_PANEL_SESSION,
+                payment=None,
+                payment_state=exit_domain.PaymentState.NOT_APPLICABLE,
+                currency=get_config().get("currency", "$"),
+            ).mark_committed()
+        return super().plan_exit(experiment, participant, context)
+
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.config = get_config()
-        if self.config.get("show_reward"):
+        # Lucid recruitment already defaults to hiding rewards; only an
+        # explicit opt-in has to be refused.
+        if self.config.get("show_reward", None) is True:
             raise RuntimeError(
                 "Lucid recruitment requires `show_reward` to be set to `False`."
             )
@@ -1671,7 +2731,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         self.store = kwargs.get("store", RedisStore())
 
     def recruit(self, n=1):
-        """Incremental recruitment isn't implemented for now, so we return an empty list."""
+        """Reopen entry if ``close_recruitment`` paused it; Lucid sends the entrants."""
+        self._resume_entry()
         return []
 
     def get_status(self, submissions=None) -> LucidRecruitmentStatus:
@@ -1769,12 +2830,10 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)
 
     def run_checks(self):
+        self._recheck_paused_entry()
         logger.info("Polling Lucid API to count entry_df")
 
         survey_number = self.current_survey_number()
@@ -1857,7 +2916,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             },
         )
         db.session.add(status_entry)
-        db.session.commit()
 
         unfailed_entrants = LucidRID.query.filter_by(
             terminated_at=None, completed_at=None
@@ -1880,24 +2938,8 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                 # skip terminated entrants
                 continue
 
-            details = None
-            participant = None
-            reason = None
-            try:
-                participant = Participant.query.filter_by(worker_id=entrant.rid).one()
-                responses = (
-                    Response.query.filter_by(participant_id=participant.id)
-                    .order_by(Response.creation_time)
-                    .all()
-                )
-                if len(responses) == 0:
-                    reason = "first-response-timeout"
-
-            except sqlalchemy.orm.exc.NoResultFound:
-                # Do not terminate participants who did not pass the qualifications
-                if entrant.lucid_status != self.MARKETPLACE_CODE:
-                    reason = "never-entered-experiment"
-
+            participant = entrant.resolve_participant()
+            reason = self._clock_termination_reason(entrant, participant, now)
             if reason:
                 try:
                     participant_info = (
@@ -1905,9 +2947,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                         if participant
                         else {"assignment_id": entrant.rid}
                     )
-                    self.terminate_participant(
-                        reason=reason, details=details, **participant_info
-                    )
+                    self.terminate_participant(reason=reason, **participant_info)
 
                     logger.info(
                         f"Successfully terminated participant with RID '{entrant.rid}'."
@@ -1916,6 +2956,33 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     logger.error(
                         f"Error terminating participant with RID '{entrant.rid}': {e}"
                     )
+
+    def _clock_termination_reason(self, entrant, participant, now):
+        """Return why the clock should terminate this entrant, or ``None``.
+
+        The browser enforces the overall time limit, but a participant who
+        closes the tab stays ``working`` forever and keeps a paused survey
+        from completing. The grace period lets the browser terminate first.
+        """
+        if participant is None:
+            # Do not terminate participants who did not pass the qualifications
+            if entrant.lucid_status != self.MARKETPLACE_CODE:
+                return "never-entered-experiment"
+            return None
+
+        if Response.query.filter_by(participant_id=participant.id).first() is None:
+            return "first-response-timeout"
+
+        limit_s = self.termination_time_in_s
+        if (
+            limit_s is not None
+            and participant.status == "working"
+            and now
+            > entrant.registered_at
+            + timedelta(seconds=limit_s + self.CLOCK_TIMEOUT_GRACE_S)
+        ):
+            return f"overall-timeout-{limit_s}s"
+        return None
 
     def get_survey_storage_key(self, name):
         experiment_id = self.config.get("id")
@@ -2022,11 +3089,79 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         }
 
     def close_recruitment(self):
+        """Stop new entrants, and complete the survey once nobody is still working.
+
+        PsyNet calls this as soon as finished plus working participants cover
+        the target. Lucid records anyone who returns after the survey leaves
+        ``live`` as Survey Closed (code 136) rather than as a complete, so while
+        participants are still working the survey stays ``live`` and entry is
+        paused by lowering its total quota to the completes Lucid already has.
+        ``run_checks`` re-evaluates recruitment every minute while entry is
+        paused, which completes the survey once the last working participant
+        has finished or timed out, or reopens entry if more are needed.
         """
-        Lucid automatically ends recruitment when the number of completes has reached the
-        target.
-        """
-        self.lucidservice.log("Recruitment is automatically handled by Lucid.")
+        survey_number = self.current_survey_number()
+        if survey_number is None:
+            return
+        try:
+            if self.lucidservice.get_survey_status(survey_number) != "live":
+                return
+            if self._n_working_participants() == 0:
+                self.lucidservice.change_status(survey_number, "complete")
+                self.store.set(self._paused_quantity_key, "")
+            elif not self._paused_quantity():
+                quantity, completes = (
+                    self.lucidservice.get_survey_quantity_and_completes(survey_number)
+                )
+                self.lucidservice.set_survey_quantity(survey_number, completes)
+                self.store.set(self._paused_quantity_key, quantity)
+                self.lucidservice.log(
+                    f"Paused entry to survey {survey_number} while participants finish."
+                )
+        except Exception:
+            logger.warning(
+                "Failed to close Lucid survey %s; it may keep fielding.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _resume_entry(self):
+        """Restore the total quota that ``close_recruitment`` lowered, if any."""
+        quantity = self._paused_quantity()
+        if not quantity:
+            return
+        survey_number = self.current_survey_number()
+        try:
+            self.lucidservice.set_survey_quantity(survey_number, quantity)
+            self.store.set(self._paused_quantity_key, "")
+            self.lucidservice.log(f"Reopened entry to survey {survey_number}.")
+        except Exception:
+            logger.warning(
+                "Failed to reopen entry to Lucid survey %s.",
+                survey_number,
+                exc_info=True,
+            )
+
+    def _recheck_paused_entry(self):
+        """Let the experiment complete or reopen a survey whose entry is paused."""
+        if not self._paused_quantity():
+            return
+        from .experiment import get_experiment
+
+        get_experiment().recruit()
+
+    @property
+    def _paused_quantity_key(self):
+        return self.get_survey_storage_key("paused_quantity")
+
+    def _paused_quantity(self):
+        """Return the total quota to restore when entry is paused, else ``None``."""
+        value = self.store.get(self._paused_quantity_key)
+        return int(value) if value else None
+
+    @staticmethod
+    def _n_working_participants():
+        return Participant.query.filter_by(status="working", failed=False).count()
 
     def normalize_entry_information(self, entry_information):
         """Accepts data from the recruited user and returns data needed to validate,
@@ -2055,12 +3190,14 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         if rid is None:
             rid = hit_id
 
-        # Save RID info into the database
+        # Dallinger's /participant and /load-participant routes call this
+        # without committing, so the new RID must be committed here.
         try:
-            LucidRID.query.filter_by(rid=rid).one()
+            lucid_rid = LucidRID.query.filter_by(rid=rid).one()
         except NoResultFound:
             self.lucidservice.log(f"Saving RID '{rid}' into the database.")
-            db.session.add(LucidRID(rid=rid))
+            lucid_rid = LucidRID(rid=rid)
+            db.session.add(lucid_rid)
             db.session.commit()
         except MultipleResultsFound:
             raise MultipleResultsFound(
@@ -2078,6 +3215,21 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
 
         return participant_data
 
+    def link_lucid_rid_to_participant(self, participant):
+        """Link the LucidRID row for this participant's RID when present."""
+        if participant is None or participant.worker_id is None:
+            return
+        try:
+            lucid_rid = LucidRID.query.filter_by(rid=participant.worker_id).one()
+        except NoResultFound:
+            return
+        except MultipleResultsFound:
+            raise MultipleResultsFound(
+                f"Multiple rows for Lucid RID '{participant.worker_id}' found. "
+                "This should never happen."
+            )
+        lucid_rid.link_participant(participant)
+
     def exit_response(self, experiment, participant):
         """
         Delegate to the experiment for possible values to show to the
@@ -2091,13 +3243,40 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             external_submit_url=external_submit_url,
         )
 
-    def reward_bonus(self, participant, amount, reason):
-        """
-        Set `completed_at` timestamp on participant's LucidRID entry.
+    def decide_payment(self, participant, *, experiment) -> exit_domain.PaymentDecision:
+        """Keep terminated Lucid sessions at returned with no PsyNet payment."""
+        del experiment
+        if self._committed_panel_termination(participant) is not None:
+            return exit_domain.PaymentDecision(
+                status="returned",
+                platform_base=0.0,
+                bonus=0.0,
+            )
+        return exit_domain.PaymentDecision(
+            status=self.completion_status(participant),
+            platform_base=0.0,
+            bonus=0.0,
+        )
 
-        Returns False if the Lucid complete/terminate call raises.
+    def reward_bonus(self, participant, amount, reason):
+        """Lucid does not transfer bonuses through ``reward_bonus``."""
+        raise RuntimeError(
+            "Lucid reports terminal outcomes via "
+            "report_submission_outcome, including a zero bonus. "
+            "Do not call reward_bonus."
+        )
+
+    def report_submission_outcome(self, participant, amount, reason):
+        """Complete or terminate the respondent on Lucid, even with a zero bonus.
+
+        Returns False if the Lucid complete or terminate call raises.
         """
+        _check_external_call_allowed()
         try:
+            if self._committed_panel_termination(participant) is not None:
+                # The exit flow already terminated the panel session; a second
+                # call would report a different disposition for the same RID.
+                return True
             if participant is not None and participant.progress == 1:
                 self.complete_participant(participant.assignment_id)
             else:
@@ -2110,10 +3289,12 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     reason = "consent-rejected"
                 else:
                     reason = "participant-did-not-complete"
-                self.terminate_participant(participant=participant, reason=reason)
+                self.terminate_participant(
+                    participant=participant, reason=reason, raise_on_error=True
+                )
         except Exception as ex:
             logger.exception(
-                "Lucid reward_bonus failed for participant %s.",
+                "Lucid outcome report failed for participant %s.",
                 getattr(participant, "id", None),
             )
             record_bonus_attempt_detail(participant, str(ex))
@@ -2126,55 +3307,50 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     def _record_survey_sid(self, survey_sid):
         self.store.set(self.get_survey_storage_key("survey_sid"), survey_sid)
 
-    def external_submit_url(self, participant=None, assignment_id=None):
+    def _committed_panel_termination(self, participant):
+        """Return a committed Lucid terminate plan, if the session has one."""
+        plan = exit_domain._committed_exit_plan(participant)
+        if (
+            plan is not None
+            and plan.path is exit_domain.ExitPath.TERMINATE_PANEL_SESSION
+        ):
+            return plan
+        return None
+
+    def _panel_termination_url(self, participant, assignment_id=None):
+        """Build a Lucid terminate callback, never a Complete (RIS 10) URL."""
+        return self.external_submit_url(
+            participant=participant,
+            assignment_id=assignment_id,
+            allow_complete=False,
+        )
+
+    def external_submit_url(
+        self, participant=None, assignment_id=None, *, allow_complete=True
+    ):
         if participant is None and assignment_id is None:
             raise RuntimeError(
                 "Error generating 'external_submit_url': One of 'participant' or 'assignment_id' needs to be provided."
             )
-        data = self.data_for_submit_url(participant, assignment_id)
+        data = self._submit_url_data(
+            participant, assignment_id, allow_complete=allow_complete
+        )
         return self.lucidservice.generate_submit_url(ris=data["ris"], rid=data["rid"])
 
     def data_for_submit_url(self, participant, assignment_id):
-        # Standard terminate
+        return self._submit_url_data(participant, assignment_id, allow_complete=True)
+
+    def _submit_url_data(self, participant, assignment_id, *, allow_complete):
+        """Choose Lucid's RIS code for a callback URL."""
         ris = 20
         if participant is not None:
             assignment_id = participant.assignment_id
-            if "performance_check" in participant.failure_tags:
-                # Security terminate
+            failure_tags = getattr(participant, "failure_tags", None) or []
+            if "performance_check" in failure_tags:
                 ris = 30
-            elif participant.progress == 1:
-                # Complete
+            elif allow_complete and participant.progress == 1:
                 ris = 10
-        if assignment_id is None:
-            assignment_id = assignment_id
         return {"rid": assignment_id, "ris": ris}
-
-    def error_page_content(self, assignment_id, external_submit_url):
-        _p = get_translator(context=True)
-
-        if external_submit_url is None:
-            external_submit_url = self.external_submit_url(assignment_id=assignment_id)
-
-        html = tags.div()
-        with html:
-            tags.p(
-                " ".join(
-                    [
-                        _p(
-                            "lucid_error",
-                            "Redirecting to Lucid Marketplace...",
-                        ),
-                    ]
-                )
-            )
-            tags.script(
-                raw(
-                    'setTimeout(() => { window.location = "'
-                    + external_submit_url
-                    + '"; }, 2000)'
-                )
-            )
-        return html
 
     def time_until_termination_in_s(self, rid):
         return self.lucidservice.time_until_termination_in_s(rid)
@@ -2183,18 +3359,37 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         return self.lucidservice.complete_respondent(rid)
 
     def terminate_participant(
-        self, participant=None, assignment_id=None, reason=None, details=None
+        self,
+        participant=None,
+        assignment_id=None,
+        reason=None,
+        details=None,
+        *,
+        raise_on_error=False,
     ):
+        """Terminate a Lucid participant and return their terminate URL.
+
+        :meth:`LucidService.terminate_respondent` commits as soon as Lucid
+        confirms, so this always raises inside timeline steps; call it from
+        an ``AsyncCodeBlock`` there. Lucid API failures are logged rather
+        than raised unless ``raise_on_error`` is set, because most callers
+        are timeout handlers that must still send the participant back to
+        the panel.
+        """
         assert participant or assignment_id
         assert not (participant and assignment_id)
+        _check_external_call_allowed()
 
         if participant:
             assignment_id = participant.assignment_id
+            if reason in {"early_exit", "early-exit-button", "terminate-button"}:
+                participant.early_exited = True
+                if participant.module_state:
+                    participant.module_state.mark_early_exited()
 
             participant.failed = True
             participant.failed_reason = reason
             participant.status = "returned"
-            db.session.commit()
         try:
             logger.info(
                 f"Terminating respondent with RID '{assignment_id}'. Reason: '{reason}'"
@@ -2204,8 +3399,150 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             logger.error(
                 f"Error terminating respondent with RID '{assignment_id}': {e}"
             )
+            if raise_on_error:
+                raise
 
         return self.external_submit_url(assignment_id=assignment_id)
+
+    def execute_early_exit_plan(
+        self, experiment, participant, plan: exit_domain.ExitPlan
+    ) -> None:
+        """Terminate the panel session described by a Lucid exit plan.
+
+        Voluntary Leave terminates via the Lucid API within the route's
+        transaction. Error recovery preserves Lucid's established behavior:
+        the error route records termination details and the browser follows
+        the generated terminate URL, without a second API termination.
+        """
+        super().execute_early_exit_plan(experiment, participant, plan)
+        if plan.context is exit_domain.ExitContext.ERROR_RECOVERY:
+            # The error route has already recorded termination details. The
+            # browser's terminate URL remains the sole external handoff.
+            return
+        self.terminate_participant(
+            participant=participant,
+            reason="early_exit",
+            raise_on_error=True,
+        )
+
+    def release_participant(self, experiment, participant) -> TimelineLogic:
+        """Return terminated sessions directly to Lucid without submission."""
+        if self._committed_panel_termination(participant) is not None:
+            from .page import ExecuteFrontEndJS
+
+            url = self._panel_termination_url(participant)
+            return ExecuteFrontEndJS(f"window.location.replace({json.dumps(url)})")
+        return super().release_participant(experiment, participant)
+
+    def _standard_voluntary_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan voluntary return of the participant to Lucid.
+
+        Lucid never pays through PsyNet, and termination is always available,
+        so the below-threshold return-without-payment path is not used.
+        """
+        del experiment, participant
+        _p = get_translator(context=True)
+        path = exit_domain.ExitPath.TERMINATE_PANEL_SESSION
+        confirmation = self._early_exit_confirmation(
+            _p(
+                "early_exit_lucid",
+                "If you leave now, you will not be able to continue later, and "
+                "you will return to your panel provider. This session will "
+                "not issue a payment; any payment depends on your panel "
+                "provider's rules. Your responses so far will still be saved.",
+            ),
+            path=path,
+        )
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.VOLUNTARY,
+            path=path,
+            payment=None,
+            payment_state=exit_domain.PaymentState.NOT_APPLICABLE,
+            currency=get_config().get("currency", "$"),
+            confirmation=confirmation,
+        )
+
+    def _standard_error_recovery_exit_plan(
+        self, experiment, participant
+    ) -> exit_domain.ExitPlan:
+        """Plan error recovery through Lucid's panel handoff."""
+        del experiment, participant
+        return exit_domain.ExitPlan.create(
+            context=exit_domain.ExitContext.ERROR_RECOVERY,
+            path=exit_domain.ExitPath.TERMINATE_PANEL_SESSION,
+            payment=None,
+            payment_state=exit_domain.PaymentState.NOT_APPLICABLE,
+            currency=get_config().get("currency", "$"),
+        )
+
+    def shows_error_recovery_page(self, plan: exit_domain.ExitPlan) -> bool:
+        """Lucid recovery explains the panel return before redirecting."""
+        return plan.context is exit_domain.ExitContext.ERROR_RECOVERY
+
+    def error_page_presentation(
+        self,
+        *,
+        participant=None,
+        plan: exit_domain.ExitPlan | None = None,
+        assignment_id: str | None = None,
+        external_submit_url: str | None = None,
+        contact_address: str | None = None,
+    ) -> exit_domain.ErrorRecoveryPresentation:
+        """Explain Lucid's return to the participant's panel provider."""
+        self._check_stale_error_page_override()
+        del contact_address
+        _p = get_translator(context=True)
+        if external_submit_url is None:
+            if participant is None:
+                external_submit_url = self._panel_termination_url(
+                    None, assignment_id=assignment_id
+                )
+            else:
+                external_submit_url = self._panel_termination_url(participant)
+        if participant is None or plan is None:
+            message = self._error_recovery_body(
+                _p(
+                    "lucid_error",
+                    "We will return you to your panel in a few seconds.",
+                ),
+                responses_saved=False,
+            )
+        else:
+            message = self._error_recovery_body(
+                _p(
+                    "early_exit_error_lucid",
+                    "We will return you to your panel in a few seconds.",
+                ),
+                responses_saved=True,
+            )
+        return exit_domain.ErrorRecoveryPresentation(
+            message=message,
+            failure_message=_p(
+                "early_exit_error_lucid",
+                "We could not return you to your panel. Please try again. If this "
+                "keeps happening, contact your panel provider.",
+            ),
+            button_label=_p(
+                "early_exit_error_lucid",
+                "Return to your panel",
+            ),
+            destination_url=external_submit_url,
+            auto_redirect_delay_ms=5000,
+        )
+
+    def prepare_error_recovery(self, participant) -> None:
+        """Record Lucid termination details before the browser handoff."""
+        self.record_error_termination(participant.assignment_id)
+
+    def record_error_termination(self, assignment_id, reason="error-page_route"):
+        """Record Lucid's error-page termination details for an assignment."""
+        self.set_termination_details(assignment_id, reason)
+
+    def early_exit_allowed(self, participant) -> bool:
+        """Allow Lucid termination regardless of PsyNet's reward threshold."""
+        return True
 
     def set_termination_details(self, rid, reason):
         self.lucidservice.set_termination_details(rid, reason)
@@ -2255,6 +3592,9 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
                     f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
                 )
 
+        if participant is not None:
+            self.link_lucid_rid_to_participant(participant)
+
         return participant
 
     @property
@@ -2278,11 +3618,12 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         return self.get_config_entry("initial_response_within_s")
 
     def change_lucid_status(self, status):
+        _check_external_call_allowed()
         survey_number = self.current_survey_number()
         service = get_lucid_service()
         service.change_status(survey_number, status)
         LucidStatus.query.order_by(LucidStatus.id.desc()).first().status = status
-        db.session.commit()
+        _commit_external_call_state()
 
 
 class DevLucidRecruiter(DevRecruiter, BaseLucidRecruiter):
@@ -2413,7 +3754,8 @@ def get_lucid_settings(
     lucid_recruitment_config_path: str, path to the Lucid recruitment config.
 
     termination_time_in_s: int, maximal time a participant can spend on the experiment. If this time is exceeded,
-        the participant is terminated via the front-end.
+        the participant is terminated via the front-end. If the participant has closed the tab, the recruiter
+        clock terminates them one minute later instead.
 
     bid_incidence: int, default 66, the bid incidence. Bid incidence is the number of completes/(number of completes +
         participants who did not pass the qualifications). It is a percentage, so if you expect 66% of the participants
@@ -2460,19 +3802,23 @@ def get_lucid_settings(
         "lucid_recruitment_config": lucid_recruitment_config,
         "currency": "EUR",
         "show_reward": False,
-        "show_abort_button": False,
     }
     if debug_recruiter:
         settings["debug_recruiter"] = "DevLucidRecruiter"
     return settings
 
 
-class GenericRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
+class GenericRecruiter(
+    PsyNetRecruiterMixin, PsyNetExitPageMixin, dallinger.recruiters.CLIRecruiter
+):
     """
     An improved version of Dallinger's Hot-Air Recruiter.
     """
 
     nickname = "generic"
+    # Generic recruitment has no platform to pay through, so any figure PsyNet
+    # showed would be one the experimenter has to disburse by hand.
+    shows_reward_by_default = False
 
     def has_external_bonus_payment(self) -> bool:
         """Generic/local recruitment does not pay through an external platform."""
@@ -2512,7 +3858,7 @@ class GenericRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
                 "(see https://pypi.org/project/dominate/)."
             )
 
-        return flask.render_template("custom_html.html", html=html)
+        return render_template_with_translations("custom_html.html", html=html)
 
     def open_recruitment(self, n=1):
         res = super().open_recruitment(n=n)
@@ -2532,7 +3878,4 @@ class GenericRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter):
         The participant has been working longer than the time defined in
         the "duration" config value.
         """
-        for participant in participants:
-            participant.status = "abandoned"
-            # We preserve this commit just in case Dallinger removes the external commit in the future
-            session.commit()
+        _abandon_overdue_participants(participants)

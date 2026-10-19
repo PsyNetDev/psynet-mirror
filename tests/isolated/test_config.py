@@ -46,6 +46,83 @@ def test_legacy_js_var_globals_rejects_invalid_mode(in_experiment_directory):
 
 
 @pytest.mark.parametrize(
+    "overrides",
+    [
+        {"recruiter": "mturk"},
+        {"recruiter": "MTurkRecruiter"},
+        {"recruiter": "multi", "recruiters": "mturk: 1, bots: 1"},
+    ],
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_mturk_recruitment_is_rejected(in_experiment_directory, overrides):
+    experiment = get_experiment()
+    config = get_config()
+
+    with config.override(overrides):
+        with pytest.raises(RuntimeError, match="no longer supports.*MTurk"):
+            experiment.check_config()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"recruiter": "bots"},
+        {"recruiter": "dallinger.recruiters.BotRecruiter"},
+        {"recruiter": "multi", "recruiters": "prolific: 1, hotair: 1"},
+        {"recruiter": "MultiRecruiter"},
+    ],
+)
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_unsupported_psynet_recruiters_are_rejected(in_experiment_directory, overrides):
+    experiment = get_experiment()
+    config = get_config()
+
+    with config.override(overrides):
+        with pytest.raises(RuntimeError, match="does not support.*bots.*multi"):
+            experiment.check_config()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_bot_recruiter_subclass_is_rejected(in_experiment_directory):
+    from dallinger.recruiters import BotRecruiter
+
+    class CustomBots(BotRecruiter):
+        nickname = "custom-bots"
+
+    experiment = get_experiment()
+    config = get_config()
+
+    with config.override({"recruiter": CustomBots.nickname}):
+        with pytest.raises(RuntimeError, match="does not support.*bots.*multi"):
+            experiment.check_config()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+def test_multi_recruiter_subclass_is_rejected(in_experiment_directory):
+    from dallinger.recruiters import MultiRecruiter
+
+    class CustomMulti(MultiRecruiter):
+        nickname = "custom-multi"
+
+    experiment = get_experiment()
+    config = get_config()
+
+    with config.override(
+        {"recruiter": CustomMulti.nickname, "recruiters": "hotair: 1"}
+    ):
+        with pytest.raises(RuntimeError, match="does not support.*bots.*multi"):
+            experiment.check_config()
+
+
+@pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 def test_secrets(in_experiment_directory):
@@ -76,11 +153,11 @@ def test_warns_when_experiment_config_is_overridden(in_experiment_directory, cap
 
     # Simulate a higher-priority runtime write overriding a value set in
     # experiment.py.
-    with config.override({"min_accumulated_reward_for_abort": 0.99}):
+    with config.override({"min_reward_for_paid_early_exit": 0.99}):
         with caplog.at_level(logging.WARNING):
             exp.check_config()
 
-    assert "min_accumulated_reward_for_abort" in caplog.text
+    assert "min_reward_for_paid_early_exit" in caplog.text
     assert "overridden" in caplog.text
     assert "0.15" in caplog.text
     assert "0.99" in caplog.text
@@ -129,6 +206,17 @@ def test_no_override_warning_when_values_match(in_experiment_directory, caplog):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_missing_title_says_where_to_set_it(in_experiment_directory):
+    exp = get_experiment()
+
+    with get_config().override({"title": ""}):
+        with pytest.raises(RuntimeError, match="Set it in config.txt"):
+            exp.check_config()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 def test_experiment_config_reaches_processes_that_change_directory(
     in_experiment_directory, tmp_path, monkeypatch
 ):
@@ -154,7 +242,7 @@ def test_experiment_config_reaches_processes_that_change_directory(
         # Simulate a fresh process by discarding the cached config.
         dallinger_config.config = None
         config = dallinger_config.get_config(load=True)
-        assert config.get("min_accumulated_reward_for_abort") == 0.15
+        assert config.get("min_reward_for_paid_early_exit") == 0.15
     finally:
         dallinger_config.config = saved_config
         os.chdir(original_cwd)
@@ -175,7 +263,7 @@ def test_experiment_config_overrides_dallingerconfig(
 
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".dallingerconfig").write_text(
-        "[Parameters]\nmin_accumulated_reward_for_abort = 0.99\n"
+        "[Parameters]\nmin_reward_for_paid_early_exit = 0.99\n"
     )
 
     saved_config = dallinger_config.config
@@ -183,7 +271,7 @@ def test_experiment_config_overrides_dallingerconfig(
         # Simulate a fresh process by discarding the cached config.
         dallinger_config.config = None
         config = dallinger_config.get_config(load=True)
-        assert config.get("min_accumulated_reward_for_abort") == 0.15
+        assert config.get("min_reward_for_paid_early_exit") == 0.15
     finally:
         dallinger_config.config = saved_config
 

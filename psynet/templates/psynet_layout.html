@@ -3,10 +3,23 @@
 {# We therefore have to give this base template a different name. We should investigate this bug further. #}
 
 {% extends "base/layout.html" %}
-{% include "theme.html" %}
+{% import "macros/head.html" as psynet_head %}
+
+{% block head %}
+    {{ super() }}
+    {{ psynet_head.viewport() }}
+{% endblock %}
+
+{# Includes must live inside a block. A top-level include in a child template is
+   emitted before <!doctype html>, which puts the whole document into quirks mode. #}
+{% block stylesheets %}
+    {{ super() }}
+    {% include "theme.html" %}
+{% endblock %}
 
 {% block scripts %}
     {{ super() }}
+    <script src="{{ url_for('static', filename='scripts/psynet.early-exit.js') }}"></script>
 
     {% if participant is defined %}
         <script>

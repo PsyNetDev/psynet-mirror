@@ -2,12 +2,17 @@ import os
 import tempfile
 from pathlib import Path
 
+import click
 import pytest
 
-from psynet.command_line import check_psynet_requirement_is_unambiguous
+from psynet.command_line import (
+    check_psynet_requirement_includes_experiment_extra,
+    check_psynet_requirement_is_unambiguous,
+)
 from psynet.experiment_scaffold import (
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
+    requirement_includes_experiment_extra,
 )
 from psynet.utils import working_directory
 
@@ -75,7 +80,7 @@ def test_check_psynet_requirement_is_unambiguous_missing_version():
                 file.flush()
 
                 with pytest.raises(
-                    ValueError,
+                    click.ClickException,
                     match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                     "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                     "or a commit hash.",
@@ -98,7 +103,7 @@ def test_check_psynet_requirement_is_unambiguous_extension():
                     file.flush()
 
                     with pytest.raises(
-                        ValueError,
+                        click.ClickException,
                         match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                         "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                         "or a commit hash.",
@@ -118,7 +123,7 @@ def test_check_psynet_requirement_is_unambiguous_master_branch():
                         file.flush()
 
                     with pytest.raises(
-                        ValueError,
+                        click.ClickException,
                         match="When deploying an experiment, you need to specify PsyNet in an unambiguous way. "
                         "This means you can't just give a branch name, e.g. master; you have to specify a particular version "
                         "or a commit hash.",
@@ -219,6 +224,9 @@ def test_check_psynet_requirement_is_unambiguous_name_based_with_spaces():
     [
         "psynet[experiment] @ file:///home/frank/projects/PsyNet",
         "-e file:///home/frank/projects/PsyNet#egg=psynet[experiment]",
+        "psynet[experiment] @ file:///tmp/psynet-14.0.0-py3-none-any.whl",
+        "psynet[experiment] @ ./PsyNet",
+        "psynet[experiment] @ ~/PsyNet",
     ],
 )
 def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
@@ -232,5 +240,177 @@ def test_check_psynet_requirement_is_unambiguous_local_path_suggests_commit_pin(
     with tempfile.TemporaryDirectory() as dir:
         with working_directory(dir):
             Path("requirements.txt").write_text(f"{requirement}\n")
-            with pytest.raises(ValueError, match="psynet setup --psynet-source commit"):
+            with pytest.raises(click.ClickException) as error:
                 check_psynet_requirement_is_unambiguous()
+    message = error.value.message
+    assert message.startswith("requirements.txt installs PsyNet from a local path")
+    assert "branch name" not in message
+    assert "psynet setup --psynet-source commit" in message
+
+
+@pytest.mark.parametrize(
+    "version, example",
+    [("14.2.0", "14.2.0"), ("14.2.0rc1", "14.2.0rc1"), ("14.2.0a1", "<version>")],
+)
+def test_psynet_pin_examples_follow_the_installed_release(
+    monkeypatch, version, example
+):
+    from psynet.command_line import _ambiguous_psynet_requirement_message
+
+    monkeypatch.setattr("psynet.command_line.__version__", version)
+    message = _ambiguous_psynet_requirement_message("psynet")
+    assert f"* psynet[experiment]=={example}\n" in message
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "/opt/psynet-14.0.0-py3-none-any.whl",
+        "./PsyNet",
+        "~/PsyNet",
+        "psynet @ /opt/PsyNet",
+    ],
+)
+def test_bare_paths_and_wheels_are_local_psynet_requirements(requirement):
+    from psynet.command_line import _is_local_psynet_requirement
+
+    assert _is_local_psynet_requirement(requirement)
+    assert not _is_local_psynet_requirement("psynet[experiment]==14.0.0")
+
+
+def test_remote_deploy_reports_a_local_psynet_pin_before_stale_constraints(
+    tmp_path, monkeypatch
+):
+    from psynet.command_line import run_pre_checks
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", raising=False)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
+    Path("requirements.txt").write_text(
+        "-e file:///tmp/PsyNet#egg=psynet[experiment]\n"
+    )
+
+    with pytest.raises(click.ClickException, match="from a local path"):
+        run_pre_checks(mode="live", local_=False, app="my-app")
+
+
+@pytest.mark.parametrize(
+    "requirement, expected",
+    [
+        ("psynet[experiment]==14.0.0", True),
+        (
+            "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2",
+            True,
+        ),
+        ("PsyNet[Experiment]==14.0.0", True),
+        ("psynet[docs, experiment]==14.0.0", True),
+        ("-e file:///tmp/PsyNet#egg=psynet[experiment]", True),
+        ("psynet==14.0.0", False),
+        ("psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2", False),
+        ("psynet[docs]==14.0.0", False),
+        ("psynet[experimental]==14.0.0", False),
+        ("-e file:///tmp/PsyNet#egg=psynet", False),
+    ],
+)
+def test_requirement_includes_experiment_extra(requirement, expected):
+    assert requirement_includes_experiment_extra(requirement) is expected
+
+
+def test_deploy_rejects_psynet_pin_without_experiment_extra():
+    try:
+        del os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"]
+    except KeyError:
+        pass
+
+    with tempfile.TemporaryDirectory() as directory:
+        with working_directory(directory):
+            Path("requirements.txt").write_text(
+                "psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2\n"
+            )
+            with pytest.raises(ValueError, match=r"psynet\[experiment\]") as error:
+                check_psynet_requirement_includes_experiment_extra()
+            message = str(error.value)
+            assert "clock process fails to start" in message
+            assert (
+                "psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2"
+                in message
+            )
+
+            Path("requirements.txt").write_text("psynet[experiment]==14.0.0\n")
+            check_psynet_requirement_includes_experiment_extra()
+
+            os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"] = "1"
+            Path("requirements.txt").write_text("psynet==14.0.0\n")
+            check_psynet_requirement_includes_experiment_extra()
+            del os.environ["SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA"]
+
+
+@pytest.mark.parametrize(
+    "requirement, suggested",
+    [
+        ("psynet==14.0.0", "psynet[experiment]==14.0.0"),
+        ("psynet[docs]==14.0.0", "psynet[docs,experiment]==14.0.0"),
+        (
+            "-e file:///tmp/PsyNet#egg=psynet[docs]",
+            "-e file:///tmp/PsyNet#egg=psynet[docs,experiment]",
+        ),
+    ],
+)
+def test_experiment_extra_error_suggests_pin_that_passes(
+    requirement, suggested, monkeypatch, tmp_path
+):
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_EXPERIMENT_EXTRA", raising=False)
+    monkeypatch.chdir(tmp_path)
+    requirements = tmp_path / "requirements.txt"
+
+    requirements.write_text(f"{requirement}\n")
+    with pytest.raises(ValueError) as error:
+        check_psynet_requirement_includes_experiment_extra()
+    assert f"Change it to:\n  {suggested}\n" in str(error.value)
+
+    requirements.write_text(f"{suggested}\n")
+    check_psynet_requirement_includes_experiment_extra()
+
+
+@pytest.mark.parametrize(
+    "requirement, is_release",
+    [
+        ("psynet[experiment]==14.0.0", True),
+        ("psynet[experiment]==14.0.0rc1", True),
+        ("psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v14.0.0#egg=psynet", True),
+        ("psynet @ git+https://gitlab.com/alice/my-fork.git@v14.0.0", True),
+        ("psynet@git+ssh://git@gitlab.com/alice/PsyNet.git@v14.0.0rc2", True),
+        ("psynet == 14.0.0", True),
+        ("psynet[experiment]==14.1.0a2", False),
+        ("psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet", False),
+        ("psynet[experiment]", False),
+    ],
+)
+def test_live_deploys_ask_before_installing_a_development_psynet(
+    tmp_path, monkeypatch, capsys, requirement, is_release
+):
+    import click
+
+    from psynet import command_line
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", raising=False)
+    Path("requirements.txt").write_text(f"{requirement}\n")
+    questions = []
+    monkeypatch.setattr(
+        command_line, "user_confirms", lambda q: questions.append(q) or False
+    )
+
+    if is_release:
+        command_line.confirm_deploying_development_psynet()
+        assert not questions
+        return
+
+    with pytest.raises(click.Abort):
+        command_line.confirm_deploying_development_psynet()
+    assert requirement in questions[0]
+
+    monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
+    command_line.confirm_deploying_development_psynet()
+    assert len(questions) == 1
+    assert "development version of PsyNet" in capsys.readouterr().err

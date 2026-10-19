@@ -1,18 +1,20 @@
 What's new
 ==========
 
-Highlights from recent PsyNet releases — what is exciting for experiment
-authors, plus where to go when a release needs migration work.
-
-For PsyNet 14 migrations, start with :doc:`/whats_new/upgrading_to_psynet_14`.
-In Cursor, ``/upgrade-to-psynet-14`` follows that checklist.
-For experiments created before ``deploy.toml``, follow
-:doc:`/whats_new/upgrading_deployment_file_selection`.
+Each major release with experimenter-facing changes has a highlights page and,
+where needed, an upgrade guide. The full list of changes in every release is in
+the `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
 
 .. toctree::
+   :caption: PsyNet 14
    :maxdepth: 1
 
    psynet_14
    upgrading_to_psynet_14
    upgrading_deployment_file_selection
+
+.. toctree::
+   :caption: Earlier versions
+   :maxdepth: 1
+
    psynet_10

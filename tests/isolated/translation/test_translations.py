@@ -5,13 +5,11 @@ To run translation tests locally:
 
     pytest tests/isolated/translation/test_translations.py -v
 
-To check if translations are up to date (normally only runs on release branches):
+To check if translations are up to date (only runs on release branches):
 
     CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translations.py::test_psynet_translations_up_to_date -v
 
 """
-
-import os
 
 import polib
 import pytest
@@ -22,13 +20,7 @@ from psynet.translation.check import (
 )
 from psynet.translation.check import check_translations as check_translations_internal
 from psynet.translation.translate import check_translations
-from psynet.utils import get_psynet_root, working_directory
-
-
-def is_release_branch():
-    """Check if we're running on a release branch in CI."""
-    branch_name = os.environ.get("CI_COMMIT_REF_NAME", "")
-    return branch_name.startswith("release-")
+from psynet.utils import get_psynet_root, is_release_branch, working_directory
 
 
 def make_entry(msgid="", msgstr=""):
@@ -43,6 +35,22 @@ def make_entries(source_text, translated_text):
         {key: make_entry(msgid=source_text)},  # pot entries
         {key: make_entry(msgid=source_text, msgstr=translated_text)},  # po entries
     )
+
+
+def test_timeline_hold_messages_use_translatable_copy():
+    """Hold copy goes through gettext so the release-branch catalog can pick it up.
+
+    Merge requests do not refresh ``psynet/locales``. Until then these strings
+    fall back to English.
+    """
+    source = (get_psynet_root() / "psynet" / "timeline_hold.py").read_text(
+        encoding="utf-8"
+    )
+    assert '_p("timeline_hold", "Waiting for other participants…")' in source
+    assert '"Please wait, the experiment should continue shortly..."' in source
+    assert '_p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet")' in source
+    assert '_p("timeline_hold", "Your partner is ready.")' in source
+    assert '_p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.")' in source
 
 
 def test_matching_variables():
@@ -117,7 +125,7 @@ def test_multiple_entries():
 
 @pytest.mark.skipif(
     not is_release_branch(),
-    reason="Translation up-to-date check only runs on release branches",
+    reason="This test only runs on release branches",
 )
 def test_psynet_translations_up_to_date():
     """

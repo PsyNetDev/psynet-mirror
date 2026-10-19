@@ -58,6 +58,24 @@ def test_sqlalchemy_profile_counts_queries(sqlite_engine):
     assert profiler.total_time_ms >= 0.0
 
 
+def test_env_profiler_honours_stack_depth(sqlite_engine, monkeypatch):
+    import psynet.sqlalchemy_profiling as profiling
+
+    monkeypatch.setenv("PSYNET_SQL_PROFILE", "stack=1,stack_depth=40")
+    monkeypatch.setenv("PSYNET_SQL_PROFILE_SILENT", "1")
+    monkeypatch.delenv("PSYNET_SQL_PROFILE_DIR", raising=False)
+    monkeypatch.setattr(profiling, "_AUTO_PROFILER", None)
+    profiler = profiling.maybe_enable_sqlalchemy_profiling(sqlite_engine)
+    try:
+        with sqlite_engine.begin() as conn:
+            conn.execute(text("SELECT 1"))
+    finally:
+        profiler.stop()
+
+    [stat] = profiler.get_stats()
+    assert len(stat.stack) > 6
+
+
 def test_sqlalchemy_profile_filters_by_min_duration(sqlite_engine):
     engine = sqlite_engine
     with sqlalchemy_profile(engine, min_duration_ms=1e9) as profiler:

@@ -41,6 +41,7 @@ SECTION_KINDS = {
     "performance",
     "data",
     "analysis",
+    "simulation",
     "source",
     "files",
     "timeline",
@@ -77,6 +78,7 @@ ARTIFACT_KINDS = {
 }
 ARTIFACT_STATUSES = {"present", "missing", "blocked", "not_applicable"}
 ARTIFACT_CREATORS = {"agent", "cli", "manual", "unknown"}
+DIRECTORY_ARTIFACT_IDS = frozenset({"simulate_export"})
 BLOCKER_SEVERITIES = {"warning", "error"}
 CHECK_STATUSES = {"pass", "fail", "warning", "not_run"}
 # Notebooks often contain embedded image output. Keep the rendered text preview
@@ -86,6 +88,12 @@ MAX_AUDIT_SECTION_BYTES = MAX_AUDIT_TEXT_BYTES
 PLACEHOLDER_IMPLEMENTATION_SUMMARY = "TODO: Summarize the experiment implementation."
 CLI_NAME = "psynet audit"
 AUDIT_CSS_OUTPUT = "css/audit.css"
+AUDIT_JS_OUTPUT = "js/audit.js"
+# Vendored Plotly.js (plotly.min.js) and MathJax 4 tex-svg (mathjax-tex-svg.min.js)
+# live in psynet/resources/audit/ with adjacent LICENSE files. Replace those
+# copies and licenses together when upgrading.
+AUDIT_MATHJAX_JS_OUTPUT = "js/mathjax-tex-svg.min.js"
+AUDIT_PLOTLY_JS_OUTPUT = "js/plotly.min.js"
 
 
 class AuditValidationError(ValueError):
@@ -118,6 +126,9 @@ __all__ = [
     "ARTIFACT_REQUIRED_FIELDS",
     "ARTIFACT_STATUSES",
     "AUDIT_CSS_OUTPUT",
+    "AUDIT_JS_OUTPUT",
+    "AUDIT_MATHJAX_JS_OUTPUT",
+    "AUDIT_PLOTLY_JS_OUTPUT",
     "AUDIT_TOP_LEVEL_REQUIRED",
     "AuditValidationError",
     "BLOCKER_REQUIRED_FIELDS",
@@ -127,6 +138,7 @@ __all__ = [
     "CLI_NAME",
     "CORE_KNOWN_EXTENSION_IDS",
     "DEFAULT_AUDIT_PROFILE",
+    "DIRECTORY_ARTIFACT_IDS",
     "DOCUMENTED_EXTERNAL_EXTENSION_IDS",
     "MAX_AUDIT_NOTEBOOK_BYTES",
     "MAX_AUDIT_SECTION_BYTES",

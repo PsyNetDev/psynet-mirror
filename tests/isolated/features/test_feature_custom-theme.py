@@ -25,6 +25,17 @@ class TestExp(object):
             # Page 0
             time.sleep(1)
 
+            # Content emitted before <!doctype html> would silently put every
+            # participant page into quirks mode.
+            assert driver.execute_script("return document.compatMode") == "CSS1Compat"
+
+            # The default theme ships as a cacheable stylesheet.
+            assert driver.execute_script(
+                "return [...document.styleSheets].some("
+                "  (s) => (s.href || '').includes('participant.css'))"
+            )
+
+            # Experiment-supplied CSS must still win over the defaults.
             # This attribute is set via static/theme.css
             button = driver.find_element(By.ID, "next-button")
             col_rosybrown = "rgba(188, 143, 143, 1)"

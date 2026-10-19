@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import json
 import pickle
 import types
 import warnings
@@ -287,6 +288,16 @@ def unserialize(x):
     # import_local_experiment()
     # custom_classes = list(get_custom_sql_classes().values())
     # return jsonpickle.decode(x, context=unpickler, classes=custom_classes)
+    #
+    # jsonpickle tags every value that is not plain JSON with "py/" (the
+    # "json://" check is defensive). Untagged JSON decodes identically with
+    # json.loads, which is several times faster. Text that is not JSON still
+    # goes to jsonpickle, which falls back to YAML when PyYAML is installed.
+    if '"py/' not in x and "json://" not in x:
+        try:
+            return json.loads(x)
+        except ValueError:
+            pass
     unpickler = PsyNetUnpickler()
     return jsonpickle.decode(x, context=unpickler)
     # return jsonpickle.decode(x, classes=custom_classes)
@@ -351,7 +362,8 @@ class DominateHandler(jsonpickle.handlers.BaseHandler):
 jsonpickle.register(dominate.dom_tag.dom_tag, DominateHandler, base=True)
 
 
-def _callable_to_path(function):
+def callable_to_path(function):
+    """Return the import path for a supported function or class method."""
     if inspect.ismethod(function):
         if function.__self__ is not None and not inspect.isclass(function.__self__):
             raise TypeError("Cannot serialize bound instance methods.")
@@ -370,7 +382,8 @@ def _callable_to_path(function):
     return f"{module}.{function.__qualname__}"
 
 
-def _callable_from_path(path):
+def callable_from_path(path):
+    """Load a supported callable from its import path."""
     module_name, qualname = path.split(".", 1)
     module = importlib.import_module(module_name)
     target = module
@@ -381,10 +394,10 @@ def _callable_from_path(path):
 
 class CallableHandler(jsonpickle.handlers.BaseHandler):
     def flatten(self, obj, state):
-        return {"py/function": _callable_to_path(obj)}
+        return {"py/function": callable_to_path(obj)}
 
     def restore(self, state):
-        return _callable_from_path(state["py/function"])
+        return callable_from_path(state["py/function"])
 
 
 jsonpickle.register(types.FunctionType, CallableHandler, base=True)

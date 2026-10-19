@@ -159,14 +159,14 @@ trial_maker = CustomTrialMaker(
     chains_per_participant=1,  # set to None if chain_type="across"
     chains_per_experiment=None,  # set to None if chain_type="within"
     trials_per_node=1,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,
     recruit_mode="n_participants",
     target_n_participants=1,
     n_repeat_trials=0,
-    wait_for_networks=True,  # wait for asynchronous processes to complete before continuing to the next trial
+    wait_for_networks=True,  # wait for async jobs to complete before continuing to the next trial
 )
 
 

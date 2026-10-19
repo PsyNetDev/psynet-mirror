@@ -1,5 +1,0 @@
-# Migrate code style to Black, add isort
-b0df4c054bfda2878662198423ad069661aaf1ed
-
-# Add flake8
-7ca49188125e1e08553d68eb0b9ae5270efa848e

@@ -16,7 +16,7 @@ class Consent(Elt):
     element in your timeline.
     """
 
-    pass
+    is_consent = True
 
 
 class NoConsent(Consent, NullElt):
@@ -74,6 +74,8 @@ class LabRecruiterStandardConsent(Module):
         time_estimate:
             Time estimated for the page.
         """
+
+        expect_scrolling = True
 
         def __init__(
             self,
@@ -146,6 +148,8 @@ class LabRecruiterAudiovisualConsent(Module):
         time_estimate:
             Time estimated for the page.
         """
+
+        expect_scrolling = True
 
         def __init__(
             self,
@@ -225,6 +229,8 @@ class LucidConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -289,6 +295,8 @@ class PrincetonConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -351,6 +359,8 @@ class PrincetonLabRecruiterConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -379,7 +389,15 @@ PrincetonCAPRecruiterConsent = PrincetonLabRecruiterConsent
 ########
 class MainConsent(Module):
     """
-    The main consent form.
+    The main consent form of the Max Planck Institute for Empirical Aesthetics.
+
+    .. warning::
+
+        The text says the study is run by the Max Planck Institute for
+        Empirical Aesthetics and names one of its researchers. Use it only
+        for studies covered by that institute's ethics approval; otherwise
+        write a consent page with your own approved text
+        (see :doc:`/code/participants/consent`).
 
     Parameters
     ----------
@@ -418,6 +436,8 @@ class MainConsent(Module):
         time_estimate:
             Time estimated for the page.
         """
+
+        expect_scrolling = True
 
         def __init__(
             self,
@@ -483,6 +503,8 @@ class DatabaseConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -547,6 +569,8 @@ class AudiovisualConsent(Module):
             Time estimated for the page.
         """
 
+        expect_scrolling = True
+
         def __init__(
             self,
             time_estimate: Optional[float] = 30,
@@ -610,6 +634,8 @@ class OpenScienceConsent(Module):
         time_estimate:
             Time estimated for the page.
         """
+
+        expect_scrolling = True
 
         def __init__(
             self,
@@ -677,6 +703,8 @@ class VoluntaryWithNoCompensationConsent(Module):
         time_estimate:
             Time estimated for the page.
         """
+
+        expect_scrolling = True
 
         def __init__(
             self,

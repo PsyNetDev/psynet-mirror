@@ -1,90 +1,81 @@
 ---
 name: develop-experiment-front-end
-description: Develop and test PsyNet experiment front-end interfaces with ModularPage, Native Graphics, and Playwright checks. Use when building or validating participant-facing pages, controls, custom prompts, or UI evidence screenshots.
+description: Choose and build participant-facing PsyNet pages, from built-in ModularPage prompts and controls through Native Graphics to custom JavaScript, and check them in the browser. Use when building pages, controls, stimulus displays, or custom prompts.
 ---
 
 # Develop experiment front end
 
-## Prerequisites
+## Read first
 
-- For Playwright screenshots or participant-flow video evidence, use
-  `record-participant-video/SKILL.md`.
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
-## Modular pages
+- `code/writing_pages`: pages, prompts, controls, validation, and timing within a page
+- `code/pages/control_gallery`: built-in controls
+- `code/pages/graphics`: Native Graphics
+- `code/pages/event_management`: page events and the event log
+- `code/pages/custom_front_ends`: custom prompts, controls, and pages, and their JavaScript lifecycle
+- `code/pages/theming`: colors and layout tokens
+- `test/backend`: how bots answer pages
 
-PsyNet contains a wide range of built-in components for developing user interfaces.
-Most of these are accessed via the `ModularPage` component;
-these should be prioritized where possible.
+## Choose the lowest level that works
 
-## Graphics
+Work down this list and stop at the first level that can express the design:
 
-PsyNet includes a sophisticated Native Graphics system for displaying
-graphics programmatically. Under the hood, it uses the JavaScript library
-Raphaël for graphics rendering. PsyNet exposes some Raphaël functionality to
-users, for example when defining custom object attributes. Whenever custom
-frontend behavior seems necessary, first consider whether the task can be
-implemented with PsyNet's Native Graphics system. This is often the
-recommended approach for psychological experiments involving simple visual
-stimuli such as geometric shapes, fixation crosses, or several relatively
-simple objects, shapes, or images presented in a timed sequence within a
-single trial. Simple interactions, such as clicking on a shape, can also be
-handled with PsyNet Graphics.
+1. A `ModularPage` with built-in prompts and controls.
+2. Native Graphics (`GraphicPrompt`, `GraphicControl`) for shapes, images,
+   timed frame sequences, and clicks on objects.
+3. A custom `Prompt` or `Control` on a `ModularPage`.
+4. A custom `Page` subclass with a template fragment.
 
-For visual experiments involving images, geometric shapes, or simple spatial
-interactions, include an explicit PsyNet Graphics feasibility check before
-choosing custom JavaScript. Record the result in the implementation plan or
-technical notes: either identify the PsyNet Graphics components/events that will
-be used, or explain the concrete requirement that makes custom JavaScript
-necessary. Do not choose custom JavaScript only because it seems more familiar
-or because image presentation appears easier without first checking whether
-PsyNet Graphics can handle the same display and interaction.
+For visual tasks (images, shapes, spatial clicks), record a Native Graphics
+feasibility check in the plan before choosing custom JavaScript: name the
+graphics objects and events you will use, or the concrete requirement they
+cannot meet. Familiarity is not a reason to write custom JavaScript.
 
-## Events
+Drive within-trial changes, such as enabling responses after a sound, through
+page events rather than timers in custom code.
 
-Changes that occur within a trial should be controlled using PsyNet's event
-management system where possible. PsyNet Graphics can use event management to
-coordinate object display with events such as `promptEnd`. For more details,
-consult the PsyNet Event Management documentation and the Graphics tutorial.
+Find a demo to start from with `explore-psynet-repository/SKILL.md`.
+`demos/features/modular_page` shows custom prompts and controls, and
+`demos/experiments/graphics` shows Native Graphics.
 
-## Customization
+## Bots on custom components
 
-Simple customizations can be achieved by passing custom JS to the `ModularPage`.
-Further customization can be achieved by creating custom `Prompt` or `Control` components.
-More wholesale customization can be achieved by creating a custom `Page` subclass.
+A custom `Page` or `Control` needs `get_bot_response`. A plain return value
+is stored as the final answer and skips `format_answer` (see "How bots
+answer" in `test/backend`). Return `BotResponse(raw_answer=...)` so bot data
+has the same shape as browser data:
 
-Customizations should be tested robustly.
-Construct a minimal experiment timeline to do this,
-and construct a Playwright test for each custom component.
-Use the Playwright test to create screenshots at key moments, and review these screenshots.
-For canonical participant video evidence, follow `record-participant-video/SKILL.md`.
-Ensure that:
+```python
+from psynet.bot import BotResponse
 
-- Stimuli are displayed as expected
-- All text is visible
-- Button layouts are intuitive
-- Aesthetics are good and consistent
 
-Video review should be used sparingly as it is time-consuming.
+class ColorText(Control):
+    def format_answer(self, raw_answer, **kwargs):
+        return raw_answer.capitalize()
 
-When implementing custom `Page` classes, make sure `get_bot_response`
-returns the same structured, formatted answer that the browser path records.
-PsyNet bots submit the value returned by `get_bot_response` as the formatted
-answer, so the bot path can bypass `format_answer` unless you explicitly
-call it or otherwise match its output.
+    def get_bot_response(self, experiment, bot, page, prompt):
+        return BotResponse(raw_answer="hello")
+```
 
-When repeating custom `Page` classes with JavaScript event handlers, avoid
-reusing the default `session_id` unless the code explicitly handles PsyNet's
-`pageUpdated` event. Consecutive pages with the same session can preserve the
-browser context and update the DOM without rerunning page scripts. Use distinct
-`session_id` values for repeated interactive pages when each trial needs fresh
-handler installation.
+Leave `session_id` at its default (`None`) on repeated interactive pages.
+Consecutive pages that share a `session_id` update in place and fire
+`pageUpdated` instead of activating the page's JavaScript again.
 
-## Examples
+## Check custom components in the browser
 
-Refer to the explore-psynet-repository skill for examples to work from.
+For each custom component, build a minimal timeline and a Playwright test
+(`playwright-testing/SKILL.md`). Take screenshots at key moments and run the
+layout check before each one. Confirm that stimuli display as intended, all
+text is visible, button layouts are intuitive, and styling is consistent.
+Record video (`record-participant-video/SKILL.md`) only when screenshots
+cannot show the behavior, because it is slow to review.
 
-## Rules & gotchas
+## Rules
 
-- Implement keyboard-button responses with `KeyboardPushButtonControl` rather than dedicated JavaScript.
-- Do not show technical details that are not participant-facing, such as labeling display items “stimuli”.
-- Do not measure reaction time unless explicitly instructed. When RT is required, follow the reaction-time guidance in `psychophysics/SKILL.md`.
+- Use `KeyboardPushButtonControl` for keyboard responses rather than custom
+  key handlers.
+- Do not show non-participant-facing terms, such as calling display items
+  "stimuli".
+- Do not measure reaction time unless asked. When it is required, follow
+  "Reaction time" in `psychophysics/SKILL.md`.
