@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 
@@ -29,6 +30,8 @@ def test_performance_test_local(tmp_path):
         capture_output=True,
         text=True,
         timeout=600,
+        # Keeps the run's logs out of the real ~/psynet-data.
+        env={**os.environ, "HOME": str(tmp_path)},
     )
     print(result.stdout, result.stderr, sep="\n")
     assert result.returncode == 0

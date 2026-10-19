@@ -59,4 +59,4 @@ RUN mkdir -p /experiment/static \
 
 ENV PORT=5000
 
-CMD dallinger_heroku_web
+CMD ["dallinger_heroku_web"]

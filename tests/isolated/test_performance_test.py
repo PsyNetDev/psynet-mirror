@@ -27,6 +27,15 @@ from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
 
+@pytest.fixture(autouse=True)
+def _performance_logs_in_tmp_path(tmp_path_factory, monkeypatch):
+    """Keep the logs these tests write out of ``~/psynet-data``."""
+    directory = tmp_path_factory.mktemp("performance-logs")
+    monkeypatch.setattr(
+        "psynet.command_line._performance_log_directory", lambda: directory
+    )
+
+
 def _base_result(**overrides):
     """Return a minimal valid result for format_test_results."""
     fields = {
@@ -322,6 +331,7 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
     output = capsys.readouterr().out
     assert "Running: 0" in output
     assert "Failed by experiment: 3" in output
+    assert "Avg: -" in output
     assert "\r" not in output
 
 
