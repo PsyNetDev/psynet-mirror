@@ -101,6 +101,22 @@ test.describe("Optional background capture lifecycle @both", () => {
     await expectBlobPlays(page, "resumed");
   });
 
+  test("a rejection on a later page does not restart the previous page's clip", async ({page}) => {
+    await page.evaluate(() => {window.started = capture.begin({...config,max_duration:30});});
+    await page.getByRole("button",{name:"Enable camera",exact:true}).click();
+    await page.evaluate(() => started);
+    const result = await page.evaluate(async () => {
+      capture.clips.camera.flush = async () => {};
+      await capture.finish();
+      // The answer was accepted and the next page records nothing in the
+      // background, while the camera stays available (an answer recording).
+      await capture.discard();
+      await capture.resume();
+      return {clips:Object.keys(capture.clips),camera:capture.streams.has("camera")};
+    });
+    expect(result).toEqual({clips:[],camera:true});
+  });
+
   test("skipping capture avoids another permission prompt", async ({page}) => {
     await page.evaluate(() => {window.started = capture.begin(config);});
     await page.getByRole("button",{name:"Continue without recording",exact:true}).click();

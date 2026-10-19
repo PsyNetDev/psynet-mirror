@@ -2333,6 +2333,7 @@ def run_pre_checks(
     exp.check_config()
     exp.check_size(heroku=heroku)
     exp.check_consents()
+    exp._check_background_recording_pages()
     exp.check_python_dependencies()
 
     try:
