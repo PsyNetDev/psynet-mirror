@@ -32,6 +32,7 @@ from psynet.utils import (
     get_package_source_directory,
     get_psynet_root,
     git_repository_available,
+    is_a_package,
     is_in_repo_experiment,
     linspace,
     list_experiment_dirs,
@@ -547,6 +548,17 @@ where = ["src"]
         locales_dir = get_locales_dir_from_path(tmp_path)
 
     assert locales_dir == expected
+
+
+def test_experiment_with_uv_init_pyproject_is_not_a_package(tmp_path):
+    (tmp_path / "experiment.py").write_text("")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "my-experiment"\nversion = "0.1.0"\ndependencies = []\n'
+    )
+
+    assert not is_a_package(tmp_path)
+    assert get_locales_dir_from_path(tmp_path) == tmp_path / "locales"
+    assert is_a_package(get_psynet_root())
 
 
 def test_get_installed_package_source_directory_supports_namespace_packages(
