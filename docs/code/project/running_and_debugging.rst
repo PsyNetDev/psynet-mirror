@@ -102,6 +102,13 @@ traceback showing where they happened. If the traceback ends in PsyNet code,
 read that part of the PsyNet source to see what it expected. A breakpoint
 just before the failing line shows the values of the local variables.
 
+If ``experiment.py`` or a module it imports fails to load, PsyNet prints a
+shorter traceback: the lines from your experiment folder, plus the line where
+the error was raised. To see the full traceback, run the command again with
+``PSYNET_SHOW_TRACEBACK=1`` (any value other than ``0``, ``false`` or ``no``
+works), for example
+``PSYNET_SHOW_TRACEBACK=1 psynet debug local``.
+
 If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the
 smallest version that still fails when you ask for help.
