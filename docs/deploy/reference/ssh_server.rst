@@ -191,7 +191,8 @@ arguments or with ``--app`` (the two are equivalent and can be combined):
     psynet destroy ssh my-app my-other-app --server my-server.example.org
 
 It first checks that the apps are on the server; if one isn't, it stops and
-lists the apps that are, suggesting the closest name. It then asks you to
+lists the apps that are, suggesting the closest name (except with
+``--remove-data``; see below). It then asks you to
 confirm, once for all the apps (pressing Enter answers no); add ``--yes`` to
 skip the confirmation in scripts, where it is required because there is no
 terminal to ask in. If one of several apps fails to be destroyed, it carries
@@ -220,6 +221,12 @@ non-interactive runs must pass one of the two flags:
 .. code-block:: bash
 
     psynet destroy ssh my-app --server my-server.example.org --yes --keep-data
+
+To delete kept data after the app is gone, run the same command with
+``--remove-data``. With ``--remove-data``, an app that is no longer on the
+server is not rejected: PsyNet skips the pending-job check and the export
+reminder for it, and Dallinger deletes whatever data it left behind, or says
+that none is left.
 
 The data question and the two flags need a Dallinger version whose
 ``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.

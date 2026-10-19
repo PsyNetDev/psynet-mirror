@@ -5587,12 +5587,15 @@ def _patch_dallinger_destroy_ssh(
     """Fake Dallinger's ``docker-ssh destroy``, with Dallinger #10129's data options if ``data_options``."""
     destroyed = []
 
-    def fake_destroy(app, server, **data):
+    def fake_destroy(app, server, delete_data_command=None, **data):
         destroyed.append((app, server, data) if data_options else (app, server))
+        if data.get("keep_data"):
+            click.echo(f"To delete it, run: {delete_data_command}")
 
     if data_options:
         for flag in ("--remove-data", "--keep-data", "--yes"):
             fake_destroy = click.option(flag, is_flag=True)(fake_destroy)
+        fake_destroy = click.option("--delete-data-command")(fake_destroy)
     fake_destroy = click.option("--server")(fake_destroy)
     fake_destroy = click.command()(click.option("--app", required=True)(fake_destroy))
 
@@ -5748,6 +5751,39 @@ def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_p
     assert destroyed == [
         ("one", "musix", {"remove_data": True, "keep_data": False, "yes": True})
     ]
+
+
+def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
+    monkeypatch, tmp_path
+):
+    """Its leftover data is Dallinger's to find, without PsyNet's wake-up or name suggestions."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    woken = []
+    monkeypatch.setattr(
+        "psynet.command_line._awaken_ssh_app", lambda server, app: woken.append(app)
+    )
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "twoo", "one", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "did you mean" not in result.output
+    assert "Export the data of twoo" not in result.output
+    assert "Export the data of one" in result.output
+    assert [app for app, _, _ in destroyed] == ["twoo", "one"]
+    assert woken == ["one"]
+
+
+def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
+    _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y", "--keep-data"])
+    assert result.exit_code == 0, result.output
+    assert (
+        "To delete it, run: psynet destroy ssh one --server musix --remove-data"
+        in result.output
+    )
 
 
 @pytest.mark.parametrize(

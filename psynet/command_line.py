@@ -4446,18 +4446,19 @@ def _destroy(
     ask_for_confirmation=True,
     discard_pending_jobs=False,
     destroy_kwargs=None,
+    deployed=True,
 ):
     """Destroy a single app.
 
     For docker-ssh apps (``server`` given), the caller confirms first; this
-    wakes the app and checks for pending async jobs with
+    wakes a ``deployed`` app and checks for pending async jobs with
     :func:`_confirm_destroy_with_pending_jobs`, or
     :func:`_destroy_without_pending_job_check` if the check can't run.
     Other apps are confirmed here unless ``ask_for_confirmation`` is false.
     ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
     isn't covered by a spinner, as it may prompt or report what it kept.
     """
-    if server:
+    if server and deployed:
         _awaken_ssh_app(server, app)
         try:
             pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
@@ -4499,17 +4500,29 @@ def _command_params(command):
     return {param.name for param in command.params}
 
 
-def _ssh_data_options(apps, server, remove_data, keep_data):
+def _delete_data_command(app, server):
+    """Make Dallinger name ``psynet destroy ssh`` as the command that deletes kept data, if it can."""
+    from dallinger.command_line.docker_ssh import destroy
+
+    if "delete_data_command" not in _command_params(destroy):
+        return {}
+    command = f"psynet destroy ssh {app} --server {server} --remove-data"
+    return {"delete_data_command": command}
+
+
+def _ssh_data_options(apps, server, remove_data, keep_data, undeployed=()):
     """Return the data options for Dallinger's ``docker-ssh destroy``.
 
-    Unless the data is kept, first warns about apps without a local export.
+    Unless the data is kept, first warns about apps without a local export,
+    except ``undeployed`` apps, which can no longer be exported.
     Without ``remove_data`` or ``keep_data``, a single app gets no options, so
     that Dallinger lists its data and asks; several apps are asked about once.
     """
     if keep_data:
         return {"keep_data": True}
     for app in apps:
-        _warn_if_not_exported(app, server)
+        if app not in undeployed:
+            _warn_if_not_exported(app, server)
     if not remove_data:
         if len(apps) == 1:
             return {}
@@ -4637,7 +4650,8 @@ def destroy__docker_ssh(
     once for several apps; --yes does not answer this. Non-interactive
     runs must pass one of the two. Both need a Dallinger whose
     `dallinger docker-ssh destroy` has them; older versions destroy apps as
-    before.
+    before. With --remove-data, it also deletes the data left behind by an
+    app that was destroyed earlier with its data kept.
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
@@ -4668,11 +4682,19 @@ def destroy__docker_ssh(
         )
 
     batch = len(apps) > 1
-    _require_ssh_apps_exist(server, apps)
+    if remove_data and data_choice:
+        # An app destroyed with its data kept is no longer listed. Dallinger
+        # deletes its leftovers, or says that none are left.
+        undeployed = set(apps) - _ssh_app_names(server)
+    else:
+        _require_ssh_apps_exist(server, apps)
+        undeployed = set()
     if not yes:
         _confirm_destroy_ssh_apps(server, apps)
     data_options = (
-        _ssh_data_options(apps, server, remove_data, keep_data) if data_choice else {}
+        _ssh_data_options(apps, server, remove_data, keep_data, undeployed)
+        if data_choice
+        else {}
     )
     failed = []
     for name in apps:
@@ -4684,7 +4706,8 @@ def destroy__docker_ssh(
                 server=server,
                 ask_for_confirmation=not (yes or batch),
                 discard_pending_jobs=discard_pending_jobs,
-                destroy_kwargs=data_options,
+                destroy_kwargs={**data_options, **_delete_data_command(name, server)},
+                deployed=name not in undeployed,
             ):
                 failed.append(name)
         except Exception as e:
