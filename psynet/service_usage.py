@@ -187,6 +187,18 @@ def find_sessions():
     return sorted(sessions.values(), key=lambda s: (s.base_port.zfill(6), s.database))
 
 
+def _listening_port(process):
+    """Return a TCP port that ``process`` listens on, or ``None`` if unknown."""
+    import psutil
+
+    try:
+        connections = process.net_connections(kind="tcp")
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return None
+    ports = [c.laddr.port for c in connections if c.status == psutil.CONN_LISTEN]
+    return min(ports, default=None)
+
+
 def find_redis_servers(ports=()):
     """Return the running ``redis-server`` processes and the Redis servers on ``ports``.
 
@@ -200,6 +212,8 @@ def find_redis_servers(ports=()):
         if process.info["name"] != "redis-server":
             continue
         port = _redis_server_port(process.info["cmdline"] or [])
+        if port is None:
+            port = _listening_port(process)
         servers.append(
             RedisServer(
                 pid=process.info["pid"],
@@ -283,13 +297,17 @@ def _report(sessions, redis_servers, databases):
             f"        {s.command} (PIDs {', '.join(map(str, s.pids))})"
         )
     click.echo("\nRedis servers:")
+    if not redis_servers:
+        click.echo("  none")
     for r in redis_servers:
         users = _session_names(sessions, lambda s: s.redis_port == r.port)
         clients = "no answer" if r.clients is None else _count(r.clients, "client")
         process = "not a local process" if r.pid is None else f"PID {r.pid}"
         click.echo(f"  {r.port or '?'}  {process}  {clients}  {users or 'no session'}")
     click.echo("\nDatabases:")
-    for d in databases:
+    if databases == []:
+        click.echo("  none")
+    for d in databases or []:
         connections = _count(d.connections, "connection")
         click.echo(f"  {d.name}  {connections}  {_database_users(d, sessions)}")
 
@@ -332,6 +350,6 @@ def list_services():
     except psycopg2.Error as e:
         databases = None
         database_error = str(e).strip()
-    _report(sessions, redis_servers, databases or [])
+    _report(sessions, redis_servers, databases)
     if databases is None:
         click.echo(f"  could not list them: {database_error}")

@@ -197,7 +197,8 @@ experiment against local Postgres/Redis on this machine.
 
 When several experiments or test runs share a machine, ``psynet services list``
 shows each running session's port, database, Redis server and directory, read
-from the environments of your PsyNet, Dallinger and pytest processes, followed
+from your PsyNet, Dallinger and pytest processes and the port locks they hold,
+followed
 by every Redis server and database and the session that uses it. Use it to
 pick free settings before starting another session.
 

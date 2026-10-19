@@ -8,12 +8,14 @@ import sys
 import time
 
 import psutil
+import pytest
 
 from psynet.isolated_environment import READY_ENV_VAR
 from psynet.service_usage import (
     Database,
     _database_users,
     _session_command,
+    find_redis_servers,
     find_sessions,
 )
 
@@ -127,3 +129,15 @@ def test_databases_of_plain_pytest_sessions_are_found_by_their_port_lock(
         fcntl.flock(lock, fcntl.LOCK_EX)
         assert _database_users(database, []) == "a session holding port 6990"
     assert _database_users(Database("study_test_1", 0), []) == "no session"
+
+
+def test_the_shared_redis_server_is_listed_once():
+    """The Redis server on 6379 is listed once, whether or not it is a local process."""
+    import redis
+
+    try:
+        redis.Redis(port=6379, socket_timeout=2).ping()
+    except redis.RedisError:
+        pytest.skip("no Redis server on localhost:6379")
+    servers = find_redis_servers(ports={6379})
+    assert [s.port for s in servers].count(6379) == 1
