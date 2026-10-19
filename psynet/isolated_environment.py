@@ -25,6 +25,10 @@ PsyNet's process cleanup already only targets processes that use the current
 ``DATABASE_URL`` (see ``psynet.command_line.uses_current_database``), so once
 the URLs differ the tests leave a running ``psynet debug local`` alone.
 
+``psynet debug local --isolated`` gives a debug server the same kind of
+environment, so that it runs next to other servers and test sessions; like a
+test session's, its database and Redis are removed when it stops.
+
 Design constraints
 ------------------
 Dallinger connects to PostgreSQL and Redis when ``dallinger.db`` is first
@@ -35,8 +39,10 @@ module therefore imports nothing from Dallinger. It is used in two places:
   pytest configuration and the experiment ``pytest.ini`` template load with
   ``-p``. Plugins named with ``-p`` are imported before auto-loaded plugins
   such as ``pytest_dallinger`` and ``pytest_psynet``.
-- ``psynet test local``, which has already imported Dallinger by the time it
-  runs, and so re-runs itself in a child process inside the environment.
+- ``psynet test local``, ``psynet performance-test local`` and
+  ``psynet debug local --isolated``, which have already imported Dallinger
+  by the time they run, and so re-run themselves in a child process inside
+  the environment.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
@@ -47,9 +53,9 @@ are isolated already.
 
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
-same directory breaks. :func:`check_no_debug_server` refuses to start in that
-case; the ``in_experiment_directory`` fixture also calls it, because tests
-started from elsewhere enter the experiment directory later.
+same directory breaks. Servers and tests therefore share the directory lock
+in :mod:`psynet.testing.locks`: tests wait for each other, but refuse to start
+while a server holds it.
 """
 
 import fcntl
@@ -147,58 +153,6 @@ def _in_ci(environ=None):
 
 def _is_configured(environ):
     return bool(environ.get(READY_ENV_VAR)) or _in_ci(environ)
-
-
-def check_no_debug_server(directory):
-    """Raise ``RuntimeError`` if a ``psynet debug`` process runs in ``directory``.
-
-    Tests replace the generated files in the experiment directory, which
-    breaks a debug server that serves it, even when the services are isolated.
-    Servers that another test session started there are skipped: they run with
-    the test environment already set up, or their session holds the directory's
-    lock, which this session waits for.
-    """
-    import psutil
-
-    directory = os.path.realpath(directory)
-    for process in psutil.process_iter(["cmdline", "cwd"]):
-        cmdline = process.info["cmdline"] or []
-        cwd = process.info["cwd"]
-        if not (
-            cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline)
-        ):
-            continue
-        try:
-            environ = process.environ()
-        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            environ = {}
-        if not _started_by_test_session(environ, directory):
-            raise RuntimeError(
-                f"psynet debug (PID {process.pid}) is serving {directory}, and the "
-                "tests would replace its generated files. Stop it, or run the tests "
-                "from a copy of the experiment such as a git worktree."
-            )
-
-
-def _started_by_test_session(environ, directory):
-    """Return whether a process with ``environ`` belongs to a test session.
-
-    Servers that a session's fixtures start inherit :data:`READY_ENV_VAR`;
-    CI slots that hold the directory's lock pass it down instead.
-    """
-    from .testing.locks import HELD_LOCK_ENV_VAR
-
-    held_lock = environ.get(HELD_LOCK_ENV_VAR)
-    return bool(environ.get(READY_ENV_VAR)) or (
-        held_lock is not None and os.path.realpath(held_lock) == directory
-    )
-
-
-def _is_psynet_debug(cmdline):
-    return any(
-        os.path.basename(arg) == "psynet" and cmdline[i + 1 : i + 2] == ["debug"]
-        for i, arg in enumerate(cmdline)
-    )
 
 
 #: PostgreSQL's SQLSTATE for ``too_many_connections``.
@@ -526,19 +480,13 @@ def port_lock_path(port):
     return lock_path(f"psynet-test-{port}")
 
 
-def try_lock(path):
-    """Take an exclusive lock on the file at ``path`` without waiting.
+def open_lock_file(path):
+    """Open, creating if needed, the lock file at ``path`` without locking it.
 
     Another user's lock file is opened read-only, which is enough for
     ``flock``; such a lock file is not writable. Any local user can
     deliberately hold or block a lock name in ``/tmp``: these locks prevent
     accidents, not attacks.
-
-    Returns
-    -------
-    file or None
-        The open lock file, which holds the lock until it is closed, or None
-        if another process holds the lock.
 
     Raises
     ------
@@ -558,7 +506,24 @@ def try_lock(path):
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         raise OSError(f"{path} is not a regular file.")
-    lock = os.fdopen(fd, mode)
+    return os.fdopen(fd, mode)
+
+
+def try_lock(path):
+    """Take an exclusive lock on the file at ``path`` without waiting.
+
+    Returns
+    -------
+    file or None
+        The open lock file (see :func:`open_lock_file`), which holds the lock
+        until it is closed, or None if another process holds the lock.
+
+    Raises
+    ------
+    OSError
+        If the file can't be opened at all or isn't a regular file.
+    """
+    lock = open_lock_file(path)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:

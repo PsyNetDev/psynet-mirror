@@ -270,6 +270,20 @@ def _recruiter_class_by_name(name):
         return None
 
 
+def named_recruiter_class(config=None):
+    """Return the class of the recruiter named in the configuration, or ``None``.
+
+    Unlike :func:`configured_recruiter_class`, this ignores the debug-mode
+    stand-in and replay mode, so it gives the recruiter that a deployment
+    will use. It returns ``None`` when no recruiter is named or the name is
+    unknown.
+    """
+    if config is None:
+        config = get_config()
+    name = config.get("recruiter", None)
+    return _recruiter_class_by_name(name) if name else None
+
+
 def configured_recruiter_class(config=None):
     """Return the recruiter class that the configuration selects.
 
@@ -371,6 +385,10 @@ class PsyNetRecruiterMixin:
             exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT,
         }
     )
+
+    #: Whether ``max_concurrent_participants`` may hold newcomers on the start
+    #: page. Only open-link recruiters support it; see :mod:`psynet.capacity`.
+    supports_max_concurrent_participants = False
 
     #: Whether participants are shown their accumulated reward when the
     #: experiment does not say either way. Recruiters that disburse money
@@ -891,6 +909,7 @@ class HotAirRecruiter(
 ):
     # Local debug recruitment pays nobody, so there is no reward to report.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """HotAir does not pay through an external recruitment platform."""
@@ -3819,6 +3838,7 @@ class GenericRecruiter(
     # Generic recruitment has no platform to pay through, so any figure PsyNet
     # showed would be one the experimenter has to disburse by hand.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """Generic/local recruitment does not pay through an external platform."""
