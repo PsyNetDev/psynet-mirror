@@ -4484,7 +4484,7 @@ def _destroy(
     if "expire_hit" in _command_params(f_destroy):
         kwargs["expire_hit"] = False
     kwargs.update(destroy_kwargs or {})
-    log(f"Destroying {app}...")
+    log(f"Destroying {app}..." if deployed else f"Deleting leftover data of {app}...")
     try:
         ctx.invoke(f_destroy, **kwargs)
     except subprocess.CalledProcessError:
@@ -4691,7 +4691,7 @@ def destroy__docker_ssh(
         _require_ssh_apps_exist(server, apps)
         undeployed = set()
     if not yes:
-        _confirm_destroy_ssh_apps(server, apps)
+        _confirm_destroy_ssh_apps(server, apps, undeployed)
     data_options = (
         _ssh_data_options(apps, server, remove_data, keep_data, undeployed)
         if data_choice
@@ -4716,6 +4716,10 @@ def destroy__docker_ssh(
                 raise
             if isinstance(e, click.ClickException):
                 click.echo(f"Problem destroying {name}: {e.format_message()}")
+            elif isinstance(e, click.Abort) and name in undeployed:
+                # Dallinger reports a failed deletion as a ClickException.
+                click.echo(f"Nothing left to delete for {name}.")
+                continue
             elif isinstance(e, click.Abort):
                 click.echo(
                     f"Failed to destroy {name}; see the messages above. If it "
@@ -4732,15 +4736,25 @@ def destroy__docker_ssh(
         raise click.Abort()
 
 
-def _confirm_destroy_ssh_apps(server, apps):
-    """Ask before destroying ``apps``; without a terminal to ask in, require ``--yes``."""
-    noun = "app" if len(apps) == 1 else "apps"
-    target = f"{len(apps)} {noun} on {server}: {', '.join(apps)}"
+def _confirm_destroy_ssh_apps(server, apps, undeployed=()):
+    """Ask before destroying ``apps``, or deleting the leftover data of ``undeployed`` ones; without a terminal to ask in, require ``--yes``."""
+    deployed = [app for app in apps if app not in undeployed]
+    gone = [app for app in apps if app in undeployed]
+    actions = []
+    if deployed:
+        noun = "app" if len(deployed) == 1 else "apps"
+        actions.append(
+            f"destroy {len(deployed)} {noun} on {server}: {', '.join(deployed)}"
+        )
+    if gone:
+        where = "" if deployed else f" on {server}"
+        actions.append(f"delete the leftover data of {', '.join(gone)}{where}")
+    action = ", and ".join(actions)
     if not _stdin_is_interactive():
         raise click.ClickException(
-            f"Confirmation needed to destroy {target}; re-run with --yes."
+            f"Confirmation needed to {action}; re-run with --yes."
         )
-    if not click.confirm(f"Destroy {target}?", default=False):
+    if not click.confirm(f"{action[0].upper()}{action[1:]}?", default=False):
         raise click.Abort()
 
 

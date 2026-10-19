@@ -225,8 +225,10 @@ non-interactive runs must pass one of the two flags:
 To delete kept data after the app is gone, run the same command with
 ``--remove-data``. With ``--remove-data``, an app that is no longer on the
 server is not rejected: PsyNet skips the pending-job check and the export
-reminder for it, and Dallinger deletes whatever data it left behind, or says
-that none is left.
+reminder for it, asks to delete its leftover data rather than to destroy it,
+and Dallinger deletes whatever data it left behind, or says that none is left.
+When destroying several apps, such an app with nothing left is reported but
+does not count as a failure.
 
 The data question and the two flags need a Dallinger version whose
 ``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
