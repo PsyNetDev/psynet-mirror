@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -726,9 +727,16 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
-def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, capsys):
-    """PsyNet's launch job opens no browsers and prints what the browser would show."""
-    from psynet.command_line import _debug_auto_reload, launch_app_without_browsers
+@pytest.mark.parametrize("no_browsers", [True, False])
+def test_debug_auto_reload_prints_the_dashboard_login_once(
+    monkeypatch, capsys, no_browsers
+):
+    """PsyNet's launch job prints the login once and never logs it in a URL."""
+    from psynet.command_line import (
+        _debug_auto_reload,
+        launch_app_and_open_browsers,
+        launch_app_without_browsers,
+    )
 
     develop = importlib.import_module("dallinger.command_line.develop")
     original_job = develop.launch_app_and_open_browser
@@ -744,8 +752,9 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
     monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=True)
-    assert calls == [({"skip_flask": False, "port": 5010}, launch_app_without_browsers)]
+    _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
+    job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
+    assert calls == [({"skip_flask": False, "port": 5010}, job)]
     assert os.environ["FLASK_RUN_PORT"] == "5010"
     assert develop.launch_app_and_open_browser is original_job
 
@@ -759,12 +768,22 @@ def test_debug_auto_reload_no_browsers_launches_without_browsers(monkeypatch, ca
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
     )
-    monkeypatch.setattr(develop, "_async_browser", pytest.fail)
-    launch_app_without_browsers(5001, no_browsers=False)
+    opened = []
+    monkeypatch.setattr(develop, "open_browser", opened.append)
+    job(5001)
+    deadline = time.monotonic() + 5
+    while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
+        time.sleep(0.01)
     output = capsys.readouterr().out
     assert "Prolific study simulated" in output
     assert "http://127.0.0.1:5001/dashboard" in output
     assert "Dashboard user: admin password: s3cret" in output
+    assert output.count("s3cret") == 1
+    if no_browsers:
+        assert opened == []
+    else:
+        assert "admin:s3cret@127.0.0.1:5001/dashboard" in opened[0]
+        assert "/ad?" in opened[1]
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
@@ -794,6 +813,127 @@ def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
     monkeypatch.setenv("PSYNET_LEGACY_DEBUG_GUNICORN_THREADS", raw)
     with pytest.raises(click.UsageError, match="positive integer"):
         _legacy_debug_gunicorn_threads()
+
+
+class _PreLaunchReached(Exception):
+    pass
+
+
+@pytest.fixture
+def debug_local(tmp_path, monkeypatch):
+    """Run ``psynet debug local`` in ``tmp_path``, stopping where it would launch."""
+    from psynet.command_line import debug__local
+    from psynet.isolated_environment import READY_ENV_VAR
+
+    monkeypatch.chdir(tmp_path)
+    Path("experiment.py").write_text("raise RuntimeError('experiment imported')\n")
+    monkeypatch.delenv(READY_ENV_VAR, raising=False)
+    monkeypatch.setattr("dallinger.config.config", None)
+    monkeypatch.setattr(
+        "psynet.isolated_environment.lock_path",
+        lambda name: str(tmp_path / f"{name}.lock"),
+    )
+
+    def pre_launch(*args, **kwargs):
+        raise _PreLaunchReached
+
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
+    return lambda: CliRunner().invoke(debug__local, ["--no-browsers"])
+
+
+@pytest.fixture
+def busy_port():
+    """Return a listening socket on a free port."""
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        yield server
+
+
+def _free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+@pytest.mark.parametrize("source", ["environment", "config.txt", "~/.dallingerconfig"])
+def test_debug_local_refuses_a_busy_port(
+    debug_local, busy_port, monkeypatch, tmp_path, source
+):
+    port = busy_port.getsockname()[1]
+    sections = f"[Server]\nbase_port = 1\n[Later]\nbase_port = {port}\n"
+    if source == "environment":
+        monkeypatch.setenv("base_port", str(port))
+    else:
+        monkeypatch.delenv("base_port", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        Path(os.path.expanduser(source)).write_text(sections)
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert f"Port {port} is already in use" in result.output
+    assert "base_port" in result.output
+
+
+def test_test_sessions_skip_the_check(debug_local, busy_port, monkeypatch):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
+
+
+def test_debug_local_stops_leftover_workers_on_its_port(
+    debug_local, busy_port, monkeypatch
+):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setattr(
+        "psynet.command_line.list_psynet_worker_processes", lambda: ["leftover"]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", busy_port.close
+    )
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
+
+
+@pytest.mark.parametrize(
+    "holder, message",
+    [
+        ("psynet-debug-db-{tag}", "(PID 4242) is using the database"),
+        ("psynet-test-{port}", "A PsyNet test session is using port"),
+    ],
+)
+def test_debug_local_refuses_a_held_lock(
+    debug_local, monkeypatch, tmp_path, holder, message
+):
+    from psynet.command_line import _database_url_tag
+    from psynet.isolated_environment import try_lock
+
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    name = holder.format(tag=_database_url_tag(), port=port)
+    with try_lock(str(tmp_path / f"{name}.lock")) as lock:
+        lock.write("4242")
+        lock.flush()
+        result = debug_local()
+
+    assert result.exit_code == 1
+    assert message in result.output
+    assert "Nothing was reset." in result.output
+
+
+def test_debug_local_reports_an_unopenable_lock_file(
+    debug_local, monkeypatch, tmp_path
+):
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    (tmp_path / f"psynet-debug-{port}.lock").mkdir()
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert "Could not open the lock file" in result.output
 
 
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
@@ -1002,6 +1142,51 @@ class TestExport:
     def export_data(self):
         with patch("psynet.command_line.export_data") as mock_export_data:
             yield mock_export_data
+
+    @pytest.mark.parametrize("over_unix_socket", [False, True])
+    def test_export_local_explains_a_stopped_database(
+        self, monkeypatch, request, import_local_experiment, over_unix_socket
+    ):
+        from psynet.command_line import psynet
+
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        if over_unix_socket:
+            socket_dir = tempfile.mkdtemp(dir="/tmp")  # Socket paths must be short.
+            request.addfinalizer(lambda: shutil.rmtree(socket_dir, ignore_errors=True))
+            db_url = f"postgresql://dallinger:secret@/dallinger?host={socket_dir}"
+        else:
+            db_url = f"postgresql://dallinger:secret@127.0.0.1:{port}/dallinger"
+        monkeypatch.setenv("DATABASE_URL", db_url)
+        monkeypatch.setattr("psynet.command_line.db.db_url", db_url)
+
+        result = CliRunner().invoke(psynet, ["export", "local"])
+
+        assert result.exit_code == 1, result.output
+        assert over_unix_socket or f"127.0.0.1:{port}" in result.output
+        assert "psynet services check" in result.output
+        assert "apps ssh" not in result.output
+        assert "secret" not in result.output
+        assert "Traceback" not in result.output
+
+    @pytest.mark.parametrize(
+        "location, expected", [("local", "psynet debug local"), ("ssh", "'my-app'")]
+    )
+    def test_experiment_variables_explains_an_empty_experiment_table(
+        self, location, expected
+    ):
+        import psycopg2
+
+        from psynet.command_line import _experiment_variables, db
+
+        connection = psycopg2.connect(dsn=db.db_url)
+        try:
+            connection.cursor().execute("CREATE TEMP TABLE experiment (vars text)")
+            with pytest.raises(click.ClickException, match=expected):
+                _experiment_variables(connection, location=location, app="my-app")
+        finally:
+            connection.close()
 
 
 @pytest.fixture
@@ -1539,7 +1724,7 @@ def test_check_constraints():
         with working_directory(dir):
             with pytest.raises(
                 click.ClickException,
-                match="Experiment directory is missing a requirements.txt file.",
+                match="requirements.txt is missing from this experiment",
             ):
                 _check_constraints()
 
@@ -1549,7 +1734,7 @@ def test_check_constraints():
 
                 with pytest.raises(
                     click.ClickException,
-                    match="Experiment directory is missing a constraints.txt file.",
+                    match="constraints.txt is missing from this experiment",
                 ):
                     _check_constraints()
 
@@ -2051,12 +2236,23 @@ def test_scripts_scaffold_regenerates_empty_constraints(tmp_path):
     assert (tmp_path / "constraints.txt").read_text() == GENERATED_CONSTRAINTS
 
 
-def _assume_git_repository(monkeypatch):
-    """Treat setup tests as already inside a git work tree."""
+def _isolate_setup_test(monkeypatch, check_folder=False):
+    """Isolate a setup test from the developer's machine.
+
+    Treats the test as inside a git work tree and ignores any editable
+    Dallinger in the developer's environment. The unrelated-files check is
+    skipped unless ``check_folder``, because many tests put fixture
+    directories next to the experiment.
+    """
     monkeypatch.setattr(
         "psynet.experiment_setup.git_repository_available",
         lambda: True,
     )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source", lambda: None
+    )
+    if not check_folder:
+        monkeypatch.setattr("psynet.experiment_setup._unrelated_entries", lambda: [])
 
 
 def _stub_new_venv_delegation(monkeypatch, tmp_path):
@@ -2087,9 +2283,9 @@ def _stub_new_venv_delegation(monkeypatch, tmp_path):
     return uv_calls, delegated
 
 
-def _mock_dedicated_experiment_venv(monkeypatch):
+def _mock_dedicated_experiment_venv(monkeypatch, check_folder=False):
     """Treat setup tests as using a dedicated experiment venv, not the shared one."""
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch, check_folder=check_folder)
     monkeypatch.setattr(
         "psynet.experiment_setup._is_psynet_checkout_virtualenv",
         lambda: False,
@@ -2109,7 +2305,7 @@ def _mock_dedicated_experiment_venv(monkeypatch):
 
 def _mock_foreign_experiment_venv(monkeypatch, foreign_venv):
     """Active interpreter is a non-experiment, non-shared virtualenv."""
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
@@ -2455,7 +2651,15 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
         lambda path: False,
     )
     _mock_dedicated_experiment_venv(monkeypatch)
-    monkeypatch.setattr("psynet.experiment_setup._run_uv", lambda *args: None)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    uv_calls = []
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv", lambda args, *_: uv_calls.append(args)
+    )
 
     with working_directory(tmp_path):
         result = CliRunner().invoke(
@@ -2465,6 +2669,118 @@ def test_setup_can_pin_editable_psynet_commit(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "requirements.txt").read_text() == f"{requirement}\n"
+    assert [args[:2] for args in uv_calls] == [["pip", "sync"], ["pip", "check"]]
+    assert (
+        f"pinning PsyNet to a commit replaces the editable Dallinger at "
+        f"{dallinger_source}" in result.output
+    )
+
+
+def test_setup_keeps_editable_dallinger(tmp_path, monkeypatch):
+    """Setup reinstalls an editable Dallinger after syncing, without pinning it."""
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_dedicated_experiment_venv(monkeypatch)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+    uv_calls = []
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv", lambda args, *_: uv_calls.append(args)
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup"])
+
+    assert result.exit_code == 0, result.output
+    assert f"Dallinger is installed editable from {dallinger_source}" in result.output
+    assert uv_calls == [
+        ["pip", "sync", "constraints.txt", "--strict"],
+        ["pip", "install", "-e", str(dallinger_source)],
+        ["pip", "check"],
+    ]
+    assert "dallinger" not in (tmp_path / "requirements.txt").read_text().lower()
+
+
+def test_setup_explains_incompatible_editable_dallinger(tmp_path, monkeypatch):
+    """A failing dependency check names the editable Dallinger as the suspect."""
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_dedicated_experiment_venv(monkeypatch)
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+
+    def fake_run_uv(args, description, quiet=False):
+        if args == ["pip", "check"]:
+            raise click.ClickException(f"Failed to {description}.")
+
+    monkeypatch.setattr("psynet.experiment_setup._run_uv", fake_run_uv)
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup"])
+
+    assert result.exit_code == 1, result.output
+    assert f"The editable Dallinger at {dallinger_source}" in result.output
+    assert "uv pip uninstall dallinger" in result.output
+
+
+def test_setup_refuses_folder_with_unrelated_files(tmp_path, monkeypatch):
+    """Setup won't scaffold into an unrelated folder unless told to."""
+    (tmp_path / "notes.txt").write_text("not an experiment\n")
+    _mock_dedicated_experiment_venv(monkeypatch, check_folder=True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+
+    with working_directory(tmp_path):
+        refused = CliRunner().invoke(psynet, ["setup", "--no-install"])
+        assert refused.exit_code == 1, refused.output
+        assert "notes.txt" in refused.output
+        assert "--yes" in refused.output
+        assert not (tmp_path / "experiment.py").exists()
+
+        accepted = CliRunner().invoke(psynet, ["setup", "--no-install", "--yes"])
+    assert accepted.exit_code == 0, accepted.output
+    assert (tmp_path / "experiment.py").exists()
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        ["experiment.py", "static/", "tests/", "audit/"],
+        ["audit/", "LICENSE"],
+        ["static/"],
+        [".python-version", "README.md", "main.py", "pyproject.toml", "uv.lock"],
+    ],
+)
+def test_setup_accepts_experiment_folders(tmp_path, monkeypatch, entries):
+    """Experiment work and repository files don't trigger the folder check."""
+    for entry in entries:
+        if entry.endswith("/"):
+            (tmp_path / entry).mkdir()
+        else:
+            (tmp_path / entry).write_text(
+                "import psynet.experiment\n" if entry == "experiment.py" else ""
+            )
+    _mock_dedicated_experiment_venv(monkeypatch, check_folder=True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: None
+    )
+
+    with working_directory(tmp_path):
+        result = CliRunner().invoke(psynet, ["setup", "--no-install"])
+
+    assert result.exit_code == 0, result.output
+    assert "don't belong to a PsyNet experiment" not in result.output
 
 
 def test_setup_editable_source_scaffolds_without_commit_pin_warning(
@@ -2554,7 +2870,7 @@ def test_setup_rejects_no_install_with_force_shared_env(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._is_psynet_checkout_virtualenv",
         lambda: True,
@@ -2576,7 +2892,7 @@ def test_setup_shared_env_noninteractive_requires_explicit_flag(tmp_path, monkey
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2605,7 +2921,7 @@ def test_setup_shared_env_no_install_skips_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2640,7 +2956,7 @@ def test_setup_shared_env_force_syncs_with_warning(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2737,7 +3053,7 @@ def test_setup_shared_env_interactive_cancel_makes_no_changes(tmp_path, monkeypa
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2771,7 +3087,7 @@ def test_setup_shared_env_interactive_no_install(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2805,7 +3121,7 @@ def test_setup_no_install_skips_editable_source_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2844,7 +3160,7 @@ def test_setup_no_install_keeps_existing_explicit_pin(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2879,7 +3195,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2924,7 +3240,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
     command, env = delegated[0]
     assert command[0] == str(tmp_path / ".venv" / "bin" / "psynet")
     assert command[1] == "setup"
-    assert command[2:] == ["--psynet-source", "editable"]
+    assert command[2:] == ["--yes", "--psynet-source", "editable"]
     assert env["VIRTUAL_ENV"] == str((tmp_path / ".venv").resolve())
     assert env["PSYNET_SETUP_DELEGATED"] == "1"
     # The outer process must not scaffold or repin; the inner run owns that.
@@ -2933,7 +3249,7 @@ def test_setup_shared_env_interactive_new_venv(tmp_path, monkeypatch):
 
 
 def test_setup_detects_psynet_running_from_other_virtualenv(tmp_path, monkeypatch):
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -2983,7 +3299,7 @@ def test_setup_shared_env_interactive_new_venv_suggests_editable_install(
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3024,7 +3340,7 @@ def test_delegated_setup_does_not_inherit_pythonpath(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services", lambda **kwargs: None
     )
@@ -3053,7 +3369,7 @@ def test_setup_delegated_run_does_not_create_another_venv(tmp_path, monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services", lambda **kwargs: None
     )
@@ -3083,7 +3399,7 @@ def test_setup_shared_env_interactive_new_venv_default(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3112,6 +3428,47 @@ def test_setup_shared_env_interactive_new_venv_default(tmp_path, monkeypatch):
     assert not (tmp_path / "Dockerfile").exists()
 
 
+def test_setup_new_venv_explains_incompatible_editable_dallinger(tmp_path, monkeypatch):
+    """A failed new-venv install never suggests uninstalling from the shared env."""
+    psynet_source = tmp_path / "psynet-source"
+    psynet_source.mkdir()
+    (tmp_path / "requirements.txt").write_text("psynet==0.0.0\n")
+    monkeypatch.setattr(
+        "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
+    )
+    _isolate_setup_test(monkeypatch)
+    monkeypatch.setattr(
+        "psynet.experiment_setup._is_psynet_checkout_virtualenv", lambda: True
+    )
+    monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_psynet_source", lambda: psynet_source
+    )
+    dallinger_source = tmp_path / "dallinger-source"
+    monkeypatch.setattr(
+        "psynet.experiment_setup.get_editable_dallinger_source",
+        lambda: dallinger_source,
+    )
+
+    def fake_run_uv(args, description, quiet=False):
+        if args[:2] == ["pip", "install"]:
+            raise click.ClickException(
+                f"Failed to {description}.\nNo version of dallinger satisfies psynet"
+            )
+
+    monkeypatch.setattr("psynet.experiment_setup._run_uv", fake_run_uv)
+
+    with working_directory(tmp_path):
+        # First answer picks the dedicated venv; second records editable PsyNet.
+        result = CliRunner().invoke(psynet, ["setup"], input="1\n1\n")
+
+    assert result.exit_code == 1, result.output
+    assert f"The editable Dallinger at {dallinger_source}" in result.output
+    assert "Remove ./.venv" in result.output
+    assert "--psynet-source commit" in result.output
+    assert "uv pip uninstall" not in result.output
+
+
 def test_setup_shared_env_interactive_new_venv_rejects_existing_venv(
     tmp_path, monkeypatch
 ):
@@ -3120,7 +3477,7 @@ def test_setup_shared_env_interactive_new_venv_rejects_existing_venv(
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3155,7 +3512,7 @@ def test_setup_shared_env_interactive_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "psynet.experiment_setup._ensure_active_virtualenv", lambda: None
     )
-    _assume_git_repository(monkeypatch)
+    _isolate_setup_test(monkeypatch)
     monkeypatch.setattr(
         "psynet.experiment_setup._handle_setup_services",
         lambda **kwargs: None,
@@ -3351,6 +3708,7 @@ def test_check_experiment_directory_reports_missing_git(tmp_path, monkeypatch):
     with working_directory(tmp_path):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
+        (tmp_path / "constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         with pytest.raises(click.ClickException, match="git init"):
             _check_experiment_directory("debug")
@@ -3365,6 +3723,7 @@ def test_check_experiment_directory_passes_with_scaffold_and_git(tmp_path, monke
     with working_directory(tmp_path):
         (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
         (tmp_path / "requirements.txt").write_text("psynet\n")
+        (tmp_path / "constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         _check_experiment_directory("debug")
 
@@ -3379,6 +3738,7 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
     with working_directory(tmp_path):
         Path("experiment.py").write_text("class Exp:\n    pass\n")
         Path("requirements.txt").write_text("psynet\n")
+        Path("constraints.txt").write_text("psynet==1.0\n")
         scaffold_experiment_directory()
         subprocess.run(["git", "init", "-q"], check=True)
 
@@ -3401,6 +3761,20 @@ def test_check_experiment_directory_requires_commit_only_for_remote_deployments(
             check=True,
         )
         _check_experiment_directory("deploy", require_git_commit=True)
+
+
+def test_local_runs_require_constraints_txt(tmp_path, monkeypatch):
+    from psynet.command_line import _check_experiment_directory
+
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
+    (tmp_path / "experiment.py").write_text("class Exp:\n    pass\n")
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+    with working_directory(tmp_path):
+        scaffold_experiment_directory()
+        Path("constraints.txt").unlink(missing_ok=True)
+        with pytest.raises(click.ClickException, match="psynet generate-constraints"):
+            _check_experiment_directory("test")
 
 
 def test_test_local_reports_missing_scaffold_like_debug(tmp_path, monkeypatch):
@@ -4761,7 +5135,10 @@ def test_remote_update_keeps_local_data(remote_launch):
     [
         ({}, None),
         ({"workers": 1}, "1 local PsyNet server process(es)"),
-        ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
+        (
+            {"clients": [(4321, "u", "flask", "idle", None, -1, None)]},
+            "pid 4321 (flask, idle, local socket)",
+        ),
         ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
         ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
     ],
@@ -4801,6 +5178,8 @@ def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
 
 
 def test_other_redis_clients_are_counted_but_not_this_process():
+    from urllib.parse import urlsplit
+
     import redis
     from dallinger.db import redis_conn
 
@@ -4810,11 +5189,75 @@ def test_other_redis_clients_are_counted_but_not_this_process():
     redis_conn.ping()
     before = _count_other_redis_clients()
     other = redis.Redis.from_url(_redis_url())
+    # Set the index in the URL path, which from_url prefers to a db argument.
+    own_db = int(other.connection_pool.connection_kwargs.get("db", 0))
+    other_db_url = urlsplit(_redis_url())._replace(path=f"/{(own_db + 1) % 16}")
+    other_db = redis.Redis.from_url(other_db_url.geturl())
     other.ping()
+    other_db.ping()
     try:
         assert _count_other_redis_clients() == before + 1
     finally:
         other.close()
+        other_db.close()
+
+
+def test_other_database_clients_are_listed_but_not_this_process(
+    db_client_in_other_process,
+):
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import list_other_database_clients
+
+    # A checked-out connection survives the engine.dispose() in the lister.
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        pids = [row[0] for row in list_other_database_clients()]
+        transaction = own.begin()
+        own.execute(text("CREATE TEMP TABLE locked_by_own_connection (x int)"))
+        locking_pids = [row[0] for row in list_other_database_clients()]
+        transaction.rollback()
+    assert db_client_in_other_process in pids
+    assert own_pid not in pids
+    assert own_pid in locking_pids
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_forked_child_does_not_claim_parent_database_connections():
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import _own_backends
+
+    def own_pids():
+        return {pid for pid, _ in _own_backends()}
+
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        assert own_pid in own_pids()
+        child = os.fork()
+        if child == 0:
+            os._exit(int(own_pid in own_pids()))
+        _, status = os.waitpid(child, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
+
+
+def test_own_pid_with_another_backend_start_is_another_client(monkeypatch):
+    """A backend that reused the pid of a dead own connection is not hidden."""
+    from datetime import timedelta
+
+    import dallinger.db
+
+    from psynet import db as psynet_db
+
+    with dallinger.db.engine.connect() as own:
+        conn = own.connection.dbapi_connection
+        os_pid, (pid, start) = psynet_db._backends[conn]
+        reused = (os_pid, (pid, start - timedelta(seconds=1)))
+        monkeypatch.setitem(psynet_db._backends, conn, reused)
+        clients = psynet_db.list_other_database_clients(release_local=False)
+    assert pid in [row.pid for row in clients]
 
 
 @pytest.mark.parametrize(
@@ -4861,7 +5304,7 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     )
     monkeypatch.setattr(
         "psynet.db.list_other_database_clients",
-        lambda release_local=True: [(1, "dallinger", "pytest", "idle")],
+        lambda release_local=True: [(1, "dallinger", "pytest", "idle", None, -1, None)],
     )
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
     monkeypatch.setattr(
@@ -4870,7 +5313,6 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     )
     monkeypatch.setattr("psynet.experiment.get_experiment", lambda: experiment)
     monkeypatch.setattr("psynet.command_line.clean_sys_modules", lambda: None)
-    monkeypatch.setattr("psynet.command_line.update_docker_tag", lambda: None)
     _prepare()
     assert inits == [True]
     assert idle_calls == []

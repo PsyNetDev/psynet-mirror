@@ -107,7 +107,6 @@ _OBSOLETE_DOCKER_SCRIPT_HASHES = {
 }
 
 _GENERATED_FILES = {
-    "Dockertag": lambda: dockertag_contents(),
     ".python-version": lambda: f"{_current_python_major_minor()}\n",
 }
 
@@ -143,11 +142,6 @@ _REQUIREMENTS_TXT_COMMENTS = """\
 def _current_python_major_minor() -> str:
     """Return the running interpreter's major and minor version."""
     return f"{sys.version_info.major}.{sys.version_info.minor}"
-
-
-def dockertag_contents() -> str:
-    """Return Dockertag file contents for the current experiment directory."""
-    return f"{Path.cwd().name}\n"
 
 
 def _experiment_script_resource(relative_path: str):
@@ -539,6 +533,23 @@ def _optional_commit_psynet_requirement(source: Path) -> str | None:
 def get_editable_psynet_source() -> Path | None:
     """Return the source path when PsyNet is installed in editable mode."""
     return _editable_source(_psynet_direct_url_info())
+
+
+def get_editable_dallinger_source() -> Path | None:
+    """Return the source path when Dallinger is installed in editable mode.
+
+    Falls back to Dallinger's own detection for legacy ``.egg-link`` installs,
+    which do not record ``direct_url.json``.
+    """
+    source = get_editable_source("dallinger")
+    if source is not None:
+        return source
+    try:
+        from dallinger.utils import get_editable_dallinger_path
+    except ImportError:
+        return None
+    legacy_source = get_editable_dallinger_path()
+    return Path(legacy_source).resolve() if legacy_source else None
 
 
 def get_editable_source(package: str) -> Path | None:
