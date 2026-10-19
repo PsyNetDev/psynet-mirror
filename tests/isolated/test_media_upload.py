@@ -634,8 +634,10 @@ def test_receiver_crash_releases_ownership_and_cleans_partials(
         process.join(timeout=5)
         pytest.fail("Receiver did not exit in time")
     assert process.exitcode == 23
+    # The crash skips flushing, so how much of the chunk reached the file
+    # depends on Python's buffer size (8 KiB before 3.14, 128 KiB from 3.14).
     files = list(tmp_path.glob("psynet-upload-*"))
-    assert len(files) == 1 and files[0].stat().st_size == 65536
+    assert len(files) == 1 and files[0].stat().st_size <= 65536
     if retry:
         _receive_recording(
             asset_id,
