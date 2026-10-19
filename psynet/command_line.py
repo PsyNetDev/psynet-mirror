@@ -1,5 +1,6 @@
 import collections
 import datetime
+import difflib
 import functools
 import getpass
 import hashlib
@@ -1474,7 +1475,6 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 # pre deploy #
 ##############
 def run_pre_checks_deploy(local_, recruiter):
-    check_psynet_requirement_is_unambiguous()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
     if not local_:
@@ -1505,18 +1505,22 @@ def _abort_if_app_exists(server, app, *, update=False):
 
     from dallinger.command_line.docker_ssh import get_apps
 
-    apps = get_apps(server)
-    existing_apps = {entry.name for entry in apps}
-    if app in existing_apps:
-        click.echo(
-            "\n".join(
-                [
-                    f"App with name {app} already exists: found on server. Aborting.",
-                    "Use a different name or destroy the current app.",
-                ]
+    existing = {entry.name: entry for entry in get_apps(server)}
+    if app in existing:
+        ingress_option = f"--ingress {existing[app].ingress}"
+        update_command = _ssh_app_update_command(server, app)
+        if update_command:
+            update_advice = f"run `{update_command} --server {server} {ingress_option}`"
+        else:
+            update_advice = (
+                f"add --update {ingress_option} to the command that created it"
             )
+        raise click.ClickException(
+            f"An app named {app} already exists on {server}.\n"
+            f"To ship changes to it, {update_advice}; this keeps its database.\n"
+            "To start over, use a different --app, or export its data and then run "
+            f"`psynet destroy ssh --app {app} --server {server}`."
         )
-        raise click.Abort
 
 
 _option_ssh_update = click.option(
@@ -2354,6 +2358,10 @@ def run_pre_checks(
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
     if not local_:
+        # A local-path pin can never deploy, so say so before asking for a
+        # constraints.txt refresh.
+        if mode == "live" or "psynet" not in local_packages:
+            check_psynet_requirement_is_unambiguous()
         _check_constraints_before_remote_deploy()
 
     exp = get_experiment()
@@ -2470,7 +2478,6 @@ def run_pre_checks_sandbox(local_packages=()):
         decide what runs, so they are not checked.
     """
     if "psynet" not in local_packages:
-        check_psynet_requirement_is_unambiguous()
         check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements(skip=local_packages)
 
@@ -3126,7 +3133,7 @@ def check_psynet_requirement_is_unambiguous():
 
     Raises
     ------
-    ValueError
+    click.ClickException
         If the PsyNet requirement is missing or ambiguous.
     """
     environment_variable = "SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"
@@ -3152,7 +3159,9 @@ def check_psynet_requirement_is_unambiguous():
             spinner.fail("✗")
 
         if not valid:
-            raise ValueError(_ambiguous_psynet_requirement_message(requirement))
+            raise click.ClickException(
+                _ambiguous_psynet_requirement_message(requirement)
+            )
 
 
 def confirm_deploying_development_psynet():
@@ -3260,38 +3269,49 @@ def _requirement_with_experiment_extra(requirement: str) -> str:
 def _is_local_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement points at a local filesystem path."""
     compact = requirement.lower().replace(" ", "")
-    return compact.startswith("-e") or "file://" in compact
+    return (
+        compact.startswith(("-e", ".", "/", "~"))
+        or "file://" in compact
+        or re.search(r"@[./~]", compact) is not None
+        or compact.endswith(".whl")
+    )
 
 
 def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
     """Build the deploy-time error for a missing or ambiguous PsyNet pin."""
-    branch_note = (
-        "This means you can't just give a branch name, e.g. master; you have to "
-        "specify a particular version or a commit hash."
-    )
+    is_release = re.fullmatch(r"\d+\.\d+\.\d+(?:rc\d+)?", __version__)
+    version = __version__ if is_release else "<version>"
+    commit = "45f317688af59350f9a6f3052fd73076318f2775"
     examples = [
-        "* psynet[experiment]==10.1.1",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
+        f"* psynet[experiment]=={version}",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v{version}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@{commit}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@{commit}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@{commit[:8]}#egg=psynet",
     ]
 
-    parts = [
-        "When deploying an experiment, you need to specify PsyNet in an "
-        "unambiguous way. " + branch_note,
-    ]
+    local = requirement is not None and _is_local_psynet_requirement(requirement)
+    if local:
+        parts = [
+            "requirements.txt installs PsyNet from a local path (an editable, "
+            "directory or wheel install), which the deploy server can't "
+            "install. Pin a published version or a pushed Git commit instead."
+        ]
+    else:
+        parts = [
+            "When deploying an experiment, you need to specify PsyNet in an "
+            "unambiguous way. This means you can't just give a branch name, "
+            "e.g. master; you have to specify a particular version or a "
+            "commit hash."
+        ]
     if requirement:
         parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
-        if _is_local_psynet_requirement(requirement):
-            parts.append(
-                "\n\nLocal path, wheel and editable installs cannot be resolved "
-                "on a remote deploy server. Replace this entry with a published "
-                "version or a pushed Git commit (see the examples below). If you "
-                "developed against a local PsyNet checkout, re-run:\n"
-                "  psynet setup --psynet-source commit\n"
-                "to pin a pushed Git commit before deploying."
-            )
+    if local:
+        parts.append(
+            "\n\nIf you developed against a local PsyNet checkout, re-run:\n"
+            "  psynet setup --psynet-source commit\n"
+            "to pin a pushed Git commit before deploying."
+        )
     from .experiment_scaffold import get_editable_psynet_source
 
     if get_editable_psynet_source() is not None:
@@ -3492,6 +3512,8 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     """
     Export the experiment from a remote server via Docker and SSH.
     """
+    if app:
+        _require_ssh_apps_exist(server, [app])
     app = _resolve_ssh_app(ctx, app, server)
     _awaken_ssh_app(server, app)
     export_(
@@ -4263,18 +4285,19 @@ def destroy__heroku(ctx, app):
     """
     Destroy the experiment on Heroku.
     """
-    _destroy(
+    if not _destroy(
         ctx,
         dallinger.command_line.destroy,
         app=app,
-    )
+    ):
+        raise click.Abort()
 
 
 def user_confirms(question, default=False):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
     """
-    print(question + " Enter 'y' for yes, 'n' for no.")
+    print(question)
     return click.confirm("", default=default)
 
 
@@ -4295,9 +4318,9 @@ def _confirm_destroy_with_pending_jobs(
     summary : dict
         The output of :func:`_fetch_ssh_pending_async_jobs`.
     ask_for_confirmation : bool
-        Whether the user may be asked. When ``False`` (batch mode, or a
-        future ``--yes``), or when stdin is not a terminal, an app with
-        pending jobs is not destroyed.
+        Whether the user may be asked. When ``False`` (with ``--yes``), or
+        when stdin is not a terminal, an app with pending jobs is not
+        destroyed.
     discard_pending_jobs : bool
         Destroy the app even if jobs are pending, after reporting them.
 
@@ -4322,7 +4345,7 @@ def _confirm_destroy_with_pending_jobs(
         "`psynet export ssh` again before destroying the app."
     )
     if ask_for_confirmation and _stdin_is_interactive():
-        return user_confirms("Destroy the app anyway?", default=False)
+        return user_confirms(f"Destroy {app} anyway?", default=False)
     log(f"Not destroying {app}. Pass --discard-pending-jobs to destroy it anyway.")
     return False
 
@@ -4332,12 +4355,11 @@ def _confirm_destroy_with_pending_jobs(
 _COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
 
 
-def _is_debug_ssh_app(server, app):
-    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
+def _ssh_compose_settings(server, app, *keys):
+    """Read config values from an SSH app's compose file, or ``None`` for each that can't be read.
 
     The compose file is read rather than the app's config in its web
-    container, which may be what failed. Apps whose compose file can't be
-    read count as not deployed by ``psynet debug ssh``.
+    container, which may not be running.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException
@@ -4349,9 +4371,30 @@ def _is_debug_ssh_app(server, app):
         )
     except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
         log(f"Could not read {app}'s compose file on {server}: {e}")
-        return False
-    match = re.search(_COMPOSE_SETTING.format("debug_ssh_app"), compose or "")
-    return bool(match) and match[1].strip().lower() == "true"
+        compose = ""
+    matches = [re.search(_COMPOSE_SETTING.format(key), compose or "") for key in keys]
+    return [match[1].strip().lower() if match else None for match in matches]
+
+
+def _is_debug_ssh_app(server, app):
+    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
+
+    Apps whose compose file can't be read count as not deployed by
+    ``psynet debug ssh``.
+    """
+    (debug_ssh_app,) = _ssh_compose_settings(server, app, "debug_ssh_app")
+    return debug_ssh_app == "true"
+
+
+def _ssh_app_update_command(server, app):
+    """Return the command that updates an SSH app in place, or ``None`` if its compose file doesn't say."""
+    mode, performance_test_app = _ssh_compose_settings(
+        server, app, "mode", "performance_test_app"
+    )
+    if performance_test_app == "true":
+        return f"psynet performance-test ssh --app {app}"
+    command = _SSH_COMMAND_FOR_MODE.get(mode)
+    return f"{command} --app {app} --update" if command else None
 
 
 def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs):
@@ -4406,13 +4449,13 @@ def _destroy(
 ):
     """Destroy a single app.
 
-    For docker-ssh apps (``server`` given), first wake the app and check for
-    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`, or
+    For docker-ssh apps (``server`` given), the caller confirms first; this
+    wakes the app and checks for pending async jobs with
+    :func:`_confirm_destroy_with_pending_jobs`, or
     :func:`_destroy_without_pending_job_check` if the check can't run.
+    Other apps are confirmed here unless ``ask_for_confirmation`` is false.
     """
-    target = app or "the app"
     if server:
-        target += f" from {server}"
         _awaken_ssh_app(server, app)
         try:
             pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
@@ -4426,43 +4469,40 @@ def _destroy(
             )
         if not may_destroy:
             return False
-    confirmed = (
-        user_confirms(f"Would you like to delete {target}?", default=True)
-        if ask_for_confirmation
-        else True
-    )
+    elif ask_for_confirmation and not user_confirms(
+        f"Destroy {app or 'the app'}?", default=False
+    ):
+        return False
 
-    if confirmed:
-        with yaspin(f"Destroying {app}...") as spinner:
-            try:
-                kwargs = {"app": app}
-                kwargs = {**kwargs, "server": server} if server else kwargs
-                # Dallinger still exposes this retired-platform option. Keep
-                # it disabled until the upstream command removes it.
-                if "expire_hit" in get_args(f_destroy):
-                    ctx.invoke(
-                        f_destroy,
-                        expire_hit=False,
-                        **kwargs,
-                    )
-                else:
-                    ctx.invoke(
-                        f_destroy,
-                        **kwargs,
-                    )
-                spinner.ok("✔")
-            except subprocess.CalledProcessError:
-                spinner.fail("✗")
-                click.echo(
-                    f"Failed to destroy {app}. "
-                    "Maybe it was already destroyed, or the app name was wrong?"
+    with yaspin(f"Destroying {app}...") as spinner:
+        try:
+            kwargs = {"app": app}
+            kwargs = {**kwargs, "server": server} if server else kwargs
+            # Dallinger still exposes this retired-platform option. Keep
+            # it disabled until the upstream command removes it.
+            if "expire_hit" in get_args(f_destroy):
+                ctx.invoke(
+                    f_destroy,
+                    expire_hit=False,
+                    **kwargs,
                 )
-                return False
-            except click.Abort:
-                spinner.fail("✗")
-                raise
-        return True
-    return False
+            else:
+                ctx.invoke(
+                    f_destroy,
+                    **kwargs,
+                )
+            spinner.ok("✔")
+        except subprocess.CalledProcessError:
+            spinner.fail("✗")
+            click.echo(
+                f"Failed to destroy {app}. "
+                "Maybe it was already destroyed, or the app name was wrong?"
+            )
+            return False
+        except click.Abort:
+            spinner.fail("✗")
+            raise
+    return True
 
 
 @psynet.group("hibernate")
@@ -4551,51 +4591,128 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
         raise click.UsageError(f"Provide an app name. Example: {example_usage}")
     if app:
         assert len(apps) == 0, "You cannot provide both --app and a list of apps."
-        click.echo(f"Consider using the batch syntax: {example_usage}")
-        if not _destroy(
-            ctx,
-            destroy,
-            app=app,
-            server=server,
-            ask_for_confirmation=not yes,
-            discard_pending_jobs=discard_pending_jobs,
-        ):
-            raise click.Abort()
-    if len(apps) > 0:
-        assert app is None, "You cannot provide both --app and a list of apps."
-        confirmation = f"""
-            Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
-            """
-        if yes or click.confirm(confirmation, abort=True):
-            failed = []
-            for app in apps:
-                try:
-                    if not _destroy(
-                        ctx,
-                        destroy,
-                        app=app,
-                        server=server,
-                        ask_for_confirmation=False,
-                        discard_pending_jobs=discard_pending_jobs,
-                    ):
-                        failed.append(app)
-                except click.Abort:
-                    click.echo(
-                        f"Failed to destroy {app}. "
-                        "Maybe it was already destroyed, or the app name was wrong?"
-                    )
-                    failed.append(app)
-                except Exception:
-                    logger.exception(
-                        "Failed to destroy app %s; continuing with remaining apps.",
-                        app,
-                    )
-                    click.echo(
-                        f"Failed to destroy {app}; continuing with remaining apps."
-                    )
-                    failed.append(app)
-            if failed:
-                raise click.Abort()
+        apps = (app,)
+    _require_ssh_apps_exist(server, apps)
+    if not yes:
+        _confirm_destroy_ssh_apps(server, apps)
+    failed = []
+    for app in apps:
+        try:
+            if not _destroy(
+                ctx,
+                destroy,
+                app=app,
+                server=server,
+                ask_for_confirmation=not yes,
+                discard_pending_jobs=discard_pending_jobs,
+            ):
+                failed.append(app)
+        except click.Abort:
+            click.echo(
+                f"Failed to destroy {app}; see the messages above. If it "
+                "stopped while removing the app's Cloudflare tunnel or DNS "
+                "record, fix that and run this command again."
+            )
+            failed.append(app)
+        except Exception:
+            logger.exception(
+                "Failed to destroy app %s; continuing with remaining apps.",
+                app,
+            )
+            click.echo(f"Failed to destroy {app}; continuing with remaining apps.")
+            failed.append(app)
+    if failed:
+        raise click.Abort()
+
+
+def _confirm_destroy_ssh_apps(server, apps):
+    """Ask before destroying ``apps``; without a terminal to ask in, require ``--yes``."""
+    noun = "app" if len(apps) == 1 else "apps"
+    target = f"{len(apps)} {noun} on {server}: {', '.join(apps)}"
+    if not _stdin_is_interactive():
+        raise click.ClickException(
+            f"Confirmation needed to destroy {target}; re-run with --yes."
+        )
+    if not click.confirm(f"Destroy {target}?", default=False):
+        raise click.Abort()
+
+
+def _ssh_app_names(server):
+    """Return the names of the apps on an SSH server.
+
+    An app counts if Dallinger's ``destroy`` would find it: it has a Caddy
+    configuration, a compose file or, after a failed Cloudflare deploy, just
+    a tunnel token.
+
+    Raises
+    ------
+    click.ClickException
+        If the listing fails or times out, so that it isn't mistaken for a
+        server without apps.
+    """
+    import paramiko
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    cmd = (
+        "ls -1 ~/dallinger/caddy.d 2>/dev/null; "
+        "ls -1d ~/dallinger/*/docker-compose.yml "
+        "~/dallinger/*/secrets/cloudflare-tunnel-token 2>/dev/null; true"
+    )
+    marker = "psynet-app-listing-exit="
+    timeout_s = _PENDING_JOB_CHECK_TIMEOUT_S
+    # The outer sh keeps `$?` out of the login shell, which may be fish.
+    listing_cmd = f"{_with_remote_timeout(cmd, timeout_s)}; echo {marker}$?"
+    try:
+        output = _ssh_executor(server).run(
+            f"sh -c {shlex.quote(listing_cmd)}", raise_=False
+        )
+    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
+        problem = str(e)
+    else:
+        listing, _, status = (output or "").rpartition(marker)
+        status = status.strip()
+        problem = {
+            "0": None,
+            str(_REMOTE_TIMEOUT_STATUS): f"timed out after {timeout_s} s",
+            "127": "the server has no `timeout` command",
+            "": "no answer from the server",
+        }.get(status, f"exit code {status}")
+    if problem:
+        raise click.ClickException(
+            f"Couldn't list the apps on {server} ({problem}); check the SSH "
+            "connection and try again."
+        )
+    names = set()
+    for entry in listing.split():
+        match = re.search(
+            r"/([^/]+)/(?:docker-compose\.yml|secrets/cloudflare-tunnel-token)$",
+            entry,
+        )
+        names.add(match[1] if match else entry)
+    return names
+
+
+def _require_ssh_apps_exist(server, apps):
+    """Fail, listing the server's apps, if any of ``apps`` is not on ``server``."""
+    existing = sorted(_ssh_app_names(server))
+    missing = [app for app in apps if app not in existing]
+    if not missing:
+        return
+    names = ", ".join(f"'{app}'" for app in missing)
+    message = f"No app named {names} on {server}."
+    if len(missing) > 1:
+        message = f"No apps named {names} on {server}."
+    if not existing:
+        raise click.ClickException(f"{message} It has no apps.")
+    message += f" Apps there: {', '.join(existing)}"
+    suggestions = [
+        match
+        for app in missing
+        for match in difflib.get_close_matches(app, existing, n=1)
+    ]
+    if suggestions:
+        message += f" (did you mean {' or '.join(suggestions)}?)"
+    raise click.ClickException(message)
 
 
 @psynet.group("apps")
