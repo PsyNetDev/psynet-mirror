@@ -75,8 +75,11 @@ Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
 ``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
 ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
 Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
-records. Until a server default is changed, omitting ``--ingress`` keeps
-classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
+records. With a Dallinger version that provides
+``check_deploy_credentials``, ``psynet deploy ssh``, ``psynet debug ssh`` and
+``psynet performance-test ssh`` check that the token can be read before they
+contact the server or reset local data. Until a server default is changed,
+omitting ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
 name rather than ``https://<app>.<ssh-host>``.
 
 .. _ssh_server_launch_info:

@@ -1,0 +1,1 @@
+With a Dallinger version that provides `check_deploy_credentials`, `psynet deploy ssh`, `psynet debug ssh` and `psynet performance-test ssh` to a Cloudflare-ingress server now stop with Dallinger's `Error: Cloudflare error: …` message before they contact the server, start local services, reset local data or run `prepare`, if the Cloudflare API token can't be read.

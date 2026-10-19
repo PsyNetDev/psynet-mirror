@@ -1915,12 +1915,14 @@ def _pre_launch(
     local_packages=(),
     assume_yes=False,
     performance_test_app=False,
+    ingress=None,
 ):
     """Check and prepare the experiment directory before a launch.
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page.
+    experiment needn't have a consent page. ``ingress`` is the SSH deploy's
+    ``--ingress`` option.
     """
     from .experiment import get_experiment
 
@@ -1931,6 +1933,10 @@ def _pre_launch(
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
     _check_local_image_packages(local_packages)
+
+    # performance-test ssh checked the credentials before contacting the server.
+    if ssh and not performance_test_app:
+        _check_ssh_deploy_credentials(server, ingress)
 
     from .services import ensure_local_services
 
@@ -2018,6 +2024,28 @@ def _pre_launch(
         # Unimports the PsyNet experiment, because Dallinger will want to start from scratch when using Heroku.
         # We don't unimport it in other cases because reloading the experiment produces an unnecessary time overhead.
         clean_sys_modules()
+
+
+def _check_ssh_deploy_credentials(server, ingress):
+    """Stop an SSH deploy before it contacts the server if credentials are missing.
+
+    Dallinger versions with ``check_deploy_credentials`` check that a
+    Cloudflare-ingress deploy can load its Cloudflare API token. Older
+    versions lack it, so the check is skipped and Dallinger's deploy checks
+    the token later.
+
+    Parameters
+    ----------
+    server : str
+        The configured server to deploy to.
+    ingress : str or None
+        The ``--ingress`` option; ``None`` uses the server's default ingress.
+    """
+    try:
+        from dallinger.command_line.docker_ssh import check_deploy_credentials
+    except ImportError:
+        return
+    check_deploy_credentials(server=server, ingress=ingress)
 
 
 def _forget_tables_defined_in_experiment_directory():
@@ -2167,6 +2195,7 @@ def deploy__docker_ssh(
             app=app,
             update=update,
             assume_yes=assume_yes,
+            ingress=ingress,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -2942,6 +2971,7 @@ def _debug_ssh(
             local_packages=local_packages,
             assume_yes=assume_yes,
             performance_test_app=performance_test_app,
+            ingress=ingress,
         )
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
@@ -7021,6 +7051,7 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     # Contacting the server loads the config, so a missing config.txt must be
     # scaffolded first.
     _check_experiment_directory("sandbox", require_git_commit=True)
+    _check_ssh_deploy_credentials(server, deploy_options.get("ingress"))
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
