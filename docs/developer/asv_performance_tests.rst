@@ -78,6 +78,12 @@ or either commit fails to build, it exits with status 2 without comparing the
 commits; the job log shows the failure, and the results for both commits are
 still published.
 
+ASV reuses one virtualenv for both commits, so ``asv.conf.json`` uninstalls
+Dallinger as well as PsyNet whenever ASV switches commits. Each commit then
+gets the Dallinger that its own ``pyproject.toml`` resolves to, rather than
+keeping the one installed for the other commit. Other dependencies are not
+reinstalled.
+
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
 Don't add a second one. Scheduled pipelines run as the schedule's owner, and

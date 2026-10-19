@@ -198,9 +198,16 @@ example, from a static rating study on an SSH server (some rows left out)::
       Bots finished is - where the test was shorter than one participant session (11 min), so no bot could finish.
 
     Recommended: at most 416 participants at once.
+      To enforce it, set max_concurrent_participants = 416 in Experiment.variables.
     Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) failed, over the 1% limit.
       Errors at 560: 5 x HTTP 500 on /participant_status, 3 x OperationalError, 2 x HTTP 500 on /response.
     Validation test: 416 bots (80% of 520), arriving over 11 min, ran for 23 min and passed.
+
+Nothing holds participants to the recommended number unless the study
+enforces it. With the ``generic`` or ``hotair`` recruiter, the summary
+suggests the ``max_concurrent_participants`` setting that does so (see
+:ref:`limiting_simultaneous_participants`); with other recruiters it leaves
+that line out.
 
 *Notes* follow with advice, for example on errors, worker processes and
 database growth. If the validation test fails, the summary suggests a lower
@@ -430,3 +437,77 @@ A typical sequence is a local sweep to see how response times grow with
 load, then more worker processes or faster queries where needed, then a
 capacity search (``--n-bots auto``) on the real server to choose how many
 participants to run at once.
+
+.. _limiting_simultaneous_participants:
+
+Limiting simultaneous participants
+----------------------------------
+
+A study shared through a public link, such as a citizen-science study, can
+attract more visitors at once than the server can serve. Past that point
+every participant's pages slow down, including those of people who are
+already halfway through. To protect them, cap the number of active
+participants with the experiment variable ``max_concurrent_participants``:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        variables = {"max_concurrent_participants": 150}
+
+Newcomers over the cap see a message on the start page saying that many
+people are taking part. The page retries every 20 to 40 seconds and lets
+them in once there is space. People who are already taking the study, or
+who return to it, are never refused.
+
+A participant counts towards the cap while they are working and have
+joined or submitted a page in the last 10 minutes. People who close the tab
+stop counting once that time passes. Simultaneous arrivals can overshoot the
+cap by a few participants.
+
+Choose the cap with a capacity search on the real server (see
+:ref:`performance_testing_capacity`): its summary recommends a number, such
+as ``max_concurrent_participants = 416``, with headroom below the largest
+passing test.
+
+Bots from ``psynet test`` and ``psynet performance-test`` create their
+participants directly rather than through the start page, so the cap never
+holds them back; a performance test measures the server, not the cap. They
+do count towards it, though, so while bots are running, a low cap can keep
+people who use the start page waiting.
+
+PsyNet reads the cap from the experiment's variables each time a newcomer
+arrives, so experiment code can change it while the study runs, for example a
+code block that sets ``experiment.var.max_concurrent_participants = 80``.
+There is no dashboard control or command for changing it by hand yet; to use
+a different fixed cap, change ``variables`` and redeploy. To measure load
+differently, override
+:meth:`~psynet.experiment.Experiment.is_at_capacity`. For example, if some
+pages run longer than 10 minutes without a submission (such as a long
+video), count participants as active for longer:
+
+.. code-block:: python
+
+    from psynet.capacity import count_active_participants
+
+    class Exp(psynet.experiment.Experiment):
+        variables = {"max_concurrent_participants": 150}
+
+        def is_at_capacity(self):
+            limit = self.var.max_concurrent_participants
+            return limit is not None and count_active_participants(1800) >= limit
+
+The method runs every time a newcomer tries to start, including each retry
+from the start page, so keep it cheap. After it reports the study as full,
+each web process skips it for 2 seconds. People already waiting are let in at
+their next retry, up to 40 seconds after the cap is raised. Use it only for
+load: newcomers are told that many people are taking part and retried
+automatically, which would mislead them if the study were closed for another
+reason.
+
+The cap and the method only work with the ``generic`` and ``hotair``
+recruiters, and the recruiter must be named in ``config.txt`` or
+``Experiment.config``; launching fails otherwise.
+Prolific and CINT participants have accepted a place, so they should not
+be kept waiting. With Prolific, ``initial_recruitment_size`` already roughly
+limits how many people take part at once, because PsyNet opens a new place
+only when someone finishes.

@@ -82,9 +82,10 @@ experiments sharing one would wake each other's participants.
 
 Two runs in the same experiment directory still conflict, because each
 creates and removes generated files there. Tests wait for each other
-automatically, and tests and debug servers refuse to start while
-``psynet debug`` serves the same directory; to debug and test at once, or to
-debug twice, use a separate copy (such as a git worktree) of the experiment.
+automatically, but tests and servers refuse to start while a server
+uses the same directory, and servers refuse while tests use it; to debug and
+test at once, or to debug twice, use a separate copy (such as a git worktree)
+of the experiment.
 
 ``psynet services list`` shows which ports, databases and Redis servers the
 sessions running on your machine already use.

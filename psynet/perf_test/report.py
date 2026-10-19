@@ -774,6 +774,7 @@ def format_performance_summary(
     terminal=None,
     confirmation_planned=False,
     local=False,
+    open_link=False,
 ):
     """Summarize the tests of a suite: a table of the tests, then the verdict and notes.
 
@@ -798,6 +799,9 @@ def format_performance_summary(
     local : bool
         Whether the bots and the server ran on this computer, which a note
         then says.
+    open_link : bool
+        Whether the experiment's recruiter supports
+        ``max_concurrent_participants``, so that the verdict suggests it.
 
     Returns
     -------
@@ -831,7 +835,7 @@ def format_performance_summary(
         ]
     notes = [_LOCAL_CAVEAT, _NOT_MEASURED] if local else [_NOT_MEASURED]
     tail += _capacity_renderables(
-        results, limits, time_factor, notes, confirmation_planned
+        results, limits, time_factor, notes, confirmation_planned, open_link
     )
     tables = []
     for columns in _summary_columns(results, limits):
@@ -1224,26 +1228,26 @@ def _error_kinds_lines(result, causes):
     return [f"  Errors at {result.n_bots:,}: {named}{more}."]
 
 
-def _recommendation(outcome, confirmation, limits):
-    """Return the verdict's first line, the recommended participant cap, if there is one.
+def _recommendation(outcome, confirmation, limits, open_link=False):
+    """Return the verdict's first lines: the recommended participant cap, if there is one.
 
     A confirmation test that passed confirms its cap, and one that exceeded
     the limits suggests a lower cap to check; without one, the cap is
-    :data:`CAPACITY_HEADROOM` of the capacity.
+    :data:`CAPACITY_HEADROOM` of the capacity. With ``open_link``, a
+    recommended cap comes with the ``max_concurrent_participants`` setting.
     """
     if confirmation is None:
         if outcome.cap is None:
             return []
+        cap = outcome.cap
         text, style = (
-            f"at most {outcome.cap:,} participants at once "
+            f"at most {cap:,} participants at once "
             f"({CAPACITY_HEADROOM:.0%} of {outcome.capacity:,}).",
             _RECOMMENDED,
         )
     elif _confirmed(confirmation, limits):
-        text, style = (
-            f"at most {confirmation.n_bots:,} participants at once.",
-            _RECOMMENDED,
-        )
+        cap = confirmation.n_bots
+        text, style = (f"at most {cap:,} participants at once.", _RECOMMENDED)
     elif _confirmation_exceeded(confirmation, limits):
         retry = retry_bot_count(confirmation, limits)
         rerun = f"--n-bots {retry} --duration-minutes {confirmation.duration_minutes or 0:g}"
@@ -1260,7 +1264,13 @@ def _recommendation(outcome, confirmation, limits):
             "test didn't confirm it.",
             _UNCONFIRMED,
         )
-    return [Text(f"Recommended: {text}", style=style)]
+    lines = [Text(f"Recommended: {text}", style=style)]
+    if open_link and style == _RECOMMENDED:
+        lines.append(
+            f"  To enforce it, set max_concurrent_participants = {cap} in "
+            "Experiment.variables."
+        )
+    return lines
 
 
 def _capacity_lines(outcome, limits):
@@ -1410,22 +1420,32 @@ def format_capacity_summary(
     terminal=None,
     *,
     confirmation_planned=False,
+    open_link=False,
 ):
     """Return the verdict, worker settings and notes that end :func:`format_performance_summary`, as lines.
 
-    ``terminal`` and ``confirmation_planned`` are as for
+    ``terminal``, ``confirmation_planned`` and ``open_link`` are as for
     :func:`format_performance_summary`.
     """
     return _render(
         _capacity_renderables(
-            results, limits, time_factor, confirmation_planned=confirmation_planned
+            results,
+            limits,
+            time_factor,
+            confirmation_planned=confirmation_planned,
+            open_link=open_link,
         ),
         terminal,
     )
 
 
 def _capacity_renderables(
-    results, limits, time_factor, extra_notes=(), confirmation_planned=False
+    results,
+    limits,
+    time_factor,
+    extra_notes=(),
+    confirmation_planned=False,
+    open_link=False,
 ):
     """Return what :func:`format_capacity_summary` renders, with ``extra_notes`` last.
 
@@ -1437,7 +1457,7 @@ def _capacity_renderables(
         return []
     outcome = capacity_outcome(results, limits)
     capacity, first_fail = outcome.capacity, outcome.first_fail
-    verdict = _recommendation(outcome, confirmation, limits)
+    verdict = _recommendation(outcome, confirmation, limits, open_link)
     capacity_lines = _capacity_lines(outcome, limits)
     if not verdict:
         capacity_lines[0] = Text(capacity_lines[0], style="bold")

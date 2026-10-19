@@ -961,6 +961,7 @@ def debug_local(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     Path("experiment.py").write_text("raise RuntimeError('experiment imported')\n")
     monkeypatch.delenv(READY_ENV_VAR, raising=False)
+    monkeypatch.delenv("PSYNET_HELD_EXPERIMENT_DIRECTORY_LOCK", raising=False)
     monkeypatch.setattr("dallinger.config.config", None)
     monkeypatch.setattr(
         "psynet.isolated_environment.lock_path",
@@ -1072,25 +1073,21 @@ def test_debug_local_reports_an_unopenable_lock_file(
     assert "Could not open the lock file" in result.output
 
 
-def test_debug_local_refuses_a_directory_that_another_debug_server_serves(
-    debug_local, monkeypatch, tmp_path
+@pytest.mark.parametrize("isolated", [False, True])
+def test_debug_local_refuses_a_directory_that_a_test_session_uses(
+    debug_local, monkeypatch, tmp_path, isolated
 ):
-    monkeypatch.setenv("base_port", str(_free_port()))
-    fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    server = subprocess.Popen([sys.executable, str(fake_psynet), "debug", "local"])
-    try:
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            result = debug_local()
-            if "is serving" in result.output:
-                break
-            time.sleep(0.1)
-    finally:
-        server.kill()
-        server.wait()
+    from psynet.testing.locks import experiment_directory_lock
 
-    assert f"psynet debug (PID {server.pid}) is serving" in result.output
+    monkeypatch.setenv("base_port", str(_free_port()))
+    rerun = Mock(side_effect=SystemExit(0))
+    monkeypatch.setattr("psynet.command_line._rerun_in_isolated_environment", rerun)
+    with experiment_directory_lock(tmp_path, export=False):
+        result = debug_local(*(["--isolated"] if isolated else []))
+
+    assert result.exit_code == 1
+    assert f"A PsyNet test session (PID {os.getpid()}) is using" in result.output
+    rerun.assert_not_called()
 
 
 @pytest.mark.parametrize("docker", [False, True])
@@ -6050,6 +6047,7 @@ def test_performance_test_options_reach_the_tester(options, expected, tmp_path):
         label=experiment.label,
         after_test=ANY,
         local=True,
+        open_link=ANY,
     )
     searching = options.get("n_bots") == "auto"
     assert (suite.find_capacity.called, suite.run.called) == (
@@ -6199,6 +6197,8 @@ def _invoke_destroy_ssh(
             server="test-server",
             yes=yes,
             discard_pending_jobs=discard_pending_jobs,
+            remove_data=False,
+            keep_data=False,
         )
 
     return CliRunner().invoke(parent)
@@ -6242,14 +6242,25 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
     assert pre_launch_kwargs["docker"] is True
 
 
-def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
+def _patch_dallinger_destroy_ssh(
+    monkeypatch, check_pending_jobs=False, data_options=False
+):
+    """Fake Dallinger's ``docker-ssh destroy``, with Dallinger #10129's data options if ``data_options``."""
     destroyed = []
 
-    @click.command()
-    @click.option("--app", required=True)
-    @click.option("--server")
-    def fake_destroy(app, server):
-        destroyed.append((app, server))
+    def fake_destroy(app, server, delete_data_command=None, **data):
+        destroyed.append((app, server, data) if data_options else (app, server))
+        if app == "gone":  # Dallinger aborts when no data is left
+            raise click.Abort()
+        if data.get("keep_data"):
+            click.echo(f"To delete it, run: {delete_data_command}")
+
+    if data_options:
+        for flag in ("--remove-data", "--keep-data", "--yes"):
+            fake_destroy = click.option(flag, is_flag=True)(fake_destroy)
+        fake_destroy = click.option("--delete-data-command")(fake_destroy)
+    fake_destroy = click.option("--server")(fake_destroy)
+    fake_destroy = click.command()(click.option("--app", required=True)(fake_destroy))
 
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
@@ -6297,6 +6308,7 @@ def test_destroy_ssh_without_a_terminal_asks_for_yes(monkeypatch):
 
 def _patch_ssh_listing(monkeypatch, executor):
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
     monkeypatch.setattr(
@@ -6345,6 +6357,142 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
             "No app named 'dogfood-dpe' on musix. Apps there: dogfood-cf, "
             "dogfood-dbg, dogfood-dep (did you mean dogfood-dep?)" in result.output
         )
+
+
+def test_destroy_ssh_combines_app_option_and_arguments(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "--app", "one", "two", "one"], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Destroy 2 apps on musix: one, two?") == 1
+    assert destroyed == [("one", "musix"), ("two", "musix")]
+
+
+def test_destroy_ssh_requires_an_app_name(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh"])
+    assert result.exit_code == 2, result.output
+    assert "Provide an app name" in result.output
+    assert "psynet destroy ssh <app>" in result.output
+    assert destroyed == []
+
+
+@pytest.mark.parametrize(
+    "apps, data",
+    [
+        (["one"], {"remove_data": False, "keep_data": False, "yes": False}),
+        (["one", "two"], {"remove_data": False, "keep_data": True, "yes": False}),
+    ],
+)
+def test_destroy_ssh_data_question_for_one_or_several_apps(
+    monkeypatch, tmp_path, apps, data
+):
+    """Dallinger asks about a single app's data; PsyNet asks once about several."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", *apps], input="y\nn\n")
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Also delete the data of") == (len(apps) > 1)
+    assert "Export the data of one first" in result.output
+    assert destroyed == [(app, "musix", data) for app in apps]
+
+
+def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "one", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert destroyed == [
+        ("one", "musix", {"remove_data": True, "keep_data": False, "yes": True})
+    ]
+
+
+def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
+    monkeypatch, tmp_path
+):
+    """Its leftover data is Dallinger's to find, without PsyNet's wake-up or name suggestions."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    woken = []
+    monkeypatch.setattr(
+        "psynet.command_line._awaken_ssh_app", lambda server, app: woken.append(app)
+    )
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "twoo", "gone", "one", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "did you mean" not in result.output
+    assert "Export the data of twoo" not in result.output
+    assert "Export the data of one" in result.output
+    assert "Nothing left to delete for gone." in result.output
+    assert "run this command again" not in result.output
+    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "one"]
+    assert woken == ["one"]
+
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "twoo", "--remove-data"], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("[y/N]") == 1
+    assert "Delete the leftover data of twoo on musix? [y/N]" in result.output
+    assert "Deleting leftover data of twoo..." in result.output
+
+
+def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
+    _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y", "--keep-data"])
+    assert result.exit_code == 0, result.output
+    assert (
+        "To delete it, run: psynet destroy ssh one --server musix --remove-data"
+        in result.output
+    )
+
+
+@pytest.mark.parametrize(
+    "data_options, flags, message",
+    [
+        (True, [], "pass --remove-data or --keep-data in non-interactive sessions"),
+        (False, ["--keep-data"], "need a newer Dallinger"),
+    ],
+)
+def test_destroy_ssh_data_choice_usage_errors(
+    monkeypatch, data_options, flags, message
+):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=data_options)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y", *flags])
+    assert result.exit_code == 2, result.output
+    assert message in result.output
+    assert destroyed == []
+
+
+def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    record = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"app": "one", "server": "musix"}))
+    _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    args = ["destroy", "ssh", "one", "-y", "--remove-data"]
+
+    with working_directory(tmp_path):
+        assert "Found no export of one" in CliRunner().invoke(psynet, args).output
+        manifest = tmp_path / "exports/latest/manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"deployment_id": "dep-1"}))
+        output = CliRunner().invoke(psynet, args).output
+        assert "Found no export" not in output and "Export the data" not in output
 
 
 @pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
@@ -6621,19 +6769,6 @@ def test_export_warns_about_pending_jobs(capsys):
     )
 
 
-def test_destroy_ssh_requires_an_app_name(monkeypatch):
-    @click.command()
-    @click.option("--app")
-    @click.option("--server")
-    def fake_destroy(app, server):
-        raise AssertionError("should not destroy")
-
-    result = _invoke_destroy_ssh(monkeypatch, fake_destroy)
-    assert result.exit_code != 0, result.output
-    assert "Provide an app name" in result.output
-    assert "psynet destroy ssh" in result.output
-
-
 def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     destroyed = []
 
@@ -6656,6 +6791,19 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert "Traceback" not in result.output
 
 
+def test_destroy_ssh_single_app_reports_dallinger_errors(monkeypatch):
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        raise click.ClickException("Retry with X.")
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, app="broken")
+    assert result.exit_code == 1, result.output
+    assert "Error: Retry with X." in result.output
+    assert "Problem destroying" not in result.output
+
+
 def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
     destroyed = []
 
@@ -6672,7 +6820,14 @@ def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
     assert isinstance(result.exception, SystemExit)
 
 
-def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        (RuntimeError("ssh failed"), "Failed to destroy broken; continuing"),
+        (click.ClickException("Retry with X."), "Problem destroying broken: Retry"),
+    ],
+)
+def test_destroy_ssh_continues_when_one_app_raises(monkeypatch, error, message):
     destroyed = []
 
     @click.command()
@@ -6681,28 +6836,13 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch):
     def fake_destroy(app, server):
         destroyed.append(app)
         if app == "broken":
-            raise RuntimeError("ssh failed")
+            raise error
 
     result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("broken", "kept"))
     assert destroyed == ["broken", "kept"], result.output
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "Failed to destroy broken; continuing with remaining apps." in result.output
-
-
-def test_destroy_ssh_batch_succeeds(monkeypatch):
-    destroyed = []
-
-    @click.command()
-    @click.option("--app", required=True)
-    @click.option("--server")
-    def fake_destroy(app, server):
-        destroyed.append(app)
-
-    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, apps=("kept-1", "kept-2"))
-    assert destroyed == ["kept-1", "kept-2"], result.output
-    assert result.exception is None, result.output
-    assert result.exit_code == 0, result.output
+    assert message in result.output
 
 
 @pytest.mark.parametrize("signum, status", [("SIGTERM", 143), ("SIGINT", -2)])
@@ -6878,16 +7018,18 @@ def test_performance_test_existing_explains_a_missing_server():
             _check_existing_server_answers()
 
 
-def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves(
+    tmp_path, monkeypatch
+):
     from psynet.command_line import _run_performance_test_with_new_server
+    from psynet.testing.locks import SERVER, experiment_directory_lock
 
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PSYNET_HELD_EXPERIMENT_DIRECTORY_LOCK", raising=False)
     with (
-        patch(
-            "psynet.isolated_environment.check_no_debug_server",
-            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
-        ),
+        experiment_directory_lock(tmp_path, export=False, kind=SERVER),
         patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
-        pytest.raises(click.ClickException, match="PID 7"),
+        pytest.raises(click.ClickException, match="A PsyNet server .PID"),
     ):
         _run_performance_test_with_new_server(n_bots=[2])
     start.assert_not_called()
