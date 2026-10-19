@@ -190,7 +190,8 @@ trials), then launch a debug deployment:
 
 The experiment is available at
 ``https://my-study-pilot.your-server.example.org`` within a minute or two.
-The terminal prints a *Single recruitment link*; take the experiment
+The command ends with a *Ready* summary whose *Participant link* is the
+single recruitment link; take the experiment
 through it yourself and send it to a few colleagues. Check:
 
 - the median completion time against your estimate;
@@ -249,14 +250,12 @@ you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
 commands ask before resetting if a local server or another program is connected
 to the local database or Redis; pass ``--yes`` to skip the question.
 ``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints:
-
-- the recruitment message (for Prolific, a link to the new draft study);
-- the dashboard link with its user name and password;
-- a command for viewing the logs and, on servers with classic ingress, a
-  Dozzle URL.
-
-Save these. Open the dashboard and check that the experiment is running.
+prints a *Ready* summary of the participant link, the dashboard link and
+user, where the password is saved, the logs command and, for apps with
+classic ingress, the log viewer in the browser. Without a single
+participant link, the summary shows the recruiter's message instead (for
+Prolific, a link to the new draft study). Save these. Open the
+dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.
 
@@ -494,7 +493,9 @@ When the target number of participants is reached:
       psynet destroy ssh --app my-study --server your-server.example.org
 
    This stops the experiment's containers and removes its folder from the
-   server. It first wakes the app if it is asleep. If async jobs are still
+   server, then asks whether to delete the experiment's data too (see
+   :ref:`ssh_server_files`); pass ``--remove-data`` or ``--keep-data`` to
+   answer in advance. It first wakes the app if it is asleep. If async jobs are still
    pending, the command says how many and asks you to confirm, or refuses
    when it cannot ask (for example in a script, or when destroying several
    apps at once). Pass ``--discard-pending-jobs`` only if you accept losing

@@ -14,7 +14,7 @@ FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.63.0-jammy AS
 FROM ${BASE_IMAGE}
 # The participant recording helper (record-participant-video skill) muxes
 # audio and video with the system ffmpeg and ffprobe.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+RUN apt-get-update && timeout --kill-after=10 900 apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=playwright-browsers /ms-playwright /ms-playwright

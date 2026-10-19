@@ -407,7 +407,8 @@ pilot of any experiment and open ``https://<app>.<server>`` as described in
 :doc:`/deploy/running_a_study`. On a server with classic ingress, the first
 deployment also starts the log viewer at ``https://logs.<server>``. Its
 username is ``dallinger`` and its password is the dashboard password of that
-first deployment. To change it, run
+first deployment. Each deployment saves it as ``logs_password`` in its
+``launch-info.json``. To change it, run
 ``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
 Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 

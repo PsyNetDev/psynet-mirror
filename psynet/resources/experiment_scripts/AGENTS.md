@@ -33,16 +33,18 @@ In Cursor, disable sandboxing when running PsyNet commands by setting
 
 `psynet test local` runs in its own database, Redis and port, so it
 can run while another experiment is being served or tested. It refuses to run
-in a directory that `psynet debug` is serving, because both create and remove
+in a directory that `psynet debug` is serving, and `psynet debug local`
+refuses a directory that tests are using, because both create and remove
 generated files there; test from a copy (such as a git worktree) instead.
 `psynet debug local` sessions, however, share port 5000, the PostgreSQL database, Redis and
 Dallinger's development folder, and starting one stops the other's worker
 processes. Before `psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
-stop it, or run yours alongside it with its own database, Redis server and
-port, as described in "Run several experiments at once" in
-`code/project/running_and_debugging`.
+stop it, or run yours alongside it with `psynet debug local --isolated`,
+which uses a free port and a temporary database and Redis that are removed
+when it stops (see "Run several experiments at once" in
+`code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
 `psynet debug ssh` and `psynet debug heroku`) also clear the local database
 and Redis and stop local workers, so don't run them while a local experiment is

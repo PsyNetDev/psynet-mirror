@@ -15,11 +15,11 @@ from .isolated_environment import (
     READY_ENV_VAR,
     IsolatedEnvironment,
     IsolationError,
-    check_no_debug_server,
     postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
 )
+from .testing.locks import check_no_server
 
 # Runs that don't execute tests and so don't need their own services.
 _INFO_ONLY_ARGS = {"-h", "--help", "-V", "--version"}
@@ -55,9 +55,9 @@ def _start():
             )
         )
     try:
-        check_no_debug_server(os.getcwd())
+        check_no_server(os.getcwd())
         environment = IsolatedEnvironment.start()
-    except RuntimeError as e:
+    except (OSError, RuntimeError) as e:
         raise pytest.UsageError(str(e)) from e
     # Not pytest_unconfigure: a nested pytest.main() in the same process
     # would close the outer session's environment.

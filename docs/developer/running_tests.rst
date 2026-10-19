@@ -158,6 +158,8 @@ Docker), the session uses a spare database number on your Redis server
 instead, which keeps its data apart but can still send live notifications to a
 debug server's participants. That database is emptied when the session ends. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
+``psynet debug local --isolated`` gives a debug server the same environment
+(see :ref:`running_several_local_experiments`).
 
 Each session has its own database, but all of them share your PostgreSQL
 server and its ``max_connections`` limit (100 by default). Several sessions at
@@ -176,9 +178,11 @@ isn't isolated. CI jobs (where ``CI`` is set) always use their configured
 services.
 
 Isolation covers services, not files: tests still create and remove generated
-files in the experiment directory. A test session therefore refuses to start
-while ``psynet debug`` is serving the same directory; run the tests from a copy
-of the experiment (such as a git worktree) instead.
+files in the experiment directory. Each session therefore holds a lock on the
+directory: sessions in the same directory wait for each other, and a session
+refuses to start while ``psynet debug`` (which holds the same lock) is serving
+it, as ``psynet debug local`` refuses a directory that a session is using.
+Run the tests from a copy of the experiment (such as a git worktree) instead.
 
 Set ``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
 port, for example if your PostgreSQL user can't create databases. The session

@@ -2929,8 +2929,11 @@ class AssetRegistry:
     def prepare_assets_for_deployment(self):
         # Assets are prepared one at a time: SSH uploads cannot share connections, and
         # parallel preparation previously deadlocked on competing database transactions.
+        # disable=None hides the bar when stderr isn't a terminal.
         for a in tqdm(
-            self._staged_asset_specifications, desc="Generating/uploading assets..."
+            self._staged_asset_specifications,
+            desc="Generating/uploading assets...",
+            disable=None if self._staged_asset_specifications else True,
         ):
             a.prepare_for_deployment(registry=self)
         db.session.commit()
