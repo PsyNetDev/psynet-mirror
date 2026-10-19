@@ -130,7 +130,7 @@ def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> 
         The app's ingress, if the caller read it from the server. Otherwise
         it comes from ``deployment_info`` when this directory deployed the
         app, and failing that is guessed from the server's
-        ``default_ingress``, which the description then says it assumes.
+        ``default_ingress``, and the description then says so.
     """
     from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
