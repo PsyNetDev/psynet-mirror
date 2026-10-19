@@ -950,16 +950,18 @@ class AnalyzedRecordingTrial(FinalizeBackstopTrial):
 )
 @pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("failure", ["exception", "database_error"])
-@pytest.mark.parametrize("failing_attempts", [1, 2])
-def test_deposit_callback_failure_in_a_worker_rolls_back_and_retries(
+@pytest.mark.parametrize("failing_attempts", [0, 1, 2])
+def test_deposit_callbacks_in_a_worker_never_expose_a_finalizable_trial(
     db_session, participant, monkeypatch, tmp_path, failure, failing_attempts
 ):
-    """A failing hook's changes are discarded and the hook is retried; only a
-    persistent failure fails the trial, so analysis is never skipped."""
+    """The finalization poller never sees a deposit before its callbacks have
+    queued analysis. A failing hook's changes are discarded and the hook is
+    retried; only a persistent failure fails the trial."""
     import io
     from pathlib import Path
 
     from sqlalchemy import text
+    from sqlalchemy.orm import Session
 
     from psynet.asset import LocalStorage
     from psynet.async_job import AsyncJob, WorkerAsyncJob
@@ -1005,8 +1007,15 @@ def test_deposit_callback_failure_in_a_worker_rolls_back_and_retries(
     after_deposit = Recording.after_deposit
     calls = []
 
+    finalizable_during_callbacks = []
+
     def flaky_after_deposit(self):
         calls.append(self.id)
+        # What the finalization poller sees from its own session meanwhile.
+        with Session(db.engine) as poller:
+            finalizable_during_callbacks.extend(
+                poller.scalars(Trial.ready_to_finalize_id_select()).all()
+            )
         if len(calls) > failing_attempts:
             return after_deposit(self)
         self.trial.answer = "changed by a failing hook"
@@ -1028,8 +1037,11 @@ def test_deposit_callback_failure_in_a_worker_rolls_back_and_retries(
     assert (job.finished, job.failed) == (True, False)
     recording = db.session.get(Recording, recording_id, populate_existing=True)
     assert (recording.upload_status, recording.deposited) == ("deposited", True)
+    assert len(calls) == min(failing_attempts + 1, _DEPOSIT_CALLBACK_ATTEMPTS)
+    assert trial_id not in finalizable_during_callbacks
     trial = db.session.get(Trial, trial_id, populate_existing=True)
     assert trial.answer == 1
+    assert not trial.finalized
     if failing_attempts < _DEPOSIT_CALLBACK_ATTEMPTS:
         assert not trial.failed
         assert trial.async_post_trial_requested
