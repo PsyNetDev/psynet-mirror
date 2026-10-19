@@ -12,12 +12,12 @@ interacting in real time. It builds on [Dallinger](https://dallinger.readthedocs
 and provides recruitment and payment, testing with simulated participants,
 deployment, monitoring and data export.
 
-**[Read the documentation](https://psynetdev.gitlab.io/PsyNet/)**
+**[Read the documentation](https://psynetdev.gitlab.io/PsyNet/alpha/)**
 
 ## Get started
 
 First install uv, Git, Docker, Google Chrome, the PostgreSQL client library
-and the Heroku CLI ([install guide](https://psynetdev.gitlab.io/PsyNet/install.html)).
+and the Heroku CLI ([install guide](https://psynetdev.gitlab.io/PsyNet/alpha/install.html)).
 On Windows, use WSL (Ubuntu). Then create an experiment and run it:
 
 ```bash
@@ -31,16 +31,16 @@ psynet debug local      # opens the dashboard and the participant view
 
 Then open the folder in a coding agent (Cursor, Claude Code, Codex, ...) and
 describe your study, or write the code yourself, starting from
-[Creating an experiment](https://psynetdev.gitlab.io/PsyNet/code/project/creating_an_experiment.html).
-The [Quickstart](https://psynetdev.gitlab.io/PsyNet/quickstart.html) walks
+[Creating an experiment](https://psynetdev.gitlab.io/PsyNet/alpha/code/project/creating_an_experiment.html).
+The [Quickstart](https://psynetdev.gitlab.io/PsyNet/alpha/quickstart.html) walks
 through this in about ten minutes.
 
 ## Learn more
 
-- [Demos](https://psynetdev.gitlab.io/PsyNet/demos/index.html): working experiments to copy from.
-- [Deploy](https://psynetdev.gitlab.io/PsyNet/deploy/index.html): servers, recruiters and going live.
-- [What's new](https://psynetdev.gitlab.io/PsyNet/whats_new/index.html): release notes and upgrade guides.
-- [Contributing](https://psynetdev.gitlab.io/PsyNet/developer/index.html): developing PsyNet itself.
+- [Demos](https://psynetdev.gitlab.io/PsyNet/alpha/demos/index.html): working experiments to copy from.
+- [Deploy](https://psynetdev.gitlab.io/PsyNet/alpha/deploy/index.html): servers, recruiters and going live.
+- [What's new](https://psynetdev.gitlab.io/PsyNet/alpha/whats_new/index.html): release notes and upgrade guides.
+- [Contributing](https://psynetdev.gitlab.io/PsyNet/alpha/developer/index.html): developing PsyNet itself.
 
 ## Credits
 
