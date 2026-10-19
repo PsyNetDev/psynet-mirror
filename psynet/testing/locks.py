@@ -51,6 +51,35 @@ def _holder(lock_file):
     return pid, kind
 
 
+#: How long to wait for a new holder to record itself, or for a probe to finish.
+_HOLDER_TIMEOUT_S = 1.0
+
+
+def _try_acquire(lock_file):
+    """Take the lock without waiting for its holder; return None, or the holder.
+
+    The holder records itself just after taking the lock, and a brief probe
+    (:func:`check_no_server`) records nothing, so an unknown holder is
+    retried briefly before it is returned as ``("", "")``.
+
+    Returns
+    -------
+    tuple of str or None
+        None if the lock is now held by ``lock_file``, otherwise the
+        ``(pid, kind)`` recorded by the holder.
+    """
+    deadline = time.monotonic() + _HOLDER_TIMEOUT_S
+    while True:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return None
+        except BlockingIOError:
+            holder = _holder(lock_file)
+            if holder[0] or time.monotonic() > deadline:
+                return holder
+            time.sleep(0.05)
+
+
 def _describe(pid, kind):
     if not pid:
         return "another PsyNet process"
@@ -85,8 +114,9 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
     Raises
     ------
     DirectoryInUseError
-        If a server holds the lock, or ``kind`` is :data:`SERVER` and anything
-        holds it.
+        If a server, or a holder that hasn't recorded itself (such as one
+        whose lock file this user can't write), holds the lock, or ``kind`` is
+        :data:`SERVER` and anything holds it.
     OSError
         If the lock file can't be opened.
     """
@@ -96,12 +126,12 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
         return
 
     with isolated_environment.open_lock_file(_lock_path(directory)) as lock_file:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            pid, held_by = _holder(lock_file)
-            if kind == SERVER or held_by == SERVER:
-                raise _in_use_error(directory, pid, held_by) from None
+        holder = _try_acquire(lock_file)
+        if holder is not None:
+            pid, held_by = holder
+            # An unknown holder may be a server, which would never release it.
+            if kind == SERVER or held_by != TEST_SESSION:
+                raise _in_use_error(directory, pid, held_by)
             logger.info(
                 "Waiting for %s to release %s...", _describe(pid, held_by), directory
             )
@@ -133,15 +163,14 @@ def check_no_server(directory):
     """Raise :class:`DirectoryInUseError` if a local server holds ``directory``'s lock.
 
     Lets a test session fail before it creates its database and Redis; a
-    test session that holds the lock is waited for later instead.
+    test session that holds the lock is waited for later instead. Holders
+    that don't record themselves are refused, as by
+    :func:`experiment_directory_lock`.
     """
     directory = os.path.realpath(directory)
     if os.environ.get(HELD_LOCK_ENV_VAR) == directory:
         return
     with isolated_environment.open_lock_file(_lock_path(directory)) as lock_file:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            pid, held_by = _holder(lock_file)
-            if held_by == SERVER:
-                raise _in_use_error(directory, pid, held_by) from None
+        holder = _try_acquire(lock_file)
+        if holder is not None and holder[1] != TEST_SESSION:
+            raise _in_use_error(directory, *holder)

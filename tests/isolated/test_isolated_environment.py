@@ -1,3 +1,4 @@
+import fcntl
 import os
 import shutil
 import socket
@@ -15,6 +16,7 @@ from psynet.isolated_environment import (
     IsolationError,
     _claim_port,
     _spare_redis_database,
+    open_lock_file,
     postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
@@ -85,6 +87,29 @@ def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
             check_no_server(tmp_path)
     with experiment_directory_lock(tmp_path, kind=kind):
         check_no_server(tmp_path)
+
+
+def test_a_holder_that_records_nothing_is_waited_out_briefly_then_refused(
+    tmp_path, monkeypatch
+):
+    """Covers a probe in progress, and a lock file that its holder couldn't write."""
+    import threading
+
+    from psynet.testing.locks import _lock_path
+
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    probe = open_lock_file(_lock_path(os.path.realpath(tmp_path)))
+    fcntl.flock(probe, fcntl.LOCK_EX)
+    threading.Timer(0.3, probe.close).start()
+    with experiment_directory_lock(tmp_path, kind=SERVER):
+        pass
+
+    with open_lock_file(_lock_path(os.path.realpath(tmp_path))) as silent:
+        fcntl.flock(silent, fcntl.LOCK_EX)
+        silent.truncate()
+        with pytest.raises(DirectoryInUseError, match="Another PsyNet process"):
+            with experiment_directory_lock(tmp_path):
+                pass
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")

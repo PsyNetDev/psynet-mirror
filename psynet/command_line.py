@@ -5341,8 +5341,9 @@ def _rerun_in_isolated_environment(mode="test"):
     ----------
     mode : str
         ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
-        ``"debug"`` also holds the experiment directory's lock for the whole
-        run and prints how to reach the server's data and when it has stopped.
+        ``"debug"`` also prints how to reach the server's data and when it has
+        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
