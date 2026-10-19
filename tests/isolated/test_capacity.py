@@ -104,9 +104,9 @@ def test_newcomers_are_refused_only_while_the_study_is_full(
     def broken():
         raise RuntimeError("database unavailable")
 
-    monkeypatch.setattr(experiment, "is_at_capacity", broken)
-    assert before_request() is None
-    monkeypatch.undo()
+    with monkeypatch.context() as m:
+        m.setattr(experiment, "is_at_capacity", broken)
+        assert before_request() is None
 
     experiment.var.max_concurrent_participants = 0
     config = get_config()

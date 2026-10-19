@@ -139,6 +139,7 @@ def refuse_new_participant_if_full():
             full = get_experiment().is_at_capacity()
         except Exception:
             # Admitting the newcomer is better than sending them to an error page.
+            db.session.rollback()
             logger.warning(
                 "is_at_capacity failed, so the newcomer is admitted.", exc_info=True
             )
