@@ -188,8 +188,11 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. It asks you to confirm first; add
-``--yes`` to skip the confirmation in scripts. It also wakes the app if it is
+name is deployed, which replaces it. It first checks that the app is on the
+server; if not, it stops and lists the apps that are, suggesting the closest
+name. It then asks you to confirm (pressing Enter answers no); add ``--yes``
+to skip the confirmation in scripts, where it is required because there is no
+terminal to ask in. It also wakes the app if it is
 asleep and asks it for pending async jobs, and does not destroy an app that
 has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
 not skip this check. If the check cannot run, for example because the app's
@@ -204,8 +207,9 @@ Updating a running app
 To ship a fix to an app that is already running, add ``--update`` to the
 command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
-was deployed with. PsyNet asks you to confirm, then rebuilds the image and
-restarts the app. The update keeps:
+was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
+the existing app and prints the update command for it. PsyNet asks you to
+confirm, then rebuilds the image and restarts the app. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
