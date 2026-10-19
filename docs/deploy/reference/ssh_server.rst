@@ -84,18 +84,27 @@ name rather than ``https://<app>.<ssh-host>``.
 Launch information
 ------------------
 
-At the end of a deployment, the command prints the log command, the Dozzle
-address and the dashboard link with its credentials:
+``psynet deploy ssh`` and ``psynet debug ssh`` end with a summary of what
+you need next:
 
 .. code:: text
 
-    You can now log in to the console at
-    https://admin:XXX@my-study.my-server.example.org/dashboard
-    (user = admin, password = XXX)
+    Ready: my-study on my-server.example.org
+      Participant link: https://my-study.my-server.example.org/ad?recruiter=generic&generate_tokens=1&mode=live
+      Dashboard:        https://my-study.my-server.example.org/dashboard (user: admin)
+      Password:         saved in ~/psynet-data/launch-data/<deployment-id>/launch-info.json
+      Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
+      Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password)
 
-PsyNet also saves the credentials in
-``~/psynet-data/launch-data/<deployment-id>/launch-info.json``, where the
-deployment ID has the form ``<label>__mode=<mode>__launch=<timestamp>``.
+The participant link appears for recruiters that print a single recruitment
+link, such as ``generic``; for other recruiters the summary ends with the
+recruiter's message instead (for Prolific, a link to the new draft study).
+The log viewer row appears for servers without a Cloudflare tunnel.
+Passwords are not printed; they are saved in ``launch-info.json`` together
+with the other details. With older Dallinger versions, Dallinger's own
+summary, including the dashboard password, still appears above this one.
+The deployment ID has the form
+``<label>__mode=<mode>__launch=<timestamp>``.
 
 What a deployment does
 ----------------------
