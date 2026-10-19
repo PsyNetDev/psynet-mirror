@@ -395,6 +395,15 @@ asv_benchmarks:
   # only offers this job manually.
   interruptible: false
   resource_group: benchmark-results
+  # A healthy run takes ~45 min, plus up to an hour if a slow benchmark hits
+  # its 30-minute setup_cache timeout on both commits. A stalled run is
+  # retried once instead of holding the runner for the 3-hour project default.
+  timeout: 2h
+  retry:
+    max: 1
+    when:
+      - stuck_or_timeout_failure
+      - runner_system_failure
   variables:
     # Full clone: the previous default-branch commit may be unreachable in the
     # default shallow clone, but we need it as the regression baseline.
