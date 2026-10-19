@@ -615,9 +615,11 @@ def _refuse_if_local_server_running(docker=False):
     shared by all users and held for the whole run, catch a server that
     hasn't bound its port yet, and a test session or ``--isolated`` debug
     server that has claimed the port; the connection test catches other
-    programs on the port. A ``psynet debug`` serving the same directory, such
-    as an ``--isolated`` one, is refused because both replace its generated
-    files.
+    programs on the port. The experiment directory's lock
+    (:func:`psynet.testing.locks.experiment_directory_lock`), held as a
+    server, refuses a test session or another server, such as an
+    ``--isolated`` one, in the same directory, because both replace its
+    generated files.
     Leftover workers that use this database, for example from a server that
     was killed, are stopped first, as starting would stop them anyway. Test
     sessions skip the checks: their environment is their own.
@@ -659,7 +661,9 @@ def _refuse_if_local_server_running(docker=False):
                 f"A PsyNet test session or isolated debug server is using port "
                 f"{port}. Wait for it to finish. {_several_experiments_advice()}"
             )
-        _check_no_debug_server_here()
+        from .testing.locks import SERVER
+
+        _hold_experiment_directory(stack, SERVER)
         path = lock_path(f"psynet-debug-db-{_database_url_tag()}")
         database_lock = _hold_run_lock(stack, path)
         if database_lock is None:
@@ -1030,7 +1034,12 @@ def _debug_in_isolated_environment_if_requested(func):
                 raise click.UsageError(
                     "--isolated does not work with --docker, which always uses port 5000."
                 )
-            _rerun_in_isolated_environment("debug")
+            from .testing.locks import SERVER
+
+            with ExitStack() as stack:
+                # Held here so that the child inherits it; see HELD_LOCK_ENV_VAR.
+                _hold_experiment_directory(stack, SERVER)
+                _rerun_in_isolated_environment("debug")
         return func(*args, **kwargs)
 
     return wrapper
@@ -5332,13 +5341,13 @@ def _rerun_in_isolated_environment(mode="test"):
     ----------
     mode : str
         ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
-        ``"debug"`` also keeps other servers' Chrome windows open and prints how
-        to reach the server's data and when it has stopped.
+        ``"debug"`` also holds the experiment directory's lock for the whole
+        run and prints how to reach the server's data and when it has stopped.
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
-    _check_no_debug_server_here()
+    _check_no_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
     # set up fails without advice about services it won't use.
     _check_experiment_directory(mode)
@@ -5348,9 +5357,6 @@ def _rerun_in_isolated_environment(mode="test"):
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
-    if mode == "debug":
-        # Chrome windows can't be told apart by server, so leave other servers' open.
-        env["KEEP_OLD_CHROME_WINDOWS_IN_DEBUG_MODE"] = "1"
     exit_code = 130
     interrupted = None
     with _exit_on_termination_signal(), environment:
@@ -5394,13 +5400,39 @@ def _rerun_in_isolated_environment(mode="test"):
     sys.exit(exit_code or interrupted or 0)
 
 
-def _check_no_debug_server_here():
-    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
-    from .isolated_environment import check_no_debug_server
+def _check_no_server_here():
+    """Raise ``click.ClickException`` if a local server holds the current directory."""
+    from .testing.locks import check_no_server
 
     try:
-        check_no_debug_server(os.getcwd())
-    except RuntimeError as e:
+        check_no_server(os.getcwd())
+    except (OSError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _hold_experiment_directory(stack, kind):
+    """Hold the current directory's lock until ``stack`` closes.
+
+    Parameters
+    ----------
+    stack : contextlib.ExitStack
+        The stack that releases the lock.
+    kind : str
+        :data:`psynet.testing.locks.SERVER` or
+        :data:`psynet.testing.locks.TEST_SESSION`; see
+        :func:`psynet.testing.locks.experiment_directory_lock`.
+
+    Raises
+    ------
+    click.ClickException
+        If the lock is held by a server, or ``kind`` is a server and the lock
+        is held at all, or the lock file can't be opened.
+    """
+    from .testing.locks import experiment_directory_lock
+
+    try:
+        stack.enter_context(experiment_directory_lock(os.getcwd(), kind=kind))
+    except (OSError, RuntimeError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -6692,23 +6724,26 @@ def _stop_server(server_info):
 
 def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
     """Run performance test after starting a new experiment server."""
-    _check_no_debug_server_here()
-    # Prefer legacy debug: gunicorn with several workers is closer to a deployed
-    # server than the auto-reload develop path used by normal
-    # ``psynet debug local``.
-    server_info = _start_local_server_and_wait_for_ready(
-        ["debug", "local", "--legacy", "--no-browsers"],
-        debug=debug,
-        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
-    )
-    try:
-        all_results = _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+    from .testing.locks import TEST_SESSION
+
+    with ExitStack() as stack:
+        _hold_experiment_directory(stack, TEST_SESSION)
+        # Prefer legacy debug: gunicorn with several workers is closer to a deployed
+        # server than the auto-reload develop path used by normal
+        # ``psynet debug local``.
+        server_info = _start_local_server_and_wait_for_ready(
+            ["debug", "local", "--legacy", "--no-browsers"],
+            debug=debug,
+            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
         )
-        print("✓ Performance test completed")
-        return all_results
-    finally:
-        _stop_server(server_info)
+        try:
+            all_results = _run_performance_test_with_existing_server(
+                debug=debug, json_output=json_output, **options
+            )
+            print("✓ Performance test completed")
+            return all_results
+        finally:
+            _stop_server(server_info)
 
 
 def _performance_test_app_info():

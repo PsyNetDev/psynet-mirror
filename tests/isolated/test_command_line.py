@@ -936,6 +936,7 @@ def debug_local(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     Path("experiment.py").write_text("raise RuntimeError('experiment imported')\n")
     monkeypatch.delenv(READY_ENV_VAR, raising=False)
+    monkeypatch.delenv("PSYNET_HELD_EXPERIMENT_DIRECTORY_LOCK", raising=False)
     monkeypatch.setattr("dallinger.config.config", None)
     monkeypatch.setattr(
         "psynet.isolated_environment.lock_path",
@@ -1047,25 +1048,21 @@ def test_debug_local_reports_an_unopenable_lock_file(
     assert "Could not open the lock file" in result.output
 
 
-def test_debug_local_refuses_a_directory_that_another_debug_server_serves(
-    debug_local, monkeypatch, tmp_path
+@pytest.mark.parametrize("isolated", [False, True])
+def test_debug_local_refuses_a_directory_that_a_test_session_uses(
+    debug_local, monkeypatch, tmp_path, isolated
 ):
-    monkeypatch.setenv("base_port", str(_free_port()))
-    fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    server = subprocess.Popen([sys.executable, str(fake_psynet), "debug", "local"])
-    try:
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            result = debug_local()
-            if "is serving" in result.output:
-                break
-            time.sleep(0.1)
-    finally:
-        server.kill()
-        server.wait()
+    from psynet.testing.locks import experiment_directory_lock
 
-    assert f"psynet debug (PID {server.pid}) is serving" in result.output
+    monkeypatch.setenv("base_port", str(_free_port()))
+    rerun = Mock(side_effect=SystemExit(0))
+    monkeypatch.setattr("psynet.command_line._rerun_in_isolated_environment", rerun)
+    with experiment_directory_lock(tmp_path, export=False):
+        result = debug_local(*(["--isolated"] if isolated else []))
+
+    assert result.exit_code == 1
+    assert f"A PsyNet test session (PID {os.getpid()}) is using" in result.output
+    rerun.assert_not_called()
 
 
 @pytest.mark.parametrize("docker", [False, True])
@@ -6771,16 +6768,18 @@ def test_performance_test_existing_explains_a_missing_server():
             _check_existing_server_answers()
 
 
-def test_performance_test_refuses_a_directory_that_a_debug_server_serves():
+def test_performance_test_refuses_a_directory_that_a_debug_server_serves(
+    tmp_path, monkeypatch
+):
     from psynet.command_line import _run_performance_test_with_new_server
+    from psynet.testing.locks import SERVER, experiment_directory_lock
 
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PSYNET_HELD_EXPERIMENT_DIRECTORY_LOCK", raising=False)
     with (
-        patch(
-            "psynet.isolated_environment.check_no_debug_server",
-            side_effect=RuntimeError("psynet debug (PID 7) is serving here"),
-        ),
+        experiment_directory_lock(tmp_path, export=False, kind=SERVER),
         patch("psynet.command_line._start_local_server_and_wait_for_ready") as start,
-        pytest.raises(click.ClickException, match="PID 7"),
+        pytest.raises(click.ClickException, match="A PsyNet server .PID"),
     ):
         _run_performance_test_with_new_server(n_bots=[2])
     start.assert_not_called()

@@ -1,9 +1,6 @@
 import os
 import shutil
 import socket
-import subprocess
-import sys
-import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,12 +15,19 @@ from psynet.isolated_environment import (
     IsolationError,
     _claim_port,
     _spare_redis_database,
-    check_no_debug_server,
     postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
     start_redis_server,
     try_lock,
+)
+from psynet.testing.locks import (
+    HELD_LOCK_ENV_VAR,
+    SERVER,
+    TEST_SESSION,
+    DirectoryInUseError,
+    check_no_server,
+    experiment_directory_lock,
 )
 
 
@@ -61,66 +65,26 @@ def test_shared_environment_warns_once():
     assert shared_environment_warning({}) is None
 
 
-def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
-    """A user's debug server is refused; one that another test session started isn't."""
-    from psynet.testing.locks import HELD_LOCK_ENV_VAR
-
-    fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    shell = {
-        k: v
-        for k, v in os.environ.items()
-        if k not in (HELD_LOCK_ENV_VAR, READY_ENV_VAR)
-    }
-
-    def spawn(env):
-        return subprocess.Popen(
-            [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
-        )
-
-    # Servers from a session's fixtures (whose env is copied from the session
-    # before it takes the directory lock), and from a CI slot holding the lock.
-    processes = [
-        spawn({**shell, READY_ENV_VAR: "1"}),
-        spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)}),
-    ]
-    try:
-        time.sleep(0.5)
-        check_no_debug_server(tmp_path)
-        user_server = spawn(shell)
-        processes.append(user_server)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            try:
-                check_no_debug_server(tmp_path)
-            except RuntimeError as e:
-                assert f"PID {user_server.pid}" in str(e)
-                break
-            time.sleep(0.1)
+@pytest.mark.parametrize(
+    "holder, kind", [(SERVER, TEST_SESSION), (SERVER, SERVER), (TEST_SESSION, SERVER)]
+)
+def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
+    tmp_path, monkeypatch, holder, kind
+):
+    """Tests wait only for other tests; anything else in the directory is refused."""
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    with experiment_directory_lock(tmp_path, export=False, kind=holder):
+        message = rf"A PsyNet {holder} \(PID {os.getpid()}\) is using"
+        with pytest.raises(DirectoryInUseError, match=message):
+            with experiment_directory_lock(tmp_path, kind=kind):
+                pass
+        if holder == SERVER:
+            with pytest.raises(DirectoryInUseError, match=message):
+                check_no_server(tmp_path)
         else:
-            pytest.fail("the debug process was not detected")
-        check_no_debug_server(tmp_path / "..")
-    finally:
-        for process in processes:
-            process.kill()
-            process.wait()
-
-
-def test_a_debug_server_does_not_refuse_itself(tmp_path):
-    """The check skips the calling process and its ancestors, such as a launcher."""
-    check = "from psynet.isolated_environment import check_no_debug_server as c; c('.')"
-    fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text(
-        f"import subprocess, sys\n{check}\n"
-        f"subprocess.run([sys.executable, '-c', {check!r}], check=True)\n"
-    )
-    env = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}
-    subprocess.run(
-        [sys.executable, str(fake_psynet), "debug", "local"],
-        cwd=tmp_path,
-        env=env,
-        check=True,
-    )
+            check_no_server(tmp_path)
+    with experiment_directory_lock(tmp_path, kind=kind):
+        check_no_server(tmp_path)
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
