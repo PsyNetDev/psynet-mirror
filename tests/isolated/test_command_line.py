@@ -366,7 +366,7 @@ class TestCommandLine(object):
         _print_ssh_ready(result, "launch-info.json")
         assert capsys.readouterr().out.endswith(
             "  Log viewer:       https://logs.example.org (user: dallinger; "
-            "password: logs_password in launch-info.json)\n"
+            "password saved as logs_password in launch-info.json)\n"
             "  Recruitment:\n    Additional details:\n\n    Study created on Prolific\n"
         )
 
@@ -6138,8 +6138,10 @@ def _patch_dallinger_destroy_ssh(
 
     def fake_destroy(app, server, delete_data_command=None, **data):
         destroyed.append((app, server, data) if data_options else (app, server))
-        if app == "gone":  # Dallinger aborts when no data is left
+        if app == "gone":  # older Dallinger aborts when no data is left
             raise click.Abort()
+        if app == "empty":
+            click.echo(f"Nothing left to delete for {app} on example.com.")
         if data.get("keep_data"):
             click.echo(f"To delete it, run: {delete_data_command}")
 
@@ -6325,11 +6327,12 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     assert [app for app, _, _ in destroyed] == ["twoo", "gone", "one"]
     assert woken == ["one"]
 
-    result = CliRunner().invoke(
-        psynet, ["destroy", "ssh", "gone", "-y", "--remove-data"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "Nothing left to delete for gone on musix." in result.output
+    for name in "gone", "empty":
+        result = CliRunner().invoke(
+            psynet, ["destroy", "ssh", name, "-y", "--remove-data"]
+        )
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Nothing left to delete") == 1
 
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     result = CliRunner().invoke(
@@ -6338,11 +6341,13 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     assert result.exit_code == 0, result.output
     assert result.output.count("[y/N]") == 1
     assert (
-        "Destroy 1 app on musix and delete its data: one, and delete the "
-        "leftover data of twoo? [y/N]" in result.output
+        "Destroy 1 app on musix (one) and delete its data, and delete the "
+        "leftover data of twoo? This deletes each app's database, Redis and "
+        "Postgres volumes, ~/dallinger-data/<app> and cannot be undone. [y/N]"
+        in result.output
     )
     assert "Export the data of twoo" not in result.output
-    assert "Deleting leftover data of twoo..." in result.output
+    assert "Deleting any leftover data of twoo..." in result.output
 
 
 def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
@@ -6384,9 +6389,10 @@ def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
     args = ["destroy", "ssh", "one", "--remove-data"]
 
     with working_directory(tmp_path):
-        output = CliRunner().invoke(psynet, args, input="y\n").output
+        output = CliRunner().invoke(psynet, args, input="n\n").output
         warning = output.index("Found no export of one")
-        assert warning < output.index("Destroy 1 app on musix and delete its data")
+        assert warning < output.index("Destroy 1 app on musix (one) and delete its")
+        assert "Destroying one" not in output
         manifest = tmp_path / "exports/latest/manifest.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({"deployment_id": "dep-1"}))
@@ -6398,7 +6404,7 @@ def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
     "args, pending",
     [
         (["--yes", "--remove-data"], {"total": 0}),
-        (["--yes", "--keep-data"], {"total": 0}),
+        (["--keep-data"], {"total": 0}),
         ([], _PENDING),
     ],
 )

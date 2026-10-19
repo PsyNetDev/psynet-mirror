@@ -94,7 +94,7 @@ you need next:
       Dashboard:        https://my-study.my-server.example.org/dashboard (user: admin)
       Password:         saved in ~/psynet-data/launch-data/<deployment-id>/launch-info.json
       Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
-      Log viewer:       https://logs.my-server.example.org (user: dallinger; password: logs_password in launch-info.json)
+      Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password in launch-info.json)
       Image:            ghcr.io/my-lab/my-study:3f2a9c1e
 
 The image row names the deployed Docker image, with Dallinger versions that
@@ -242,8 +242,8 @@ the two flags:
 Just before the question that decides whether the data is deleted (the data
 question, or the confirmation with ``--remove-data``), PsyNet reminds you to
 export any app it finds no export of in ``exports/`` of the current directory,
-so you can still answer no. Nothing is asked with ``--remove-data --yes`` or
-``--keep-data``, so there is no reminder either.
+so you can still answer no. Nothing is asked about the data with
+``--remove-data --yes`` or ``--keep-data``, so there is no reminder either.
 
 To delete kept data after the app is gone, run the same command with
 ``--remove-data``. With ``--remove-data``, an app that is no longer on the

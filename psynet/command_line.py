@@ -2268,7 +2268,8 @@ def _print_ssh_ready(result, launch_info):
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
-        f"{logs_url} (user: dallinger; password: logs_password in {Path(launch_info).name})"
+        f"{logs_url} (user: dallinger; password saved as logs_password in "
+        f"{Path(launch_info).name})"
     )
     link = result.get("participant_link")
     rows = [
@@ -4839,7 +4840,11 @@ def _destroy(
     if "expire_hit" in _command_params(f_destroy):
         kwargs["expire_hit"] = False
     kwargs.update(destroy_kwargs or {})
-    log(f"Destroying {app}..." if deployed else f"Deleting leftover data of {app}...")
+    log(
+        f"Destroying {app}..."
+        if deployed
+        else f"Deleting any leftover data of {app}..."
+    )
     try:
         ctx.invoke(f_destroy, **kwargs)
     except click.Abort:
@@ -4871,6 +4876,9 @@ def _delete_data_command(app, server):
     return {"delete_data_command": command}
 
 
+_SSH_APP_DATA = "database, Redis and Postgres volumes, ~/dallinger-data/<app>"
+
+
 def _ssh_data_options(apps, server, remove_data, keep_data, exportable=()):
     """Return the data options for Dallinger's ``docker-ssh destroy``.
 
@@ -4886,9 +4894,8 @@ def _ssh_data_options(apps, server, remove_data, keep_data, exportable=()):
         for app in exportable:
             _warn_if_not_exported(app, server)
         remove_data = click.confirm(
-            f"Also delete the data of {', '.join(apps)} on {server} (database, "
-            "Redis and Postgres volumes, ~/dallinger-data/<app>)? This cannot "
-            "be undone. Answer no to keep it.",
+            f"Also delete the data of {', '.join(apps)} on {server} "
+            f"({_SSH_APP_DATA})? This cannot be undone. Answer no to keep it.",
             default=False,
         )
     return {"remove_data": True, "yes": True} if remove_data else {"keep_data": True}
@@ -4989,8 +4996,7 @@ def _dallinger_hibernation_command(name):
     "--remove-data",
     is_flag=True,
     help=(
-        "Also delete the apps' data on the server (database, Redis and Postgres "
-        "volumes, ~/dallinger-data/<app>), with no separate question about "
+        f"Also delete the apps' data on the server ({_SSH_APP_DATA}), with no separate question about "
         "the data; the destroy confirmation (skipped by --yes) mentions it."
     ),
 )
@@ -5109,12 +5115,13 @@ def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
     actions = []
     if deployed:
         noun = "app" if len(deployed) == 1 else "apps"
-        data = ""
+        target = f"{len(deployed)} {noun} on {server}"
         if remove_data:
-            data = f" and delete {'its' if len(deployed) == 1 else 'their'} data"
-        actions.append(
-            f"destroy {len(deployed)} {noun} on {server}{data}: {', '.join(deployed)}"
-        )
+            its = "its" if len(deployed) == 1 else "their"
+            action = f"destroy {target} ({', '.join(deployed)}) and delete {its} data"
+        else:
+            action = f"destroy {target}: {', '.join(deployed)}"
+        actions.append(action)
     if gone:
         where = "" if deployed else f" on {server}"
         actions.append(f"delete the leftover data of {', '.join(gone)}{where}")
@@ -5126,7 +5133,11 @@ def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
     if remove_data:
         for app in deployed:
             _warn_if_not_exported(app, server)
-    if not click.confirm(f"{action[0].upper()}{action[1:]}?", default=False):
+    question = f"{action[0].upper()}{action[1:]}?"
+    if remove_data:
+        whose = "the app's" if len(apps) == 1 else "each app's"
+        question += f" This deletes {whose} {_SSH_APP_DATA} and cannot be undone."
+    if not click.confirm(question, default=False):
         raise click.Abort()
 
 
