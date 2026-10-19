@@ -796,6 +796,127 @@ def test_debug_legacy_gunicorn_workers_reject_invalid_env(monkeypatch, raw):
         _legacy_debug_gunicorn_threads()
 
 
+class _PreLaunchReached(Exception):
+    pass
+
+
+@pytest.fixture
+def debug_local(tmp_path, monkeypatch):
+    """Run ``psynet debug local`` in ``tmp_path``, stopping where it would launch."""
+    from psynet.command_line import debug__local
+    from psynet.isolated_environment import READY_ENV_VAR
+
+    monkeypatch.chdir(tmp_path)
+    Path("experiment.py").write_text("raise RuntimeError('experiment imported')\n")
+    monkeypatch.delenv(READY_ENV_VAR, raising=False)
+    monkeypatch.setattr("dallinger.config.config", None)
+    monkeypatch.setattr(
+        "psynet.isolated_environment.lock_path",
+        lambda name: str(tmp_path / f"{name}.lock"),
+    )
+
+    def pre_launch(*args, **kwargs):
+        raise _PreLaunchReached
+
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
+    return lambda: CliRunner().invoke(debug__local, ["--no-browsers"])
+
+
+@pytest.fixture
+def busy_port():
+    """Return a listening socket on a free port."""
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        yield server
+
+
+def _free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+@pytest.mark.parametrize("source", ["environment", "config.txt", "~/.dallingerconfig"])
+def test_debug_local_refuses_a_busy_port(
+    debug_local, busy_port, monkeypatch, tmp_path, source
+):
+    port = busy_port.getsockname()[1]
+    sections = f"[Server]\nbase_port = 1\n[Later]\nbase_port = {port}\n"
+    if source == "environment":
+        monkeypatch.setenv("base_port", str(port))
+    else:
+        monkeypatch.delenv("base_port", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        Path(os.path.expanduser(source)).write_text(sections)
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert f"Port {port} is already in use" in result.output
+    assert "base_port" in result.output
+
+
+def test_test_sessions_skip_the_check(debug_local, busy_port, monkeypatch):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
+
+
+def test_debug_local_stops_leftover_workers_on_its_port(
+    debug_local, busy_port, monkeypatch
+):
+    monkeypatch.setenv("base_port", str(busy_port.getsockname()[1]))
+    monkeypatch.setattr(
+        "psynet.command_line.list_psynet_worker_processes", lambda: ["leftover"]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line.kill_psynet_worker_processes", busy_port.close
+    )
+
+    assert isinstance(debug_local().exception, _PreLaunchReached)
+
+
+@pytest.mark.parametrize(
+    "holder, message",
+    [
+        ("psynet-debug-db-{tag}", "(PID 4242) is using the database"),
+        ("psynet-test-{port}", "A PsyNet test session is using port"),
+    ],
+)
+def test_debug_local_refuses_a_held_lock(
+    debug_local, monkeypatch, tmp_path, holder, message
+):
+    from psynet.command_line import _database_url_tag
+    from psynet.isolated_environment import try_lock
+
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    name = holder.format(tag=_database_url_tag(), port=port)
+    with try_lock(str(tmp_path / f"{name}.lock")) as lock:
+        lock.write("4242")
+        lock.flush()
+        result = debug_local()
+
+    assert result.exit_code == 1
+    assert message in result.output
+    assert "Nothing was reset." in result.output
+
+
+def test_debug_local_reports_an_unopenable_lock_file(
+    debug_local, monkeypatch, tmp_path
+):
+    port = _free_port()
+    monkeypatch.setenv("base_port", str(port))
+    (tmp_path / f"psynet-debug-{port}.lock").mkdir()
+
+    result = debug_local()
+
+    assert result.exit_code == 1
+    assert "Could not open the lock file" in result.output
+
+
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
 # @pytest.mark.usefixtures("in_experiment_directory")
 # class TestDeploy:
