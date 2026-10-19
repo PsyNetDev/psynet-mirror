@@ -114,9 +114,9 @@ def report_lucid():
 
         last_status["status_list"] = status_list
 
-        last_status["api_call"] = (
-            datetime.now() - pd.to_datetime(last_status["timestamp"])
-        ).seconds
+        last_status["api_call"] = int(
+            (datetime.now() - pd.to_datetime(last_status["timestamp"])).total_seconds()
+        )
         params["last_status"] = last_status
 
     if len(all_entrants) == 0:
@@ -134,13 +134,16 @@ def report_lucid():
         params["display_cards"] = True
 
     entry_df = pd.DataFrame([entrant.to_dict() for entrant in all_entrants])
+    # Display-only join: do not persist LucidRID.participant_id on page load.
+    if "participant_id" in entry_df.columns:
+        entry_df = entry_df.drop(columns=["participant_id"])
     participants = pd.DataFrame(
         [
             {"participant_id": participant.id, "rid": participant.worker_id}
             for participant in Participant.query.all()
         ]
     )
-    entry_df = entry_df.merge(participants, left_on="rid", right_on="rid", how="left")
+    entry_df = entry_df.merge(participants, on="rid", how="left")
     entry_df.lucid_entry_date = pd.to_datetime(
         entry_df.lucid_entry_date, format="mixed"
     )
@@ -226,9 +229,9 @@ def report_lucid():
 
     items = entrant_info_to_status_items(entrant_info)
 
-    items[
-        0
-    ] += "<br>The total number of working participants or participants who dropped out (e.g., close window)."
+    items[0] += (
+        "<br>The total number of working participants or participants who dropped out (e.g., close window)."
+    )
     items[1] += "<br>The total number of respondents send to termination by PsyNet."
     items[2] += "<br>The total number of complete participants."
 
@@ -275,9 +278,9 @@ def report_lucid():
 
     items[0] += "<br>The total number of respondents clicking on the survey link."
     items[1] += "<br>The total number of respondents who passed the qualifications."
-    items[
-        2
-    ] += "<br>The total number of respondents who are marked as complete by Lucid."
+    items[2] += (
+        "<br>The total number of respondents who are marked as complete by Lucid."
+    )
 
     params["lucid_responent_activity"] = {
         "title": "Respondent activity",
@@ -313,12 +316,12 @@ def report_lucid():
         "<br>The total number of respondents who are doing the experiment or were not returned to the marketplace "
         "(e.g., closing the window)."
     )
-    items[
-        2
-    ] += "<br>The total number of respondents who are marked as terminated in Lucid."
-    items[
-        3
-    ] += "<br>The total number of respondents who are marked as complete in Lucid."
+    items[2] += (
+        "<br>The total number of respondents who are marked as terminated in Lucid."
+    )
+    items[3] += (
+        "<br>The total number of respondents who are marked as complete in Lucid."
+    )
     n_psynet_working = len(entry_df.query("psynet_status == 'Working'"))
     n_lucid_working = len(lucid_entry_df.query("lucid_status == @in_survey_status"))
     if n_lucid_working != n_psynet_working:
@@ -561,7 +564,9 @@ def report_lucid():
             missing = terminated_df.query("rid not in @rids")[
                 ["rid", "termination_reason"]
             ]
-            missing = missing.merge(participants, on="rid", how="left")
+            missing = missing.merge(
+                entry_df[["rid", "participant_id"]], on="rid", how="left"
+            )
             missing["participant_id"] = missing.participant_id.apply(
                 lambda x: x if not pd.isna(x) else "Not registered"
             )

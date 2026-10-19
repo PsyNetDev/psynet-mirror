@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta
+from functools import partial
 from typing import List, Tuple, Union
 
 import psutil
@@ -11,6 +12,28 @@ from .redis import redis_vars
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
+
+
+def _alert_researcher(message: str):
+    """Log ``message`` as an error now and notify the researcher once the transaction commits.
+
+    Waiting for the commit keeps slow notifiers from holding the caller's row
+    locks and stops a rolled-back request that is retried from alerting twice.
+    """
+    from .db import _call_after_commit
+
+    logger.error(message)
+    _call_after_commit(partial(_send_alert, message))
+
+
+def _send_alert(message: str):
+    """Send ``message`` through the experiment's notifier, logging any failure."""
+    from .experiment import get_experiment
+
+    try:
+        get_experiment().notifier.notify(message)
+    except Exception:
+        logger.exception("Failed to notify the researcher: %s", message)
 
 
 class Notifier:
@@ -76,10 +99,10 @@ class Notifier:
         if self.deployment_information["is_local_deployment"]:
             msg = f"{msg} locally"
         elif self.deployment_information["is_ssh_deployment"]:
-            msg = f'{msg} to {self.deployment_information["server"]} with app name `{self.deployment_information["app"]}`'
+            msg = f"{msg} to {self.deployment_information['server']} with app name `{self.deployment_information['app']}`"
         else:
             msg = (
-                f'{msg} to Heroku with app name `{self.deployment_information["app"]}`'
+                f"{msg} to Heroku with app name `{self.deployment_information['app']}`"
             )
         return msg
 
@@ -118,7 +141,7 @@ class Notifier:
     def export_url_message(self):
         return self.url(
             "Trigger export",
-            f"{self.exp.dashboard_url}/export/trigger?anonymize=both&assets=none&type=psynet",
+            f"{self.exp.dashboard_url}/export/trigger?assets=none",
         )
 
     def on_launch(self):
@@ -237,6 +260,24 @@ class LoggerNotifier(Notifier):
         assert level in self.LEVEL2CODE.keys()
         code = self.LEVEL2CODE[level]
         logger.log(code, msg)
+
+    @classmethod
+    def format_credentials(cls, label, url, username, password):
+        """Format credentials for the server log, leaving out the password."""
+        msg = super().format_credentials(label, url, username, None)
+        if password is not None:
+            msg += (
+                "\nPassword: not shown in logs "
+                "(printed by the command that launched the experiment)"
+            )
+        return msg
+
+    def on_launch(self):
+        """Log the launch, leaving local dashboard details to the launch banner."""
+        if self.deployment_information["is_local_deployment"]:
+            self.notify(self.launch_message)
+        else:
+            super().on_launch()
 
     @staticmethod
     def bold(msg: str):

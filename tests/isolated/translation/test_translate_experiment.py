@@ -48,8 +48,14 @@ def test_translate_experiment(mocker):
         "psynet.translation.translators.DefaultTranslator.translate"
     )
 
+    def expected_translation(source_lang, target_lang, i, text):
+        return f"{source_lang} -> {target_lang} {i}: {text}"
+
     def mock_translate_func(texts, source_lang, target_lang, file_path=None):
-        return [f"{source_lang} -> {target_lang} {i}" for i in range(len(texts))]
+        return [
+            expected_translation(source_lang, target_lang, i, text)
+            for i, text in enumerate(texts)
+        ]
 
     mock_translate.side_effect = mock_translate_func
 
@@ -86,20 +92,23 @@ def test_translate_experiment(mocker):
 
     # Expected message IDs and their corresponding translations
     expected_entries = [
-        ("Hello, welcome to my experiment!", "en -> fr 0"),
+        (
+            "Hello, welcome to my experiment!",
+            "en -> fr 0: Hello, welcome to my experiment!",
+        ),
         # Unlike the translator, the po file will only contain one entry for "What is your name?".
         # This is because all entries with the same msgid are merged into a single entry in the PO file.
         # Only the last translation is kept; en -> fr 1 is therefore omitted from the PO file.
-        ("What is your name?", "en -> fr 2"),
-        ("Hello, {NAME}!", "en -> fr 3"),
-        ("What is your favorite pet?", "en -> fr 4"),
-        ("dog", "en -> fr 5"),
-        ("cat", "en -> fr 6"),
-        ("fish", "en -> fr 7"),
-        ("hamster", "en -> fr 8"),
-        ("bird", "en -> fr 9"),
-        ("snake", "en -> fr 10"),
-        ("Great, I like {PET} too!", "en -> fr 11"),
+        ("What is your name?", "en -> fr 2: What is your name?"),
+        ("Hello, {NAME}!", "en -> fr 3: Hello, {NAME}!"),
+        ("What is your favorite pet?", "en -> fr 4: What is your favorite pet?"),
+        ("dog", "en -> fr 5: dog"),
+        ("cat", "en -> fr 6: cat"),
+        ("fish", "en -> fr 7: fish"),
+        ("hamster", "en -> fr 8: hamster"),
+        ("bird", "en -> fr 9: bird"),
+        ("snake", "en -> fr 10: snake"),
+        ("Great, I like {PET} too!", "en -> fr 11: Great, I like {PET} too!"),
     ]
 
     # Check each entry matches expected msgid and translation
@@ -139,7 +148,7 @@ def test_translate_experiment(mocker):
 
     # The new translatable string should be translated
     assert po[-1].msgid == "Translate me please"
-    assert po[-1].msgstr == "en -> fr 12"
+    assert po[-1].msgstr == "en -> fr 12: Translate me please"
 
     # Now let's reinstate the fuzzy flag for the original manual translation
     po[0].fuzzy = True
@@ -154,7 +163,7 @@ def test_translate_experiment(mocker):
 
     # The manual translation should now be overwritten by the machine translation
     po = polib.pofile(po_path)
-    assert po[0].msgstr == "en -> fr 0"
+    assert po[0].msgstr == "en -> fr 0: Hello, welcome to my experiment!"
     assert po[0].fuzzy
 
 

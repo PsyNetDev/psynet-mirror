@@ -430,6 +430,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "Ef svo er, vinsamlegast gefðu nokkur orð sem lýsa vandamálinu."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Ljúka"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

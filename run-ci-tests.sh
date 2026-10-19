@@ -1,70 +1,37 @@
 CI_NODE_TOTAL=${CI_NODE_TOTAL:=1}
 CI_NODE_INDEX=${CI_NODE_INDEX:=1}
+PYTHON_VERSION=${PYTHON_VERSION:=3.14}
+TEST_SCOPE=${TEST_SCOPE:=full}
+TEST_SLOTS=${TEST_SLOTS:=1}
 
 TIMEOUT_SECONDS=300
 
-echo "Running tests on node $CI_NODE_INDEX of $CI_NODE_TOTAL"
+if [[ "$TEST_SCOPE" != "full" && "$TEST_SCOPE" != "isolated" ]]; then
+  echo "Unknown TEST_SCOPE: $TEST_SCOPE"
+  exit 2
+fi
+
+echo "Running $TEST_SCOPE tests with Python $PYTHON_VERSION on node $CI_NODE_INDEX of $CI_NODE_TOTAL ($TEST_SLOTS slot(s))"
 
 echo "Installing CI dependencies..."
 bash install-ci-dependencies.sh || exit 1
 
-echo "Checking if translation is needed..."
-echo "CI_COMMIT_REF_NAME = $CI_COMMIT_REF_NAME"
-if [[ ! "$CI_COMMIT_REF_NAME" =~ ^release- ]]; then
-    echo "Not a release branch - will use the null translator to populate any missing translations."
-    psynet translate --translator null || exit 1
+
+if [[ "$CI_COMMIT_REF_NAME" =~ ^release- ]]; then
+    echo "Release branch detected - all PsyNet translations must be present."
 else
-    echo "Release branch detected - will require all translations to be present."
+    echo "Not a release branch - missing PsyNet translations fall back to English during tests."
 fi
 
-# Fail the build if any of the tests fail
-EXIT_CODE=0
-
-for file in $(psynet list-experiment-dirs --for-ci-tests --ci-node-total $CI_NODE_TOTAL --ci-node-index $CI_NODE_INDEX); do
-  echo "Testing experiment $file"
-  # We use -Werror to ensure that we see all warnings as errors, but ignore yaspin color warnings
-  pytest \
-    --junitxml=/public/$(basename $file)_junit.xml \
-    $file/test.py \
-    -Werror \
-    -W "ignore:color, on_color and attrs are not supported when output stream is not a TTY:UserWarning:yaspin.core" \
-    -q \
-    -o log_cli=False \
-    --chrome \
-    --timeout=$TIMEOUT_SECONDS
-  if [ $? -ne 0 ]; then
-    EXIT_CODE=1
-  fi
-done
-
-for file in $(psynet list-isolated-tests --ci-node-total $CI_NODE_TOTAL --ci-node-index $CI_NODE_INDEX); do
-  echo "Testing isolated test $file"
-  # We use -Werror to ensure that we see all warnings as errors, but ignore yaspin color warnings
-  pytest \
-    $file \
-    -Werror \
-    -W "ignore:color, on_color and attrs are not supported when output stream is not a TTY:UserWarning:yaspin.core" \
-    -q \
-    -o log_cli=False \
-    --chrome \
-    --timeout=$TIMEOUT_SECONDS
-  if [ $? -ne 0 ]; then
-    EXIT_CODE=1
-  fi
-done
-
-# At the moment we don't have any other tests to run, but here's some template code to do so
-# if we decide to add some.
-#pytest \
-#  --test-group-count=$CI_NODE_TOTAL \
-#  --test-group=$CI_NODE_INDEX \
-#  --test-group-random-seed=12345 \
-#  --ignore=tests/local_only \
-#  --ignore=tests/isolated \
-#  --ignore=tests/test_run_all_demos.py \
-#  --ignore=tests/test_run_isolated_tests.py \
-#  --chrome \
-#  tests \
-#  || exit 1
-
-exit $EXIT_CODE
+# Each item runs in its own pytest process; see psynet/dev/ci_tests.py for how
+# shards are balanced and how parallel slots are isolated from each other.
+psynet dev ci run-tests \
+  --scope "$TEST_SCOPE" \
+  --node-total "$CI_NODE_TOTAL" \
+  --node-index "$CI_NODE_INDEX" \
+  --slots "$TEST_SLOTS" \
+  --timeout "$TIMEOUT_SECONDS" \
+  --junit-dir /public \
+  --python-version "$PYTHON_VERSION" \
+  --durations-output "/public/ci_durations_${PYTHON_VERSION}_${CI_NODE_INDEX}.json" \
+  --log-dir /public/test-logs

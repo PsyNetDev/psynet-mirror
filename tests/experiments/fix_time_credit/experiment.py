@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.page import InfoPage
 from psynet.timeline import CodeBlock, Timeline, while_loop
@@ -9,15 +7,15 @@ from psynet.timeline import CodeBlock, Timeline, while_loop
 
 
 def assert_no_time_credit_fixes(participant):
-    assert (
-        len(participant.time_credit_fixes) == 0
-    ), f"Expected no time credit bounds, got {participant.time_credit_fixes}"
+    assert len(participant.time_credit_fixes) == 0, (
+        f"Expected no time credit bounds, got {participant.time_credit_fixes}"
+    )
 
 
 def assert_time_credit(participant, value):
-    assert (
-        participant.time_credit == value
-    ), f"Expected time credit to be {value}, got {participant.time_credit}"
+    assert participant.time_credit == value, (
+        f"Expected time credit to be {value}, got {participant.time_credit}"
+    )
 
 
 class Exp(psynet.experiment.Experiment):

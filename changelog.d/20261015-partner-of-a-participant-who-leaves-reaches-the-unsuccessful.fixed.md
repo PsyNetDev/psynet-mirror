@@ -1,0 +1,1 @@
+Fixed an error page (HTTP 500) for participants whose sync group closed because a partner left or timed out: their next submission or page load now takes them to the unsuccessful end without rebuilding the open page, whose code may need the closed group. The answer submitted from that abandoned page is no longer stored.

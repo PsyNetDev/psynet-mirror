@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
 import numpy as np
 
 import psynet.experiment
@@ -161,11 +160,15 @@ class CreateAndRateNode(CreateAndRateNodeMixin, AudioGibbsNode):
             # is previous iteration
             return winning_target.definition
         else:
-            trial = self.trial_maker.get_finished_creations(self)[0]
-            active_index = trial.active_index
-            vector = trial.updated_vector.copy()
+            initial_index = winning_target.initial_index
+            active_index = winning_target.active_index
+            vector = winning_target.updated_vector.copy()
             vector[active_index] = winning_target.answer
-            return {"vector": vector, "active_index": active_index}
+            return {
+                "vector": vector,
+                "initial_index": initial_index,
+                "active_index": active_index,
+            }
 
 
 class CustomCreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, AudioGibbsTrialMaker):
@@ -217,7 +220,7 @@ def make_trial_maker(rate_mode):
         max_trials_per_participant=n_trials_per_participant,
         max_nodes_per_chain=n_iterations_per_chain,
         chains_per_experiment=None,  # set to None if chain_type="within"
-        balance_across_chains=True,
+        chain_order="balanced",
         check_performance_at_end=True,
         check_performance_every_trial=False,
         propagate_failure=False,

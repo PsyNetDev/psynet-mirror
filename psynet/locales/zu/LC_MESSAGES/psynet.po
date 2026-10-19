@@ -430,6 +430,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "Uma kunjalo, sicela unikeze amagama ambalwa achaza inkinga."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "Qeda"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

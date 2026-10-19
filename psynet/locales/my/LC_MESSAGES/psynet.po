@@ -428,6 +428,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "ပြဿနာကို ဖော်ပြပါ"
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "အပြီးသတ်ပါ"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

@@ -35,10 +35,12 @@ class TestAutomaticBackups:
         ]
         assert set(artifact_files) == {
             "basic_data.json",
-            "database.zip",
+            "export.zip",
             "experiment_status.json",
             "recruitment_status.json",
-        }, f"The contents of {artifacts_dir} are not as expected. Instead found: {artifact_files}"
+        }, (
+            f"The contents of {artifacts_dir} are not as expected. Instead found: {artifact_files}"
+        )
 
         experiment_status = (
             launched_experiment.artifact_storage.read_experiment_status()
@@ -52,9 +54,9 @@ class TestAutomaticBackups:
         assert recruitment_status["recruiter"] == "hotair"
         assert not recruitment_status["need_more_participants"]
 
-        export_path = tmp_path / "database.zip"
+        export_path = tmp_path / "export.zip"
         launched_experiment.artifact_storage.download_export(
-            export_type="database", destination=str(export_path)
+            destination=str(export_path)
         )
         assert os.path.isfile(export_path)
         assert os.path.getsize(export_path) > 0

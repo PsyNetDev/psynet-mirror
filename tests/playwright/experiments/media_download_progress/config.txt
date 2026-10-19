@@ -1,0 +1,10 @@
+[Config]
+title = Media download progress bar check
+description = Verify media-download-progress-bar visibility under inplace transitions.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+
+recruiter = generic
+currency = $
+wage_per_hour = 12.0
+inplace_timeline_transitions = true

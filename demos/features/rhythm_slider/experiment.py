@@ -49,16 +49,6 @@ def new_example(
         <p>
             Closest audio: <strong id="slider-audio">NA</strong>
         </p>
-        <script>
-            update_value = function() {{
-                document.getElementById("slider-audio").innerHTML = findClosestMedia(slider);
-                document.getElementById("slider-raw-value").innerHTML = parseFloat(slider.getAttribute("raw-value")).toFixed(2);
-                document.getElementById("slider-output-value").innerHTML = parseFloat(slider.getAttribute("output-value")).toFixed(2);
-                document.getElementById("phase").innerHTML = parseFloat(slider.getAttribute("phase")).toFixed(2);
-                document.getElementById("random-wrap").innerHTML = slider.getAttribute("random-wrap");
-            }}
-            psynet.trial.onEvent("trialConstruct", () => setInterval(update_value, 100));
-        </script>
         """
     )
     time_estimate = kwargs.pop("time_estimate")
@@ -70,6 +60,7 @@ def new_example(
             control=AudioSliderControl(audio=media.audio, **kwargs),
             media=media,
             time_estimate=time_estimate,
+            js_page_modules=["/static/slider-debug.js"],
         ),
         DebugResponsePage(),
     )

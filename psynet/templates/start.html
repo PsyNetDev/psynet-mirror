@@ -3,26 +3,40 @@
 {% block stylesheets %}
     {{ super() }}
     <style>
+        /* Selectors are scoped: bare `div` and `p` rules previously also matched
+           the layout's spinner element, which gave the page a stray empty
+           screen below the fold. */
+        #starting-experiment {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            min-height: 100vh;
+            text-align: center;
+        }
 
-    div {
-        width: 100%;
-        height: 100vh;
-    }
-    p {
-        font-size: 3em;
-        font-weight: 600;
-        text-align: center;
-        top: 50%;
-        width: 100%;
-        position: absolute;
-    }
+        #starting-experiment p {
+            margin: 0;
+            font-size: clamp(1.25rem, 3vw, 1.75rem);
+            font-weight: 600;
+            letter-spacing: -0.015em;
+        }
+
+        #starting-experiment .spinner-border {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-width: 0.25rem;
+            color: var(--psynet-accent);
+        }
     </style>
 {% endblock %}
 
 {% block body %}
     {{super()}}
 
-    <div class="colorfadeanim">
+    <div id="starting-experiment">
+        <div class="spinner-border" role="status" aria-hidden="true"></div>
         <p>
             {{ pgettext("start", "Starting experiment...") }}
         </p>
@@ -50,41 +64,95 @@
             })
         }
 
-        async function createParticipant() {
+        function shouldAttemptCreate(resp) {
+            return Boolean(
+                resp &&
+                resp.status === 403 &&
+                (resp.errorCode === "participant_not_found" ||
+                 resp.errorCode === "assignment_id_missing")
+            );
+        }
+
+        let startInProgress = false;
+        let startAttempt = 0;
+
+        function handleStartError(resp, attempt) {
+            if (attempt !== startAttempt) {
+                return;
+            }
+            startInProgress = false;
+            // TODO(Dallinger structured participant errors): Replace this last
+            // dallinger.error() call with psynetErrorPage.go() once /participant
+            // and /load-participant return stable error codes for refusals such
+            // as worker_already_participated. Do not infer codes by parsing the
+            // current rendered HTML or its human-readable error text.
+            dallinger.error(resp);
+        }
+
+        async function createParticipant(entryInformation, attempt) {
             // This is similar to dallinger.createParticipant but it bypasses the dallinger.identity
             // storage object, which shares information across different browser windows and hence
             // is not reliable when testing multiple participants on the same machine.
 
-            let entryInformation = getEntryInformation();
-            let fingerprintHash = await getFingerprintHash();
-            let url = "/participant";
-            let data = {};
-
-            if (entryInformation) {
-                data = entryInformation;
-                data.fingerprint_hash = fingerprintHash;
-            } else {
-                let recruiter = dallinger.getUrlParameter('recruiter');
-                let hitId = dallinger.getUrlParameter('hitId');
-                let workerId = dallinger.getUrlParameter('workerId');
-                let assignmentId = dallinger.getUrlParameter('assignmentId');
-                let mode = dallinger.getUrlParameter('mode');
-
-                url += "/" + workerId;
-                url += "/" + hitId;
-                url += "/" + assignmentId;
-                url += "/" + mode;
-                url += "?fingerprint_hash=" + fingerprintHash;
-                url += '&recruiter=' + recruiter;
+            if (!entryInformation) {
+                entryInformation = getEntryInformation();
             }
+            let fingerprintHash = await getFingerprintHash();
+            if (attempt !== startAttempt) {
+                return;
+            }
+            let data = Object.assign(
+                {},
+                entryInformation,
+                {fingerprint_hash: fingerprintHash}
+            );
 
-            dallinger.post(url, data).done(function (resp) {
-                window.location = "/timeline?unique_id=" + resp.participant.unique_id;
+            dallinger.post("/participant", data).done(function (resp) {
+                if (attempt !== startAttempt) {
+                    return;
+                }
+                window.location.replace("/timeline?unique_id=" + resp.participant.unique_id);
             }).fail(function(resp) {
-                dallinger.error(resp);
+                handleStartError(resp, attempt);
             });
         }
 
-        createParticipant();
+        function startParticipantFlow() {
+            if (startInProgress) {
+                return;
+            }
+            startInProgress = true;
+            const attempt = ++startAttempt;
+            let entryInformation = getEntryInformation();
+            if (Object.keys(entryInformation).length > 0) {
+                dallinger.post("/load-participant", entryInformation).done(function (resp) {
+                    if (attempt !== startAttempt) {
+                        return;
+                    }
+                    window.location.replace("/timeline?unique_id=" + resp.participant.unique_id);
+                }).fail(function(resp) {
+                    if (attempt !== startAttempt) {
+                        return;
+                    }
+                    if (shouldAttemptCreate(resp)) {
+                        createParticipant(entryInformation, attempt);
+                    } else {
+                        handleStartError(resp, attempt);
+                    }
+                });
+            } else {
+                createParticipant(entryInformation, attempt);
+            }
+        }
+
+        // pageshow runs on first load and when the page is restored (including
+        // bfcache). Reset the in-progress flag after a persisted restore so
+        // /start can run again after back/forward navigation.
+        window.addEventListener("pageshow", function (event) {
+            if (event.persisted) {
+                startInProgress = false;
+            }
+            startParticipantFlow();
+        });
     </script>
 {% endblock %}

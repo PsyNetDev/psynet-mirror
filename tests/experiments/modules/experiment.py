@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.page import InfoPage
 from psynet.timeline import CodeBlock, Module, PageMaker, Timeline, for_loop, join
@@ -15,9 +13,9 @@ def check_module_b(participant):
 
     export = participant.to_dict()
     flattened_keys = [k for k in export if k.startswith(("module_a__", "module_b__"))]
-    assert (
-        flattened_keys == []
-    ), f"participant.to_dict() should no longer contain module locals, but found: {flattened_keys}"
+    assert flattened_keys == [], (
+        f"participant.to_dict() should no longer contain module locals, but found: {flattened_keys}"
+    )
 
 
 class Exp(psynet.experiment.Experiment):

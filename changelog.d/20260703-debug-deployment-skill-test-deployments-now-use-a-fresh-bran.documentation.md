@@ -1,0 +1,1 @@
+Reworked the deployment-test skill (renamed from `debug-deployment-test-experiments`) and coordinated it with the release skill: each deployment gets a fresh branch, RC promotion requires per-app promotion verdicts, and audit trails are archived in the private `psynet-deployment-tests` repository.

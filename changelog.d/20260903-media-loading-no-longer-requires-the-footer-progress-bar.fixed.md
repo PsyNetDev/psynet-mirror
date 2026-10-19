@@ -1,0 +1,1 @@
+Fixed media loading on experiments that hide the footer. `psynet.media.init()` runs on every trial and unconditionally styled the media-download progress bar, which lives in the footer, so `show_footer = false` left the page stuck: the trial never finished constructing and its controls stayed disabled.

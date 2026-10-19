@@ -1,7 +1,5 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import random
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 from markupsafe import Markup
@@ -304,19 +302,20 @@ class CustomTrialMaker(GraphChainTrialMaker):
         max_trials_per_participant: Optional[int],
         chains_per_participant: Optional[int],
         trials_per_node: int,
-        balance_across_chains: bool,
+        chain_order: str,
         check_performance_at_end: bool,
         check_performance_every_trial: bool,
         recruit_mode: str,
-        target_n_participants=Optional[int],
+        target_n_participants: Optional[int] = None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
         max_nodes_per_chain: Optional[int] = None,
-        fail_trials_on_premature_exit: bool = False,
         fail_trials_on_participant_performance_check: bool = False,
         propagate_failure: bool = True,
         n_repeat_trials: int = 0,
         wait_for_networks: bool = False,
         allow_revisiting_networks_in_across_chains: bool = False,
         max_trials_per_block: int = None,
+        choose_participant_group=None,
     ):
         network_structure = self.generate_grid(grid_dimension)
         super().__init__(
@@ -329,19 +328,20 @@ class CustomTrialMaker(GraphChainTrialMaker):
             max_trials_per_participant=max_trials_per_participant,
             chains_per_participant=chains_per_participant,
             trials_per_node=trials_per_node,
-            balance_across_chains=balance_across_chains,
+            chain_order=chain_order,
             check_performance_at_end=check_performance_at_end,
             check_performance_every_trial=check_performance_every_trial,
             recruit_mode=recruit_mode,
             target_n_participants=target_n_participants,
+            n_participants_completion=n_participants_completion,
             max_nodes_per_chain=max_nodes_per_chain,
-            fail_trials_on_premature_exit=fail_trials_on_premature_exit,
             fail_trials_on_participant_performance_check=fail_trials_on_participant_performance_check,
             propagate_failure=propagate_failure,
             n_repeat_trials=n_repeat_trials,
             wait_for_networks=wait_for_networks,
             allow_revisiting_networks_in_across_chains=allow_revisiting_networks_in_across_chains,
             max_trials_per_block=max_trials_per_block,
+            choose_participant_group=choose_participant_group,
         )
 
     def generate_grid(self, size):
@@ -395,7 +395,7 @@ class CustomTrialMaker(GraphChainTrialMaker):
             "vertices": vertices,
             "edges": edges,
             "blocks": blocks,
-            "groups": blocks,
+            "participant_groups": groups,
         }
 
 
@@ -449,12 +449,15 @@ class Exp(psynet.experiment.Experiment):
             max_trials_per_participant=3,
             chains_per_participant=None,
             trials_per_node=1,
-            balance_across_chains=True,
+            chain_order="balanced",
             check_performance_at_end=False,
             check_performance_every_trial=False,
             recruit_mode="n_trials",
             target_n_participants=None,
             max_trials_per_block=1,
+            choose_participant_group=lambda participant: (
+                participant.var.participant_group
+            ),
         ),
         InfoPage("You finished the experiment!", time_estimate=0),
     )
@@ -464,3 +467,8 @@ class Exp(psynet.experiment.Experiment):
 
     def test_check_bot(self, bot: Bot, **kwargs):
         assert len(bot.alive_trials) == 3
+
+        expected_group = f"col_{bot.id % 3}"
+        assert bot.module_states["graph_demo"][-1].participant_group == expected_group
+        for trial in bot.alive_trials:
+            assert trial.participant_group == expected_group

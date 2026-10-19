@@ -1,0 +1,1 @@
+Deprecated `fail_trials_on_premature_exit`. The argument is still accepted, defaults to `False`, and is ignored. It is not stored on the trial maker, so reading `trial_maker.fail_trials_on_premature_exit` now raises `AttributeError`. Premature exit always fails incomplete trials and preserves completed trials.

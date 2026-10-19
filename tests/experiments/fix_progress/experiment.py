@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import pytest
 
 import psynet.experiment
@@ -17,9 +15,9 @@ def assert_progress_is_less_than_one(participant):
 
 
 def assert_progress(participant, value):
-    assert participant.progress == pytest.approx(
-        value
-    ), f"Expected progress to be {value}, got {participant.progress}"
+    assert participant.progress == pytest.approx(value), (
+        f"Expected progress to be {value}, got {participant.progress}"
+    )
 
 
 class Exp(psynet.experiment.Experiment):

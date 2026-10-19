@@ -1,0 +1,1 @@
+Made SPA contract failures visible during ``psynet test local`` by checking static timeline pages before bots run (including non-template ModularPage codes when external templates need an app context) and by extracting SPA messages from bot HTTP 500 bodies via a stable footer marker. Documented the full experiment scaffold files needed for local validation.

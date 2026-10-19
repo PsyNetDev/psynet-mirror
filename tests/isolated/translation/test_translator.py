@@ -109,7 +109,9 @@ def test_translator_with_file_path():
         expected_translation = expected_translations[i]
         assert preprocess_translation(translation) == preprocess_translation(
             expected_translation
-        ), f"Translation {i} does not match expected translation. Expected: {expected_translation}, Got: {translation}"
+        ), (
+            f"Translation {i} does not match expected translation. Expected: {expected_translation}, Got: {translation}"
+        )
 
 
 def preprocess_translation(text: str) -> str:
@@ -127,10 +129,7 @@ def preprocess_translation(text: str) -> str:
         Normalized text with standardized spacing and punctuation
     """
     return (
-        text.lower()
-        .strip()
-        .replace(" !", "!")
-        .replace(" ?", "?")
+        text.lower().strip().replace(" !", "!").replace(" ?", "?")
         # Add any future normalization rules here
     )
 

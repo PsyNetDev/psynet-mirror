@@ -2,6 +2,8 @@
 Test that ExperimentMeta correctly validates __init__ method signatures.
 """
 
+import inspect
+
 import pytest
 
 from psynet.experiment import Experiment
@@ -50,3 +52,37 @@ def test_init_with_additional_params():
             self.custom_param = custom_param
 
     assert ExtraParamsExperiment is not None
+
+
+def test_overriding_fail_participant_raises():
+    with pytest.raises(RuntimeError, match="fail_participant"):
+
+        class OverrideFailParticipant(Experiment):
+            def fail_participant(self, participant):
+                participant.fail()
+
+
+def test_inheriting_fail_participant_is_allowed():
+    class InheritFailParticipant(Experiment):
+        pass
+
+    assert InheritFailParticipant.fail_participant is Experiment.fail_participant
+
+
+def test_mixin_fail_participant_override_raises():
+    class FailParticipantMixin:
+        def fail_participant(self, participant):
+            participant.fail()
+
+    with pytest.raises(RuntimeError, match="fail_participant"):
+
+        class MixinOverride(FailParticipantMixin, Experiment):
+            pass
+
+
+def test_default_allows_mobile_devices():
+    # Read the dict literal rather than calling extra_parameters(), which
+    # registers Dallinger keys globally and breaks later experiment launches
+    # in the same process.
+    source = inspect.getsource(Experiment.config_defaults)
+    assert '"allow_mobile_devices": True' in source

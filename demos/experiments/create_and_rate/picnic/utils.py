@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
 from markupsafe import Markup
 
 from psynet.modular_page import ModularPage, Prompt, TextControl
@@ -97,15 +96,17 @@ instructions = join(
                 <div class="alert alert-primary" role="alert">
                     <strong>Note:</strong> You are only rating if the meaning of the guessed rule matches the intended rule. You can ignore differences in spelling and phrasing.
                 </div>
-
-                <style>
-                .form-check-input:disabled~.form-check-label, .form-check-input[disabled]~.form-check-label {
-                    color: #000;
-                }
-                </style>
             """
         ),
         time_estimate=5,
+        css=[
+            """
+            .form-check-input:disabled ~ .form-check-label,
+            .form-check-input[disabled] ~ .form-check-label {
+                color: #000;
+            }
+            """
+        ],
     ),
     InfoPage(
         Markup(

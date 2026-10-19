@@ -7,7 +7,6 @@ from psynet.data import SQLBase, SQLMixin, register_table
 @register_table
 class ErrorRecord(SQLBase, SQLMixin):
     __tablename__ = "error"
-    __extra_vars__ = {}
 
     # Remove default SQL columns
     failed = None
@@ -24,8 +23,6 @@ class ErrorRecord(SQLBase, SQLMixin):
         "psynet.participant.Participant", back_populates="errors"
     )
 
-    worker_id = Column(String)
-
     network_id = Column(Integer, ForeignKey("network.id"), index=True)
     network = relationship("TrialNetwork", back_populates="errors")
 
@@ -35,28 +32,25 @@ class ErrorRecord(SQLBase, SQLMixin):
     response_id = Column(Integer, ForeignKey("response.id"), index=True)
     response = relationship("psynet.timeline.Response", back_populates="errors")
 
-    trial_id = Column(Integer, ForeignKey("info.id"), index=True)
+    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
     trial = relationship("psynet.trial.main.Trial", back_populates="errors")
 
     asset_id = Column(Integer, ForeignKey("asset.id"), index=True)
     asset = relationship("Asset", back_populates="errors")
 
-    process_id = Column(Integer, ForeignKey("process.id"), index=True)
-    process = relationship("AsyncProcess", back_populates="errors")
+    async_job_id = Column(Integer, ForeignKey("async_job.id"), index=True)
+    async_job = relationship("AsyncJob", back_populates="errors")
 
     log_line_number = Column(Integer, nullable=True)
 
     def __init__(self, error, **kwargs):
         super().__init__(message=str(error), kind=type(error).__name__, **kwargs)
 
-        if self.participant:
-            self.worker_id = self.participant.worker_id
-
     @property
     def ids(self):
         """
         Returns a dictionary of IDs for the error record.
 
-        This includes the IDs of the participant, network, node, response, trial, asset, and process.
+        This includes the IDs of the participant, network, node, response, trial, asset, and async job.
         """
         return {k: v for k, v in self.__dict__.items() if "_id" in k}

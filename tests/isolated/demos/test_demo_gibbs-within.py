@@ -37,23 +37,23 @@ class TestExp:
 
             dimension_order = GibbsNetwork.query.one().dimension_order
             nodes = GibbsNode.query.order_by(GibbsNode.id).all()
-            assert (
-                len(set([node.initial_index for node in nodes])) == 1
-            ), "All nodes should have same initial index."
+            assert len(set([node.initial_index for node in nodes])) == 1, (
+                "All nodes should have same initial index."
+            )
             initial_index = nodes[0].initial_index
             n_nodes = n_trials + 1
-            assert (
-                len(nodes) == n_nodes
-            ), "There should be one node per trial plus one for the initial node."
+            assert len(nodes) == n_nodes, (
+                "There should be one node per trial plus one for the initial node."
+            )
             dimension_start_index = dimension_order.index(initial_index)
 
             predicted_dimension_order = (dimension_order * 3)[
                 dimension_start_index : (dimension_start_index + n_nodes)
             ]
             real_dimension_order = [node.active_index for node in nodes]
-            assert (
-                real_dimension_order == predicted_dimension_order
-            ), "Dimensions are not visited in correct order."
+            assert real_dimension_order == predicted_dimension_order, (
+                "Dimensions are not visited in correct order."
+            )
 
             next_page(driver, "next-button")
             click_finish_button(driver)

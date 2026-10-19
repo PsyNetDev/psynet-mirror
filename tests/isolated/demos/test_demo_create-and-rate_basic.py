@@ -103,29 +103,31 @@ class TestCreateAndRateBasic(TestExp):
 
     def assertions(self):
         expected_trial_order = [
-            "Info-1-CreateTrial",
-            "Info-2-SingleRateTrial",
-            "Info-3-SingleRateTrial",
+            "Trial-1-CreateTrial",
+            "Trial-2-SingleRateTrial",
+            "Trial-3-SingleRateTrial",
         ]
         nodes, node, trials = self.get_nodes_and_trials(expected_trial_order)
         rate_trials = trials[1:]
         for trial in rate_trials:
-            assert (
-                trial.network_id == trials[0].network_id
-            ), "Trials should be in the same network"
+            assert trial.network_id == trials[0].network_id, (
+                "Trials should be in the same network"
+            )
             assert len(trial.targets) == 1, "Trials should have 1 target"
         ratings = dict(ChainMap(*[trial.answer for trial in rate_trials]))
         assert trials[0].answer == "testA", "First trial should have answer 'testA'"
-        assert (
-            f"{trials[0]}" == "Info-1-CreateTrial"
-        ), "First trial should be 'Info-1-CreateTrial'"
+        assert f"{trials[0]}" == "Trial-1-CreateTrial", (
+            "First trial should be 'Trial-1-CreateTrial'"
+        )
         assert ratings == {
-            "Info-1-CreateTrial": 5,
+            "Trial-1-CreateTrial": 5,
             "Node-1-CreateAndRateNode": 1,
-        }, "The first creation should get the highest rating, the initial creation should get the lowest rating"
-        assert (
-            node.definition == trials[0]
-        ), "Therefore, the aggregated node should point to the first trial (which got the highest rating)"
+        }, (
+            "The first creation should get the highest rating, the initial creation should get the lowest rating"
+        )
+        assert node.definition == trials[0], (
+            "Therefore, the aggregated node should point to the first trial (which got the highest rating)"
+        )
 
     def test_demo(self, bot_recruits, db_session):
         self.process_demo(bot_recruits, nth_child=1, stop_at_participant_idx=2)
@@ -139,36 +141,36 @@ class TestCreateAndRateBasic(TestExp):
 class TestCreateAndSelectBasic(TestExp):
     @staticmethod
     def make_decision(driver):
-        next_page(driver, "Info-1-CreateTrial")
+        next_page(driver, "Trial-1-CreateTrial")
 
     def assertions(self):
         expected_trial_order = [
-            "Info-1-CreateTrial",
-            "Info-2-CreateTrial",
-            "Info-3-SelectTrial",
-            "Info-4-SelectTrial",
-            "Info-5-SelectTrial",
+            "Trial-1-CreateTrial",
+            "Trial-2-CreateTrial",
+            "Trial-3-SelectTrial",
+            "Trial-4-SelectTrial",
+            "Trial-5-SelectTrial",
         ]
         nodes, node, trials = self.get_nodes_and_trials(expected_trial_order)
 
         select_trials = trials[2:]
         for trial in select_trials:
-            assert (
-                trial.network_id == trials[0].network_id
-            ), "Trials should be in the same network"
+            assert trial.network_id == trials[0].network_id, (
+                "Trials should be in the same network"
+            )
             assert len(trial.targets) == 3, "Trials should have 3 targets"
 
         assert trials[0].answer == "testA", "First trial should have answer 'testA'"
         assert trials[1].answer == "testB", "Second trial should have answer 'testB'"
-        all(
-            [trial.answer == "Info-1-CreateTrial" for trial in select_trials]
-        ), "All select trials should have answer 'Info-1-CreateTrial'"
-        assert (
-            f"{trials[0]}" == "Info-1-CreateTrial"
-        ), "First trial should be 'Info-1-CreateTrial'"
-        assert (
-            node.definition == trials[0]
-        ), "Therefore, the aggregated node should point to the first trial (which was always selected)"
+        assert all(trial.answer == "Trial-1-CreateTrial" for trial in select_trials), (
+            "All select trials should have answer 'Trial-1-CreateTrial'"
+        )
+        assert f"{trials[0]}" == "Trial-1-CreateTrial", (
+            "First trial should be 'Trial-1-CreateTrial'"
+        )
+        assert node.definition == trials[0], (
+            "Therefore, the aggregated node should point to the first trial (which was always selected)"
+        )
 
     def test_demo(self, bot_recruits, db_session):
         self.process_demo(bot_recruits, nth_child=3, stop_at_participant_idx=4)

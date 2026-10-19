@@ -3,17 +3,70 @@
 {% block stylesheets %}
     <style>
         #dashboard-participant {
-            margin-top: 20px
+            margin-top: 20px;
         }
-        #resume-table {
+        /* Flex items default to min-width:auto, which lets wide tables overflow
+           and sit on top of the neighbouring column on small screens. */
+        #dashboard-participant > [class*="col-"] {
+            min-width: 0;
+        }
+        #lookup-table,
+        #participant-detail-table {
             border-collapse: collapse;
             border: none;
         }
+        #participant-detail-table td {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 991.98px) {
+            #participant-detail {
+                margin-bottom: 1.5rem;
+                padding-bottom: 1rem;
+                border-bottom: 1px solid #dee2e6;
+            }
+        }
         #btn-copy-url {
-            margin-left: 20px
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+        @media (min-width: 992px) {
+            #btn-copy-url {
+                margin-top: 0;
+                margin-left: 20px;
+            }
         }
         colgroup col.title {
           font-weight: bold;
+        }
+        .btn-group-vertical form + form {
+            margin-top: 0.25rem;
+        }
+        #payment-review-actions form {
+            display: inline-block;
+            margin-right: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        #payment-review-table tbody tr:hover {
+            background-color: rgba(0, 0, 0, 0.04);
+        }
+        #payment-review-table tbody a {
+            color: inherit;
+        }
+        #participant-detail-table .section-head th {
+            background-color: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            font-size: 0.95rem;
+            padding-top: 0.85rem;
+        }
+        #participant-detail-table tr:first-child.section-head th {
+            border-top: none;
+        }
+        #participant-detail-table .section-head .btn {
+            font-size: 0.8rem;
+            font-weight: normal;
+            margin-left: 0.5rem;
+            vertical-align: middle;
         }
     </style>
 {% endblock %}
@@ -54,59 +107,127 @@
 
 {% block body %}
     <h1>{{ title }}</h1>
-    <p>This page allows you to retrieve information about a participant in the experiment, including the current status, the accumulated reward, and the link to resume the session.</p>
-    <div class="row" id="dashboard-participant">
-        <div class="col-5">
-            <table class="table" id="resume-table">
-                <colgroup>
-                    <col class="title"></col>
-                    <col></col>
-                </colgroup>
+    <p>Look up a participant by ID, or review bonuses PsyNet could not confirm.</p>
 
-                <tr>
-                    <td>Participant ID</td>
-                    <td><input id="input-participant-id" class="form-control response" type="text" value=""/></td>
-                    <td><button type="button" class="btn btn-primary" onclick="selectParticipantByParticipantId()">Go</button></td>
-                </tr>
-                <tr>
-                    <td>Assignment ID</td>
-                    <td><input id="input-assignment-id" class="form-control response" type="text" value=""/></td>
-                    <td><button type="button" class="btn btn-primary" onclick="selectParticipantByAssignmentId()">Go</button></td>
-                </tr>
-                <tr>
-                    <td>Worker ID</td>
-                    <td><input id="input-worker-id" class="form-control response" type="text" value=""/></td>
-                    <td><button type="button" class="btn btn-primary" onclick="selectParticipantByWorkerId()">Go</button></td>
-                </tr>
-            </table>
+    {% if participants_needing_review %}
+        <div class="alert alert-warning" role="alert">
+            <h2 class="h5">Needs payment review ({{ participants_needing_review | length }})</h2>
+            <p class="mb-3">
+                PsyNet could not confirm these bonuses. Prolific may already have paid them.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-striped mb-0" id="payment-review-table">
+                    <thead>
+                        <tr>
+                            <th>Participant ID</th>
+                            <th>Worker ID</th>
+                            <th>Planned bonus</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for review_participant in participants_needing_review %}
+                            {% set review_url = url_for('dashboard.dashboard_participants', participant_id=review_participant.id) %}
+                            <tr {% if participant is not none and participant.id == review_participant.id %}class="table-active"{% endif %}>
+                                <td>
+                                    <a href="{{ review_url }}">{{ review_participant.id }}</a>
+                                </td>
+                                <td>
+                                    <a href="{{ review_url }}">{{ review_participant.worker_id }}</a>
+                                </td>
+                                <td>
+                                    <a href="{{ review_url }}">{{ currency }}{{ "%.2f"|format(review_participant.planned_bonus or 0) }}</a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <div class="col-7">
-            {{ message }}
+    {% else %}
+        <p class="text-muted">No participants currently need payment review.</p>
+    {% endif %}
 
-            {% if participant is not none %}
+    <div class="row" id="dashboard-participant">
+        {% if participant is not none %}
+            <div class="col-12 col-lg-7 order-1 order-lg-2" id="participant-detail">
                 {{ summarize_participant(participant) }}
-            {% endif %}
+            </div>
+        {% endif %}
+        <div class="col-12 {% if participant is not none %}col-lg-5 order-2 order-lg-1{% else %}col-lg-5{% endif %}" id="participant-lookup">
+            {{ message }}
+            <div class="table-responsive">
+                <table class="table" id="lookup-table">
+                    <colgroup>
+                        <col class="title"></col>
+                        <col></col>
+                    </colgroup>
+                    <tr>
+                        <th scope="row">Participant ID</th>
+                        <td>
+                            <div class="input-group">
+                                <input id="input-participant-id" class="form-control response" type="text" value=""/>
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-primary" onclick="selectParticipantByParticipantId()">Go</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Assignment ID</th>
+                        <td>
+                            <div class="input-group">
+                                <input id="input-assignment-id" class="form-control response" type="text" value=""/>
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-primary" onclick="selectParticipantByAssignmentId()">Go</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Worker ID</th>
+                        <td>
+                            <div class="input-group">
+                                <input id="input-worker-id" class="form-control response" type="text" value=""/>
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-primary" onclick="selectParticipantByWorkerId()">Go</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
         </div>
     </div>
 {% endblock %}
 
 {% macro summarize_participant(participant) %}
-    <table class="table" id="resume-table">
+    <div class="table-responsive">
+    <table class="table" id="participant-detail-table">
+        <tr class="section-head">
+            <th colspan="2">Identity</th>
+        </tr>
         <tr>
             <td>Participant ID</td>
             <td>{{ participant.id }}</td>
-        </tr>
-        <tr>
-            <td>Unique ID</td>
-            <td>{{ participant.unique_id }}</td>
         </tr>
         <tr>
             <td>Worker ID</td>
             <td>{{ participant.worker_id }}</td>
         </tr>
         <tr>
+            <td>Recruiter</td>
+            <td>{{ participant.recruiter_id }}</td>
+        </tr>
+        <tr>
             <td>Assignment ID</td>
             <td>{{ participant.assignment_id }}</td>
+        </tr>
+        <tr>
+            <td>Unique ID</td>
+            <td>{{ participant.unique_id }}</td>
+        </tr>
+        <tr class="section-head">
+            <th colspan="2">Progress</th>
         </tr>
         <tr>
             <td>Status</td>
@@ -118,11 +239,7 @@
         </tr>
         <tr>
             <td>Current module</td>
-            <td>{{ participant.current_module_id }}</td>
-        </tr>
-        <tr>
-            <td>Current reward</td>
-            <td>{{ participant.calculate_reward() }}</td>
+            <td>{{ participant.module_id }}</td>
         </tr>
         <tr>
             <td>Link for resuming session</td>
@@ -131,7 +248,91 @@
                 <button type="button" class="btn btn-secondary" id="btn-copy-url" onclick="copyURLForResumingSession()">Copy</button>
             </td>
         </tr>
+        <tr class="section-head">
+            <th colspan="2">Payment</th>
+        </tr>
+        <tr>
+            <td>Issued completion code</td>
+            <td>{{ participant.issued_completion_code_type }}</td>
+        </tr>
+        <tr {% if participant.platform_base_unpaid %}class="table-warning"{% endif %}>
+            <td>Base payment</td>
+            <td>{{ currency }}{{ "%.2f"|format(participant.base_payment or 0) }}</td>
+        </tr>
+        {% if participant.platform_base_unpaid %}
+        <tr class="table-warning">
+            <td>Base payment unpaid</td>
+            <td>{{ participant.platform_base_unpaid_detail }}</td>
+        </tr>
+        {% endif %}
+        <tr {% if participant.bonus_needs_review %}class="table-warning"{% endif %}>
+            <td>Planned bonus</td>
+            <td>{{ currency }}{{ "%.2f"|format(participant.planned_bonus or 0) }}</td>
+        </tr>
+        <tr {% if participant.bonus_needs_review %}class="table-warning"{% endif %}>
+            <td>Delivered bonus</td>
+            <td>
+                {% if participant.bonus is none %}
+                    —
+                {% else %}
+                    {{ currency }}{{ "%.2f"|format(participant.bonus) }}
+                {% endif %}
+            </td>
+        </tr>
+        <tr {% if participant.bonus_needs_review %}class="table-warning"{% endif %}>
+            <td>Bonus status</td>
+            <td>{{ participant.bonus_status_label }}</td>
+        </tr>
+        {% if participant.bonus_status == "capped" %}
+        <tr>
+            <td colspan="2" class="text-muted">The hard experiment payment cap reduced this bonus. Planned is the decided amount; delivered is what was sent.</td>
+        </tr>
+        {% endif %}
+        {% if participant.bonus_attempt_detail %}
+        <tr {% if participant.bonus_needs_review %}class="table-warning"{% endif %}>
+            <td>Last attempt</td>
+            <td>{{ participant.bonus_attempt_detail }}</td>
+        </tr>
+        {% endif %}
+        {% if participant.platform_payment_supported %}
+        <tr class="section-head">
+            <th colspan="2">
+                Platform
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard.dashboard_participants', participant_id=participant.id) }}">Refresh</a>
+            </th>
+        </tr>
+            <tr>
+                <td>Submission status</td>
+                <td>{{ participant.platform_submission_status or "Could not read" }}</td>
+            </tr>
+            <tr>
+                <td>Bonus reported</td>
+                <td>
+                    {% if participant.platform_bonus is none %}
+                        Could not read
+                    {% else %}
+                        {{ currency }}{{ "%.2f"|format(participant.platform_bonus) }}
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" class="text-muted">Polled on this page load. Prolific pay is asynchronous, so a recent POST may not show yet. For screened-out participants, the fixed screen-out reward is excluded, so this figure is comparable to the delivered bonus above.</td>
+            </tr>
+        {% endif %}
     </table>
+    </div>
+    {% if participant.bonus_needs_review %}
+        <div id="payment-review-actions">
+            <form method="post" action="{{ url_for('dashboard.dashboard_pay_bonus') }}" onsubmit="if (!confirm('Post remaining bonus after spend caps? PsyNet will not send more than planned minus what the platform already reports. Only continue if that still looks unpaid.')) return false; this.querySelector('button[type=submit]').disabled = true;">
+                <input type="hidden" name="participant_id" value="{{ participant.id }}">
+                <button type="submit" class="btn btn-primary">Pay bonus</button>
+            </form>
+            <form method="post" action="{{ url_for('dashboard.dashboard_dismiss_bonus') }}" onsubmit="return confirm('Dismiss without paying? PsyNet will not post this bonus, and will not try again automatically.');">
+                <input type="hidden" name="participant_id" value="{{ participant.id }}">
+                <button type="submit" class="btn btn-outline-secondary">Dismiss without paying</button>
+            </form>
+        </div>
+    {% endif %}
 {% endmacro %}
 
-{% macro get_timeline_url(participants) %}{{ app_base_url }}/timeline?unique_id={{ participant.unique_id }}{% endmacro %}
+{% macro get_timeline_url(p) %}{{ app_base_url }}/timeline?unique_id={{ p.unique_id }}{% endmacro %}

@@ -1,0 +1,1 @@
+Added a "Choose a PsyNet version" section that explains releases, release candidates and development versions, and how to install each; the quickstart and "Creating an experiment" pages link to it from their install commands.

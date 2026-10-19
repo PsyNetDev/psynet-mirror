@@ -19,9 +19,9 @@ class Exp(psynet.experiment.Experiment):
         ),
         wait_while(
             lambda participant: (
-                datetime.datetime.now() - participant.var.start_time
-            ).total_seconds()
-            <= 4,
+                (datetime.datetime.now() - participant.var.start_time).total_seconds()
+                <= 4
+            ),
             expected_wait=3,
             check_interval=0.5,
         ),

@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import psynet.experiment
 from psynet.asset import LocalStorage, S3Storage  # noqa
 from psynet.bot import Bot
@@ -35,9 +33,9 @@ class Exp(psynet.experiment.Experiment):
     )
 
     def test_check_bot(self, bot: Bot, **kwargs):
-        from psynet.process import AsyncProcess
+        from psynet.async_job import AsyncJob
 
         assert not bot.failed
-        processes = AsyncProcess.query.filter_by(participant_id=bot.id).all()
-        assert all(not p.failed for p in processes)
-        assert all(not p.pending for p in processes)
+        async_jobs = AsyncJob.query.filter_by(participant_id=bot.id).all()
+        assert all(not job.failed for job in async_jobs)
+        assert all(not job.pending for job in async_jobs)

@@ -427,6 +427,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "ئەگەر هەبوو، تکایە چەند وشەیەک دیاری بکە کە کێشەکە دیاری بکات."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "کۆتایی"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

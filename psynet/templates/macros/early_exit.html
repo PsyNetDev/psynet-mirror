@@ -1,0 +1,29 @@
+{# Shared Leave confirmation dialog for timeline and error pages. #}
+{% macro early_exit_modal(
+    assignment_id,
+    offer_id,
+    confirmation
+) %}
+    <div id="early-exit-modal"
+         class="modal"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="early-exit-title"
+         aria-describedby="early-exit-message"
+         data-assignment-id="{{ assignment_id }}"
+         data-offer-id="{{ offer_id }}"
+         hidden>
+        <div class="modal-content">
+            <h2 id="early-exit-title">{{ confirmation.title }}</h2>
+            <p id="early-exit-message">{{ confirmation.message }}</p>
+            <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
+                <button type="button" id="early-exit-confirm" class="btn btn-danger">
+                    {{ confirmation.confirm_label }}
+                </button>
+                <button type="button" id="early-exit-cancel" class="btn btn-passive">
+                    {{ confirmation.cancel_label }}
+                </button>
+            </div>
+        </div>
+    </div>
+{% endmacro %}

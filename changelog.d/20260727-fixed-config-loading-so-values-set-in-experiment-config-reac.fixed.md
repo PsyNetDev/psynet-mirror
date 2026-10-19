@@ -1,0 +1,1 @@
+Fixed config loading so values set in `Experiment.config` remain available after an initialized experiment process changes into a non-experiment directory. Previously such processes could skip the experiment's config defaults and resolve different values (e.g. `dashboard_user`), causing bots to fail authentication with HTTP 401 errors.

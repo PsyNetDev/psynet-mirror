@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.equipment import MonitorInformation
 from psynet.page import DebugResponsePage, InfoPage

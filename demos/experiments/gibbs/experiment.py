@@ -10,16 +10,15 @@ from sqlalchemy.orm import relationship
 
 import psynet.experiment
 from psynet.asset import asset
+from psynet.async_job import AsyncJob
 from psynet.bot import Bot
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.demography.general import ExperimentFeedback
 from psynet.modular_page import ModularPage, Prompt, PushButtonControl, SliderControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.process import AsyncProcess
 from psynet.timeline import CodeBlock, Timeline
 from psynet.trial.gibbs import GibbsNetwork, GibbsNode, GibbsTrial, GibbsTrialMaker
-from psynet.trial.main import TrialNode
 from psynet.utils import get_logger
 
 logger = get_logger()
@@ -68,9 +67,15 @@ class ColorSliderPage(ModularPage):
                     "hidden_inputs": hidden_inputs,
                 },
                 continuous_updates=False,
-                bot_response=lambda: random.randint(0, 255),
+                # Bots answer differently on every trial. A bot that happened to
+                # give the same answer to all its repeat trials would be failed by
+                # the trial maker's consistency check, just like a real participant
+                # who tried to cheat that way.
+                bot_response=lambda trial: trial.id % 256,
             ),
             time_estimate=time_estimate,
+            css_links=["/static/color-slider.css"],
+            js_page_modules=["/static/color-slider.js"],
         )
 
     def metadata(self, **kwargs):
@@ -153,18 +158,6 @@ class CustomTrialMaker(GibbsTrialMaker):
     # If we set this to True, then the performance check will wait until all async_post_trial processes have finished
     end_performance_check_waits = False
 
-    def prioritize_networks(self, networks, participant, experiment):
-        for network in networks:
-            network.alive_trials_at_degree = len(
-                TrialNode.query.filter_by(network_id=network.id)
-                .order_by(TrialNode.id)
-                .all()[-1]
-                .alive_trials
-            )
-
-        # Prioritize nodes with the most alive trials
-        return list(reversed(sorted(networks, key=lambda n: n.alive_trials_at_degree)))
-
     def get_end_feedback_passed_page(self, score):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
@@ -180,11 +173,6 @@ class CustomTrialMaker(GibbsTrialMaker):
             return 0.0
         else:
             return max(0.0, score)
-
-    def custom_network_filter(self, candidates, participant):
-        # As an example, let's make the participant join networks
-        # in order of increasing network ID.
-        return sorted(candidates, key=lambda x: x.id)
 
 
 start_nodes = [
@@ -206,14 +194,14 @@ trial_maker = CustomTrialMaker(
     chains_per_participant=None,  # set to None if chain_type="across"
     chains_per_experiment=8,  # set to None if chain_type="within"
     trials_per_node=2,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,
     recruit_mode="n_trials",
     target_n_participants=None,
     n_repeat_trials=3,
-    wait_for_networks=True,  # wait for asynchronous processes to complete before continuing to the next trial
+    wait_for_networks=True,  # wait for async jobs to complete before continuing to the next trial
     choose_participant_group=lambda participant: participant.var.participant_group,
 )
 
@@ -274,7 +262,7 @@ class Exp(psynet.experiment.Experiment):
             assert len(b.alive_trials) == 7  # 4 normal trials + 3 repeat trials
             assert all([t.finalized for t in b.alive_trials])
 
-        processes = AsyncProcess.query.all()
-        assert all([not p.failed for p in processes])
+        async_jobs = AsyncJob.query.all()
+        assert all([not job.failed for job in async_jobs])
 
         super().test_check_bots(bots)

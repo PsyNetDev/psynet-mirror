@@ -1,0 +1,1 @@
+PsyNet now removes any username, password or access token from the Git `origin` URL (for example `https://user:token@gitlab.com/...`) before storing it in deployment records, status files and exports, or showing it in `psynet` error messages.

@@ -1,0 +1,1 @@
+Added `fail_participants_below_min_size` parameters to groupers, allowing experiments to release participants to continue the experiment when a group drops below `min_group_size` instead of failing them by default.

@@ -1,9 +1,7 @@
 import logging
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import time
 import warnings
 from functools import cached_property
@@ -14,6 +12,7 @@ import dallinger.pytest_dallinger
 import pexpect
 import pexpect.exceptions
 import pytest
+import requests
 import sqlalchemy.exc
 from dallinger import db, pytest_dallinger
 from dallinger.bots import BotBase
@@ -34,20 +33,36 @@ from psynet.participant import Participant
 
 from . import artifact as psynet_artifact
 from . import asset as psynet_asset
+from . import data as _psynet_data  # noqa: F401  # patches dallinger.db.init_db
 from .command_line import (
     clean_sys_modules,
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
-    working_directory,
+    kill_psynet_worker_processes,
+    stop_local_debug_process,
 )
-from .data import init_db
 from .experiment import get_experiment, import_local_experiment
+from .experiment_scaffold import (
+    scaffold_missing_files,
+)
+from .isolated_environment import check_no_debug_server
 from .modular_page import ModularPage, PushButtonControl
 from .redis import redis_vars
-from .test_helpers.mock_s3 import get_artifact_storage_s3_test_client
+from .test_helpers.mock_s3 import (
+    get_mock_s3_client,
+    get_mock_s3_resource,
+)
+from .testing.chrome_driver import create_psynet_chrome_driver
+from .testing.locks import experiment_directory_lock
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from .utils import clear_all_caches, wait_until
+from .utils import (
+    clear_all_caches,
+    is_in_repo_experiment,
+    is_release_branch,
+    wait_until,
+    working_directory,
+)
 
 logger = logging.getLogger(__file__)
 warnings.filterwarnings("ignore", category=sqlalchemy.exc.SAWarning)
@@ -56,8 +71,17 @@ ci_only = pytest.mark.skipif(
     os.environ.get("CI") is None, reason="This test only runs in CI environment"
 )
 
+# Bound the bot's final worker-status request so a wedged server surfaces as a
+# clear teardown error well before pytest-timeout kills the whole test.
+WORKER_STATUS_TIMEOUT_SEC = 30
+
 local_only = pytest.mark.skipif(
     os.environ.get("CI") is not None, reason="This test only runs in local environment"
+)
+
+release_branch_only = pytest.mark.skipif(
+    not is_release_branch(),
+    reason="This test only runs on release branches",
 )
 
 
@@ -92,12 +116,26 @@ def assert_text(driver, element_id, value):
 
 
 @pytest.fixture
-def artifact_storage_s3_test_root(tmp_path, monkeypatch):
-    root = str(tmp_path / "psynet-artifact-storage-s3-test")
-    client = get_artifact_storage_s3_test_client(root)
+def mock_s3_root(tmp_path, monkeypatch):
+    """
+    Configure the filesystem-backed S3 mock for PsyNet tests.
+
+    This fixture monkeypatches current-process S3 helpers and sets
+    ``PSYNET_MOCK_S3_ROOT``, so child processes such as ``psynet prepare`` use
+    the same mock too. It verifies storage/export behavior, not public HTTP
+    access to generated S3 URLs.
+    """
+    root = tmp_path / "psynet-mock-s3"
+    client = get_mock_s3_client(str(root))
+    resource = get_mock_s3_resource(str(root))
+
+    monkeypatch.setenv("PSYNET_MOCK_S3_ROOT", str(root))
     monkeypatch.setattr(psynet_asset, "get_s3_client", lambda: client)
+    monkeypatch.setattr(psynet_asset, "get_s3_resource", lambda: resource)
+    monkeypatch.setattr(psynet_asset, "get_s3_bucket", resource.Bucket)
     monkeypatch.setattr(psynet_artifact, "get_s3_client", lambda: client)
     psynet_asset.list_files_in_s3_bucket__cached.cache_clear()
+
     try:
         client.create_bucket(Bucket="psynet-tests")
         yield root
@@ -113,7 +151,7 @@ def bot_class(headless=None):
 
     class PYTEST_BOT_CLASS(BotBase):
         def sign_up(self):
-            """Accept HIT, give consent and start experiment.
+            """Accept the assignment, give consent, and start the experiment.
 
             This uses Selenium to click through buttons on the ad,
             consent, and instruction pages.
@@ -209,25 +247,45 @@ def bot_class(headless=None):
                 logger.error("Error during experiment sign off.")
                 return False
 
+        def complete_experiment(self, status):
+            """Finalize the session over HTTP rather than in the browser.
+
+            Dallinger navigates the browser to ``/worker_complete``. PsyNet's
+            exit flow already calls that route from the participant page, so by
+            the time the bot fixture runs this step the browser is displaying
+            the recruiter exit page and the navigation only repeats an
+            idempotent request. A browser that is still settling that exit
+            redirect can leave the navigation unfinished, which also blocks the
+            ``driver.quit()`` that follows until the whole test times out.
+            """
+            if not self.participant_id:
+                raise ValueError(
+                    "bot.participant_id is not set. Cannot complete experiment."
+                )
+            parts = parse.urlparse(self.URL)
+            url = f"{parts.scheme}://{parts.netloc}/{status}"
+            # /worker_complete accepts POST, matching psynet.js; /worker_failed
+            # is registered for GET only.
+            method = "POST" if status == "worker_complete" else "GET"
+            response = requests.request(
+                method,
+                url,
+                params={"participant_id": self.participant_id},
+                timeout=WORKER_STATUS_TIMEOUT_SEC,
+            )
+            if not response.ok:
+                logger.error(
+                    "Bot %s %s for participant %s returned HTTP %s.",
+                    method,
+                    url,
+                    self.participant_id,
+                    response.status_code,
+                )
+            return response
+
         @cached_property
         def driver(self):
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-
-            chrome_options = Options()
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--no-sandbox")
-
-            user_data_dir = tempfile.mkdtemp(prefix="psynet-chrome-")
-            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-
-            if headless:
-                chrome_options.add_argument("--headless")
-
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.set_window_size(1024, 768)
-
-            return driver
+            return create_psynet_chrome_driver(headless=headless)
 
     return PYTEST_BOT_CLASS
 
@@ -236,38 +294,83 @@ def page_loaded(driver):
     return driver.execute_script("return document.readyState == 'complete'")
 
 
-def psynet_loaded(driver):
-    psynet_loaded = driver.execute_script(
-        "try { return psynet != undefined } catch(e) { if (e instanceof ReferenceError) { return false }}"
+def psynet_page_ready(driver):
+    """Return whether the current PsyNet page lifecycle is ready."""
+    return driver.execute_script(
+        """
+        const psynet = window.psynet;
+        if (!psynet || psynet.nextPagePending === true) {
+            return false;
+        }
+        // New in-place timeline pages expose an explicit lifecycle readiness
+        // flag. The DOM marker confirms that the swapped fragment has updated
+        // the visible page body, and pageUuid is needed for transition checks.
+        if (typeof psynet.pageReady !== "undefined") {
+            return psynet.pageReady === true &&
+                document.querySelector("#main-body[data-page-ready]") !== null &&
+                typeof window.pageUuid !== "undefined";
+        }
+        // Legacy full-page loads do not define pageReady; pageLoaded is the
+        // older PsyNet lifecycle signal. Keep this fallback until those tests
+        // move fully to the in-place timeline contract.
+        return psynet.pageLoaded === true &&
+            typeof window.pageUuid !== "undefined";
+        """
     )
-    if psynet_loaded:
-        page_loaded = driver.execute_script("return psynet.pageLoaded")
-        if page_loaded:
-            response_enabled = driver.execute_script(
-                "return psynet.trial.events.responseEnable.happened"
-            )
-            if response_enabled:
-                return True
-    return False
+
+
+def psynet_loaded(driver):
+    """Backward-compatible alias for page lifecycle readiness."""
+    return psynet_page_ready(driver)
 
 
 def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0):
     def get_uuid():
-        return driver.execute_script("return pageUuid")
+        return driver.execute_script("return window.pageUuid")
 
-    def click_button():
-        button = driver.find_element(by, button_identifier)
-        button.click()
+    def find_button():
+        return driver.find_element(by, button_identifier)
+
+    def target_ready_to_click():
+        try:
+            button = find_button()
+        except NoSuchElementException:
+            return False
+        return button.is_displayed() and button.is_enabled()
 
     wait_until(
-        psynet_loaded,
+        psynet_page_ready,
         max_wait=max_wait,
         error_message="Page never became ready.",
         driver=driver,
     )
+    wait_until(
+        target_ready_to_click,
+        max_wait=max_wait,
+        error_message=f"Button {button_identifier!r} never became ready to click.",
+    )
 
     old_uuid = get_uuid()
-    click_button()
+    button = find_button()
+    # In-flow footers sit after the page content. Scrolling to the document
+    # bottom can cover the target with the footer; bring the control itself
+    # into view instead.
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        el.scrollIntoView({block: 'center', inline: 'nearest'});
+        const y = el.getBoundingClientRect().top + window.pageYOffset
+            - (window.innerHeight / 2);
+        window.scrollTo(0, Math.max(0, y));
+        document.documentElement.scrollTop = Math.max(0, y);
+        document.body.scrollTop = Math.max(0, y);
+        """,
+        button,
+    )
+    try:
+        button.click()
+    except ElementClickInterceptedException:
+        driver.execute_script("arguments[0].click();", button)
     if finished:
         wait_until(
             lambda: "recruiter-exit" in driver.current_url,
@@ -275,13 +378,13 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
             error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
         )
     else:
-        if driver.current_url == "http://localhost:5000/error-page":
+        if parse.urlparse(driver.current_url).path == "/error-page":
             raise RuntimeError(
                 "Unexpectedly hit an error page, check the server logs for details."
             )
 
         wait_until(
-            lambda: psynet_loaded(driver) and get_uuid() != old_uuid,
+            lambda: psynet_page_ready(driver) and get_uuid() != old_uuid,
             max_wait=max_wait,
             error_message="Failed to load new page.",
         )
@@ -334,10 +437,36 @@ def in_experiment_directory(experiment_directory):
         )
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
-    with working_directory(experiment_directory):
-        yield experiment_directory
+    cleanup_error = None
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+    ):
+        check_no_debug_server(experiment_directory)
+        try:
+            with scaffold_missing_files():
+                # In-repo demos/tests use PsyNet's shared development .venv, so
+                # skip Dallinger's constraints regeneration. Standalone temp
+                # experiment dirs still need the env override when constraints
+                # are absent.
+                original_skip_dependency_check = os.getenv("SKIP_DEPENDENCY_CHECK")
+                if is_in_repo_experiment() or not Path("constraints.txt").exists():
+                    os.environ["SKIP_DEPENDENCY_CHECK"] = "1"
+                try:
+                    yield experiment_directory
+                finally:
+                    if original_skip_dependency_check is None:
+                        os.environ.pop("SKIP_DEPENDENCY_CHECK", None)
+                    else:
+                        os.environ["SKIP_DEPENDENCY_CHECK"] = (
+                            original_skip_dependency_check
+                        )
+        except Exception as exc:
+            cleanup_error = exc
     clean_sys_modules()
     clear_all_caches()
+    if cleanup_error is not None:
+        raise cleanup_error
 
 
 @pytest.fixture(scope="class")
@@ -356,14 +485,12 @@ def skip_constraints_check():
 
 @pytest.fixture(scope="class")
 def clear_workers():
+    """Stop leftover local servers that use this test run's database."""
+
     def _zap():
-        kills = [["pkill", "-f", "heroku"]]
-        for kill in kills:
-            try:
-                subprocess.check_call(kill)
-            except Exception as e:
-                if e.returncode != 1:
-                    raise
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
+        kill_psynet_worker_processes()
 
     _zap()
     yield
@@ -407,10 +534,9 @@ def debug_experiment(
     use PsyNet debug instead. Note that we use legacy mode for now.
     """
     print(f"Launching experiment in directory '{in_experiment_directory}'...")
-    init_db(drop_all=True)
+    # db_session already reset the database for this test class. Brief pause so
+    # any lingering teardown from the previous class can finish before launch.
     time.sleep(0.5)
-    kill_psynet_chrome_processes()
-    kill_chromedriver_processes()
 
     timeout = 60
 
@@ -419,6 +545,10 @@ def debug_experiment(
     config = get_config()
     if not config.ready:
         config.load()
+
+    # Browser cleanup matches this run's base_port, so config must be loaded.
+    kill_psynet_chrome_processes()
+    kill_chromedriver_processes()
 
     p = pexpect.spawn(
         "psynet",
@@ -444,21 +574,38 @@ def debug_experiment(
 
         yield p
     finally:
+        # Wait for the server (and orphaned workers) to fully stop before the
+        # next test class resets the database; a short Ctrl-C + log flush is
+        # not enough and can leave backends holding locks during drop_all.
         try:
-            flush_output(p, timeout=0.1)
-            p.sendcontrol("c")
-            flush_output(p, timeout=3)
-            # Why do we need to call flush_output twice? Good question.
-            # Something about calling p.sendcontrol("c") seems to disrupt the log.
-            # Better to call it both before and after.
-        except (IOError, pexpect.exceptions.EOF):
-            pass
-        kill_psynet_chrome_processes()
-        kill_chromedriver_processes()
-        clear_all_caches()
+            stop_debug_experiment_process(p)
+        finally:
+            kill_psynet_chrome_processes()
+            kill_chromedriver_processes()
+            clear_all_caches()
 
 
 dallinger.pytest_dallinger.debug_experiment = debug_experiment
+
+
+def stop_debug_experiment_process(process):
+    """Flush logs best-effort, then always stop the debug process and workers."""
+    if getattr(process, "closed", False):
+        return
+
+    try:
+        flush_output(process, timeout=0.1)
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
+        logger.warning("Error while flushing debug experiment output: %s", err)
+    except Exception:
+        logger.exception("Unexpected error while flushing debug experiment output")
+
+    try:
+        stop_local_debug_process(process)
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
+        logger.warning("Error while stopping the debug experiment process: %s", err)
+    except Exception:
+        logger.exception("Unexpected error while stopping the debug experiment process")
 
 
 @pytest.fixture(scope="class")
@@ -471,6 +618,77 @@ def debug_server_process(debug_experiment):
     return debug_experiment
 
 
+def terminate_other_postgres_connections():
+    """
+    Terminate other backends of the current role connected to the test database.
+
+    Used only as a deadlock-retry backstop: the primary mitigation is waiting
+    for the previous experiment server to fully stop in ``debug_experiment``
+    teardown. If a rare leftover session still holds locks during ``drop_all``,
+    terminating those backends clears them before the next attempt.
+
+    Only backends owned by the current database role are targeted: terminating
+    other roles' backends would require extra privileges (raising
+    ``InsufficientPrivilege`` otherwise) and could kill sessions unrelated to
+    the test run, such as a developer's ``psql`` shell.
+
+    Closes local sessions and disposes the engine's connection pool first, so
+    that this process's own idle pooled connections are not terminated out
+    from under it. Connections checked out elsewhere in the process would
+    still be terminated, so this must only run when no other component holds
+    a database connection (as is the case at the test-setup call sites).
+    """
+    from .db import (
+        TERMINATE_OTHER_DATABASE_CLIENTS_SQL,
+        release_local_database_connections,
+    )
+
+    release_local_database_connections()
+    with db.engine.connect() as con:
+        con.execute(TERMINATE_OTHER_DATABASE_CLIENTS_SQL)
+
+
+# Postgres SQLSTATE code for "deadlock detected"; matching on the code rather
+# than the error message keeps detection independent of the server's locale.
+DEADLOCK_PGCODE = "40P01"
+
+
+def _is_deadlock_error(err):
+    """Check whether a SQLAlchemy error wraps a Postgres deadlock."""
+    return getattr(err.orig, "pgcode", None) == DEADLOCK_PGCODE
+
+
+def init_db_with_retries(max_attempts=3, wait_sec=2.0):
+    """
+    Reset the database for a test, retrying if a deadlock is detected.
+
+    The primary mitigation for between-test deadlocks is waiting for the
+    previous experiment server to fully stop in ``debug_experiment`` teardown.
+    On deadlock, terminate leftover same-role backends and retry; that
+    termination is intentionally not done on the happy path.
+
+    Calls ``dallinger.db.init_db``, which is PsyNet's patched version
+    (``psynet.data`` is imported by this module for that side effect). That
+    wrapper closes sessions before ``drop_all``.
+    """
+    import dallinger.db
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return dallinger.db.init_db(drop_all=True)
+        except sqlalchemy.exc.OperationalError as err:
+            if not _is_deadlock_error(err) or attempt == max_attempts:
+                raise
+            logger.warning(
+                "Deadlock detected while resetting the database "
+                "(attempt %d/%d); terminating leftover connections and retrying...",
+                attempt,
+                max_attempts,
+            )
+            terminate_other_postgres_connections()
+            time.sleep(wait_sec)
+
+
 @pytest.fixture(scope="class")
 def db_session(in_experiment_directory):
     import dallinger.db
@@ -478,7 +696,7 @@ def db_session(in_experiment_directory):
     # The drop_all call can hang without this; see:
     # https://stackoverflow.com/questions/13882407/sqlalchemy-blocked-on-dropping-tables
     dallinger.db.session.close()
-    session = dallinger.db.init_db(drop_all=True)
+    session = init_db_with_retries()
     yield session
     session.rollback()
     session.close()
@@ -675,7 +893,6 @@ trial_maker_1 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,
@@ -692,7 +909,6 @@ trial_maker_2 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,
@@ -795,7 +1011,7 @@ def _debug_click_interception(driver, element):
 
 
 @pytest.fixture(params=["local", "s3"])
-def artifact_storage(request, tmp_path, artifact_storage_s3_test_root):
+def artifact_storage(request, tmp_path, mock_s3_root):
     if request.param == "local":
         yield LocalArtifactStorage(str(tmp_path))
     elif request.param == "s3":

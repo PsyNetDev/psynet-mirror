@@ -1,0 +1,20 @@
+{
+    "version": 1,
+    "project": "psynet",
+    "project_url": "https://gitlab.com/PsyNetDev/PsyNet",
+    "repo": ".",
+    "branches": ["master"],
+    "environment_type": "virtualenv",
+    "pythons": ["3.14"],
+    "matrix": {},
+    "build_command": [
+        "python -m pip wheel --no-deps --wheel-dir {build_cache_dir} {build_dir}"
+    ],
+    "install_command": [
+        "in-dir={env_dir} python -m pip install '{build_dir}[experiment,demos]'"
+    ],
+    "benchmark_dir": "benchmarks",
+    "env_dir": ".asv/env",
+    "results_dir": ".asv/results",
+    "html_dir": ".asv/html"
+}

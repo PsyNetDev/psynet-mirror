@@ -33,16 +33,18 @@ def test_skip_hidden_directories():
         # Verify no entries from hidden directory
         for entry in entries:
             for occurrence_path, _ in entry.occurrences:
-                assert (
-                    ".hidden_venv" not in occurrence_path
-                ), "Should not extract from hidden directories"
+                assert ".hidden_venv" not in occurrence_path, (
+                    "Should not extract from hidden directories"
+                )
 
 
 def test_skip_common_venv_names():
     """Test that common virtual environment directory names are skipped."""
     venv_names = ["venv", ".venv", "env", ".env"]
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    # Include "env" in the temporary root name to ensure only relative directory
+    # components are checked below.
+    with tempfile.TemporaryDirectory(prefix="env") as tmpdir:
         # Create a normal Python file
         normal_file = Path(tmpdir) / "experiment.py"
         normal_file.write_text('_("normal translation")\n')
@@ -61,15 +63,14 @@ def test_skip_common_venv_names():
         # Verify no entries from venv directories
         for entry in entries:
             for occurrence_path, _ in entry.occurrences:
-                for venv_name in venv_names:
-                    assert (
-                        venv_name not in occurrence_path
-                    ), f"Should not extract from {venv_name} directory"
+                relative_path = Path(occurrence_path).relative_to(tmpdir)
+                occurrence_dirs = relative_path.parts[:-1]
+                assert not set(venv_names).intersection(occurrence_dirs)
 
 
 def test_skip_ide_and_build_directories():
     """Test that IDE and build directories are skipped."""
-    skip_dirs = ["__pycache__", ".vscode", ".github", "node_modules"]
+    skip_dirs = ["__pycache__", ".vscode", ".github", "node_modules", "docs_text"]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a normal Python file
@@ -91,9 +92,9 @@ def test_skip_ide_and_build_directories():
         for entry in entries:
             for occurrence_path, _ in entry.occurrences:
                 for skip_dir in skip_dirs:
-                    assert (
-                        skip_dir not in occurrence_path
-                    ), f"Should not extract from {skip_dir} directory"
+                    assert skip_dir not in occurrence_path, (
+                        f"Should not extract from {skip_dir} directory"
+                    )
 
 
 def test_normal_directories_still_processed():
@@ -123,9 +124,9 @@ def test_normal_directories_still_processed():
                 all_paths.append(occurrence_path)
 
         assert any("main.py" in p for p in all_paths), "Should extract from main.py"
-        assert any(
-            "sub.py" in p for p in all_paths
-        ), "Should extract from submodule/sub.py"
+        assert any("sub.py" in p for p in all_paths), (
+            "Should extract from submodule/sub.py"
+        )
 
 
 def test_performance_with_large_venv():

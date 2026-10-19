@@ -1,0 +1,12 @@
+{
+  "name": "psynet-playwright-tests",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  },
+  "scripts": {
+    "playwright:test": "playwright test",
+    "playwright:ui": "playwright test --ui",
+    "playwright:install": "playwright install chromium"
+  }
+}

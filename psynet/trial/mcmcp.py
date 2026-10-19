@@ -1,9 +1,6 @@
-# pylint: disable=unused-argument,abstract-method
-
 import random
 from collections import Counter
 
-from ..field import extra_var
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 
 
@@ -33,8 +30,6 @@ class MCMCPTrial(ChainTrial):
         This definition corresponds to a setting
         of the chain's free parameters.
     """
-
-    __extra_vars__ = ChainTrial.__extra_vars__.copy()
 
     def make_definition(self, experiment, participant):
         """
@@ -73,12 +68,10 @@ class MCMCPTrial(ChainTrial):
         return definition
 
     @property
-    @extra_var(__extra_vars__)
     def first_stimulus(self):
         return self.definition["ordered"][0]["value"]
 
     @property
-    @extra_var(__extra_vars__)
     def second_stimulus(self):
         return self.definition["ordered"][1]["value"]
 
@@ -130,7 +123,7 @@ class MCMCPNode(ChainNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment
@@ -158,9 +151,6 @@ class MCMCPNode(ChainNode):
             "proposal": self.get_proposal(seed, experiment, participant),
         }
 
-    def create_initial_seed(self, experiment, participant):
-        raise NotImplementedError
-
 
 class MCMCPTrialMaker(ChainTrialMaker):
     """
@@ -178,7 +168,6 @@ class MCMCPTrialMaker(ChainTrialMaker):
         * The role of the chosen stimulus (``"current_state"`` or ``"proposal"``);
         * The value of the parameters underlying the chosen stimulus.
         """
-        # pylint: disable=unused-argument,no-self-use
         position = int(answer)
         answer = {
             "position": position,

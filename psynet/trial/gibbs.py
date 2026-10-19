@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 import random
 from statistics import mean, median
 
@@ -8,7 +6,6 @@ from sqlalchemy.orm import declared_attr, deferred
 
 from psynet.field import _PythonList
 
-from ..field import extra_var
 from ..utils import get_logger
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 
@@ -71,8 +68,6 @@ class GibbsTrial(ChainTrial):
         The updated vector after the participant has responded.
     """
 
-    __extra_vars__ = ChainTrial.__extra_vars__.copy()
-
     resample_free_parameter = True
 
     def choose_reverse_scale(self):
@@ -126,27 +121,22 @@ class GibbsTrial(ChainTrial):
         return definition
 
     @property
-    @extra_var(__extra_vars__)
     def initial_vector(self):
         return self.definition["vector"]
 
     @property
-    @extra_var(__extra_vars__)
     def initial_index(self):
         return self.definition["initial_index"]
 
     @property
-    @extra_var(__extra_vars__)
     def active_index(self):
         return self.definition["active_index"]
 
     @property
-    @extra_var(__extra_vars__)
     def reverse_scale(self):
         return self.definition["reverse_scale"]
 
     @property
-    @extra_var(__extra_vars__)
     def updated_vector(self):
         if self.answer is None:
             return None
@@ -275,7 +265,7 @@ class GibbsNode(ChainNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment

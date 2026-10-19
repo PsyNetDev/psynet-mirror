@@ -1,0 +1,1 @@
+Fixed experiment-audit notebook previews so executed notebooks between 100 KB and 10 MB still appear in the Analysis panel, and stopped ``init`` from writing ``source_path`` values that ``validate`` would reject.

@@ -1,4 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
 import random
 from typing import Union
 
@@ -51,6 +50,9 @@ class ColorText(Control):
 
     def get_bot_response(self, experiment, bot, page, prompt):
         return "Hello, I am a bot!"
+
+    def get_js_page_modules(self):
+        return ["/static/color-text.js"]
 
 
 video_slider_media_spec = MediaSpec()

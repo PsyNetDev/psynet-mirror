@@ -1,0 +1,1 @@
+Polished `psynet audit` UX: readiness score card, validate-before-render (with `--allow-invalid`), `mark-present`, clearer starter/validate messaging, and source_path defaults for audits inside the experiment directory.

@@ -22,9 +22,9 @@ F_STRING_PATTERN = "{(.+?)}"
 
 def variable_name_check(variable_name):
     """Check if a variable name is uppercase and only contains underscores and capital letters."""
-    assert all(
-        [letter.isupper() or letter == "_" for letter in variable_name]
-    ), f'Variable name "{variable_name}" must be uppercase and may only contain of underscore and capital letters.'
+    assert all([letter.isupper() or letter == "_" for letter in variable_name]), (
+        f'Variable name "{variable_name}" must be uppercase and may only contain of underscore and capital letters.'
+    )
 
 
 def get_translations(namespace, locales_dir, locales):
@@ -95,9 +95,9 @@ def assert_no_missing_translations(po_entries, pot_entries, locale):
         ]
         raise IndexError(f"Missing translations for {locale} (see above)")
 
-    assert all(
-        [key in po_entries for key in pot_entries.keys()]
-    ), f"Keys in {locale} do not match keys in the template"
+    assert all([key in po_entries for key in pot_entries.keys()]), (
+        f"Keys in {locale} do not match keys in the template"
+    )
 
 
 def assert_no_empty_translations(po_entries, pot_entries, locale, language_name):

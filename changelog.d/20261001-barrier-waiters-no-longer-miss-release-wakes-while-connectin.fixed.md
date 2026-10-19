@@ -1,0 +1,1 @@
+Fixed a race where a participant waiting at a barrier could miss its release if the barrier released while the wait page's WebSocket was still connecting, and was then failed for timing out even though the barrier had already released them.

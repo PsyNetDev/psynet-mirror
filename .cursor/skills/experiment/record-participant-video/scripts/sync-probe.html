@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Audio/video sync probe</title>
+<!--
+  Flashes the whole window white and plays a 1 kHz beep through Web Audio
+  at the same moment, once per second. measure-latency.cjs records this page
+  and compares flash and beep onsets in the resulting MP4.
+
+  Query parameters:
+    seconds        Total probe duration (default 20).
+    navigateAfter  Reload into a new document after this many seconds, to
+                   check that segments from separate page loads line up.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #888; font: 20px sans-serif; }
+  #flash { position: fixed; inset: 0; background: #fff; display: none; }
+  #status { position: fixed; left: 20px; bottom: 20px; }
+</style>
+</head>
+<body>
+<div id="flash"></div>
+<div id="status">starting</div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const seconds = Number(params.get("seconds") || 20);
+  const navigateAfter = Number(params.get("navigateAfter") || 0);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const context = new AudioContext();
+
+  function flashAndBeep() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        const flash = document.getElementById("flash");
+        flash.style.display = "block";
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.frequency.value = 1000;
+        gain.gain.value = 0.5;
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.1);
+        setTimeout(() => {
+          flash.style.display = "none";
+          resolve();
+        }, 100);
+      });
+    });
+  }
+
+  (async () => {
+    await context.resume();
+    await sleep(700);
+    const start = performance.now();
+    let n = 0;
+    while (performance.now() - start < seconds * 1000) {
+      if (navigateAfter && performance.now() - start >= navigateAfter * 1000) {
+        const remaining = Math.max(1, seconds - navigateAfter);
+        location.href = `${location.pathname}?seconds=${remaining}`;
+        return;
+      }
+      document.getElementById("status").textContent = `probe ${++n}`;
+      await flashAndBeep();
+      await sleep(900);
+    }
+    document.getElementById("status").textContent = "done";
+    window.probeDone = true;
+  })();
+</script>
+</body>
+</html>

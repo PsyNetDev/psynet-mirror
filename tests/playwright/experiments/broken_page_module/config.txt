@@ -1,0 +1,10 @@
+[Config]
+title = Broken page module bootstrap test
+description = Test experiment for full-page managed JavaScript load failures.
+contact_email_on_error = test@example.com
+organization_name = PsyNet
+
+recruiter = generic
+currency = $
+wage_per_hour = 12.0
+inplace_timeline_transitions = true

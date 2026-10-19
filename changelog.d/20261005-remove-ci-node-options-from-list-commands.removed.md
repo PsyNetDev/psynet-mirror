@@ -1,0 +1,1 @@
+Removed the `--ci-node-total` and `--ci-node-index` options from `psynet list-experiment-dirs` and `psynet list-isolated-tests`, together with the matching arguments of `psynet.utils.list_experiment_dirs()` and `psynet.utils.list_isolated_tests()`. CI now shards tests by recorded duration with `psynet dev ci run-tests`.

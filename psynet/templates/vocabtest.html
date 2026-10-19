@@ -15,7 +15,7 @@
     </div>
     </div>
 </div>
-<script src="/static/scripts/fitty.min.js"></script>
+<script src="{{ url_for('static', filename='scripts/fitty.min.js') }}"></script>
 <script>
     $.fn.extend({
         disableSelection: function () {
@@ -93,6 +93,7 @@
                 test.trialCount = 1;
                 test.allowRevisitingItems = test._options.allowRevisitingItems;
                 test.finished = false;
+                test.timeOut = null;
 
                 ['trueLabelStyle', 'falseLabelStyle'].forEach(function (key) {
                     if (test._options[key] === undefined) {
@@ -144,8 +145,8 @@
 
                 if (test._options.useKeyboard) {
                     var availableKeys = [test._options.trueKey, test._options.falseKey];
-                    $(document).on("keypress", function (e) {
-                        var key = e.originalEvent.code;
+                    psynet.addPageEventListener(document, "keypress", function (e) {
+                        var key = e.code;
 
                         if (availableKeys.includes(key)) {
                             if (key === test._options.trueKey) {
@@ -157,6 +158,24 @@
                     });
                 }
                 test.showTrial();
+            };
+
+            VocabTest.prototype.clearTimer = function () {
+                if (this.timeOut !== null) {
+                    clearTimeout(this.timeOut);
+                    this.timeOut = null;
+                }
+            };
+
+            VocabTest.prototype.setTimer = function (callback, delay) {
+                this.clearTimer();
+                this.timeOut = psynet.trial.setTimer(callback, delay);
+            };
+
+            VocabTest.prototype.cleanup = function () {
+                this.finished = true;
+                this.clearTimer();
+                $('#' + this._options.containerID).empty();
             };
 
 
@@ -198,7 +217,7 @@
                     fitty('#test-stimulus', {maxSize: 80});
                 }
                 test.startTrialTime = performance.now();
-                test.timeOut = setTimeout(function () {
+                test.setTimer(function () {
                     stimulusContainer.html();
                     stimulusContainer.text('…');
                 }, test._options.displayTime);
@@ -207,6 +226,7 @@
             VocabTest.prototype.finish = function () {
                 var test = this;
                 test.finished = true;
+                test.clearTimer();
                 var container = $('#' + test._options.containerID);
                 container.empty();
                 console.debug('Test took ' + performance.now() - test.startTime);
@@ -217,10 +237,10 @@
             VocabTest.prototype.nextTrial = function (answer) {
                 var test = this;
                 var timeTaken = performance.now() - test.startTrialTime;
-                clearTimeout(test.timeOut);
+                test.clearTimer();
 
                 if (!test.finished) {
-                    test.timeOut = setTimeout(function () {
+                    test.setTimer(function () {
                         test.currentItem.answer = answer;
                         test.currentItem.timeTaken = timeTaken;
                         test.history.push(test.currentItem);
@@ -240,22 +260,22 @@
 
 
     var test = new VocabTest({
-        items: items,
+        items: psynet.var.items,
         containerID: 'test',
-        displayTime: testConfig.displayTime,
-        trueKey: testConfig.trueKey,
-        trueKeyLabel: testConfig.trueKeyLabel,
-        falseKey: testConfig.falseKey,
-        falseKeyLabel: testConfig.falseKeyLabel,
-        trueLabelTemplate: testConfig.trueLabelTemplate,
-        falseLabelTemplate: testConfig.falseLabelTemplate,
-        pressKeyLabelTemplate: testConfig.pressKeyLabelTemplate,
-        lagBetweenTrials: testConfig.lagBetweenTrials,
-        showButtons: testConfig.showButtons,
-        useKeyboard: testConfig.useKeyboard,
-        maxWidth: testConfig.imageWidth,
-        maxHeigth: testConfig.imageHeight,
-        presentAsImage: testConfig.presentAsImage,
+        displayTime: psynet.var.testConfig.displayTime,
+        trueKey: psynet.var.testConfig.trueKey,
+        trueKeyLabel: psynet.var.testConfig.trueKeyLabel,
+        falseKey: psynet.var.testConfig.falseKey,
+        falseKeyLabel: psynet.var.testConfig.falseKeyLabel,
+        trueLabelTemplate: psynet.var.testConfig.trueLabelTemplate,
+        falseLabelTemplate: psynet.var.testConfig.falseLabelTemplate,
+        pressKeyLabelTemplate: psynet.var.testConfig.pressKeyLabelTemplate,
+        lagBetweenTrials: psynet.var.testConfig.lagBetweenTrials,
+        showButtons: psynet.var.testConfig.showButtons,
+        useKeyboard: psynet.var.testConfig.useKeyboard,
+        maxWidth: psynet.var.testConfig.imageWidth,
+        maxHeigth: psynet.var.testConfig.imageHeight,
+        presentAsImage: psynet.var.testConfig.presentAsImage,
 
         onEnd: function (test) {
             psynet.nextPage(test.history);
@@ -264,6 +284,10 @@
 
     psynet.trial.onEvent("submitEnable", function () {
         test.start();
+    });
+
+    psynet.addPageCleanupCallback(function () {
+        test.cleanup();
     });
 </script>
 {% endblock %}

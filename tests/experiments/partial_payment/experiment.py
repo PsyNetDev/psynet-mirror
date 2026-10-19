@@ -1,7 +1,8 @@
 """
-This experiment tests different routes of participant payment in PsyNet, specifically focusing on:
+This experiment tests different routes of participant payment in PsyNet,
+specifically focusing on:
 1. Full payment with bonus (approved participants)
-2. Partial payment for screened-out participants
+2. Partial payment for failed participants who contact the experimenter
 3. Partial payment for returned assignments
 
 Payment Routes:
@@ -12,7 +13,7 @@ Payment Routes:
    - Total: £4.50
    - Route: Completes full experiment
 
-2. Screened-out Participants (ID=2):
+2. Manual partial payment Participants (ID=2):
    - Partial payment: ~£0.17-0.18 (based on time spent)
    - No bonus
    - Route: Fails at prescreener stage
@@ -25,8 +26,6 @@ Payment Routes:
 The experiment uses participant.var to track the route taken through the timeline,
 which is then verified in the test_check_bot method.
 """
-
-# pylint: disable=unused-import,abstract-method,unused-argument
 
 import psynet.experiment
 from psynet.bot import Bot
@@ -45,7 +44,12 @@ class Exp(psynet.experiment.Experiment):
     config = {
         "prolific_workspace": "test_workspace",
         "prolific_project": "test_project",
-        "prolific_enable_screen_out": True,
+        "prolific_enable_return_for_bonus": False,
+        # This experiment tests the manual/returned partial-payment routes,
+        # so disable the (default-on) automatic screen-out payment, which
+        # would otherwise require `prolific_screen_out_slots` and reroute
+        # failed participants through the UNSUCCESSFUL completion code.
+        "prolific_pay_unsuccessful": False,
     }
 
     test_n_bots = 3
@@ -76,7 +80,9 @@ class Exp(psynet.experiment.Experiment):
             lambda participant: participant.id == 2,
             logic_if_true=[
                 CodeBlock(
-                    lambda participant: participant.var.set("route", "screened_out")
+                    lambda participant: participant.var.set(
+                        "route", "manual_partial_payment"
+                    )
                 ),
                 UnsuccessfulEndPage(),
             ],
@@ -87,7 +93,7 @@ class Exp(psynet.experiment.Experiment):
             logic_if_true=[
                 CodeBlock(
                     lambda participant: participant.var.set(
-                        "route", "returned_and_screened_out"
+                        "route", "returned_partial_payment"
                     )
                 ),
                 UnsuccessfulEndPage(),
@@ -107,12 +113,12 @@ class Exp(psynet.experiment.Experiment):
         route = bot.var.get("route")
 
         if bot.id == 1:
-            assert (
-                route == "bonus_awarded"
-            ), f"Expected route 'bonus_awarded', got '{route}'"
-            assert (
-                bot.status == "approved"
-            ), f"Expected status for bot ID {bot.id} to be 'approved', but got '{bot.status}'"
+            assert route == "bonus_awarded", (
+                f"Expected route 'bonus_awarded', got '{route}'"
+            )
+            assert bot.status == "approved", (
+                f"Expected status for bot ID {bot.id} to be 'approved', but got '{bot.status}'"
+            )
             # Ensure the status is committed and refresh the bot object to get the latest status
             from psynet.experiment import db
 
@@ -121,36 +127,41 @@ class Exp(psynet.experiment.Experiment):
 
             assert self.base_payment == 1.0
 
-            assert (
-                self.bonus(bot) == BONUS
-            ), f"Expected bonus for bot ID {bot.id} to be 3.5, but got {self.bonus(bot)} (status: {bot.status}, time_reward: {bot.time_reward}, performance_reward: {bot.performance_reward}, bot.bonus: {bot.bonus})"
+            decision = bot.recruiter.decide_payment(bot, experiment=self)
+            assert decision.bonus == BONUS, (
+                f"Expected bonus for bot ID {bot.id} to be 3.5, but got {decision.bonus} (status: {bot.status}, time_reward: {bot.time_reward}, performance_reward: {bot.performance_reward}, bot.bonus: {bot.bonus})"
+            )
         elif bot.id == 2:
-            assert (
-                route == "screened_out"
-            ), f"Expected route 'screened_out', got '{route}'"
-            assert (
-                bot.status == "screened_out"
-            ), f"Expected status for bot ID {bot.id} to be 'screened_out', but got '{bot.status}'"
-            assert self.bonus(bot) in (
+            assert route == "manual_partial_payment", (
+                f"Expected route 'manual_partial_payment', got '{route}'"
+            )
+            assert bot.failed, f"Expected bot ID {bot.id} to be marked as failed."
+            assert bot.calculate_reward() in (
                 0.17,
                 0.18,
-            ), f"Expected bonus for bot ID {bot.id} to be either 0.17 or 0.18, but got {self.bonus(bot)}"
+            ), (
+                f"Expected accumulated reward for bot ID {bot.id} to be either "
+                f"0.17 or 0.18, but got {bot.calculate_reward()}"
+            )
         elif bot.id == 3:
-            assert (
-                route == "returned_and_screened_out"
-            ), f"Expected route 'returned_and_screened_out', got '{route}'"
+            assert route == "returned_partial_payment", (
+                f"Expected route 'returned_partial_payment', got '{route}'"
+            )
             # Simulate the participant returning their assignment
             self.assignment_returned(bot)
             # Explicitly set the status to "returned" for testing
             # In a real Prolific environment, this would be set by run_recruiter_checks scheduled_task
             bot.status = "returned"
             bot.failed = True
-            assert (
-                bot.status == "returned"
-            ), f"Expected status for bot ID {bot.id} to be 'returned', but got '{bot.status}'"
-            assert self.bonus(bot) in (
+            assert bot.status == "returned", (
+                f"Expected status for bot ID {bot.id} to be 'returned', but got '{bot.status}'"
+            )
+            decision = bot.recruiter.decide_payment(bot, experiment=self)
+            assert decision.bonus in (
                 0.17,
                 0.18,
-            ), f"Expected bonus for bot ID {bot.id} to be either 0.17 or 0.18, but got {self.bonus(bot)}"
+            ), (
+                f"Expected bonus for bot ID {bot.id} to be either 0.17 or 0.18, but got {decision.bonus}"
+            )
         else:
             raise ValueError(f"Unexpected bot id: {bot.id}")

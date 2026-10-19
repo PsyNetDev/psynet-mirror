@@ -60,10 +60,10 @@ def get_timeline():
 
 
 all_assets = {
-    "bier": asset("local_only/bier.wav", cache=True),
-    "file-concatenated": asset("local_only/file_concatenated.mp3", cache=True),
-    "funk-game-loop": asset("local_only/funk-game-loop.mp3", cache=True),
-    "train-1": asset("local_only/train1.wav", cache=True),
+    "bier": asset("local_only/bier.wav"),
+    "file-concatenated": asset("local_only/file_concatenated.mp3"),
+    "funk-game-loop": asset("local_only/funk-game-loop.mp3"),
+    "train-1": asset("local_only/train1.wav"),
 }
 
 example_js_synth_1 = ModularPage(
@@ -118,13 +118,17 @@ example_js_synth_3 = ModularPage(
     events={
         "playMelody": Event(
             is_triggered_by="sliderChange",
-            js="stimulus.notes[1].pitches = [info.outputValue]; psynet.trial.restart();",
+            js=(
+                "psynet.getJsSynthState().stimulus.notes[1].pitches = "
+                "[info.outputValue]; psynet.trial.restart();"
+            ),
         ),
         "disableSlider": Event(
-            is_triggered_by="promptStart", js="slider.disabled = true;"
+            is_triggered_by="promptStart",
+            js="psynet.page.control.slider.disable(true);",
         ),
         "enableSlider": Event(
-            is_triggered_by="promptEnd", js="slider.disabled = false;"
+            is_triggered_by="promptEnd", js="psynet.page.control.slider.enable(true);"
         ),
     },
 )
@@ -183,22 +187,24 @@ example_preloading = PageMaker(
             of your browser.
             Note how the buttons only become enabled once the audio has finished loading.
         </p>
-        <ul>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.bier.play();">Play 'bier'.</button></li>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.bier.stop();">Stop 'bier'.</button></li>
-        </ul>
-        <ul>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.funk_game_loop.play();">Play 'funk_game_loop'.</button></li>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.funk_game_loop.stop();">Stop 'funk_game_loop'.</button></li>
-        </ul>
-        <ul>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.honey_bee.play();">Play 'honey_bee'.</button></li>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.honey_bee.stop();">Stop 'honey_bee'.</button></li>
-        </ul>
-        <ul>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.there_it_is.play();">Play 'there_it_is'.</button></li>
-            <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.there_it_is.stop();">Stop 'there_it_is'.</button></li>
-        </ul>
+        <div id="audio-preloading-controls">
+            <ul>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.bier.play();">Play 'bier'.</button></li>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.bier.stop();">Stop 'bier'.</button></li>
+            </ul>
+            <ul>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.funk_game_loop.play();">Play 'funk_game_loop'.</button></li>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.funk_game_loop.stop();">Stop 'funk_game_loop'.</button></li>
+            </ul>
+            <ul>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.honey_bee.play();">Play 'honey_bee'.</button></li>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.honey_bee.stop();">Stop 'honey_bee'.</button></li>
+            </ul>
+            <ul>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.there_it_is.play();">Play 'there_it_is'.</button></li>
+                <li> <button type="button" class="btn btn-primary wait-for-media-load" onclick="psynet.audio.there_it_is.stop();">Stop 'there_it_is'.</button></li>
+            </ul>
+        </div>
         """
         ),
         media=MediaSpec(
@@ -211,13 +217,7 @@ example_preloading = PageMaker(
                 },
             }
         ),
-        css=[
-            """
-        .btn {
-            margin: 2px
-        }
-        """
-        ],
+        css_links=["/static/audio-preloading.css"],
     ),
     time_estimate=5,
 )
@@ -516,6 +516,11 @@ example_record_audio_video = join(
         ),
         time_estimate=5,
     ),
+    wait_while(
+        lambda participant: not participant.assets["video_record_page"].deposited,
+        expected_wait=5.0,
+        log_message="Waiting for the recording to finish uploading",
+    ),
     PageMaker(
         lambda participant: ModularPage(
             "playback",
@@ -532,16 +537,3 @@ example_record_audio_video = join(
 
 class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
-
-    @property
-    def ad_requirements(self):
-        return super().ad_requirements + [
-            'You must be wearing <span style="font-weight: bold;">headphones</span> and sitting in a quiet place.'
-        ]
-
-    @property
-    def ad_payment_information(self):
-        return (
-            super().ad_payment_information
-            + '<br>Send us your <span style="font-weight: bold;">bank account information</span> to receive refunds.'
-        )

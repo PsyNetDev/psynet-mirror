@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import traceback
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -14,6 +15,7 @@ from typing import Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import Session as SASession
 
 _AUTO_PROFILER = None
@@ -516,6 +518,31 @@ def assert_query_count(
 
 
 @contextmanager
+def count_orm_loads() -> Iterable[Counter]:
+    """
+    Count ORM objects loaded from the database within a block, by class name.
+
+    Query counts miss work that grows with the number of rows a query
+    returns; the number of loaded objects captures it, independent of timing.
+
+    Yields
+    ------
+    collections.Counter
+        Mapping from class name to the number of objects loaded.
+    """
+    loads = Counter()
+
+    def on_load(target, context):
+        loads[type(target).__name__] += 1
+
+    event.listen(Mapper, "load", on_load)
+    try:
+        yield loads
+    finally:
+        event.remove(Mapper, "load", on_load)
+
+
+@contextmanager
 def assert_query_duration(
     max_total_duration_ms: Optional[float] = None,
     *,
@@ -629,6 +656,7 @@ def maybe_enable_sqlalchemy_profiling(
     min_duration_ms = float(options.get("min_ms", 0.0))
     top_n = int(options.get("top_n", 20))
     capture_stack = _parse_bool(options.get("stack", "0"))
+    stack_depth = int(options.get("stack_depth", 6))
     normalize_sql = _parse_bool(options.get("normalize", "1"))
     max_statement_chars = options.get("max_statement_chars")
     if max_statement_chars is not None:
@@ -636,6 +664,7 @@ def maybe_enable_sqlalchemy_profiling(
     profiler = SQLAlchemyQueryProfiler(
         engine,
         capture_stack=capture_stack,
+        stack_depth=stack_depth,
         min_duration_ms=min_duration_ms,
         normalize_sql=normalize_sql,
         max_statement_chars=max_statement_chars,
@@ -1130,7 +1159,7 @@ def format_aggregated_html(
         </tr>
       </thead>
       <tbody>
-        {''.join(rows) if rows else '<tr><td colspan="6">No queries captured.</td></tr>'}
+        {"".join(rows) if rows else '<tr><td colspan="6">No queries captured.</td></tr>'}
       </tbody>
     </table>
   </div>
@@ -1149,7 +1178,7 @@ def format_aggregated_html(
         </tr>
       </thead>
       <tbody>
-        {''.join(commit_rows) if commit_rows else '<tr><td colspan="6">No commits captured.</td></tr>'}
+        {"".join(commit_rows) if commit_rows else '<tr><td colspan="6">No commits captured.</td></tr>'}
       </tbody>
     </table>
   </div>

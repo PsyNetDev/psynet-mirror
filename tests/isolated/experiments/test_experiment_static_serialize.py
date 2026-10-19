@@ -8,11 +8,13 @@ from psynet.experiment import import_local_experiment
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.serialize import (
     PsyNetUnpickler,
+    SerializedCallable,
     prepare_function_for_serialization,
     serialize,
     unserialize,
 )
 from psynet.trial.static import StaticNode, StaticTrial
+from psynet.utils import call_function_with_context
 
 
 @pytest.mark.parametrize(
@@ -193,6 +195,10 @@ class MyClass2:
         return cls.x + y
 
 
+def return_experiment(experiment=None):
+    return experiment
+
+
 def test_serialize_class_method():
     obj = MyClass2()
     method = obj.add
@@ -207,3 +213,10 @@ def test_serialize_class_method():
     method_unserialized = unserialize(method_serialized)
 
     assert method_unserialized(4) == 7
+
+
+def test_serialized_callable_receives_context_arguments():
+    serialized = SerializedCallable(function=return_experiment, arguments={})
+    experiment = object()
+
+    assert call_function_with_context(serialized, experiment=experiment) is experiment

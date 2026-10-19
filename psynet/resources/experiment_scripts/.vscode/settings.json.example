@@ -6,13 +6,13 @@
 // (consider propagating any changes there)
 {
     "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
             "source.organizeImports": "explicit"
         }
     },
-    "isort.args": ["--profile", "black"],
     "sqltools.connections": [
         {
             "ssh": "Disabled",

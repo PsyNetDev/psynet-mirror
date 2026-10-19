@@ -429,6 +429,11 @@ msgstr ""
 "যদি তেনেকুৱা হয়, অনুগ্ৰহ কৰি সমস্যাটো বৰ্ণনা কৰি কিছু শব্দ প্ৰদান কৰক."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "সমাপ্ত কৰক"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

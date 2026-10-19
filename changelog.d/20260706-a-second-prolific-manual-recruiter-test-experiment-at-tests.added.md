@@ -1,0 +1,1 @@
+Added a second deployment-test experiment at `tests/deployment/audio_gibbs` (an audio Gibbs sampler exercising audio synthesis, assets, async workers, and the approved cultural-foundation consent). It defaults to HotAir, while a full deployment test runs its Prolific and Lucid variants alongside the payment-flow test.

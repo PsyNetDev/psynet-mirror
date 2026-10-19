@@ -1,9 +1,9 @@
-psynet@git+https://gitlab.com/PsyNetDev/PsyNet@master#egg=psynet
+psynet
 
 # Alternatively, you can use one of the following syntaxes to specify a custom PsyNet version
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
-# psynet@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.4.0#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet
+# psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet
 
 music21==9.1.0
-sing4me@git+https://gitlab.com/computational-audition/sing4me@a5ffff0feba95e0836bc2a7808b02ad3c78ac5ac#egg=sing4me
+sing4me==2.0.0

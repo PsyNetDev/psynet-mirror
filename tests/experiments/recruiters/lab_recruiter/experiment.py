@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument
-
 import psynet.experiment
 from psynet.consent import MainConsent
 from psynet.page import InfoPage

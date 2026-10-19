@@ -2,15 +2,16 @@
 
 
 {% block stylesheets %}
-    <link rel="stylesheet" href="/static/css/consent.css"/>
+    {{ super() }}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/consent.css') }}"/>
 {% endblock %}
 
 {% block main_body %}
-  <div class="main-div" style="padding-bottom: 100px;">
+  <div class="main-div">
 
     <h1>{{ pgettext("consent-title", "Research Participant Consent Form") }}</h1>
     <hr>
-    <div class="text-justify">
+    <div class="consent-body">
         <div class="text-left" style="font-size:18px">
           <h2>{{ pgettext("consent", "Title of study:") }} {{experiment_title}}</h2>
           <p>

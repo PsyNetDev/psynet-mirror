@@ -1,0 +1,1 @@
+Deprecated the ``js_links`` and ``scripts`` Page arguments in favor of ``js_dependencies``, ``js_page_code``, and ``js_page_modules``. Pages that still use the deprecated arguments keep classic script semantics and force a full page reload.

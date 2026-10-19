@@ -1,18 +1,11 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.6
     hooks:
-      - id: black
-        args: [--target-version, py310]
-        language_version: python3
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
         types: [python]
         files: ^(tests|psynet|demos|docs)/
-  - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
-    hooks:
-      - id: isort
-        args: ["--profile", "black", "--filter-files"]
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.2
-    hooks:
-    - id: flake8
+      - id: ruff-format
+        types: [python]
+        files: ^(tests|psynet|demos|docs)/

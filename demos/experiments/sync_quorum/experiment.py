@@ -78,8 +78,10 @@ class Exp(psynet.experiment.Experiment):
                 logic=join(
                     conditional(
                         "check_quorate",
-                        condition=lambda participant: participant.sync_group.n_active_participants
-                        >= participant.sync_group.min_group_size,
+                        condition=lambda participant: (
+                            participant.sync_group.n_active_participants
+                            >= participant.sync_group.min_group_size
+                        ),
                         logic_if_true=PageMaker(
                             lambda participant: InfoPage(
                                 f"We are now quorate. There are {participant.sync_group.n_active_participants - 1} other participants present."

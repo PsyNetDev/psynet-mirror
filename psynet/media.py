@@ -1,3 +1,10 @@
+"""Media helpers for experiments.
+
+This module covers two related jobs: serving pregenerated files from the
+experiment ``static/`` directory, and lower-level audio/S3 utilities
+(batch packing, WAV recoding, bucket setup).
+"""
+
 import json
 import os
 import shutil
@@ -5,9 +12,11 @@ import struct
 import tempfile
 import wave
 from functools import cache
+from pathlib import Path
+from typing import Union
+from urllib.parse import quote
 
 import boto3
-from botocore.config import Config
 from dallinger.config import get_config
 
 from .utils import get_logger
@@ -15,7 +24,49 @@ from .utils import get_logger
 logger = get_logger()
 
 
+def static_url_for(
+    path: Union[str, Path],
+    *,
+    experiment_root: Union[str, Path, None] = None,
+) -> str:
+    """Return the public ``/static/...`` URL for a file under ``static/``.
+
+    Parameters
+    ----------
+    path
+        File path, absolute or relative to the experiment directory.
+    experiment_root
+        Experiment directory. Defaults to the current working directory.
+    """
+    # Containment is checked lexically: ``psynet debug local`` serves from a
+    # develop directory whose ``static/`` entries are symlinks to the experiment.
+    root = Path(os.path.abspath(experiment_root or Path.cwd()))
+    static_root = Path(os.path.normpath(root / "static"))
+    candidate = Path(os.path.normpath(root / path))
+    try:
+        relative = candidate.relative_to(static_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"{candidate} is not inside {static_root}. Put pregenerated media in "
+            "static/ so it can be served as /static/..., or register the file "
+            "as a PsyNet asset if it is generated or lives outside the experiment."
+        ) from exc
+    return "/static/" + quote(relative.as_posix())
+
+
 def make_batch_file(in_files, output_path):
+    """
+    Concatenate files into a single batch file, each prefixed by its 4-byte size.
+
+    Use :func:`unpack_batch_file` to split the batch again.
+
+    Parameters
+    ----------
+    in_files : list of str
+        Paths of the files to pack, in order.
+    output_path : str
+        Path of the batch file to write.
+    """
     with open(output_path, "wb") as output:
         for in_file in in_files:
             b = os.path.getsize(in_file)
@@ -77,50 +128,45 @@ def get_aws_credentials(capitalize=False):
     return cred
 
 
-def get_s3_endpoint_url():
-    """
-    Get the custom S3 endpoint URL, if configured.
-
-    This reads `PSYNET_S3_ENDPOINT_URL` from the environment. When set, PsyNet
-    will direct boto3 to use the specified S3-compatible endpoint (for example
-    Moto, LocalStack, or MinIO) instead of AWS. This is useful for CI or local
-    testing where real S3 access is not desired.
-    """
-    return os.environ.get("PSYNET_S3_ENDPOINT_URL")
-
-
-def get_s3_client_kwargs():
-    """
-    Build boto3 client/resource kwargs for custom S3 endpoints.
-
-    Returns an empty dict when no custom endpoint is configured. When a custom
-    endpoint is set, this includes `endpoint_url` and path-style addressing,
-    which improves compatibility with S3 emulators.
-    """
-    endpoint_url = get_s3_endpoint_url()
-    if not endpoint_url:
-        return {}
-    return {
-        "endpoint_url": endpoint_url,
-        "config": Config(s3={"addressing_style": "path"}),
-    }
-
-
 def get_s3_client():
-    return boto3.client("s3", **get_aws_credentials(), **get_s3_client_kwargs())
+    from psynet.test_helpers.mock_s3 import get_configured_mock_s3_client
+
+    mock_client = get_configured_mock_s3_client()
+    if mock_client is not None:
+        return mock_client
+
+    return boto3.client("s3", **get_aws_credentials())
 
 
 def get_s3_resource():
-    return boto3.resource("s3", **get_aws_credentials(), **get_s3_client_kwargs())
+    from psynet.test_helpers.mock_s3 import get_configured_mock_s3_resource
+
+    mock_resource = get_configured_mock_s3_resource()
+    if mock_resource is not None:
+        return mock_resource
+
+    return boto3.resource("s3", **get_aws_credentials())
 
 
 def get_s3_bucket(bucket_name: str):
-    # pylint: disable=no-member
     resource = get_s3_resource()
     return resource.Bucket(bucket_name)
 
 
 def setup_bucket_for_presigned_urls(bucket_name, public_read=False):
+    """
+    Configure an S3 bucket so browsers can GET and PUT objects through presigned URLs.
+
+    Replaces the bucket's CORS rules. Typically run from a
+    :class:`~psynet.timeline.PreDeployRoutine`.
+
+    Parameters
+    ----------
+    bucket_name : str
+        Name of the S3 bucket.
+    public_read : bool
+        Also add a bucket policy allowing public reads of all objects.
+    """
     logger.info("Setting bucket CORSRules and policies...")
 
     s3_resource = get_s3_resource()

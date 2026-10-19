@@ -1,0 +1,30 @@
+<div id="chatroom-header">
+    <h4 id="chatroom-room-label"></h4>
+    <div id="chatroom-meta">
+        <span>
+            <span id="participant-count">0</span> participant<span id="participant-count-plural">s</span>
+        </span>
+        <button id="leave-btn" class="btn btn-secondary btn-sm">Leave chat</button>
+    </div>
+</div>
+
+<div id="chatroom-layout">
+    <div id="chatroom-sidebar">
+        <h6>Participants</h6>
+        <ul id="chatroom-participants"></ul>
+    </div>
+
+    <div id="chatroom-main">
+        <div id="chatroom-messages"></div>
+        <div id="chatroom-input-row">
+            <input
+                type="text"
+                id="chat-input"
+                class="form-control"
+                placeholder="Type a message…"
+                autocomplete="off"
+            />
+            <button id="send-btn" class="btn btn-primary">Send</button>
+        </div>
+    </div>
+</div>

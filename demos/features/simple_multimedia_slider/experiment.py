@@ -59,24 +59,6 @@ def new_example(description, **kwargs):
         <p>
             Just played <strong id="slider-audio">NA</strong>
         </p>
-        <script>
-            update_value = function() {
-                document.getElementById("slider-audio").innerHTML = slider.audio;
-                document.getElementById("slider-raw-value").innerHTML = parseFloat(slider.getAttribute("raw-value")).toFixed(2);
-                document.getElementById("slider-output-value").innerHTML = parseFloat(slider.getAttribute("output-value")).toFixed(2);
-                document.getElementById("phase").innerHTML = parseFloat(slider.getAttribute("phase")).toFixed(2);
-                document.getElementById("random-wrap").innerHTML = slider.getAttribute("random-wrap");
-            };
-            psynet.trial.onEvent("trialConstruct", () => setInterval(update_value, 100));
-
-        </script>
-        <style>
-        .video {
-            width:256px;
-            height: 256px;
-            margin: 20px auto;
-        }
-        </style>
         """
     prompt = Markup(prompt)
     time_estimate = kwargs.pop("time_estimate")
@@ -89,6 +71,16 @@ def new_example(description, **kwargs):
             control=MediaSliderControl(slider_media=slider_media, **kwargs),
             media=media,
             time_estimate=time_estimate,
+            js_page_modules=["/static/slider-debug.js"],
+            css=[
+                """
+                .video {
+                    width: 256px;
+                    height: 256px;
+                    margin: 20px auto;
+                }
+                """
+            ],
         ),
         DebugResponsePage(),
     )

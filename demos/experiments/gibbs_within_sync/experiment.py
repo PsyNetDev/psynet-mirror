@@ -64,6 +64,8 @@ class ColorSliderPage(ModularPage):
                 bot_response=lambda: random.randint(0, 255),
             ),
             time_estimate=time_estimate,
+            css_links=["/static/color-slider.css"],
+            js_page_modules=["/static/color-slider.js"],
         )
 
 
@@ -148,6 +150,8 @@ trial_maker = GibbsTrialMaker(
     # such that no nodes are 'contaminated' by the failed trial. This is often desirable,
     # but if we want to make maximum use of participant trials, we can set propagate_failure=False.
     propagate_failure=False,
+    wait_for_networks=True,
+    sync_group_wait_content="Waiting for more people to join your group",
 )
 
 
@@ -180,6 +184,7 @@ class Exp(psynet.experiment.Experiment):
             initial_group_size=3,
             join_existing_groups=True,
             join_criterion=is_group_joinable,
+            content="Waiting for more people to join your group",
         ),
         trial_maker,
     )
@@ -187,16 +192,13 @@ class Exp(psynet.experiment.Experiment):
     test_n_bots = 4
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        from psynet.page import WaitPage
-
         original_bots = bots[:3]
 
         for bot in original_bots:
             assert bot.get_current_page().content == "Welcome to the experiment!"
             bot.take_page()
-            assert isinstance(bot.get_current_page(), WaitPage)
 
-        # Send the first three bots into the trial maker
+        # The last arriver skips the grouper hold; refresh drivers off that page.
         advance_past_wait_pages(original_bots)
 
         # Trial 1 (degree = 0)
@@ -204,11 +206,10 @@ class Exp(psynet.experiment.Experiment):
             page = bot.get_current_page()
             assert page.label == "color_trial"
             bot.take_page(response=response)
-            assert isinstance(bot.get_current_page(), WaitPage)
 
         # Going now to the next trial;
         # Trial 2 (degree = 1)
-        advance_past_wait_pages(original_bots)
+        advance_past_wait_pages(original_bots, max_iterations=30)
 
         # Check that the trials have been aggregated appropriately
         page = bots[0].get_current_page()
@@ -233,8 +234,8 @@ class Exp(psynet.experiment.Experiment):
 
         # Now the participant should be waiting at the prepare_trial barrier.
         # The other two bots need to finish the previous trial before this new trial can begin
-        assert isinstance(new_bot.get_current_page(), WaitPage)
-        assert "prepare_trial" in new_bot.active_barriers
+        assert new_bot.get_current_page().is_timeline_hold
+        assert trial_maker.with_namespace("prepare_trial") in new_bot.active_barriers
 
         # Let's have them finish the trial, then
         for bot in [bots[1], bots[2]]:
@@ -250,7 +251,7 @@ class Exp(psynet.experiment.Experiment):
         # Trial 3 (degree = 2)
         bots = [bots[1], bots[2], new_bot]
 
-        advance_past_wait_pages(bots)
+        advance_past_wait_pages(bots, max_iterations=30)
 
         for bot in bots:
             assert bot.current_trial is not None
@@ -267,20 +268,20 @@ class Exp(psynet.experiment.Experiment):
         for remaining_nodes in range(2):
             for bot in bots:
                 page = bot.get_current_page()
-                assert isinstance(
-                    page, InfoPage
-                ), f"Bot {bot.id} unexpectedly saw {page} instead of an InfoPage, on remaining_nodes = {remaining_nodes}."
+                assert isinstance(page, InfoPage), (
+                    f"Bot {bot.id} unexpectedly saw {page} instead of an InfoPage, on remaining_nodes = {remaining_nodes}."
+                )
                 bot.take_page()
 
                 page = bot.get_current_page()
                 assert page.label == "color_trial"
                 bot.take_page()
-            advance_past_wait_pages(bots)
+            advance_past_wait_pages(bots, max_iterations=30)
 
         for bot in bots:
             page = bot.get_current_page()
             text = as_plain_text(page.prompt.text)
-            assert "That's the end of the experiment!" in text
+            assert "That's the end!" in text
 
     def test_check_bot(self, bot: Bot, **kwargs):
         assert not bot.failed or bot.failed_reason == "simulated_failure"
@@ -293,7 +294,7 @@ class Exp(psynet.experiment.Experiment):
 
     #     n_bots = Bot.query.filter_by(status="working").count()
     #     if is_experiment_launched() and n_bots < 3:  # allow only fixed number of bots
-    #         WorkerAsyncProcess(
+    #         WorkerAsyncJob(
     #             function=get_experiment().run_bot, arguments={"time_factor": 0.9}
-    #         )
+    #         ).enqueue()
     #         db.session.commit()

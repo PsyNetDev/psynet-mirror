@@ -297,13 +297,13 @@ def translate_po(
 ):
     # Add yaspin spinner here
     language_dict = get_language_dict("en")
-    assert (
-        target_lang in language_dict
-    ), f"Language {target_lang} not found in language_dict"
+    assert target_lang in language_dict, (
+        f"Language {target_lang} not found in language_dict"
+    )
     target_language = language_dict[target_lang]
-    assert (
-        target_lang != "en"
-    ), "English is the source language, so doesn't need translation."
+    assert target_lang != "en", (
+        "English is the source language, so doesn't need translation."
+    )
     bold_language = bold(f"{target_language} ({target_lang})")
     with yaspin() as spinner:
         now = time.time()

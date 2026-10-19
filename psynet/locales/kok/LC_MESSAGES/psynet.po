@@ -427,6 +427,11 @@ msgid "If so, please provide a few words describing the problem."
 msgstr "Zai, tarkhachem sang."
 
 #: psynet/end.py
+#, fuzzy
+msgid "Finish"
+msgstr "समाप्त"
+
+#: psynet/end.py
 #, fuzzy, python-brace-format
 msgctxt "final-page-rewards"
 msgid ""

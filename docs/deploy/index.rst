@@ -1,17 +1,11 @@
-Deploying
-=========
+Deploying experiments
+=====================
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
-   web_servers
-   aws_automatic_provisioning
-   aws_server_setup
-   physical_server_setup
-   ssh_server
-   heroku_server
-   deploy_from_archive
-   data
-   deployment_monitor
-   errors
-   troubleshooting
+   how_deployment_works
+   setting_up_a_server
+   running_a_study
+   recruiters/index
+   reference/index

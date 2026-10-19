@@ -2,10 +2,4 @@
 
     <textarea id="text-input" type="text" class="form-control" style="background-color: {{ params.color }}; margin-bottom: 40px;"></textarea>
 
-    <script>
-        psynet.stageResponse = function() {
-            psynet.response.staged.rawAnswer = document.getElementById('text-input').value;
-        }
-    </script>
-
 {% endmacro %}

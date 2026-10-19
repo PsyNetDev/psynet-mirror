@@ -8,14 +8,16 @@ from markupsafe import Markup
 from repp.config import ConfigUpdater, sms_tapping
 
 with warnings.catch_warnings():
-    # reppextension has a deprecation warning that we don't want to worry about.
+    # repp.extensions.iterated_tapping imports numpy.matlib (used by
+    # randomize_ioi_from_simplex). numpy.matlib emits a
+    # PendingDeprecationWarning at import time, which PsyNet's pytest
+    # setup escalates to an error.
     warnings.filterwarnings(
         "ignore",
         message=r"Importing from numpy\.matlib is deprecated.*",
         category=PendingDeprecationWarning,
-        module="reppextension",
     )
-    from reppextension.iterated_tapping import (
+    from repp.extensions.iterated_tapping import (
         REPPAnalysisItapMemory,
         REPPStimulusItapMemory,
     )
@@ -251,7 +253,6 @@ class Exp(psynet.experiment.Experiment):
             chains_per_participant=CHAINS_PER_PARTICIPANT,  # set to None if chain_type="across"
             chains_per_experiment=None,  # set to None if chain_type="within"
             trials_per_node=1,
-            balance_across_chains=False,
             check_performance_at_end=False,
             check_performance_every_trial=False,
             propagate_failure=False,

@@ -23,17 +23,16 @@ from psynet.utils import get_logger
 
 logger = get_logger()
 
-
 # def make_js_fade_string(fade_duration):
 #     return "{fade_in: %s, fade_out: %s}" % (fade_duration, fade_duration)
 
 
 all_assets = {
-    "flower": asset("local_only/flower.mp4", cache=True),
-    "birds": asset("local_only/birds.mp4", cache=True),
-    "funk-game-loop": asset("local_only/funk-game-loop.mp3", cache=True),
-    "sync-test-video": asset("local_only/video-sync-test.mp4", cache=True),
-    "sync-test-audio": asset("local_only/video-sync-test.wav", cache=True),
+    "flower": asset("local_only/flower.mp4"),
+    "birds": asset("local_only/birds.mp4"),
+    "funk-game-loop": asset("local_only/funk-game-loop.mp3"),
+    "sync-test-video": asset("local_only/video-sync-test.mp4"),
+    "sync-test-audio": asset("local_only/video-sync-test.wav"),
 }
 
 
@@ -194,7 +193,7 @@ video_pages = join(
                 "playSoundtrack": Event(
                     is_triggered_by="promptStart",
                     delay=0.0,
-                    js="psynet.audio.soundtrack.play(fade_in: 0.5, fade_out: 0.5)",
+                    js="psynet.audio.soundtrack.play({fade_in: 0.5, fade_out: 0.5})",
                 ),
                 "stopSoundtrack": Event(
                     is_triggered_by="promptStart",
@@ -222,9 +221,11 @@ video_pages = join(
         progress_display=ProgressDisplay([ProgressStage(time=5.0)]),
     ),
     wait_while(
-        lambda participant: not (
-            participant.assets["video_record_page_camera"].deposited
-            and participant.assets["video_record_page_screen"].deposited
+        lambda participant: (
+            not (
+                participant.assets["video_record_page_camera"].deposited
+                and participant.assets["video_record_page_screen"].deposited
+            )
         ),
         expected_wait=5.0,
         log_message="Waiting for video recordings to be deposited",

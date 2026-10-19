@@ -243,7 +243,7 @@ class InstrumentTimbre(Timbre):
     sampler is provided a note-to-sample dictionary which it then uses to synthesize tones for any
     required pitch. This is done by pitch-shifting the nearest pitch sample in the dictionary to the
     desired value, allowing for continuous pitch manipulation.
-    For specific implementation details, see (https://github.com/Tonejs/Tone.js/blob/c313bc6/Tone/instrument/Sampler.ts#L297).
+    For specific implementation details, see (https://github.com/Tonejs/Tone.js/blob/c313bc6/Tone/instrument/Sampler.ts).
 
     Parameters
     ----------
@@ -489,9 +489,9 @@ class JSSynth(BaseAudioPrompt):
 
         if uses_panning:
             for t in timbre.values():
-                assert isinstance(
-                    t, ADSRTimbre
-                ), "Currently panning is only supported for ADSR timbres"
+                assert isinstance(t, ADSRTimbre), (
+                    "Currently panning is only supported for ADSR timbres"
+                )
 
         options = dict(
             max_num_pitches=0,

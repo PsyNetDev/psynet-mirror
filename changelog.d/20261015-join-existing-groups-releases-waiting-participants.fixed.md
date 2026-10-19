@@ -1,0 +1,1 @@
+Fixed `SimpleGrouper(join_existing_groups=True)` leaving participants waiting until they timed out while an existing group still had room, for example after a burst of arrivals that was not a multiple of `initial_group_size`: participants already waiting now join such a group on the next barrier check. Closed groups and groups with no active members are no longer joined.

@@ -2,12 +2,14 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Hatchling rejects git/URL dependencies unless this is set. Keep it so
+# temporary Dallinger (or other) git pins can be published as local wheels.
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [project]
 name = "psynet"
-version = "13.2.0a0"
+version = "14.0.0a0"
 authors = [
   {name="Peter Harrison", email="pmch2@cam.ac.uk"},
   {name="Frank Höger", email="frank.hoeger@ae.mpg.de"},
@@ -22,22 +24,43 @@ license = {file = "LICENSE"}
 description = "PsyNet – complex psychological experiments made easy"  # A framework for running advanced psychological experiments
 keywords = ["psychology", "experiments", "online", "networks"]
 readme = "README.md"
-requires-python = ">=3.10"  # recommended Python version: 3.13
+requires-python = ">=3.11"  # recommended Python version: 3.14
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.10",
     "Framework :: Flask",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX",
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Science/Research",
 ]
 
+# Minimal core: only what is needed to run bootstrap commands
+# (psynet setup, psynet scripts …, psynet services …, psynet generate-constraints).
+# Service probes and version checks avoid psycopg2 / redis / yaspin so core stays
+# free of experiment runtime packages; those arrive via psynet[experiment].
+# Experiment authors need psynet[experiment] (installed automatically by `psynet setup`).
 dependencies = [
+    "click",
+    "packaging",
+]
+
+[project.optional-dependencies]
+# Full experiment runtime.  Contains everything that was previously in the
+# unconditional `dependencies` list.  Install with:
+#   pip install psynet[experiment]
+# or (recommended) let `psynet setup` install it via constraints.txt.
+# PsyNet source/docs installs should prefer the ``dev`` extra, which includes
+# this runtime.
+experiment = [
     "babel",
-    "dallinger[docker]>=12.1.2,<13",
+    # TODO: Replace this Git pin with a released dallinger[docker] version once
+    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout) and
+    # #10087 (no croniter at worker start-up) are on PyPI. The SHA is a commit
+    # on Dallinger master that includes them.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@406f3c147354477fc11d1247403b65577c7a349f",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
@@ -47,7 +70,6 @@ dependencies = [
     "joblib",
     "jsonpickle",
     "pandas",
-    "paramiko",
     "polib",
     "progress",
     "pytest",
@@ -55,51 +77,66 @@ dependencies = [
     "pytest-mock",
     "pytest-timeout",
     "python-gettext",
+    "rich>=13",
     "rpdb",
     "slack_sdk",  # For Slack notifications
+    "tabulate",
     "tenacity",
     "tomlkit",
     "tqdm",
     "yaspin",
     "arabic-reshaper",  # Used by VocabTest
-    "pillow"  # Used by VocabTest
+    "pillow",  # Used by VocabTest
+    # Experiment audit render/validate (shipped with experiment runtime)
+    "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
+    "pygments>=2.20.0",
 ]
-
-[project.optional-dependencies]
+# PsyNet source development and docs: runtime plus tooling.
+# Demo-only packages stay in ``demos`` so docs/CI installs stay lean.
 dev = [
-    "bump-my-version",
-    "pydata-sphinx-theme",
+    "psynet[experiment]",
+    "asv",
+    "beautifulsoup4",
+    "citeproc-py",
     "google-cloud-translate",
-    "isort",
+    "myst-parser",
     "openai",
     "pre-commit",
+    "pydata-sphinx-theme",
+    "pytest-test-groups",
+    "ruff",
     "sphinx",
+    "sphinx-autobuild",
     "sphinx-autodoc-typehints<3.0.0",
     "sphinx-copybutton",
+    "sphinx-design",
     "sphinx-inline-tabs",
-    "beautifulsoup4",
-    "pytest-test-groups",
+    "sphinx-reredirects",
+    "virtualenv",
 ]
 slack = [
     "slack_sdk",
 ]
 demos = [
-    "repp @ git+https://repp:tvKi4cirMxgnuf9s4Vma@gitlab.com/computational-audition/repp",
-    "reppextension @ git+https://reppextension:s_Ux2u-2emzHPK4kVq6g@gitlab.com/computational-audition-lab/repp-technology/reppextension",
-    "sing4me @ git+https://gitlab.com/computational-audition/sing4me",
     "music21",
     "numpy",
     "praat-parselmouth",
+    "psynet-step==0.1.0",
+    "repp-tapping",
     "scipy",
+    "sing4me",
     "soundfile",
     "statsmodels",
 ]
+
+[project.entry-points."psynet.static"]
+psynet = "psynet.static_resources:psynet_static_root"
 
 [project.entry-points.pytest11]
 pytest_psynet = "psynet.pytest_psynet"
 
 [project.scripts]
-psynet = "psynet.command_line:psynet"
+psynet = "psynet.bootstrap_cli:main"
 
 [project.urls]
 Changelog = "https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md"
@@ -108,15 +145,22 @@ Homepage = "https://www.psynet.dev/"
 Issues = "https://gitlab.com/PsyNetDev/PsyNet/-/issues"
 Repository = "https://gitlab.com/PsyNetDev/PsyNet/"
 
+# Built by `psynet dev docs bundle` for `psynet docs`; gitignored, so it must
+# be listed as an artifact to reach the sdist and wheel.
+[tool.hatch.build]
+artifacts = ["/psynet/resources/docs_text"]
+
 [tool.hatch.build.targets.wheel]
 include = ["/psynet"]
+
+[tool.hatch.build.targets.wheel.force-include]
+".cursor/skills/experiment" = "psynet/resources/experiment_scripts/.cursor/skills/psynet"
 
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/.gitlab",
-    "/.postgres_setup.sql",
-    "/.run-ci-tests-locally-v2.sh",
-    "/.run-ci-tests-locally.sh",
+    "/postgres_setup.sql",
+    "/run-ci-tests-locally-v2.sh",
     "/.venv*",
     "/ci",
     "/demos",
@@ -124,19 +168,43 @@ exclude = [
     "/tests",
 ]
 
-[tool.black]
+[tool.pytest.ini_options]
+# Must be loaded with -p, before Dallinger connects; see psynet/isolated_environment.py.
+addopts = "-p psynet.pytest_environment"
+norecursedirs = [
+    "tests/experiments",
+    "tests/isolated",
+    "tests/template_experiment_tests",
+]
+
+[tool.ruff]
 line-length = 88
-target-version = ["py313"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | docs/_build
-  | dist
-)/
-'''
+target-version = "py311"
+builtins = ["_"]
+extend-exclude = [
+    ".cache",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "bin",
+    "build",
+    "dist",
+    "docs/_build",
+    "lib",
+    "src",
+    # Vendored copies of the shared IRB consent modules from
+    # https://gitlab.com/computational-audition-lab/cococo-shared;
+    # kept byte-identical to each other (not linted/formatted here).
+    # They may diverge from upstream when PsyNet needs a local template fix.
+    "tests/deployment/audio_gibbs/consents_cococo",
+    "tests/deployment/auto_recruit_prolific/consents_cococo",
+    "tests/deployment/payment_flows_prolific/consents_cococo",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "E501"]

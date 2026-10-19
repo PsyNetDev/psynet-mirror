@@ -13,7 +13,7 @@ import requests
 from markupsafe import Markup
 from yaspin import yaspin
 
-from psynet.asset import ExperimentAsset
+from psynet.asset import FileAsset
 from psynet.page import InfoPage
 from psynet.timeline import MediaSpec, Page, get_template, join
 from psynet.translation.keyboards import KeyboardPage
@@ -260,6 +260,7 @@ class VocabPage(Page):
             label="vocabtest",
             time_estimate=time_estimate,
             template_str=get_template("vocabtest.html"),
+            framework_owned_template=True,
             js_vars={
                 "items": items,
                 "testConfig": test_config,
@@ -304,6 +305,22 @@ class VocabTrial(StaticTrial):
             "showButtons": self.trial_maker.use_buttons,
             "presentAsImage": self.trial_maker.present_as_image,
         }
+
+    def finalize_definition(self, definition, experiment, participant):
+        previous_trials = [
+            previous
+            for previous in VocabTrial.query.filter_by(
+                trial_maker_id=self.trial_maker_id,
+                participant_id=participant.id,
+            ).all()
+            if previous is not self
+        ]
+        selected_hashes = self.trial_maker.choose_hashes(
+            self.node.seed, previous_trials
+        )
+        assets = self.trial_maker.get_assets(self.node.seed, selected_hashes)
+        self.assets = {**self.assets, **assets}
+        return {**definition, "hashes": selected_hashes}
 
     @property
     def items(self) -> list[dict]:
@@ -374,6 +391,10 @@ class VocabTest(StaticTrialMaker):
     corresponding key on the keyboard or by clicking the corresponding button on the screen. The test is made to work
     with the vocabulary tests created with the VocabTest package by Pol van Rijn
     (https://github.com/polvanrijn/VocabTest).
+
+    VocabTest does not support synchronized groups. Each participant must
+    receive independently chosen items; a follower copy would run
+    ``finalize_definition`` again and pick a different set.
 
     Attributes
     ----------
@@ -466,6 +487,12 @@ class VocabTest(StaticTrialMaker):
         ] = "https://psynet.s3.amazonaws.com/resources/fonts/GoNotoKurrent-Bold.ttf",
         **kwargs,
     ):
+        if kwargs.get("sync_group_type") is not None:
+            raise ValueError(
+                "VocabTest does not support synchronized groups. "
+                "Each participant must receive independently chosen items; "
+                "a follower copy would pick a different item set."
+            )
         self.locale = locale
         self.label = label
 
@@ -478,9 +505,9 @@ class VocabTest(StaticTrialMaker):
         assert performance_check_type in ["accuracy", "consistency"]
         self.performance_check_type = performance_check_type
         if performance_check_type == "consistency":
-            assert (
-                n_repeat_items > 0
-            ), "The number of repeated items must be greater than 0."
+            assert n_repeat_items > 0, (
+                "The number of repeated items must be greater than 0."
+            )
         concatenated_chars = ""
         test_items = []
         with open(csv_path) as f:
@@ -519,9 +546,9 @@ class VocabTest(StaticTrialMaker):
         self.n_items = n_items
         self.n_repeat_items = n_repeat_items
         assert self.n_items % 2 == 0, "The number of items must be even."
-        assert (
-            self.n_repeat_items <= self.n_items
-        ), "The number of repeated items must be less than or equal to the number of items."
+        assert self.n_repeat_items <= self.n_items, (
+            "The number of repeated items must be less than or equal to the number of items."
+        )
         self.show_instructions = show_instructions
         self.show_feedback = show_feedback
         self.hide_after = hide_after
@@ -546,6 +573,7 @@ class VocabTest(StaticTrialMaker):
             recruit_mode=None,
             target_trials_per_node=None,
             target_n_participants=None,
+            sync_group_type=None,
         )
 
     def get_font_path(self, font_url):
@@ -582,9 +610,9 @@ class VocabTest(StaticTrialMaker):
         return use_arabic_script, image_width, image_height, font_size
 
     def select_hashes(self, stimuli, n):
-        assert len({item["hash"] for item in stimuli}) == len(
-            stimuli
-        ), "Duplicate hashes found in input to select_hashes."
+        assert len({item["hash"] for item in stimuli}) == len(stimuli), (
+            "Duplicate hashes found in input to select_hashes."
+        )
         selected_hashes = []
         enough_stimuli = False
         n_visited = sorted({item["n_visited"] for item in stimuli})
@@ -600,15 +628,15 @@ class VocabTest(StaticTrialMaker):
                     enough_stimuli = True
                 else:
                     selected_hashes.extend(available_hashes)
-        assert len(set(selected_hashes)) == len(
-            selected_hashes
-        ), "Duplicates found in output of select_hashes."
+        assert len(set(selected_hashes)) == len(selected_hashes), (
+            "Duplicates found in output of select_hashes."
+        )
         return selected_hashes
 
     def choose_hashes(self, stimuli, previous_trials):
-        assert len({item["hash"] for item in stimuli}) == len(
-            stimuli
-        ), "Duplicate hashes found in input to choose_hashes."
+        assert len({item["hash"] for item in stimuli}) == len(stimuli), (
+            "Duplicate hashes found in input to choose_hashes."
+        )
         visited_hashes = []
         for _trial in previous_trials:
             visited_hashes.extend(_trial.definition["hashes"])
@@ -635,9 +663,9 @@ class VocabTest(StaticTrialMaker):
             + self.select_hashes(incorrect_stimuli, n)
         )
         selected_hashes = random.sample(selected_hashes, n * 2)
-        assert len(set(selected_hashes)) == len(
-            selected_hashes
-        ), "choose_hashes returned duplicate hashes."
+        assert len(set(selected_hashes)) == len(selected_hashes), (
+            "choose_hashes returned duplicate hashes."
+        )
         if self.n_repeat_items > 0:
             selected_hashes = selected_hashes + random.sample(
                 selected_hashes, self.n_repeat_items
@@ -649,8 +677,8 @@ class VocabTest(StaticTrialMaker):
             return {}
         assets = {
             asset.local_key: asset
-            for asset in ExperimentAsset.query.filter(
-                ExperimentAsset.local_key.in_(selected_hashes)
+            for asset in FileAsset.query.filter(
+                FileAsset.local_key.in_(selected_hashes)
             ).all()
         }
 
@@ -678,7 +706,7 @@ class VocabTest(StaticTrialMaker):
                     font_size=self.font_size,
                     font_path=default_test_config["font_path"],
                 )
-                asset = ExperimentAsset(
+                asset = FileAsset(
                     local_key=hash_,
                     input_path=path,
                     extension=".png",
@@ -687,20 +715,6 @@ class VocabTest(StaticTrialMaker):
                 asset.deposit()
                 assets[hash_] = asset
         return assets
-
-    def prepare_trial(self, experiment, participant):
-        previous_trials = VocabTrial.query.filter_by(
-            trial_maker_id=self.id, participant_id=participant.id
-        ).all()
-        trial, trial_status = super().prepare_trial(experiment, participant)
-
-        if trial:
-            stimuli = trial.node.seed
-            selected_hashes = self.choose_hashes(stimuli, previous_trials)
-            trial.definition["hashes"] = selected_hashes
-            assets = self.get_assets(stimuli, selected_hashes)
-            trial.assets = assets
-        return trial, trial_status
 
     @staticmethod
     def score_consistency(items, repeat_items):
@@ -903,7 +917,7 @@ class WikiVocab(VocabTest):
     The WikiVocab test is a vocabulary test that checks the participant's knowledge of words in a given language.
     Make sure you set the `performance_threshold_per_trial` according to your requirements.
 
-    See `VocabTest` for more information.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(
@@ -933,7 +947,7 @@ class BibleVocab(VocabTest):
     Since the quality of the vocabulary test items is less controlled than the WikiVocab test, one can use the
     "consistency" `performance_check_type` instead.
 
-    Make sure you set the `performance_threshold_per_trial` according to your requirements.
+    See :class:`~psynet.prescreen.vocabtest.VocabTest` for the other arguments.
     """
 
     def __init__(

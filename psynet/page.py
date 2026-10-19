@@ -1,26 +1,31 @@
 import warnings
 from importlib import resources
 from math import ceil
+from pathlib import Path
 from pprint import pformat
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
+from urllib.parse import urlparse
 
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 
-from .asset import CachedAsset, ExternalAsset
+from .asset import ExternalAsset, FileAsset
 from .modular_page import AudioPrompt, ModularPage
 from .timeline import (
     CodeBlock,
+    Elt,
     Event,
     Module,
     Page,
     PageMaker,
+    _normalize_js_page_code,
+    conditional,
     get_template,
     join,
     while_loop,
 )
-from .utils import get_logger
+from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
 warnings.simplefilter("always", DeprecationWarning)
@@ -123,6 +128,7 @@ class UnityPage(Page):
 
     dynamically_update_progress_bar_and_reward = True
     is_unity_page = True
+    requires_full_page_reload = True
 
     def __init__(
         self,
@@ -149,6 +155,7 @@ class UnityPage(Page):
             contents=self.contents,
             time_estimate=time_estimate,
             template_str=get_template(template),
+            framework_owned_template=True,
             template_arg={
                 "title": self.title,
                 "resources": "" if self.resources is None else self.resources,
@@ -196,11 +203,24 @@ class WaitPage(Page):
         self.wait_time = wait_time
         if content is not None:
             self.content = content
+        wait_ms = wait_time * 1000
+        wait_ms_literal = f"{wait_ms:g}"
+        wait_timer_code = (
+            'trial.onEvent("pageReady", () => {\n'
+            f"    trial.setTimer(() => psynet.nextPage(), {wait_ms_literal});\n"
+            "});"
+        )
+        js_page_code = [
+            wait_timer_code,
+            *_normalize_js_page_code(kwargs.pop("js_page_code", None)),
+        ]
         super().__init__(
             label="wait",
             time_estimate=wait_time,
             template_str=get_template("wait-page.html"),
-            template_arg={"content": self.content, "wait_time": self.wait_time},
+            framework_owned_template=True,
+            template_arg={"content": self.content},
+            js_page_code=js_page_code,
             **kwargs,
         )
 
@@ -220,9 +240,12 @@ def wait_while(
     expected_wait: float,
     check_interval: float = 2.0,
     max_wait_time: float = 20.0,
-    wait_page=WaitPage,
+    wait_page=None,
     log_message: Optional[str] = None,
     fail_on_timeout=True,
+    fix_time_credit: Optional[bool] = None,
+    content: Optional[str] = None,
+    on_timeout: Optional[Callable] = None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -241,25 +264,43 @@ def wait_while(
         argument list.
 
     expected_wait
-        How long the participant is likely to wait, in seconds.
+        How long the participant is likely to wait, in seconds. This controls
+        progress estimation and fixed time credit; actual visible waiting time
+        is credited when ``fix_time_credit`` is false.
 
     check_interval
-        How often should the browser check the condition, in seconds.
+        How often the browser should check the condition if no framework wake
+        notification arrives, in seconds.
 
     max_wait_time
         The participant's maximum waiting time in seconds. Default: 20.0.
 
     wait_page
         The wait page that should be displayed to the participant;
-        defaults to :class:`~psynet.page.WaitPage`.
+        by default the current page is preserved with a lightweight waiting
+        indicator. Pass :class:`~psynet.page.WaitPage` or another page factory
+        to opt into page-based waiting.
 
     log_message
         Optional message to display in the log.
 
     fail_on_timeout
-        Whether the participants should be failed when the ``max_loop_time`` is reached.
-        Setting this to ``False`` will not return the ``UnsuccessfulEndPage`` when maximum time has elapsed
-        but allow them to proceed to the next page.
+        Whether the participant should be failed when ``max_wait_time`` is reached.
+        Setting this to ``False`` allows them to proceed to the next page instead.
+
+    fix_time_credit
+        Whether to award the fixed ``expected_wait`` rather than actual visible
+        waiting time. Defaults to ``False`` for timeline holds and ``True`` for
+        explicit page-based waiting.
+
+    content
+        Message displayed by the timeline hold. Only used when ``wait_page`` is
+        omitted.
+
+    on_timeout
+        Optional function called with ``participant=...`` when
+        ``max_wait_time`` is reached, before the participant is failed or
+        moves on. It must not commit the database session.
 
     Returns
     -------
@@ -269,19 +310,62 @@ def wait_while(
     """
     assert expected_wait >= 0
     assert check_interval > 0
-    expected_repetitions = ceil(expected_wait / check_interval)
-
-    _wait_page = wait_page(wait_time=check_interval)
+    label = "wait_while"
+    uses_timeline_hold = wait_page is None
+    if wait_page is not None and content is not None:
+        raise ValueError("content only applies when wait_page is omitted.")
+    if fix_time_credit is None:
+        fix_time_credit = not uses_timeline_hold
 
     def log(participant):
         logger.info(f"Participant {participant.id}: {log_message}")
 
+    if uses_timeline_hold:
+        from psynet.timeline_hold import _ConditionHoldPage
+
+        def entry_condition(participant, experiment):
+            result = call_function_with_context(
+                condition,
+                participant=participant,
+                experiment=experiment,
+            )
+            logger.info(
+                "Evaluating timeline hold (%s) condition: result = %s",
+                label,
+                result,
+            )
+            return result
+
+        hold = _ConditionHoldPage(
+            condition=condition,
+            hold_id=label,
+            expected_wait=expected_wait,
+            max_wait_time=max_wait_time,
+            fix_time_credit=fix_time_credit,
+            check_interval=check_interval,
+            content=content,
+            message_kind="generic" if content is None else None,
+            fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
+        )
+        hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
+        return join(
+            conditional(
+                label,
+                entry_condition,
+                logic_if_true=hold_logic,
+                fix_time_credit=fix_time_credit,
+                log_chosen_branch=False,
+                time_estimate=expected_wait,
+            )
+        )
+
+    expected_repetitions = ceil(expected_wait / check_interval)
+    _wait_page = wait_page(wait_time=check_interval)
     if log_message is None:
         logic = _wait_page
     else:
         logic = join(CodeBlock(log), _wait_page)
-
-    label = "wait_while"
 
     return join(
         while_loop(
@@ -291,36 +375,54 @@ def wait_while(
             expected_repetitions=expected_repetitions,
             max_loop_time=max_wait_time,
             fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
+            fix_time_credit=fix_time_credit,
         ),
     )
 
 
-# At some point we might make deprecation warnings for these classes
-class SuccessfulEndPage(PageMaker):
-    def __init__(self):
-        super().__init__(
-            lambda experiment: experiment.SuccessfulEndLogic(), time_estimate=0.0
-        )
+class EndPageRedirect(Elt):
+    """Base class for end pages that redirect to a named timeline branch.
 
+    Parameters
+    ----------
+    failure_tags
+        Optional failure tags to append before redirecting.
+    """
 
-class UnsuccessfulEndPage(PageMaker):
+    time_estimate = 0.0
+    branch_name = None
+
     def __init__(self, failure_tags: Optional[List] = None, **kwargs):
-        super().__init__(
-            lambda experiment: experiment.UnsuccessfulEndLogic(
-                failure_tags=failure_tags, **kwargs
-            ),
-            time_estimate=0.0,
+        super().__init__()
+        if failure_tags is None:
+            failure_tags = []
+        self.failure_tags = failure_tags
+
+    def consume(self, experiment, participant):
+        if self.failure_tags:
+            participant.append_failure_tags(*self.failure_tags)
+        experiment.timeline.redirect_to_branch(
+            experiment, participant, self.branch_name
         )
 
 
-class RejectedConsentPage(PageMaker):
-    def __init__(self, failure_tags: Optional[List] = None, **kwargs):
-        super().__init__(
-            lambda experiment: experiment.RejectedConsentLogic(
-                failure_tags=failure_tags, **kwargs
-            ),
-            time_estimate=0.0,
-        )
+class SuccessfulEndPage(EndPageRedirect):
+    """Redirects the participant to the successful end branch."""
+
+    branch_name = "successful_end"
+
+
+class UnsuccessfulEndPage(EndPageRedirect):
+    """Redirects the participant to the unsuccessful end branch."""
+
+    branch_name = "unsuccessful_end"
+
+
+class RejectedConsentPage(EndPageRedirect):
+    """Redirects the participant to the rejected consent branch."""
+
+    branch_name = "rejected_consent"
 
 
 class DebugResponsePage(PageMaker):
@@ -360,6 +462,8 @@ class DebugResponsePage(PageMaker):
 
 
 class VolumeCalibration(Module):
+    """Module that loops a sound so the participant can set a comfortable volume."""
+
     def __init__(
         self,
         url=str(resources.files("psynet") / "resources/audio/brown_noise.wav"),
@@ -379,7 +483,7 @@ class VolumeCalibration(Module):
         if str(url).startswith("http"):
             return ExternalAsset(url=url)
         else:
-            return CachedAsset(input_path=url)
+            return FileAsset(input_path=url)
 
     def page(self, min_time, time_estimate, id_):
         return PageMaker(
@@ -387,6 +491,9 @@ class VolumeCalibration(Module):
                 id_,
                 AudioPrompt(assets["volume_calibration_audio"], self.text(), loop=True),
                 events={
+                    # TODO: This is page-level gating expressed as a trial event.
+                    # Prefer a page-scoped timer API once the frontend lifecycle
+                    # distinguishes page timers from prompt/trial-cycle timers.
                     "submitEnable": Event(is_triggered_by="trialStart", delay=min_time)
                 },
             ),
@@ -409,6 +516,33 @@ class VolumeCalibration(Module):
         )
 
 
+def _validate_jspsych_timeline_module(timeline):
+    """Reject timeline values using the removed HTML/Jinja API."""
+    if not isinstance(timeline, str):
+        raise TypeError("JsPsychPage timeline must be a JavaScript module URL.")
+
+    timeline_path = urlparse(timeline).path.lower()
+    migration_message = (
+        "Migrate following "
+        "https://psynetdev.gitlab.io/PsyNet/whats_new/upgrading_to_psynet_14.html"
+        " — or, in Cursor, run /upgrade-to-psynet-14"
+    )
+    if timeline_path.endswith((".html", ".htm")):
+        raise ValueError(
+            "JsPsychPage no longer accepts HTML timeline templates "
+            "(error codes: jspsych_html_timeline).\n\n" + migration_message
+        )
+
+    local_path = Path(timeline)
+    if local_path.is_file():
+        source = local_path.read_text(encoding="utf-8")
+        if "jspsych-page.html" in source or "{% block timeline" in source:
+            raise ValueError(
+                "JsPsychPage detected an old Jinja timeline template "
+                "(error codes: jspsych_html_timeline).\n\n" + migration_message
+            )
+
+
 class JsPsychPage(Page):
     """
     A page that embeds a jsPsych experiment. See ``demos/jspsych`` for example usage.
@@ -417,13 +551,14 @@ class JsPsychPage(Page):
         Label for the page.
 
     timeline :
-        A path to an HTML file that defines the jsPsych experiment's timeline.
-        The timeline should be saved as an object called ``timeline``.
+        URL of a JavaScript module exporting ``buildTimeline(context)``.
+        This function receives ``jsPsych``, ``vars``, ``page``, ``psynet``, and
+        ``root``, and returns the jsPsych timeline array.
         See ``demos/jspsych`` for an example.
 
-    js_links :
-        A list of links to JavaScript files to include in the page. Typically this would include
-        a link to the required jsPsych version as well as links to the required plug-ins.
+    js_dependencies :
+        A list of JavaScript libraries to load once per browser document. Typically this would
+        include a link to the required jsPsych version as well as links to the required plug-ins.
         It is recommended to include these files in the ``static`` directory and refer to them
         using relative paths; alternatively it is possible to link to these files via a CDN.
 
@@ -436,40 +571,73 @@ class JsPsychPage(Page):
         in the timeline template, writing for example ``psynet.var["my_variable"]``.
     """
 
+    requires_full_page_reload = True
+
     def __init__(
         self,
         label: str,
         timeline: str,
         time_estimate: float,
-        js_links: Union[str, List[str]],
+        js_dependencies: Union[str, List[str]],
         css_links: Union[str, List[str]],
         js_vars: Optional[dict] = None,
         **kwargs,
     ):
-        if isinstance(js_links, str):
-            js_links = [js_links]
+        _validate_jspsych_timeline_module(timeline)
+        if isinstance(js_dependencies, str):
+            js_dependencies = [js_dependencies]
         if isinstance(css_links, str):
             css_links = [css_links]
+        js_vars = {} if js_vars is None else dict(js_vars)
+        if "jspsych_timeline_module" in js_vars:
+            raise ValueError(
+                "jspsych_timeline_module is reserved for JsPsychPage internals."
+            )
+        js_vars["jspsych_timeline_module"] = timeline
 
         super().__init__(
             time_estimate=time_estimate,
-            template_path=timeline,
+            template_str=get_template("jspsych-page.html"),
             label=label,
             js_vars=js_vars,
-            js_links=js_links,
+            js_dependencies=js_dependencies,
+            js_page_modules=["/static/scripts/jspsych-page.js"],
             css_links=css_links,
+            framework_owned_template=True,
             **kwargs,
         )
 
 
 class ExecuteFrontEndJS(InfoPage):
+    """Execute JavaScript in a lifecycle-managed page module."""
+
     # Skip beforeunload detection since this page is expected to navigate away
     skip_beforeunload = True
 
-    def __init__(self, js: str, message: str = ""):
+    def __init__(self, js: str):
         super().__init__(
-            content=message,
+            content=self._spinner(),
             time_estimate=0.0,
-            scripts=[js],
+            js_vars={"execute_front_end_js": js},
+            js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )
+
+    @staticmethod
+    def _spinner():
+        """Render a spinner rather than prose.
+
+        These pages run some JavaScript and then navigate, normally within a
+        couple of hundred milliseconds. That is too brief to read a sentence,
+        but long enough that a blank surface looks broken, and it can stretch
+        out when the network is slow. The spinner reads the same either way.
+        The label is for screen readers, which have nothing else to announce.
+        """
+        _p = get_translator(context=True)
+
+        return Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))

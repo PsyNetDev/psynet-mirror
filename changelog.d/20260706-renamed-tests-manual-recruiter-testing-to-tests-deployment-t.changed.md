@@ -1,0 +1,1 @@
+Renamed `tests/manual_recruiter_testing` to `tests/deployment`; the basic Prolific test (previously `prolific`) is now `tests/deployment/payment_flows_prolific` and defaults to HotAir, with the paid setup (including the approved cultural-foundation consent) in an `experiment.py.prolific` variant.

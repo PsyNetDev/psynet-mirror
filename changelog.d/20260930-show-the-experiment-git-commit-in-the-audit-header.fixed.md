@@ -1,0 +1,1 @@
+The rendered audit header now shows the experiment's short Git commit, with `-dirty` when files outside `audit/` have uncommitted changes, instead of `-`. A value set in `experiment.git_commit` in `audit.json` still takes precedence.
