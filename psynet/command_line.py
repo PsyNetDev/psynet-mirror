@@ -4295,8 +4295,8 @@ def _confirm_destroy_with_pending_jobs(
     summary : dict
         The output of :func:`_fetch_ssh_pending_async_jobs`.
     ask_for_confirmation : bool
-        Whether the user may be asked. When ``False`` (batch mode, or a
-        future ``--yes``), or when stdin is not a terminal, an app with
+        Whether the user may be asked. When ``False`` (several apps, or
+        ``--yes``), or when stdin is not a terminal, an app with
         pending jobs is not destroyed.
     discard_pending_jobs : bool
         Destroy the app even if jobs are pending, after reporting them.
@@ -4551,7 +4551,7 @@ def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
     """
     from dallinger.command_line.docker_ssh import destroy
 
-    apps = list(dict.fromkeys(((app,) if app else ()) + tuple(apps)))
+    apps = list(dict.fromkeys(([app] if app else []) + list(apps)))
     if not apps:
         raise click.UsageError(
             "Provide an app name. Example: "
