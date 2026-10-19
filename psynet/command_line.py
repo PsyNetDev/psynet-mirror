@@ -2260,6 +2260,7 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info):
     """End an SSH deployment with the links and commands the user needs next.
 
+    Also names the deployed Docker image, if Dallinger reports it.
     Passwords are not printed, so that pasted logs don't leak them; they
     are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
@@ -2267,7 +2268,7 @@ def _print_ssh_ready(result, launch_info):
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
-        f"{logs_url} (user: dallinger; password saved as logs_password)"
+        f"{logs_url} (user: dallinger; password: logs_password in {Path(launch_info).name})"
     )
     link = result.get("participant_link")
     rows = [
@@ -2276,6 +2277,7 @@ def _print_ssh_ready(result, launch_info):
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
         ("Log viewer", log_viewer),
+        ("Image", result.get("image_name")),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
@@ -4793,6 +4795,7 @@ def _destroy(
     discard_pending_jobs=False,
     destroy_kwargs=None,
     deployed=True,
+    warn_unexported=False,
 ):
     """Destroy a single app.
 
@@ -4800,9 +4803,13 @@ def _destroy(
     wakes a ``deployed`` app and checks for pending async jobs with
     :func:`_confirm_destroy_with_pending_jobs`, or
     :func:`_destroy_without_pending_job_check` if the check can't run.
+    With ``warn_unexported``, :func:`_warn_if_not_exported` then reminds the
+    user to export, just before Dallinger asks whether to delete the data.
     Other apps are confirmed here unless ``ask_for_confirmation`` is false.
     ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
     isn't covered by a spinner, as it may prompt or report what it kept.
+    For an app that is no longer ``deployed``, finding nothing left to delete
+    counts as success.
     """
     if server:
         if deployed:
@@ -4819,6 +4826,8 @@ def _destroy(
                 )
             if not may_destroy:
                 return False
+            if warn_unexported:
+                _warn_if_not_exported(app, server)
     elif ask_for_confirmation and not user_confirms(
         f"Destroy {app or 'the app'}?", default=False
     ):
@@ -4833,6 +4842,11 @@ def _destroy(
     log(f"Destroying {app}..." if deployed else f"Deleting leftover data of {app}...")
     try:
         ctx.invoke(f_destroy, **kwargs)
+    except click.Abort:
+        if deployed:
+            raise
+        # Older Dallinger versions abort when nothing is left to delete.
+        click.echo(f"Nothing left to delete for {app} on {server}.")
     except subprocess.CalledProcessError:
         click.echo(
             f"Failed to destroy {app}. "
@@ -4857,22 +4871,20 @@ def _delete_data_command(app, server):
     return {"delete_data_command": command}
 
 
-def _ssh_data_options(apps, server, remove_data, keep_data, undeployed=()):
+def _ssh_data_options(apps, server, remove_data, keep_data, exportable=()):
     """Return the data options for Dallinger's ``docker-ssh destroy``.
 
-    Unless the data is kept, first warns about apps without a local export,
-    except ``undeployed`` apps, which can no longer be exported.
     Without ``remove_data`` or ``keep_data``, a single app gets no options, so
-    that Dallinger lists its data and asks; several apps are asked about once.
+    that Dallinger lists its data and asks; several apps are asked about once,
+    after a reminder to export any ``exportable`` app without a local export.
     """
     if keep_data:
         return {"keep_data": True}
-    for app in apps:
-        if app not in undeployed:
-            _warn_if_not_exported(app, server)
     if not remove_data:
         if len(apps) == 1:
             return {}
+        for app in exportable:
+            _warn_if_not_exported(app, server)
         remove_data = click.confirm(
             f"Also delete the data of {', '.join(apps)} on {server} (database, "
             "Redis and Postgres volumes, ~/dallinger-data/<app>)? This cannot "
@@ -4978,7 +4990,8 @@ def _dallinger_hibernation_command(name):
     is_flag=True,
     help=(
         "Also delete the apps' data on the server (database, Redis and Postgres "
-        "volumes, ~/dallinger-data/<app>) without asking."
+        "volumes, ~/dallinger-data/<app>), with no separate question about "
+        "the data; the destroy confirmation (skipped by --yes) mentions it."
     ),
 )
 @click.option("--keep-data", is_flag=True, help="Keep the apps' data on the server.")
@@ -4998,7 +5011,9 @@ def destroy__docker_ssh(
     runs must pass one of the two. Both need a Dallinger whose
     `dallinger docker-ssh destroy` has them; older versions destroy apps as
     before. With --remove-data, it also deletes the data left behind by an
-    app that was destroyed earlier with its data kept.
+    app that was destroyed earlier with its data kept, and succeeds if
+    nothing is left. Before the question that decides whether data is
+    deleted, PsyNet reminds you to export apps without a local export.
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
@@ -5036,13 +5051,16 @@ def destroy__docker_ssh(
     else:
         _require_ssh_apps_exist(server, apps)
         undeployed = set()
+    exportable = [name for name in apps if name not in undeployed]
     if not yes:
-        _confirm_destroy_ssh_apps(server, apps, undeployed)
+        _confirm_destroy_ssh_apps(server, apps, undeployed, remove_data)
     data_options = (
-        _ssh_data_options(apps, server, remove_data, keep_data, undeployed)
+        _ssh_data_options(apps, server, remove_data, keep_data, exportable)
         if data_choice
         else {}
     )
+    # Dallinger asks about a single app's data after the pending-job check.
+    warn_unexported = data_choice and not (remove_data or keep_data or batch)
     failed = []
     for name in apps:
         try:
@@ -5055,6 +5073,7 @@ def destroy__docker_ssh(
                 discard_pending_jobs=discard_pending_jobs,
                 destroy_kwargs={**data_options, **_delete_data_command(name, server)},
                 deployed=name not in undeployed,
+                warn_unexported=warn_unexported,
             ):
                 failed.append(name)
         except Exception as e:
@@ -5062,10 +5081,6 @@ def destroy__docker_ssh(
                 raise
             if isinstance(e, click.ClickException):
                 click.echo(f"Problem destroying {name}: {e.format_message()}")
-            elif isinstance(e, click.Abort) and name in undeployed:
-                # Dallinger reports a failed deletion as a ClickException.
-                click.echo(f"Nothing left to delete for {name}.")
-                continue
             elif isinstance(e, click.Abort):
                 click.echo(
                     f"Failed to destroy {name}; see the messages above. If it "
@@ -5082,15 +5097,23 @@ def destroy__docker_ssh(
         raise click.Abort()
 
 
-def _confirm_destroy_ssh_apps(server, apps, undeployed=()):
-    """Ask before destroying ``apps``, or deleting the leftover data of ``undeployed`` ones; without a terminal to ask in, require ``--yes``."""
+def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
+    """Ask before destroying ``apps``, or deleting the leftover data of ``undeployed`` ones.
+
+    Without a terminal to ask in, requires ``--yes``. With ``remove_data``,
+    the question says that the data is deleted too, after a reminder to
+    export any deployed app without a local export.
+    """
     deployed = [app for app in apps if app not in undeployed]
     gone = [app for app in apps if app in undeployed]
     actions = []
     if deployed:
         noun = "app" if len(deployed) == 1 else "apps"
+        data = ""
+        if remove_data:
+            data = f" and delete {'its' if len(deployed) == 1 else 'their'} data"
         actions.append(
-            f"destroy {len(deployed)} {noun} on {server}: {', '.join(deployed)}"
+            f"destroy {len(deployed)} {noun} on {server}{data}: {', '.join(deployed)}"
         )
     if gone:
         where = "" if deployed else f" on {server}"
@@ -5100,6 +5123,9 @@ def _confirm_destroy_ssh_apps(server, apps, undeployed=()):
         raise click.ClickException(
             f"Confirmation needed to {action}; re-run with --yes."
         )
+    if remove_data:
+        for app in deployed:
+            _warn_if_not_exported(app, server)
     if not click.confirm(f"{action[0].upper()}{action[1:]}?", default=False):
         raise click.Abort()
 
