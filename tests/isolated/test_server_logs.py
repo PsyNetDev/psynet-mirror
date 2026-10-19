@@ -11,6 +11,7 @@ COMPOSE_LOGS = '"docker compose -f ~/dallinger/study/docker-compose.yml logs -f"
 CLOUDFLARE_LOGS = (
     f"with 'ssh -p 2222 -i /keys/lab.pem ubuntu@lab.example {COMPOSE_LOGS}'"
 )
+GUESSED = ", assuming it uses the server's default ingress"
 
 
 @pytest.mark.parametrize(
@@ -34,14 +35,15 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
             {"host": "lab"},
             "/keys/lab.pem",
             None,
-            "probably in Dozzle at https://logs.lab",
+            f"in Dozzle at https://logs.lab{GUESSED}",
         ),
-        (CLOUDFLARE_HOST, "/keys/lab.pem", None, f"probably {CLOUDFLARE_LOGS}"),
+        (CLOUDFLARE_HOST, "/keys/lab.pem", None, CLOUDFLARE_LOGS + GUESSED),
         (
             CLOUDFLARE_HOST,
             Path.home() / ".ssh" / "lab key.pem",
             None,
-            f"probably with 'ssh -p 2222 -i ~/'.ssh/lab key.pem' ubuntu@lab.example {COMPOSE_LOGS}'",
+            f"with 'ssh -p 2222 -i ~/'.ssh/lab key.pem' ubuntu@lab.example {COMPOSE_LOGS}'"
+            + GUESSED,
         ),
         # Recorded deployments of this app win over the server's default.
         (
@@ -60,7 +62,7 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
             CLOUDFLARE_HOST,
             "/keys/lab.pem",
             ("other", "classic"),
-            f"probably {CLOUDFLARE_LOGS}",
+            CLOUDFLARE_LOGS + GUESSED,
         ),
     ],
 )

@@ -129,19 +129,22 @@ def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> 
     ingress : str, optional
         The app's ingress, if the caller read it from the server. Otherwise
         it comes from ``deployment_info`` when this directory deployed the
-        app, and failing that is guessed, with a "probably", from the
-        server's ``default_ingress``.
+        app, and failing that is guessed from the server's
+        ``default_ingress``, which the description then says it assumes.
     """
     from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
     server_info = CONFIGURED_HOSTS.get(server, {})
     ingress = ingress or _recorded_ingress(server, app)
-    hedge = ""
+    caveat = ""
     if ingress is None:
-        ingress, hedge = server_ingress(server_info), "probably "
+        ingress = server_ingress(server_info)
+        caveat = ", assuming it uses the server's default ingress"
     url = dozzle_url(server, ingress)
     if url:
-        return f"{hedge}in Dozzle at {url}"
-    if "host" not in server_info:
-        return f"{hedge}with 'docker compose logs' on the server"
-    return f"{hedge}with '{logs_command(server_info, app)}'"
+        where = f"in Dozzle at {url}"
+    elif "host" not in server_info:
+        where = "with 'docker compose logs' on the server"
+    else:
+        where = f"with '{logs_command(server_info, app)}'"
+    return where + caveat
