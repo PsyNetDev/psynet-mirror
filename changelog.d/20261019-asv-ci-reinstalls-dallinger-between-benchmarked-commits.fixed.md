@@ -1,0 +1,1 @@
+The nightly ASV benchmark job now reinstalls Dallinger for each compared commit, so an older commit is no longer benchmarked against the newer commit's Dallinger, and the job no longer tries to upload an empty `.asv/results/` artifact when it fails.

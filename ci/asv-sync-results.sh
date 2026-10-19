@@ -65,7 +65,6 @@ while [ $# -gt 0 ]; do
 done
 
 cleanup() {
-    snapshot_results_for_ci
     detach_worktree
     if [ -n "$TMP_CONF" ]; then
         rm -f "$TMP_CONF"

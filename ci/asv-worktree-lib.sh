@@ -12,10 +12,6 @@
 # which preserves the worktree if it has uncommitted changes (so failed
 # benchmark runs leave their state behind for inspection).
 #
-# ``snapshot_results_for_ci`` copies result files (excluding ``.git``) to
-# ``ARTIFACT_RESULTS_DIR`` (default ``$REPO_ROOT/.asv/ci-artifacts``) so CI
-# can upload them after the worktree is removed.
-#
 # ``fetch_branch`` force-updates the local branch ref from the remote
 # (the orphan branch is append-only in normal use, but ``+`` is defensive
 # against history rewrites). Returns 0 if a fetch happened, 1 if the
@@ -67,21 +63,6 @@ detach_worktree() {
             echo "Inspect with: git -C $RESULTS_DIR status" >&2
         fi
     fi
-}
-
-# Copy ASV result files out of the results worktree. CI uploads this snapshot
-# after ``git worktree remove`` deletes ``.asv/results/``.
-snapshot_results_for_ci() {
-    local src="${RESULTS_DIR:-}"
-    local dest="${ARTIFACT_RESULTS_DIR:-${REPO_ROOT:+$REPO_ROOT/.asv/ci-artifacts}}"
-    [ -n "$src" ] && [ -d "$src" ] || return 0
-    [ -n "$dest" ] || return 0
-    if [ -z "$(find "$src" -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
-        return 0
-    fi
-    rm -rf "$dest"
-    mkdir -p "$dest"
-    tar -C "$src" --exclude='.git' -cf - . | tar -C "$dest" -xf -
 }
 
 # Write a temp asv config to ``$1`` whose ``branches`` field contains only

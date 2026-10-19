@@ -78,6 +78,11 @@ or either commit fails to build, it exits with status 2 without comparing the
 commits; the job log shows the failure, and the results for both commits are
 still published.
 
+ASV reuses one virtualenv for both commits, so ``asv.conf.json`` uninstalls
+Dallinger as well as PsyNet before each install. Otherwise the older commit
+could keep the Dallinger version installed for the newer one whenever its
+requirements also allowed that version.
+
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.
 Don't add a second one. Scheduled pipelines run as the schedule's owner, and
@@ -104,14 +109,6 @@ every benchmark it runs, so the default-branch job is also looser on the
 fast suite; merge requests still gate the fast suite at ``--factor 1.25``.
 The job is currently allowed to fail while the benchmark suite is being
 tuned.
-
-ASV reuses one virtualenv across the two commits. ``asv.conf.json`` therefore
-uninstalls both PsyNet and Dallinger before installing the next commit, so a
-newer Dallinger left behind by ``HEAD`` cannot be reused by an older PsyNet
-whose extras still accept that version. Failed ``asv_benchmarks`` jobs upload
-``.asv/ci-artifacts/`` (a copy of the result files taken before the
-``benchmark-results`` worktree is removed) so GitLab does not warn that
-``.asv/results/`` is missing.
 
 ASV command modes
 =================
