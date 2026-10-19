@@ -2001,17 +2001,16 @@ def _print_ssh_ready(result, launch_info):
     study) is shown instead.
     """
     logs_url = result.get("logs_url")
+    log_viewer = logs_url and (
+        f"{logs_url} (user: dallinger; password saved as logs_password)"
+    )
     link = result.get("participant_link")
     rows = [
         ("Participant link", link),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
-        (
-            "Log viewer",
-            logs_url
-            and f"{logs_url} (user: dallinger; password saved as logs_password)",
-        ),
+        ("Log viewer", log_viewer),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
