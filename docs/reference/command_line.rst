@@ -206,8 +206,12 @@ pick free settings before starting another session.
   psynet services list
 
 Isolated test and debug sessions drop their own databases when they end, so
-a ``dallinger_test_<port>`` database with no session is left over from a
-killed session; drop it with ``dropdb <name>``.
+a ``<database>_test_<port>`` database (such as ``dallinger_test_5100``) with
+no session is left over from a killed session. Drop it with:
+
+.. code:: bash
+
+  PGPASSWORD=dallinger dropdb -h localhost -U dallinger dallinger_test_5100
 
 
 .. _scripts:

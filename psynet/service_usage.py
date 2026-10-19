@@ -10,7 +10,9 @@ PostgreSQL databases and ``redis-server`` processes.
 A process's environment shows only the settings it started with. Isolated
 sessions under plain ``pytest`` change theirs in-process (see
 :mod:`psynet.isolated_environment`), so the port lock that every isolated test
-and debug session holds is the reliable sign that its database is in use.
+and debug session holds is the reliable sign of their settings: such a
+session is found from the lock file it holds open, and its database from the
+lock alone.
 
 ``psynet services list`` prints the result. It only reads; it never stops
 processes or drops databases.
@@ -41,6 +43,7 @@ _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X"}
 _SESSION_DATABASE = re.compile(r"_test_(\d+)$")
+_PORT_LOCK = re.compile(r"psynet-test-(\d+)\.lock$")
 
 
 @dataclass
@@ -109,6 +112,30 @@ def _database_name(url):
     return urlparse(url).path.lstrip("/")
 
 
+def _redis_server_port(cmdline):
+    """Return the port in a ``redis-server`` command line, or ``None``."""
+    match = re.search(r"--port (\d+)|:(\d+)\s*$", " ".join(cmdline))
+    return int(match.group(1) or match.group(2)) if match else None
+
+
+def _plain_pytest_key(process, environ):
+    """Return the settings of a plain ``pytest`` session from the port lock it holds.
+
+    Returns ``None`` if the process holds no port lock, as for a pytest run
+    outside PsyNet.
+    """
+    ports = [_PORT_LOCK.search(f.path) for f in process.open_files()]
+    port = next((match.group(1) for match in ports if match), None)
+    if port is None:
+        return None
+    database = _database_name(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+    redis_port = _redis_port(environ.get("REDIS_URL", DEFAULT_REDIS_URL))
+    for child in process.children():
+        if child.name() == "redis-server":
+            redis_port = _redis_server_port(child.cmdline()) or redis_port
+    return (port, f"{database}_test_{port}", redis_port)
+
+
 def find_sessions():
     """Return the current user's PsyNet sessions, keyed by their shared settings."""
     import psutil
@@ -124,15 +151,18 @@ def find_sessions():
             continue
         try:
             environ = process.environ()
+            cwd = process.cwd()
+            plain_pytest = command[0] in {"pytest", "py.test"} and (
+                READY_ENV_VAR not in environ
+            )
+            key = _plain_pytest_key(process, environ) if plain_pytest else None
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
-        try:
-            cwd = process.cwd()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            cwd = ""
+        if plain_pytest and key is None:
+            continue
         if command[0] == "flask" and "base_port" not in environ:
             continue
-        key = (
+        key = key or (
             environ.get("base_port", _DEFAULT_BASE_PORT),
             _database_name(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)),
             _redis_port(environ.get("REDIS_URL", DEFAULT_REDIS_URL)),
@@ -142,6 +172,8 @@ def find_sessions():
     # rerun child, so it belongs to the child's session.
     child_keys = {info["ppid"]: key for info, key, *_, child in found if child}
     sessions = {}
+    # Flask runs in the development folder, so other processes name the session.
+    found.sort(key=lambda entry: entry[2][0] == "flask")
     for info, key, command, cwd, child in found:
         if not child:
             key = child_keys.get(info["pid"], key)
@@ -155,17 +187,19 @@ def find_sessions():
     return sorted(sessions.values(), key=lambda s: (s.base_port.zfill(6), s.database))
 
 
-def find_redis_servers():
-    """Return all running ``redis-server`` processes."""
+def find_redis_servers(ports=()):
+    """Return the running ``redis-server`` processes and the Redis servers on ``ports``.
+
+    A local Redis server on one of ``ports`` that is not a ``redis-server``
+    process, such as one in Docker, is returned with ``pid=None``.
+    """
     import psutil
 
     servers = []
     for process in psutil.process_iter(["pid", "name", "cmdline"]):
         if process.info["name"] != "redis-server":
             continue
-        cmdline = " ".join(process.info["cmdline"] or [])
-        match = re.search(r"--port (\d+)|:(\d+)\s*$", cmdline)
-        port = int(match.group(1) or match.group(2)) if match else None
+        port = _redis_server_port(process.info["cmdline"] or [])
         servers.append(
             RedisServer(
                 pid=process.info["pid"],
@@ -173,6 +207,10 @@ def find_redis_servers():
                 clients=_redis_clients(port) if port else None,
             )
         )
+    for port in sorted(set(ports) - {server.port for server in servers} - {None}):
+        clients = _redis_clients(port)
+        if clients is not None:
+            servers.append(RedisServer(pid=None, port=port, clients=clients))
     return sorted(servers, key=lambda s: s.port or 0)
 
 
@@ -248,7 +286,8 @@ def _report(sessions, redis_servers, databases):
     for r in redis_servers:
         users = _session_names(sessions, lambda s: s.redis_port == r.port)
         clients = "no answer" if r.clients is None else _count(r.clients, "client")
-        click.echo(f"  {r.port}  PID {r.pid}  {clients}  {users or 'no session'}")
+        process = "not a local process" if r.pid is None else f"PID {r.pid}"
+        click.echo(f"  {r.port or '?'}  {process}  {clients}  {users or 'no session'}")
     click.echo("\nDatabases:")
     for d in databases:
         connections = _count(d.connections, "connection")
@@ -284,7 +323,10 @@ def list_services():
             "'psynet services list' needs psynet[experiment]; run 'psynet setup' first."
         ) from e
     sessions = find_sessions()
-    redis_servers = find_redis_servers()
+    default_redis_port = _redis_port(DEFAULT_REDIS_URL)
+    redis_servers = find_redis_servers(
+        {s.redis_port for s in sessions} | {default_redis_port}
+    )
     try:
         databases = find_databases()
     except psycopg2.Error as e:

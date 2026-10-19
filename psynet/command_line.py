@@ -422,15 +422,12 @@ def _validate_location(ctx, param, value):
     default=None,
     help="Name of the remote server (for the ssh location)",
 )
-@click.pass_context
-def experiment_variables(ctx, location, app, server):
+def experiment_variables(location, app, server):
     """
     Show the variables of the experiment.
     """
-    # Dallinger's shared --server option insists on a configured server even
-    # for local experiments, so the server is only resolved for ssh.
-    if location == "ssh":
-        server = resolve_server_option(ctx, None, server)
+    # Not Dallinger's shared --server option, which insists on a configured
+    # server even for local experiments; db_connection resolves it for ssh.
     with db_connection(location, app, server) as connection:
         return _experiment_variables(connection, echo=True, location=location, app=app)
 

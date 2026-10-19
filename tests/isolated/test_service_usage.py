@@ -60,6 +60,41 @@ def test_find_sessions_reads_settings_from_running_processes(tmp_path):
         process.wait()
 
 
+def test_plain_pytest_sessions_are_found_by_the_port_lock_they_hold(tmp_path):
+    """Plain pytest isolates in-process, so its shell settings are not its own."""
+    shell = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}
+    shell["DATABASE_URL"] = "postgresql://dallinger:dallinger@localhost/study"
+    lock = tmp_path / "psynet-test-5991.lock"
+    processes = []
+    for directory, body in [
+        ("locked", f"f = open({str(lock)!r}, 'w'); fcntl.flock(f, fcntl.LOCK_EX)\n"),
+        ("unlocked", ""),
+    ]:
+        (tmp_path / directory).mkdir()
+        script = tmp_path / directory / "pytest"
+        script.write_text(f"import fcntl, time\n{body}time.sleep(60)\n")
+        processes.append(
+            subprocess.Popen(
+                [sys.executable, str(script)], env=shell, cwd=script.parent
+            )
+        )
+    pids = {process.pid for process in processes}
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            sessions = [s for s in find_sessions() if s.pids[0] in pids]
+            if sessions:
+                break
+            time.sleep(0.1)
+        assert [(s.base_port, s.database) for s in sessions] == [
+            ("5991", "study_test_5991")
+        ]
+    finally:
+        for process in processes:
+            process.kill()
+            process.wait()
+
+
 def test_session_command_recognises_scripts_and_python_modules():
     assert _session_command(["/venv/bin/psynet", "debug", "local"]) == [
         "psynet",

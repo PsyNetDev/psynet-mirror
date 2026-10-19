@@ -6700,7 +6700,9 @@ def test_destroy_ssh_batch_succeeds(monkeypatch):
     assert result.exit_code == 0, result.output
 
 
-def test_signalled_debug_process_stops_its_child_processes(tmp_path):
+@pytest.mark.parametrize("signum, status", [("SIGTERM", 143), ("SIGINT", -2)])
+def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, status):
+    """Children that the signal didn't reach are stopped, after a pause on SIGINT."""
     import signal
     import sys
     import time
@@ -6723,8 +6725,8 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
     child_pid = int(pid_file.read_text())
 
-    parent.send_signal(signal.SIGTERM)
-    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    parent.send_signal(getattr(signal, signum))
+    assert parent.wait(timeout=30) == status
     deadline = time.monotonic() + 10
     while psutil.pid_exists(child_pid):
         assert time.monotonic() < deadline, "child process outlived its parent"
