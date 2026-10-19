@@ -11,6 +11,7 @@ export class BackgroundRecorder {
     this.decisions = new Map();
     this.granted = new Set();
     this.clips = {};
+    this.stoppedForSnapshot = new Set();
   }
 
   async begin(config) {
@@ -190,7 +191,7 @@ export class BackgroundRecorder {
    */
   async resume() {
     for (const source of this.stoppedForSnapshot) {
-      if (!this.devices.reusable(source, this.config.audio)) continue;
+      if (!this.clips[source] || !this.devices.reusable(source, this.config.audio)) continue;
       this.clips[source].reset();
       delete this.outcomes[source];
       delete this.unavailable[source];
@@ -203,6 +204,7 @@ export class BackgroundRecorder {
   async discard() {
     for (const clip of Object.values(this.clips)) clip.reset();
     this.clips = {};
+    this.stoppedForSnapshot.clear();
     this.indicator?.remove();
     this.indicator = null;
   }

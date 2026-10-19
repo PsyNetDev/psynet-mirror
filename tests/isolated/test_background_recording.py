@@ -45,7 +45,7 @@ def test_background_environment_is_checked_at_startup(
         "psynet.utils.get_config", lambda: {"inplace_timeline_transitions": inplace}
     )
     with pytest.raises(ValueError, match=error):
-        exp._check_static_spa_contracts()
+        exp._check_background_recording_pages()
 
 
 @pytest.mark.parametrize("consent_first", [True, False])
@@ -65,10 +65,10 @@ def test_background_page_must_follow_stock_consent(
         "psynet.utils.get_config", lambda: {"inplace_timeline_transitions": True}
     )
     if consent_first:
-        exp._check_static_spa_contracts()
+        exp._check_background_recording_pages()
     else:
         with pytest.raises(ValueError, match="before the audiovisual consent"):
-            exp._check_static_spa_contracts()
+            exp._check_background_recording_pages()
 
 
 def test_recording_labels_use_participant_translation(monkeypatch):
