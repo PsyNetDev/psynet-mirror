@@ -13,6 +13,9 @@
     "install_command": [
         "in-dir={env_dir} python -m pip install '{build_dir}[experiment,demos]'"
     ],
+    "uninstall_command": [
+        "return-code=any in-dir={env_dir} python -m pip uninstall -y {project} dallinger"
+    ],
     "benchmark_dir": "benchmarks",
     "env_dir": ".asv/env",
     "results_dir": ".asv/results",
