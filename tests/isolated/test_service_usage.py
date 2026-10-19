@@ -13,6 +13,7 @@ import pytest
 from psynet.isolated_environment import READY_ENV_VAR
 from psynet.service_usage import (
     Database,
+    Session,
     _database_users,
     _session_command,
     find_redis_servers,
@@ -128,6 +129,8 @@ def test_databases_of_plain_pytest_sessions_are_found_by_their_port_lock(
     with open(tmp_path / "6990", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         assert _database_users(database, []) == "a session holding port 6990"
+        debug = Session(base_port="6990", database="dallinger", redis_port=6379)
+        assert _database_users(database, [debug]) == "no session"
     assert _database_users(Database("study_test_1", 0), []) == "no session"
 
 

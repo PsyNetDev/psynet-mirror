@@ -857,6 +857,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     """PsyNet's launch job prints the login once and never logs it in a URL."""
     from psynet.command_line import (
         _debug_auto_reload,
+        _reloader_exclude_patterns,
         launch_app_and_open_browsers,
         launch_app_without_browsers,
     )
@@ -874,12 +875,16 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
-    monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
-    monkeypatch.delenv("FLASK_RUN_EXCLUDE_PATTERNS", raising=False)
+    # setenv, unlike delenv of an unset variable, restores the variables it sets.
+    monkeypatch.setenv("FLASK_RUN_PORT", "")
+    monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     assert calls == [({"skip_flask": False, "port": 5010}, job)]
     assert os.environ["FLASK_RUN_PORT"] == "5010"
+    assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
+        _reloader_exclude_patterns()
+    )
     assert develop.launch_app_and_open_browser is original_job
 
     config = Mock(ready=True)

@@ -258,7 +258,7 @@ def find_databases():
 
 
 def _port_is_claimed(port):
-    """Return whether an isolated session holds the lock of ``port``."""
+    """Return whether a session holds the lock of ``port``."""
     try:
         lock = os.fdopen(os.open(port_lock_path(port), os.O_RDONLY | os.O_NOFOLLOW))
     except OSError:
@@ -281,7 +281,9 @@ def _database_users(database, sessions):
     users = _session_names(sessions, lambda s: s.database == database.name)
     match = _SESSION_DATABASE.search(database.name)
     port = match.group(1) if match else None
-    if not users and port is not None and _port_is_claimed(port):
+    # A plain debug server holds the lock of its port too, but uses another database.
+    listed = any(s.base_port == port for s in sessions)
+    if not users and port is not None and not listed and _port_is_claimed(port):
         users = f"a session holding port {port}"
     return users or "no session"
 
@@ -325,7 +327,9 @@ def _redis_clients(port):
     import redis
 
     try:
-        info = redis.Redis(port=port, socket_timeout=2).info("clients")
+        info = redis.Redis(host="127.0.0.1", port=port, socket_timeout=2).info(
+            "clients"
+        )
     except redis.RedisError:
         return None
     return info["connected_clients"] - 1

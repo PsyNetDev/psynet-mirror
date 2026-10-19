@@ -32,7 +32,7 @@ from psynet.experiment_scaffold import (
 @click.option(
     "--no-install",
     is_flag=True,
-    help="Scaffold and generate constraints without installing packages.",
+    help="Scaffold, generate constraints and set up Git without installing packages.",
 )
 @click.option(
     "--force-shared-env",
