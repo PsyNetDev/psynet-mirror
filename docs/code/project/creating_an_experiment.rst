@@ -23,8 +23,8 @@ The tools in :doc:`/install` must be installed first.
 
 #. Copy the directory to a location outside your PsyNet checkout, for example
    ``~/psynet-experiments/chord_ratings``. The folder name follows the same
-   rules as in :doc:`/quickstart`: letters, digits and underscores only, not
-   starting with a digit, and not the name of an existing Python module.
+   rule as in :doc:`/quickstart`: it must not be the name of an existing
+   Python module such as ``code`` or ``test``.
 #. Open the directory in your IDE and a terminal in it.
 #. Install PsyNet into a fresh virtual environment and run ``psynet setup``:
 

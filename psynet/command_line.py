@@ -1989,9 +1989,9 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
     if not source:
-        from dallinger.utils import get_editable_dallinger_path
+        from .experiment_scaffold import get_editable_dallinger_source
 
-        source = get_editable_dallinger_path() or ""
+        source = str(get_editable_dallinger_source() or "")
     if not source:
         import dallinger as dallinger_pkg
 
@@ -2684,9 +2684,7 @@ def install_autocomplete():
 #######################
 def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
-    from dallinger.utils import get_editable_dallinger_path
-
-    from .experiment_scaffold import get_editable_source
+    from .experiment_scaffold import get_editable_dallinger_source
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -2748,11 +2746,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    # Dallinger 12.4 and older only detect legacy .egg-link editable installs.
-    dallinger_is_editable = (
-        get_editable_source("dallinger") is not None
-        or get_editable_dallinger_path() is not None
-    )
+    dallinger_is_editable = get_editable_dallinger_source() is not None
     if dallinger_is_editable:
         _prepare(
             dallinger_version,
