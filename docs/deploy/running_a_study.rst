@@ -190,7 +190,8 @@ trials), then launch a debug deployment:
 
 The experiment is available at
 ``https://my-study-pilot.your-server.example.org`` within a minute or two.
-The terminal prints a *Single recruitment link*; take the experiment
+The command ends with a *Ready* summary whose *Participant link* is the
+single recruitment link; take the experiment
 through it yourself and send it to a few colleagues. Check:
 
 - the median completion time against your estimate;
@@ -249,13 +250,12 @@ you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
 commands ask before resetting if a local server or another program is connected
 to the local database or Redis; pass ``--yes`` to skip the question.
 ``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints:
-
-- the recruitment message (for Prolific, a link to the new draft study);
-- the dashboard link with its user name and password;
-- a command and a Dozzle URL for viewing the logs.
-
-Save these. Open the dashboard and check that the experiment is running.
+prints a *Ready* summary of the participant link, the dashboard link and
+user, where the password is saved, the logs command and, for servers without
+a Cloudflare tunnel, the log viewer in the browser. Without a single
+participant link, the summary shows the recruiter's message instead (for
+Prolific, a link to the new draft study). Save these. Open the
+dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.
 
