@@ -5167,21 +5167,21 @@ def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
     export any deployed app without a local export.
     """
     deployed = [app for app in apps if app not in undeployed]
-    gone = [app for app in apps if app in undeployed]
-    actions = []
-    if deployed:
+    leftovers = (
+        f"the leftover data of {', '.join(app for app in apps if app in undeployed)}"
+    )
+    if not deployed:
+        action = f"delete {leftovers} on {server}"
+    else:
         noun = "app" if len(deployed) == 1 else "apps"
         target = f"{len(deployed)} {noun} on {server}"
         if remove_data:
             its = "its" if len(deployed) == 1 else "their"
             action = f"destroy {target} ({', '.join(deployed)}) and delete {its} data"
+            if undeployed:
+                action += f" and {leftovers}"
         else:
             action = f"destroy {target}: {', '.join(deployed)}"
-        actions.append(action)
-    if gone:
-        where = "" if deployed else f" on {server}"
-        actions.append(f"delete the leftover data of {', '.join(gone)}{where}")
-    action = ", and ".join(actions)
     if not _stdin_is_interactive():
         raise click.ClickException(
             f"Confirmation needed to {action}; re-run with --yes."

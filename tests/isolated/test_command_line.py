@@ -6403,8 +6403,8 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     assert result.exit_code == 0, result.output
     assert result.output.count("[y/N]") == 1
     assert (
-        "Destroy 1 app on musix (one) and delete its data, and delete the "
-        "leftover data of twoo? This deletes each app's database, Redis and "
+        "Destroy 1 app on musix (one) and delete its data and the leftover "
+        "data of twoo? This deletes each app's database, Redis and "
         "Postgres volumes, ~/dallinger-data/<app>. It cannot be undone. [y/N]"
         in result.output
     )
