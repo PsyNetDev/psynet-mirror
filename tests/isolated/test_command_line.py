@@ -353,11 +353,14 @@ class TestCommandLine(object):
             "server": "host",
             "dashboard_link": "https://my-app.example.org/dashboard",
             "dashboard_user": "admin",
-            "recruitment_msg": "Additional details:\nStudy created on Prolific",
+            "logs_url": "https://logs.example.org",
+            "recruitment_msg": "\nAdditional details:\n\nStudy created on Prolific\n",
         }
         _print_ssh_ready(result, "launch-info.json")
         assert capsys.readouterr().out.endswith(
-            "  Recruitment:\n    Additional details:\n    Study created on Prolific\n"
+            "  Log viewer:       https://logs.example.org (user: dallinger; "
+            "password saved as logs_password)\n"
+            "  Recruitment:\n    Additional details:\n\n    Study created on Prolific\n"
         )
 
     def test_reset_console_is_silent_without_a_terminal(self):

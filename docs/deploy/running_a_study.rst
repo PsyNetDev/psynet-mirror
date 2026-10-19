@@ -240,9 +240,10 @@ commands ask before resetting if a local server or another program is connected
 to the local database or Redis; pass ``--yes`` to skip the question.
 ``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
 prints a *Ready* summary of the participant link, the dashboard link and
-user, where the password is saved, and the logs command. Without a single
-participant link, the summary shows the recruitment message instead (for
-Prolific, the new draft study). Save these. Open the
+user, where the password is saved, the logs command and, for servers without
+a Cloudflare tunnel, the log viewer in the browser. Without a single
+participant link, the summary shows the recruiter's message instead (for
+Prolific, a link to the new draft study). Save these. Open the
 dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.

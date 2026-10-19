@@ -1995,8 +1995,8 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info):
     """End an SSH deployment with the links and commands the user needs next.
 
-    The password is not printed, so that pasted logs don't leak it; it is
-    saved in ``launch_info``. Without a single participant link, the
+    Passwords are not printed, so that pasted logs don't leak them; they
+    are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead.
     """
@@ -2007,7 +2007,11 @@ def _print_ssh_ready(result, launch_info):
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
-        ("Log viewer", logs_url and f"{logs_url} (user: dallinger)"),
+        (
+            "Log viewer",
+            logs_url
+            and f"{logs_url} (user: dallinger; password saved as logs_password)",
+        ),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
@@ -2016,8 +2020,8 @@ def _print_ssh_ready(result, launch_info):
     message = None if link else result.get("recruitment_msg")
     if message:
         click.echo("  Recruitment:")
-        for line in message.splitlines():
-            click.echo(f"    {line}")
+        for line in message.strip().splitlines():
+            click.echo(f"    {line}".rstrip())
 
 
 def _configure_dallinger_image_source(use_local_dallinger=False):
