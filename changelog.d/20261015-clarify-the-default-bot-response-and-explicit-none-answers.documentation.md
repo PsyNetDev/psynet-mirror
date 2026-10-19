@@ -1,0 +1,1 @@
+Documented that `bot_response=None` makes bots answer `None` while leaving `bot_response` unset keeps the default bot answer, and that the `bot_response` argument of pages and controls also accepts a function.

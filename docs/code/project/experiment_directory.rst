@@ -69,14 +69,14 @@ boilerplate templates with those of the installed PsyNet version, and
     ``psynet generate-constraints``.
 
 ``Dockerfile``
-    Defines the experiment's Docker image.
-
-``Dockertag``
-    The name of the Docker image, set to the directory name.
+    Defines the experiment's Docker image. Its Python base image has the
+    version in ``.python-version``.
 
 ``.python-version``
     The Python major and minor version that was active when the experiment
-    was scaffolded.
+    was scaffolded or last updated with ``psynet scripts update``.
+    ``constraints.txt`` is compiled for this version, and Dallinger's
+    experiment checks fail while a different Python version is active.
 
 ``test.py`` and ``pytest.ini``
     Run bots through the experiment with ``psynet test local``. Customize the

@@ -46,9 +46,9 @@ COMMIT_SITES = {
     "experiment.py::Experiment._relock_arriver_after_barrier_check": _OWNS_REQUEST,
     "experiment.py::Experiment._attempt_queued_barrier_checks": _OWNS_REQUEST,
     "experiment.py::Experiment.route_response": _OWNS_REQUEST,
-    "process.py::AsyncProcess.call_function": _OWNS_JOB,
-    "process.py::LocalAsyncProcess.thread_function": _OWNS_JOB,
-    "process.py::WorkerAsyncProcess.check_timeouts": _OWNS_JOB,
+    "async_job.py::AsyncJob.call_function": _OWNS_JOB,
+    "async_job.py::LocalAsyncJob.thread_function": _OWNS_JOB,
+    "async_job.py::AsyncJob.check_timeouts": _OWNS_JOB,
     "pytest_psynet.py::trial": "pytest fixture",
     "recruiters.py::BaseLucidRecruiter.normalize_entry_information": (
         "Dallinger's /participant and /load-participant routes do not commit"
@@ -59,6 +59,8 @@ COMMIT_SITES = {
     "sync.py::_advance_released_hold_waiters_after_commit": _OWNS_JOB,
     "sync.py::_evaluate_held_instance": _OWNS_JOB,
     "sync.py::check_sync_groups": _OWNS_JOB,
+    "sync.py::_finish_dissolving_groups": _OWNS_JOB,
+    "sync.py::_time_out_overdue_waiters": _OWNS_JOB,
     "timeline.py::Module.prepare_assets_for_deployment": _OWNS_DEPLOY,
     "timeline.py::Module.nodes_register_in_db": _OWNS_DEPLOY,
     "timeline.py::Module.nodes_stage_assets": _OWNS_DEPLOY,

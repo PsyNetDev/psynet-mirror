@@ -1,33 +1,47 @@
 import os
-import re
 import shutil
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import pytest
 
-import psynet
 from psynet.isolated_environment import (
-    DEBUG,
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     ENV_VAR,
     READY_ENV_VAR,
-    TEST,
     IsolatedEnvironment,
     IsolationError,
     _claim_port,
     _spare_redis_database,
     check_no_debug_server,
+    postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
     start_redis_server,
-    without_session_settings,
+    try_lock,
 )
+
+
+def _database_exists(database_url):
+    import psycopg2
+
+    parts = urlsplit(database_url)
+    shared = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    connection = psycopg2.connect(shared)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s",
+                (parts.path.lstrip("/"),),
+            )
+            return cursor.fetchone() is not None
+    finally:
+        connection.close()
 
 
 def test_should_isolate_respects_opt_out_and_ci():
@@ -41,65 +55,46 @@ def test_should_isolate_respects_opt_out_and_ci():
         should_isolate({ENV_VAR: "bogus"})
 
 
-def test_new_sessions_ignore_an_exported_debug_session():
-    exported = {
-        "DATABASE_URL": "postgresql://u:p@localhost/dallinger_debug_5100",
-        "REDIS_URL": "redis://127.0.0.1:6479",
-        "base_port": "5100",
-        "OTHER": "kept",
-    }
-    assert without_session_settings(exported) == {
-        "DATABASE_URL": "postgresql://u:p@localhost/dallinger",
-        "OTHER": "kept",
-    }
-    plain = {"DATABASE_URL": "postgresql://u:p@localhost/study_2", "base_port": "5200"}
-    assert without_session_settings(plain) == plain
-    look_alike = {
-        "DATABASE_URL": "postgresql://u:p@localhost/study_test_1",
-        "REDIS_URL": "redis://localhost:6380",
-        "base_port": "6000",
-    }
-    assert without_session_settings(look_alike) == look_alike
-
-
 def test_shared_environment_warns_once():
     assert "reset" in shared_environment_warning({ENV_VAR: "shared"})
     assert shared_environment_warning({ENV_VAR: "shared", READY_ENV_VAR: "1"}) is None
     assert shared_environment_warning({}) is None
 
 
-@pytest.mark.parametrize(
-    "purpose, newcomer", [(TEST, "the tests"), (DEBUG, "a second debug server")]
-)
-def test_sessions_refuse_a_directory_that_a_debug_server_serves(
-    tmp_path, purpose, newcomer
-):
-    """A user's debug server is refused; one that a test session started isn't."""
+def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
+    """A user's debug server is refused; one that another test session started isn't."""
     from psynet.testing.locks import HELD_LOCK_ENV_VAR
 
     fake_psynet = tmp_path / "psynet"
     fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    shell = {k: v for k, v in os.environ.items() if k != HELD_LOCK_ENV_VAR}
+    shell = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in (HELD_LOCK_ENV_VAR, READY_ENV_VAR)
+    }
 
     def spawn(env):
         return subprocess.Popen(
             [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
         )
 
-    test_server = spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)})
-    processes = [test_server]
+    # Servers from a session's fixtures (whose env is copied from the session
+    # before it takes the directory lock), and from a CI slot holding the lock.
+    processes = [
+        spawn({**shell, READY_ENV_VAR: "1"}),
+        spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)}),
+    ]
     try:
         time.sleep(0.5)
-        check_no_debug_server(tmp_path, purpose)
+        check_no_debug_server(tmp_path)
         user_server = spawn(shell)
         processes.append(user_server)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
-                check_no_debug_server(tmp_path, purpose)
+                check_no_debug_server(tmp_path)
             except RuntimeError as e:
                 assert f"PID {user_server.pid}" in str(e)
-                assert f"{newcomer} would replace" in str(e)
                 break
             time.sleep(0.1)
         else:
@@ -111,73 +106,41 @@ def test_sessions_refuse_a_directory_that_a_debug_server_serves(
             process.wait()
 
 
-def test_a_debug_server_is_not_refused_by_its_own_wrapper(tmp_path):
-    """``timeout 60 psynet debug local`` doesn't count as a server in its directory."""
-    wrapper = tmp_path / "psynet"
-    wrapper.write_text(
-        "import subprocess, sys\n"
-        "check = 'from psynet.isolated_environment import check_no_debug_server as c; c(\".\")'\n"
-        "sys.exit(subprocess.run([sys.executable, '-c', check]).returncode)\n"
+def test_a_debug_server_does_not_refuse_itself(tmp_path):
+    """The check skips the calling process and its ancestors, such as a launcher."""
+    check = "from psynet.isolated_environment import check_no_debug_server as c; c('.')"
+    fake_psynet = tmp_path / "psynet"
+    fake_psynet.write_text(
+        f"import subprocess, sys\n{check}\n"
+        f"subprocess.run([sys.executable, '-c', {check!r}], check=True)\n"
     )
-    env = {**os.environ, "PYTHONPATH": str(Path(psynet.__file__).parents[1])}
-    result = subprocess.run(
-        [sys.executable, str(wrapper), "debug", "local"], cwd=tmp_path, env=env
+    env = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}
+    subprocess.run(
+        [sys.executable, str(fake_psynet), "debug", "local"],
+        cwd=tmp_path,
+        env=env,
+        check=True,
     )
-    assert result.returncode == 0
-
-
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
-def test_children_stop_when_their_caller_is_killed(tmp_path):
-    """A SIGKILLed launcher still stops its Redis server and re-run command."""
-    import psutil
-
-    pid_file = tmp_path / "child.pid"
-    caller = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import subprocess, time\n"
-            "from psynet.isolated_environment import sigterm_on_caller_exit\n"
-            "child = subprocess.Popen(['sleep', '60'], "
-            "preexec_fn=sigterm_on_caller_exit())\n"
-            f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
-            "time.sleep(60)\n",
-        ],
-        env={**os.environ, "PYTHONPATH": str(Path(psynet.__file__).parents[1])},
-    )
-    deadline = time.monotonic() + 30
-    while not pid_file.exists() or not pid_file.read_text():
-        assert time.monotonic() < deadline, "child process did not start"
-        time.sleep(0.1)
-    child = psutil.Process(int(pid_file.read_text()))
-    caller.kill()
-    caller.wait()
-    child.wait(timeout=10)
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
 def test_isolated_environment_uses_its_own_services():
-    url = urlsplit(os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
-    database = re.sub(r"_(test|debug)_\d+$", "", url.path.lstrip("/"))
     shared = {
-        "DATABASE_URL": urlunsplit(url._replace(path=f"/{database}")),
+        "DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL),
         "REDIS_URL": os.environ.get("REDIS_URL", DEFAULT_REDIS_URL),
         "base_port": os.environ.get("base_port", "5000"),
     }
     with (
         IsolatedEnvironment.start(shared) as first,
-        IsolatedEnvironment.start(shared, purpose=DEBUG) as second,
+        IsolatedEnvironment.start(shared) as second,
     ):
         for key in ["DATABASE_URL", "REDIS_URL", "base_port"]:
             assert len({shared[key], first.env[key], second.env[key]}) == 3
         assert first.env[READY_ENV_VAR] == "1"
         port = first.env["base_port"]
+        database = urlsplit(shared["DATABASE_URL"]).path.lstrip("/")
         assert urlsplit(first.env["DATABASE_URL"]).path == f"/{database}_test_{port}"
-        debug_port = second.env["base_port"]
-        assert second.env["DATABASE_URL"].endswith(f"/{database}_debug_{debug_port}")
-        assert _database_exists(shared, first.env["DATABASE_URL"])
-        assert _database_exists(shared, second.env["DATABASE_URL"])
-        assert f"export DATABASE_URL={second.env['DATABASE_URL']}" in second.describe()
+        assert _database_exists(first.env["DATABASE_URL"])
         redis_port = int(first.env["REDIS_URL"].rsplit(":", 1)[1])
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
         develop_directory = Path(first.env["dallinger_develop_directory"])
@@ -186,23 +149,7 @@ def test_isolated_environment_uses_its_own_services():
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", redis_port), timeout=1).close()
     assert not develop_directory.exists()
-    assert not _database_exists(shared, first.env["DATABASE_URL"])
-    assert not _database_exists(shared, second.env["DATABASE_URL"])
-
-
-def _database_exists(shared, database_url):
-    import psycopg2
-
-    connection = psycopg2.connect(shared["DATABASE_URL"])
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s",
-                (urlsplit(database_url).path.lstrip("/"),),
-            )
-            return cursor.fetchone() is not None
-    finally:
-        connection.close()
+    assert not _database_exists(first.env["DATABASE_URL"])
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
@@ -237,15 +184,59 @@ def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
     assert target.read_text() == "keep me"
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root can open read-only files for writing",
+)
+def test_read_only_lock_files_still_lock(tmp_path):
+    """Another user's lock file can't be opened for writing, but still locks."""
+    path = tmp_path / "other-user.lock"
+    path.touch(mode=0o444)
+
+    with try_lock(str(path)) as lock:
+        assert not lock.writable()
+        assert try_lock(str(path)) is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs os.mkfifo")
+def test_lock_files_must_be_regular_files(tmp_path):
+    os.mkfifo(tmp_path / "fifo.lock", 0o444)
+    with pytest.raises(OSError, match="not a regular file"):
+        try_lock(str(tmp_path / "fifo.lock"))
+
+
 def test_spare_redis_databases_avoid_the_shared_one():
     assert _spare_redis_database("redis://localhost:6379", 0) == 1
     assert _spare_redis_database("redis://localhost:6379", 1) == 2
     assert _spare_redis_database("redis://localhost:6379/1", 0) == 0
 
 
-def test_a_failed_debug_start_warns_what_dropping_isolated_does():
-    message = str(IsolationError("no port", DEBUG))
-    assert "Without --isolated" in message and "resets them" in message
+def test_spare_redis_database_is_emptied_when_the_session_ends(monkeypatch):
+    import redis
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which", lambda cmd: None if cmd == "redis-server" else real_which(cmd)
+    )
+    with IsolatedEnvironment.start() as environment:
+        url = environment.env["REDIS_URL"]
+        redis.Redis.from_url(url).set("left-by-test", "1")
+    assert not redis.Redis.from_url(url).exists("left-by-test")
+
+
+def test_description_hides_the_redis_password():
+    environment = IsolatedEnvironment(
+        {
+            "DATABASE_URL": "postgresql://u:p@localhost/dallinger_test_5100",
+            "REDIS_URL": "redis://:secret@redis.example:6380/3",
+            "base_port": "5100",
+        }
+    )
+
+    description = environment.describe()
+
+    assert "Redis at redis.example:6380/3," in description
+    assert "secret" not in description
 
 
 def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
@@ -266,6 +257,24 @@ def test_a_failed_start_explains_how_to_opt_out(tmp_path, monkeypatch):
     port, lock = _claim_port(free_port)
     lock.close()
     assert port == free_port, "the failed start kept its port claim"
+
+
+@pytest.mark.parametrize(
+    "server_error",
+    [
+        "FATAL:  sorry, too many clients already",
+        "FATAL:  remaining connection slots are reserved for non-replication "
+        "superuser connections",
+    ],
+)
+def test_running_out_of_postgres_connections_is_explained(server_error):
+    message = str(IsolationError(RuntimeError(f"Could not connect: {server_error}")))
+
+    assert server_error in message
+    assert "PostgreSQL server has run out of connections" in message
+    assert "max_connections" in message
+    assert f"{ENV_VAR}=shared" not in message, "opting out would not help"
+    assert postgres_connection_limit_message("database does not exist") is None
 
 
 @pytest.mark.skipif(not shutil.which("redis-server"), reason="needs redis-server")
@@ -291,5 +300,4 @@ def test_a_failed_redis_start_drops_the_new_database(monkeypatch):
         IsolatedEnvironment.start()
 
     assert len(created) == 1
-    shared = {"DATABASE_URL": os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)}
-    assert not _database_exists(shared, created[0])
+    assert not _database_exists(created[0])

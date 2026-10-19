@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from importlib.machinery import ModuleSpec
 from math import isnan
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.timeline import Module
@@ -31,6 +32,7 @@ from psynet.utils import (
     get_package_source_directory,
     get_psynet_root,
     git_repository_available,
+    is_a_package,
     is_in_repo_experiment,
     linspace,
     list_experiment_dirs,
@@ -548,6 +550,17 @@ where = ["src"]
     assert locales_dir == expected
 
 
+def test_experiment_with_uv_init_pyproject_is_not_a_package(tmp_path):
+    (tmp_path / "experiment.py").write_text("")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "my-experiment"\nversion = "0.1.0"\ndependencies = []\n'
+    )
+
+    assert not is_a_package(tmp_path)
+    assert get_locales_dir_from_path(tmp_path) == tmp_path / "locales"
+    assert is_a_package(get_psynet_root())
+
+
 def test_get_installed_package_source_directory_supports_namespace_packages(
     tmp_path, monkeypatch
 ):
@@ -845,3 +858,58 @@ def test_templates_read_config_lazily_and_hide_sensitive_keys():
         html = render_string_with_translations(template, locale="en")
 
     assert html == "dark|hidden|unset"
+
+
+@pytest.mark.parametrize("retry_posts", [True, False])
+def test_keep_alive_session_retries_a_dropped_post_only_when_asked(retry_posts):
+    """A POST on a connection the server drops is resent once only if allowed."""
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from psynet.utils import keep_alive_session
+
+    attempts = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            attempts.append(self.path)
+            if len(attempts) == 1:
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/response"
+    try:
+        with keep_alive_session(retry_posts=retry_posts) as session:
+            if retry_posts:
+                assert session.post(url, data={"a": 1}).status_code == 200
+            else:
+                with pytest.raises(requests.ConnectionError):
+                    session.post(url, data={"a": 1})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert len(attempts) == (2 if retry_posts else 1)
+
+
+def test_check_for_login_errors_reports_the_form_messages():
+    from psynet.utils import check_for_login_errors
+
+    page = Mock(text="<html><body><p>Dashboard</p></body></html>")
+    check_for_login_errors(page)
+
+    page.text = (
+        '<div class="alert alert-danger">Invalid login</div>'
+        '<span style="color: red">Unknown user</span>'
+    )
+    with pytest.raises(RuntimeError, match="'Invalid login - Unknown user'"):
+        check_for_login_errors(page)

@@ -1,4 +1,4 @@
-"""Run local tests and debug servers in their own database, Redis, port and folder.
+"""Run local tests in their own database, Redis server, port and develop folder.
 
 Why this exists
 ---------------
@@ -17,27 +17,32 @@ An isolated environment gives the test session:
   afresh when the session starts and dropped when it ends;
 - a private ``redis-server`` on the shared Redis port plus the same offset,
   stopped when the session ends (Redis delivers live notifications to every
-  database on a server, so a database number on the shared server is only a
-  fallback);
+  database on a server, so a database number on the shared server, emptied
+  when the session ends, is only a fallback);
 - its own ``dallinger_develop_directory``.
 
 PsyNet's process cleanup already only targets processes that use the current
 ``DATABASE_URL`` (see ``psynet.command_line.uses_current_database``), so once
 the URLs differ the tests leave a running ``psynet debug local`` alone.
 
+``psynet debug local --isolated`` gives a debug server the same kind of
+environment, so that it runs next to other servers and test sessions; like a
+test session's, its database and Redis are removed when it stops.
+
 Design constraints
 ------------------
 Dallinger connects to PostgreSQL and Redis when ``dallinger.db`` is first
 imported, so the environment variables must change before that import. This
-module therefore imports nothing from Dallinger. It is used in these places:
+module therefore imports nothing from Dallinger. It is used in two places:
 
 - :mod:`psynet.pytest_environment`, an early pytest plugin that PsyNet's
   pytest configuration and the experiment ``pytest.ini`` template load with
   ``-p``. Plugins named with ``-p`` are imported before auto-loaded plugins
   such as ``pytest_dallinger`` and ``pytest_psynet``.
-- ``psynet test local`` and ``psynet debug local --isolated``, which have
-  already imported Dallinger by the time they run, and so re-run themselves
-  in a child process inside the environment.
+- ``psynet test local``, ``psynet performance-test local`` and
+  ``psynet debug local --isolated``, which have already imported Dallinger
+  by the time they run, and so re-run themselves in a child process inside
+  the environment.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
@@ -46,27 +51,19 @@ marks the processes a session starts once their environment is chosen, or when
 ``CI`` is set, because CI machines run no debug server and their test slots
 are isolated already.
 
-``psynet debug local --isolated`` uses the same environment for a debug
-server, with a ``<database>_debug_<port>`` database, so that several debug
-servers and test sessions can run side by side. Like test databases, it is
-dropped when the server stops, so local commands such as ``psynet export
-local`` must read it, with the ``DATABASE_URL`` that
-:meth:`IsolatedEnvironment.describe` prints, while the server runs.
-
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
 same directory breaks. :func:`check_no_debug_server` refuses to start in that
-case.
+case; the ``in_experiment_directory`` fixture also calls it, because tests
+started from elsewhere enter the experiment directory later.
 """
 
-import ctypes
 import fcntl
 import os
 import re
-import shlex
 import shutil
-import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -78,15 +75,46 @@ ISOLATED = "isolated"
 SHARED = "shared"
 #: Set for processes that a test session starts after choosing their environment.
 READY_ENV_VAR = "_PSYNET_TEST_ENVIRONMENT_READY"
-#: Purposes of an isolated environment; they name its database.
-TEST = "test"
-DEBUG = "debug"
 
 DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
-_PR_SET_PDEATHSIG = 1
+
+
+def local_base_port(environ=None):
+    """Return Dallinger's ``base_port`` without importing the experiment.
+
+    Follows Dallinger's precedence: the ``base_port`` environment variable,
+    then ``config.txt`` in the current directory, then ``~/.dallingerconfig``,
+    then 5000. Like Dallinger, a later section of a file overrides an earlier
+    one. A ``base_port`` set in the experiment class's ``config`` dictionary is
+    not seen.
+
+    Raises
+    ------
+    ValueError
+        If a configuration file can't be parsed or ``base_port`` isn't a number.
+    """
+    import configparser
+
+    environ = os.environ if environ is None else environ
+    if "base_port" in environ:
+        return int(environ["base_port"])
+    for path in ("config.txt", os.path.expanduser("~/.dallingerconfig")):
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path)
+        except configparser.Error as e:
+            raise ValueError(f"Could not read {path}: {e}") from e
+        values = [
+            parser[s]["base_port"]
+            for s in parser.sections()
+            if "base_port" in parser[s]
+        ]
+        if values:
+            return int(values[-1])
+    return _DEFAULT_BASE_PORT
 
 
 def should_isolate(environ=None):
@@ -117,75 +145,63 @@ def shared_environment_warning(environ=None):
     )
 
 
+def _in_ci(environ=None):
+    """Return whether ``CI`` is set, so the services are the CI job's own."""
+    environ = os.environ if environ is None else environ
+    return environ.get("CI", "").lower() not in ("", "0", "false")
+
+
 def _is_configured(environ):
-    in_ci = environ.get("CI", "").lower() not in ("", "0", "false")
-    return bool(environ.get(READY_ENV_VAR)) or in_ci
+    return bool(environ.get(READY_ENV_VAR)) or _in_ci(environ)
 
 
-def check_no_debug_server(directory, purpose=TEST):
-    """Raise ``RuntimeError`` if another ``psynet debug`` process runs in ``directory``.
+def check_no_debug_server(directory):
+    """Raise ``RuntimeError`` if a ``psynet debug`` process runs in ``directory``.
 
     Tests and debug servers replace the generated files in the experiment
     directory, which breaks a debug server that serves it, even when the
-    services are isolated. Servers that a test session started there are
-    skipped: that session holds the directory's lock, which tests wait for.
+    services are isolated. Skipped are this process and its ancestors (such as
+    the ``psynet debug local --isolated`` launcher), and servers that a test
+    session or isolated debug server started there: they run with their
+    environment already set up, or their session holds the directory's lock,
+    which this session waits for.
     """
     import psutil
 
-    from .testing.locks import HELD_LOCK_ENV_VAR
-
-    newcomer = "the tests" if purpose == TEST else "a second debug server"
     directory = os.path.realpath(directory)
-    for process in _debug_servers(directory):
-        try:
-            held_lock = process.environ().get(HELD_LOCK_ENV_VAR)
-        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            held_lock = None
-        if held_lock is not None and os.path.realpath(held_lock) == directory:
+    this_process = psutil.Process()
+    own = {this_process.pid, *(p.pid for p in this_process.parents())}
+    for process in psutil.process_iter(["cmdline", "cwd"]):
+        cmdline = process.info["cmdline"] or []
+        cwd = process.info["cwd"]
+        if process.pid in own or not (
+            cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline)
+        ):
             continue
-        raise RuntimeError(
-            f"psynet debug (PID {process.pid}) is serving {directory}, and "
-            f"{newcomer} would replace its generated files. Stop it, or run "
-            f"{newcomer} from a copy of the experiment such as a git worktree."
-        )
-
-
-def debug_server_environment(directory):
-    """Return the PID and environment of the ``psynet debug`` serving ``directory``.
-
-    For ``psynet debug local --isolated`` this is the re-run child, whose
-    environment holds the server's own settings. Returns ``None`` if no debug
-    server runs there or its environment can't be read.
-    """
-    import psutil
-
-    found = None
-    for process in _debug_servers(directory):
         try:
             environ = process.environ()
         except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            continue
-        if found is None or READY_ENV_VAR in environ:
-            found = process.pid, environ
-    return found
+            environ = {}
+        if not _started_by_test_session(environ, directory):
+            raise RuntimeError(
+                f"psynet debug (PID {process.pid}) is serving {directory}, and "
+                "this command would replace its generated files. Stop it, or run "
+                "this command in a copy of the experiment such as a git worktree."
+            )
 
 
-def _debug_servers(directory):
-    """Yield the ``psynet debug`` processes in ``directory``, except this command."""
-    import psutil
+def _started_by_test_session(environ, directory):
+    """Return whether a process with ``environ`` belongs to a test session.
 
-    directory = os.path.realpath(directory)
-    # Wrappers such as ``timeout 60 psynet debug local`` are this command itself.
-    this_command = {os.getpid(), *(p.pid for p in psutil.Process().parents())}
-    for process in psutil.process_iter(["cmdline", "cwd"]):
-        cwd = process.info["cwd"]
-        if (
-            process.pid not in this_command
-            and cwd
-            and os.path.realpath(cwd) == directory
-            and _is_psynet_debug(process.info["cmdline"] or [])
-        ):
-            yield process
+    Servers that a session's fixtures start inherit :data:`READY_ENV_VAR`;
+    CI slots that hold the directory's lock pass it down instead.
+    """
+    from .testing.locks import HELD_LOCK_ENV_VAR
+
+    held_lock = environ.get(HELD_LOCK_ENV_VAR)
+    return bool(environ.get(READY_ENV_VAR)) or (
+        held_lock is not None and os.path.realpath(held_lock) == directory
+    )
 
 
 def _is_psynet_debug(cmdline):
@@ -195,63 +211,60 @@ def _is_psynet_debug(cmdline):
     )
 
 
+#: PostgreSQL's SQLSTATE for ``too_many_connections``.
+_TOO_MANY_CONNECTIONS_SQLSTATE = "53300"
+_TOO_MANY_CONNECTIONS_TEXTS = (
+    "too many clients already",
+    "remaining connection slots are reserved",
+)
+
+
+def postgres_connection_limit_message(error):
+    """Explain a PostgreSQL "too many connections" error, or return None.
+
+    Parameters
+    ----------
+    error : BaseException or str
+        An exception (for example from psycopg2 or SQLAlchemy) or text such as
+        server output.
+
+    Returns
+    -------
+    str or None
+        Advice for the user if ``error`` says that the server has run out of
+        connections, otherwise None.
+    """
+    if getattr(error, "pgcode", None) == _TOO_MANY_CONNECTIONS_SQLSTATE or any(
+        text in str(error) for text in _TOO_MANY_CONNECTIONS_TEXTS
+    ):
+        return (
+            "The local PostgreSQL server has run out of connections. Every local "
+            "experiment, test session and database shares this server and its "
+            "max_connections limit (100 by default). Run fewer bots or test "
+            "sessions at once, stop other local experiments, or raise "
+            "max_connections in postgresql.conf (psql -c 'SHOW config_file' "
+            "shows where it is) and restart PostgreSQL."
+        )
+    return None
+
+
 class IsolationError(RuntimeError):
     """Raised when a test session can't get its own database and Redis.
 
-    The message gives the reason and how to opt out, so callers can show
-    ``str(error)`` as is; the original exception is the ``__cause__``.
+    The message gives the reason and how to opt out (or, if PostgreSQL ran out
+    of connections, how to free some), so callers can show ``str(error)`` as
+    is; the original exception is the ``__cause__``.
     """
 
-    def __init__(self, reason, purpose=TEST):
-        if purpose == DEBUG:
-            message = (
-                f"Could not give this debug server its own database and Redis "
-                f"({reason}). Without --isolated it uses the local ones instead, "
-                "which resets them and stops any other local debug server that uses them."
-            )
-        else:
-            message = (
-                f"Could not give these tests their own database and Redis ({reason}). "
-                f"Set {ENV_VAR}={SHARED} to run them against the local database and "
-                "Redis instead, which resets any local debug server."
-            )
-        super().__init__(message)
-
-
-def is_isolated_debug_server(environ):
-    """Return whether ``environ`` is that of a ``psynet debug local --isolated``."""
-    database = urlsplit(environ.get("DATABASE_URL", "")).path
-    return bool(environ.get(READY_ENV_VAR)) and database.endswith(
-        f"_{DEBUG}_{environ.get('base_port')}"
-    )
-
-
-_SERVER_SETTINGS = ("DATABASE_URL", "REDIS_URL", "base_port")
-
-
-def export_advice(environ):
-    """Return how to point other local commands at the debug server with ``environ``.
-
-    Settings the server has are exported and those it lacks are unset, so the
-    line also works for a plain ``psynet debug local``.
-    """
-    return (
-        "To point other local commands (such as psynet export local) at it, run:\n"
-        f"  {_export_line(environ)}"
-    )
-
-
-def _export_line(environ):
-    exported = [
-        f"{k}={shlex.quote(environ[k])}" for k in _SERVER_SETTINGS if k in environ
-    ]
-    unset = [k for k in _SERVER_SETTINGS if k not in environ]
-    commands = []
-    if exported:
-        commands.append("export " + " ".join(exported))
-    if unset:
-        commands.append("unset " + " ".join(unset))
-    return "; ".join(commands)
+    def __init__(self, reason):
+        advice = postgres_connection_limit_message(reason) or (
+            f"Set {ENV_VAR}={SHARED} to run them against the local database and "
+            "Redis instead, which resets any local debug server."
+        )
+        super().__init__(
+            f"Could not give these tests their own database and Redis ({reason}). "
+            f"{advice}"
+        )
 
 
 class IsolatedEnvironment:
@@ -261,103 +274,99 @@ class IsolatedEnvironment:
     stop its Redis server.
     """
 
-    def __init__(
-        self,
-        env,
-        port_lock=None,
-        redis_process=None,
-        purpose=TEST,
-    ):
+    def __init__(self, env, port_lock=None, redis_process=None):
         self.env = env
-        self.purpose = purpose
         self._port_lock = port_lock
         self._redis_process = redis_process
 
     @classmethod
-    def start(cls, environ=None, purpose=TEST):
-        """Create the database and start Redis; return the new environment.
-
-        ``purpose`` is :data:`TEST` or :data:`DEBUG`; the database is named
-        ``<database>_<purpose>_<port>``.
+    def start(cls, environ=None):
+        """Create the test database and start Redis; return the new environment.
 
         Raises
         ------
         IsolationError
-            If no free port is found, PostgreSQL can't be reached, the
-            database can't be created or Redis doesn't start; the message
+            If ``base_port`` can't be read, no free port is found, PostgreSQL
+            can't be reached, the test database can't be created or Redis
+            doesn't start; the message
             says how to opt out. Other errors propagate unchanged, because
             opting out would not fix them.
         """
         import psycopg2
 
         try:
-            return cls._start(environ, purpose)
-        except (OSError, RuntimeError, psycopg2.Error) as e:
-            raise IsolationError(e, purpose) from e
+            return cls._start(environ)
+        except (OSError, RuntimeError, ValueError, psycopg2.Error) as e:
+            raise IsolationError(e) from e
 
     @classmethod
-    def _start(cls, environ, purpose):
-        environ = without_session_settings(
-            dict(os.environ if environ is None else environ)
-        )
+    def _start(cls, environ):
+        environ = dict(os.environ if environ is None else environ)
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
+        shared_base_port = local_base_port(environ)
+        shared_redis_port = urlsplit(redis_url).port or 6379
 
-        def usable(port):
-            return not private_redis or _port_is_free(
-                _session_redis_port(environ, port)
-            )
+        def redis_port(web_port):
+            # Offsetting from the claimed web port keeps concurrent sessions
+            # from picking the same Redis port.
+            return shared_redis_port + web_port - shared_base_port
 
         base_port, port_lock = _claim_port(
-            _shared_base_port(environ) + _PORT_OFFSET, usable=usable
+            shared_base_port + _PORT_OFFSET,
+            also_free=redis_port if private_redis else None,
         )
         session_database_url = None
         try:
             session_database_url = create_database(
-                database_url, suffix=f"_{purpose}_{base_port}"
+                database_url, suffix=f"_test_{base_port}"
             )
             env = {
                 **environ,
                 READY_ENV_VAR: "1",
                 "DATABASE_URL": session_database_url,
-                "REDIS_URL": _session_redis_url(environ, base_port, private_redis),
                 "base_port": str(base_port),
-                # Not gettempdir(): Dallinger rejects development paths with a period.
                 "dallinger_develop_directory": f"/tmp/dallinger_develop_{base_port}",
             }
             if not private_redis:
+                slot = (base_port - shared_base_port - _PORT_OFFSET) // 10
+                number = _spare_redis_database(redis_url, slot)
+                env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    f"redis-server is not on PATH, so this session uses "
-                    f"{env['REDIS_URL']} on the shared server. Live notifications "
-                    "can still reach another local debug server's participants.",
+                    f"redis-server is not on PATH, so these tests use Redis database "
+                    f"{number} on the shared server. Live notifications can still "
+                    "reach a local debug server's participants.",
                     file=sys.stderr,
                 )
-                return cls(env, port_lock, purpose=purpose)
+                return cls(env, port_lock)
 
-            process = start_redis_server(_session_redis_port(environ, base_port))
+            process = start_redis_server(redis_port(base_port))
         except BaseException:
             if session_database_url is not None:
                 _drop_session_database(session_database_url)
             port_lock.close()
             raise
-        return cls(env, port_lock, process, purpose)
+        env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port(base_port)}"
+        return cls(env, port_lock, process)
 
     def describe(self):
-        """Return a summary of where the session's services are."""
+        """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
-        summary = (
-            f"Using database {database}, Redis at {self.env['REDIS_URL']}, "
-            f"and port {self.env['base_port']}."
+        redis = urlsplit(self.env["REDIS_URL"])
+        redis_database = redis.path.lstrip("/") or "0"
+        return (
+            f"Using database {database}, Redis at {redis.hostname}:"
+            f"{redis.port or 6379}/{redis_database}, and port {self.env['base_port']}."
         )
-        if self.purpose == DEBUG:
-            summary += "\n" + export_advice(self.env)
-        return summary
 
     def close(self):
-        """Stop the session's Redis server and drop its database."""
+        """Stop or empty the session's Redis and drop its database."""
         if self._redis_process is not None:
-            stop_process(self._redis_process)
+            _stop_process(self._redis_process)
             self._redis_process = None
+        elif self._port_lock is not None:
+            _flush_redis_database(self.env["REDIS_URL"])
         if self._port_lock is not None:
             # While the port is still claimed, so no new session is using it yet.
             shutil.rmtree(self.env["dallinger_develop_directory"], ignore_errors=True)
@@ -370,59 +379,6 @@ class IsolatedEnvironment:
 
     def __exit__(self, *exc_info):
         self.close()
-
-
-def without_session_settings(environ):
-    """Return ``environ`` without the exported settings of an isolated session.
-
-    A shell that ran the ``export`` line of a debug server has its
-    ``<database>_debug_<port>`` database, its private Redis (which stops with
-    the server) and its port. A new session should start from the shared
-    settings instead, not from databases such as
-    ``dallinger_debug_5100_test_5200`` and a stopped Redis. Only a suffix that
-    matches ``base_port`` counts, so a user's own ``study_test_1`` is kept.
-    """
-    environ = dict(environ)
-    database_url = environ.get("DATABASE_URL", "")
-    shared_url, port = split_session_database(database_url)
-    if port is not None and port == environ.get("base_port"):
-        environ["DATABASE_URL"] = shared_url
-        environ.pop("REDIS_URL", None)
-        environ.pop("base_port", None)
-    return environ
-
-
-def split_session_database(database_url):
-    """Split ``<database>_(test|debug)_<port>`` into the shared URL and the port.
-
-    Also accepts a bare database name. Returns ``(database_url, None)`` for
-    other names.
-    """
-    parts = urlsplit(database_url)
-    match = re.fullmatch(rf"(.*)_(?:{TEST}|{DEBUG})_(\d+)", parts.path)
-    if match is None:
-        return database_url, None
-    return urlunsplit(parts._replace(path=match.group(1))), match.group(2)
-
-
-def _shared_base_port(environ):
-    return int(environ.get("base_port", _DEFAULT_BASE_PORT))
-
-
-def _session_redis_port(environ, port):
-    # Offsetting from the claimed web port keeps concurrent sessions from
-    # picking the same Redis port.
-    shared_redis_port = urlsplit(environ.get("REDIS_URL", DEFAULT_REDIS_URL)).port
-    return (shared_redis_port or 6379) + port - _shared_base_port(environ)
-
-
-def _session_redis_url(environ, port, private_redis):
-    """Return the Redis URL of the session on web ``port``."""
-    if private_redis:
-        return f"redis://127.0.0.1:{_session_redis_port(environ, port)}"
-    redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
-    slot = (port - _shared_base_port(environ) - _PORT_OFFSET) // 10
-    return _with_redis_database(redis_url, _spare_redis_database(redis_url, slot))
 
 
 def create_database(database_url, *, suffix):
@@ -453,22 +409,33 @@ def _drop_database(cursor, name):
     """Drop database ``name`` if it exists, after terminating its connections."""
     from psycopg2 import sql
 
-    # DROP DATABASE ... WITH (FORCE) needs PostgreSQL 13, but
-    # `psynet services ensure` starts PostgreSQL 12.
+    _terminate_connections(cursor, name)
+    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+
+
+def _terminate_connections(cursor, name):
+    """Terminate the other client connections to database ``name``.
+
+    ``DROP DATABASE ... WITH (FORCE)`` would do this, but needs PostgreSQL 13,
+    and ``psynet services ensure`` starts PostgreSQL 12. Autovacuum workers
+    are left alone: only a superuser may terminate them, and ``CREATE
+    DATABASE`` and ``DROP DATABASE`` stop them anyway.
+    """
     cursor.execute(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-        "WHERE datname = %s AND pid <> pg_backend_pid()",
+        "WHERE datname = %s AND pid <> pg_backend_pid() "
+        "AND backend_type = 'client backend'",
         (name,),
     )
-    cursor.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
 
 
 def _drop_session_database(session_database_url):
     """Drop a session's database, warning instead of raising if that fails."""
     import psycopg2
 
-    shared_url, _ = split_session_database(session_database_url)
-    name = urlsplit(session_database_url).path.lstrip("/")
+    parts = urlsplit(session_database_url)
+    name = parts.path.lstrip("/")
+    shared_url = urlunsplit(parts._replace(path=re.sub(r"_test_\d+$", "", parts.path)))
     try:
         connection = psycopg2.connect(shared_url)
         try:
@@ -485,12 +452,21 @@ def _drop_session_database(session_database_url):
         )
 
 
+def _flush_redis_database(redis_url):
+    """Empty a spare Redis database, warning instead of raising if that fails."""
+    import redis
+
+    try:
+        redis.Redis.from_url(redis_url).flushdb()
+    except redis.RedisError as e:
+        print(
+            f"Warning: could not empty the test session's Redis database ({e}).",
+            file=sys.stderr,
+        )
+
+
 def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
-
-    The server runs in its own session, so Ctrl+C in the terminal doesn't stop
-    it before the servers that use it, and it stops when the calling process
-    dies without cleaning up; see :func:`sigterm_on_caller_exit`.
 
     Raises
     ------
@@ -499,14 +475,12 @@ def start_redis_server(port):
         answer within 10 seconds.
     """
     if not _port_is_free(port):
-        raise RuntimeError(f"Port {port} for a session's Redis server is in use.")
+        raise RuntimeError(f"Port {port} for a test Redis server is in use.")
     process = subprocess.Popen(
         ["redis-server", "--bind", "127.0.0.1", "--port", str(port)]
         + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
-        preexec_fn=sigterm_on_caller_exit(),
     )
     try:
         deadline = time.monotonic() + 10
@@ -521,33 +495,11 @@ def start_redis_server(port):
             time.sleep(0.1)
         raise RuntimeError(f"Redis on port {port} did not start.")
     except BaseException:
-        stop_process(process)
+        _stop_process(process)
         raise
 
 
-def sigterm_on_caller_exit():
-    """Return a ``preexec_fn`` that sends the child SIGTERM when the caller dies.
-
-    This stops a session's Redis server and re-run command even when the
-    process that started them is killed with SIGKILL and can't clean up. It
-    uses Linux's ``PR_SET_PDEATHSIG``, which fires when the calling *thread*
-    exits, so call it from a thread that lives as long as the session. Returns
-    ``None`` on other platforms.
-    """
-    if not sys.platform.startswith("linux"):
-        return None
-    prctl = ctypes.CDLL(None, use_errno=True).prctl
-    caller = os.getpid()
-
-    def preexec():
-        # The caller may already have died between fork and prctl.
-        if prctl(_PR_SET_PDEATHSIG, signal.SIGTERM) != 0 or os.getppid() != caller:
-            os.kill(os.getpid(), signal.SIGTERM)
-
-    return preexec
-
-
-def stop_process(process):
+def _stop_process(process):
     """Terminate ``process``, killing it if it hasn't exited after 10 seconds."""
     process.terminate()
     try:
@@ -568,42 +520,83 @@ def _port_is_free(port):
         return True
 
 
-def port_lock_path(port):
-    """Return the lock file that a session holds while it uses ``port``.
+def lock_path(name):
+    """Return the path of the lock file ``<name>.lock``.
 
-    In ``/tmp`` rather than ``TMPDIR``, so that sessions with different
+    In ``/tmp`` rather than ``TMPDIR``, so that processes with different
     temporary directories still see each other's claims, like the
     development folders that are also in ``/tmp``.
     """
     root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
-    return os.path.join(root, f"psynet-test-{port}.lock")
+    return os.path.join(root, f"{name}.lock")
 
 
-def _claim_port(start, usable=None):
+def port_lock_path(port):
+    """Return the lock file that a test session holds while it uses ``port``."""
+    return lock_path(f"psynet-test-{port}")
+
+
+def try_lock(path):
+    """Take an exclusive lock on the file at ``path`` without waiting.
+
+    Another user's lock file is opened read-only, which is enough for
+    ``flock``; such a lock file is not writable. Any local user can
+    deliberately hold or block a lock name in ``/tmp``: these locks prevent
+    accidents, not attacks.
+
+    Returns
+    -------
+    file or None
+        The open lock file, which holds the lock until it is closed, or None
+        if another process holds the lock.
+
+    Raises
+    ------
+    OSError
+        If the file can't be opened at all or isn't a regular file.
+    """
+    # Not following symlinks or truncating, so a link planted in /tmp
+    # can't make this empty someone's file; non-blocking, so a FIFO can't hang.
+    flags = os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | flags, 0o644)
+        mode = "r+"
+    except PermissionError:
+        # Without O_CREAT, so Linux's fs.protected_regular allows it in /tmp.
+        fd = os.open(path, os.O_RDONLY | flags)
+        mode = "r"
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(f"{path} is not a regular file.")
+    lock = os.fdopen(fd, mode)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        return None
+    return lock
+
+
+def _claim_port(start, also_free=None):
     """Return a free web port and an open lock file that reserves it.
 
     A test session's server binds its port only once the experiment has
     started, so the lock stops a second session from choosing the same port
     (and with it the same database) in the meantime. Closing the file releases
-    the claim. ``usable`` says whether a candidate port can be used besides
-    being free, for example because the session's Redis port is also free.
+    the claim. ``also_free`` maps a candidate port to another port that must
+    also be free, such as the session's Redis port.
     """
     for port in range(start, start + 1000, 10):
         try:
-            # Not following symlinks or truncating, so a link planted in /tmp
-            # can't make this empty someone's file.
-            fd = os.open(
-                port_lock_path(port), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644
-            )
+            lock = try_lock(port_lock_path(port))
         except OSError:
+            # An unopenable claim file counts as taken.
             continue
-        lock = os.fdopen(fd, "r+")
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
+        if lock is None:
             continue
-        if _port_is_free(port) and (usable is None or usable(port)):
+        if _port_is_free(port) and (
+            also_free is None or _port_is_free(also_free(port))
+        ):
             return port, lock
         lock.close()
     raise RuntimeError(f"No free port found from {start}.")

@@ -9,7 +9,8 @@ from bugs. This test suite includes running all the demos and checking that
 they complete in the correct state.
 
 Whenever you push a contribution to a branch of the PsyNet repository,
-these automated tests will be automatically queued. They normally take 10-15 minutes
+these automated tests will be automatically queued (merge requests stacked on
+another feature branch run only the fast checks; see below). They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
 Resolve any errors before merging into ``master``.
 
@@ -23,6 +24,14 @@ That list is an allowlist: a path missing from it skips the tests on merge
 requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
+
+Merge requests stacked on another feature branch, whose target branch is
+neither ``master`` nor a ``release-`` branch, run only the fast checks (``pre_commit``,
+``validate_agent_skills`` and ``changelog_check``). The pytest, Playwright,
+``docs`` and ``asv_regression`` jobs that the diff would otherwise trigger
+appear as optional manual jobs instead: start them from the pipeline page when
+you want a full run. Pipelines created after the merge request is retargeted
+to ``master`` run everything as usual.
 
 Merge-train pipelines skip jobs that already passed on the same files.
 Merging goes through a GitLab merge train, whose pipeline tests the commit that
@@ -84,11 +93,11 @@ from the PsyNet checkout:
     PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
     DIR=$(mktemp -d)
     curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
-      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_14|playwright_e2e_)")) | "\(.id) \(.name)"' \
       | while read -r id name shard; do
           i=${shard%/*}
           case $name in
-            tests_*) f=ci_durations_3.13_$i.json ;;
+            tests_*) f=ci_durations_3.14_$i.json ;;
             *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
           esac
           curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
@@ -139,7 +148,7 @@ by default each local test session gets its own environment and leaves a
 running ``psynet debug local`` alone. The session prints where it runs, for
 example::
 
-    Using database dallinger_test_5100, Redis at redis://127.0.0.1:6479, and port 5100.
+    Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
 
 It claims a free web port 100 or more above your ``base_port`` (so from 5100
 by default), uses the database ``<database>_test_<port>`` next to
@@ -147,8 +156,19 @@ by default), uses the database ``<database>_test_<port>`` next to
 sessions can also run at once. Both are removed when the session ends. If ``redis-server`` isn't installed (for example when Redis runs only in
 Docker), the session uses a spare database number on your Redis server
 instead, which keeps its data apart but can still send live notifications to a
-debug server's participants. If the environment can't be set up, the session stops
+debug server's participants. That database is emptied when the session ends. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
+``psynet debug local --isolated`` gives a debug server the same environment
+(see :ref:`running_several_local_experiments`).
+
+Each session has its own database, but all of them share your PostgreSQL
+server and its ``max_connections`` limit (100 by default). Several sessions at
+once, or a performance test with a few hundred bots, can use up that limit;
+PostgreSQL then refuses connections with "sorry, too many clients already", and
+PsyNet says that the server ran out of connections. Run fewer bots or sessions
+at once, stop other local experiments, or raise ``max_connections`` in
+``postgresql.conf`` (``psql -c 'SHOW config_file'`` shows where it is) and
+restart PostgreSQL.
 
 This applies to ``pytest`` runs from the PsyNet checkout, to experiments
 whose ``pytest.ini`` loads ``-p psynet.pytest_environment`` (run ``psynet
@@ -297,9 +317,12 @@ count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
-the in-request retry waits 250ms; if that is still busy, one delayed
-``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. An in-page probe that counts hold wakes or schedule calls must
+the browser retries once after 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. Playwright judges a busy 503 only by the same hang
+cap as other requests, because its duration varies with CI load; the
+unit test ``test_process_response_ready_hold_resume_locks_with_nowait``
+checks that hold-resume uses ``NOWAIT``. An in-page
+probe that counts hold wakes or schedule calls must
 swallow ``psynet.resumeTimelineHold`` and call
 ``window.__settleTimelineHoldResume`` before installing its counters. The helper
 waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a

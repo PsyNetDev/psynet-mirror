@@ -60,6 +60,13 @@ experiment is reachable at a first-level hostname such as
 
     psynet deploy ssh --app consonance --ingress cloudflare
 
+Use a Cloudflare tunnel for a server on a private network, such as a lab
+computer: Let's Encrypt cannot issue certificates for a private address, so
+classic ingress cannot serve participants there. To make it the server's
+default, register it with ``dallinger docker-ssh servers add --host <host>
+--default-ingress cloudflare``. Cloudflare ingress needs a Dallinger version
+newer than 12.4.
+
 Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
 ``cloudflare_dns_zone`` from Dallinger config (for example
 ``science-of-music.org``).
@@ -112,14 +119,30 @@ writable, retrying with a root Alpine container if needed.
 ``psynet export ssh`` reaches a deployment at the public origin recorded in
 its deployment manifest.
 
-To deploy with an unreleased Dallinger checkout, bake it into the image::
+``psynet deploy ssh`` always installs the PsyNet and Dallinger versions pinned
+in ``constraints.txt`` (``requirements.txt`` if there is no
+``constraints.txt``). Before deploying, ``psynet deploy ssh``,
+``psynet debug ssh`` and ``psynet performance-test ssh`` compare these pins
+with the installed PsyNet and Dallinger, including the commit of an editable
+checkout, and stop if they differ, so that you don't test one version locally
+while the server runs another. Install the pinned versions with
+``psynet setup``. To try unreleased PsyNet or Dallinger checkouts on a
+server, bake them into a debug deployment's image::
 
-    psynet deploy ssh --app your-app-name --use-local-dallinger
+    psynet debug ssh --app your-app-name --use-local-psynet --use-local-dallinger
 
-PYTHONPATH is not enough: the image still pip-installs the Dallinger version
-pinned in ``pyproject.toml``. ``--use-local-dallinger`` builds a wheel from
-the editable checkout (or ``DALLINGER_SOURCE``), and the image build installs
-it after ``COPY .``.
+Each option builds a wheel from the editable checkout (for Dallinger, or
+``DALLINGER_SOURCE``), and the image build installs it after ``COPY .``, over
+the pinned version. Before the build, PsyNet copies ``constraints.txt`` to
+``local-image-pins.txt`` without that package's lines, and the image installs
+the copy instead. Bundled demos and experiments without ``constraints.txt``
+use ``requirements.txt``. This way, an editable pin that points at a path on
+your machine does not break the build. Each option
+also skips the sandbox checks on that package's pin, so bundled demos, whose
+``requirements.txt`` lists plain ``psynet``, can be deployed with
+``--use-local-psynet``. The options need the experiment's ``Dockerfile`` from
+this PsyNet version; run ``psynet scripts update`` if PsyNet says it is out of
+date.
 
 Services
 ^^^^^^^^
@@ -128,7 +151,7 @@ Each app runs these Docker Compose services:
 
 - ``web``, which serves HTTP requests;
 - ``worker_1`` to ``worker_N``, which process background tasks, one for each
-  of ``num_dynos_worker``;
+  of ``worker_processes`` (see :ref:`performance_testing_async_workers`);
 - ``clock``, which runs scheduled tasks;
 - ``redis``, which holds the app's cache and task queue;
 - ``pgbouncer``, which pools the app's database connections.
@@ -165,7 +188,18 @@ Files on the server
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
 uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it.
+name is deployed, which replaces it. It first checks that the app is on the
+server; if not, it stops and lists the apps that are, suggesting the closest
+name. It then asks you to confirm (pressing Enter answers no); add ``--yes``
+to skip the confirmation in scripts, where it is required because there is no
+terminal to ask in. It also wakes the app if it is
+asleep and asks it for pending async jobs, and does not destroy an app that
+has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
+not skip this check. If the check cannot run, for example because the app's
+web container is down, it does not destroy the app without
+``--discard-pending-jobs``, except for apps deployed with ``psynet debug ssh``
+or ``psynet performance-test ssh``, which it destroys anyway.
+See :doc:`/reference/api/async_job`.
 
 Updating a running app
 ----------------------
@@ -173,8 +207,9 @@ Updating a running app
 To ship a fix to an app that is already running, add ``--update`` to the
 command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
-was deployed with. PsyNet asks you to confirm, then rebuilds the image and
-restarts the app. The update keeps:
+was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
+the existing app and prints the update command for it. PsyNet asks you to
+confirm, then rebuilds the image and restarts the app. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
@@ -201,6 +236,10 @@ To sleep apps automatically after a quiet period, set in ``config.txt``::
 
     docker_ssh_idle_hibernate = true
     docker_ssh_idle_hibernate_minutes = 60
+
+Before sleeping, the app is asked whether it must stay awake: it stays awake
+while participants are working, while ``auto_recruit`` is on, and while
+async jobs are pending, so a backlog of low-priority jobs finishes first.
 
 ``/health`` probes do not reset the idle timer. While idle sleep is on,
 PsyNet pages ping the server every few minutes while a participant is using
