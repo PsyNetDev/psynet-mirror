@@ -8,9 +8,9 @@ PsyNet is a Python framework for behavioral experiments that are difficult to
 run on conventional platforms: procedures that adapt to each response, chains
 in which one participant's response becomes the next participant's stimulus,
 ratings balanced across thousands of stimuli, and groups of participants
-interacting in real time. It builds on [Dallinger](https://dallinger.readthedocs.io/)
-and provides recruitment and payment, testing with simulated participants,
-deployment, monitoring and data export.
+interacting in real time. It provides extensive automation of the data collection pipeline,
+including testing with simulated participants, participant recruitment and payment,
+experiment deployment, monitoring, and data export.
 
 **[Read the documentation](https://psynetdev.gitlab.io/PsyNet/alpha/)**
 
