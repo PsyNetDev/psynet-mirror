@@ -209,11 +209,10 @@ export of in ``exports/`` of the current directory. For a single app, Dallinger
 then lists the app's data with its sizes and asks, just before tearing the app
 down, and skips the question if there is no data. For several apps, PsyNet
 asks once for all of them, before checking any. Answer no, or pass
-``--keep-data``, to keep the data;
-each app's kept data is then listed with the command that deletes it later. Pass
-``--remove-data`` to delete it without asking. ``--yes`` does not answer this
-question, so scripts and other non-interactive runs must pass one of the two
-flags:
+``--keep-data``, to keep the data; each app's kept data is then listed with the
+command that deletes it later. Pass ``--remove-data`` to delete it without
+asking. ``--yes`` does not answer this question, so scripts and other
+non-interactive runs must pass one of the two flags:
 
 .. code-block:: bash
 
