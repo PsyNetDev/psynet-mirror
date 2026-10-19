@@ -50,6 +50,8 @@ the ``--dns-host`` name itself rather than a subdomain, and its logs at
 ``https://<dns-host>/logs``. Such a deployment needs a server with no other
 apps: Dallinger offers to destroy any it finds first.
 
+.. _ssh_server_cloudflare:
+
 Cloudflare tunnels (optional)
 -----------------------------
 
@@ -79,6 +81,13 @@ records. Until a server default is changed, omitting ``--ingress`` keeps
 classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
 name rather than ``https://<app>.<ssh-host>``.
 
+Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server>`` exists
+only on servers with classic ingress. Read a Cloudflare app's logs with the
+``ssh … docker compose … logs -f`` command printed at the end of the
+deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
+The dashboard's **Monitor > Logger** page shows the experiment's own log
+output with either ingress.
+
 .. _ssh_server_launch_info:
 
 Launch information
@@ -99,7 +108,7 @@ you need next:
 The participant link appears for recruiters that print a single recruitment
 link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
-The log viewer row appears for servers without a Cloudflare tunnel.
+The log viewer row appears for apps with classic ingress.
 Passwords are not printed; they are saved in ``launch-info.json`` together
 with the other details. With older Dallinger versions, Dallinger's own
 summary, including the dashboard password, still appears above this one.

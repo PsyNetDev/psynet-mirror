@@ -251,8 +251,8 @@ commands ask before resetting if a local server or another program is connected
 to the local database or Redis; pass ``--yes`` to skip the question.
 ``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
 prints a *Ready* summary of the participant link, the dashboard link and
-user, where the password is saved, the logs command and, for servers without
-a Cloudflare tunnel, the log viewer in the browser. Without a single
+user, where the password is saved, the logs command and, for apps with
+classic ingress, the log viewer in the browser. Without a single
 participant link, the summary shows the recruiter's message instead (for
 Prolific, a link to the new draft study). Save these. Open the
 dashboard and check that the experiment is running.
@@ -377,10 +377,13 @@ spending, errors, server resources and individual participants; see
 :ref:`experiment_dashboard` for each tab. When you run several studies,
 the Deployments tab (the deployment monitor) shows all of them at once.
 
-**Logs.** Dozzle shows the live logs of every container on the server.
-Its URL is printed at launch (``https://logs.your-server.example.org``
-for servers that use subdomains); the login is described in
-:doc:`/deploy/setting_up_a_server`. You can also read the logs over SSH:
+**Logs.** On servers with classic ingress, Dozzle shows the live logs of
+every container on the server. Its URL is printed at launch
+(``https://logs.your-server.example.org`` for servers that use subdomains);
+the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
+Cloudflare ingress, such as lab computers, have no Dozzle (see
+:ref:`ssh_server_cloudflare`); run the log command printed at launch instead.
+With either ingress you can read the logs over SSH:
 
 .. code:: bash
 

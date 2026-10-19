@@ -404,11 +404,13 @@ List the registered servers, then connect to yours:
 
 A new server reports ``No apps found.`` To check the whole path, deploy a
 pilot of any experiment and open ``https://<app>.<server>`` as described in
-:doc:`/deploy/running_a_study`. The first deployment also starts the log
-viewer at ``https://logs.<server>``; its username is ``dallinger`` and its
-password is the dashboard password of that first deployment. Each deployment
-saves it as ``logs_password`` in its ``launch-info.json``. To change it,
-run ``dallinger docker-ssh set-dozzle-password --server <server>``.
+:doc:`/deploy/running_a_study`. On a server with classic ingress, the first
+deployment also starts the log viewer at ``https://logs.<server>``. Its
+username is ``dallinger`` and its password is the dashboard password of that
+first deployment. Each deployment saves it as ``logs_password`` in its
+``launch-info.json``. To change it, run
+``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
+Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 
 Stopping and removing the server
 --------------------------------

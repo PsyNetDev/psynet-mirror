@@ -83,6 +83,12 @@ from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
+from .server_logs import (
+    compose_ingress,
+    logs_command,
+    server_ingress,
+    where_to_read_logs,
+)
 from .utils import (
     format_bytes,
     get_experiment_url,
@@ -1971,12 +1977,14 @@ def _pre_launch(
     local_packages=(),
     assume_yes=False,
     performance_test_app=False,
+    ingress=None,
 ):
     """Check and prepare the experiment directory before a launch.
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page.
+    experiment needn't have a consent page. ``ingress`` is the SSH deploy's
+    ``--ingress`` option; the resolved ingress is recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
@@ -2011,12 +2019,16 @@ def _pre_launch(
         ssh_host = server_info["host"]
         ssh_user = server_info.get("user")
 
-        deployment_info.write(ssh_host=ssh_host, ssh_user=ssh_user)
-
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
+        deployment_info.write(
+            ssh_host=ssh_host,
+            ssh_user=ssh_user,
+            ingress=server_ingress(server_info, ingress),
+            logs_command=logs_command(server_info, app) if app else None,
+        )
         if update:
             _check_ssh_update(server, app, mode, confirm=not performance_test_app)
 
@@ -2223,6 +2235,7 @@ def deploy__docker_ssh(
             app=app,
             update=update,
             assume_yes=assume_yes,
+            ingress=ingress,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -2998,6 +3011,7 @@ def _debug_ssh(
             local_packages=local_packages,
             assume_yes=assume_yes,
             performance_test_app=performance_test_app,
+            ingress=ingress,
         )
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
@@ -4756,41 +4770,47 @@ def _confirm_destroy_with_pending_jobs(
 _COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
 
 
-def _ssh_compose_settings(server, app, *keys):
-    """Read config values from an SSH app's compose file, or ``None`` for each that can't be read.
+def _read_ssh_compose_file(server, app):
+    """Return an SSH app's compose file, or ``None`` if it can't be read in full.
 
     The compose file is read rather than the app's config in its web
-    container, which may not be running.
+    container, which may not be running. A read that fails or times out
+    returns ``None``, because part of the file could miss settings or services.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException
 
     cmd = f"cat ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
     try:
-        compose = _ssh_executor(server).run(
-            _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S), raise_=False
+        status, compose, _ = _ssh_executor(server).run_with_status(
+            _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S)
         )
     except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
         log(f"Could not read {app}'s compose file on {server}: {e}")
-        compose = ""
+        return None
+    return compose if status == 0 and compose else None
+
+
+def _compose_settings(compose, *keys):
+    """Return config values from an SSH app's compose file, or ``None`` for each that it lacks."""
     matches = [re.search(_COMPOSE_SETTING.format(key), compose or "") for key in keys]
     return [match[1].strip().lower() if match else None for match in matches]
 
 
-def _is_debug_ssh_app(server, app):
+def _is_debug_ssh_app(compose):
     """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
 
-    Apps whose compose file can't be read count as not deployed by
-    ``psynet debug ssh``.
+    Apps whose compose file couldn't be read (``None``) count as not deployed
+    by ``psynet debug ssh``.
     """
-    (debug_ssh_app,) = _ssh_compose_settings(server, app, "debug_ssh_app")
+    (debug_ssh_app,) = _compose_settings(compose, "debug_ssh_app")
     return debug_ssh_app == "true"
 
 
 def _ssh_app_update_command(server, app):
     """Return the command that updates an SSH app in place, or ``None`` if its compose file doesn't say."""
-    mode, performance_test_app = _ssh_compose_settings(
-        server, app, "mode", "performance_test_app"
+    mode, performance_test_app = _compose_settings(
+        _read_ssh_compose_file(server, app), "mode", "performance_test_app"
     )
     if performance_test_app == "true":
         return f"psynet performance-test ssh --app {app}"
@@ -4827,13 +4847,16 @@ def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs)
             "--discard-pending-jobs was passed."
         )
         return True
-    if _is_debug_ssh_app(server, app):
+    compose = _read_ssh_compose_file(server, app)
+    if _is_debug_ssh_app(compose):
         return True
+    ingress = compose_ingress(compose) if compose else None
     log(
         f"{problem} Not destroying {app}, because destroying it would lose the "
         "results of any jobs still running. If its web container isn't "
         f"running, start it (see 'psynet apps ssh --server {server}' or its "
-        "logs in Dozzle) and run this command again. Otherwise check in its "
+        f"logs {where_to_read_logs(server, app, ingress)}) and run this command again. "
+        "Otherwise check in its "
         "logs that its async jobs have finished, then pass "
         "--discard-pending-jobs to destroy it anyway."
     )
