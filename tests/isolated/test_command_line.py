@@ -4727,6 +4727,7 @@ def test_pre_launch_aborts_when_app_exists():
     "command, args",
     [
         ("deploy__docker_ssh", ["--app", "test-app"]),
+        ("deploy__docker_ssh", ["--app", "test-app", "--update"]),
         ("debug__docker_ssh", ["--app", "test-app"]),
         ("performance_test__docker_ssh", ["--app", "test-app"]),
     ],
@@ -4741,7 +4742,7 @@ def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
         pytest.skip("Dallinger has no check_deploy_credentials")
     from dallinger.command_line.lib.cloudflare import CloudflareError
 
-    hosts = {"lab.example.org": {"host": "lab", "default_ingress": "cloudflare"}}
+    hosts = {"lab.example.org": {"host": "lab", "default_ingress": "classic"}}
     monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", hosts)
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
     monkeypatch.setattr(docker_ssh, "get_config", lambda load: MagicMock())
@@ -4760,7 +4761,8 @@ def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(
-        getattr(command_line, command), ["--server", "lab", *args]
+        getattr(command_line, command),
+        ["--server", "lab", "--ingress", "cloudflare", *args],
     )
 
     if dallinger_has_check:
