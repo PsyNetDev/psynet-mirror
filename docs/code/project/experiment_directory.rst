@@ -72,9 +72,6 @@ boilerplate templates with those of the installed PsyNet version, and
     Defines the experiment's Docker image. Its Python base image has the
     version in ``.python-version``.
 
-``Dockertag``
-    The name of the Docker image, set to the directory name.
-
 ``.python-version``
     The Python major and minor version that was active when the experiment
     was scaffolded or last updated with ``psynet scripts update``.

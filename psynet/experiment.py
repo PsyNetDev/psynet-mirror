@@ -1050,6 +1050,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.var.label = self.label
         self.var.git_commit_sha = deployment_info.read("git_commit_sha")
         self.var.git_dirty = deployment_info.read("git_dirty")
+        self.var.git_dirty_paths = deployment_info.read_all().get("git_dirty_paths")
         if deployment_info.read("is_local_deployment"):
             # This is necessary because the local deployment command is blocking and therefore we can't
             # get the launch data from the command-line invocation.

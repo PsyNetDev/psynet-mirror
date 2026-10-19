@@ -107,7 +107,6 @@ _OBSOLETE_DOCKER_SCRIPT_HASHES = {
 }
 
 _GENERATED_FILES = {
-    "Dockertag": lambda: dockertag_contents(),
     ".python-version": lambda: f"{_current_python_major_minor()}\n",
 }
 
@@ -143,11 +142,6 @@ _REQUIREMENTS_TXT_COMMENTS = """\
 def _current_python_major_minor() -> str:
     """Return the running interpreter's major and minor version."""
     return f"{sys.version_info.major}.{sys.version_info.minor}"
-
-
-def dockertag_contents() -> str:
-    """Return Dockertag file contents for the current experiment directory."""
-    return f"{Path.cwd().name}\n"
 
 
 def _experiment_script_resource(relative_path: str):
