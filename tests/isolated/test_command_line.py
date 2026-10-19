@@ -271,6 +271,113 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
+    @pytest.mark.parametrize("new_dallinger", [False, True])
+    def test_deploy_ssh_ends_with_a_ready_block(
+        self, monkeypatch, tmp_path, new_dallinger
+    ):
+        from psynet.command_line import psynet
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "experiment.py").touch()
+
+        def deploy(show_summary=True, **kwargs):
+            message = "Single recruitment link: https://my-app.example.org/ad?mode=live"
+            if show_summary:
+                print(f"Dashboard password: secret\n{message}")
+            return {
+                **({"recruitment_msg": message} if new_dallinger else {}),
+                "dashboard_user": "admin",
+                "dashboard_password": "secret",
+                "dashboard_link": "https://my-app.example.org/dashboard",
+                "log_command": "ssh host 'docker compose logs -f'",
+                "app": "my-app",
+                "server": "host",
+            }
+
+        summary_option = click.Option(
+            ["--summary/--no-summary", "show_summary"], default=True
+        )
+        dallinger_deploy = click.Command(
+            "deploy", callback=deploy, params=[summary_option] if new_dallinger else []
+        )
+        with (
+            patch("psynet.command_line._pre_launch"),
+            patch("psynet.command_line._cleanup_exp_directory"),
+            patch("psynet.command_line.reset_console"),
+            patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
+            patch("dallinger.command_line.docker_ssh.deploy", dallinger_deploy),
+            patch(
+                "dallinger.command_line.docker_ssh.get_configured_hosts",
+                return_value={"host": {}},
+            ),
+        ):
+            result = CliRunner().invoke(
+                psynet, ["deploy", "ssh", "--server", "host", "--app", "my-app"]
+            )
+
+        assert result.exit_code == 0, result.output
+        launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
+        assert result.output.splitlines()[-5:] == [
+            "Ready: my-app on host",
+            "  Participant link: https://my-app.example.org/ad?mode=live",
+            "  Dashboard:        https://my-app.example.org/dashboard (user: admin)",
+            f"  Password:         saved in {launch_info}",
+            "  Logs:             ssh host 'docker compose logs -f'",
+        ]
+        assert ("secret" in result.output) is not new_dallinger
+        assert "secret" not in result.output.split("Ready:")[1]
+        assert launch_info.stat().st_mode & 0o777 == 0o600
+        assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
+
+    @pytest.mark.parametrize(
+        "recruitment_msg",
+        [
+            None,
+            "Initial recruitment list:\nhttps://my-app.example.org/ad?workerId=bot1\n"
+            "Additional details:\nBot recruitment started using BotBase",
+        ],
+    )
+    def test_participant_link_needs_a_single_recruitment_link(self, recruitment_msg):
+        from psynet.command_line import _participant_link
+
+        printed = "Single recruitment link: https://my-app.example.org/ad"
+        result = {"recruitment_msg": recruitment_msg}
+        assert _participant_link(result, printed) is None
+
+    def test_ready_block_shows_the_recruitment_message_without_a_link(self, capsys):
+        from psynet.command_line import _print_ssh_ready
+
+        result = {
+            "app": "my-app",
+            "server": "host",
+            "dashboard_link": "https://my-app.example.org/dashboard",
+            "dashboard_user": "admin",
+            "logs_url": "https://logs.example.org",
+            "recruitment_msg": "\nAdditional details:\n\nStudy created on Prolific\n",
+        }
+        _print_ssh_ready(result, "launch-info.json")
+        assert capsys.readouterr().out.endswith(
+            "  Log viewer:       https://logs.example.org (user: dallinger; "
+            "password saved as logs_password)\n"
+            "  Recruitment:\n    Additional details:\n\n    Study created on Prolific\n"
+        )
+
+    def test_reset_console_is_silent_without_a_terminal(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from psynet.command_line import reset_console; reset_console()",
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "stty" not in result.stderr
+
     def test_export_launch_info_records_public_origin(self, tmp_path):
         from psynet.command_line import _export_launch_info
 
@@ -1598,10 +1705,16 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app():
+def test_performance_test_deploys_mark_the_app(capsys):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
+    ctx.invoke.return_value = {
+        "app": "my-app",
+        "server": "server",
+        "dashboard_link": "https://my-app.example.org/dashboard",
+        "dashboard_user": "admin",
+    }
     with (
         patch("psynet.command_line._configure_dallinger_image_source"),
         patch("psynet.command_line._pre_launch") as pre_launch,
@@ -1622,6 +1735,8 @@ def test_performance_test_deploys_mark_the_app():
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
+    assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
+    assert "Ready:" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("key", ["performance_test_app", "debug_ssh_app"])
@@ -5608,36 +5723,19 @@ def test_performance_test_options_reject_out_of_range_values(option, value):
     assert "Invalid value" in result.output
 
 
-def test_performance_log_directory_works_without_a_user_name(tmp_path, monkeypatch):
+def test_performance_logs_are_kept_under_psynet_data(tmp_path, monkeypatch):
     from psynet.command_line import _performance_log_directory
 
-    def no_user_name():
-        raise OSError("No username set in the environment")
-
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
-    monkeypatch.setattr("psynet.command_line.getpass.getuser", no_user_name)
-
+    monkeypatch.setenv("HOME", str(tmp_path))
     directory = _performance_log_directory()
-    assert directory == tmp_path / f"psynet-performance-logs-{os.getuid()}"
+    assert directory == tmp_path / "psynet-data" / "performance-logs"
     assert directory.is_dir()
-
-
-def test_performance_log_directory_avoids_a_folder_others_may_write(
-    tmp_path, monkeypatch
-):
-    from psynet.command_line import _performance_log_directory
-
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
-    shared = _performance_log_directory()
-    shared.chmod(0o777)
-    directory = _performance_log_directory()
-    assert directory != shared and directory.is_dir()
 
 
 def test_performance_log_directory_keeps_only_recent_logs(tmp_path, monkeypatch):
     from psynet.command_line import _KEPT_PERFORMANCE_LOGS, _performance_log_directory
 
-    monkeypatch.setattr("psynet.command_line.tempfile.gettempdir", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
     directory = _performance_log_directory()
     server_logs = []
     for i in range(_KEPT_PERFORMANCE_LOGS + 5):
