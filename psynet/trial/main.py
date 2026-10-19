@@ -1119,6 +1119,17 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             logger.debug("%sawaiting an asset deposit, so we have to wait.", msg)
             return
 
+        # A recording worker may have deposited the last asset and queued
+        # async_post_trial since this trial was loaded. Re-read the flag under
+        # the trial's row lock, which the worker holds until it commits, so
+        # the job is queued only once.
+        db.session.refresh(
+            self, attribute_names=["async_post_trial_requested"], with_for_update=True
+        )
+        if self.async_post_trial_requested:
+            logger.debug("%sno need, async_post_trial was requested meanwhile.", msg)
+            return
+
         logger.debug("%sconditions satisfied, queueing async_post_trial.", msg)
         self.queue_async_post_trial()
 

@@ -1048,3 +1048,54 @@ def test_deposit_callbacks_in_a_worker_never_expose_a_finalizable_trial(
     else:
         assert trial.failed_reason == "after_deposit_error"
         assert not trial.async_post_trial_requested
+
+
+class CountingAnalysisTrial(FinalizeBackstopTrial):
+    run_async_post_trial = True
+    queued = []
+
+    def async_post_trial(self):
+        pass
+
+    def queue_async_post_trial(self):
+        type(self).queued.append(self.id)
+        self.async_post_trial_requested = True
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_async_post_trial_is_not_queued_twice_from_a_stale_trial(
+    db_session, participant
+):
+    """The participant's request may hold a trial loaded before a recording
+    worker's deposit queued analysis; it must not queue it again."""
+    from sqlalchemy import update
+    from sqlalchemy.orm import Session
+
+    network = _create_network(_chain_trial_maker(), get_experiment())
+    trial = CountingAnalysisTrial(
+        experiment=get_experiment(),
+        node=network.head,
+        participant=participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+    )
+    trial.answer = 1
+    trial.complete = True
+    db.session.add(trial)
+    db.session.commit()
+    CountingAnalysisTrial.queued = []
+    assert trial.async_post_trial_requested is False  # loaded in this session
+
+    # Meanwhile the worker's deposit queues analysis and commits.
+    with Session(db.engine) as worker, worker.begin():
+        worker.execute(
+            update(Trial)
+            .where(Trial.id == trial.id)
+            .values(async_post_trial_requested=True)
+        )
+
+    trial.check_if_can_run_async_post_trial()
+    assert CountingAnalysisTrial.queued == []
