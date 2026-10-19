@@ -270,9 +270,9 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
-    @pytest.mark.parametrize("returns_message", [False, True])
+    @pytest.mark.parametrize("new_dallinger", [False, True])
     def test_deploy_ssh_ends_with_a_ready_block(
-        self, monkeypatch, tmp_path, returns_message
+        self, monkeypatch, tmp_path, new_dallinger
     ):
         from psynet.command_line import psynet
 
@@ -281,13 +281,12 @@ class TestCommandLine(object):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "experiment.py").touch()
 
-        @click.command()
-        def dallinger_deploy(**kwargs):
+        def deploy(show_summary=True, **kwargs):
             message = "Single recruitment link: https://my-app.example.org/ad?mode=live"
-            if not returns_message:
+            if show_summary:
                 print(f"Dashboard password: secret\n{message}")
             return {
-                **({"recruitment_msg": message} if returns_message else {}),
+                **({"recruitment_msg": message} if new_dallinger else {}),
                 "dashboard_user": "admin",
                 "dashboard_password": "secret",
                 "dashboard_link": "https://my-app.example.org/dashboard",
@@ -296,6 +295,12 @@ class TestCommandLine(object):
                 "server": "host",
             }
 
+        summary_option = click.Option(
+            ["--summary/--no-summary", "show_summary"], default=True
+        )
+        dallinger_deploy = click.Command(
+            "deploy", callback=deploy, params=[summary_option] if new_dallinger else []
+        )
         with (
             patch("psynet.command_line._pre_launch"),
             patch("psynet.command_line._cleanup_exp_directory"),
@@ -320,6 +325,7 @@ class TestCommandLine(object):
             f"  Password:         saved in {launch_info}",
             "  Logs:             ssh host 'docker compose logs -f'",
         ]
+        assert ("secret" in result.output) is not new_dallinger
         assert "secret" not in result.output.split("Ready:")[1]
         assert launch_info.stat().st_mode & 0o777 == 0o600
         assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
@@ -338,6 +344,21 @@ class TestCommandLine(object):
         printed = "Single recruitment link: https://my-app.example.org/ad"
         result = {"recruitment_msg": recruitment_msg}
         assert _participant_link(result, printed) is None
+
+    def test_ready_block_shows_the_recruitment_message_without_a_link(self, capsys):
+        from psynet.command_line import _print_ssh_ready
+
+        result = {
+            "app": "my-app",
+            "server": "host",
+            "dashboard_link": "https://my-app.example.org/dashboard",
+            "dashboard_user": "admin",
+            "recruitment_msg": "Additional details:\nStudy created on Prolific",
+        }
+        _print_ssh_ready(result, "launch-info.json")
+        assert capsys.readouterr().out.endswith(
+            "  Recruitment:\n    Additional details:\n    Study created on Prolific\n"
+        )
 
     def test_reset_console_is_silent_without_a_terminal(self):
         result = subprocess.run(

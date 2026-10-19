@@ -239,14 +239,10 @@ you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
 commands ask before resetting if a local server or another program is connected
 to the local database or Redis; pass ``--yes`` to skip the question.
 ``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints:
-
-- the recruitment message (for Prolific, a link to the new draft study);
-- the dashboard link with its user name and password;
-- a command and a Dozzle URL for viewing the logs.
-
-It ends with a *Ready* summary of the participant link, the dashboard link and
-user, where the password is saved, and the logs command. Save these. Open the
+prints a *Ready* summary of the participant link, the dashboard link and
+user, where the password is saved, and the logs command. Without a single
+participant link, the summary shows the recruitment message instead (for
+Prolific, the new draft study). Save these. Open the
 dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.

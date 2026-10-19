@@ -1918,6 +1918,7 @@ def deploy__docker_ssh(
             app=app,
             ingress=ingress,
             update=update,
+            dallinger_summary=False,
         )
 
         _print_ssh_ready(result, _post_deploy(result))
@@ -1946,11 +1947,15 @@ def _invoke_docker_ssh_deploy(
     ingress=None,
     update=False,
     config_options=None,
+    dallinger_summary=True,
 ):
-    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported.
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding options it supports.
 
     ``config_options`` are config variables that the app gets in its
-    environment, on top of those of the local config.
+    environment, on top of those of the local config. Without
+    ``dallinger_summary``, Dallinger versions that support it skip their
+    closing summary, which includes the dashboard password, because the
+    caller prints its own.
     """
     kwargs = {
         "server": server,
@@ -1960,9 +1965,11 @@ def _invoke_docker_ssh_deploy(
         "archive_path": None,
         "update": bool(update),
     }
-    params = getattr(command, "params", ())
-    if any(getattr(param, "name", None) == "ingress" for param in params):
+    params = {getattr(param, "name", None) for param in getattr(command, "params", ())}
+    if "ingress" in params:
         kwargs["ingress"] = ingress
+    if "show_summary" in params:
+        kwargs["show_summary"] = dallinger_summary
     output = io.StringIO()
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
@@ -1988,19 +1995,29 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info):
     """End an SSH deployment with the links and commands the user needs next.
 
-    The password is only saved to ``launch_info``, because Dallinger has
-    already printed it.
+    The password is not printed, so that pasted logs don't leak it; it is
+    saved in ``launch_info``. Without a single participant link, the
+    recruitment message that Dallinger returned (for example a Prolific
+    study) is shown instead.
     """
+    logs_url = result.get("logs_url")
+    link = result.get("participant_link")
     rows = [
-        ("Participant link", result.get("participant_link")),
+        ("Participant link", link),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
+        ("Log viewer", logs_url and f"{logs_url} (user: dallinger)"),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
         if value:
             click.echo(f"  {label + ':':<18}{value}")
+    message = None if link else result.get("recruitment_msg")
+    if message:
+        click.echo("  Recruitment:")
+        for line in message.splitlines():
+            click.echo(f"    {line}")
 
 
 def _configure_dallinger_image_source(use_local_dallinger=False):
@@ -2667,6 +2684,7 @@ def _debug_ssh(
                 ingress=ingress,
                 update=update,
                 config_options=config_options,
+                dallinger_summary=bool(performance_test_app),
             )
 
         launch_info = _post_deploy(result)

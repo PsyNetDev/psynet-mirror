@@ -96,9 +96,13 @@ you need next:
       Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
 
 The participant link appears for recruiters that print a single recruitment
-link, such as ``generic``. The summary doesn't repeat the dashboard password,
-which appears earlier in the output and is saved in ``launch-info.json``
-together with the other details. The deployment ID has the form
+link, such as ``generic``; for other recruiters, such as Prolific, the
+summary ends with Dallinger's recruitment message instead. Classic-ingress
+deployments also list the Dozzle log viewer. The dashboard password is not
+printed; it is saved in ``launch-info.json`` together with the other details.
+With Dallinger versions older than the ``--no-summary`` option of
+``dallinger docker-ssh deploy``, Dallinger's own summary, including the
+password, still appears above. The deployment ID has the form
 ``<label>__mode=<mode>__launch=<timestamp>``.
 
 What a deployment does
