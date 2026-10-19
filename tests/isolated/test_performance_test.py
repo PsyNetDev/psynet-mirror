@@ -2070,6 +2070,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
+        "  To enforce it in an open-link study, set "
+        "max_concurrent_participants = 416 in Experiment.variables.\n"
         "Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) "
         "failed, over the 1% limit.\n"
         "  Errors at 560: 10 x OperationalError.\n"

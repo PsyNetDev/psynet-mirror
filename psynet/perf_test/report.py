@@ -1225,7 +1225,7 @@ def _error_kinds_lines(result, causes):
 
 
 def _recommendation(outcome, confirmation, limits):
-    """Return the verdict's first line, the recommended participant cap, if there is one.
+    """Return the verdict's first lines: the recommended participant cap, if there is one.
 
     A confirmation test that passed confirms its cap, and one that exceeded
     the limits suggests a lower cap to check; without one, the cap is
@@ -1234,16 +1234,15 @@ def _recommendation(outcome, confirmation, limits):
     if confirmation is None:
         if outcome.cap is None:
             return []
+        cap = outcome.cap
         text, style = (
-            f"at most {outcome.cap:,} participants at once "
+            f"at most {cap:,} participants at once "
             f"({CAPACITY_HEADROOM:.0%} of {outcome.capacity:,}).",
             _RECOMMENDED,
         )
     elif _confirmed(confirmation, limits):
-        text, style = (
-            f"at most {confirmation.n_bots:,} participants at once.",
-            _RECOMMENDED,
-        )
+        cap = confirmation.n_bots
+        text, style = (f"at most {cap:,} participants at once.", _RECOMMENDED)
     elif _confirmation_exceeded(confirmation, limits):
         retry = retry_bot_count(confirmation, limits)
         rerun = f"--n-bots {retry} --duration-minutes {confirmation.duration_minutes or 0:g}"
@@ -1260,7 +1259,13 @@ def _recommendation(outcome, confirmation, limits):
             "test didn't confirm it.",
             _UNCONFIRMED,
         )
-    return [Text(f"Recommended: {text}", style=style)]
+    lines = [Text(f"Recommended: {text}", style=style)]
+    if style == _RECOMMENDED:
+        lines.append(
+            f"  To enforce it in an open-link study, set "
+            f"max_concurrent_participants = {cap} in Experiment.variables."
+        )
+    return lines
 
 
 def _capacity_lines(outcome, limits):
