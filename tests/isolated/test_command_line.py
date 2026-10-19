@@ -5620,14 +5620,11 @@ def test_destroy_ssh_requires_an_app_name(monkeypatch):
     assert destroyed == []
 
 
-_KEEP = {"remove_data": False, "keep_data": True, "yes": False}
-
-
 @pytest.mark.parametrize(
     "apps, data",
     [
         (["one"], {"remove_data": False, "keep_data": False, "yes": False}),
-        (["one", "two"], _KEEP),
+        (["one", "two"], {"remove_data": False, "keep_data": True, "yes": False}),
     ],
 )
 def test_destroy_ssh_data_question_for_one_or_several_apps(
