@@ -1873,6 +1873,7 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
 def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("psynet\n")
     monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
+    monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
     monkeypatch.setattr("psynet.experiment.get_experiment", Mock)
     monkeypatch.setattr("psynet.command_line.get_config", Mock)
     monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
@@ -1885,6 +1886,42 @@ def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
         run_pre_checks(mode="sandbox", local_=False, app="test-app")
 
     init_db.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "compose, advice",
+    [
+        (
+            '      mode: "sandbox"\n      debug_ssh_app: "true"\n',
+            "run `psynet debug ssh --app one --update --server musix "
+            "--ingress cloudflare`",
+        ),
+        ("", "add --update --ingress cloudflare to the command that created it"),
+    ],
+)
+def test_deploying_onto_an_existing_ssh_app_suggests_update(
+    monkeypatch, compose, advice
+):
+    from types import SimpleNamespace
+
+    from psynet.command_line import _abort_if_app_exists
+
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(
+        docker_ssh,
+        "get_apps",
+        lambda server: [SimpleNamespace(name="one", ingress="cloudflare")],
+    )
+    executor = Mock()
+    executor.run_with_status.return_value = (0, compose, "")
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
+
+    with pytest.raises(click.ClickException) as error:
+        _abort_if_app_exists("musix", "one")
+    assert f"To ship changes to it, {advice}; this keeps its database." in (
+        error.value.message
+    )
+    assert "`psynet destroy ssh --app one --server musix`" in error.value.message
 
 
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
@@ -4498,23 +4535,6 @@ def test_remove_empty_parent_dirs_stops_at_workspace_root(tmp_path, monkeypatch)
     assert not (tmp_path / ".github").exists()
 
 
-def test_abort_if_app_exists():
-    from psynet.command_line import _abort_if_app_exists
-
-    app = Mock()
-    app.name = "test-app"
-    with (
-        patch(
-            "dallinger.command_line.docker_ssh.get_apps",
-            return_value=[app],
-        ),
-        patch("psynet.command_line.click.echo") as mock_echo,
-    ):
-        with pytest.raises(click.Abort):
-            _abort_if_app_exists(server="test-server", app="test-app")
-    assert mock_echo.call_count == 1
-
-
 def test_update_keeps_an_existing_ssh_app():
     from psynet.command_line import _abort_if_app_exists
 
@@ -5925,12 +5945,16 @@ def _invoke_destroy_ssh(
     discard_pending_jobs=False,
     confirm=lambda *args, **kwargs: True,
     events=None,
+    yes=True,
 ):
     from psynet.command_line import destroy__docker_ssh
 
     events = [] if events is None else events
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", destroy_app)
+    monkeypatch.setattr(
+        "psynet.command_line._require_ssh_apps_exist", lambda server, apps: None
+    )
     monkeypatch.setattr(
         "psynet.command_line._awaken_ssh_app",
         lambda server, app: events.append(("awaken", app)),
@@ -5952,7 +5976,7 @@ def _invoke_destroy_ssh(
             app=app,
             apps=apps,
             server="test-server",
-            yes=False,
+            yes=yes,
             discard_pending_jobs=discard_pending_jobs,
         )
 
@@ -6009,6 +6033,9 @@ def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
     monkeypatch.setattr(docker_ssh, "destroy", fake_destroy)
     monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
+    monkeypatch.setattr(
+        "psynet.command_line._ssh_app_names", lambda server: {"one", "two"}
+    )
     monkeypatch.setattr("psynet.command_line._awaken_ssh_app", lambda server, app: None)
     if not check_pending_jobs:
         monkeypatch.setattr(
@@ -6018,12 +6045,85 @@ def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
     return destroyed
 
 
-def test_destroy_ssh_confirmation_names_the_app_and_server(monkeypatch):
+@pytest.mark.parametrize(
+    "app_args, target",
+    [
+        (["--app", "one"], "1 app on musix: one"),
+        (["one", "two"], "2 apps on musix: one, two"),
+    ],
+)
+def test_destroy_ssh_confirmation_defaults_to_no(monkeypatch, app_args, target):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", *app_args], input="\n")
+    assert f"Destroy {target}? [y/N]" in result.output
+    assert "batch syntax" not in result.output
+    assert destroyed == []
+
+
+def test_destroy_ssh_without_a_terminal_asks_for_yes(monkeypatch):
     destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one"], input="n\n")
-    assert "Would you like to delete one from musix?" in result.output
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one"])
+    assert result.exit_code == 1
+    assert (
+        "Confirmation needed to destroy 1 app on musix: one; re-run with --yes."
+        in result.output
+    )
     assert destroyed == []
+
+
+def _patch_ssh_listing(monkeypatch, executor):
+    monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"musix": {}})
+    monkeypatch.setattr(
+        "psynet.command_line._awaken_ssh_app",
+        lambda server, app: pytest.fail("woke an app"),
+    )
+
+
+@pytest.mark.parametrize(
+    "status, problem",
+    [("124", "timed out after 30 s"), ("127", "the server has no `timeout` command")],
+)
+def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, status, problem):
+    executor = Mock()
+    executor.run.return_value = f"psynet-app-listing-exit={status}\n"
+    _patch_ssh_listing(monkeypatch, executor)
+
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one", "--yes"])
+    assert result.exit_code == 1, result.output
+    assert (
+        f"Couldn't list the apps on musix ({problem}); check the SSH "
+        "connection and try again." in result.output
+    )
+    assert "no apps" not in result.output
+
+
+def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
+    from psynet.command_line import export__docker_ssh
+
+    executor = Mock()
+    executor.run.return_value = (
+        "dogfood-dbg\n/home/dallinger/dallinger/dogfood-dep/docker-compose.yml\n"
+        "/home/dallinger/dallinger/dogfood-cf/secrets/cloudflare-tunnel-token\n"
+        "psynet-app-listing-exit=0\n"
+    )
+    _patch_ssh_listing(monkeypatch, executor)
+
+    for command, args in [
+        (psynet, ["destroy", "ssh", "--app", "dogfood-dpe"]),
+        (psynet, ["destroy", "ssh", "dogfood-dbg", "dogfood-dpe", "--yes"]),
+        (export__docker_ssh, ["--app", "dogfood-dpe"]),
+    ]:
+        result = CliRunner().invoke(command, args)
+        assert result.exit_code == 1, result.output
+        assert (
+            "No app named 'dogfood-dpe' on musix. Apps there: dogfood-cf, "
+            "dogfood-dbg, dogfood-dep (did you mean dogfood-dep?)" in result.output
+        )
 
 
 @pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
@@ -6077,7 +6177,7 @@ def test_destroy_ssh_refuses_apps_with_pending_jobs(monkeypatch, target):
 def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
     def decline(*args, **kwargs):
         decline.calls.append(kwargs)
-        return False
+        return len(decline.calls) == 1
 
     decline.calls = []
     events = []
@@ -6090,13 +6190,14 @@ def test_destroy_ssh_asks_before_destroying_pending_jobs(monkeypatch):
         pending=_PENDING,
         confirm=decline,
         events=events,
+        yes=False,
     )
 
     assert destroyed == [], result.output
     assert result.exit_code == 1, result.output
     assert events == [("awaken", "busy"), ("check", "busy")]
-    assert "Destroy the app anyway?" in result.output
-    assert decline.calls == [{"default": False}]
+    assert "Destroy busy anyway?" in result.output
+    assert decline.calls == [{"default": False}, {"default": False}]
 
 
 @pytest.mark.parametrize(
@@ -6161,8 +6262,12 @@ def test_ssh_pending_job_check_queries_the_web_container(monkeypatch):
 _WEB_DOWN = b'service "web" is not running\n'
 
 
-def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
+def _destroy_unchecked_ssh_apps(
+    monkeypatch, args, *, compose="", status=1, compose_status=0
+):
     """Run ``psynet destroy ssh`` on a server whose web containers fail the pending-jobs check with ``status``.
+
+    Reading the compose file exits with ``compose_status`` and prints ``compose``.
 
     Returns the result, the destroyed apps, the remote check's commands and
     the other commands run on the server.
@@ -6174,8 +6279,9 @@ def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
         channels.append(_FakeChannel(status, _WEB_DOWN)) or channels[-1]
     )
     run_commands = []
-    executor.run.side_effect = lambda cmd, raise_=True: (
-        run_commands.append(cmd) or compose
+    executor.run.side_effect = lambda cmd, raise_=True: run_commands.append(cmd)
+    executor.run_with_status.side_effect = lambda cmd: (
+        run_commands.append(cmd) or (compose_status, compose, "")
     )
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *args])
@@ -6186,7 +6292,6 @@ def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
 @pytest.mark.parametrize(
     "args, mode",
     [
-        (["--app", "one"], "live"),
         (["--app", "one", "--yes"], "live"),
         (["one", "two", "--yes"], "sandbox"),
     ],
@@ -6208,14 +6313,28 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
 
 
 @pytest.mark.parametrize(
-    "default_ingress, services, logs",
+    "default_ingress, services, compose_status, logs",
     [
-        ("cloudflare", "  web:\n", "its logs in Dozzle at https://logs.musix)"),
-        ("classic", "  web:\n  cloudflared:\n", "its logs with 'ssh -i /k.pem lab "),
+        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.musix)"),
+        (
+            "classic",
+            "  web:\n  cloudflared:\n",
+            0,
+            "its logs with 'ssh -i /k.pem lab ",
+        ),
+        # A timed-out read may have stopped before the cloudflared service.
+        (
+            "cloudflare",
+            "  web:\n",
+            124,
+            "its logs with 'ssh -i /k.pem lab \"docker compose -f "
+            "~/dallinger/one/docker-compose.yml logs -f\"', assuming it uses "
+            "the server's default ingress)",
+        ),
     ],
 )
 def test_destroy_ssh_points_to_the_logs_of_the_apps_own_ingress(
-    monkeypatch, default_ingress, services, logs
+    monkeypatch, default_ingress, services, compose_status, logs
 ):
     monkeypatch.setitem(
         importlib.import_module("dallinger.command_line.docker_ssh").CONFIGURED_HOSTS,
@@ -6226,7 +6345,10 @@ def test_destroy_ssh_points_to_the_logs_of_the_apps_own_ingress(
         "dallinger.command_line.utils.get_server_pem_path", lambda: "/k.pem"
     )
     result, *_ = _destroy_unchecked_ssh_apps(
-        monkeypatch, ["--app", "one"], compose=f"services:\n{services}"
+        monkeypatch,
+        ["--app", "one", "--yes"],
+        compose=f"services:\n{services}",
+        compose_status=compose_status,
     )
 
     assert logs in result.output
@@ -6356,7 +6478,7 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit)
     assert "Failed to destroy gone" in result.output
-    assert "Maybe it was already destroyed" in result.output
+    assert "run this command again" in result.output
     assert "Traceback" not in result.output
 
 
