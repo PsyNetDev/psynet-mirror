@@ -125,23 +125,25 @@ def refuse_new_participant_if_full():
     global _full_until
 
     from .experiment import get_experiment
-    from .recruiters import configured_recruiter_class
+    from .recruiters import named_recruiter_class
 
     if flask.request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
         return None
-    try:
-        recruiter_class = configured_recruiter_class()
-    except NotImplementedError:
-        # An unknown recruiter name fails closed: the gate still applies.
-        recruiter_class = None
-    if recruiter_class is not None and not recruiter_supports_participant_limits(
-        recruiter_class
-    ):
+    # The named recruiter, not the debug-mode stand-in, matches the launch check.
+    if not recruiter_supports_participant_limits(named_recruiter_class()):
         return None
 
     now = time.monotonic()
     if now >= _full_until:
-        if not get_experiment().is_at_capacity():
+        try:
+            full = get_experiment().is_at_capacity()
+        except Exception:
+            # Admitting the newcomer is better than sending them to an error page.
+            logger.warning(
+                "is_at_capacity failed, so the newcomer is admitted.", exc_info=True
+            )
+            return None
+        if not full:
             return None
         _full_until = now + _FULL_CACHE_S
         logger.info("The study is at capacity, so newcomers wait on the start page.")

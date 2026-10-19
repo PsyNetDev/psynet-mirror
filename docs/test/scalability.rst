@@ -469,7 +469,9 @@ passing test.
 
 Bots from ``psynet test`` and ``psynet performance-test`` create their
 participants directly rather than through the start page, so the cap never
-holds them back; a performance test measures the server, not the cap.
+holds them back; a performance test measures the server, not the cap. They
+do count towards it, though, so while bots are running, a low cap can keep
+people who use the start page waiting.
 
 PsyNet reads the cap from the experiment's variables each time a newcomer
 arrives, so experiment code can change it while the study runs, for example a
