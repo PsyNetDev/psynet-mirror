@@ -4761,7 +4761,10 @@ def test_remote_update_keeps_local_data(remote_launch):
     [
         ({}, None),
         ({"workers": 1}, "1 local PsyNet server process(es)"),
-        ({"clients": [(4321, "u", "flask", "idle")]}, "pid 4321 (flask, idle)"),
+        (
+            {"clients": [(4321, "u", "flask", "idle", None, -1, None)]},
+            "pid 4321 (flask, idle, local socket)",
+        ),
         ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
         ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
     ],
@@ -4801,6 +4804,8 @@ def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
 
 
 def test_other_redis_clients_are_counted_but_not_this_process():
+    from urllib.parse import urlsplit
+
     import redis
     from dallinger.db import redis_conn
 
@@ -4810,11 +4815,75 @@ def test_other_redis_clients_are_counted_but_not_this_process():
     redis_conn.ping()
     before = _count_other_redis_clients()
     other = redis.Redis.from_url(_redis_url())
+    # Set the index in the URL path, which from_url prefers to a db argument.
+    own_db = int(other.connection_pool.connection_kwargs.get("db", 0))
+    other_db_url = urlsplit(_redis_url())._replace(path=f"/{(own_db + 1) % 16}")
+    other_db = redis.Redis.from_url(other_db_url.geturl())
     other.ping()
+    other_db.ping()
     try:
         assert _count_other_redis_clients() == before + 1
     finally:
         other.close()
+        other_db.close()
+
+
+def test_other_database_clients_are_listed_but_not_this_process(
+    db_client_in_other_process,
+):
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import list_other_database_clients
+
+    # A checked-out connection survives the engine.dispose() in the lister.
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        pids = [row[0] for row in list_other_database_clients()]
+        transaction = own.begin()
+        own.execute(text("CREATE TEMP TABLE locked_by_own_connection (x int)"))
+        locking_pids = [row[0] for row in list_other_database_clients()]
+        transaction.rollback()
+    assert db_client_in_other_process in pids
+    assert own_pid not in pids
+    assert own_pid in locking_pids
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_forked_child_does_not_claim_parent_database_connections():
+    import dallinger.db
+    from sqlalchemy import text
+
+    from psynet.db import _own_backends
+
+    def own_pids():
+        return {pid for pid, _ in _own_backends()}
+
+    with dallinger.db.engine.connect() as own:
+        own_pid = own.execute(text("SELECT pg_backend_pid()")).scalar()
+        assert own_pid in own_pids()
+        child = os.fork()
+        if child == 0:
+            os._exit(int(own_pid in own_pids()))
+        _, status = os.waitpid(child, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
+
+
+def test_own_pid_with_another_backend_start_is_another_client(monkeypatch):
+    """A backend that reused the pid of a dead own connection is not hidden."""
+    from datetime import timedelta
+
+    import dallinger.db
+
+    from psynet import db as psynet_db
+
+    with dallinger.db.engine.connect() as own:
+        conn = own.connection.dbapi_connection
+        os_pid, (pid, start) = psynet_db._backends[conn]
+        reused = (os_pid, (pid, start - timedelta(seconds=1)))
+        monkeypatch.setitem(psynet_db._backends, conn, reused)
+        clients = psynet_db.list_other_database_clients(release_local=False)
+    assert pid in [row.pid for row in clients]
 
 
 @pytest.mark.parametrize(
@@ -4861,7 +4930,7 @@ def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
     )
     monkeypatch.setattr(
         "psynet.db.list_other_database_clients",
-        lambda release_local=True: [(1, "dallinger", "pytest", "idle")],
+        lambda release_local=True: [(1, "dallinger", "pytest", "idle", None, -1, None)],
     )
     monkeypatch.setattr("psynet.command_line.redis_vars.clear", lambda: None)
     monkeypatch.setattr(
