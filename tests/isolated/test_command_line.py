@@ -5623,17 +5623,26 @@ def test_destroy_ssh_requires_an_app_name(monkeypatch):
 _KEEP = {"remove_data": False, "keep_data": True, "yes": False}
 
 
-@pytest.mark.parametrize("apps", [["one"], ["one", "two"]])
-def test_destroy_ssh_asks_once_about_data_and_keeps_it(monkeypatch, tmp_path, apps):
+@pytest.mark.parametrize(
+    "apps, data",
+    [
+        (["one"], {"remove_data": False, "keep_data": False, "yes": False}),
+        (["one", "two"], _KEEP),
+    ],
+)
+def test_destroy_ssh_data_question_for_one_or_several_apps(
+    monkeypatch, tmp_path, apps, data
+):
+    """Dallinger asks about a single app's data; PsyNet asks once about several."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *apps], input="y\nn\n")
     assert result.exit_code == 0, result.output
-    assert result.output.count("Also delete the data of") == 1
+    assert result.output.count("Also delete the data of") == (len(apps) > 1)
     assert "Export the data of one first" in result.output
-    assert destroyed == [(app, "musix", _KEEP) for app in apps]
+    assert destroyed == [(app, "musix", data) for app in apps]
 
 
 def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_path):
@@ -5975,8 +5984,7 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert destroyed == ["gone", "kept-1", "kept-2"], result.output
     assert result.exit_code == 1, result.output
     assert isinstance(result.exception, SystemExit)
-    assert "Failed to destroy gone" in result.output
-    assert "Maybe it was already destroyed" in result.output
+    assert "Failed to destroy gone; see the message above." in result.output
     assert "Traceback" not in result.output
 
 

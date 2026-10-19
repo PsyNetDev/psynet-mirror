@@ -4402,17 +4402,15 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
     discard_pending_jobs=False,
-    destroy_kwargs=dict,
+    destroy_kwargs=None,
 ):
     """Destroy a single app.
 
     For docker-ssh apps (``server`` given), first wake the app and check for
     pending async jobs with :func:`_confirm_destroy_with_pending_jobs`, or
     :func:`_destroy_without_pending_job_check` if the check can't run.
-    ``destroy_kwargs`` is called once the destruction is confirmed and returns
-    extra options for ``f_destroy``, so it may ask questions of its own.
-    Dallinger's output isn't covered by a spinner, as it may prompt or report
-    what it kept.
+    ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
+    isn't covered by a spinner, as it may prompt or report what it kept.
     """
     target = app or "the app"
     if server:
@@ -4443,7 +4441,7 @@ def _destroy(
     # until the upstream command removes it.
     if "expire_hit" in _command_params(f_destroy):
         kwargs["expire_hit"] = False
-    kwargs.update(destroy_kwargs())
+    kwargs.update(destroy_kwargs or {})
     log(f"Destroying {app}...")
     try:
         ctx.invoke(f_destroy, **kwargs)
@@ -4464,18 +4462,20 @@ def _command_params(command):
 def _ssh_data_options(apps, server, remove_data, keep_data):
     """Return the data options for Dallinger's ``docker-ssh destroy``.
 
-    Without ``remove_data`` or ``keep_data``, asks once whether to delete the
-    data of all ``apps``, after warning about apps without a local export.
+    Unless the data is kept, first warns about apps without a local export.
+    Without ``remove_data`` or ``keep_data``, a single app gets no options, so
+    that Dallinger lists its data and asks; several apps are asked about once.
     """
     if keep_data:
         return {"keep_data": True}
     for app in apps:
         _warn_if_not_exported(app, server)
     if not remove_data:
-        folder = apps[0] if len(apps) == 1 else "<app>"
+        if len(apps) == 1:
+            return {}
         remove_data = click.confirm(
             f"Also delete the data of {', '.join(apps)} on {server} (database, "
-            f"Redis and Postgres volumes, ~/dallinger-data/{folder})? This cannot "
+            "Redis and Postgres volumes, ~/dallinger-data/<app>)? This cannot "
             "be undone. Answer no to keep it.",
             default=False,
         )
@@ -4593,7 +4593,8 @@ def destroy__docker_ssh(
     confirmed once, then destroyed in turn; failures don't stop the rest.
 
     Without --remove-data or --keep-data, asks whether to delete the apps'
-    data, once for all of them; --yes does not answer this. Non-interactive
+    data: Dallinger asks for a single app, listing its data, and PsyNet asks
+    once for several apps; --yes does not answer this. Non-interactive
     runs must pass one of the two. Both need a Dallinger whose
     `dallinger docker-ssh destroy` has them; older versions destroy apps as
     before.
@@ -4626,21 +4627,16 @@ def destroy__docker_ssh(
             "--keep-data in non-interactive sessions."
         )
 
-    @functools.cache
-    def data_options():
-        if not data_choice:
-            return {}
-        return _ssh_data_options(apps, server, remove_data, keep_data)
-
     batch = len(apps) > 1
-    if batch:
-        if not yes:
-            click.confirm(
-                f"Would you like to delete {len(apps)} apps from {server} "
-                f"({', '.join(apps)})?",
-                abort=True,
-            )
-        data_options()
+    if batch and not yes:
+        click.confirm(
+            f"Would you like to delete {len(apps)} apps from {server} "
+            f"({', '.join(apps)})?",
+            abort=True,
+        )
+    data_options = (
+        _ssh_data_options(apps, server, remove_data, keep_data) if data_choice else {}
+    )
     failed = []
     for name in apps:
         try:
@@ -4660,10 +4656,7 @@ def destroy__docker_ssh(
             if isinstance(e, click.ClickException):
                 click.echo(f"Problem destroying {name}: {e.format_message()}")
             elif isinstance(e, click.Abort):
-                click.echo(
-                    f"Failed to destroy {name}. "
-                    "Maybe it was already destroyed, or the app name was wrong?"
-                )
+                click.echo(f"Failed to destroy {name}; see the message above.")
             else:
                 logger.exception(
                     "Failed to destroy app %s; continuing with remaining apps.", name
