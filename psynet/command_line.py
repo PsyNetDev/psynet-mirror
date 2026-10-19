@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -17,7 +18,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -532,23 +533,177 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             "It is not possible to select both --legacy and --docker modes simultaneously."
         )
 
-    _pre_launch(ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None)
-    _cleanup_before_debug()
+    with _refuse_if_local_server_running(docker=docker):
+        _pre_launch(
+            ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None
+        )
+        _cleanup_before_debug()
+
+        try:
+            # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
+            if legacy:
+                # Warning: _debug_legacy can fail if the experiment directory is imported before _debug_legacy is called.
+                # We therefore need to avoid accessing config variables, calling import_local_experiment, etc.
+                # This problem manifests specifically when the experiment contains custom tables.
+                _debug_legacy(ctx, archive=None, no_browsers=no_browsers)
+            elif docker:
+                _debug_docker(ctx, archive=None, no_browsers=no_browsers)
+            else:
+                _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
+        finally:
+            kill_psynet_worker_processes()
+            _cleanup_exp_directory()
+
+
+_SEVERAL_EXPERIMENTS_DOCS_PAGE = "code/project/running_and_debugging"
+
+
+@contextmanager
+def _refuse_if_local_server_running(docker=False):
+    """Refuse to start while another local server uses this port or database.
+
+    Starting resets the database, Redis and development folder and stops
+    worker processes, so it must fail before any of that happens. Lock files,
+    shared by all users and held for the whole run, catch a server that
+    hasn't bound its port yet, and a test session that has claimed the port;
+    the connection test catches other programs on the port.
+    Leftover workers that use this database, for example from a server that
+    was killed, are stopped first, as starting would stop them anyway. Test
+    sessions skip the checks: their environment is their own.
+
+    Parameters
+    ----------
+    docker : bool
+        Whether the server runs in Docker, which always publishes port 5000.
+
+    Raises
+    ------
+    click.ClickException
+        If the port or the database is in use, or a lock file can't be opened.
+    """
+    from .isolated_environment import READY_ENV_VAR
+
+    if os.environ.get(READY_ENV_VAR):
+        yield
+        return
 
     try:
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
-        if legacy:
-            # Warning: _debug_legacy can fail if the experiment directory is imported before _debug_legacy is called.
-            # We therefore need to avoid accessing config variables, calling import_local_experiment, etc.
-            # This problem manifests specifically when the experiment contains custom tables.
-            _debug_legacy(ctx, archive=None, no_browsers=no_browsers)
-        elif docker:
-            _debug_docker(ctx, archive=None, no_browsers=no_browsers)
-        else:
-            _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
-    finally:
-        kill_psynet_worker_processes()
-        _cleanup_exp_directory()
+        port = 5000 if docker else _local_base_port()
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    from .isolated_environment import lock_path, port_lock_path
+
+    with ExitStack() as stack:
+        path = lock_path(f"psynet-debug-{port}")
+        port_lock = _hold_run_lock(stack, path)
+        if port_lock is None:
+            raise click.ClickException(
+                f"Another local PsyNet server{_lock_owner(path)} is using port "
+                f"{port}. Stop it with Ctrl+C in its terminal. "
+                f"{_several_experiments_advice()}"
+            )
+        if _hold_run_lock(stack, port_lock_path(port)) is None:
+            raise click.ClickException(
+                f"A PsyNet test session is using port {port}. Wait for it to "
+                f"finish. {_several_experiments_advice()}"
+            )
+        path = lock_path(f"psynet-debug-db-{_database_url_tag()}")
+        database_lock = _hold_run_lock(stack, path)
+        if database_lock is None:
+            database = _url_without_password(_current_database_url())
+            raise click.ClickException(
+                f"Another local PsyNet server{_lock_owner(path)} is using the "
+                f"database {database}, so starting here would wipe its data. "
+                f"Stop it with Ctrl+C in its terminal. {_several_experiments_advice()}"
+            )
+        stopped_leftovers = False
+        if _port_in_use(port) and list_psynet_worker_processes():
+            kill_psynet_worker_processes()
+            stopped_leftovers = True
+            deadline = time.monotonic() + 5
+            while _port_in_use(port) and time.monotonic() < deadline:
+                time.sleep(0.2)
+        if _port_in_use(port):
+            raise click.ClickException(_port_in_use_message(port, stopped_leftovers))
+        yield
+
+
+def _hold_run_lock(stack, path):
+    """Lock the file at ``path`` until ``stack`` closes and record this PID in it.
+
+    Returns
+    -------
+    file or None
+        The open lock file, or None if another process holds the lock.
+    """
+    from .isolated_environment import try_lock
+
+    try:
+        lock = try_lock(path)
+    except OSError as e:
+        raise click.ClickException(
+            f"Could not open the lock file {path} ({e}). Remove it if no local "
+            "PsyNet server is running."
+        ) from e
+    if lock is None:
+        return None
+    if lock.writable():
+        lock.truncate(0)
+        lock.write(str(os.getpid()))
+        lock.flush()
+    return stack.enter_context(lock)
+
+
+def _lock_owner(path):
+    """Return " (PID n)" for the process that holds the lock at ``path``, or ""."""
+    try:
+        with open(path) as f:
+            pid = f.read().strip()
+    except OSError:
+        pid = ""
+    return f" (PID {pid})" if pid else ""
+
+
+def _port_in_use(port):
+    """Return whether a server accepts connections on ``port`` on this computer."""
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _several_experiments_advice(stopped_leftovers=False):
+    from psynet.local_docs import published_docs_url
+
+    docs_url = (
+        f"{published_docs_url(__version__)}{_SEVERAL_EXPERIMENTS_DOCS_PAGE}.html"
+        "#running-several-local-experiments"
+    )
+    return (
+        "To run both at once, give this terminal its own port (base_port), "
+        "database (DATABASE_URL), Redis server (REDIS_URL) and development folder "
+        "(dallinger_develop_directory) as described in "
+        f'"Run several experiments at once": {docs_url}. Nothing was reset'
+        + ("; only leftover workers were stopped." if stopped_leftovers else ".")
+    )
+
+
+def _port_in_use_message(port, stopped_leftovers=False):
+    airplay = (
+        " On macOS, AirPlay Receiver uses port 5000: turn it off in System "
+        "Settings > General > AirDrop & Handoff."
+        if sys.platform == "darwin" and port == 5000
+        else ""
+    )
+    return (
+        f"Port {port} is already in use by another program or a leftover "
+        "process, so the local PsyNet server can't start. "
+        f"`lsof -nP -iTCP:{port} -sTCP:LISTEN` shows what is listening.{airplay} "
+        f"{_several_experiments_advice(stopped_leftovers)}"
+    )
 
 
 def _enable_sql_profile(sql_profile_options, sql_profile_dir):
@@ -1332,11 +1487,21 @@ def is_psynet_chrome_process(process):
 
 
 def _local_base_port():
-    """Return the port of this shell's local server (Dallinger's ``base_port``)."""
-    config = get_config()
-    if config.ready:
+    """Return the port of this shell's local server (Dallinger's ``base_port``).
+
+    Uses Dallinger's configuration if it is loaded already. Otherwise reads
+    the environment and configuration files with
+    :func:`psynet.isolated_environment.local_base_port`, because creating the
+    configuration would import the experiment.
+    """
+    import dallinger.config
+
+    from .isolated_environment import local_base_port
+
+    config = dallinger.config.config
+    if config is not None and config.ready:
         return config.get("base_port")
-    return int(os.environ.get("base_port", 5000))
+    return local_base_port()
 
 
 def psynet_browser_prefix(kind):
@@ -1347,8 +1512,12 @@ def psynet_browser_prefix(kind):
     The prefix includes a hash of ``DATABASE_URL``, which identifies a local
     run in the same way as :func:`uses_current_database`.
     """
-    tag = hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
-    return f"psynet-{kind}-{tag}-"
+    return f"psynet-{kind}-{_database_url_tag()}-"
+
+
+def _database_url_tag():
+    """Return a short hash of ``DATABASE_URL`` that identifies a local run."""
+    return hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
 
 
 def _current_database_url():
