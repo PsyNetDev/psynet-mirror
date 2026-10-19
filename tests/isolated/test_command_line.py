@@ -5774,6 +5774,13 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     assert [app for app, _, _ in destroyed] == ["twoo", "one"]
     assert woken == ["one"]
 
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "twoo", "--remove-data"], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("[y/N]") == 1
+
 
 def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
     _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)

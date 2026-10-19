@@ -4458,20 +4458,21 @@ def _destroy(
     ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
     isn't covered by a spinner, as it may prompt or report what it kept.
     """
-    if server and deployed:
-        _awaken_ssh_app(server, app)
-        try:
-            pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
-        except _PendingJobCheckError as e:
-            may_destroy = _destroy_without_pending_job_check(
-                app, server, e, discard_pending_jobs
-            )
-        else:
-            may_destroy = _confirm_destroy_with_pending_jobs(
-                app, pending_jobs, ask_for_confirmation, discard_pending_jobs
-            )
-        if not may_destroy:
-            return False
+    if server:
+        if deployed:
+            _awaken_ssh_app(server, app)
+            try:
+                pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
+            except _PendingJobCheckError as e:
+                may_destroy = _destroy_without_pending_job_check(
+                    app, server, e, discard_pending_jobs
+                )
+            else:
+                may_destroy = _confirm_destroy_with_pending_jobs(
+                    app, pending_jobs, ask_for_confirmation, discard_pending_jobs
+                )
+            if not may_destroy:
+                return False
     elif ask_for_confirmation and not user_confirms(
         f"Destroy {app or 'the app'}?", default=False
     ):
