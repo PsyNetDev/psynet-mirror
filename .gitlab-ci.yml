@@ -450,10 +450,6 @@ asv_benchmarks:
       echo "$status" > .asv/asv-benchmarks-status
     - git push "$ASV_RESULTS_REMOTE" benchmark-results
     - exit "$(cat .asv/asv-benchmarks-status)"
-  artifacts:
-    when: on_failure
-    paths:
-      - .asv/results/
   rules:
     - if: $NIGHTLY_BENCHMARKS == "1" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
