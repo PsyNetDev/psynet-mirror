@@ -65,6 +65,7 @@ from rich.text import Text
 
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
 from psynet.perf_test.report import format_text, warning
+from psynet.server_logs import where_to_read_logs
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +289,7 @@ class RemoteApp:
             raise RuntimeError(
                 f"None of {self.app}'s server processes, such as web, is running "
                 f"on {self.server}, so its database can't be reset; see its logs "
-                "in Dozzle."
+                f"{where_to_read_logs(self.server, self.app)}."
             )
         print(f"▶ Stopping {self.app}'s server processes...")
         self._stopped = list(dict.fromkeys(self._stopped + services))
@@ -363,7 +364,7 @@ class RemoteApp:
                 f"{self.server} with 'cd ~/dallinger/{self.app} && docker compose "
                 f"restart {' '.join(missing)}', then run the test again."
             )
-        return f"{message} See its logs in Dozzle."
+        return f"{message} See its logs {where_to_read_logs(self.server, self.app)}."
 
     def _unregistered_workers(self, workers):
         """Return those of the ``workers`` services whose container has no RQ worker registration.

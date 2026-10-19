@@ -2093,7 +2093,7 @@ def test_deploying_onto_an_existing_ssh_app_suggests_update(
         lambda server: [SimpleNamespace(name="one", ingress="cloudflare")],
     )
     executor = Mock()
-    executor.run.return_value = compose
+    executor.run_with_status.return_value = (0, compose, "")
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
 
     with pytest.raises(click.ClickException) as error:
@@ -6602,7 +6602,7 @@ def test_destroy_ssh_batch_destroys_only_the_apps_it_could_check(monkeypatch):
         return {"total": 0}
 
     monkeypatch.setattr(
-        "psynet.command_line._is_debug_ssh_app", lambda server, app: False
+        "psynet.command_line._read_ssh_compose_file", lambda server, app: None
     )
     fake_destroy, destroyed = _recording_destroy()
     result = _invoke_destroy_ssh(
@@ -6631,8 +6631,12 @@ def test_ssh_pending_job_check_queries_the_web_container(monkeypatch):
 _WEB_DOWN = b'service "web" is not running\n'
 
 
-def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
+def _destroy_unchecked_ssh_apps(
+    monkeypatch, args, *, compose="", status=1, compose_status=0
+):
     """Run ``psynet destroy ssh`` on a server whose web containers fail the pending-jobs check with ``status``.
+
+    Reading the compose file exits with ``compose_status`` and prints ``compose``.
 
     Returns the result, the destroyed apps, the remote check's commands and
     the other commands run on the server.
@@ -6644,8 +6648,9 @@ def _destroy_unchecked_ssh_apps(monkeypatch, args, *, compose="", status=1):
         channels.append(_FakeChannel(status, _WEB_DOWN)) or channels[-1]
     )
     run_commands = []
-    executor.run.side_effect = lambda cmd, raise_=True: (
-        run_commands.append(cmd) or compose
+    executor.run.side_effect = lambda cmd, raise_=True: run_commands.append(cmd)
+    executor.run_with_status.side_effect = lambda cmd: (
+        run_commands.append(cmd) or (compose_status, compose, "")
     )
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *args])
@@ -6674,6 +6679,48 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
         "Not destroying one" in result.output
     )
     assert "pass --discard-pending-jobs to destroy it anyway" in result.output
+
+
+@pytest.mark.parametrize(
+    "default_ingress, services, compose_status, logs",
+    [
+        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.musix)"),
+        (
+            "classic",
+            "  web:\n  cloudflared:\n",
+            0,
+            "its logs with 'ssh -i /k.pem lab ",
+        ),
+        # A timed-out read may have stopped before the cloudflared service.
+        (
+            "cloudflare",
+            "  web:\n",
+            124,
+            "its logs with 'ssh -i /k.pem lab \"docker compose -f "
+            "~/dallinger/one/docker-compose.yml logs -f\"', assuming it uses "
+            "the server's default ingress)",
+        ),
+    ],
+)
+def test_destroy_ssh_points_to_the_logs_of_the_apps_own_ingress(
+    monkeypatch, default_ingress, services, compose_status, logs
+):
+    monkeypatch.setitem(
+        importlib.import_module("dallinger.command_line.docker_ssh").CONFIGURED_HOSTS,
+        "musix",
+        {"host": "lab", "default_ingress": default_ingress},
+    )
+    monkeypatch.setattr(
+        "dallinger.command_line.utils.get_server_pem_path", lambda: "/k.pem"
+    )
+    result, *_ = _destroy_unchecked_ssh_apps(
+        monkeypatch,
+        ["--app", "one", "--yes"],
+        compose=f"services:\n{services}",
+        compose_status=compose_status,
+    )
+
+    assert logs in result.output
 
 
 @pytest.mark.parametrize(
