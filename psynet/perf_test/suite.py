@@ -76,6 +76,9 @@ class PerformanceSuite:
     local : bool
         Whether the bots and the server run on this computer, which the
         summary then says.
+    open_link : bool
+        Whether the experiment's recruiter supports
+        ``max_concurrent_participants``, which the summary then suggests.
     """
 
     def __init__(
@@ -86,9 +89,11 @@ class PerformanceSuite:
         label=None,
         after_test=None,
         local=False,
+        open_link=False,
     ):
         self.tester = tester
         self.local = local
+        self.open_link = open_link
         self.limits = limits or CapacityLimits()
         self.before_test = before_test
         self.label = label
@@ -334,6 +339,7 @@ class PerformanceSuite:
             elapsed_s=time.monotonic() - started,
             confirmation_planned=confirmation_planned,
             local=self.local,
+            open_link=self.open_link,
         ):
             logger.info(line)
 
