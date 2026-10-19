@@ -7248,8 +7248,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             return
         extra_deps = self.notifier.python_dependencies
-        with open("constraints.txt", "r") as f:
-            constraints = f.readlines()
+        if not extra_deps:
+            return
+        constraints_path = Path("constraints.txt")
+        constraints = (
+            constraints_path.read_text().splitlines()
+            if constraints_path.exists()
+            else []
+        )
         for dep in extra_deps:
             self.check_python_dependency(dep, constraints)
 

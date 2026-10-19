@@ -352,7 +352,21 @@ def _prepare(archive=None):
 #########
 
 
-def _experiment_variables(connection, echo=False):
+def _no_experiment_message(location, app):
+    """Explain that the experiment table is empty, depending on where the database is."""
+    if location == "local":
+        return (
+            "The local database has no experiment yet. Start one with "
+            "'psynet debug local' and wait for 'Experiment launch complete!' "
+            "before exporting."
+        )
+    return (
+        f"The database of app '{app}' has no experiment yet; "
+        "it may not have finished launching."
+    )
+
+
+def _experiment_variables(connection, echo=False, location="local", app=None):
     cursor = None
     try:
         cursor = connection.cursor()
@@ -360,9 +374,7 @@ def _experiment_variables(connection, echo=False):
         records = cursor.fetchall()
 
         if len(records) == 0:
-            raise RuntimeError(
-                "No rows found in the `experiment` table, maybe the experiment isn't launched yet?"
-            )
+            raise click.ClickException(_no_experiment_message(location, app))
 
         assert len(records) == 1
 
@@ -371,9 +383,10 @@ def _experiment_variables(connection, echo=False):
             click.echo(serialize(_vars, indent=4))
         return _vars
     except psycopg2.errors.UndefinedTable:
-        click.echo(
-            "Could not find the table `experiment` on the remote database. This could mean that the experiment isn't "
-            "launched yet, or it could mean that the experiment is using an incompatible version of PsyNet."
+        raise click.ClickException(
+            "Could not find the table `experiment` on the experiment database. "
+            "This could mean that the experiment isn't launched yet, or it could "
+            "mean that the experiment is using an incompatible version of PsyNet."
         )
     finally:
         if cursor is not None:
@@ -406,7 +419,7 @@ def experiment_variables(location, app, server):
     Show the variables of the experiment.
     """
     with db_connection(location, app, server) as connection:
-        return _experiment_variables(connection, echo=True)
+        return _experiment_variables(connection, echo=True, location=location, app=app)
 
 
 def _read_experiment_variables(location, app=None, server=None):
@@ -416,7 +429,7 @@ def _read_experiment_variables(location, app=None, server=None):
     so callers should avoid it unless they really need the variables.
     """
     with db_connection(location, app, server) as connection:
-        return _experiment_variables(connection)
+        return _experiment_variables(connection, location=location, app=app)
 
 
 @contextmanager
@@ -424,25 +437,62 @@ def db_connection(location, app=None, server=None):
     """
     Get a database connection.
     """
+    if location == "ssh":
+        if app is None:
+            raise click.UsageError("Missing parameter: --app")
+        # Resolved here so that the error message can name the server;
+        # get_db_uri then only normalizes the name, without prompting again.
+        server = resolve_server_option(
+            click.get_current_context(silent=True), None, server
+        )
+    connection = None
     try:
-        connection = None
         with get_db_uri(location, app, server) as db_uri:
-            if "postgresql://" in db_uri or "postgres://" in db_uri:
-                connection = psycopg2.connect(dsn=db_uri)
-            else:
-                connection = psycopg2.connect(database=db_uri, user="dallinger")
+            try:
+                if "postgresql://" in db_uri or "postgres://" in db_uri:
+                    connection = psycopg2.connect(dsn=db_uri)
+                else:
+                    connection = psycopg2.connect(database=db_uri, user="dallinger")
+            except psycopg2.OperationalError as err:
+                if any(
+                    text in str(err)
+                    for text in ("Connection refused", "Is the server running")
+                ):
+                    raise click.ClickException(
+                        _connection_refused_message(location, db_uri, app, server)
+                    ) from err
+                raise
             yield connection
-    except psycopg2.OperationalError as err:
-        if "Connection refused" in str(err):
-            raise ConnectionError(
-                f"Couldn't connect to the experiment database. Are you sure the app name ({app}) is correct? "
-                "You can list all valid apps using the following command:\n\tpsynet apps ssh"
-            )
-        else:
-            raise
     finally:
         if connection:
             connection.close()
+
+
+def _connection_refused_message(location, db_uri, app, server):
+    """Explain a refused database connection without revealing credentials."""
+    from .services import _host_port_from_url
+
+    if location == "local":
+        try:
+            host, port = _host_port_from_url(
+                db_uri, schemes={"postgres", "postgresql"}, default_port=5432
+            )
+            address = f" at {host}:{port}"
+        except ValueError:
+            address = ""
+        return (
+            f"Couldn't connect to the local PostgreSQL database{address}. "
+            "Check that it is running with:\n  psynet services check"
+        )
+    if location == "ssh":
+        return (
+            f"Couldn't connect to the database of app '{app}' on {server}. "
+            f"List the apps on that server with:\n  psynet apps ssh --server {server}"
+        )
+    return (
+        f"Couldn't connect to the database of Heroku app '{app}'. "
+        "Check the app name with 'heroku apps'."
+    )
 
 
 @contextmanager
@@ -1282,10 +1332,43 @@ def launch_app_without_browsers(port, **kwargs):
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response and logs into the dashboard through the browser it opens, so this
-    job prints the recruitment message and the dashboard credentials instead.
+    response, so this job prints the recruitment message and the dashboard
+    credentials instead; the server log leaves the password out.
     It must stay importable by module path because RQ workers resolve it that way.
     """
+    _launch_app_and_report(port)
+
+
+def launch_app_and_open_browsers(port, **kwargs):
+    """Launch the development app, print its details, then open the browsers.
+
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
+    auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
+    with the password embedded; this one prints the login once and logs the
+    dashboard without it. It must stay importable by module path because RQ
+    workers resolve it that way.
+    """
+    develop = importlib.import_module("dallinger.command_line.develop")
+
+    _launch_app_and_report(port)
+    config = get_config()
+    log("Opening dashboard")
+    _open_browser_async(develop.dashboard_url(config, port))
+    time.sleep(0.1)  # Keeps the two tabs opening in the same order.
+    ad_url = develop.ad_url(config, port)
+    log(f"Opening ad: {ad_url}")
+    _open_browser_async(ad_url)
+
+
+def _open_browser_async(url):
+    """Open ``url`` in a thread, because opening a browser can be slow."""
+    develop = importlib.import_module("dallinger.command_line.develop")
+
+    threading.Thread(target=develop.open_browser, args=(url,)).start()
+
+
+def _launch_app_and_report(port):
+    """Launch the development app and print the recruitment message and dashboard login."""
     from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
 
@@ -1364,8 +1447,9 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     # Dallinger's development server runs `flask run`, which reads this variable.
     os.environ["FLASK_RUN_PORT"] = str(port)
     debug_kwargs = {"skip_flask": False, "port": port}
-    if no_browsers:
-        develop_module.launch_app_and_open_browser = launch_app_without_browsers
+    develop_module.launch_app_and_open_browser = (
+        launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
+    )
 
     try:
         run_pre_auto_reload_checks()
@@ -2412,8 +2496,11 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     require a Git commit for provenance; local debug and test runs may use a
     repository with no commits. Leftover generated ``.dockerignore`` files and
     ``docker/`` helper scripts are removed (custom copies are preserved with a
-    warning). These checks must run before ``redis_vars.clear()`` so users
-    without Redis still see actionable guidance.
+    warning). Standalone experiments must have ``requirements.txt`` and
+    ``constraints.txt`` unless ``SKIP_DEPENDENCY_CHECK`` is set; whether the
+    lockfile is up to date is only checked before remote deployments. These
+    checks must run before ``redis_vars.clear()`` so users without Redis still
+    see actionable guidance.
     """
     prepared = _prepare_in_repo_experiment()
     ensure_deployment_policy()
@@ -2435,6 +2522,8 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             f"({missing_paths}). "
             f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
         )
+    if not prepared and not os.environ.get("SKIP_DEPENDENCY_CHECK"):
+        _check_dependency_files_present()
     # Git provenance (commit SHA and dirty state) is recorded for deployments.
     if not git_repository_available():
         from .light_utils import git_command_available
@@ -2554,9 +2643,7 @@ def run_pre_checks(
                 ):
                     raise click.Abort
     except FileNotFoundError:
-        raise click.ClickException(
-            f"requirements.txt is missing from your experiment directory ({os.getcwd()})."
-        )
+        raise click.ClickException(_missing_requirements_message())
 
     if (
         heroku
@@ -3232,38 +3319,48 @@ def check_dockerfile():
         )
 
 
-def _check_constraints(spinner=None):
-    directory = os.getcwd()
+def _missing_requirements_message():
+    """Explain how to recreate a missing ``requirements.txt``."""
+    return (
+        "requirements.txt is missing from this experiment "
+        f"({Path.cwd() / 'requirements.txt'}). Recreate it with "
+        "'psynet scripts scaffold' (or 'psynet setup', which also installs "
+        "the packages), then add any extra packages your experiment needs."
+    )
 
-    # Freshness uses the same MD5-in-lockfile rule as ``psynet setup``.
-    requirements_path = Path(directory) / "requirements.txt"
-    constraints_path = Path(directory) / "constraints.txt"
 
+def _check_dependency_files_present():
+    """Raise ``click.ClickException`` if ``requirements.txt`` or ``constraints.txt`` is missing."""
+    requirements_path = Path.cwd() / "requirements.txt"
+    constraints_path = Path.cwd() / "constraints.txt"
     if not requirements_path.exists():
-        if spinner:
-            spinner.fail("✘")
+        raise click.ClickException(_missing_requirements_message())
+    if not constraints_path.exists():
         raise click.ClickException(
-            "Experiment directory is missing a requirements.txt file. "
-            "You need to create this file and put your Python package dependencies (e.g. psynet) in it."
+            f"constraints.txt is missing from this experiment ({constraints_path}). "
+            "PsyNet needs it so every install and deployment uses the same "
+            "package versions. Create it with:\n"
+            "  psynet generate-constraints\n"
+            "or run 'psynet setup', which also installs the packages."
         )
-        # raise click.Abort()
 
+
+def _check_constraints(spinner=None):
+    # Freshness uses the same MD5-in-lockfile rule as ``psynet setup``.
+    requirements_path = Path.cwd() / "requirements.txt"
+    constraints_path = Path.cwd() / "constraints.txt"
     generate_constraints_cmd = (
         "    psynet setup\n"
         "or only refresh the lockfile with:\n"
         "    psynet generate-constraints"
     )
 
-    if not constraints_path.exists():
+    try:
+        _check_dependency_files_present()
+    except click.ClickException:
         if spinner:
             spinner.fail("✘")
-        raise click.ClickException(
-            "Error: Experiment directory is missing a constraints.txt file. "
-            "Standalone experiments need this lockfile so installs are "
-            "reproducible. Please check that your requirements.txt file is "
-            "up-to-date, then create constraints.txt by running:\n"
-            + generate_constraints_cmd
-        )
+        raise
 
     from .constraints_compile import (
         constraints_are_hand_written,

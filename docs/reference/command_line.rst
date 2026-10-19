@@ -218,6 +218,10 @@ generates ``constraints.txt`` when needed (unless ``--skip-constraints``).
   psynet scripts scaffold
   psynet scripts scaffold --skip-constraints
 
+After ``--skip-constraints``, run ``psynet generate-constraints`` before
+``psynet debug local`` or ``psynet test local``: both stop when a standalone
+experiment has no ``constraints.txt``.
+
 ``update``
 ^^^^^^^^^^
 
