@@ -19,7 +19,7 @@ Skills elsewhere under `.cursor/skills/` belong to the experiment.
 
 Follow the `install` page (see "Documentation" below). In short: use a
 virtual environment at `.venv/` (ask the user before creating one with
-`uv venv --python 3.13`, which downloads Python if it is missing), then run
+`uv venv --python 3.14`, which downloads Python if it is missing), then run
 `uv pip install psynet` and `psynet setup`, which installs the experiment
 dependencies. Start PostgreSQL and Redis with `psynet services ensure`.
 Without Docker (for example on some cloud agents), install both natively and
@@ -35,31 +35,30 @@ In Cursor, disable sandboxing when running PsyNet commands by setting
 can run while another experiment is being served or tested. It refuses to run
 in a directory that `psynet debug` is serving, because both create and remove
 generated files there; test from a copy (such as a git worktree) instead.
-`psynet debug
-local` sessions, however, share port 5000, the PostgreSQL database, Redis and
+`psynet debug local` sessions, however, share port 5000, the PostgreSQL database, Redis and
 Dallinger's development folder, and starting one stops the other's worker
 processes. Before `psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with `psynet debug local --isolated`,
-which gives it its own port, database and Redis server and prints them (see
-"Run several experiments at once" in `code/project/running_and_debugging`).
-Its database is dropped when it stops, so export any data you need first.
-This works for a different experiment directory (or a git worktree); if
-`psynet debug` already serves your directory, don't start a second one there.
-`psynet deploy` also uses and clears the local database and Redis, so don't
-run it while a local experiment is running. `psynet test local` and
-`psynet performance-test local` get their own database, Redis server and
-port, so they leave a running experiment alone, unless it serves the same
-directory, where they refuse to run.
+which uses a free port and a temporary database and Redis that are removed
+when it stops (see "Run several experiments at once" in
+`code/project/running_and_debugging`).
+Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
+`psynet debug ssh` and `psynet debug heroku`) also clear the local database
+and Redis and stop local workers, so don't run them while a local experiment is
+running. When local data is in use they ask first, or refuse in a session
+without a terminal; don't pass `--yes` to get past that. `--update` leaves
+local data alone. `psynet test local` and `psynet performance-test local` get
+their own database, Redis server and port, so they leave a running experiment
+alone, unless it serves the same directory, where they refuse to run.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read
 `code/project/running_and_debugging`. After `psynet debug local`, the log
 prints an ad page URL such as
-`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair` (with
-`--isolated`, use the port it prints instead of 5000); offer to
+`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
 walk through the experiment in the browser. When you start the server from a
 non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local`); otherwise it can stop without a

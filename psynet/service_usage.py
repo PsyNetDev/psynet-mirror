@@ -35,12 +35,12 @@ from .isolated_environment import (
     DEFAULT_REDIS_URL,
     READY_ENV_VAR,
     port_lock_path,
-    split_session_database,
 )
 
 _DEFAULT_BASE_PORT = "5000"
 _SESSION_SCRIPTS = {"psynet", "dallinger", "pytest", "py.test", "flask"}
 _PYTHON_OPTIONS_WITH_VALUES = {"-W", "-X"}
+_SESSION_DATABASE = re.compile(r"_test_(\d+)$")
 
 
 @dataclass
@@ -227,7 +227,8 @@ def _session_names(sessions, matches):
 def _database_users(database, sessions):
     """Describe who uses ``database``, e.g. ``session 5100`` or ``no session``."""
     users = _session_names(sessions, lambda s: s.database == database.name)
-    _, port = split_session_database(database.name)
+    match = _SESSION_DATABASE.search(database.name)
+    port = match.group(1) if match else None
     if not users and port is not None and _port_is_claimed(port):
         users = f"a session holding port {port}"
     return users or "no session"

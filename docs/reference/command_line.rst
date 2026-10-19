@@ -138,12 +138,22 @@ Useful flags:
 * ``--force-foreign-env`` — allow installing into a virtual environment that
   is not this experiment's ``./.venv`` (for example another project's
   environment). Prefer creating and activating ``./.venv`` instead.
+* ``--yes`` / ``-y`` — set up the folder even if it contains files that
+  don't belong to a PsyNet experiment.
 
 If PsyNet is installed editable, setup asks how to record it in
 ``requirements.txt``: keep the editable checkout, pin a specific pushed Git
 commit URL, or retain an existing explicit requirement. The same choice can be
 supplied non-interactively with ``--psynet-source editable``, ``commit``, or
 ``existing``.
+
+If Dallinger is installed editable, setup keeps it, except with
+``--psynet-source commit``; see
+:doc:`/code/project/using_local_psynet_and_dallinger`.
+
+If the folder has no ``experiment.py`` and contains files that don't belong
+to a PsyNet experiment, setup asks before adding experiment files there.
+Without a terminal to ask in, it stops unless you pass ``--yes``.
 
 If the active virtual environment is the PsyNet repository's development
 ``.venv``, setup refuses to install packages by default. Interactively it
@@ -196,8 +206,8 @@ pick free settings before starting another session.
   psynet services list
 
 Isolated test and debug sessions drop their own databases when they end, so
-a ``dallinger_test_<port>`` or ``dallinger_debug_<port>`` database with no
-session is left over from a killed session; drop it with ``dropdb <name>``.
+a ``dallinger_test_<port>`` database with no session is left over from a
+killed session; drop it with ``dropdb <name>``.
 
 
 .. _scripts:
@@ -225,6 +235,10 @@ generates ``constraints.txt`` when needed (unless ``--skip-constraints``).
 
   psynet scripts scaffold
   psynet scripts scaffold --skip-constraints
+
+After ``--skip-constraints``, run ``psynet generate-constraints`` before
+``psynet debug local`` or ``psynet test local``: both stop when a standalone
+experiment has no ``constraints.txt``.
 
 ``update``
 ^^^^^^^^^^
@@ -284,9 +298,11 @@ PsyNet version pin):
   psynet generate-constraints
 
 This runs Dallinger's standalone constraints script via ``uv run`` (the same
-lock policy as ``dallinger constraints generate``). An editable Dallinger
-checkout supplies its local script; otherwise PsyNet runs the canonical script
-from Dallinger's GitHub repository.
+lock policy as ``dallinger constraints generate``). An installed Dallinger,
+such as an editable checkout, supplies its local script; otherwise PsyNet runs
+the canonical script from Dallinger's GitHub repository. Either way, the
+Dallinger version in ``constraints.txt`` comes from ``requirements.txt`` or
+PsyNet's Dallinger pin, not from the installed copy.
 
 
 .. _install:

@@ -18,18 +18,18 @@ requirements:
   as well (a wildcard record such as ``*.my-server.example.org``). Each
   experiment is served at a subdomain.
 
-For a live study with several participants at a time, choose a machine with
-at least 16 GB of RAM and 4 CPU cores, such as an AWS ``m7i.xlarge``
-instance. A pilot runs on a smaller machine such as ``m7i.large``. As a rough
-guide, allow 5 GB of RAM for each experiment that runs on the server at the
-same time.
+A pilot runs on a machine with 2 CPU cores and 8 GB of RAM, such as an AWS
+``m7i.large`` instance. A live study usually needs at least 4 cores and 16 GB,
+such as an ``m7i.xlarge``; to size the server for your study, see
+:ref:`choosing_server_size`. Allow 5 GB of RAM for each experiment that runs
+on the server at the same time.
 
 The usual choices are:
 
 - **An AWS EC2 instance provisioned by Dallinger.** One command creates the
   machine, its DNS records and its registration. You pay for the instance
-  while it exists; at the time of writing (January 2026) an ``m7i.xlarge``
-  costs around $0.20 an hour, so a five-hour study costs around $1.
+  while it exists; at the time of writing (October 2026) an ``m7i.xlarge``
+  costs around $0.23 an hour, so a five-hour study costs around $1.
 - **A virtual machine from any cloud provider**, such as Hetzner, Contabo, or
   AWS configured by hand in the console.
 - **A physical machine** run by you or your institution.
@@ -50,6 +50,102 @@ records before you register it; see
    - your SSH key is registered wherever the lab requires it, for example
      on GitLab or on the lab's servers;
    - you have received the lab's credential files (see below).
+
+.. _choosing_server_size:
+
+Choosing a server size
+^^^^^^^^^^^^^^^^^^^^^^
+
+How many participants a server can serve at the same time depends mostly on
+its CPU. What matters is the number taking part at the same moment, not the
+total: recruitment platforms can send many participants within minutes of a
+study opening, so plan for that peak rather than for the average.
+
+In one test, a simple rating experiment (ten static trials and one async
+process) ran on a desktop server with 8 cores, 16 CPU threads and 32 GB of
+RAM (AMD Ryzen 7 5800X). With bots working at a realistic pace, it served up
+to about 640 at once, with a 95th-percentile response time of about 180 ms
+and no errors. That is about 40 participants per CPU thread. At 640 the CPU
+was the limit: the web workers used about 9 threads and the database about
+3, and with more bots the server handled fewer requests a second. Memory
+was not the limit: the experiment used under 5 GB.
+
+.. warning::
+
+   Dallinger 12.4 and earlier cap every docker-ssh server at about 200
+   participants at a time, whatever its size, because of the database
+   connection pool: in the same test, the response time rose to over 400 ms
+   at 320 bots while most of the CPU sat idle. The figures in this section
+   assume a Dallinger release that includes
+   `Dallinger#10051 <https://github.com/Dallinger/Dallinger/pull/10051>`_,
+   which is not yet released. Even then, only apps deployed with Cloudflare
+   ingress get the larger pool; classic-ingress apps share one database
+   server and stay at about 200.
+
+A cloud vCPU is one CPU thread, often on a slower core, and most experiments
+do more work per page than this one, so as a starting point plan on 20 to 30
+participants at a time per vCPU:
+
+.. list-table::
+   :header-rows: 1
+
+   * - AWS instance
+     - vCPUs
+     - RAM
+     - Participants at a time
+     - Price per hour
+   * - ``m7i.large``
+     - 2
+     - 8 GB
+     - 40–60
+     - $0.12
+   * - ``m7i.xlarge``
+     - 4
+     - 16 GB
+     - 80–120
+     - $0.23
+   * - ``m7i.2xlarge``
+     - 8
+     - 32 GB
+     - 160–240
+     - $0.47
+   * - ``m7i.4xlarge``
+     - 16
+     - 64 GB
+     - 320–480
+     - $0.93
+
+Prices are on-demand Linux prices in the London region (``eu-west-2``) in
+October 2026; US regions are about 15% cheaper. See AWS's lists of
+`instance types <https://aws.amazon.com/ec2/instance-types/>`_ and
+`on-demand prices <https://aws.amazon.com/ec2/pricing/on-demand/>`_.
+These figures are only a starting point. Before a large study, measure your
+own experiment on the server you will use (see
+:ref:`performance_testing_server`), and keep the number of participants
+taking part at once below the capacity it reports.
+
+Experiments with CPU-heavy async jobs, such as tapping experiments
+that analyse recordings with REPP, need extra cores for their worker
+processes, about one core for each. One worker process keeps up with about
+(session length) / (CPU time per job × jobs per participant) participants
+at once; :ref:`performance_testing_async_workers` explains how to estimate
+this and how to set ``worker_processes``.
+
+In experiments where participants wait for each other (see
+:doc:`/code/multiplayer/synchronization`), each barrier adds requests, so
+capacity depends on how often participants reach one. On the same server,
+the ``rock_paper_scissors`` demo, whose pairs choose a move, wait for each
+other and then chat for 30 seconds, served about 560 participants at once.
+The same game in groups of eight served about 400. The ``create_rate_sync``
+demo, whose groups of three pass a barrier after every five-second page,
+served about 140.
+
+The server is a small part of a study's cost. 100 participants at once, paid
+£9 an hour, cost about £900 an hour, while an ``m7i.4xlarge`` that can serve
+several times as many costs under $1 an hour. A server that is too small
+makes pages slow or fail for everyone taking part, which wastes their time
+and your payments, so choose a size with room to spare. Remember to tear the
+server down afterwards: a forgotten ``m7i.4xlarge`` costs about $22 a day.
 
 Configuring your computer
 -------------------------
@@ -88,6 +184,52 @@ Then add the path to ``~/.dallingerconfig``:
 
     [SSH]
     server_pem = ~/.ssh/my-server.pem
+
+Dallinger accepts an Ed25519, RSA, or ECDSA key. A DSA key has to be replaced;
+see :ref:`replacing-a-dsa-key`.
+
+.. _replacing-a-dsa-key:
+
+Replacing a DSA key
+^^^^^^^^^^^^^^^^^^^
+
+A DSA (DSS) private key cannot be converted to Ed25519, RSA, or ECDSA.
+Check the file named by ``server_pem``:
+
+.. code-block:: bash
+
+    ssh-keygen -l -f ~/.ssh/my-server.pem
+
+``(DSA)`` in that output means the key has to be replaced. Generate a new
+key, and do not overwrite the old file yet:
+
+.. code-block:: bash
+
+    ssh-keygen -t ed25519 -f ~/.ssh/my-new-server.pem
+    chmod 600 ~/.ssh/my-new-server.pem
+
+Install ``~/.ssh/my-new-server.pem.pub`` on the server while a login still
+works. Another authorized key can append it to ``~/.ssh/authorized_keys`` for
+the deploy user:
+
+.. code-block:: bash
+
+    ssh -i ~/.ssh/other-key.pem ubuntu@my-server.example.org 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys' < ~/.ssh/my-new-server.pem.pub
+
+A current OpenSSH client cannot log in with the DSA key, because it no longer
+offers ``ssh-dss``. If that key is the only login, paste the new public key
+in through the server provider's console. Then point ``server_pem`` at
+``~/.ssh/my-new-server.pem`` and confirm it:
+
+.. code-block:: bash
+
+    ssh -i ~/.ssh/my-new-server.pem ubuntu@my-server.example.org
+
+If you provision servers with ``dallinger ec2 provision``, set
+``ec2_default_pem`` to the new key pair's name as well. The file name must
+still match that name, as ``~/.ssh/<ec2_default_pem>.pem``. Dallinger imports
+the key pair into a region when it is missing. An instance that is already
+running still needs the public key in its ``authorized_keys``.
 
 Docker image name
 ^^^^^^^^^^^^^^^^^
@@ -211,7 +353,9 @@ Registering the server
           server_pem = ~/.ssh/cool-psychology.pem
 
       If the key pair does not exist in the region you provision in, Dallinger
-      imports it there from the local file.
+      imports it there from the local file. AWS does not issue DSA keys. If
+      ``server_pem`` is a DSA key you created yourself, replace it as
+      described in :ref:`replacing-a-dsa-key`.
 
       **Provision.** List the regions with ``dallinger ec2 list regions`` and
       choose the one closest to your participants. Then run:
@@ -262,7 +406,8 @@ A new server reports ``No apps found.`` To check the whole path, deploy a
 pilot of any experiment and open ``https://<app>.<server>`` as described in
 :doc:`/deploy/running_a_study`. The first deployment also starts the log
 viewer at ``https://logs.<server>``; its username is ``dallinger`` and its
-password is the dashboard password of that first deployment. To change it,
+password is the dashboard password of that first deployment. Each deployment
+saves it as ``logs_password`` in its ``launch-info.json``. To change it,
 run ``dallinger docker-ssh set-dozzle-password --server <server>``.
 
 Stopping and removing the server

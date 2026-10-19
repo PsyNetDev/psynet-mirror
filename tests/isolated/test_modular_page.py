@@ -435,6 +435,17 @@ def test_modular_page_metadata():
     assert metadata["control"] == page.control.metadata
 
 
+def test_unset_and_explicit_none_bot_responses():
+    unset = ModularPage("test", "Hi!", PushButtonControl(["Yes"]))
+    assert unset.call__get_bot_response(experiment=None, bot=None).raw_answer == "Yes"
+
+    explicit_none = ModularPage(
+        "test", "Hi!", PushButtonControl(["Yes"], bot_response=None)
+    )
+    response = explicit_none.call__get_bot_response(experiment=None, bot=None)
+    assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
+
+
 def test_modular_page_accepts_page_css_list():
     page = ModularPage(
         "test",

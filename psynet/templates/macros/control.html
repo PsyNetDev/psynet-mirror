@@ -1077,21 +1077,21 @@
         }
     </style>
 
-    <ul class="nav nav-tabs">
-        <li class="nav-item">
-            <a href="#audio-meter-sliders" class="nav-link" data-toggle="tab">{{ pgettext("audio_meter_calibrate", "Sliders") }}</a>
+    <ul class="nav nav-tabs" id="audio-meter-calibrate-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a href="#audio-meter-sliders" class="nav-link active" data-bs-toggle="tab" role="tab" aria-controls="audio-meter-sliders" aria-selected="true">{{ pgettext("audio_meter_calibrate", "Sliders") }}</a>
         </li>
-        <li class="nav-item">
-            <a href="#audio-meter-documentation" class="nav-link" data-toggle="tab">{{ pgettext("audio_meter_calibrate", "Documentation") }}</a>
+        <li class="nav-item" role="presentation">
+            <a href="#audio-meter-documentation" class="nav-link" data-bs-toggle="tab" role="tab" aria-controls="audio-meter-documentation" aria-selected="false">{{ pgettext("audio_meter_calibrate", "Documentation") }}</a>
         </li>
     </ul>
 
     <div class="tab-content">
-        <div id="audio-meter-sliders" class="tab-pane active">
+        <div id="audio-meter-sliders" class="tab-pane active" role="tabpanel">
             {{ multi_slider(params.sliders) }}
         </div>
 
-        <div id="audio-meter-documentation" class="tab-pane">
+        <div id="audio-meter-documentation" class="tab-pane" role="tabpanel">
             <p>
                 {{ pgettext("audio_meter_calibrate", "The <strong>decay</strong> parameters determine the amount of smoothing that happens to the signal, and have units of seconds.") }}
                 {{ pgettext("audio_meter_calibrate", "A high decay parameter means that the signal takes a long time to decay (i.e. high smoothing).") }}

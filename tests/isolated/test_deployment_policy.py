@@ -57,8 +57,8 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 
 
 @pytest.fixture(autouse=True)
-def _skip_constraints_check(monkeypatch):
-    """These experiments have no constraints.txt, which the checks would reject."""
+def _skip_lockfile_check(monkeypatch):
+    """These scaffolds have no constraints.txt, which this module doesn't test."""
     monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
 
 

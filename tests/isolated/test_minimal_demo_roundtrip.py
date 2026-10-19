@@ -99,7 +99,7 @@ TEST_EXPERIMENT_TREE_PREFIXES = (
 # Custom config.txt files that remain tracked under test experiment trees.
 # Stock configs and READMEs are gitignored; add new customs with ``git add -f``.
 TEST_EXPERIMENT_CUSTOM_CONFIGS = {
-    "tests/experiments/async_processes/config.txt",
+    "tests/experiments/async_jobs/config.txt",
     "tests/playwright/experiments/adversarial_lifecycle/config.txt",
     "tests/playwright/experiments/broken_page_dependency/config.txt",
     "tests/playwright/experiments/broken_page_module/config.txt",
