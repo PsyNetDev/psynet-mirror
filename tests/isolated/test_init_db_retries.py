@@ -348,6 +348,7 @@ def test_populate_db_from_zip_file_refuses_listed_clients(
         lambda release_local=True: [
             (123, "dallinger", "gunicorn", "idle", "127.0.0.1", 54321, since),
             (124, "dallinger", "", "active", None, -1, since),
+            (125, "dallinger", "", "idle", "::1", 5432, None),
         ],
     )
     monkeypatch.setattr(
@@ -357,7 +358,8 @@ def test_populate_db_from_zip_file_refuses_listed_clients(
     with pytest.raises(
         data_mod.DatabaseInUseError,
         match=r"pid 123 \(gunicorn, idle, 127\.0\.0\.1:54321, since 09:12\), "
-        r"Postgres backend pid 124 \(active, local socket, since 09:12\)",
+        r"Postgres backend pid 124 \(active, local socket, since 09:12\), "
+        r"Postgres backend pid 125 \(idle, \[::1\]:5432\)",
     ):
         data_mod.populate_db_from_zip_file(str(tmp_path / "export.zip"))
     assert dropped == []
