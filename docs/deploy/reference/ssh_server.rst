@@ -171,6 +171,8 @@ hibernation controller.
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
 
+.. _ssh_server_files:
+
 Files on the server
 ^^^^^^^^^^^^^^^^^^^
 
@@ -187,19 +189,59 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. It first checks that the app is on the
-server; if not, it stops and lists the apps that are, suggesting the closest
-name. It then asks you to confirm (pressing Enter answers no); add ``--yes``
-to skip the confirmation in scripts, where it is required because there is no
-terminal to ask in. It also wakes the app if it is
+uses it. Give it one or more app names, as
+arguments or with ``--app`` (the two are equivalent and can be combined):
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app my-other-app --server my-server.example.org
+
+It first checks that the apps are on the server; if one isn't, it stops and
+lists the apps that are, suggesting the closest name (except with
+``--remove-data``; see below). It then asks you to
+confirm, once for all the apps (pressing Enter answers no); add ``--yes`` to
+skip the confirmation in scripts, where it is required because there is no
+terminal to ask in. If one of several apps fails to be destroyed, it carries
+on with the rest and then exits with status 1. It also wakes each app if it is
 asleep and asks it for pending async jobs, and does not destroy an app that
-has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
-not skip this check. If the check cannot run, for example because the app's
-web container is down, it does not destroy the app without
-``--discard-pending-jobs``, except for apps deployed with ``psynet debug ssh``
-or ``psynet performance-test ssh``, which it destroys anyway.
+has some unless you pass ``--discard-pending-jobs`` or, when destroying a
+single app, confirm; ``--yes`` does not skip this check. If the check cannot
+run, for example because the app's web container is down, it does not destroy
+the app without ``--discard-pending-jobs``, except for apps deployed with
+``psynet debug ssh`` or ``psynet performance-test ssh``, which it destroys
+anyway.
 See :doc:`/reference/api/async_job`.
+
+It also asks whether to delete the apps' data: the database and Postgres user
+in the shared PostgreSQL, the app's Redis and Postgres volumes, and
+``~/dallinger-data/<app>``. First it reminds you to export any app it finds no
+export of in ``exports/`` of the current directory. For a single app, Dallinger
+then lists the app's data with its sizes and asks, just before tearing the app
+down, and skips the question if there is no data. For several apps, PsyNet
+asks once for all of them, before checking any. Answer no, or pass
+``--keep-data``, to keep the data; each app's kept data is then listed with the
+command that deletes it later. Pass ``--remove-data`` to delete it without
+asking. ``--yes`` does not answer this question, so scripts and other
+non-interactive runs must pass one of the two flags:
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app --server my-server.example.org --yes --keep-data
+
+To delete kept data after the app is gone, run the same command with
+``--remove-data``. With ``--remove-data``, an app that is no longer on the
+server is not rejected: PsyNet skips the pending-job check and the export
+reminder for it, asks to delete its leftover data rather than to destroy it,
+and Dallinger deletes whatever data it left behind, or says that none is left.
+When destroying several apps, such an app with nothing left is reported but
+does not count as a failure.
+
+The data question and the two flags need a Dallinger version whose
+``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
+With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
+as before: a classic app's database stays in PostgreSQL until an app with the
+same name is deployed, which replaces it, while a Cloudflare app's volumes are
+deleted.
 
 Updating a running app
 ----------------------
