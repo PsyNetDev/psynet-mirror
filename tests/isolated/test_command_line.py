@@ -5680,7 +5680,8 @@ def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
         manifest = tmp_path / "exports/latest/manifest.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({"deployment_id": "dep-1"}))
-        assert "export" not in CliRunner().invoke(psynet, args).output.lower()
+        output = CliRunner().invoke(psynet, args).output
+        assert "Found no export" not in output and "Export the data" not in output
 
 
 @pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
@@ -5979,6 +5980,19 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     assert "Traceback" not in result.output
 
 
+def test_destroy_ssh_single_app_reports_dallinger_errors(monkeypatch):
+    @click.command()
+    @click.option("--app", required=True)
+    @click.option("--server")
+    def fake_destroy(app, server):
+        raise click.ClickException("Retry with X.")
+
+    result = _invoke_destroy_ssh(monkeypatch, fake_destroy, app="broken")
+    assert result.exit_code == 1, result.output
+    assert "Error: Retry with X." in result.output
+    assert "Problem destroying" not in result.output
+
+
 def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
     destroyed = []
 
@@ -5999,7 +6013,7 @@ def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
     "error, message",
     [
         (RuntimeError("ssh failed"), "Failed to destroy broken; continuing"),
-        (click.ClickException("Retry with X."), "Failed to destroy broken: Retry"),
+        (click.ClickException("Retry with X."), "Problem destroying broken: Retry"),
     ],
 )
 def test_destroy_ssh_continues_when_one_app_raises(monkeypatch, error, message):

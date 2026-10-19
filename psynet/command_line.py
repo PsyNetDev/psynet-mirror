@@ -3720,7 +3720,7 @@ def _latest_launch_record(app, server):
         if payload.get("app") != app or payload.get("server") != server:
             continue
         if mtime >= chosen_mtime:
-            chosen = {"deployment_id": path.parent.name, **payload}
+            chosen = {**payload, "deployment_id": path.parent.name}
             chosen_mtime = mtime
     return chosen
 
@@ -4472,9 +4472,10 @@ def _ssh_data_options(apps, server, remove_data, keep_data):
     for app in apps:
         _warn_if_not_exported(app, server)
     if not remove_data:
+        folder = apps[0] if len(apps) == 1 else "<app>"
         remove_data = click.confirm(
             f"Also delete the data of {', '.join(apps)} on {server} (database, "
-            "Redis and Postgres volumes, ~/dallinger-data/<app>)? This cannot "
+            f"Redis and Postgres volumes, ~/dallinger-data/{folder})? This cannot "
             "be undone. Answer no to keep it.",
             default=False,
         )
@@ -4657,7 +4658,7 @@ def destroy__docker_ssh(
             if not batch:
                 raise
             if isinstance(e, click.ClickException):
-                click.echo(f"Failed to destroy {name}: {e.format_message()}")
+                click.echo(f"Problem destroying {name}: {e.format_message()}")
             elif isinstance(e, click.Abort):
                 click.echo(
                     f"Failed to destroy {name}. "

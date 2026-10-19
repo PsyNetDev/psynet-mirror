@@ -202,9 +202,10 @@ the app without ``--discard-pending-jobs``, except for apps deployed with
 anyway.
 See :doc:`/reference/api/async_job`.
 
-It then asks whether to delete the apps' data as well: the database and
-Postgres user in the shared PostgreSQL, the app's Redis and Postgres volumes,
-and ``~/dallinger-data/<app>``. It asks once for all the apps, after reminding
+It also asks whether to delete the apps' data: the database and Postgres user
+in the shared PostgreSQL, the app's Redis and Postgres volumes, and
+``~/dallinger-data/<app>``. It asks once for all the apps (right after
+confirming a single app, or before checking any of several), after reminding
 you to export any app it finds no export of in ``exports/`` of the current
 directory. Answer no, or pass ``--keep-data``, to keep the data; each app's
 kept data is then listed with the command that deletes it later. Pass
@@ -220,7 +221,8 @@ The data question and the two flags need a Dallinger version whose
 ``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
 With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
 as before: a classic app's database stays in PostgreSQL until an app with the
-same name is deployed, which replaces it.
+same name is deployed, which replaces it, while a Cloudflare app's volumes are
+deleted.
 
 Updating a running app
 ----------------------
