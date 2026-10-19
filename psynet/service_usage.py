@@ -80,7 +80,7 @@ def _session_command(cmdline):
     Returns ``None`` for commands other than PsyNet, Dallinger, Flask and pytest.
     """
     args = list(cmdline)
-    if args and os.path.basename(args[0]).startswith("python"):
+    if args and os.path.basename(args[0]).lower().startswith("python"):
         args.pop(0)
         while args and args[0].startswith("-"):
             option = args.pop(0)

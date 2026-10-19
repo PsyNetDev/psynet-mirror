@@ -40,10 +40,11 @@ def test_find_sessions_reads_settings_from_running_processes(tmp_path):
     process = subprocess.Popen(
         [sys.executable, str(script), "debug", "local"], env=env, cwd=tmp_path
     )
+    directory = os.path.realpath(tmp_path)
     try:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            matches = [s for s in find_sessions() if s.directory == str(tmp_path)]
+            matches = [s for s in find_sessions() if s.directory == directory]
             if matches and len(matches[0].pids) == 2:
                 break
             time.sleep(0.1)
@@ -52,7 +53,6 @@ def test_find_sessions_reads_settings_from_running_processes(tmp_path):
         assert session.redis_port == 6987
         assert session.pids[0] == process.pid and len(session.pids) == 2
         assert session.command == "psynet debug local"
-        assert session.directory == str(tmp_path)
     finally:
         for child in psutil.Process(process.pid).children():
             child.kill()
@@ -69,6 +69,9 @@ def test_session_command_recognises_scripts_and_python_modules():
     assert _session_command(
         ["python3", "-W", "ignore", "-X", "dev", "-m", "pytest"]
     ) == ["pytest"]
+    assert _session_command(["/Library/Frameworks/Python", "-m", "pytest"]) == [
+        "pytest"
+    ]
     assert _session_command(["python3", "/venv/bin/dallinger_heroku_worker"]) == [
         "dallinger_heroku_worker"
     ]
