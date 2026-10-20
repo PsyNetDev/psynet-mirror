@@ -221,7 +221,13 @@ To reproduce such errors locally, note the failing job's shard number
 ``psynet dev ci run-tests`` as described in the previous section.
 Use ``--slots 1`` to check whether the failure depends on tests running concurrently.
 
-Tests that use S3 run against a filesystem mock by default. The ``boto3``
+Tests that use S3 run against a filesystem mock by default. The exception is
+the ``tests/experiments/static_audio`` test experiment, which CI runs against
+the real ``psynet-tests`` bucket with the project's AWS credentials. It is
+the only CI test that launches an experiment with ``S3Storage`` and uploads
+participant recordings to S3 in asynchronous jobs. Each bot sends a unique
+recording, so content addressing cannot skip those uploads, and each run adds
+a few small files to the bucket. The ``boto3``
 tests in ``tests/isolated/test_s3.py`` can also run against the real
 ``psynet-tests`` bucket, with the AWS credentials from your Dallinger config.
 The same setting runs the ``awscli`` transfer test, which needs the ``aws``

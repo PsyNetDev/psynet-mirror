@@ -1,3 +1,7 @@
+import shutil
+import tempfile
+import uuid
+
 import pytest
 
 import psynet.experiment
@@ -22,6 +26,17 @@ from .custom_synth import synth_prosody
 
 def synth_stimulus(path, frequencies):
     synth_prosody(vector=frequencies, output_path=path)
+
+
+def unique_bot_recording():
+    """Return a copy of the example recording with random trailing bytes."""
+    # Assets are content-addressed, so an identical recording would already be
+    # in the bucket and its asynchronous upload would be skipped.
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as file:
+        with open("example-bier.wav", "rb") as source:
+            shutil.copyfileobj(source, file)
+        file.write(uuid.uuid4().bytes)
+    return file.name
 
 
 nodes = [
@@ -62,7 +77,7 @@ class CustomTrial(StaticTrial):
             ),
             AudioRecordControl(
                 duration=record_duration,
-                bot_response_media="example-bier.wav",
+                bot_response_media=unique_bot_recording,
                 auto_advance=True,
             ),
             time_estimate=self._time_trial,
@@ -104,6 +119,9 @@ class CustomTrial(StaticTrial):
 class Exp(psynet.experiment.Experiment):
     label = "Static audio demo"
 
+    # CI runs this experiment against the real psynet-tests bucket, with no S3
+    # mock: it is the only CI test of launching with S3 storage and uploading
+    # participant recordings to S3 in asynchronous jobs.
     asset_storage = S3Storage("psynet-tests", "static-audio")
 
     timeline = Timeline(
