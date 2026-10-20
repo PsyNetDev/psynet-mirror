@@ -288,7 +288,11 @@ class TestCommandLine(object):
             if show_summary:
                 print(f"Dashboard password: secret\n{message}")
             return {
-                **({"recruitment_msg": message} if new_dallinger else {}),
+                **(
+                    {"recruitment_msg": message, "image_name": "my-app:abc123"}
+                    if new_dallinger
+                    else {}
+                ),
                 "dashboard_user": "admin",
                 "dashboard_password": "secret",
                 "dashboard_link": "https://my-app.example.org/dashboard",
@@ -320,12 +324,14 @@ class TestCommandLine(object):
 
         assert result.exit_code == 0, result.output
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
-        assert result.output.splitlines()[-5:] == [
+        image = ["  Image:            my-app:abc123"] if new_dallinger else []
+        assert result.output.splitlines()[-5 - len(image) :] == [
             "Ready: my-app on host",
             "  Participant link: https://my-app.example.org/ad?mode=live",
             "  Dashboard:        https://my-app.example.org/dashboard (user: admin)",
             f"  Password:         saved in {launch_info}",
             "  Logs:             ssh host 'docker compose logs -f'",
+            *image,
         ]
         assert ("secret" in result.output) is not new_dallinger
         assert "secret" not in result.output.split("Ready:")[1]
@@ -361,7 +367,7 @@ class TestCommandLine(object):
         _print_ssh_ready(result, "launch-info.json")
         assert capsys.readouterr().out.endswith(
             "  Log viewer:       https://logs.example.org (user: dallinger; "
-            "password saved as logs_password)\n"
+            "password saved as logs_password in launch-info.json)\n"
             "  Recruitment:\n    Additional details:\n\n    Study created on Prolific\n"
         )
 
@@ -6181,6 +6187,9 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
     assert pre_launch_kwargs["docker"] is True
 
 
+_PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
+
+
 def _patch_dallinger_destroy_ssh(
     monkeypatch, check_pending_jobs=False, data_options=False
 ):
@@ -6189,8 +6198,10 @@ def _patch_dallinger_destroy_ssh(
 
     def fake_destroy(app, server, delete_data_command=None, **data):
         destroyed.append((app, server, data) if data_options else (app, server))
-        if app == "gone":  # Dallinger aborts when no data is left
+        if app == "gone":  # older Dallinger aborts when no data is left
             raise click.Abort()
+        if app == "empty":
+            click.echo(f"Nothing left to delete for {app} on example.com.")
         if data.get("keep_data"):
             click.echo(f"To delete it, run: {delete_data_command}")
 
@@ -6367,25 +6378,39 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     )
 
     result = CliRunner().invoke(
-        psynet, ["destroy", "ssh", "twoo", "gone", "one", "-y", "--remove-data"]
+        psynet,
+        ["destroy", "ssh", "twoo", "gone", "empty", "one", "-y", "--remove-data"],
     )
     assert result.exit_code == 0, result.output
     assert "did you mean" not in result.output
-    assert "Export the data of twoo" not in result.output
-    assert "Export the data of one" in result.output
-    assert "Nothing left to delete for gone." in result.output
+    assert "Nothing left to delete for gone on musix." in result.output
+    assert result.output.count("Nothing left to delete") == 2
     assert "run this command again" not in result.output
-    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "one"]
+    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "empty", "one"]
     assert woken == ["one"]
+
+    for name in "gone", "empty":
+        result = CliRunner().invoke(
+            psynet, ["destroy", "ssh", name, "-y", "--remove-data"]
+        )
+        assert result.exit_code == 0, result.output
+        assert result.output.count("Nothing left to delete") == 1
 
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     result = CliRunner().invoke(
-        psynet, ["destroy", "ssh", "twoo", "--remove-data"], input="y\n"
+        psynet, ["destroy", "ssh", "twoo", "one", "--remove-data"], input="y\n"
     )
     assert result.exit_code == 0, result.output
     assert result.output.count("[y/N]") == 1
-    assert "Delete the leftover data of twoo on musix? [y/N]" in result.output
-    assert "Deleting leftover data of twoo..." in result.output
+    assert (
+        "Destroy 1 app on musix (one) and delete its data and the leftover "
+        "data of twoo? This deletes each app's database, Redis and "
+        "Postgres volumes, ~/dallinger-data/<app>. It cannot be undone. [y/N]"
+        in result.output
+    )
+    assert "Export the data of one" in result.output
+    assert "Export the data of twoo" not in result.output
+    assert "Deleting any leftover data of twoo..." in result.output
 
 
 def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
@@ -6419,19 +6444,51 @@ def test_destroy_ssh_data_choice_usage_errors(
 
 def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     record = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
     record.parent.mkdir(parents=True)
     record.write_text(json.dumps({"app": "one", "server": "musix"}))
     _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
-    args = ["destroy", "ssh", "one", "-y", "--remove-data"]
+    args = ["destroy", "ssh", "one", "--remove-data"]
 
     with working_directory(tmp_path):
-        assert "Found no export of one" in CliRunner().invoke(psynet, args).output
+        output = CliRunner().invoke(psynet, args, input="n\n").output
+        warning = output.index("Found no export of one")
+        assert warning < output.index("Destroy 1 app on musix (one) and delete its")
+        assert "Destroying one" not in output
         manifest = tmp_path / "exports/latest/manifest.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({"deployment_id": "dep-1"}))
-        output = CliRunner().invoke(psynet, args).output
+        output = CliRunner().invoke(psynet, args, input="y\n").output
         assert "Found no export" not in output and "Export the data" not in output
+
+
+@pytest.mark.parametrize(
+    "args, pending",
+    [
+        (["--yes", "--remove-data"], {"total": 0}),
+        (["--keep-data"], {"total": 0}),
+        ([], _PENDING),
+    ],
+)
+def test_destroy_ssh_export_reminder_only_before_a_data_question(
+    monkeypatch, tmp_path, args, pending
+):
+    """No reminder without a question about the data, or after declining the destroy."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
+    _patch_dallinger_destroy_ssh(
+        monkeypatch, check_pending_jobs=True, data_options=True
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._fetch_ssh_pending_async_jobs",
+        lambda app, server: pending,
+    )
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "one", *args], input="y\nn\n"
+    )
+    assert "Export the data of one" not in result.output
 
 
 @pytest.mark.parametrize("yes_flag", ["--yes", "-y"])
@@ -6448,9 +6505,6 @@ def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, exp
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *app_args, yes_flag])
     assert result.exit_code == 0, result.output
     assert destroyed == [(app, "musix") for app in expected]
-
-
-_PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
 
 
 def _recording_destroy():
