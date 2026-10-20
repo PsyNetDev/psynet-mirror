@@ -78,6 +78,10 @@ Provisioning runs these steps and prints each one to the terminal:
    (``*.<dns-host>``), pointing at the instance's AWS hostname.
 7. Registers the server with Dallinger under both its AWS hostname and the
    ``--dns-host`` name.
+8. Sets up the shared services that classic-ingress experiments use, as
+   ``dallinger docker-ssh servers add`` does (see
+   :ref:`ssh_server_shared_services`), and prints the log viewer's password
+   once.
 
 At the end, you should see something like this:
 
@@ -85,14 +89,6 @@ At the end, you should see something like this:
 
    Provisioning complete! Time taken: 192.402161359787. memory-lab is
    ready at ec2-52-91-24-127.compute-1.amazonaws.com
-
-Provisioning doesn't start the shared services that classic-ingress
-experiments use. Start them before the first deployment (see
-:ref:`ssh_server_shared_services`):
-
-.. code:: bash
-
-   dallinger docker-ssh servers upgrade --host <subdomain>.<your-domain> --yes
 
 Increasing storage
 ==================

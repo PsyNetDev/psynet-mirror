@@ -383,17 +383,10 @@ Registering the server
       its AWS hostname and under the ``--dns-host`` name, so always pass the
       ``--dns-host`` name as ``--server`` (here
       ``memory-lab.cool-psychology.org``). Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``.
-
-      Provisioning doesn't start the shared services that experiments use.
-      Start them, under the same name, and note the log viewer's password
-      that this prints:
-
-      .. code-block:: bash
-
-          dallinger docker-ssh servers upgrade --host memory-lab.cool-psychology.org --yes
-
-      For the other ``ec2`` commands and what provisioning does, see
+      ``https://<app>.memory-lab.cool-psychology.org``. Provisioning also
+      starts the shared services that experiments use (see
+      :ref:`ssh_server_shared_services`) and prints the log viewer's password
+      once; note it. For the other ``ec2`` commands and what provisioning does, see
       :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::

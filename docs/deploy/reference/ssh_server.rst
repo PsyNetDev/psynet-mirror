@@ -299,16 +299,16 @@ deleted.
 Setting up and upgrading the shared services
 --------------------------------------------
 
-Deployments never set up the shared classic-ingress services. Two Dallinger
+Deployments never set up the shared classic-ingress services. These Dallinger
 commands do:
 
 - ``dallinger docker-ssh servers add`` sets them up on a server that has no
   ``~/dallinger/docker-compose.yml`` yet, and prints the new log viewer
-  password. It leaves a server that already has that file unchanged.
+  password once. It leaves a server that already has that file unchanged.
+  ``dallinger ec2 provision`` does the same for the server it creates.
 - ``dallinger docker-ssh servers upgrade --host <server>`` sets them up or
-  rewrites them. Run it on a server provisioned with ``dallinger ec2
-  provision``, on a server set up by an older Dallinger version, and when a
-  deployment asks for it:
+  rewrites them. Run it on a server set up by an older Dallinger version, and
+  when a deployment asks for it:
 
   .. code-block:: bash
 
@@ -321,7 +321,7 @@ commands do:
   recreated, which briefly interrupts every classic app on the server, so
   upgrade when no classic experiment is live.
 
-Both commands write the server's ``Caddyfile`` for its own DNS name (see
+These commands write the server's ``Caddyfile`` for its own DNS name (see
 :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the
 ``--contact-email`` saved with the server, or else ``contact_email_on_error``;
 ``servers add`` saves ``contact_email_on_error`` unless you pass
@@ -332,7 +332,8 @@ obtain new certificates once. The log viewer moves to ``https://logs.<server
 DNS name>`` if it was at ``https://<server>/logs``, so that name must also
 resolve to the server.
 
-``servers add`` (when it sets up a server) and ``servers upgrade`` leave the
+``servers add`` and ``ec2 provision`` (when they set up a server) and
+``servers upgrade`` leave the
 shared ``Caddyfile``, ``docker-compose.yml``, ``dozzle-users.yml`` and
 ``.env.json`` read-only. Older Dallinger versions rewrite these files on every
 classic deployment, so on such a server their deployments fail with

@@ -66,10 +66,9 @@ select it with ``--server``. Registration installs Docker if needed. With
 classic ingress, the server also runs services that all experiments on it
 share: a PostgreSQL database server, a Caddy web server that routes each
 experiment's address to it and obtains HTTPS certificates, and a Dozzle log
-viewer. ``dallinger docker-ssh servers add`` starts them when it registers a
-new server; after ``dallinger ec2 provision``, you start them with ``dallinger
-docker-ssh servers upgrade``. Deployments only add their own address to Caddy,
-so they don't interrupt the other experiments (see
+viewer. ``dallinger docker-ssh servers add`` and ``dallinger ec2 provision``
+start them when they set up a new server. Deployments only add their own
+address to Caddy, so they don't interrupt the other experiments (see
 :ref:`ssh_server_shared_services`).
 With Cloudflare ingress, each experiment instead has its own
 database and tunnel, and there is no Dozzle (see :ref:`ssh_server_cloudflare`).
