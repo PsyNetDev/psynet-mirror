@@ -227,16 +227,7 @@ the real ``psynet-tests`` bucket with the project's AWS credentials. It is
 the only CI test that launches an experiment with ``S3Storage`` and uploads
 participant recordings to S3 in asynchronous jobs. Each bot sends a unique
 recording, so content addressing cannot skip those uploads, and each run adds
-a few small files to the bucket. The ``boto3``
-tests in ``tests/isolated/test_s3.py`` can also run against the real
-``psynet-tests`` bucket, with the AWS credentials from your Dallinger config.
-The same setting runs the ``awscli`` transfer test, which needs the ``aws``
-CLI and real S3. Run them before changing PsyNet's S3 code, or when the mock
-may have drifted from real S3:
-
-.. code-block:: shell
-
-    PSYNET_TEST_REAL_S3=1 pytest tests/isolated/test_s3.py -k real
+a few small files to the bucket.
 
 Playwright UI tests
 -------------------
