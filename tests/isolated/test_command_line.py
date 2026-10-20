@@ -213,6 +213,27 @@ class TestCommandLine(object):
             with pytest.raises(click.UsageError, match="does not support"):
                 _dallinger_hibernation_command("hibernate")
 
+    @pytest.mark.parametrize("action", ["hibernate", "awaken"])
+    def test_hibernation_ssh_accepts_names_of_apps_deployed_without_app(self, action):
+        received = []
+
+        @click.command()
+        @click.option("--server")
+        @click.option("--app")
+        def dallinger_command(server, app):
+            received.append(app)
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        with (
+            patch.object(dssh, action, dallinger_command, create=True),
+            patch.object(dssh, "get_configured_hosts", lambda: {"musix": {}}),
+        ):
+            result = CliRunner().invoke(
+                psynet, [action, "ssh", "--app", "dlgr-d8f9f2c4", "--server", "musix"]
+            )
+        assert result.exit_code == 0, result.output
+        assert received == ["dlgr-d8f9f2c4"]
+
     def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
         from psynet.command_line import _configure_dallinger_image_source
 
