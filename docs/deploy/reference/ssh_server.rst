@@ -94,8 +94,8 @@ data or run ``prepare``. Until a server default is changed, omitting
 ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
 app at its public name rather than ``https://<app>.<ssh-host>``.
 
-Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server>`` exists
-only on servers with classic ingress. Read a Cloudflare app's logs with the
+Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS
+name>`` exists only on servers with classic ingress. Read a Cloudflare app's logs with the
 ``ssh … docker compose … logs -f`` command printed at the end of the
 deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
 The dashboard's **Monitor > Logger** page shows the experiment's own log
@@ -303,8 +303,9 @@ Deployments never set up the shared classic-ingress services. These Dallinger
 commands do:
 
 - ``dallinger docker-ssh servers add`` sets them up on a server that has no
-  ``~/dallinger/docker-compose.yml`` yet, and prints the new log viewer
-  password once. It leaves a server that already has that file unchanged.
+  ``~/dallinger/docker-compose.yml`` yet, unless it is registered with
+  ``--default-ingress cloudflare``, and prints the new log viewer password
+  once. It leaves a server that already has that file unchanged.
   ``dallinger ec2 provision`` does the same for the server it creates.
 - ``dallinger docker-ssh servers upgrade --host <server>`` sets them up or
   rewrites them. Run it on a server set up by an older Dallinger version, and
@@ -333,15 +334,14 @@ DNS name>`` if it was at ``https://<server>/logs``, so that name must also
 resolve to the server.
 
 ``servers add`` and ``ec2 provision`` (when they set up a server) and
-``servers upgrade`` leave the
-shared ``Caddyfile``, ``docker-compose.yml``, ``dozzle-users.yml`` and
-``.env.json`` read-only. Older Dallinger versions rewrite these files on every
+``servers upgrade`` leave the shared ``Caddyfile``, ``docker-compose.yml``,
+``dozzle-users.yml`` and ``.env.json`` read-only. Older Dallinger versions rewrite these files on every
 classic deployment, so on such a server their deployments fail with
 ``PermissionError: [Errno 13] Permission denied``, after building the image
 but before changing anything shared. Everyone who deploys to the server must
 therefore use a Dallinger version with ``servers upgrade``. If an older
-version rewrote the files anyway (before they were read-only, or as
-``root``), deployments stop before the build and ask you to run ``servers
+version rewrote the files anyway (for example when it ran as ``root``, or
+after the files were made writable), deployments stop before the build and ask you to run ``servers
 upgrade`` again, which restores them.
 
 Updating a running app

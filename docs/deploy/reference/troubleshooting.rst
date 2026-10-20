@@ -8,7 +8,7 @@ Troubleshooting deployments
 When a deployment fails on the server, the real error is usually in the logs
 of the app's ``web`` service. Read them over SSH with the log command that
 the deployment prints (see :ref:`ssh_server_working_over_ssh`) or, on servers
-with classic ingress, in Dozzle at ``https://logs.<server>``. Apps with
+with classic ingress, in Dozzle at ``https://logs.<server DNS name>``. Apps with
 Cloudflare ingress have no Dozzle (see :ref:`ssh_server_cloudflare`).
 
 DNS resolution error
@@ -30,11 +30,10 @@ Deployments don't set up the server's shared services, so Dallinger stops
 before building the image if the deployment needs something they lack. This
 happens on a server that an older Dallinger registered or provisioned but
 never deployed to. It also happens on a server set up by an older Dallinger
-when the experiment is served
-at the server's own DNS name (no ``--app``), or when the older Dallinger's
-last deployment there was such a root-domain one. Run the command that the
-message names, when no classic experiment on the server is live, then deploy
-again:
+when the experiment is served at the server's own DNS name (no ``--app``), or
+when the older Dallinger's last deployment there was such a root-domain one.
+Run the command that the message names, when no classic experiment on the
+server is live, then deploy again:
 
 .. code:: bash
 
@@ -42,6 +41,16 @@ again:
 
 The same applies if the message says that an older Dallinger version has
 rewritten the shared files. See :ref:`ssh_server_shared_services`.
+
+If the message says that the server's ``Caddyfile`` does not serve the
+expected name, the server may already serve another DNS name, for example a
+server registered by IP address whose earlier deployments used ``--dns-host
+nip.io``. Save
+that name, which restarts nothing, and deploy again:
+
+.. code:: bash
+
+    dallinger docker-ssh servers add --host 121.101.152.23 --dns-host nip.io
 
 Deployment fails with ``PermissionError``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -300,9 +300,10 @@ Registering the server
 
       This takes a few minutes. If Docker is not installed, Dallinger installs
       it, including the Docker Compose plugin, and adds your user to the
-      ``docker`` group. It then starts the shared services that experiments
-      use (see :ref:`ssh_server_shared_services`) and prints the log
-      viewer's password. The ``--host`` value is the name you pass as
+      ``docker`` group. With classic ingress (the default), on a server that
+      Dallinger hasn't set up yet, it then starts the shared services that
+      experiments use (see :ref:`ssh_server_shared_services`) and prints the
+      log viewer's password once; note it. The ``--host`` value is the name you pass as
       ``--server`` in later commands, and experiments are served at
       ``https://<app>.my-server.example.org``.
 
@@ -386,8 +387,8 @@ Registering the server
       ``https://<app>.memory-lab.cool-psychology.org``. Provisioning also
       starts the shared services that experiments use (see
       :ref:`ssh_server_shared_services`) and prints the log viewer's password
-      once; note it. For the other ``ec2`` commands and what provisioning does, see
-      :doc:`/deploy/reference/aws_automatic_provisioning`.
+      once; note it. For the other ``ec2`` commands and what provisioning
+      does, see :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::
 
@@ -409,15 +410,16 @@ List the registered servers, then connect to yours:
     psynet apps ssh --server my-server.example.org
 
 A new server reports ``No apps found.`` To check the whole path, deploy a
-pilot of any experiment and open ``https://<app>.<server>`` as described in
-:doc:`/deploy/running_a_study`. On a server with classic ingress, the log
-viewer is at ``https://logs.<server>``. Its username is ``dallinger``, and its
-password is the random one printed when the shared services were set up. On a
-server set up by an older Dallinger, it is the dashboard password of the
-server's first deployment, and ``servers upgrade`` keeps it. Each deployment
-saves it as ``logs_password`` in
-its ``launch-info.json``, and the server keeps it as ``DOZZLE_PASSWORD`` in
-``~/dallinger/.env.json``. To change it, run
+pilot of any experiment and open ``https://<app>.<server DNS name>`` as
+described in :doc:`/deploy/running_a_study`. On a server with classic ingress,
+the log viewer is at ``https://logs.<server DNS name>``. Its username is
+``dallinger``, and its password is the random one printed when the shared
+services were set up. On a server set up by an older Dallinger, it is the
+dashboard password of the server's first deployment, and ``servers upgrade``
+keeps it. The server keeps it as ``DOZZLE_PASSWORD`` in
+``~/dallinger/.env.json``; with Dallinger versions that report it, each
+deployment also saves it as ``logs_password`` in its ``launch-info.json``. To
+change it, run
 ``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
 Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 
