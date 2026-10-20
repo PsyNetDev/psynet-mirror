@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -14,7 +15,7 @@ import zipfile
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from functools import cache, cached_property
+from functools import cache, partial
 from importlib import resources
 from os.path import abspath, dirname, exists
 from os.path import join as join_path
@@ -54,6 +55,7 @@ from dallinger.utils import classproperty
 from dallinger.utils import get_base_url as dallinger_get_base_url
 from dallinger.version import __version__ as dallinger_version
 from flask import (
+    current_app,
     flash,
     has_request_context,
     jsonify,
@@ -67,12 +69,13 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, text
-from sqlalchemy.orm import lazyload
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy.orm import lazyload, load_only
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from psynet import __version__
 from psynet.artifact import LocalArtifactStorage
-from psynet.perf_test import run_parallel_test
 from psynet.utils import (
     format_bytes,
     get_config,
@@ -83,12 +86,25 @@ from psynet.utils import (
 from . import deployment_info
 from . import exit as exit_domain
 from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
+from .capacity import (
+    count_active_participants,
+    is_valid_participant_limit,
+    recruiter_supports_participant_limits,
+    refuse_new_participant_if_full,
+    usable_participant_limit,
+)
 from .command_line import export_launch_data
 from .data import SQLBase, SQLMixin, ingest_zip, register_table
 from .db import (
+    _call_after_commit,
+    _check_external_call_allowed,
+    _commit_external_call_state,
+    _in_read_only_render,
     _set_transaction_lock_timeout,
     blocking_psycopg,
+    forbid_commits,
     is_transient_transaction_error,
     read_only_transaction,
     transaction,
@@ -125,9 +141,11 @@ from .recruiters import (  # noqa: F401
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
     StagingLabRecruiter,
     configured_recruiter_class,
+    named_recruiter_class,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
+from .server_logs import dozzle_url
 from .static_resources import (
     apply_versioned_static_cache_headers,
     get_static_package_extra_files,
@@ -144,6 +162,7 @@ from .timeline import (
     Timeline,
     WebSocketElt,
     _is_timeline_hold,
+    _timeline_step_name,
     new_page_uuid,
 )
 from .translation.check import check_translations
@@ -164,6 +183,7 @@ from .utils import (
     get_logger,
     get_translator,
     is_in_repo_experiment,
+    keep_alive_session,
     loading_experiment_classes,
     log_time_taken,
     render_template_with_translations,
@@ -496,6 +516,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     big_base_payment : `bool`
         Set this to `True` if you REALLY want to set `base_payment` to a value > 20.
 
+    max_concurrent_participants : `int` or `None`
+        The maximum number of participants taking the study at once; newcomers
+        over the limit wait on the start page until there is space (see
+        :meth:`is_at_capacity`). Only supported with the ``generic`` and
+        ``hotair`` recruiters. ``0`` admits nobody new. Default: `None` (no
+        limit).
+
     There are also a few experiment variables that are set automatically and that should,
     in general, not be changed manually:
 
@@ -626,6 +653,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Indicates whether the experiment needs internet access. Can be set to ``False`` for lab or field studies.
         Default: ``True``.
 
+    debug_ssh_app : ``bool``
+        Marks an SSH app as one that ``psynet debug ssh`` (or ``psynet
+        performance-test ssh``) deployed, which sets it. ``psynet destroy
+        ssh`` destroys such an app with a warning when it can't check the
+        app for pending async jobs, instead of refusing. Don't set it
+        yourself.
+        Default: ``False``.
+
+    performance_test_app : ``bool``
+        Marks an SSH app as one that ``psynet performance-test ssh`` may load,
+        reset and pre-fill, which means that its data is disposable.
+        ``performance-test ssh`` sets it when it deploys an app for its tests,
+        and refuses to run on apps without it. Setting it yourself declares
+        that the app's data may be deleted.
+        Default: ``False``.
+
 
 
     Parameters
@@ -709,7 +752,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "in your Experiment class. For example, you might write: label = 'GSP experiment with faces'"
             )
 
-        self.database_checks = []
+        self.database_checks = [
+            DatabaseCheck("async_job_timeouts", AsyncJob.check_timeouts)
+        ]
         self.participant_fail_routines = []
         self.recruitment_criteria = []
         self._websocket_message_handlers = {}
@@ -736,9 +781,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         self.process_timeline()
 
-    @cached_property
+    @property
     def authenticated_session(self):
-        return get_authenticated_session(self.base_url)
+        """Return a dashboard-authenticated session for the current thread.
+
+        ``requests.Session`` is not thread-safe, so each thread keeps its own
+        session. The process logs in once per server and every thread's
+        session reuses that login's cookies, so bots running in threads don't
+        each log in.
+        """
+        return _thread_dashboard_session(self.base_url)
 
     @classmethod
     def get_index_html(cls):
@@ -1014,6 +1066,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.var.label = self.label
         self.var.git_commit_sha = deployment_info.read("git_commit_sha")
         self.var.git_dirty = deployment_info.read("git_dirty")
+        self.var.git_dirty_paths = deployment_info.read_all().get("git_dirty_paths")
         if deployment_info.read("is_local_deployment"):
             # This is necessary because the local deployment command is blocking and therefore we can't
             # get the launch data from the command-line invocation.
@@ -1029,6 +1082,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
+        return refuse_new_participant_if_full()
 
     @staticmethod
     def after_request(request, response):
@@ -1106,8 +1160,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def get_request_statistics(cls, lookback_s):
         now = datetime.now()
         lookback = now - timedelta(seconds=lookback_s)
-        all_requests = Request.query.filter(Request.creation_time > lookback).all()
-        durations = [req.duration for req in all_requests]
+        durations = (
+            db.session.execute(
+                select(Request.duration).where(Request.creation_time > lookback)
+            )
+            .scalars()
+            .all()
+        )
         return {
             "median_response_time": (
                 float(median(durations)) if len(durations) > 0 else 0
@@ -1281,7 +1340,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         logs_url = None
         if is_ssh_deployment:
-            logs_url = "https://logs." + deployment_information.get("server")
+            logs_url = dozzle_url(
+                deployment_information.get("server"),
+                deployment_information.get("ingress"),
+            )
 
         def unpack_export(deployment_id):
             exp = get_experiment()
@@ -1342,29 +1404,37 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def get_participant_status(cls):
-        participants = Participant.query.all()
-        complete_participants = [
-            participant for participant in participants if participant.complete
-        ]
-        time_taken = []
-        for participant in complete_participants:
-            try:
-                time_taken.append(
-                    (participant.end_time - participant.creation_time).total_seconds()
+        # Runs every minute, so it loads only the columns it needs rather than
+        # every participant's pickled state.
+        complete_participants = (
+            Participant.query.filter_by(complete=True)
+            .options(
+                load_only(
+                    Participant.creation_time,
+                    Participant.end_time,
+                    Participant.time_credit,
+                    Participant.performance_reward,
                 )
-            except TypeError:
-                # If the participant has no end time, just to be sure
-                pass
+            )
+            .all()
+        )
+        time_taken = [
+            (participant.end_time - participant.creation_time).total_seconds()
+            for participant in complete_participants
+            if participant.end_time is not None
+            and participant.creation_time is not None
+        ]
         median_time_taken = median(time_taken) if len(time_taken) > 0 else 0
         estimated_duration = cls.estimated_completion_time(
             None
         )  # wage_per_hour is not used
-        total_rewards = [
+        total_cost = sum(
             participant.calculate_reward() for participant in complete_participants
-        ]
-        total_cost = sum(total_rewards)
+        )
         participant_status_summary = dict(
-            Counter([participant.status for participant in participants])
+            db.session.execute(
+                select(Participant.status, func.count()).group_by(Participant.status)
+            ).all()
         )
         return {
             "total_cost": total_cost,
@@ -1554,12 +1624,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         }
 
     def _nodes_on_deploy(self):
+        """Mark nodes as deployed, queueing ``async_on_deploy`` where required.
+
+        Nodes without ``async_on_deploy`` are marked in one statement, so that
+        experiments with many nodes don't load every node at launch.
+        """
         from .trial.main import TrialNode
 
         db.session.commit()
 
+        if not in_deployment_package():
+            return
+
+        pending = TrialNode.on_deploy_complete.isnot(True)
+        TrialNode.query.filter(
+            pending, TrialNode.async_on_deploy_required.isnot(True)
+        ).update({TrialNode.on_deploy_complete: True}, synchronize_session=False)
+
         for node in (
-            TrialNode.query.with_for_update(of=TrialNode).populate_existing().all()
+            TrialNode.query.filter(pending)
+            .with_for_update(of=TrialNode)
+            .populate_existing()
+            .all()
         ):
             node.check_on_deploy()
 
@@ -1598,7 +1684,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if self.test_mode == "serial" or self.test_n_bots == 1:
             self._test_experiment_serial()
         elif self.test_mode == "parallel":
-            run_parallel_test(
+            _run_parallel_test(
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
@@ -1608,6 +1694,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             raise ValueError(f"Invalid test mode: {self.test_mode}")
 
         self._report_request_statistics()
+        self._report_async_job_cpu_time()
 
     def _check_static_spa_contracts(self):
         """Fail fast on static timeline pages that are not SPA-compatible.
@@ -1661,6 +1748,49 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "total_requests": total_requests,
         }
 
+    def _report_async_job_cpu_time(self):
+        """Log the CPU and wall time of the async jobs that ran.
+
+        Rows are grouped by where the jobs ran, label and priority.
+        """
+        from .async_job import _format_cpu_time_summary
+
+        response = self.authenticated_session.get(self.base_url + "/async_job_cpu_time")
+        response.raise_for_status()
+        logger.info(_format_cpu_time_summary(response.json()))
+
+    @experiment_route("/async_job_cpu_time", methods=["GET"])
+    @classmethod
+    @login_required
+    @with_transaction
+    def async_job_cpu_time(cls):
+        from .async_job import _get_cpu_time_summary
+
+        return _get_cpu_time_summary()
+
+    def reason_to_stay_awake(self):
+        """Keep a docker-ssh app awake while async jobs are pending.
+
+        Idle hibernation stops the workers and the web process, so pending
+        :class:`~psynet.async_job.WorkerAsyncJob` and
+        :class:`~psynet.async_job.LocalAsyncJob` jobs would not finish.
+
+        Returns
+        -------
+        str or None
+            A short reason for the deploy logs, or ``None`` to allow sleep.
+        """
+        parent = getattr(super(), "reason_to_stay_awake", None)
+        reason = parent() if parent else None
+        if reason:
+            return reason
+        from .async_job import _describe_pending_jobs, _get_pending_job_summary
+
+        summary = _get_pending_job_summary()
+        return (
+            _describe_pending_jobs(summary, precise=False) if summary["total"] else None
+        )
+
     def _test_experiment_serial(self):
         logger.info(f"Testing experiment with {self.test_n_bots} serial bot(s)...")
 
@@ -1675,8 +1805,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
-        Defines the logic for testing the experiment in a serial process
-        (i.e. not running bots in parallel processes).
+        Defines the logic for testing the experiment serially
+        (i.e. not running bots in parallel).
         This is useful for testing specific experiment logic,
         but less useful for load-testing.
 
@@ -1924,25 +2054,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         if len(networks) > 0:
             logger.info("Growing %i networks...", len(networks))
-            # Iterate by ID so a mid-batch handle_error rollback cannot leave us
-            # holding detached ORM instances for later networks.
-            for network_id in [network.id for network in networks]:
-                network = db.session.get(TrialNetwork, network_id)
-                if network is None:
-                    continue
-                try:
-                    network.trial_maker.call_grow_network(
-                        network, check_readiness=False
-                    )
-                except Exception as err:
-                    # Re-fetch after handle_error rollback; commit the fail so a
-                    # later error in this batch cannot undo it.
-                    exp.isolate_batch_item_failure(
-                        err,
-                        refetch=lambda: db.session.get(TrialNetwork, network_id),
-                        fail=Experiment._fail_grown_network,
-                        network=network,
-                    )
+            for network in networks:
+                exp._run_batch_item(
+                    partial(
+                        network.trial_maker.call_grow_network,
+                        network,
+                        check_readiness=False,
+                    ),
+                    fail=partial(Experiment._fail_grown_network, network),
+                    network=network,
+                )
 
             logger.info("Finished growing networks.")
 
@@ -2168,6 +2289,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "legacy_js_var_globals": "warn",
             "needs_internet_access": True,
             "check_participant_opened_devtools": False,
+            "performance_test_app": False,
+            "debug_ssh_app": False,
             "supported_locales": "[]",
             "wage_per_hour": 9.0,
             "window_height": 768,
@@ -2228,6 +2351,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "hard_max_experiment_payment": 1100.0,
             "soft_max_experiment_payment": 1000.0,
             "max_participant_payment": 25.0,
+            "max_concurrent_participants": None,
         }
 
     @experiment_route("/api/<endpoint>", methods=["GET", "POST"])
@@ -2457,6 +2581,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config = get_config()
 
         cls.check_recruiter_support(config)
+        cls.check_max_concurrent_participants_support(config)
 
         if not config.get("clock_on"):
             # We force the clock to be on because it's necessary for the check_networks functionality.
@@ -2471,7 +2596,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 + " in the '[Recruitment strategy]' section of the config.txt."
             )
 
-        n_char_title = len(config.get("title"))
+        title = config.get("title", None)
+        if not title:
+            raise RuntimeError(
+                "The experiment needs a title, which recruiters show to "
+                "participants. Set it in config.txt, for example "
+                "'title = Pitch discrimination (Chrome browser, 10 minutes to complete)', "
+                "or in Experiment.config."
+            )
+        n_char_title = len(title)
         if n_char_title > 128:
             raise RuntimeError(
                 f"The maximum title length is 128 characters (current = {n_char_title}), please fix this in config.txt."
@@ -2499,6 +2632,87 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
 
         cls._warn_about_overridden_experiment_config(config)
+
+    @classmethod
+    def check_max_concurrent_participants_support(cls, config):
+        """Reject participant limits for recruiters that send paid participants.
+
+        Raises
+        ------
+        ValueError
+            If the class sets an invalid ``max_concurrent_participants``.
+        RuntimeError
+            If the recruiter named in the configuration (ignoring the
+            debug-mode stand-in) is missing, unknown or doesn't support
+            participant limits.
+        """
+        limit = cls.variables.get("max_concurrent_participants")
+        if not is_valid_participant_limit(limit):
+            raise ValueError(
+                "max_concurrent_participants must be a whole number of at least 0, "
+                f"or None for no limit, not {limit!r}."
+            )
+        limits_participants = (
+            limit is not None or cls.is_at_capacity is not Experiment.is_at_capacity
+        )
+        if not limits_participants:
+            return
+        # The named recruiter, not the debug-mode stand-in, decides: deploy
+        # commands run this check while the config is still in debug mode.
+        if not recruiter_supports_participant_limits(named_recruiter_class(config)):
+            recruiter = config.get("recruiter", None)
+            if not recruiter:
+                raise RuntimeError(
+                    "max_concurrent_participants and is_at_capacity need a named "
+                    "recruiter that supports them: set recruiter = generic (or "
+                    "hotair) in config.txt or Experiment.config."
+                )
+            raise RuntimeError(
+                f"The {recruiter!r} recruiter doesn't support "
+                "max_concurrent_participants or is_at_capacity: only generic and "
+                "hotair do, because other recruiters send participants who have "
+                "accepted a place and should not be kept waiting. Remove "
+                "max_concurrent_participants from Experiment.variables (or set it "
+                "to None) and remove any is_at_capacity override. With Prolific, "
+                "limit simultaneous participants through initial_recruitment_size "
+                "instead."
+            )
+
+    def is_at_capacity(self):
+        """Return whether the study is too busy to admit a newcomer right now.
+
+        While this returns ``True``, newcomers wait on the start page, which
+        tells them that many people are taking part and retries every 20 to
+        40 seconds. It is called before each new participant is created,
+        including those retries, so keep it cheap; after it returns ``True``,
+        each web process skips it for 2 seconds. Returning participants are
+        never refused. Use it only for load: the waiting message and retries
+        don't suit closing the study (for example outside certain hours).
+
+        By default, the study is at capacity once the experiment variable
+        ``max_concurrent_participants`` participants are active (see
+        :func:`psynet.capacity.count_active_participants`). Because it is an
+        experiment variable, the limit can change while the study runs, for
+        example ``experiment.var.max_concurrent_participants = 80``. Override
+        this method to measure load differently, for example to count
+        participants as active for 30 minutes after their last page::
+
+            from psynet.capacity import count_active_participants
+
+            def is_at_capacity(self):
+                limit = self.var.max_concurrent_participants
+                return limit is not None and count_active_participants(1800) >= limit
+
+        Only supported with the ``generic`` and ``hotair`` recruiters.
+
+        Returns
+        -------
+        bool
+        """
+        limit = usable_participant_limit(
+            self.var.get("max_concurrent_participants", None)
+        )
+        return limit is not None and count_active_participants() >= limit
 
     @staticmethod
     def check_recruiter_support(config):
@@ -2925,8 +3139,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
     def commit_payment_state(self):
-        """Persist claimed payment fields so a crash cannot replay a POST."""
-        db.session.commit()
+        """Persist claimed payment fields so a crash cannot replay a POST.
+
+        Recruiters call this just before posting a payment. Like any commit,
+        it raises inside timeline steps, so payments made from experiment
+        code belong in an ``AsyncCodeBlock``.
+        """
+        _commit_external_call_state()
 
     def _lock_participant_for_payment(self, participant):
         """Reload the participant row with ``FOR UPDATE`` for the pay claim.
@@ -3031,8 +3250,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         A hard-cap clip keeps ``planned_bonus`` as the decided amount and
         finishes as ``capped`` even when a remainder was sent.
 
-        Does not re-apply caps or send emails when already settled.
+        Does not re-apply caps or send emails when already settled. Raises
+        wherever ``_check_external_call_allowed`` does (timeline steps,
+        savepoints, rendering), even when there is nothing to pay.
         """
+        _check_external_call_allowed()
         participant = self._lock_participant_for_payment(participant)
         if bonus_is_settled(participant):
             logger.info(
@@ -3483,6 +3705,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
+            if Experiment._pending_redirect_replaces_open_page(participant):
+                if page_uuid != participant.page_uuid:
+                    Experiment._settle_stale_hold(participant, page_uuid)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page),
+                    page=page,
+                )
             event = self.timeline.get_current_elt(self, participant)
             if page_uuid != participant.page_uuid:
                 page = self._page_for_stale_hold_resume(
@@ -3523,37 +3756,41 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
-            response = event.process_response(
-                raw_answer=raw_answer,
-                blobs=blobs,
-                metadata=metadata,
-                experiment=self,
-                participant=participant,
-                client_ip_address=client_ip_address,
-                answer=answer,
-            )
-            validation = event.validate(
-                response=response,
-                answer=response.answer,
-                raw_answer=raw_answer,
-                participant=participant,
-                experiment=self,
-                page=event,
-            )
-            if isinstance(validation, str):
-                validation = FailedValidation(message=validation)
-
-            response.successful_validation = not isinstance(
-                validation, FailedValidation
-            )
-            if not response.successful_validation:
-                return ResponseResult(
-                    payload={
-                        "submission": "rejected",
-                        "message": validation.message,
-                    }
+            with forbid_commits(
+                f"Response processing for {_timeline_step_name(event)}"
+            ):
+                response = event.process_response(
+                    raw_answer=raw_answer,
+                    blobs=blobs,
+                    metadata=metadata,
+                    experiment=self,
+                    participant=participant,
+                    client_ip_address=client_ip_address,
+                    answer=answer,
                 )
+                validation = event.validate(
+                    response=response,
+                    answer=response.answer,
+                    raw_answer=raw_answer,
+                    participant=participant,
+                    experiment=self,
+                    page=event,
+                )
+                if isinstance(validation, str):
+                    validation = FailedValidation(message=validation)
 
+                response.successful_validation = not isinstance(
+                    validation, FailedValidation
+                )
+                if not response.successful_validation:
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": validation.message,
+                        }
+                    )
+
+                event._accept_response(response, self, participant)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
@@ -3578,8 +3815,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     @staticmethod
-    def _hold_resume_must_settle(participant, event):
-        """Return whether fail, redirect, or timeout must take the locked path.
+    def _pending_redirect_replaces_open_page(participant):
+        """Return whether a queued redirect should replace the open page unbuilt.
+
+        ``Participant.fail()`` queues ``pending_redirect`` when it runs outside
+        this participant's request, for example when a partner leaves and
+        their sync group closes. The open page belongs to the abandoned flow,
+        and its page maker may read state that ``fail()`` removed, so it is
+        neither rebuilt nor scored. Timeline holds are still rebuilt, because
+        leaving one settles its wait record.
+        """
+        if getattr(participant, "pending_redirect", None) is None:
+            return False
+        from .timeline_hold import TimelineHoldRecord
+
+        on_hold = db.session.query(
+            TimelineHoldRecord.query.filter_by(
+                participant_id=participant.id, page_uuid=participant.page_uuid
+            ).exists()
+        ).scalar()
+        return not on_hold
+
+    def _hold_resume_must_settle(self, participant, event):
+        """Return whether a release by failure, redirect, or timeout must take the locked path.
 
         Missing ``pending_redirect`` / ``failed`` attributes are treated as
         not set. Only an exact ``True`` timeout settles, so a dummy hold
@@ -3587,7 +3845,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         if getattr(participant, "pending_redirect", None) is not None:
             return True
-        if getattr(participant, "failed", False):
+        if getattr(participant, "failed", False) and event.failure_releases_hold(
+            self, participant
+        ):
             return True
         timed_out = getattr(event, "participant_timed_out", None)
         return callable(timed_out) and timed_out(participant) is True
@@ -3605,6 +3865,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         path (``_page_for_stale_hold_resume``). Accidental identity-map
         dirties are rolled back when ``route_response`` sees ``skip_write``.
         """
+        if Experiment._pending_redirect_replaces_open_page(participant):
+            return None
         event = self.timeline.get_current_elt(self, participant)
         on_submitted_hold = page_uuid == participant.page_uuid and _is_timeline_hold(
             event
@@ -3637,6 +3899,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant, settle the old hold if needed and skip any later holds
         that are already clear, instead of treating it as a multi-tab mismatch.
         """
+        if not self._settle_stale_hold(participant, submitted_page_uuid):
+            return None
+        return self._advance_past_ready_holds(participant, current_page)
+
+    @staticmethod
+    def _settle_stale_hold(participant, submitted_page_uuid):
+        """Settle the hold a catch-up submit came from, if needed.
+
+        Returns
+        -------
+        bool
+            Whether ``submitted_page_uuid`` is a catch-up from one of this
+            participant's holds rather than a stale tab.
+        """
         from .timeline_hold import TimelineHoldRecord
 
         record = TimelineHoldRecord.for_stale_hold_resume(
@@ -3644,10 +3920,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             submitted_page_uuid,
         )
         if record is None:
-            return None
+            return False
         if record.resumed_at is None:
             record.settle(participant)
-        return self._advance_past_ready_holds(participant, current_page)
+        return True
 
     def _advance_past_ready_holds(self, participant, page):
         """Skip holds that are already clear after this request's writes.
@@ -4093,6 +4369,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if "docker_ssh_monitoring_path" not in config.types:
             config.register("docker_ssh_monitoring_path", str)
         config.register("check_participant_opened_devtools", bool)
+        config.register("performance_test_app", bool)
+        config.register("debug_ssh_app", bool)
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
@@ -5179,7 +5457,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @with_transaction
     def grow_network(cls, network_id):
         exp = get_experiment()
-        from .trial.main import TrialNetwork
 
         network = (
             TrialNetwork.query.with_for_update(of=[TrialNetwork])
@@ -5197,7 +5474,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     @with_transaction
     def call_async_post_grow_network(network_id):
-        from .trial.main import NetworkTrialMaker, TrialNetwork
+        from .trial.main import NetworkTrialMaker
 
         network = (
             TrialNetwork.query.with_for_update(of=TrialNetwork)
@@ -5526,22 +5803,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @with_transaction
     def route_participant_status(cls, participant_id):
         """
-        This route provides a .zip file containing useful information about the
-        participant's current status. This information is used by automated tests
-        to verify what is being displayed on the current page and what response
-        should be submitted by the bot.
+        Describe the participant's current status for automated tests.
 
-        The zip file contains:
-        - status.json: a JSON file summarising the participant's status
-        - bot_response_files/: a directory containing the files that the participant would upload as a response to the page
+        Bots use this to check what the current page shows and what response
+        to submit. The response is the status as JSON, unless the bot's
+        response to the page includes files. In that case it is a zip file
+        containing:
+
+        - status.json: the status
+        - bot_response_files/: the files that the participant would upload as
+          a response to the page
         """
         participant = Bot.query.get(participant_id)
+        at_page_maker_start = participant.elt_id[1:] == [-1]
+        if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
+            # get_current_page will move the cursor, so take the row lock. Routine
+            # polls stay unlocked so they don't block barrier checks' NOWAIT locks.
+            participant = (
+                Bot.query.with_for_update(of=Participant)
+                .populate_existing()
+                .get(participant_id)
+            )
         experiment = get_experiment()
 
-        status = {
-            "status": participant.status,
-            "page_uuid": participant.page_uuid,
-        }
+        status = {"status": participant.status}
 
         if participant.status == "working":
             current_page = participant.get_current_page()
@@ -5555,40 +5840,53 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "label": current_page.label,
                 "text": current_page.plain_text,
                 "time_estimate": current_page.time_estimate,
+                "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
                 "bot_response": bot_response.__json__(),
             }
+            if _is_timeline_hold(current_page):
+                status["page"]["check_interval"] = current_page.check_interval
         else:
             bot_response = None
+        status["page_uuid"] = participant.page_uuid
+
+        if not (bot_response and bot_response.blobs):
+            return jsonify(status)
 
         with tempfile.TemporaryDirectory() as tempdir:
-            # status.json (a JSON file summarising the participant's status)
-            status_path = os.path.join(tempdir, "status.json")
-            with open(status_path, "w") as f:
-                json.dump(status, f)
-
-            # bot_response_files/... (the files that the participant would upload as a response to the page)
-            files_dir = os.path.join(tempdir, "bot_response_files")
-            os.makedirs(files_dir, exist_ok=True)
-            if bot_response:
-                for key, blob in bot_response.blobs.items():
-                    src_path = blob.file
-                    dst_path = os.path.join(files_dir, key)
-                    shutil.copyfile(src_path, dst_path)
-
-            # status.zip (a zip file containing the status.json and the bot_response_files)
             zip_path = os.path.join(tempdir, "status.zip")
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.write(status_path, "status.json")
-
-                if bot_response:
-                    for filename in bot_response.blobs:
-                        zf.write(
-                            os.path.join(files_dir, filename),
-                            os.path.join("bot_response_files", filename),
-                        )
-
+                zf.writestr("status.json", current_app.json.dumps(status))
+                for key, blob in bot_response.blobs.items():
+                    zf.write(blob.file, f"bot_response_files/{key}")
             return send_file(zip_path, mimetype="application/zip")
+
+    @classmethod
+    def _error_trial_context(cls, participant):
+        """Return the trial, node and network for an error report.
+
+        The participant can be detached from the session after a rollback,
+        in which case its current trial cannot be loaded. The error is then
+        reported without trial context rather than failing again.
+        """
+        context = {"trial": None, "node": None, "network": None}
+        if participant is None:
+            return context
+        try:
+            trial = participant.current_trial
+            if trial is not None:
+                context = {"trial": trial, "node": trial.node, "network": trial.network}
+        except DetachedInstanceError:
+            identity = getattr(
+                sqlalchemy_inspect(participant, raiseerr=False), "identity", None
+            )
+            logger.warning(
+                "Could not load the current trial for participant %s while "
+                "reporting an error, because it is detached from the database "
+                "session. Reporting the error without trial context.",
+                identity[0] if identity else None,
+            )
+        return context
 
     @classmethod
     def fail_participant_on_error(cls, participant, error):
@@ -5761,17 +6059,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled_error = cls.handle_error(
                 err,
                 participant=participant,
-                trial=participant.current_trial,
-                node=(
-                    participant.current_trial.node
-                    if participant.current_trial
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if participant.current_trial
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
             cls._prepare_tracked_fatal_recovery(handled_error, err)
             error_page = handled_error.error_page()
@@ -5842,43 +6130,129 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return rendered
 
     @classmethod
-    def isolate_batch_item_failure(cls, error, *, refetch, fail, **error_parents):
-        """
-        Report a per-item batch failure, mark the item failed, and commit.
+    def _run_batch_item(cls, function, *, fail, **error_parents):
+        """Run one item of a poller batch in a savepoint.
 
         Used by pollers that process many candidates in one transaction
-        (network growth, finalize backstop). ``handle_error`` rolls back the
-        session, so ``refetch`` must return a fresh ORM instance (or ``None``).
-        ``fail`` receives that instance and marks it failed. The fail is
-        committed immediately so a later ``handle_error`` in the same batch
-        cannot undo it (same mid-batch commit pattern as ErrorRecord logging).
+        (network growth, finalize backstop). If ``function`` raises, only its
+        own changes are rolled back; the error is recorded in the batch's
+        transaction, ``fail()`` marks the item failed, and the researcher is
+        notified once the batch commits. If ``fail()`` itself raises, the
+        ``error_parents`` objects are marked failed directly, without their
+        failure cascades, so the item is not picked up again. A lock conflict
+        or deadlock is only logged, so the next poll retries the item. The
+        poller's transaction owner commits the batch as usual.
+
+        ``function`` must not commit, roll back, call :meth:`handle_error`
+        or commit external-call state; commits raise, and a savepoint could
+        not make external-call state durable.
+
+        Returns ``function()``'s result, or ``None`` if it raised.
         """
-        if not isinstance(error, cls.HandledError):
-            cls.handle_error(error, **error_parents)
-        entity = refetch()
-        if entity is None:
+        try:
+            with db.session.begin_nested():
+                with forbid_commits("A background poller item"):
+                    return function()
+        except Exception as error:
+            if is_transient_transaction_error(error):
+                logger.warning(
+                    "Poller item %s hit a lock conflict or deadlock; retrying "
+                    "on the next poll.",
+                    error_parents,
+                    exc_info=True,
+                )
+                return None
+            parents = cls._compile_error_parents(
+                cls._identify_error_parents(**error_parents)
+            )
+            token, log_line_number = cls._record_error(error, **parents)
+            _call_after_commit(
+                partial(
+                    cls.log_to_notifier,
+                    token,
+                    log_line_number,
+                    formatted_traceback=traceback.format_exc(),
+                    **parents,
+                )
+            )
+            try:
+                with db.session.begin_nested():
+                    fail()
+            except Exception as fail_error:
+                if is_transient_transaction_error(fail_error):
+                    logger.warning(
+                        "Could not mark poller item %s as failed because of a "
+                        "lock conflict; retrying on the next poll.",
+                        error_parents,
+                        exc_info=True,
+                    )
+                    return None
+                logger.exception(
+                    "fail() raised for poller item %s; marking the item "
+                    "failed without its failure cascade.",
+                    error_parents,
+                )
+                # Otherwise the item stays ready and fails again on every poll.
+                try:
+                    with db.session.begin_nested():
+                        for obj in error_parents.values():
+                            if not obj.failed:
+                                obj.failed = True
+                                obj.failed_reason = "poller_fail_callback_error"
+                                obj.time_of_death = datetime.now()
+                except Exception:
+                    logger.exception(
+                        "Could not mark poller item %s as failed; retrying on "
+                        "the next poll.",
+                        error_parents,
+                    )
             return None
-        fail(entity)
-        db.session.commit()
-        return entity
 
     @classmethod
     def handle_error(cls, error, **kwargs):
-        parents = cls._compile_error_parents(**kwargs)
+        """Roll back the failed work, save the error's record, then notify.
+
+        ``kwargs`` are the ORM objects the error concerns (``participant``,
+        ``trial``, ``async_job``, ...). They and their parents are recorded by
+        ID; objects that were never saved, and values that are not ORM
+        objects, are ignored. Because this rolls back and commits the
+        session, call it from code that owns the transaction, not from
+        inside a timeline step.
+        """
+        identities = cls._identify_error_parents(**kwargs)
         db.session.rollback()
-        cls.report_error(error, **parents)
+        parents = cls._compile_error_parents(identities)
+        token, log_line_number = cls._record_error(error, **parents)
+        db.session.commit()
+        cls.log_to_notifier(token, log_line_number, **parents)
         return cls.HandledError(**parents)
 
     @staticmethod
-    def _compile_error_parents(**kwargs):
-        # We merge to prevent sqlalchemy.orm.exc.DetachedInstanceError
-        parents = {
-            key: db.session.merge(value)
-            for key, value in kwargs.items()
-            if value is not None
-        }
+    def _identify_error_parents(**kwargs):
+        """Return the identity of each persisted object, without loading it.
+
+        After a failed flush the objects' attributes can no longer be loaded,
+        and after the rollback, objects created in the failed transaction
+        no longer exist; so we record identities before rolling back and
+        reload the objects afterwards.
+        """
+        identities = {}
+        for key, value in kwargs.items():
+            state = sqlalchemy_inspect(value, raiseerr=False)
+            if getattr(state, "identity", None) is not None:
+                identities[key] = (state.mapper.class_, state.identity)
+        return identities
+
+    @staticmethod
+    def _compile_error_parents(identities):
+        """Reload the error's objects and return their and their parents' IDs."""
+        parents = {}
+        for key, (model, identity) in identities.items():
+            value = db.session.get(model, identity)
+            if value is not None:
+                parents[key] = value
         types = [
-            "process",
+            "async_job",
             "asset",
             "response",
             "trial",
@@ -5929,16 +6303,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         error,
         **kwargs,
     ):
-        token = cls.generate_error_token()
+        """Log the error, add its record to the current transaction, and notify.
 
+        The caller's transaction decides whether the record is saved;
+        :meth:`handle_error` commits it after rolling back the failed work.
+        """
+        token, log_line_number = cls._record_error(error, **kwargs)
+        cls.log_to_notifier(token, log_line_number, **kwargs)
+
+    @classmethod
+    def _record_error(cls, error, **kwargs):
+        """Log the error and add its record; return its token and log line."""
+        token = cls.generate_error_token()
+        cls.log_to_stdout(error, token, **kwargs)
         try:
-            log_line_number = find_log_line_number(token)
+            log_line_number = find_log_line_number(f"err-{token}")
         except FileNotFoundError:
             log_line_number = None
-
-        cls.log_to_stdout(error, token, **kwargs)
         cls.log_to_db(error, token, log_line_number, **kwargs)
-        cls.log_to_notifier(token, log_line_number, **kwargs)
+        return token, log_line_number
 
     @classmethod
     def generate_error_token(cls):
@@ -5959,6 +6342,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def log_to_db(cls, error, token, log_line_number, **kwargs):
+        """Add an :class:`~psynet.error.ErrorRecord` to the current transaction.
+
+        Rendering runs in a read-only transaction, so errors reported while
+        rendering are only logged and notified.
+        """
+        if _in_read_only_render():
+            return
         # We considered running this function within its own database session,
         # but this proved incompatible with passing pre-existing SQLAlchemy objects
         # to the ErrorRecord constructor.
@@ -5971,12 +6361,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             **kwargs,
         )
         db.session.add(record)
-        # We don't normally write session.commit() within inner code,
-        # but we do here, because we really want to make sure error reporting works.
-        db.session.commit()
 
     @classmethod
-    def log_to_notifier(cls, token, line_number, **kwargs):
+    def log_to_notifier(cls, token, line_number, formatted_traceback=None, **kwargs):
+        """Notify the researcher of an error, with the traceback being handled.
+
+        Pass ``formatted_traceback`` when calling this outside the ``except``
+        block, where :func:`traceback.format_exc` no longer sees the error.
+        """
+        if formatted_traceback is None:
+            formatted_traceback = traceback.format_exc()
         url = cls.dashboard_url + "/logger"
 
         if line_number is not None:
@@ -5987,37 +6381,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         error_txt = f"error (`{token}`)"
         text = f"An {cls.notifier.url(error_txt, url)} occurred:"
-        text += "\n```" + traceback.format_exc() + "```"
+        text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
-
-    # @classmethod
-    # def serialize_error_context(
-    #     cls,
-    #     participant=None,
-    #     response=None,
-    #     trial=None,
-    #     node=None,
-    #     network=None,
-    #     process=None,
-    #     asset=None,
-    # ):
-    #     context = {}
-    #     if participant:
-    #         context["participant_id"] = participant.id
-    #         context["worker_id"] = participant.worker_id
-    #     if response:
-    #         context["response_id"] = response.id
-    #     if trial:
-    #         context["trial_id"] = trial.id
-    #     if node:
-    #         context["node_id"] = node.id
-    #     if network:
-    #         context["network_id"] = network.id
-    #     if process:
-    #         context["process_id"] = process.id
-    #     if asset:
-    #         context["asset_id"] = asset.id
-    #     return context
 
     class UniqueIdError(PermissionError):
         def __init__(self, expected, provided, participant):
@@ -6053,11 +6418,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
-        if participant.elt_id[1:] == [-1]:
+        replace_open_page = cls._pending_redirect_replaces_open_page(participant)
+        if participant.elt_id[1:] == [-1] or replace_open_page:
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
-        page.pre_render()
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
 
         return page
 
@@ -6066,7 +6433,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Run write-phase preparation for the page that will be rendered."""
         if page is None:
             return page
-        page.pre_render()
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
         available = getattr(page, "early_exit_available", None)
         if callable(available) and available(experiment, participant):
             experiment.prepare_voluntary_exit_plan(participant)
@@ -6604,10 +6972,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 total_ms=clock.elapsed_ms(),
             )
 
-        exp = get_experiment()
-        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
+        # Read the whole body before any SQL, so a slow upload does not hold
+        # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+
+        exp = get_experiment()
+        _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
 
         participant_id = get_arg_from_dict(json_data, "participant_id")
         page_uuid = get_arg_from_dict(json_data, "page_uuid")
@@ -6854,17 +7225,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             handled = experiment.handle_error(
                 error,
                 participant=participant,
-                trial=getattr(participant, "current_trial", None),
-                node=(
-                    participant.current_trial.node
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
-                network=(
-                    participant.current_trial.network
-                    if getattr(participant, "current_trial", None)
-                    else None
-                ),
+                **cls._error_trial_context(participant),
             )
         cls._prepare_tracked_fatal_recovery(handled, error)
         return error_response(
@@ -6990,8 +7351,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             return
         extra_deps = self.notifier.python_dependencies
-        with open("constraints.txt", "r") as f:
-            constraints = f.readlines()
+        if not extra_deps:
+            return
+        constraints_path = Path("constraints.txt")
+        constraints = (
+            constraints_path.read_text().splitlines()
+            if constraints_path.exists()
+            else []
+        )
         for dep in extra_deps:
             self.check_python_dependency(dep, constraints)
 
@@ -7012,12 +7379,29 @@ Experiment.UnsuccessfulEndLogic = UnsuccessfulEndLogic
 Experiment.RejectedConsentLogic = RejectedConsentLogic
 
 
-def handle_shutdown_signal(*args, **kwargs):
+def handle_shutdown_signal(signum, frame):
+    """Shut down on SIGINT or SIGTERM.
+
+    Dallinger's server processes (``dallinger_heroku_web``, ``_worker`` and
+    ``_clock``) exit with status 0, and the clock first records that the
+    experiment went offline. Other processes, such as ``psynet`` commands,
+    bots and tests, raise :class:`KeyboardInterrupt` on SIGINT and
+    ``SystemExit(128 + signum)`` on SIGTERM, so that their cleanup runs and
+    they exit with a failure status.
+
+    This is installed when the module is imported, so it replaces handlers
+    installed before then, such as those of gunicorn's workers, and is
+    replaced by those installed later, such as those of RQ's ``work()``.
+    """
     process_name = os.path.basename(sys.argv[0])
     if process_name.endswith("clock"):
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
-    sys.exit(0)
+    if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):
+        sys.exit(0)
+    if signum == signal.SIGINT:
+        raise KeyboardInterrupt
+    raise SystemExit(128 + signum)
 
 
 signal.signal(signal.SIGTERM, handle_shutdown_signal)
@@ -7098,6 +7482,70 @@ def get_experiment() -> Experiment:
     Returns an initialized instance of the experiment class.
     """
     return import_local_experiment()["class"]()
+
+
+def _run_parallel_test(n_bots, time_factor, stagger_interval_s, check_bots):
+    """Run ``n_bots`` bots at once, each in its own thread, then check them.
+
+    This backs ``psynet test`` with ``test_mode = "parallel"``. The first bot
+    error is re-raised once every bot has finished.
+    """
+    logger.info(f"Testing experiment with {n_bots} parallel bots...")
+    experiment = get_experiment()
+    errors = []
+
+    def run_bot():
+        try:
+            experiment.run_bot(BotDriver(), time_factor=time_factor)
+        # pytest.fail() and pytest.skip() raise BaseException subclasses.
+        except BaseException as err:
+            logger.exception("Bot failed.")
+            errors.append(err)
+        finally:
+            db.session.remove()
+
+    threads = []
+    for i in range(n_bots):
+        if i > 0:
+            time.sleep(stagger_interval_s)
+        thread = threading.Thread(
+            target=run_bot, name=f"psynet-bot-{i + 1}", daemon=True
+        )
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
+
+    with transaction():
+        check_bots(Bot.query.all())
+
+
+@cache
+def _dashboard_login_cookies(base_url):
+    """Log in to the dashboard at ``base_url`` and return the login's cookies.
+
+    Cached with :func:`functools.cache` so that
+    :func:`~psynet.utils.clear_all_caches` forgets logins to servers that tests
+    have since replaced at the same URL.
+    """
+    return get_authenticated_session(base_url).cookies
+
+
+_dashboard_sessions = threading.local()
+
+
+def _thread_dashboard_session(base_url):
+    """Return this thread's dashboard session for ``base_url``, sharing one login."""
+    cookies = _dashboard_login_cookies(base_url)
+    sessions = vars(_dashboard_sessions).setdefault("by_url", {})
+    login, session = sessions.get(base_url, (None, None))
+    if login is not cookies:
+        session = keep_alive_session()
+        session.cookies.update(cookies)
+        sessions[base_url] = (cookies, session)
+    return session
 
 
 @cache

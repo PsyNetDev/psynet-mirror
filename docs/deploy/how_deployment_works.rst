@@ -35,9 +35,11 @@ filename endings such as ``.db``. The stock file excludes, among others,
 ``.env``. Dallinger's
 `deploy.toml guide <https://github.com/Dallinger/Dallinger/blob/master/docs/source/deploy_toml.rst>`_
 describes the full format. PsyNet creates the file when it is missing and
-never overwrites it. When a debug or deploy command creates it, the command
-stops and lists the Git-ignored files the new file would include, so that you
-can review them before rerunning. Experiments that still have a
+never overwrites it. When PsyNet creates it for an existing experiment whose
+``.gitignore`` ignores files that ``deploy.toml`` does not exclude, the next
+debug, test or deploy command stops once and lists those files, because they
+would now be deployed. Add any that should not be deployed to ``[exclude]``
+and rerun. Experiments that still have a
 ``.dockerignore`` or ``docker/`` helper scripts need migrating first; see
 :doc:`/whats_new/upgrading_deployment_file_selection`.
 
@@ -60,11 +62,13 @@ The server is a Linux machine that you can reach over SSH, such as an AWS EC2
 instance that Dallinger provisions for you, a virtual machine from another
 cloud provider, or a machine run by you or your institution. You register it
 with Dallinger once; after that, deployment, export and destroy commands
-select it with ``--server``. Registration installs Docker if needed. The first
-deployment starts services that all experiments on the server share: a
-PostgreSQL database server, a Caddy web server that routes each experiment's
-address to it and obtains HTTPS certificates, and a Dozzle log viewer. One
-server can host several experiments at once.
+select it with ``--server``. Registration installs Docker if needed. With
+classic ingress, the first deployment starts services that all experiments on
+the server share: a PostgreSQL database server, a Caddy web server that routes
+each experiment's address to it and obtains HTTPS certificates, and a Dozzle
+log viewer. With Cloudflare ingress, each experiment instead has its own
+database and tunnel, and there is no Dozzle (see :ref:`ssh_server_cloudflare`).
+One server can host several experiments at once.
 
 To collect data on a single computer, for example in the lab or in the field,
 ``psynet deploy local`` runs the experiment on your own computer instead. It

@@ -52,13 +52,31 @@ On macOS, turn off AirPlay Receiver (**System Settings > General > AirDrop &
 Handoff**), which uses port 5000. Otherwise, stop any other experiment running
 in another terminal or IDE window.
 
-PsyNet runs one local experiment at a time. Local experiments share port 5000,
-the PostgreSQL database, Redis and Dallinger's development folder, so starting
-a second one stops the first one's worker processes and can break both. Stop
-the other experiment (Ctrl+C in its terminal) before starting another; to see
-what is using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``.
-``psynet deploy`` also uses the local database and Redis while it prepares a
-deployment, so it wipes a local experiment that is running at the same time.
+By default, ``psynet debug local`` sessions share port 5000, the PostgreSQL
+database, Redis and Dallinger's development folder. A second ``psynet debug
+local`` or ``psynet deploy local`` therefore refuses to start, without
+touching the running one, while another uses the same port, or the same
+database on another port, even when another user started it. It also refuses
+while a PsyNet test session (``psynet test local`` or pytest) has claimed the
+port, or while tests or another ``psynet debug`` (for example an
+``--isolated`` one) use the same directory. (Leftover
+worker processes from a server that was killed are stopped
+automatically.) Stop the other experiment (Ctrl+C in its terminal) first; to
+see what is using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. The
+check reads ``base_port`` from the environment, ``config.txt`` and
+``~/.dallingerconfig``, not from the experiment class's ``config``
+dictionary, and ``--docker`` always uses port 5000. To keep both running,
+start the second with ``psynet debug local --isolated``, or give one of them
+its own database, Redis server and port as described in
+:ref:`running_several_local_experiments`. ``psynet test local`` already uses
+its own, so it can run alongside.
+
+Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
+``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
+and Redis while they prepare the experiment, so they wipe a local experiment
+that is running at the same time. They ask before doing so if the local data
+looks in use, that is, a local server or another program is connected to the
+database or Redis. ``--update`` launches leave local data alone.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

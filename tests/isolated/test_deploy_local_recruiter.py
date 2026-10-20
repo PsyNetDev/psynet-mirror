@@ -11,6 +11,11 @@ def _skip_dependency_checks(monkeypatch):
         command_line, "check_psynet_requirement_is_unambiguous", lambda: None
     )
     monkeypatch.setattr(
+        command_line,
+        "check_psynet_requirement_includes_experiment_extra",
+        lambda: None,
+    )
+    monkeypatch.setattr(
         command_line, "check_core_dependency_versions_match_requirements", lambda: None
     )
 

@@ -60,7 +60,7 @@ class Pet(SQLBase, SQLMixin):
         chosen_cls = {"Cat": Cat, "Dog": Dog}[kind]
         pet = chosen_cls(participant)
         db.session.add(pet)  # This queues the pet to be added to the database
-        db.session.commit()  # This actually adds the pet to the database, giving it an ID
+        db.session.flush()  # Sends the pet to the database now, giving it an ID
         participant.var.temp__current_pet = pet.id
 
     @classmethod

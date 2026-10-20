@@ -20,6 +20,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   irreversible commands unless the user explicitly asks.
 - Before any destroy/teardown recommendation, verify whether data has been
   exported and record the export path or blocker.
+- Export and destroy only once no async jobs are pending. `psynet export ssh`
+  and `psynet export local` end with a warning that the export misses
+  pending jobs (`psynet export heroku` does not check); `psynet destroy ssh`
+  refuses when it cannot ask. Wait for the jobs, then export again; never
+  add `--discard-pending-jobs` unless the user accepts losing those results.
+  If destroy prints "Skipped the check for pending async jobs", it destroys
+  the app without the check, so confirm the export first.
 - Do not commit or publish real AWS credentials, recruiter tokens, dashboard
   passwords, `.env` files, private keys, or participant data.
 - Prefer command generation and readiness reports over live operations unless
@@ -33,11 +40,10 @@ Check that the experiment folder has:
 - `config.txt`
 - `requirements.txt`
 - `constraints.txt`
-- `Dockerfile` and/or `Dockertag` when the template expects them
-- `deploy.toml` with reviewed `[exclude]` rules; if PsyNet just created it,
-  the first debug/test/deploy command stops once so you can review. Then run
+- `Dockerfile`
+- `deploy.toml` with reviewed `[exclude]` rules. Run
   `dallinger deployment-files list` to inspect every file that PsyNet will copy.
-  Git-ignored files may still be deployed after that review. Confirm `audit/`
+  Git-ignored files are deployed unless `deploy.toml` excludes them. Confirm `audit/`
   is excluded. Stock templates include it; existing `deploy.toml` files are
   not overwritten, so add `audit` to `[exclude].paths` if it is missing.
 - `.gitignore` excluding `.venv/`, `.deploy/`, `.pytest_cache/`, `exports/`,
@@ -95,7 +101,7 @@ source .venv/bin/activate
 psynet debug local
 ```
 
-Provision:
+Provision (choose `worker_processes` with `plan-server-resources/SKILL.md`):
 
 ```bash
 dallinger ec2 provision \

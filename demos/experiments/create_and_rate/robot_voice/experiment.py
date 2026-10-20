@@ -220,7 +220,7 @@ def make_trial_maker(rate_mode):
         max_trials_per_participant=n_trials_per_participant,
         max_nodes_per_chain=n_iterations_per_chain,
         chains_per_experiment=None,  # set to None if chain_type="within"
-        balance_across_chains=True,
+        chain_order="balanced",
         check_performance_at_end=True,
         check_performance_every_trial=False,
         propagate_failure=False,

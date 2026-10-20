@@ -79,9 +79,9 @@ class CustomTrial(CameraImitationChainTrial):
                     "and we haven't been able to debug it yet. It may be some kind of race condition. "
                     "We'll now print some debugging information to try and help solve this mystery. "
                 )
-                logger.info("Does our trial's node have pending async processes?")
-                logger.info(self.node.async_processes)
-                logger.info([x.__json__() for x in self.node.async_processes])
+                logger.info("Does our trial's node have pending async jobs?")
+                logger.info(self.node.async_jobs)
+                logger.info([x.__json__() for x in self.node.async_jobs])
 
                 logger.info("What happens if we refresh the object?")
                 db.session.refresh(self)
@@ -158,7 +158,6 @@ class Exp(psynet.experiment.Experiment):
             chains_per_experiment=None,
             chains_per_participant=2,
             trials_per_node=1,
-            balance_across_chains=False,
             recruit_mode="n_participants",
             check_performance_at_end=True,
             check_performance_every_trial=False,

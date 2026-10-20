@@ -121,7 +121,6 @@ trial_maker = GameTrialMaker(
     max_trials_per_participant=3,
     expected_trials_per_participant=3,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=True,
     check_performance_every_trial=False,
     target_n_participants=3,

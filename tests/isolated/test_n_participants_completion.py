@@ -34,6 +34,17 @@ def test_rejects_unknown_n_participants_completion():
         _static_trial_maker(n_participants_completion="session")
 
 
+@pytest.mark.parametrize("recruit_mode", [None, "n_trials"])
+def test_trial_maker_completion_requires_n_participants_mode(recruit_mode):
+    with pytest.raises(ValueError, match="only takes effect with"):
+        _static_trial_maker(
+            recruit_mode=recruit_mode,
+            target_n_participants=None,
+            n_participants_completion="trial_maker",
+            **({"target_trials_per_node": 1} if recruit_mode == "n_trials" else {}),
+        )
+
+
 class DummyGraphTrial(GraphChainTrial):
     time_estimate = 1
 
@@ -55,7 +66,6 @@ def test_graph_trial_maker_defaults_target_n_participants_to_none():
         max_trials_per_participant=1,
         chains_per_participant=None,
         trials_per_node=1,
-        balance_across_chains=False,
         check_performance_at_end=False,
         check_performance_every_trial=False,
         recruit_mode="n_trials",

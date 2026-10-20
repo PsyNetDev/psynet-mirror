@@ -1169,6 +1169,14 @@
               }),
             );
             psynet.resumeTimelineHold("server notification");
+          } else if (
+            controller.resumeInFlight &&
+            message.type === "timeline_hold_wake" &&
+            (message.targets || []).some((target) => target.wake_token)
+          ) {
+            // An in-flight resume can consume a later hold whose release is
+            // published before its response delivers the new wake token.
+            controller.resumeRequested = true;
           }
         },
       });

@@ -9,7 +9,8 @@ from bugs. This test suite includes running all the demos and checking that
 they complete in the correct state.
 
 Whenever you push a contribution to a branch of the PsyNet repository,
-these automated tests will be automatically queued. They normally take 10-15 minutes
+these automated tests will be automatically queued (merge requests stacked on
+another feature branch run only the fast checks; see below). They normally take 10-15 minutes
 to complete. Keep an eye on the GitLab interface to see if any errors have occurred.
 Resolve any errors before merging into ``master``.
 
@@ -24,14 +25,89 @@ requests that change only that path. If you add a top-level file or directory
 that tests or the CI image depend on, or a test that reads a docs page, add
 its path to ``.docker_test_rules``.
 
+Merge requests stacked on another feature branch, whose target branch is
+neither ``master`` nor a ``release-`` branch, run only the fast checks (``pre_commit``,
+``validate_agent_skills`` and ``changelog_check``). The pytest, Playwright,
+``docs`` and ``asv_regression`` jobs that the diff would otherwise trigger
+appear as optional manual jobs instead: start them from the pipeline page when
+you want a full run. Pipelines created after the merge request is retargeted
+to ``master`` run everything as usual.
+
+Merge-train pipelines skip jobs that already passed on the same files.
+Merging goes through a GitLab merge train, whose pipeline tests the commit that
+``master`` will become. That commit often has exactly the same files as the
+merge request's last merged-results pipeline: when ``master`` hasn't moved and
+nothing is ahead of it in the train. Rerunning the suite on it would only
+delay the merge. The ``check_already_tested`` job runs first in each train
+pipeline. It runs ``ci/already_tested.py``, which finds the newest finished
+merged-results pipeline of the merge request that tested identical files. The
+pytest, Playwright, ``docs`` and ``asv_regression`` jobs that passed there end
+successfully at once, and their logs link to that pipeline. If anything
+differs, or the check fails, every job runs as usual. ``master`` push
+pipelines always run the full suite.
+
+A job opts in by sourcing ``ci/skip-if-already-passed.sh`` at the start of its
+``before_script``. Only add this to jobs whose result is set by the
+repository files, and never to jobs that publish or deploy. Outside drift,
+such as a new dependency release or a dead external link, can still change a
+job's result between two runs on the same files; the full ``master`` push
+pipeline catches that after the merge. ``asv_regression`` is the exception: it
+runs only on merge requests, and its result also depends on runner noise. It
+still opts in, because a train rerun would benchmark the same two commits
+again and could only add a chance of a noisy failure.
+
 Test parallelization
 --------------------
 
-The automated test suite is slow because it has to run more than 70 demo experiments.
-GitLab therefore runs these tests in parallel to save time. This is not
-really practical on most local machines, so be warned that running the full test
+The automated test suite is slow because it has to run more than 70 demo experiments
+and more than 170 isolated test files, each in its own pytest process.
+GitLab therefore splits these tests across several shard jobs, and each job
+runs several tests at once in *slots*. Running the full test
 suite locally will ordinarily take a very long time. It's better instead to
 run individual tests locally and only run the full test suite on GitLab.
+
+``run-ci-tests.sh`` calls ``psynet dev ci run-tests``, which works as follows:
+
+- Tests are assigned to shards so that each shard's estimated duration is
+  about the same. Estimates come from ``ci/test_durations.json``; tests that
+  are missing from that file get the median duration for their kind.
+- Within a shard, ``TEST_SLOTS`` tests run concurrently. Slot 0 uses the job's
+  database and Redis server; every other slot gets its own database, its own
+  Redis server and its own port (see :ref:`running_several_local_experiments`).
+- Tests that use the same demo directory never run at the same time, because
+  the ``in_experiment_directory`` fixture holds a lock on the directory.
+
+.. _refresh_test_durations:
+
+Each shard job publishes per-test logs in ``public/test-logs`` and its measured
+durations in ``public/ci_durations_<python>_<shard>.json``; each Playwright
+shard publishes ``public/playwright-<mode>-<shard>-junit.xml``. Stale estimates
+only make shards less even, so the release process refreshes them once per
+minor release. To refresh them from the latest passing ``master`` push pipeline
+(the artifacts are public, so no token is needed; requires ``jq``), run this
+from the PsyNet checkout:
+
+.. code-block:: bash
+
+    P=https://gitlab.com/api/v4/projects/PsyNetDev%2FPsyNet
+    PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
+    DIR=$(mktemp -d)
+    curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_14|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | while read -r id name shard; do
+          i=${shard%/*}
+          case $name in
+            tests_*) f=ci_durations_3.14_$i.json ;;
+            *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
+          esac
+          curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
+        done
+    psynet dev ci update-test-durations "$DIR"/*
+
+You can reproduce one CI shard locally, for example shard 4 of 12 with two
+slots::
+
+    psynet dev ci run-tests --node-total 12 --node-index 4 --slots 2
 
 Identifying which test failed
 -----------------------------
@@ -39,6 +115,10 @@ If you see that the automatic tests have failed,
 visit the GitLab error logs to see which particular test failed.
 You're looking for a test script with a name like ``test_assets.py``,
 and a test function within that, for example ``test_assets_upload_correctly()``.
+
+Each shard job prints one ``PASSED`` or ``FAILED`` line per test file, followed by
+the full output of any failed test and a summary of all failures.
+The output of every test is also saved in the job's ``public/test-logs`` artifact.
 
 Debugging tests locally
 -----------------------
@@ -62,6 +142,53 @@ we plan to remove it in the future.
 
 The ``-s`` argument tells pytest to log live output from the test as it runs.
 This is normally a good idea for keeping track of what's going on.
+
+Tests reset their database and Redis and stop local servers that use them, so
+by default each local test session gets its own environment and leaves a
+running ``psynet debug local`` alone. The session prints where it runs, for
+example::
+
+    Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
+
+It claims a free web port 100 or more above your ``base_port`` (so from 5100
+by default), uses the database ``<database>_test_<port>`` next to
+``DATABASE_URL`` and starts a private ``redis-server``, so several test
+sessions can also run at once. Both are removed when the session ends. If ``redis-server`` isn't installed (for example when Redis runs only in
+Docker), the session uses a spare database number on your Redis server
+instead, which keeps its data apart but can still send live notifications to a
+debug server's participants. That database is emptied when the session ends. If the environment can't be set up, the session stops
+with an error rather than falling back to your database.
+``psynet debug local --isolated`` gives a debug server the same environment
+(see :ref:`running_several_local_experiments`).
+
+Each session has its own database, but all of them share your PostgreSQL
+server and its ``max_connections`` limit (100 by default). Several sessions at
+once, or a performance test with a few hundred bots, can use up that limit;
+PostgreSQL then refuses connections with "sorry, too many clients already", and
+PsyNet says that the server ran out of connections. Run fewer bots or sessions
+at once, stop other local experiments, or raise ``max_connections`` in
+``postgresql.conf`` (``psql -c 'SHOW config_file'`` shows where it is) and
+restart PostgreSQL.
+
+This applies to ``pytest`` runs from the PsyNet checkout, to experiments
+whose ``pytest.ini`` loads ``-p psynet.pytest_environment`` (run ``psynet
+scripts update`` in older experiments) and to ``psynet test local``.
+``psynet test local --existing`` tests a server that is already running, so it
+isn't isolated. CI jobs (where ``CI`` is set) always use their configured
+services.
+
+Isolation covers services, not files: tests still create and remove generated
+files in the experiment directory. Each session therefore holds a lock on the
+directory: sessions in the same directory wait for each other, and a session
+refuses to start while ``psynet debug`` (which holds the same lock) is serving
+it, as ``psynet debug local`` refuses a directory that a session is using.
+Run the tests from a copy of the experiment (such as a git worktree) instead.
+
+Set ``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
+port, for example if your PostgreSQL user can't create databases. The session
+then prints a warning, because it resets those services and stops any debug
+server that uses them. ``PSYNET_TEST_ENVIRONMENT`` accepts only ``isolated``
+(the default) and ``shared``; any other value is an error.
 
 In most IDEs, you can run tests through the integrated test interface
 or by right-clicking on test files/functions and selecting "Run Test" or "Debug Test".
@@ -87,24 +214,12 @@ do not share Python state. To reproduce a CI failure, first run the whole
 failing file as shown above rather than a single test function, because tests
 in the same file share one process and can depend on the order they run in.
 
-Files in the same CI job still run one after another against the same
-PostgreSQL database, Redis and disk, so in rare cases a failure depends on an
-earlier file in that job. Each ``tests_python_3_13 N/10`` job runs every
-tenth isolated test file. To rerun the files of job 4 out of 10 in the same
-order, run:
-
-.. code-block:: shell
-
-    for f in $(psynet list-isolated-tests --ci-node-total 10 --ci-node-index 4); do
-      pytest "$f" --chrome -s || break
-    done
-
-Before the isolated tests, the ``tests_python_3_13`` jobs also run their share
-of the demo and test experiments, listed by
-``psynet list-experiment-dirs --for-ci-tests --ci-node-total 10 --ci-node-index 4``.
-See ``run-ci-tests.sh`` for exactly how CI runs both lists. On release
-branches, the ``compatibility_tests`` jobs split the isolated tests into five
-shards instead, so use ``--ci-node-total 5`` there.
+In rare cases, tests only fail when several tests are run in a particular sequence.
+This is usually due to some kind of caching issue.
+To reproduce such errors locally, note the failing job's shard number
+(e.g. job 4/6 is shard 4 of 6) and run that shard with
+``psynet dev ci run-tests`` as described in the previous section.
+Use ``--slots 1`` to check whether the failure depends on tests running concurrently.
 
 Tests that use S3 run against a filesystem mock by default. The ``boto3``
 tests in ``tests/isolated/test_s3.py`` can also run against the real
@@ -147,6 +262,10 @@ GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
 
 * ``playwright_e2e_default`` runs ``@both|@inplace-only``
 * ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
+
+Each job runs in three shards. ``psynet dev ci playwright-files`` chooses each
+shard's spec files using the durations in ``ci/test_durations.json``, so a new
+spec file needs no CI changes.
 
 Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
 any test is missing one of those tags. When adding a new lifecycle fixture,
@@ -215,9 +334,12 @@ count to the session count plus two spares so concurrent last-arrival work can
 overlap every waiter hold-resume POST without starving a waiter Redis subscribe.
 A short HTTP 503 on hold-resume is the
 ``NOWAIT`` busy retry when those requests hit the same participant row;
-the in-request retry waits 250ms; if that is still busy, one delayed
-``queued hold wake`` runs. The suite still fails a busy retry that lasts
-500ms or more. An in-page probe that counts hold wakes or schedule calls must
+the browser retries once after 250ms; if that is still busy, one delayed
+``queued hold wake`` runs. Playwright judges a busy 503 only by the same hang
+cap as other requests, because its duration varies with CI load; the
+unit test ``test_process_response_ready_hold_resume_locks_with_nowait``
+checks that hold-resume uses ``NOWAIT``. An in-page
+probe that counts hold wakes or schedule calls must
 swallow ``psynet.resumeTimelineHold`` and call
 ``window.__settleTimelineHoldResume`` before installing its counters. The helper
 waits for ``resumeInFlight`` to clear and then yields one ``setTimeout(0)``: a
@@ -314,7 +436,8 @@ Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
-``playwright_e2e_legacy`` jobs.
+``playwright_e2e_legacy`` jobs. Each has three shards (``1/3`` to ``3/3``),
+and each shard uploads the artifacts of its own spec files.
 
 To view them in GitLab:
 
@@ -326,7 +449,8 @@ Uploaded artifacts include:
 
 - ``playwright-report/``: Playwright HTML report (open ``playwright-report/index.html``).
 - ``test-results/``: per-test failure assets (screenshots, traces, videos).
-- ``public/playwright-junit.xml``: JUnit XML used for test report integration.
+- ``public/playwright-<mode>-<shard>-junit.xml``: JUnit XML used for test report
+  integration and for refreshing ``ci/test_durations.json``.
 
 
 Debugging tests via Docker

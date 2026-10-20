@@ -252,17 +252,26 @@ def linkcheck_command(
     jobs: str | None = "1",
     sphinx_options: tuple[str, ...] = (),
     show_progress: bool = True,
+    strict: bool = False,
 ) -> int:
     """Run Sphinx's linkcheck builder and print a structured summary.
 
     This is a wrapper around Sphinx's ``linkcheck`` builder. After Sphinx
     finishes, broken links are reprinted grouped by failure category.
+
+    By default only :data:`LINKCHECK_BLOCKING_CATEGORIES` fail the check;
+    other failures usually come from the remote site or the network and are
+    only reported. ``strict=True`` fails on every broken link.
     """
     docs_dir = assert_docs_available()
     build_dir = docs_dir / "_build"
 
     if clean and build_dir.exists():
         shutil.rmtree(build_dir)
+    # Without this, a run that fails before linkcheck finishes would be
+    # judged on the previous run's results.
+    if (build_dir / "linkcheck").exists():
+        shutil.rmtree(build_dir / "linkcheck")
 
     options = build_sphinx_options(
         strict=False,
@@ -281,10 +290,30 @@ def linkcheck_command(
     print(format_linkcheck_summary(issues))
 
     if result.returncode != 0:
-        if issues:
-            raise ValueError(
-                f"Linkcheck found {len(issues)} broken link(s); see summary above."
+        # Sphinx exits 1 for broken links; other codes mean the run itself
+        # failed, so the parsed issues may be incomplete.
+        if issues and result.returncode == 1:
+            blocking = [
+                issue
+                for issue in issues
+                if _categorize_linkcheck_issue(issue) in LINKCHECK_BLOCKING_CATEGORIES
+            ]
+            if strict:
+                raise ValueError(
+                    f"Linkcheck found {len(issues)} broken link(s); see summary above."
+                )
+            if blocking:
+                raise ValueError(
+                    f"Linkcheck found {len(blocking)} broken link(s) to fix: "
+                    "internal links, missing anchors, or pages not found. "
+                    "See summary above."
+                )
+            print(
+                f"\nNot failing on these {len(issues)} link(s): they usually "
+                "come from the remote site or the network. Pass --strict to "
+                "fail on them."
             )
+            return 0
         raise ValueError(
             f"Linkcheck failed with exit code {result.returncode}: "
             f"{shlex.join(str(arg) for arg in command)}"
@@ -394,12 +423,22 @@ def parse_linkcheck_issues(build_dir: Path) -> list[LinkcheckIssue]:
 LINKCHECK_CATEGORIES = (
     "Internal documentation links",
     "Missing anchors",
-    "Pages not found (404)",
+    "Pages not found (404/410)",
     "Access denied (403), possibly bot-blocked",
     "SSL/TLS errors",
     "Connection errors",
     "Timeouts",
     "Other",
+)
+
+# Categories that mean the docs themselves are wrong, so they fail
+# linkcheck even without ``strict``.
+LINKCHECK_BLOCKING_CATEGORIES = frozenset(
+    {
+        "Internal documentation links",
+        "Missing anchors",
+        "Pages not found (404/410)",
+    }
 )
 
 
@@ -414,9 +453,11 @@ def _categorize_linkcheck_issue(issue: LinkcheckIssue) -> str:
         return "Timeouts"
     if re.search(r"\bAnchor\b.*not found", reason):
         return "Missing anchors"
-    if "404" in reason:
-        return "Pages not found (404)"
-    if "403" in reason:
+    # Match the status at the start: requests appends the URL, which may
+    # itself contain these digits.
+    if re.match(r"(404|410)\b", reason):
+        return "Pages not found (404/410)"
+    if re.match(r"403\b", reason):
         return "Access denied (403), possibly bot-blocked"
     if "SSL" in reason or "certificate" in reason.lower():
         return "SSL/TLS errors"

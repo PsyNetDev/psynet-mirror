@@ -76,7 +76,6 @@ class CreateTrial(CreateTrialMixin, AudioImitationChainTrial):
         if answer["decision_page"] == "My own recording is bad":
             # Fail current recording
             self.fail(reason="My own recording is bad")
-            db.session.commit()
         return answer
 
     def get_listen_page(self):
@@ -384,7 +383,7 @@ trial_maker = CreateAndRateTrialMaker(
     max_trials_per_participant=NUM_TRIALS_PER_PARTICIPANT,
     start_nodes=start_nodes,
     chains_per_experiment=len(STIMULUS_LINES),
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=True,
     check_performance_every_trial=False,
     propagate_failure=False,
@@ -446,7 +445,7 @@ class Exp(psynet.experiment.Experiment):
         super().test_experiment()
         wait_until(
             completed_generation,
-            max_wait=10,
+            max_wait=30,
             error_message="No create-and-rate chain completed a full generation.",
         )
         generation_node, generation_creations, generation_ratings = (

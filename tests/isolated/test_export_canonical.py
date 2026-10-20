@@ -147,28 +147,37 @@ def test_ingest_zip_skips_tables_without_csv_files(tmp_path, monkeypatch):
     csv_dir = export_dir / "database"
     csv_dir.mkdir(parents=True)
     (csv_dir / "trial.csv").write_text("id\n1\n")
+    (csv_dir / "network.csv").write_text("id\n1\n")
 
     ingested = []
+    fkey_drops = []
 
     class _Inspector:
         def get_table_names(self):
-            return ["trial", "chat_message"]
+            return ["network", "trial", "chat_message"]
 
     monkeypatch.setattr("psynet.data.sqlalchemy.inspect", lambda engine: _Inspector())
     monkeypatch.setattr(
         "psynet.data.sql_base_classes",
         lambda: {
+            "network": type("Network", (), {"__tablename__": "network"}),
             "trial": type("Trial", (), {"__tablename__": "trial"}),
             "chat_message": type("ChatMessage", (), {"__tablename__": "chat_message"}),
         },
     )
     monkeypatch.setattr(
+        "psynet.data._drop_foreign_key_constraints", lambda: fkey_drops.append(1)
+    )
+    monkeypatch.setattr(
         "psynet.data.ingest_to_model",
-        lambda file, model, engine: ingested.append(model.__tablename__),
+        lambda file, model, engine, drop_foreign_keys: ingested.append(
+            (model.__tablename__, drop_foreign_keys)
+        ),
     )
 
     ingest_zip(str(export_dir), engine=object())
-    assert ingested == ["trial"]
+    assert ingested == [("network", False), ("trial", False)]
+    assert len(fkey_drops) == 1
 
 
 def test_archive_template_only_packs_present_table_csvs(tmp_path):

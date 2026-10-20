@@ -334,6 +334,37 @@ Details for the implementation:
   so no new dependency is needed. Keep the flag opt-in, because it adds a
   second or two per page.
 
+Browser participants in performance tests
+-----------------------------------------
+
+Date
+++++
+
+2026-10-10
+
+Problem
++++++++
+
+``psynet performance-test`` bots use plain HTTP requests, so they skip
+everything a browser adds: static files and media, requests to custom
+routes from page JavaScript, and websockets at timeline holds and in live
+multi-participant pages. Experiments that lean on these can pass a
+performance test and still overload the server. Writing a Python websocket
+client for the bots would cover only part of the gap and would duplicate
+``psynet.js``.
+
+Idea
+++++
+
+Let a performance test mix a few real browsers with the bots, for example
+``--n-browsers 5``. Each browser runs a Playwright participant flow, such as
+the experiment's ``tests/participant-flow.spec.js`` or a generic walk that
+uses the bot responses, against the same server while the bots supply the
+bulk of the load. The report would show browser and bot response times
+separately. Headless Chrome needs a few hundred MB of memory per page, so
+browsers stay a small share of the load; if the Playwright harness later
+covers every experiment, it could replace the HTTP bots altogether.
+
 Section dropdowns in the documentation header
 ---------------------------------------------
 
@@ -564,26 +595,27 @@ automatically.
 Run several local experiments at once
 -------------------------------------
 
-Local experiments share port 5000, the PostgreSQL database, Redis and
-Dallinger's ``/tmp/dallinger_develop`` folder, and each launch stops every
-PsyNet worker process on the machine, so a second experiment breaks the first.
-The documentation and Agent Skills tell users and agents to run one at a
-time. Proper isolation would need launches to stop only their own workers
-(for example by marking processes with the experiment directory), a refusal
-to rebuild a development folder another experiment is serving from,
-``base_port`` honoured in the default debug mode, per-experiment databases or
-Redis databases, and Chrome cleanup limited to the experiment's own windows.
-A first implementation was prototyped and then reverted in
-`!1253 <https://gitlab.com/PsyNetDev/PsyNet/-/merge_requests/1253>`_, as too
-large for a bug-fix merge request.
+Several local experiments can run at once when each terminal sets its own
+``DATABASE_URL``, ``REDIS_URL``, ``base_port`` and
+``dallinger_develop_directory`` (see :ref:`running_several_local_experiments`);
+launches then stop only workers and browsers that use their own database. CI
+uses the same isolation for parallel test slots, and local test sessions set
+it up automatically (``psynet.isolated_environment``). Two gaps remain. Every
+run still needs its own Redis server, because Redis pub/sub channels (PsyNet's
+timeline-hold wakes and Dallinger's chat channels) are shared by all database
+numbers on a server; prefixing channel names with the database identity in
+both packages would let runs share one server. And ``psynet debug local
+--isolated`` picks a free slot for a debug server, but other commands, such as
+``psynet deploy``, still need these variables set by hand.
 
-Remote deployments have the same problem. ``psynet deploy ssh`` builds the
-starting database on the local PostgreSQL and Redis: it clears every Redis
-key, drops the local tables and stops every local ``dallinger_heroku_*``
-worker, so it wipes a local debug experiment running at the same time.
-Building the template in a temporary database, clearing only PsyNet's own
-Redis keys, or refusing to deploy while a local server is running would
-avoid this.
+Remote launches have a similar problem. ``psynet deploy ssh``,
+``psynet debug ssh`` and their Heroku equivalents build the starting database
+on the local PostgreSQL and Redis: they clear every Redis key, drop the local
+tables and stop the local ``dallinger_heroku_*`` processes that use the same
+database. They ask first when a local server or another program is connected,
+but if the author agrees they still wipe the local experiment. Building the
+template in a temporary database, and clearing only PsyNet's own Redis keys,
+would avoid this.
 
 Cross-site request protection for dashboard actions
 ---------------------------------------------------

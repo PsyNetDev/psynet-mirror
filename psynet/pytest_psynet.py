@@ -52,6 +52,7 @@ from .test_helpers.mock_s3 import (
     get_mock_s3_resource,
 )
 from .testing.chrome_driver import create_psynet_chrome_driver
+from .testing.locks import experiment_directory_lock
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from .utils import (
@@ -436,7 +437,10 @@ def in_experiment_directory(experiment_directory):
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
     cleanup_error = None
-    with working_directory(experiment_directory):
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+    ):
         try:
             with scaffold_missing_files():
                 # In-repo demos/tests use PsyNet's shared development .venv, so
@@ -531,8 +535,6 @@ def debug_experiment(
     # db_session already reset the database for this test class. Brief pause so
     # any lingering teardown from the previous class can finish before launch.
     time.sleep(0.5)
-    kill_psynet_chrome_processes()
-    kill_chromedriver_processes()
 
     timeout = 60
 
@@ -541,6 +543,10 @@ def debug_experiment(
     config = get_config()
     if not config.ready:
         config.load()
+
+    # Browser cleanup matches this run's base_port, so config must be loaded.
+    kill_psynet_chrome_processes()
+    kill_chromedriver_processes()
 
     p = pexpect.spawn(
         "psynet",
@@ -885,7 +891,6 @@ trial_maker_1 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,
@@ -902,7 +907,6 @@ trial_maker_2 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,

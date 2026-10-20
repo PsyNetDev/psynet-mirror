@@ -4,7 +4,7 @@ Upgrading to PsyNet 14
 
 This checklist migrates an existing experiment onto PsyNet 14: in-place
 timeline transitions, recruiter and leave APIs, changed defaults, setup and
-deployment files, participant failure, groups, assets and exports. Work
+deployment files, participant failure, groups, assets, async jobs and exports. Work
 through the steps in order; each lists what to search for. Frontend patterns
 and full examples are in :doc:`/code/pages/custom_front_ends`.
 
@@ -163,7 +163,9 @@ Details: :doc:`/code/pages/custom_front_ends`.
 --------------------------------
 
 Search custom trial makers for ``find_networks``, ``find_node``,
-``prioritize_networks``, and ``custom_network_filter``.
+``prioritize_networks``, ``custom_network_filter``, ``balance_across_nodes``,
+``balance_across_chains``, ``choose_block_order``, ``should_finish_block``,
+``set_block_state`` and ``module_state.block``.
 
 * :class:`~psynet.trial.chain.ChainTrialMaker` subclasses now discover,
   filter, and select chains with ``find_chains``, ``custom_chain_filter``,
@@ -202,8 +204,8 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   The mixin then uses that role for both chain eligibility and the final phase
   check. Do not override ``get_trial_class`` from participant role alone.
   Creators only receive heads that still need creators. Raters receive heads
-  that are ready for raters, and they wait or exit on heads whose creator
-  slots are filled but not yet finalized. Heads that still need creators are
+  that are ready for raters, and they wait or finish the block on heads whose
+  creator slots are filled but not yet finalized. Heads that still need creators are
   not rater-eligible. A selected head that later becomes incompatible waits
   or exits instead of assigning the opposite role's trial class.
 * :attr:`~psynet.trial.main.Trial.position` is now stored when the trial is
@@ -211,6 +213,66 @@ Search custom trial makers for ``find_networks``, ``find_node``,
   maker. Previously it was calculated within each concrete trial class. Trials
   constructed outside a trial-maker state may have ``position=None``; code that
   performs arithmetic with ``position`` should handle that case explicitly.
+* Blocks are now strict: a participant only receives nodes or chains from
+  their current block, and stays in it until ``max_trials_per_block`` or
+  ``should_finish_block`` ends it, or until it has nothing more to give them.
+  Previously a participant whose block was busy could receive a trial from a
+  later block. When every candidate in the block is busy,
+  ``wait_for_networks=True`` waits; ``False`` finishes the block early. An
+  empty list from ``find_chains`` or ``find_nodes`` now finishes the block;
+  ``"exit"`` still leaves the trial maker.
+* ``balance_across_nodes`` and ``balance_across_chains`` have been removed.
+  Replace ``True`` with ``node_order="balanced"`` / ``chain_order="balanced"``
+  and ``False`` with ``"random"``. ``node_order`` already defaults to
+  ``"balanced"`` and ``chain_order`` to ``"random"``, as before. See
+  :ref:`trial_order` for planned orders such as ``"listed"`` and functions,
+  which replace hacks like a ``select_node`` that walks a fixed list.
+* Replace a ``choose_block_order`` override with the ``block_order``
+  argument: a list, ``"listed"``, or a function of ``participant``,
+  ``experiment`` and ``blocks``. Passing ``block_order`` while also
+  overriding ``choose_block_order`` raises ``TypeError``.
+* ``should_finish_block`` now takes ``(participant, block)``. Read trial counts
+  from ``participant.module_state.n_participant_trials_in_block`` and
+  ``participant.module_state.n_participant_trials_in_trial_maker``.
+* ``module_state.block`` is now derived from ``block_order`` and
+  ``block_position`` and cannot be set; ``set_block_state`` has been removed.
+  ``ChainTrialMakerState.remaining_blocks`` and ``go_to_next_block`` have also
+  been removed: read ``block_order[block_position:]`` for the remaining
+  blocks, and end a block with ``should_finish_block`` instead of advancing
+  it yourself.
+* ``ChainTrialMaker.check_participant_groups`` now receives the participant
+  group names of the start nodes instead of a list of networks.
+* To keep a participant on one chain until it is finished, pass
+  ``interleave_chains=False`` instead of giving each chain its own block.
+  :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker` now does this
+  by default.
+* ``target_trials_per_node`` (and the dense trial maker's
+  ``target_trials_per_condition``) only drives ``recruit_mode="n_trials"``.
+  Static nodes no longer stop being selected once they reach it, so a node
+  can end up with a few more trials than its target. ``node_order="balanced"``
+  still spreads trials evenly and, unless node selection runs in Python or
+  ``node_priority`` is defined, gives participants who ask at the same moment different nodes where
+  possible. To stop offering nodes once they have enough
+  trials, filter them by trial count in ``filter_nodes_query``; simultaneous
+  requests can still go slightly over. Chain
+  ``trials_per_node`` is still a hard limit.
+* Pass ``recruit_mode`` explicitly whenever you set a recruitment target.
+  ``target_n_participants`` needs ``recruit_mode="n_participants"``, and
+  ``target_trials_per_node`` / ``target_trials_per_condition`` need
+  ``recruit_mode="n_trials"``. A target with ``None`` or the other built-in
+  mode raises ``ValueError``, as does a misspelt mode. Chain-based trial
+  makers, including staircase and graph trial makers, used to default to
+  ``"n_participants"`` and now default to ``None`` like static trial makers.
+  ``n_participants_completion="trial_maker"`` likewise needs
+  ``recruit_mode="n_participants"``:
+
+  .. code-block:: python
+
+      StaticTrialMaker(
+          ...,
+          recruit_mode="n_participants",
+          target_n_participants=30,
+      )
 
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.
@@ -326,9 +388,9 @@ experiment directory.
 
 ``deploy.toml`` now decides which files are deployed; ``.gitignore`` and
 ``.dockerignore`` no longer do, so Git-ignored files under ``static/`` are
-deployed. PsyNet creates ``deploy.toml`` when it is missing, and the first
-debug, test or deploy command afterwards stops so that you can review the
-file list.
+deployed. PsyNet creates ``deploy.toml`` when it is missing. If your
+``.gitignore`` ignores files that ``deploy.toml`` does not exclude, the next
+debug, test or deploy command stops once and lists them.
 
 * Move any custom ``.dockerignore`` entries into ``deploy.toml``'s
   ``[exclude]`` table, then delete ``.dockerignore``. PsyNet removes
@@ -363,9 +425,31 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 -------------------------------------
 
 Search for ``def process_response``, ``response_approved``,
-``render_partial_timeline_payload``, and code in ``render()`` or templates
-that changes the database.
+``render_partial_timeline_payload``, ``session.commit(``,
+``session.rollback(``, ``accumulate_answers``, and code in ``render()`` or
+templates that changes the database.
 
+* With ``accumulate_answers=True``, ``participant.answer`` is now a dict from
+  the start of the page maker or trial, and each page adds its answer when it
+  is submitted. Code that reads ``participant.answer`` during such a trial
+  now gets the current trial's answers so far, not the previous trial's
+  answer. Answers from nested accumulating page makers now go into the same
+  dict instead of being lost.
+
+* Experiment code that runs while a participant moves through the timeline
+  must not call ``db.session.commit()`` or ``db.session.rollback()``; PsyNet
+  now raises ``RuntimeError`` if it does. This covers code blocks, page
+  makers, page methods (``format_answer``, ``validate``, ``on_complete``,
+  ``pre_render``), trial methods and trial maker hooks. Delete these calls:
+  PsyNet commits for you. Use ``db.session.flush()`` where you need a new
+  object's ``id``. Custom POST routes still commit themselves. See
+  :ref:`Saving changes <saving_changes>`.
+
+* ``participant.answer``, ``save_answer`` variables and ``on_complete`` are
+  now updated only after ``validate`` accepts the response. A custom
+  ``format_answer``, ``validate`` or ``process_response`` that reads
+  ``participant.answer`` now sees the previous answer; use the ``answer``
+  argument instead.
 * Pages now render in a read-only transaction. Move database writes from
   ``render()`` or templates to ``pre_render()``.
 * An override of ``Experiment.process_response`` must return a
@@ -412,7 +496,41 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
 
-19. Exports and analysis scripts
+19. Async jobs
+--------------
+
+Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
+``LocalAsyncProcess``, ``async_processes`` and ``process_id``.
+
+* Async processes are now called async jobs, and live in
+  ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
+  ``LocalAsyncJob``.
+* Creating a job no longer runs it. Call ``.enqueue()``, which launches the
+  job once the transaction commits::
+
+      from psynet.async_job import WorkerAsyncJob
+
+      WorkerAsyncJob(function=analyse, arguments={"trial": trial}).enqueue()
+
+  PsyNet logs a warning when a job is created but never enqueued.
+* The old names still work but warn. ``WorkerAsyncProcess(...)`` and
+  ``LocalAsyncProcess(...)`` create and enqueue the job, and
+  ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of
+  ``WorkerAsyncProcess`` or ``LocalAsyncProcess`` becomes a subclass of the
+  new class, so call ``.enqueue()`` on its jobs.
+* ``async_processes`` on participants, trials, nodes, networks, responses
+  and assets is now ``async_jobs``.
+* An override of ``Experiment.handle_error`` that reads ``process=`` should
+  read ``async_job=``; ``ErrorRecord.process_id`` is now ``async_job_id``.
+* In exports, ``database/process.csv`` is now ``database/async_job.csv``,
+  and its ``type`` column holds names such as
+  ``psynet.async_job.WorkerAsyncJob``. ``error.csv`` has ``async_job_id``
+  instead of ``process_id``, and ``participant.csv`` has
+  ``awaited_async_code_block_job_id``.
+
+See :doc:`/reference/api/async_job`.
+
+20. Exports and analysis scripts
 --------------------------------
 
 Search scripts and notes for ``--assets all``, ``--legacy``,
@@ -440,7 +558,7 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
 
 See :doc:`/data/what_an_export_contains`.
 
-20. Validate
+21. Validate
 ------------
 
 From a complete experiment directory. At minimum you typically need:

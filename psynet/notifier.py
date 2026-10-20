@@ -1,6 +1,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta
+from functools import partial
 from typing import List, Tuple, Union
 
 import psutil
@@ -8,9 +9,32 @@ from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
+from .server_logs import dozzle_url
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
+
+
+def _alert_researcher(message: str):
+    """Log ``message`` as an error now and notify the researcher once the transaction commits.
+
+    Waiting for the commit keeps slow notifiers from holding the caller's row
+    locks and stops a rolled-back request that is retried from alerting twice.
+    """
+    from .db import _call_after_commit
+
+    logger.error(message)
+    _call_after_commit(partial(_send_alert, message))
+
+
+def _send_alert(message: str):
+    """Send ``message`` through the experiment's notifier, logging any failure."""
+    from .experiment import get_experiment
+
+    try:
+        get_experiment().notifier.notify(message)
+    except Exception:
+        logger.exception("Failed to notify the researcher: %s", message)
 
 
 class Notifier:
@@ -97,11 +121,21 @@ class Notifier:
 
     @property
     def logs_message(self):
+        info = self.deployment_information
+        logs_url = dozzle_url(info["server"], info.get("ingress"))
+        if logs_url is None:
+            command = info.get("logs_command")
+            if command is None:
+                return self.combine(
+                    self.bold("Server logs"),
+                    "Run the log command printed at the end of the deployment, "
+                    "or `docker ps` and `docker logs` on the server.",
+                )
+            return self.combine(self.bold("Server logs"), f"`{command}`")
         config = get_config()
         dashboard_password = config.get("dashboard_password", secrets.token_urlsafe(8))
-        logs_url = f"https://logs.{self.deployment_information['server']}"
         return self.format_credentials(
-            "Server logs",
+            "Server logs (Dozzle)",
             logs_url,
             "dallinger",
             dashboard_password,
@@ -240,10 +274,21 @@ class LoggerNotifier(Notifier):
 
     @classmethod
     def format_credentials(cls, label, url, username, password):
-        """Format credentials for the server log, redacting the password."""
+        """Format credentials for the server log, leaving out the password."""
+        msg = super().format_credentials(label, url, username, None)
         if password is not None:
-            password = "<redacted>"
-        return super().format_credentials(label, url, username, password)
+            msg += (
+                "\nPassword: not shown in logs "
+                "(printed by the command that launched the experiment)"
+            )
+        return msg
+
+    def on_launch(self):
+        """Log the launch, leaving local dashboard details to the launch banner."""
+        if self.deployment_information["is_local_deployment"]:
+            self.notify(self.launch_message)
+        else:
+            super().on_launch()
 
     @staticmethod
     def bold(msg: str):
