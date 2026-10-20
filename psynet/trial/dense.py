@@ -170,7 +170,9 @@ class DenseTrialMaker(StaticTrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -194,7 +196,7 @@ class DenseTrialMaker(StaticTrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes, and until trials that are ready
+        longer have any pending async jobs, and until trials that are ready
         to finalize have been finalized (so their scores are set).
     """
 

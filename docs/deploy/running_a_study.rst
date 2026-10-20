@@ -51,15 +51,26 @@ Check the code and dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - The experiment must be in a Git repository with at least one commit.
-  PsyNet records the deployed commit and whether the working tree had
-  uncommitted changes, and ``psynet export`` compares them with your
-  checkout later, so commit everything before you deploy and push to your
-  remote.
-- The PsyNet and Dallinger versions you tested locally must match
-  ``requirements.txt``. If you change ``requirements.txt``, regenerate and
-  commit ``constraints.txt`` with ``psynet generate-constraints``. Remote
-  deployment refuses to start while a generated ``constraints.txt`` is out
-  of date with ``requirements.txt``. See :doc:`/code/project/dependencies`.
+  PsyNet records the deployed commit, whether any deployed file had
+  uncommitted changes, and the names of up to 20 such files.
+  ``psynet export`` compares them with your checkout later, so commit
+  everything before you deploy and push to your remote.
+  ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
+  with uncommitted changes and, in a terminal, ask whether to continue (the
+  default is no). Without a terminal they only warn.
+- The PsyNet and Dallinger versions you tested locally must match their
+  pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
+  commit or release tag) takes precedence; otherwise its pin in
+  ``constraints.txt`` is used, which is where Dallinger is usually pinned.
+  ``psynet deploy ssh``, ``psynet deploy heroku``, ``psynet debug ssh``,
+  ``psynet debug heroku`` and ``psynet performance-test ssh`` check both
+  packages and stop if they differ; ``psynet debug ssh --use-local-psynet``
+  and ``--use-local-dallinger`` skip the check for that package. If you change
+  ``requirements.txt``, regenerate and commit ``constraints.txt`` with
+  ``psynet generate-constraints``, then reinstall with ``psynet setup``.
+  Remote deployment refuses to start while a generated ``constraints.txt``
+  is out of date with ``requirements.txt``. See
+  :doc:`/code/project/dependencies`.
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
@@ -179,7 +190,8 @@ trials), then launch a debug deployment:
 
 The experiment is available at
 ``https://my-study-pilot.your-server.example.org`` within a minute or two.
-The terminal prints a *Single recruitment link*; take the experiment
+The command ends with a *Ready* summary whose *Participant link* is the
+single recruitment link; take the experiment
 through it yourself and send it to a few colleagues. Check:
 
 - the median completion time against your estimate;
@@ -234,13 +246,16 @@ experiment's services, and opens recruitment; see
 :doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
 database on your computer first, which clears the local PostgreSQL database
 and Redis and stops local PsyNet workers, so stop any local experiment before
-you deploy. When it finishes it prints:
-
-- the recruitment message (for Prolific, a link to the new draft study);
-- the dashboard link with its user name and password;
-- a command and a Dozzle URL for viewing the logs.
-
-Save these. Open the dashboard and check that the experiment is running.
+you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
+commands ask before resetting if a local server or another program is connected
+to the local database or Redis; pass ``--yes`` to skip the question.
+``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
+prints a *Ready* summary of the participant link, the dashboard link and
+user, where the password is saved, the logs command and, for apps with
+classic ingress, the log viewer in the browser. Without a single
+participant link, the summary shows the recruiter's message instead (for
+Prolific, a link to the new draft study). Save these. Open the
+dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.
 
@@ -362,10 +377,13 @@ spending, errors, server resources and individual participants; see
 :ref:`experiment_dashboard` for each tab. When you run several studies,
 the Deployments tab (the deployment monitor) shows all of them at once.
 
-**Logs.** Dozzle shows the live logs of every container on the server.
-Its URL is printed at launch (``https://logs.your-server.example.org``
-for servers that use subdomains); the login is described in
-:doc:`/deploy/setting_up_a_server`. You can also read the logs over SSH:
+**Logs.** On servers with classic ingress, Dozzle shows the live logs of
+every container on the server. Its URL is printed at launch
+(``https://logs.your-server.example.org`` for servers that use subdomains);
+the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
+Cloudflare ingress, such as lab computers, have no Dozzle (see
+:ref:`ssh_server_cloudflare`); run the log command printed at launch instead.
+With either ingress you can read the logs over SSH:
 
 .. code:: bash
 
@@ -432,6 +450,14 @@ options.
 Once you destroy the app or the server, ``psynet export`` no longer works,
 so treat data you have not exported as lost.
 
+If async jobs are still running, for example analyses of participants'
+recordings, ``psynet export ssh`` (and ``psynet export local``) ends with a
+warning that the export does not include their results. Wait for them to
+finish and export again; see :doc:`/reference/api/async_job`.
+``psynet export heroku`` does not check. Jobs that were lost before
+starting, for example when Redis restarted, are failed about an hour after
+they were enqueued and then stop counting as pending.
+
 Tear down
 ---------
 
@@ -458,15 +484,28 @@ When the target number of participants is reached:
       :width: 800
       :alt: Prolific submissions awaiting review
 
-4. Export the data one final time.
+4. Wait until no async jobs are pending, then export the data one final
+   time. ``psynet export ssh`` warns while jobs are still pending.
 5. Remove the experiment from the server:
 
    .. code:: bash
 
       psynet destroy ssh --app my-study --server your-server.example.org
 
-   This stops the experiment's containers and removes its folder from the
-   server.
+   After you confirm, the command wakes the app if it is asleep and checks
+   for pending async jobs. If some are still pending, it says how many and
+   asks you to confirm again, or refuses when it cannot ask (for example in
+   a script, or when destroying several apps at once). It then asks whether
+   to delete the experiment's data too (see :ref:`ssh_server_files`); pass
+   ``--remove-data`` or ``--keep-data`` to answer in advance. Finally it
+   stops the experiment's containers and removes its folder from the
+   server. Pass ``--discard-pending-jobs`` only if you accept losing
+   their results. If the app cannot be checked, for example because its
+   web container is not running, the command says why and does not destroy
+   it: start the container and try again, or check in the app's logs that
+   its jobs have finished and pass ``--discard-pending-jobs``. Apps
+   deployed with ``psynet debug ssh`` are the exception: they are destroyed
+   anyway, even if they recruit real participants.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with

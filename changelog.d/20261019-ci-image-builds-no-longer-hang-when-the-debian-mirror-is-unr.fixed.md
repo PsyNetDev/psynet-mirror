@@ -1,0 +1,1 @@
+CI image builds now time-limit and retry `apt-get update`, so they fail within minutes instead of hanging until the 3-hour job timeout when the Debian mirror is unreachable, and the nightly ASV job is retried once after a timeout.

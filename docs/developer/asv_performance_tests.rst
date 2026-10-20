@@ -34,7 +34,7 @@ Benchmarks are split by directory:
   damp that noise. Because the ``master`` job is allowed to fail (see below),
   slow-tier results are tracked in the published history rather than gating
   merges. The slow ASV history focuses on median request latency and median
-  async-process queue delay; participant failures and incomplete bots are left
+  async-job queue delay; participant failures and incomplete bots are left
   in the performance-test output instead of being tracked as ASV metrics.
 
 Merge-request checks
@@ -77,6 +77,12 @@ branch, pushes them, and then propagates the ASV exit status.
 or either commit fails to build, it exits with status 2 without comparing the
 commits; the job log shows the failure, and the results for both commits are
 still published.
+
+ASV reuses one virtualenv for both commits, so ``asv.conf.json`` uninstalls
+Dallinger as well as PsyNet whenever ASV switches commits. Each commit then
+gets the Dallinger that its own ``pyproject.toml`` resolves to, rather than
+keeping the one installed for the other commit. Other dependencies are not
+reinstalled.
 
 The PsyNet project already has this schedule, "Nightly ASV benchmarks", which
 runs at 02:00 Europe/London time; see *Build > Pipeline schedules* in GitLab.

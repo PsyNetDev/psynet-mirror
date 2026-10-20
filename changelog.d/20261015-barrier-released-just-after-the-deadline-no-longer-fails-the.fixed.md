@@ -1,0 +1,1 @@
+Fixed a race in barriers without `waiting_logic`, including `SimpleGrouper`: a participant whom the barrier released just after their `max_wait_time` ran out, but before their next check, was still failed for waiting too long, which also failed the rest of the group they had just joined.

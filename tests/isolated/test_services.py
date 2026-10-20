@@ -1,5 +1,6 @@
 """Tests for local PostgreSQL/Redis service checks and ensure helpers."""
 
+import importlib
 from unittest.mock import Mock
 
 import click
@@ -89,6 +90,15 @@ def test_services_ensure_noninteractive_requires_yes(monkeypatch):
     assert "--yes" in result.output
 
 
+def test_ensure_local_services_explains_remote_launch_use(monkeypatch, capsys):
+    monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
+    monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
+
+    with pytest.raises(click.ClickException, match="to prepare a remote launch"):
+        ensure_local_services(remote_launch=True)
+    assert "needed to prepare the remote launch" in capsys.readouterr().out
+
+
 def test_verify_local_services_soft_warns(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
     assert verify_local_services(strict=False) is False
@@ -104,6 +114,17 @@ def test_ensure_local_services_soft_does_not_raise(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
     monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
     assert ensure_local_services(assume_yes=False, strict=False) is False
+
+
+def test_ensure_local_services_trusts_a_parent_that_checked_them(monkeypatch):
+    monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
+    monkeypatch.setenv("_PSYNET_LOCAL_SERVICES_CHECKED", "1")
+    monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
+    monkeypatch.setattr("psynet.services._is_interactive", lambda: False)
+    with pytest.raises(click.ClickException):
+        ensure_local_services(assume_yes=False, strict=True)
+    monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+    assert ensure_local_services(assume_yes=False, strict=True) is True
 
 
 def test_check_redis_ping_over_socket(monkeypatch):
@@ -431,87 +452,37 @@ def test_leftover_volume_does_not_look_like_a_container(monkeypatch):
     assert ["docker", "run", "-d", "redis"] in commands
 
 
-def test_pre_launch_ensures_services_for_docker_mode(monkeypatch):
-    """Docker launches still prepare locally, so services are required here too."""
+@pytest.mark.parametrize(
+    "launch",
+    [
+        dict(mode="debug", local_=True, docker=True),
+        dict(mode="debug", local_=True, docker=False),
+        dict(mode="live", local_=False, ssh=True, docker=True, server="s", app="a"),
+    ],
+    ids=["docker", "local-venv", "ssh-deploy"],
+)
+def test_pre_launch_ensures_services(monkeypatch, launch):
+    """Every launch, including remote ones, prepares against local services."""
     from psynet.command_line import _pre_launch
 
     ensure = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", {"s": {}})
     monkeypatch.setattr(
         "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )
     monkeypatch.setattr(
-        "psynet.command_line.redis_vars.clear",
-        Mock(side_effect=RuntimeError("stop-after-redis")),
+        "psynet.command_line.deployment_info.init",
+        Mock(side_effect=RuntimeError("stop-after-services")),
     )
 
-    ctx = Mock()
-    with pytest.raises(RuntimeError, match="stop-after-redis"):
-        _pre_launch(
-            ctx,
-            mode="debug",
-            archive=None,
-            local_=True,
-            docker=True,
-        )
+    with pytest.raises(RuntimeError, match="stop-after-services"):
+        _pre_launch(Mock(), archive=None, **launch)
 
-    ensure.assert_called_once_with(assume_yes=False, strict=True)
-
-
-def test_pre_launch_ensures_services_for_local_venv_mode(monkeypatch):
-    from psynet.command_line import _pre_launch
-
-    ensure = Mock()
-    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
-    monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
+    ensure.assert_called_once_with(
+        assume_yes=False, strict=True, remote_launch=not launch["local_"]
     )
-    monkeypatch.setattr(
-        "psynet.command_line.redis_vars.clear",
-        Mock(side_effect=RuntimeError("stop-after-redis")),
-    )
-
-    ctx = Mock()
-    with pytest.raises(RuntimeError, match="stop-after-redis"):
-        _pre_launch(
-            ctx,
-            mode="debug",
-            archive=None,
-            local_=True,
-            docker=False,
-        )
-
-    ensure.assert_called_once_with(assume_yes=False, strict=True)
-
-
-def test_pre_launch_ensures_services_for_ssh_deploy(monkeypatch):
-    """SSH deploy still prepares against local Postgres/Redis."""
-    from psynet.command_line import _pre_launch
-
-    ensure = Mock()
-    monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
-    monkeypatch.setattr(
-        "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
-    )
-    monkeypatch.setattr(
-        "psynet.command_line.redis_vars.clear",
-        Mock(side_effect=RuntimeError("stop-after-redis")),
-    )
-
-    ctx = Mock()
-    with pytest.raises(RuntimeError, match="stop-after-redis"):
-        _pre_launch(
-            ctx,
-            mode="live",
-            archive=None,
-            local_=False,
-            ssh=True,
-            docker=True,
-            server="test-server",
-            app="test-app",
-        )
-
-    ensure.assert_called_once_with(assume_yes=False, strict=True)
 
 
 def test_test_local_ensures_services(monkeypatch):

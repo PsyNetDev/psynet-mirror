@@ -270,6 +270,20 @@ def _recruiter_class_by_name(name):
         return None
 
 
+def named_recruiter_class(config=None):
+    """Return the class of the recruiter named in the configuration, or ``None``.
+
+    Unlike :func:`configured_recruiter_class`, this ignores the debug-mode
+    stand-in and replay mode, so it gives the recruiter that a deployment
+    will use. It returns ``None`` when no recruiter is named or the name is
+    unknown.
+    """
+    if config is None:
+        config = get_config()
+    name = config.get("recruiter", None)
+    return _recruiter_class_by_name(name) if name else None
+
+
 def configured_recruiter_class(config=None):
     """Return the recruiter class that the configuration selects.
 
@@ -317,6 +331,34 @@ def configured_recruiter_class(config=None):
     return dallinger.recruiters.MTurkRecruiter
 
 
+def recruits_real_participants(config=None):
+    """Return why the configured recruitment may bring real participants, or ``None``.
+
+    Live mode and any recruiter other than the test ones (development and
+    mock recruiters, Hot Air, generic, bots and simulated participants) may
+    bring real participants.
+    """
+    config = config or get_config()
+    if config.get("mode", None) == "live":
+        return "the experiment runs in live mode"
+    recruiter_class = configured_recruiter_class(config)
+    if recruiter_class is None:
+        return "the experiment's recruiter could not be identified"
+    if issubclass(
+        recruiter_class,
+        (
+            DevRecruiter,
+            MockRecruiter,
+            dallinger.recruiters.HotAirRecruiter,
+            dallinger.recruiters.BotRecruiter,
+            dallinger.recruiters.SimulatedRecruiter,
+            GenericRecruiter,
+        ),
+    ):
+        return None
+    return f"the experiment recruits with {recruiter_class.__name__}"
+
+
 def _abandon_overdue_participants(participants):
     """Mark participants abandoned from Dallinger's clock and commit.
 
@@ -343,6 +385,10 @@ class PsyNetRecruiterMixin:
             exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT,
         }
     )
+
+    #: Whether ``max_concurrent_participants`` may hold newcomers on the start
+    #: page. Only open-link recruiters support it; see :mod:`psynet.capacity`.
+    supports_max_concurrent_participants = False
 
     #: Whether participants are shown their accumulated reward when the
     #: experiment does not say either way. Recruiters that disburse money
@@ -863,6 +909,7 @@ class HotAirRecruiter(
 ):
     # Local debug recruitment pays nobody, so there is no reward to report.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """HotAir does not pay through an external recruitment platform."""
@@ -3791,6 +3838,7 @@ class GenericRecruiter(
     # Generic recruitment has no platform to pay through, so any figure PsyNet
     # showed would be one the experimenter has to disburse by hand.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """Generic/local recruitment does not pay through an external platform."""

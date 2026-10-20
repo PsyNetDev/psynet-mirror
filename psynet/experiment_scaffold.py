@@ -107,7 +107,6 @@ _OBSOLETE_DOCKER_SCRIPT_HASHES = {
 }
 
 _GENERATED_FILES = {
-    "Dockertag": lambda: dockertag_contents(),
     ".python-version": lambda: f"{_current_python_major_minor()}\n",
 }
 
@@ -145,14 +144,19 @@ def _current_python_major_minor() -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def dockertag_contents() -> str:
-    """Return Dockertag file contents for the current experiment directory."""
-    return f"{Path.cwd().name}\n"
-
-
 def _experiment_script_resource(relative_path: str):
     """Return a Traversable for a packaged experiment-script template path."""
     return resources.files("psynet") / f"resources/experiment_scripts/{relative_path}"
+
+
+def _template_contents(relative_path: str) -> bytes:
+    """Return the contents a scaffold-managed template file should have."""
+    contents = _experiment_script_resource(relative_path).read_bytes()
+    if relative_path == "Dockerfile":
+        contents = contents.replace(
+            b"{python_major_minor}", _current_python_major_minor().encode()
+        )
+    return contents
 
 
 def scaffold_managed_paths() -> frozenset[str]:
@@ -208,9 +212,16 @@ def _default_experiment_py() -> str:
     return _EXPERIMENT_PY_TEMPLATE.format(label=_default_experiment_label())
 
 
-def _default_requirements_txt() -> str:
-    """Return a starter ``requirements.txt`` for the current PsyNet version."""
-    requirement = _default_psynet_requirement()
+def _default_requirements_txt(psynet_requirement: str | None = None) -> str:
+    """Return a starter ``requirements.txt``.
+
+    Parameters
+    ----------
+    psynet_requirement
+        PsyNet requirement to record. Defaults to
+        :func:`_default_psynet_requirement`.
+    """
+    requirement = psynet_requirement or _default_psynet_requirement()
     return f"{requirement}\n{_REQUIREMENTS_TXT_COMMENTS}"
 
 
@@ -380,19 +391,24 @@ def _remote_contains_commit(source: Path, commit: str, remote: str = "origin") -
     return _remote_advertises_commit(source, commit, remote=remote)
 
 
-def _psynet_direct_url_info() -> dict | None:
-    """Return PEP 610 ``direct_url.json`` metadata for the installed PsyNet.
+def _direct_url_info(package: str) -> dict | None:
+    """Return PEP 610 ``direct_url.json`` metadata for an installed package.
 
     Present only for direct installs (path, editable, or VCS); ``None`` when
-    PsyNet came from an index or is not installed.
+    the package came from an index or is not installed.
     """
     try:
-        direct_url = metadata.distribution("psynet").read_text("direct_url.json")
+        direct_url = metadata.distribution(package).read_text("direct_url.json")
     except metadata.PackageNotFoundError:
         return None
     if direct_url is None:
         return None
     return json.loads(direct_url)
+
+
+def _psynet_direct_url_info() -> dict | None:
+    """Return PEP 610 ``direct_url.json`` metadata for the installed PsyNet."""
+    return _direct_url_info("psynet")
 
 
 def _installed_psynet_file_path() -> Path | None:
@@ -516,7 +532,37 @@ def _optional_commit_psynet_requirement(source: Path) -> str | None:
 
 def get_editable_psynet_source() -> Path | None:
     """Return the source path when PsyNet is installed in editable mode."""
-    installation = _psynet_direct_url_info()
+    return _editable_source(_psynet_direct_url_info())
+
+
+def get_editable_dallinger_source() -> Path | None:
+    """Return the source path when Dallinger is installed in editable mode.
+
+    Falls back to Dallinger's own detection for legacy ``.egg-link`` installs,
+    which do not record ``direct_url.json``.
+    """
+    source = get_editable_source("dallinger")
+    if source is not None:
+        return source
+    try:
+        from dallinger.utils import get_editable_dallinger_path
+    except ImportError:
+        return None
+    legacy_source = get_editable_dallinger_path()
+    return Path(legacy_source).resolve() if legacy_source else None
+
+
+def get_editable_source(package: str) -> Path | None:
+    """Return the source path when ``package`` is installed in editable mode.
+
+    Reads the ``direct_url.json`` that pip and uv record for every editable
+    install, so it does not depend on legacy ``.egg-link`` files.
+    """
+    return _editable_source(_direct_url_info(package))
+
+
+def _editable_source(installation: dict | None) -> Path | None:
+    """Return the local source path recorded by editable ``direct_url.json`` metadata."""
     if installation is None:
         return None
     if not installation.get("dir_info", {}).get("editable", False):
@@ -576,19 +622,26 @@ def commit_psynet_requirement(source: Path) -> str:
     return f"psynet[experiment]@{pip_base}@{commit}#egg=psynet"
 
 
-def _is_psynet_requirement_line(line: str) -> bool:
-    """Return whether a requirements.txt line is a PsyNet dependency entry.
+def is_requirement_line_for(line: str, package: str) -> bool:
+    """Return whether a requirements line is a dependency entry for ``package``.
 
-    Matches bare ``psynet``, ``psynet[experiment]``, and git-URL forms with
-    ``#egg=psynet`` or ``#egg=psynet[experiment]``.
+    Matches the bare name, extras, version specifiers, direct references
+    (``package @ <url>``), and URL forms with ``#egg=<package>`` (with or
+    without extras), such as editable checkout paths.
     """
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return False
+    name = re.escape(package)
     return bool(
-        re.match(r"(?i)^psynet(?:\s*$|\s*[@<>=!~\[])", stripped)
-        or re.search(r"(?i)#egg=psynet(?:\[[\w,]+\])?(?:\s|$)", stripped)
+        re.match(rf"(?i)^{name}(?:\s*$|\s*[@<>=!~\[])", stripped)
+        or re.search(rf"(?i)#egg={name}(?:\[[\w,]+\])?(?:\s|$)", stripped)
     )
+
+
+def _is_psynet_requirement_line(line: str) -> bool:
+    """Return whether a requirements.txt line is a PsyNet dependency entry."""
+    return is_requirement_line_for(line, "psynet")
 
 
 def requirement_includes_experiment_extra(requirement: str) -> bool:
@@ -705,7 +758,7 @@ def _current_source_commit(source=None) -> str | None:
     return commit if re.fullmatch(r"[0-9a-f]{40}", commit) else None
 
 
-def _bootstrap_authored_files(skip_files):
+def _bootstrap_authored_files(skip_files, psynet_requirement=None):
     """Create missing starter experiment files without overwriting existing ones.
 
     Contents are computed before any writes so a failed PsyNet pin (for example
@@ -715,7 +768,7 @@ def _bootstrap_authored_files(skip_files):
     skipped = []
     bootstrap_files = {
         "experiment.py": _default_experiment_py,
-        "requirements.txt": _default_requirements_txt,
+        "requirements.txt": lambda: _default_requirements_txt(psynet_requirement),
     }
 
     pending = []
@@ -797,8 +850,7 @@ def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
         return False
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with resources.as_file(_experiment_script_resource(relative_path)) as path:
-        shutil.copyfile(path, destination)
+    destination.write_bytes(_template_contents(relative_path))
     if (
         relative_path == "deploy.toml"
         and previous_gitignore is not None
@@ -1042,8 +1094,7 @@ def _template_file_matches(relative_path):
     if not destination.is_file():
         return False
 
-    with resources.as_file(_experiment_script_resource(relative_path)) as template:
-        return destination.read_bytes() == template.read_bytes()
+    return destination.read_bytes() == _template_contents(relative_path)
 
 
 def _generated_file_matches(relative_path):
@@ -1121,11 +1172,14 @@ def scaffold_experiment_directory(
     *,
     overwrite=False,
     skip_files=None,
+    psynet_requirement=None,
 ):
     """Create or refresh the standard scaffold-managed experiment files.
 
     ``config.txt`` is part of the default scaffold and is created when missing,
     but existing copies are never overwritten (authors commonly customize them).
+    ``psynet_requirement``, when given, is recorded in a newly created
+    ``requirements.txt`` instead of the default requirement.
     """
     skip_files = set(skip_files or [])
     _assert_scaffold_paths_are_safe(
@@ -1139,7 +1193,9 @@ def scaffold_experiment_directory(
     previous_gitignore = _read_gitignore()
 
     try:
-        bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(skip_files)
+        bootstrap_written, bootstrap_skipped = _bootstrap_authored_files(
+            skip_files, psynet_requirement
+        )
     except ValueError as exc:
         raise click.UsageError(str(exc)) from exc
     written.extend(bootstrap_written)

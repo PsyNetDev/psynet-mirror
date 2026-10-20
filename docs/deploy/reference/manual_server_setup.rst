@@ -29,6 +29,8 @@ log in without a password:
     ssh your-username@my-server.example.org
 
 Then set ``server_pem`` to the private key, for example ``~/.ssh/id_ed25519``.
+Use an Ed25519, RSA, or ECDSA key. A DSA key cannot be used; see
+:ref:`replacing-a-dsa-key`.
 
 The account also needs passwordless ``sudo`` the first time the server is
 registered, if Docker is not yet installed or the account is not yet in the

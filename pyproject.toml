@@ -9,7 +9,7 @@ allow-direct-references = true
 
 [project]
 name = "psynet"
-version = "13.4.0a0"
+version = "14.0.0a0"
 authors = [
   {name="Peter Harrison", email="pmch2@cam.ac.uk"},
   {name="Frank Höger", email="frank.hoeger@ae.mpg.de"},
@@ -24,7 +24,7 @@ license = {file = "LICENSE"}
 description = "PsyNet – complex psychological experiments made easy"  # A framework for running advanced psychological experiments
 keywords = ["psychology", "experiments", "online", "networks"]
 readme = "README.md"
-requires-python = ">=3.11"  # recommended Python version: 3.13
+requires-python = ">=3.11"  # recommended Python version: 3.14
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.14",
@@ -44,6 +44,7 @@ classifiers = [
 # Experiment authors need psynet[experiment] (installed automatically by `psynet setup`).
 dependencies = [
     "click",
+    "packaging",
 ]
 
 [project.optional-dependencies]
@@ -55,7 +56,11 @@ dependencies = [
 # this runtime.
 experiment = [
     "babel",
-    "dallinger[docker]>=12.4.0,<13",
+    # TODO: Replace this Git pin with a released dallinger[docker] version once
+    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout) and
+    # #10087 (no croniter at worker start-up) are on PyPI. The SHA is a commit
+    # on Dallinger master that includes them.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@406f3c147354477fc11d1247403b65577c7a349f",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
@@ -65,7 +70,6 @@ experiment = [
     "joblib",
     "jsonpickle",
     "pandas",
-    "paramiko",
     "polib",
     "progress",
     "pytest",
@@ -73,6 +77,7 @@ experiment = [
     "pytest-mock",
     "pytest-timeout",
     "python-gettext",
+    "rich>=13",
     "rpdb",
     "slack_sdk",  # For Slack notifications
     "tabulate",
@@ -164,6 +169,8 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
+# Must be loaded with -p, before Dallinger connects; see psynet/isolated_environment.py.
+addopts = "-p psynet.pytest_environment"
 norecursedirs = [
     "tests/experiments",
     "tests/isolated",

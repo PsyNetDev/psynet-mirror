@@ -62,11 +62,13 @@ The server is a Linux machine that you can reach over SSH, such as an AWS EC2
 instance that Dallinger provisions for you, a virtual machine from another
 cloud provider, or a machine run by you or your institution. You register it
 with Dallinger once; after that, deployment, export and destroy commands
-select it with ``--server``. Registration installs Docker if needed. The first
-deployment starts services that all experiments on the server share: a
-PostgreSQL database server, a Caddy web server that routes each experiment's
-address to it and obtains HTTPS certificates, and a Dozzle log viewer. One
-server can host several experiments at once.
+select it with ``--server``. Registration installs Docker if needed. With
+classic ingress, the first deployment starts services that all experiments on
+the server share: a PostgreSQL database server, a Caddy web server that routes
+each experiment's address to it and obtains HTTPS certificates, and a Dozzle
+log viewer. With Cloudflare ingress, each experiment instead has its own
+database and tunnel, and there is no Dozzle (see :ref:`ssh_server_cloudflare`).
+One server can host several experiments at once.
 
 To collect data on a single computer, for example in the lab or in the field,
 ``psynet deploy local`` runs the experiment on your own computer instead. It

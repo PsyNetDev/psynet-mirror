@@ -4,6 +4,7 @@ import glob
 import hashlib
 import importlib
 import inspect
+import json
 import logging
 import os
 import random
@@ -13,6 +14,7 @@ import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -34,6 +36,7 @@ from dallinger.recruiters import _descendent_classes
 from flask.globals import current_app
 from flask.templating import Environment, _render
 from sqlalchemy import or_
+from urllib3.util import Retry
 
 from psynet.light_utils import (  # noqa: F401 – re-exported for backwards compat
     _IN_REPO_EXPERIMENT_ROOTS,
@@ -245,6 +248,65 @@ def get_config():
     config = dallinger_get_config()
     if not config.ready:
         config.load()
+    return config
+
+
+def _same_directory(a, b):
+    """Return whether paths ``a`` and ``b`` name the same existing directory."""
+    try:
+        return b is not None and os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def load_runtime_server_config(config=None, deployment_id=None):
+    """
+    Return the configuration of the running server, including runtime values.
+
+    Runtime values such as dashboard credentials come from the config of the
+    running debug server, or else from the launch info of ``deployment_id``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        The configuration to extend; by default Dallinger's configuration.
+    deployment_id : str, optional
+        The deployment whose saved launch info to read when no debug server is
+        running.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
+    from .redis import redis_vars
+
+    config = config or get_config()
+    if not config.ready:
+        config.load()
+
+    # The debug server runs from Dallinger's generated development directory,
+    # whose config.txt includes runtime values such as dashboard credentials.
+    # A deployed server runs from the experiment directory itself, whose
+    # config.txt is already loaded below the environment; loading it again
+    # on top would hide the deployment's environment, such as its mode.
+    server_working_directory = redis_vars.get("server_working_directory", None)
+    if server_working_directory:
+        from dallinger.config import experiment_directory
+
+        if not _same_directory(server_working_directory, experiment_directory()):
+            config.load_from_file(os.path.join(server_working_directory, "config.txt"))
+        return config
+
+    if deployment_id:
+        launch_info_path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_id
+            / "launch-info.json"
+        )
+        if launch_info_path.exists():
+            with open(launch_info_path, encoding="utf-8") as f:
+                config.extend(json.load(f))
+
     return config
 
 
@@ -778,22 +840,40 @@ def is_release_branch():
     return os.environ.get("CI_COMMIT_REF_NAME", "").startswith("release-")
 
 
+def _deployment_mode():
+    """Return the deployment mode (``"debug"``, ``"sandbox"`` or ``"live"``).
+
+    Returns ``None`` outside a deployment package, for example when PsyNet
+    code runs from an experiment's source folder.
+    """
+    from . import deployment_info
+    from .experiment import in_deployment_package
+
+    if not in_deployment_package():
+        return None
+    return deployment_info.read("mode")
+
+
 def _tolerate_missing_translation(namespace):
     """
     Return whether a missing catalog entry should be downgraded to a warning.
 
     Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
-    so feature-branch test runs must not depend on them. Experiment catalogs
-    are owned by the experiment author, so those keep failing loudly.
+    so feature-branch test runs and local debug sessions must not depend on them.
+    Experiment catalogs are owned by the experiment author, so those keep
+    failing loudly.
     """
     if namespace == "experiment":
         return False
-    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not is_release_branch()
+    if is_release_branch():
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _deployment_mode() in (None, "debug")
 
 
 def check_translation_is_available(message, context, locale, namespace):
-    from . import deployment_info
-    from .experiment import get_experiment, in_deployment_package
+    from .experiment import get_experiment
 
     is_available = (context, message) in REGISTERED_TRANSLATIONS[namespace][locale]
 
@@ -806,10 +886,7 @@ def check_translation_is_available(message, context, locale, namespace):
             "You cannot rename the functions _ or _p, and you must pass them strings directly, "
             "not variables or strings wrapped in parentheses."
         )
-        is_live_experiment = (
-            in_deployment_package() and deployment_info.read("mode") == "live"
-        )
-        if is_live_experiment:
+        if _deployment_mode() == "live":
             error_message += " Since this is a live experiment, we instead presented the untranslated text."
             logger.warning(error_message)
             try:
@@ -820,8 +897,8 @@ def check_translation_is_available(message, context, locale, namespace):
             error_message += (
                 " The untranslated English text will be shown instead. "
                 f"Catalogs for the {namespace} package are refreshed on the release branch "
-                "with `psynet translate`, so feature-branch tests do not require them "
-                "to be up to date."
+                "with `psynet translate`, so tests and local debug sessions do not "
+                "require them to be up to date."
             )
             logger.warning(error_message)
         else:
@@ -1429,13 +1506,10 @@ def list_isolated_tests():
 
 
 # Check TODOs
+@dataclass(frozen=True)
 class PatternDir:
-    def __init__(self, pattern, glob_dir):
-        self.pattern = pattern
-        self.glob_dir = glob_dir
-
-    def __dict__(self):
-        return {"pattern": self.pattern, "glob_dir": self.glob_dir}
+    pattern: str
+    glob_dir: str
 
 
 def _should_skip_todo_path(path: Path) -> bool:
@@ -1464,7 +1538,9 @@ def _check_todos(pattern, glob_dir):
 def _aggregate_todos(pattern_dirs: List[PatternDir]):
     todo_count = {}
     for pattern_dir in pattern_dirs:
-        todo_count.update(_check_todos(**pattern_dir.__dict__()))
+        todo_count.update(
+            _check_todos(pattern=pattern_dir.pattern, glob_dir=pattern_dir.glob_dir)
+        )
     return todo_count
 
 
@@ -1531,18 +1607,31 @@ def in_python_package():
     Returns
     -------
     bool
-        True if the current directory contains either pyproject.toml or setup.py,
-        indicating it is likely a Python package root directory.
+        See :func:`is_a_package`.
     """
     return is_a_package(".")
 
 
 def is_a_package(path):
+    """
+    Test whether a directory is the root of a Python package rather than an experiment.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to inspect.
+
+    Returns
+    -------
+    bool
+        True if the directory contains ``pyproject.toml`` or ``setup.py`` and no
+        ``experiment.py``. Experiment directories may carry their own
+        ``pyproject.toml`` (for example from ``uv init``).
+    """
     path = Path(path)
-    files_to_check = ["pyproject.toml", "setup.py"]
-    for file in files_to_check:
-        if path.joinpath(file).exists():
-            return True
+    if (path / "experiment.py").exists():
+        return False
+    return any((path / file).exists() for file in ["pyproject.toml", "setup.py"])
 
 
 def get_package_name(path="."):
@@ -1842,6 +1931,12 @@ def format_timedelta(timedelta_obj):
 
 
 def get_experiment_url(app=None, server=None):
+    """Return the experiment's URL.
+
+    Without ``app`` or ``server``, this is the URL the running experiment
+    registered in Redis, unless the ``PSYNET_EXPERIMENT_URL`` environment
+    variable gives another address for this process to reach it by.
+    """
     if server:
         if app:
             return f"https://{app}.{server}"
@@ -1853,7 +1948,7 @@ def get_experiment_url(app=None, server=None):
         else:
             from .redis import redis_vars
 
-            return redis_vars.get("base_url")
+            return os.environ.get("PSYNET_EXPERIMENT_URL") or redis_vars.get("base_url")
 
 
 def generate_text_file(path, text="Lorem ipsum"):
@@ -1961,6 +2056,33 @@ def safe(func):
     return wrapper
 
 
+def keep_alive_session(retry_posts=False):
+    """
+    Return a ``requests.Session`` that reuses connections and retries dropped ones.
+
+    A server or proxy may close an idle keep-alive connection just as the
+    client reuses it (gunicorn's default keep-alive is 2 seconds), which shows
+    up as "Connection reset by peer". The session retries such a request once.
+    Responses with error statuses are never retried.
+
+    Parameters
+    ----------
+    retry_posts : bool
+        Also retry POST and other non-idempotent requests. The server may
+        already have handled a request whose connection then dropped, so only
+        enable this when a repeat is harmless, as for bots' ``/response``
+        POSTs, which the server rejects for a page the participant has left.
+    """
+    session = requests.Session()
+    retry = Retry(total=1, status=0)
+    if retry_posts:
+        retry = Retry(total=1, status=0, allowed_methods=None)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 def get_authenticated_session(base_url, username=None, password=None):
     """
     Returns a requests.Session authenticated with the dashboard login.
@@ -1999,19 +2121,7 @@ def get_authenticated_session(base_url, username=None, password=None):
     if password is None:
         password = config.get("dashboard_password")
 
-    session = requests.Session()
-
-    # Tell the server to close the TCP connection after each request (disable HTTP keep-alive).
-    # This should prevent "Connection reset by peer" errors caused by reusing stale keep-alive sockets,
-    # which can happen if the server or a proxy drops idle connections
-    # (see e.g. https://gitlab.com/PsyNetDev/PsyNet/-/jobs/11132444772)
-    #
-    # Trade-off: every request opens a new connection, which is less efficient.
-    # The other approach would be to to keep connections alive but configure a Retry/Timeout policy
-    # (e.g. with requests.adapters.HTTPAdapter + urllib3.util.Retry).
-    # However, retry logic might complicate the logs when we get error messages due to server logic.
-    # We therefore use `Connection: close` here for simplicity.
-    session.headers["Connection"] = "close"
+    session = keep_alive_session()
 
     login_url = f"{base_url}/dashboard/login"
 
@@ -2052,6 +2162,10 @@ def get_authenticated_session(base_url, username=None, password=None):
 
 
 def check_for_login_errors(response):
+    """Raise ``RuntimeError`` with the form's messages if a dashboard login failed."""
+    # Parsing a whole dashboard page is slow, and only failed logins show alerts.
+    if "alert-danger" not in response.text:
+        return
     soup = BeautifulSoup(response.text, "html.parser")
 
     top_level_alert = soup.find("div", class_="alert alert-danger")

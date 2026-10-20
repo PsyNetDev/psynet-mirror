@@ -1,0 +1,1 @@
+`psynet translate` and the translation checks now treat a folder containing `experiment.py` as an experiment even when it also has a `pyproject.toml` (for example from `uv init`), instead of failing to find a package source directory.

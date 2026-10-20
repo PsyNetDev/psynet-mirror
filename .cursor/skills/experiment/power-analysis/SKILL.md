@@ -69,7 +69,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    nearby alternatives, sensitivity to the assumption sets, costs and what
    they exclude, and every judgment-based parameter value. Ask the user to go
    through the review checklist in the method reference. Update
-   `audit/PLAN.md` only after the user picks a design.
+   `audit/PLAN.md` only after the user picks a design. To size the server
+   for the chosen participant count, use `plan-server-resources`.
 
 ## Notebook rules
 

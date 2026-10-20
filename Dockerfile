@@ -2,7 +2,7 @@
 # On Apple Silicon Macs, Docker will emulate x86_64 but pip can use pre-built wheels
 # Can be overridden with: docker build --build-arg DOCKER_PLATFORM=linux/arm64
 ARG DOCKER_PLATFORM=linux/amd64
-ARG PYTHON_VERSION=3.13
+ARG PYTHON_VERSION=3.14
 # Debian bookworm ships Node 18, but Playwright needs Node 20 or later.
 ARG NODE_VERSION=20
 FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-bookworm-slim AS node
@@ -19,7 +19,9 @@ ENV UV_HTTP_RETRIES=8
 # TODO: delete some of these if we can
 # fonts-liberation gives browser tests an Arial-metric font, which is what the
 # participant theme's fallback face is measured against.
-RUN apt-get update && apt-get install -y curl fonts-liberation gettext jq libasound2 libatk-bridge2.0-0 libcups2 libdrm2 libdbus-1-3 libgbm1 libnss3 libpq-dev libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 redis-server rsync unzip wget build-essential
+COPY ci/apt-get-update.sh /usr/local/bin/apt-get-update
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-ci-network
+RUN apt-get-update && timeout --kill-after=10 900 apt-get install -y curl fonts-liberation gettext jq libasound2 libatk-bridge2.0-0 libcups2 libdrm2 libdbus-1-3 libgbm1 libnss3 libpq-dev libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 redis-server rsync unzip wget build-essential
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules

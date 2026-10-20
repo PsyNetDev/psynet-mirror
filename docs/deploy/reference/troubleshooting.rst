@@ -6,8 +6,10 @@ Troubleshooting deployments
 ===========================
 
 When a deployment fails on the server, the real error is usually in the logs
-of the app's ``web`` service. Read them in Dozzle at ``https://logs.<server>``
-or over SSH (see :ref:`ssh_server_working_over_ssh`).
+of the app's ``web`` service. Read them over SSH with the log command that
+the deployment prints (see :ref:`ssh_server_working_over_ssh`) or, on servers
+with classic ingress, in Dozzle at ``https://logs.<server>``. Apps with
+Cloudflare ingress have no Dozzle (see :ref:`ssh_server_cloudflare`).
 
 DNS resolution error
 ^^^^^^^^^^^^^^^^^^^^
@@ -41,6 +43,25 @@ If you know that the name now points at a new server, remove the old key from
 .. code:: bash
 
     ssh-keygen -R my-server.example.org
+
+``server_pem`` cannot be loaded
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Dallinger checks the key in ``server_pem`` before connecting. If it is a DSA
+key, Dallinger stops with an error saying that the key ``is a DSA key, which
+Dallinger can no longer use``. Replace it as described in
+:ref:`replacing-a-dsa-key`.
+
+If connecting fails with ``not a valid OPENSSH private key file`` instead, the
+file may be damaged or may not be a private key. Check it:
+
+.. code:: bash
+
+    ssh-keygen -l -f ~/.ssh/my-server.pem
+
+If ``ssh-keygen`` says the file is not a key file, point ``server_pem`` at the
+right private key. If the output ends in ``(DSA)``, replace the key as
+described in :ref:`replacing-a-dsa-key`.
 
 I cannot access my server anymore
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
