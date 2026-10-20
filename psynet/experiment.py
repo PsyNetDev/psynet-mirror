@@ -2335,10 +2335,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
             expected_type = config_types.get(key)
             if expected_type is None:
-                raise KeyError(
-                    f"{key} is not a valid configuration key. Remove it from "
-                    f"{cls.__name__}.config, or use its new name if it was renamed."
-                )
+                message = f"{key} is not a valid configuration key."
+                if key in cls.config:
+                    message += (
+                        f" Remove it from {cls.__name__}.config, or use its new "
+                        "name if it was renamed."
+                    )
+                raise KeyError(message)
             value = expected_type(value)
 
             config[key] = value

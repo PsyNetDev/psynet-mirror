@@ -4256,13 +4256,15 @@ def _remote_public_origin(app, server):
     origin = _normalize_public_origin(
         manifest.get("public_origin") if isinstance(manifest, dict) else None
     )
-    if origin is None and files.get("site"):
-        origin = _caddy_site_origin(files["site"])
+    # Older Dallinger's root Caddyfile doesn't import caddy.d, so a leftover
+    # site there isn't served; the root route takes precedence.
     caddyfile = files.get("caddyfile") or ""
     if origin is None and (
         "root" in files or f"reverse_proxy {app}_web:5000" in caddyfile
     ):
         origin = _caddy_site_origin(caddyfile)
+    if origin is None and files.get("site"):
+        origin = _caddy_site_origin(files["site"])
     return origin
 
 
@@ -4270,12 +4272,15 @@ def _caddy_site_origin(caddy_config):
     """Return the HTTPS origin of the first site in a Caddy configuration, or ``None``."""
     for line in caddy_config.splitlines():
         # Site blocks start unindented; the directives inside them don't.
-        match = re.fullmatch(r"([^\s{}#][^{}#]*?)\s*\{\s*", line)
-        if match:
-            address = match[1].replace(",", " ").split()[0]
-            if "://" not in address:
-                address = f"https://{address}"
-            return _normalize_public_origin(address)
+        # Snippets start with "(" and named matchers with "@".
+        match = re.fullmatch(r"([^\s{}#(@][^{}#]*?)\s*\{\s*(#.*)?", line)
+        if not match:
+            continue
+        address = match[1].replace(",", " ").split()[0]
+        if "://" not in address:
+            address = f"https://{address}"
+        # Later sites, such as the logs site, belong to something else.
+        return _normalize_public_origin(address)
     return None
 
 
@@ -4312,6 +4317,10 @@ def _ssh_dashboard_endpoint(app, server, config):
         origin = _remote_public_origin(app, server)
     if origin is None:
         origin = get_experiment_url(app, server)
+        log(
+            f"Found no record of {app}'s address on this computer or {server}; "
+            f"assuming {origin}."
+        )
     return DashboardEndpoint(base_url=origin, auth=(user, password))
 
 
@@ -5100,7 +5109,12 @@ def hibernate():
 
 
 @hibernate.command("ssh")
-@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    required=True,
+    callback=_verify_existing_ssh_app,
+    help="Name of the app, as listed by `psynet apps ssh`",
+)
 @option_server
 @click.pass_context
 def hibernate__ssh(ctx, app, server):
@@ -5119,7 +5133,12 @@ def awaken():
 
 
 @awaken.command("ssh")
-@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    required=True,
+    callback=_verify_existing_ssh_app,
+    help="Name of the app, as listed by `psynet apps ssh`",
+)
 @option_server
 @click.pass_context
 def awaken__ssh(ctx, app, server):

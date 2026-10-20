@@ -143,6 +143,16 @@ SERVER_CADDYFILE = (
             },
             "https://lab.example.org",
         ),
+        # A leftover site isn't served by the old root Caddyfile.
+        (
+            {
+                "Caddyfile": OLD_ROOT_CADDYFILE,
+                "caddy.d/dlgr-d8f9f2c4": "old.example {\n}",
+            },
+            "https://musix.example",
+        ),
+        # Without a route for the app, the server's own site isn't its address.
+        ({"Caddyfile": SERVER_CADDYFILE}, "https://dlgr-d8f9f2c4.musix.example"),
         (
             {
                 "Caddyfile": OLD_ROOT_CADDYFILE,
