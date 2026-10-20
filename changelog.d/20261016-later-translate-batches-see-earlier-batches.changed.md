@@ -1,0 +1,1 @@
+When `psynet translate` splits a long file such as a country list into several requests, ChatGPT now sees the translations from the earlier requests as examples, so the whole list uses consistent wording.
