@@ -112,9 +112,9 @@ dallinger ec2 provision \
 dallinger docker-ssh servers upgrade --host <server-name>.cap-experiments.com --yes
 ```
 
-Provisioning doesn't start the shared Caddy, Postgres and Dozzle services, and
-deploys never do, so run `servers upgrade` once before the first deploy. It
-prints the Dozzle password; record that it exists, not its value.
+`servers upgrade` starts the shared services before the first deploy (see
+`deploy/setting_up_a_server`, AWS tab). It prints the Dozzle password; record
+that it exists, not its value.
 
 Deploy:
 

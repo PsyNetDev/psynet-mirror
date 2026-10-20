@@ -41,7 +41,8 @@ served at ``https://<app>.<server DNS name>``. Pass it:
   about such names, and HTTPS certificates for nip.io names are sometimes
   unavailable because of rate limits.
 
-Before deploying, Dallinger checks that ``<app>.<dns-host>`` resolves to the
+Before deploying, Dallinger checks that the experiment's address
+(``<app>.<dns-host>``, or ``<dns-host>`` without ``--app``) resolves to the
 server's IP address and stops with a ``DNS resolution error`` otherwise. A
 wildcard record (``*.my-server.example.org``) covers every app name; with a
 fixed list of records, ``--app`` must be one of them.
@@ -54,7 +55,9 @@ Dallinger offers to destroy any it finds first.
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS
-name>``, always use the server's own DNS name.
+name>``, use the server's own DNS name. The exception is a server registered
+by IP address without a saved DNS name, where the deployment's ``--dns-host``
+also serves as the server's own; ``servers upgrade`` needs the saved name.
 
 .. _ssh_server_cloudflare:
 
@@ -208,54 +211,6 @@ hibernation controller.
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
 
-.. _ssh_server_shared_services:
-
-Shared services
-^^^^^^^^^^^^^^^
-
-Deployments never set up the shared classic-ingress services. Two Dallinger
-commands do:
-
-- ``dallinger docker-ssh servers add`` sets them up on a server that has no
-  ``~/dallinger/docker-compose.yml`` yet, and prints the log viewer's
-  password. It leaves a server that already has that file unchanged.
-- ``dallinger docker-ssh servers upgrade --host <server>`` sets them up or
-  rewrites them. Run it on a server provisioned with ``dallinger ec2
-  provision``, on a server set up by an older Dallinger version, and when a
-  deployment asks for it:
-
-  .. code-block:: bash
-
-      dallinger docker-ssh servers upgrade --host my-server.example.org
-
-  It lists the files it will replace and asks first (``--yes`` skips the
-  question). It keeps a ``<file>.<timestamp>.bak`` copy of each replaced file
-  and keeps the log viewer's password. A root-domain app deployed by an older
-  Dallinger keeps its address. Shared services whose configuration changed are
-  recreated, which briefly interrupts every classic app on the server, so
-  upgrade when no classic experiment is live.
-
-Both commands write the server's ``Caddyfile`` for its own DNS name (see
-:ref:`ssh_server_addresses`), and Caddy gives Let's Encrypt the
-``--contact-email`` saved with the server, which defaults to
-``contact_email_on_error``. Caddy keeps its HTTPS certificates on the
-``caddy_data`` Docker volume, so they survive recreating Caddy. On a server set up by
-an older Dallinger, the first ``servers upgrade`` adds this volume, and Caddy
-may obtain new certificates once. The log viewer moves to
-``https://logs.<server DNS name>`` if it was at ``https://<server>/logs``, so
-that name must also resolve to the server.
-
-``servers add`` (when it sets up a server) and ``servers upgrade`` leave the
-shared ``Caddyfile``, ``docker-compose.yml``, ``dozzle-users.yml`` and
-``.env.json`` read-only. Older Dallinger versions rewrite these files on every
-classic deployment, so on such a server their deployments fail with
-``PermissionError: [Errno 13] Permission denied``, after building the image
-but before changing anything shared. Everyone who deploys to the server must
-therefore use a Dallinger version with ``servers upgrade``. If an older
-version rewrote the files anyway (before they were read-only, or as
-``root``), deployments stop before the build and ask you to run ``servers
-upgrade`` again, which restores them.
-
 .. _ssh_server_files:
 
 Files on the server
@@ -338,6 +293,55 @@ With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
 as before: a classic app's database stays in PostgreSQL until an app with the
 same name is deployed, which replaces it, while a Cloudflare app's volumes are
 deleted.
+
+.. _ssh_server_shared_services:
+
+Setting up and upgrading the shared services
+--------------------------------------------
+
+Deployments never set up the shared classic-ingress services. Two Dallinger
+commands do:
+
+- ``dallinger docker-ssh servers add`` sets them up on a server that has no
+  ``~/dallinger/docker-compose.yml`` yet, and prints the new log viewer
+  password. It leaves a server that already has that file unchanged.
+- ``dallinger docker-ssh servers upgrade --host <server>`` sets them up or
+  rewrites them. Run it on a server provisioned with ``dallinger ec2
+  provision``, on a server set up by an older Dallinger version, and when a
+  deployment asks for it:
+
+  .. code-block:: bash
+
+      dallinger docker-ssh servers upgrade --host my-server.example.org
+
+  It lists the files it will replace and asks first (``--yes`` skips the
+  question). It keeps a ``<file>.<timestamp>.bak`` copy of each replaced file
+  and keeps the log viewer's password. A root-domain app deployed by an older
+  Dallinger keeps its address. Shared services whose configuration changed are
+  recreated, which briefly interrupts every classic app on the server, so
+  upgrade when no classic experiment is live.
+
+Both commands write the server's ``Caddyfile`` for its own DNS name (see
+:ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the
+``--contact-email`` saved with the server, or else ``contact_email_on_error``;
+``servers add`` saves ``contact_email_on_error`` unless you pass
+``--contact-email``. Caddy keeps its HTTPS certificates on the ``caddy_data``
+Docker volume, so they survive recreating Caddy. On a server set up by an
+older Dallinger, the first ``servers upgrade`` adds this volume, and Caddy may
+obtain new certificates once. The log viewer moves to ``https://logs.<server
+DNS name>`` if it was at ``https://<server>/logs``, so that name must also
+resolve to the server.
+
+``servers add`` (when it sets up a server) and ``servers upgrade`` leave the
+shared ``Caddyfile``, ``docker-compose.yml``, ``dozzle-users.yml`` and
+``.env.json`` read-only. Older Dallinger versions rewrite these files on every
+classic deployment, so on such a server their deployments fail with
+``PermissionError: [Errno 13] Permission denied``, after building the image
+but before changing anything shared. Everyone who deploys to the server must
+therefore use a Dallinger version with ``servers upgrade``. If an older
+version rewrote the files anyway (before they were read-only, or as
+``root``), deployments stop before the build and ask you to run ``servers
+upgrade`` again, which restores them.
 
 Updating a running app
 ----------------------

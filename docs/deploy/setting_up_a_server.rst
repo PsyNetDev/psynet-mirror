@@ -254,9 +254,9 @@ Each experiment's dashboard is protected by ``dashboard_user`` and
 ``dashboard_password``. If you leave the password out, a new random one is
 generated for each deployment and printed at the end; ``dallinger ec2
 provision`` requires both to be set. ``contact_email_on_error`` must be a
-valid address: participants see it on error pages, and when you register a
-server, Dallinger saves it as the email the server uses to obtain HTTPS
-certificates from Let's Encrypt (unless you pass ``--contact-email``).
+valid address: participants see it on error pages, and the server uses it to
+obtain HTTPS certificates from Let's Encrypt. ``dallinger docker-ssh servers
+add`` saves it with the server unless you pass ``--contact-email``.
 
 .. code-block:: ini
 
@@ -433,11 +433,16 @@ Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 Upgrading an existing server
 ----------------------------
 
-A server set up by a Dallinger version without ``dallinger docker-ssh servers
-upgrade`` needs that command once, after you update Dallinger (for an
+On a server set up by a Dallinger version without ``dallinger docker-ssh
+servers upgrade``, run that command once, after you update Dallinger (for an
 experiment, by updating its PsyNet pin; see :ref:`dependencies_updating_psynet`).
-Run it when no classic experiment on the server is live, because it briefly
-restarts the shared services:
+Deployments with ``--app`` usually keep working without it (see
+:ref:`deploy_troubleshooting_not_set_up` for when they don't), but the upgrade
+makes the server's HTTPS certificates persist, applies current database
+settings, and lets an experiment be served at the server's own DNS name. It
+also protects the server from older Dallinger versions. Run it when no
+classic experiment on the server is live, because it briefly restarts the
+shared services:
 
 .. code-block:: bash
 
@@ -446,8 +451,9 @@ restarts the shared services:
 Make sure that everyone who deploys to that server updates Dallinger too.
 Older versions can no longer deploy there: their deployments fail with
 ``PermissionError: [Errno 13] Permission denied`` before they change the
-shared files or other experiments. See :ref:`ssh_server_shared_services` for
-what the upgrade changes.
+shared files. An older deployment without ``--app`` may first offer to destroy
+the server's other experiments; decline. See :ref:`ssh_server_shared_services`
+for what the upgrade changes.
 
 Stopping and removing the server
 --------------------------------

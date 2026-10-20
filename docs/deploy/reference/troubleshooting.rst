@@ -21,14 +21,19 @@ server's IP address. If it doesn't, check that the wildcard record
 reusing a name for a new server, wait about five minutes for DNS to update and
 try again.
 
+.. _deploy_troubleshooting_not_set_up:
+
 Server is not set up for this classic-ingress deploy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Deployments don't set up the server's shared services, so Dallinger stops
-before building the image if they are missing or out of date. This happens on a
-server provisioned with ``dallinger ec2 provision``, and on a server set up by
-an older Dallinger. Run the command that the message names, when no classic
-experiment on the server is live, then deploy again:
+before building the image if the deployment needs something they lack. This
+happens on a server provisioned with ``dallinger ec2 provision``. It also
+happens on a server set up by an older Dallinger when the experiment is served
+at the server's own DNS name (no ``--app``), or when the older Dallinger's
+last deployment there was such a root-domain one. Run the command that the
+message names, when no classic experiment on the server is live, then deploy
+again:
 
 .. code:: bash
 
