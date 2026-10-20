@@ -46,7 +46,8 @@ which uses a free port and a temporary database and Redis that are removed
 when it stops (see "Run several experiments at once" in
 `code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
-`psynet debug ssh` and `psynet debug heroku`) prepare in a scratch database
+`psynet debug ssh`, `psynet debug heroku` and `psynet performance-test ssh`)
+prepare in a scratch database
 and Redis of their own, so they leave a running experiment alone, but they
 don't run at the same time as a local server or test session in the same
 directory.

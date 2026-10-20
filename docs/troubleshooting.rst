@@ -72,7 +72,8 @@ its own database, Redis server and port as described in
 its own, so it can run alongside.
 
 Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
-``psynet debug ssh`` and ``psynet debug heroku``) prepare the experiment in a
+``psynet debug ssh``, ``psynet debug heroku`` and
+``psynet performance-test ssh``) prepare the experiment in a
 scratch database and Redis of their own, so they leave a running local
 experiment alone. Because they replace the experiment directory's generated
 files, they don't run at the same time as a local server or test session in

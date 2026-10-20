@@ -1558,8 +1558,8 @@ def kill_psynet_worker_processes():
     pid_list = ", ".join(pids) if pids else "unknown"
     logger.warning(
         "Stopping %s leftover local PsyNet worker process(es) (pids %s). "
-        "Launch paths including remote deploy do this so a stale "
-        "dallinger_heroku_* backend cannot hold this Postgres database.",
+        "Local launches do this so a stale dallinger_heroku_* backend "
+        "cannot hold this Postgres database.",
         len(processes),
         pid_list,
     )
