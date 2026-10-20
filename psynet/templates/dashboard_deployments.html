@@ -698,7 +698,7 @@
                 shortcuts += makeIcon("database-fill-down", url, "Export (" + lastExport(ts) + ")")
             }
 
-            if (experiment.is_ssh_deployment) {
+            if (experiment.logs_url) {
                 shortcuts += makeIcon("terminal-fill", experiment.logs_url, "URL to logs")
             }
             let commentId = `comment-${experiment.secret}`

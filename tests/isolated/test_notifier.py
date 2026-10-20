@@ -1,3 +1,8 @@
+import logging
+from unittest.mock import Mock
+
+import pytest
+
 from psynet.notifier import LoggerNotifier, Notifier
 
 
@@ -13,4 +18,49 @@ def test_logger_notifier_redacts_dashboard_password():
     message = LoggerNotifier.format_credentials(*args)
     assert "s3cr3t" not in message
     assert "Username: `admin`" in message
-    assert "Password: `<redacted>`" in message
+    assert (
+        "Password: not shown in logs "
+        "(printed by the command that launched the experiment)" in message
+    )
+
+
+def test_logger_notifier_leaves_local_dashboard_details_to_the_banner(
+    monkeypatch, caplog
+):
+    monkeypatch.setattr(
+        "psynet.notifier.deployment_info.read_all",
+        lambda: {"secret": "abc", "is_local_deployment": True},
+    )
+
+    class _DemoNotifier(LoggerNotifier):
+        exp = Mock(label="Demo")
+
+    with caplog.at_level(logging.INFO):
+        _DemoNotifier().on_launch()
+
+    assert 'Launched experiment "Demo" (`abc`) locally' in caplog.text
+    assert "Password:" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "ingress, logs_command, expected",
+    [
+        (None, None, "https://logs.lab"),
+        ("classic", None, "https://logs.lab"),
+        ("cloudflare", "ssh lab logs", "`ssh lab logs`"),
+        ("cloudflare", None, "printed at the end of the deployment"),
+    ],
+)
+def test_logs_message_follows_the_app_ingress(
+    monkeypatch, ingress, logs_command, expected
+):
+    info = {"server": "lab", "ingress": ingress, "logs_command": logs_command}
+    monkeypatch.setattr("psynet.deployment_info.read_all", lambda: info)
+    monkeypatch.setattr(
+        "psynet.notifier.get_config", lambda: {"dashboard_password": "pw"}
+    )
+
+    message = Notifier().logs_message
+
+    assert expected in message
+    assert ("Dozzle" in message) is (ingress != "cloudflare")

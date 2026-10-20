@@ -53,13 +53,24 @@ Handoff**), which uses port 5000. Otherwise, stop any other experiment running
 in another terminal or IDE window.
 
 By default, ``psynet debug local`` sessions share port 5000, the PostgreSQL
-database, Redis and Dallinger's development folder, so starting a second one
-stops the first one's worker processes and can break both. (``psynet test
-local`` uses its own database, Redis and port, so it can run alongside.) Stop the other experiment (Ctrl+C
-in its terminal) before starting another; to see what is using the port, run
-``lsof -nP -iTCP:5000 -sTCP:LISTEN``. To keep both running, give one of them
+database, Redis and Dallinger's development folder. A second ``psynet debug
+local`` or ``psynet deploy local`` therefore refuses to start, without
+touching the running one, while another uses the same port, or the same
+database on another port, even when another user started it. It also refuses
+while a PsyNet test session (``psynet test local`` or pytest) has claimed the
+port, or while tests or another ``psynet debug`` (for example an
+``--isolated`` one) use the same directory. (Leftover
+worker processes from a server that was killed are stopped
+automatically.) Stop the other experiment (Ctrl+C in its terminal) first; to
+see what is using the port, run ``lsof -nP -iTCP:5000 -sTCP:LISTEN``. The
+check reads ``base_port`` from the environment, ``config.txt`` and
+``~/.dallingerconfig``, not from the experiment class's ``config``
+dictionary, and ``--docker`` always uses port 5000. To keep both running,
+start the second with ``psynet debug local --isolated``, or give one of them
 its own database, Redis server and port as described in
-:ref:`running_several_local_experiments`.
+:ref:`running_several_local_experiments`. ``psynet test local`` already uses
+its own, so it can run alongside.
+
 Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
 ``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
 and Redis while they prepare the experiment, so they wipe a local experiment

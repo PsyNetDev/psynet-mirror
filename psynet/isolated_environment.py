@@ -25,6 +25,10 @@ PsyNet's process cleanup already only targets processes that use the current
 ``DATABASE_URL`` (see ``psynet.command_line.uses_current_database``), so once
 the URLs differ the tests leave a running ``psynet debug local`` alone.
 
+``psynet debug local --isolated`` gives a debug server the same kind of
+environment, so that it runs next to other servers and test sessions; like a
+test session's, its database and Redis are removed when it stops.
+
 Design constraints
 ------------------
 Dallinger connects to PostgreSQL and Redis when ``dallinger.db`` is first
@@ -35,8 +39,10 @@ module therefore imports nothing from Dallinger. It is used in two places:
   pytest configuration and the experiment ``pytest.ini`` template load with
   ``-p``. Plugins named with ``-p`` are imported before auto-loaded plugins
   such as ``pytest_dallinger`` and ``pytest_psynet``.
-- ``psynet test local``, which has already imported Dallinger by the time it
-  runs, and so re-runs itself in a child process inside the environment.
+- ``psynet test local``, ``psynet performance-test local`` and
+  ``psynet debug local --isolated``, which have already imported Dallinger
+  by the time they run, and so re-run themselves in a child process inside
+  the environment.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
@@ -47,9 +53,9 @@ are isolated already.
 
 Isolation separates services, not files: tests still scaffold and remove
 generated files in the experiment directory, so a ``psynet debug`` serving the
-same directory breaks. :func:`check_no_debug_server` refuses to start in that
-case; the ``in_experiment_directory`` fixture also calls it, because tests
-started from elsewhere enter the experiment directory later.
+same directory breaks. Servers and tests therefore share the directory lock
+in :mod:`psynet.testing.locks`: tests wait for each other, but refuse to start
+while a server holds it.
 """
 
 import fcntl
@@ -57,6 +63,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -73,6 +80,41 @@ DEFAULT_DATABASE_URL = "postgresql://dallinger:dallinger@localhost/dallinger"
 DEFAULT_REDIS_URL = "redis://localhost:6379"
 _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
+
+
+def local_base_port(environ=None):
+    """Return Dallinger's ``base_port`` without importing the experiment.
+
+    Follows Dallinger's precedence: the ``base_port`` environment variable,
+    then ``config.txt`` in the current directory, then ``~/.dallingerconfig``,
+    then 5000. Like Dallinger, a later section of a file overrides an earlier
+    one. A ``base_port`` set in the experiment class's ``config`` dictionary is
+    not seen.
+
+    Raises
+    ------
+    ValueError
+        If a configuration file can't be parsed or ``base_port`` isn't a number.
+    """
+    import configparser
+
+    environ = os.environ if environ is None else environ
+    if "base_port" in environ:
+        return int(environ["base_port"])
+    for path in ("config.txt", os.path.expanduser("~/.dallingerconfig")):
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path)
+        except configparser.Error as e:
+            raise ValueError(f"Could not read {path}: {e}") from e
+        values = [
+            parser[s]["base_port"]
+            for s in parser.sections()
+            if "base_port" in parser[s]
+        ]
+        if values:
+            return int(values[-1])
+    return _DEFAULT_BASE_PORT
 
 
 def should_isolate(environ=None):
@@ -111,58 +153,6 @@ def _in_ci(environ=None):
 
 def _is_configured(environ):
     return bool(environ.get(READY_ENV_VAR)) or _in_ci(environ)
-
-
-def check_no_debug_server(directory):
-    """Raise ``RuntimeError`` if a ``psynet debug`` process runs in ``directory``.
-
-    Tests replace the generated files in the experiment directory, which
-    breaks a debug server that serves it, even when the services are isolated.
-    Servers that another test session started there are skipped: they run with
-    the test environment already set up, or their session holds the directory's
-    lock, which this session waits for.
-    """
-    import psutil
-
-    directory = os.path.realpath(directory)
-    for process in psutil.process_iter(["cmdline", "cwd"]):
-        cmdline = process.info["cmdline"] or []
-        cwd = process.info["cwd"]
-        if not (
-            cwd and os.path.realpath(cwd) == directory and _is_psynet_debug(cmdline)
-        ):
-            continue
-        try:
-            environ = process.environ()
-        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-            environ = {}
-        if not _started_by_test_session(environ, directory):
-            raise RuntimeError(
-                f"psynet debug (PID {process.pid}) is serving {directory}, and the "
-                "tests would replace its generated files. Stop it, or run the tests "
-                "from a copy of the experiment such as a git worktree."
-            )
-
-
-def _started_by_test_session(environ, directory):
-    """Return whether a process with ``environ`` belongs to a test session.
-
-    Servers that a session's fixtures start inherit :data:`READY_ENV_VAR`;
-    CI slots that hold the directory's lock pass it down instead.
-    """
-    from .testing.locks import HELD_LOCK_ENV_VAR
-
-    held_lock = environ.get(HELD_LOCK_ENV_VAR)
-    return bool(environ.get(READY_ENV_VAR)) or (
-        held_lock is not None and os.path.realpath(held_lock) == directory
-    )
-
-
-def _is_psynet_debug(cmdline):
-    return any(
-        os.path.basename(arg) == "psynet" and cmdline[i + 1 : i + 2] == ["debug"]
-        for i, arg in enumerate(cmdline)
-    )
 
 
 #: PostgreSQL's SQLSTATE for ``too_many_connections``.
@@ -240,8 +230,9 @@ class IsolatedEnvironment:
         Raises
         ------
         IsolationError
-            If no free port is found, PostgreSQL can't be reached, the
-            test database can't be created or Redis doesn't start; the message
+            If ``base_port`` can't be read, no free port is found, PostgreSQL
+            can't be reached, the test database can't be created or Redis
+            doesn't start; the message
             says how to opt out. Other errors propagate unchanged, because
             opting out would not fix them.
         """
@@ -249,7 +240,7 @@ class IsolatedEnvironment:
 
         try:
             return cls._start(environ)
-        except (OSError, RuntimeError, psycopg2.Error) as e:
+        except (OSError, RuntimeError, ValueError, psycopg2.Error) as e:
             raise IsolationError(e) from e
 
     @classmethod
@@ -258,7 +249,7 @@ class IsolatedEnvironment:
         database_url = environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         redis_url = environ.get("REDIS_URL", DEFAULT_REDIS_URL)
         private_redis = shutil.which("redis-server") is not None
-        shared_base_port = int(environ.get("base_port", _DEFAULT_BASE_PORT))
+        shared_base_port = local_base_port(environ)
         shared_redis_port = urlsplit(redis_url).port or 6379
 
         def redis_port(web_port):
@@ -473,15 +464,72 @@ def _port_is_free(port):
         return True
 
 
-def port_lock_path(port):
-    """Return the lock file that a session holds while it uses ``port``.
+def lock_path(name):
+    """Return the path of the lock file ``<name>.lock``.
 
-    In ``/tmp`` rather than ``TMPDIR``, so that sessions with different
+    In ``/tmp`` rather than ``TMPDIR``, so that processes with different
     temporary directories still see each other's claims, like the
     development folders that are also in ``/tmp``.
     """
     root = "/tmp" if os.access("/tmp", os.W_OK) else tempfile.gettempdir()
-    return os.path.join(root, f"psynet-test-{port}.lock")
+    return os.path.join(root, f"{name}.lock")
+
+
+def port_lock_path(port):
+    """Return the lock file that a test session holds while it uses ``port``."""
+    return lock_path(f"psynet-test-{port}")
+
+
+def open_lock_file(path):
+    """Open, creating if needed, the lock file at ``path`` without locking it.
+
+    Another user's lock file is opened read-only, which is enough for
+    ``flock``; such a lock file is not writable. Any local user can
+    deliberately hold or block a lock name in ``/tmp``: these locks prevent
+    accidents, not attacks.
+
+    Raises
+    ------
+    OSError
+        If the file can't be opened at all or isn't a regular file.
+    """
+    # Not following symlinks or truncating, so a link planted in /tmp
+    # can't make this empty someone's file; non-blocking, so a FIFO can't hang.
+    flags = os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | flags, 0o644)
+        mode = "r+"
+    except PermissionError:
+        # Without O_CREAT, so Linux's fs.protected_regular allows it in /tmp.
+        fd = os.open(path, os.O_RDONLY | flags)
+        mode = "r"
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(f"{path} is not a regular file.")
+    return os.fdopen(fd, mode)
+
+
+def try_lock(path):
+    """Take an exclusive lock on the file at ``path`` without waiting.
+
+    Returns
+    -------
+    file or None
+        The open lock file (see :func:`open_lock_file`), which holds the lock
+        until it is closed, or None if another process holds the lock.
+
+    Raises
+    ------
+    OSError
+        If the file can't be opened at all or isn't a regular file.
+    """
+    lock = open_lock_file(path)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        return None
+    return lock
 
 
 def _claim_port(start, also_free=None):
@@ -495,18 +543,11 @@ def _claim_port(start, also_free=None):
     """
     for port in range(start, start + 1000, 10):
         try:
-            # Not following symlinks or truncating, so a link planted in /tmp
-            # can't make this empty someone's file.
-            fd = os.open(
-                port_lock_path(port), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o644
-            )
+            lock = try_lock(port_lock_path(port))
         except OSError:
+            # An unopenable claim file counts as taken.
             continue
-        lock = os.fdopen(fd, "r+")
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
+        if lock is None:
             continue
         if _port_is_free(port) and (
             also_free is None or _port_is_free(also_free(port))

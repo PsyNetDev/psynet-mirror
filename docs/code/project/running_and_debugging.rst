@@ -40,10 +40,26 @@ another experiment, and run several test sessions at once.
 
 By default every ``psynet debug local`` uses port 5000, the ``dallinger``
 PostgreSQL database, the Redis server on port 6379 and the
-``/tmp/dallinger_develop`` folder, so only one can run at a time. To run
-another one alongside it, for example when several coding agents test
-different experiments on one machine, give the second terminal its own
-database, Redis server, port and development folder:
+``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. To run
+another alongside it, for example when several coding agents test
+different experiments on one machine, add ``--isolated``:
+
+.. code-block:: console
+
+    $ psynet debug local --isolated
+    ❯❯ Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
+    To use this server's data from another terminal (for example with psynet export local), first run: export DATABASE_URL=... REDIS_URL=... base_port=5100
+
+Like a test session, the server then gets a free port from 5100 upwards, a
+fresh database and its own Redis server (or, without ``redis-server`` on
+your ``PATH``, a spare database number on the shared one). These are
+temporary: stopping the server with :kbd:`Ctrl+C` drops the database and
+stops or empties Redis, so export any data you want to keep while it runs.
+``--isolated`` doesn't work with ``--docker``, which always uses port 5000.
+
+To keep a second server's data between runs, give its terminal its own
+database, Redis server, port and development folder instead:
 
 .. code-block:: bash
 
@@ -56,7 +72,9 @@ database, Redis server, port and development folder:
     export dallinger_develop_directory=/tmp/dallinger_develop_2
 
 ``psynet debug local`` in that terminal then serves on port 5010 and leaves
-the other experiment's processes and browsers alone.
+the other experiment's processes and browsers alone. Change all four
+settings: the startup check only catches a shared port or database, and two
+runs that share a development folder overwrite each other's files.
 Use a separate Redis server rather than another database number on the same
 server: Redis delivers PsyNet's live notifications (for example waking a
 participant who waits on a page) to every database on a server, so two
@@ -64,9 +82,10 @@ experiments sharing one would wake each other's participants.
 
 Two runs in the same experiment directory still conflict, because each
 creates and removes generated files there. Tests wait for each other
-automatically and refuse to start while ``psynet debug`` serves the same
-directory; to debug and test at once, or to debug twice, use a separate copy
-(such as a git worktree) of the experiment.
+automatically, but tests and servers refuse to start while a server
+uses the same directory, and servers refuse while tests use it; to debug and
+test at once, or to debug twice, use a separate copy (such as a git worktree)
+of the experiment.
 
 Set a breakpoint
 ----------------
@@ -101,6 +120,13 @@ Errors appear in the terminal running ``psynet debug local``, with a
 traceback showing where they happened. If the traceback ends in PsyNet code,
 read that part of the PsyNet source to see what it expected. A breakpoint
 just before the failing line shows the values of the local variables.
+
+If ``experiment.py`` or a module it imports fails to load, PsyNet prints a
+shorter traceback: the lines from your experiment folder, plus the line where
+the error was raised. To see the full traceback, run the command again with
+``PSYNET_SHOW_TRACEBACK=1`` (any value other than ``0``, ``false`` or ``no``
+works), for example
+``PSYNET_SHOW_TRACEBACK=1 psynet debug local``.
 
 If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the

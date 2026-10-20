@@ -27,6 +27,15 @@ from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
 
+@pytest.fixture(autouse=True)
+def _performance_logs_in_tmp_path(tmp_path_factory, monkeypatch):
+    """Keep the logs these tests write out of ``~/psynet-data``."""
+    directory = tmp_path_factory.mktemp("performance-logs")
+    monkeypatch.setattr(
+        "psynet.command_line._performance_log_directory", lambda: directory
+    )
+
+
 def _base_result(**overrides):
     """Return a minimal valid result for format_test_results."""
     fields = {
@@ -322,6 +331,7 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
     output = capsys.readouterr().out
     assert "Running: 0" in output
     assert "Failed by experiment: 3" in output
+    assert "Avg: -" in output
     assert "\r" not in output
 
 
@@ -2052,7 +2062,9 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
         ),
     ]
 
-    lines = format_performance_summary(results, label="rating", elapsed_s=3720)
+    lines = format_performance_summary(
+        results, label="rating", elapsed_s=3720, open_link=True
+    )
     text = _join(lines)
 
     assert "rating: 3 tests, 1 h 02 min" in text
@@ -2070,6 +2082,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
+        "  To enforce it, set max_concurrent_participants = 416 in "
+        "Experiment.variables.\n"
         "Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) "
         "failed, over the 1% limit.\n"
         "  Errors at 560: 10 x OperationalError.\n"
@@ -2081,6 +2095,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     coloured = _join(format_performance_summary(results, terminal=True))
+    # Without an open-link recruiter, the cap can't be enforced, so it isn't suggested.
+    assert "max_concurrent_participants" not in coloured
     assert "m10 (1.8%)" in coloured and " 1 (" in coloured and "m1 (" not in coloured
 
 

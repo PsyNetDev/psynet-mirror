@@ -165,9 +165,7 @@ class _Slot:
                 "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
             )
         try:
-            self._environment = IsolatedEnvironment.start(
-                {**os.environ, "base_port": str(_caller_base_port())}
-            )
+            self._environment = IsolatedEnvironment.start()
         except IsolationError as e:
             raise click.ClickException(f"Slot {index}: {e}") from e
         self.env = self._environment.env
@@ -176,18 +174,6 @@ class _Slot:
         if self._environment is not None:
             self._environment.close()
             self._environment = None
-
-
-def _caller_base_port():
-    """Return the caller's ``base_port``, from the environment or Dallinger's config files."""
-    if "base_port" in os.environ:
-        return int(os.environ["base_port"])
-    from dallinger.config import get_config
-
-    config = get_config()
-    if not config.ready:
-        config.load()
-    return config.get("base_port")
 
 
 def _junit_args(item, junit_dir, python_version):

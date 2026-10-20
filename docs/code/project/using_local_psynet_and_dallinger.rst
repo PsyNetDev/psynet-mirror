@@ -55,23 +55,31 @@ image:
 
     psynet debug ssh --app my-test --use-local-psynet
 
-The experiment's ``Dockerfile`` must be recent enough to install the wheel;
-if PsyNet says it isn't, run ``psynet scripts update``. See
+``psynet performance-test ssh`` takes the same option for the app it
+deploys. The experiment's ``Dockerfile`` must be recent enough to install
+the wheel; if PsyNet says it isn't, run ``psynet scripts update``. See
 :doc:`/deploy/reference/ssh_server` for details. ``psynet deploy`` does not
 offer this, so live deployments always use a pin.
 
 Use a local Dallinger
 ---------------------
 
-Install the checkout after ``psynet setup``:
+In the experiment directory, with its virtual environment active, install
+the checkout in editable mode:
 
 .. code-block:: bash
 
     uv pip install -e ~/Dallinger
 
-``psynet setup`` synchronizes the environment with ``constraints.txt`` and
-so replaces the editable Dallinger with the pinned version. Reinstall it
-after each ``psynet setup``.
+``psynet setup`` keeps this editable Dallinger. It synchronizes the
+environment with ``constraints.txt`` and then reinstalls the checkout, which
+also installs any new dependencies the checkout needs.
+``requirements.txt`` and ``constraints.txt`` still record PsyNet's own
+Dallinger pin, so deployments use that pinned version, not your checkout.
+
+``psynet setup --psynet-source commit`` is the exception: it replaces the
+editable Dallinger with the pinned version. Run
+``uv pip install -e ~/Dallinger`` afterwards to resume local development.
 
 To deploy with a Dallinger branch, push it and add a pin to
 ``requirements.txt``, then run ``psynet setup``:

@@ -1,9 +1,7 @@
+import fcntl
 import os
 import shutil
 import socket
-import subprocess
-import sys
-import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,11 +16,20 @@ from psynet.isolated_environment import (
     IsolationError,
     _claim_port,
     _spare_redis_database,
-    check_no_debug_server,
+    open_lock_file,
     postgres_connection_limit_message,
     shared_environment_warning,
     should_isolate,
     start_redis_server,
+    try_lock,
+)
+from psynet.testing.locks import (
+    HELD_LOCK_ENV_VAR,
+    SERVER,
+    TEST_SESSION,
+    DirectoryInUseError,
+    check_no_server,
+    experiment_directory_lock,
 )
 
 
@@ -60,49 +67,49 @@ def test_shared_environment_warns_once():
     assert shared_environment_warning({}) is None
 
 
-def test_tests_refuse_to_run_beside_a_debug_server_in_their_directory(tmp_path):
-    """A user's debug server is refused; one that another test session started isn't."""
-    from psynet.testing.locks import HELD_LOCK_ENV_VAR
-
-    fake_psynet = tmp_path / "psynet"
-    fake_psynet.write_text("import time\ntime.sleep(60)\n")
-    shell = {
-        k: v
-        for k, v in os.environ.items()
-        if k not in (HELD_LOCK_ENV_VAR, READY_ENV_VAR)
-    }
-
-    def spawn(env):
-        return subprocess.Popen(
-            [sys.executable, str(fake_psynet), "debug", "local"], cwd=tmp_path, env=env
-        )
-
-    # Servers from a session's fixtures (whose env is copied from the session
-    # before it takes the directory lock), and from a CI slot holding the lock.
-    processes = [
-        spawn({**shell, READY_ENV_VAR: "1"}),
-        spawn({**shell, HELD_LOCK_ENV_VAR: str(tmp_path)}),
-    ]
-    try:
-        time.sleep(0.5)
-        check_no_debug_server(tmp_path)
-        user_server = spawn(shell)
-        processes.append(user_server)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            try:
-                check_no_debug_server(tmp_path)
-            except RuntimeError as e:
-                assert f"PID {user_server.pid}" in str(e)
-                break
-            time.sleep(0.1)
+@pytest.mark.parametrize(
+    "holder, kind", [(SERVER, TEST_SESSION), (SERVER, SERVER), (TEST_SESSION, SERVER)]
+)
+def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
+    tmp_path, monkeypatch, holder, kind
+):
+    """Tests wait only for other tests; anything else in the directory is refused."""
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    with experiment_directory_lock(tmp_path, export=False, kind=holder):
+        message = rf"A PsyNet {holder} \(PID {os.getpid()}\) is using"
+        with pytest.raises(DirectoryInUseError, match=message):
+            with experiment_directory_lock(tmp_path, kind=kind):
+                pass
+        if holder == SERVER:
+            with pytest.raises(DirectoryInUseError, match=message):
+                check_no_server(tmp_path)
         else:
-            pytest.fail("the debug process was not detected")
-        check_no_debug_server(tmp_path / "..")
-    finally:
-        for process in processes:
-            process.kill()
-            process.wait()
+            check_no_server(tmp_path)
+    with experiment_directory_lock(tmp_path, kind=kind):
+        check_no_server(tmp_path)
+
+
+def test_a_holder_that_records_nothing_is_waited_out_briefly_then_refused(
+    tmp_path, monkeypatch
+):
+    """Covers a probe in progress, and a lock file that its holder couldn't write."""
+    import threading
+
+    from psynet.testing.locks import _lock_path
+
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    probe = open_lock_file(_lock_path(os.path.realpath(tmp_path)))
+    fcntl.flock(probe, fcntl.LOCK_EX)
+    threading.Timer(0.3, probe.close).start()
+    with experiment_directory_lock(tmp_path, kind=SERVER):
+        pass
+
+    with open_lock_file(_lock_path(os.path.realpath(tmp_path))) as silent:
+        fcntl.flock(silent, fcntl.LOCK_EX)
+        silent.truncate()
+        with pytest.raises(DirectoryInUseError, match="Another PsyNet process"):
+            with experiment_directory_lock(tmp_path):
+                pass
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
@@ -164,6 +171,27 @@ def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
 
     assert port != 6990
     assert target.read_text() == "keep me"
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root can open read-only files for writing",
+)
+def test_read_only_lock_files_still_lock(tmp_path):
+    """Another user's lock file can't be opened for writing, but still locks."""
+    path = tmp_path / "other-user.lock"
+    path.touch(mode=0o444)
+
+    with try_lock(str(path)) as lock:
+        assert not lock.writable()
+        assert try_lock(str(path)) is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs os.mkfifo")
+def test_lock_files_must_be_regular_files(tmp_path):
+    os.mkfifo(tmp_path / "fifo.lock", 0o444)
+    with pytest.raises(OSError, match="not a regular file"):
+        try_lock(str(tmp_path / "fifo.lock"))
 
 
 def test_spare_redis_databases_avoid_the_shared_one():

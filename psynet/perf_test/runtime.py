@@ -725,7 +725,9 @@ class PerformanceTester:
         # Calculate average response time from recent bot durations
         recent_durations = [d for _, d, _ in bot_state.bot_durations[-5:]]
         avg_duration = (
-            sum(recent_durations) / len(recent_durations) if recent_durations else 0
+            f"{sum(recent_durations) / len(recent_durations):.1f}s"
+            if recent_durations
+            else "-"
         )
 
         # Time remaining
@@ -735,7 +737,7 @@ class PerformanceTester:
 
         # Build status line
         failed = bot_state.bots_failed_during_test
-        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Failed by experiment: {failed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration:.1f}s | \u23f3 {mins_left}:{secs_left:02d} left"
+        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Failed by experiment: {failed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration} | \u23f3 {mins_left}:{secs_left:02d} left"
 
         if not interactive:
             print(status, flush=True)

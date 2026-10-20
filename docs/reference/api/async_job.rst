@@ -97,7 +97,8 @@ deployments:
   checked, the export prints a warning and completes;
 * ``psynet destroy ssh`` wakes the app if it is asleep, then refuses to
   destroy it while jobs are pending, or asks you to confirm when run
-  interactively.
+  interactively. It also refuses if the jobs cannot be checked, unless
+  the app was deployed with ``psynet debug ssh`` (see below).
 
 Wait for the backlog to finish, export again, and then destroy the app. For
 example, ``psynet destroy ssh`` prints:
@@ -111,9 +112,21 @@ example, ``psynet destroy ssh`` prints:
 
 Pass ``--discard-pending-jobs`` to destroy the app anyway, for example when
 the jobs can never finish; the command still says how many jobs it discards.
-If the app cannot be checked, for example because it runs an older PsyNet
-version or does not answer, the command prints a warning and destroys the
-app as before.
+The check queries the app's database from its web container over SSH, so it
+works whatever the app's ingress, including a Cloudflare tunnel that is
+briefly down. The app cannot be checked if, for example, it runs an older
+PsyNet version, its web container is not running, or it does not answer
+within 30 seconds. ``psynet destroy ssh`` then says why and does not destroy
+the app: start its web container and run the command again, or check in the
+app's logs that its jobs have finished and pass ``--discard-pending-jobs``.
+Apps deployed with ``psynet debug ssh`` or ``psynet performance-test ssh``
+are destroyed anyway, because debug apps' data is treated as disposable. This includes a debug app that recruits real participants, for
+example through Prolific, so deploy real studies with ``psynet deploy ssh``.
+PsyNet recognises these apps by the ``debug_ssh_app`` config variable that
+``psynet debug ssh`` sets; apps deployed by older PsyNet versions lack it
+and are refused like any other app.
+When ``destroy ssh`` destroys several apps, it skips those it refuses and
+destroys the others, then exits with status 1.
 
 A job is pending from :meth:`~psynet.async_job.AsyncJob.enqueue` until it
 finishes, fails, times out or is cancelled, and

@@ -1,22 +1,24 @@
 import collections
 import datetime
+import difflib
 import functools
-import getpass
 import hashlib
 import importlib
+import io
 import json
 import os
 import re
 import shlex
 import shutil
 import signal
-import stat
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext, redirect_stdout
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -50,6 +52,7 @@ from psynet.version import (
     check_installed_dallinger_version_is_recommended,
     is_release_version_specifier,
     specified_version,
+    spinner,
 )
 
 from . import deployment_info
@@ -68,7 +71,6 @@ from .experiment_scaffold import (
     _remove_obsolete_generated_docker_scripts,
     _remove_obsolete_generated_dockerignore,
     _without_deployment_policy_review,
-    dockertag_contents,
     ensure_deployment_policy,
     get_psynet_requirement,
     is_unambiguous_psynet_requirement,
@@ -81,9 +83,14 @@ from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
+from .server_logs import (
+    compose_ingress,
+    logs_command,
+    server_ingress,
+    where_to_read_logs,
+)
 from .utils import (
     format_bytes,
-    get_args,
     get_experiment_url,
     get_logger,
     get_package_name,
@@ -204,10 +211,6 @@ def clean_sys_modules():
         del sys.modules[key]
 
 
-def update_docker_tag():
-    Path("Dockertag").write_text(dockertag_contents())
-
-
 @click.group()
 @click.version_option(
     __version__,
@@ -240,6 +243,9 @@ def reset_console():
     # The 'read' command is a UNIX command that takes an arbitrary input from the user.
     import subprocess
 
+    # Without a terminal there is nothing to repair, and stty would complain.
+    if sys.stdin is None or not sys.stdin.isatty():
+        return
     try:
         # It seems that the timeout must be at least 1.0 s for this to work reliably
         subprocess.call("read NULL", timeout=1.0, shell=True)
@@ -345,7 +351,6 @@ def _prepare(archive=None):
     experiment.pre_deploy(redeploying_from_archive=archive is not None)
     db.session.flush()
     clean_sys_modules()
-    update_docker_tag()
 
     db.session.commit()
 
@@ -355,7 +360,21 @@ def _prepare(archive=None):
 #########
 
 
-def _experiment_variables(connection, echo=False):
+def _no_experiment_message(location, app):
+    """Explain that the experiment table is empty, depending on where the database is."""
+    if location == "local":
+        return (
+            "The local database has no experiment yet. Start one with "
+            "'psynet debug local' and wait for 'Experiment launch complete!' "
+            "before exporting."
+        )
+    return (
+        f"The database of app '{app}' has no experiment yet; "
+        "it may not have finished launching."
+    )
+
+
+def _experiment_variables(connection, echo=False, location="local", app=None):
     cursor = None
     try:
         cursor = connection.cursor()
@@ -363,9 +382,7 @@ def _experiment_variables(connection, echo=False):
         records = cursor.fetchall()
 
         if len(records) == 0:
-            raise RuntimeError(
-                "No rows found in the `experiment` table, maybe the experiment isn't launched yet?"
-            )
+            raise click.ClickException(_no_experiment_message(location, app))
 
         assert len(records) == 1
 
@@ -374,9 +391,10 @@ def _experiment_variables(connection, echo=False):
             click.echo(serialize(_vars, indent=4))
         return _vars
     except psycopg2.errors.UndefinedTable:
-        click.echo(
-            "Could not find the table `experiment` on the remote database. This could mean that the experiment isn't "
-            "launched yet, or it could mean that the experiment is using an incompatible version of PsyNet."
+        raise click.ClickException(
+            "Could not find the table `experiment` on the experiment database. "
+            "This could mean that the experiment isn't launched yet, or it could "
+            "mean that the experiment is using an incompatible version of PsyNet."
         )
     finally:
         if cursor is not None:
@@ -409,7 +427,7 @@ def experiment_variables(location, app, server):
     Show the variables of the experiment.
     """
     with db_connection(location, app, server) as connection:
-        return _experiment_variables(connection, echo=True)
+        return _experiment_variables(connection, echo=True, location=location, app=app)
 
 
 def _read_experiment_variables(location, app=None, server=None):
@@ -419,7 +437,7 @@ def _read_experiment_variables(location, app=None, server=None):
     so callers should avoid it unless they really need the variables.
     """
     with db_connection(location, app, server) as connection:
-        return _experiment_variables(connection)
+        return _experiment_variables(connection, location=location, app=app)
 
 
 @contextmanager
@@ -427,25 +445,62 @@ def db_connection(location, app=None, server=None):
     """
     Get a database connection.
     """
+    if location == "ssh":
+        if app is None:
+            raise click.UsageError("Missing parameter: --app")
+        # Resolved here so that the error message can name the server;
+        # get_db_uri then only normalizes the name, without prompting again.
+        server = resolve_server_option(
+            click.get_current_context(silent=True), None, server
+        )
+    connection = None
     try:
-        connection = None
         with get_db_uri(location, app, server) as db_uri:
-            if "postgresql://" in db_uri or "postgres://" in db_uri:
-                connection = psycopg2.connect(dsn=db_uri)
-            else:
-                connection = psycopg2.connect(database=db_uri, user="dallinger")
+            try:
+                if "postgresql://" in db_uri or "postgres://" in db_uri:
+                    connection = psycopg2.connect(dsn=db_uri)
+                else:
+                    connection = psycopg2.connect(database=db_uri, user="dallinger")
+            except psycopg2.OperationalError as err:
+                if any(
+                    text in str(err)
+                    for text in ("Connection refused", "Is the server running")
+                ):
+                    raise click.ClickException(
+                        _connection_refused_message(location, db_uri, app, server)
+                    ) from err
+                raise
             yield connection
-    except psycopg2.OperationalError as err:
-        if "Connection refused" in str(err):
-            raise ConnectionError(
-                f"Couldn't connect to the experiment database. Are you sure the app name ({app}) is correct? "
-                "You can list all valid apps using the following command:\n\tpsynet apps ssh"
-            )
-        else:
-            raise
     finally:
         if connection:
             connection.close()
+
+
+def _connection_refused_message(location, db_uri, app, server):
+    """Explain a refused database connection without revealing credentials."""
+    from .services import _host_port_from_url
+
+    if location == "local":
+        try:
+            host, port = _host_port_from_url(
+                db_uri, schemes={"postgres", "postgresql"}, default_port=5432
+            )
+            address = f" at {host}:{port}"
+        except ValueError:
+            address = ""
+        return (
+            f"Couldn't connect to the local PostgreSQL database{address}. "
+            "Check that it is running with:\n  psynet services check"
+        )
+    if location == "ssh":
+        return (
+            f"Couldn't connect to the database of app '{app}' on {server}. "
+            f"List the apps on that server with:\n  psynet apps ssh --server {server}"
+        )
+    return (
+        f"Couldn't connect to the database of Heroku app '{app}'. "
+        "Check the app name with 'heroku apps'."
+    )
 
 
 @contextmanager
@@ -531,23 +586,188 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             "It is not possible to select both --legacy and --docker modes simultaneously."
         )
 
-    _pre_launch(ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None)
-    _cleanup_before_debug()
+    with _refuse_if_local_server_running(docker=docker):
+        _pre_launch(
+            ctx, mode=mode, archive=archive, local_=True, docker=docker, app=None
+        )
+        _cleanup_before_debug()
+
+        try:
+            # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
+            if legacy:
+                # Warning: _debug_legacy can fail if the experiment directory is imported before _debug_legacy is called.
+                # We therefore need to avoid accessing config variables, calling import_local_experiment, etc.
+                # This problem manifests specifically when the experiment contains custom tables.
+                _debug_legacy(ctx, archive=None, no_browsers=no_browsers)
+            elif docker:
+                _debug_docker(ctx, archive=None, no_browsers=no_browsers)
+            else:
+                _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
+        finally:
+            kill_psynet_worker_processes()
+            _cleanup_exp_directory()
+
+
+_SEVERAL_EXPERIMENTS_DOCS_PAGE = "code/project/running_and_debugging"
+
+
+@contextmanager
+def _refuse_if_local_server_running(docker=False):
+    """Refuse to start while another local server uses this port, database or directory.
+
+    Starting resets the database, Redis and development folder and stops
+    worker processes, so it must fail before any of that happens. Lock files,
+    shared by all users and held for the whole run, catch a server that
+    hasn't bound its port yet, and a test session or ``--isolated`` debug
+    server that has claimed the port; the connection test catches other
+    programs on the port. The experiment directory's lock
+    (:func:`psynet.testing.locks.experiment_directory_lock`), held as a
+    server, refuses a test session or another server, such as an
+    ``--isolated`` one, in the same directory, because both replace its
+    generated files.
+    Leftover workers that use this database, for example from a server that
+    was killed, are stopped first, as starting would stop them anyway. Test
+    sessions skip the checks: their environment is their own.
+
+    Parameters
+    ----------
+    docker : bool
+        Whether the server runs in Docker, which always publishes port 5000.
+
+    Raises
+    ------
+    click.ClickException
+        If the port or the database is in use, ``psynet debug`` serves this
+        directory, or a lock file can't be opened.
+    """
+    from .isolated_environment import READY_ENV_VAR
+
+    if os.environ.get(READY_ENV_VAR):
+        yield
+        return
 
     try:
-        # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
-        if legacy:
-            # Warning: _debug_legacy can fail if the experiment directory is imported before _debug_legacy is called.
-            # We therefore need to avoid accessing config variables, calling import_local_experiment, etc.
-            # This problem manifests specifically when the experiment contains custom tables.
-            _debug_legacy(ctx, archive=None, no_browsers=no_browsers)
-        elif docker:
-            _debug_docker(ctx, archive=None, no_browsers=no_browsers)
-        else:
-            _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
-    finally:
-        kill_psynet_worker_processes()
-        _cleanup_exp_directory()
+        port = 5000 if docker else _local_base_port()
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    from .isolated_environment import lock_path, port_lock_path
+
+    with ExitStack() as stack:
+        path = lock_path(f"psynet-debug-{port}")
+        port_lock = _hold_run_lock(stack, path)
+        if port_lock is None:
+            raise click.ClickException(
+                f"Another local PsyNet server{_lock_owner(path)} is using port "
+                f"{port}. Stop it with Ctrl+C in its terminal. "
+                f"{_several_experiments_advice()}"
+            )
+        if _hold_run_lock(stack, port_lock_path(port)) is None:
+            raise click.ClickException(
+                f"A PsyNet test session or isolated debug server is using port "
+                f"{port}. Wait for it to finish. {_several_experiments_advice()}"
+            )
+        from .testing.locks import SERVER
+
+        _hold_experiment_directory(stack, SERVER)
+        path = lock_path(f"psynet-debug-db-{_database_url_tag()}")
+        database_lock = _hold_run_lock(stack, path)
+        if database_lock is None:
+            database = _url_without_password(_current_database_url())
+            raise click.ClickException(
+                f"Another local PsyNet server{_lock_owner(path)} is using the "
+                f"database {database}, so starting here would wipe its data. "
+                f"Stop it with Ctrl+C in its terminal. {_several_experiments_advice()}"
+            )
+        stopped_leftovers = False
+        if _port_in_use(port) and list_psynet_worker_processes():
+            kill_psynet_worker_processes()
+            stopped_leftovers = True
+            deadline = time.monotonic() + 5
+            while _port_in_use(port) and time.monotonic() < deadline:
+                time.sleep(0.2)
+        if _port_in_use(port):
+            raise click.ClickException(_port_in_use_message(port, stopped_leftovers))
+        yield
+
+
+def _hold_run_lock(stack, path):
+    """Lock the file at ``path`` until ``stack`` closes and record this PID in it.
+
+    Returns
+    -------
+    file or None
+        The open lock file, or None if another process holds the lock.
+    """
+    from .isolated_environment import try_lock
+
+    try:
+        lock = try_lock(path)
+    except OSError as e:
+        raise click.ClickException(
+            f"Could not open the lock file {path} ({e}). Remove it if no local "
+            "PsyNet server is running."
+        ) from e
+    if lock is None:
+        return None
+    if lock.writable():
+        lock.truncate(0)
+        lock.write(str(os.getpid()))
+        lock.flush()
+    return stack.enter_context(lock)
+
+
+def _lock_owner(path):
+    """Return " (PID n)" for the process that holds the lock at ``path``, or ""."""
+    try:
+        with open(path) as f:
+            pid = f.read().strip()
+    except OSError:
+        pid = ""
+    return f" (PID {pid})" if pid else ""
+
+
+def _port_in_use(port):
+    """Return whether a server accepts connections on ``port`` on this computer."""
+    for host in ("127.0.0.1", "::1"):
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _several_experiments_advice(stopped_leftovers=False):
+    from psynet.local_docs import published_docs_url
+
+    docs_url = (
+        f"{published_docs_url(__version__)}{_SEVERAL_EXPERIMENTS_DOCS_PAGE}.html"
+        "#running-several-local-experiments"
+    )
+    return (
+        "To debug alongside it, use psynet debug local --isolated, which gives "
+        "this server a temporary database, Redis and port. Otherwise, to run "
+        "both at once, give this terminal its own port (base_port), database (DATABASE_URL), Redis "
+        "server (REDIS_URL) and development folder (dallinger_develop_directory) "
+        "as described in "
+        f'"Run several experiments at once": {docs_url}. Nothing was reset'
+        + ("; only leftover workers were stopped." if stopped_leftovers else ".")
+    )
+
+
+def _port_in_use_message(port, stopped_leftovers=False):
+    airplay = (
+        " On macOS, AirPlay Receiver uses port 5000: turn it off in System "
+        "Settings > General > AirDrop & Handoff."
+        if sys.platform == "darwin" and port == 5000
+        else ""
+    )
+    return (
+        f"Port {port} is already in use by another program or a leftover "
+        "process, so the local PsyNet server can't start. "
+        f"`lsof -nP -iTCP:{port} -sTCP:LISTEN` shows what is listening.{airplay} "
+        f"{_several_experiments_advice(stopped_leftovers)}"
+    )
 
 
 def _enable_sql_profile(sql_profile_options, sql_profile_dir):
@@ -803,6 +1023,33 @@ def sql_profiled_command(func):
     return wrapper
 
 
+def _debug_in_isolated_environment_if_requested(func):
+    """With ``--isolated``, re-run ``psynet debug local`` in its own database, Redis and port.
+
+    Applied outside :func:`sql_profiled_command` so that only the re-run child
+    profiles and reports.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .isolated_environment import READY_ENV_VAR
+
+        if kwargs["isolated"] and not os.environ.get(READY_ENV_VAR):
+            if kwargs["docker"]:
+                raise click.UsageError(
+                    "--isolated does not work with --docker, which always uses port 5000."
+                )
+            from .testing.locks import SERVER
+
+            with ExitStack() as stack:
+                # Held here so that the child inherits it; see HELD_LOCK_ENV_VAR.
+                _hold_experiment_directory(stack, SERVER)
+                _rerun_in_isolated_environment("debug")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 @debug.command("local")
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
@@ -812,8 +1059,18 @@ def sql_profiled_command(func):
     help="Use gunicorn instead of Flask auto-reload (default four worker processes).",
 )
 @click.option("--no-browsers", is_flag=True, help="Skip opening browsers.")
+@click.option(
+    "--isolated",
+    is_flag=True,
+    help=(
+        "Run with a free port and a fresh database and Redis of its own, removed "
+        "when the server stops, so that it runs alongside other local servers "
+        "and tests."
+    ),
+)
 @_add_sql_profile_options
 @click.pass_context
+@_debug_in_isolated_environment_if_requested
 @sql_profiled_command
 def debug__local(
     ctx,
@@ -821,6 +1078,7 @@ def debug__local(
     archive,
     legacy,
     no_browsers,
+    isolated,
     sql_profile,
     sql_profile_options,
     sql_profile_dir,
@@ -927,7 +1185,8 @@ def _count_other_redis_clients():
     """Return the number of connections to local Redis from other programs.
 
     Keys left behind by a stopped experiment don't count, so a launch after
-    ``psynet debug local`` has stopped doesn't ask. This process's pooled
+    ``psynet debug local`` has stopped doesn't ask. Only clients of the
+    Redis database index in ``REDIS_URL`` count. This process's pooled
     connections are closed first, so only the connection running the query
     belongs to it. Returns ``None`` if Redis refuses ``CLIENT LIST``, for
     example because of an ACL or a renamed command.
@@ -944,7 +1203,17 @@ def _count_other_redis_clients():
     except ResponseError as error:
         logger.warning("Couldn't list local Redis clients: %s", error)
         return None
-    return sum(1 for client in clients if int(client["id"]) != own_id)
+    own_db = next(
+        (client["db"] for client in clients if int(client["id"]) == own_id), None
+    )
+    if own_db is None:
+        logger.warning("Local Redis didn't list this connection among its clients.")
+        return None
+    return sum(
+        1
+        for client in clients
+        if int(client["id"]) != own_id and client["db"] == own_db
+    )
 
 
 def _url_without_password(url):
@@ -963,7 +1232,6 @@ def _prepare_image_for_update():
 
     get_experiment().pre_deploy(update=True)
     clean_sys_modules()
-    update_docker_tag()
 
 
 def _stop_leftover_debug_processes():
@@ -1121,10 +1389,43 @@ def launch_app_without_browsers(port, **kwargs):
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response and logs into the dashboard through the browser it opens, so this
-    job prints the recruitment message and the dashboard credentials instead.
+    response, so this job prints the recruitment message and the dashboard
+    credentials instead; the server log leaves the password out.
     It must stay importable by module path because RQ workers resolve it that way.
     """
+    _launch_app_and_report(port)
+
+
+def launch_app_and_open_browsers(port, **kwargs):
+    """Launch the development app, print its details, then open the browsers.
+
+    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
+    auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
+    with the password embedded; this one prints the login once and logs the
+    dashboard without it. It must stay importable by module path because RQ
+    workers resolve it that way.
+    """
+    develop = importlib.import_module("dallinger.command_line.develop")
+
+    _launch_app_and_report(port)
+    config = get_config()
+    log("Opening dashboard")
+    _open_browser_async(develop.dashboard_url(config, port))
+    time.sleep(0.1)  # Keeps the two tabs opening in the same order.
+    ad_url = develop.ad_url(config, port)
+    log(f"Opening ad: {ad_url}")
+    _open_browser_async(ad_url)
+
+
+def _open_browser_async(url):
+    """Open ``url`` in a thread, because opening a browser can be slow."""
+    develop = importlib.import_module("dallinger.command_line.develop")
+
+    threading.Thread(target=develop.open_browser, args=(url,)).start()
+
+
+def _launch_app_and_report(port):
+    """Launch the development app and print the recruitment message and dashboard login."""
     from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
 
@@ -1177,20 +1478,27 @@ def _stop_child_processes_on_signal():
 
 
 @contextmanager
-def _exit_on_sigterm():
-    """Raise ``SystemExit(128 + SIGTERM)`` on SIGTERM, so that ``finally`` blocks clean up.
+def _exit_on_termination_signal():
+    """Raise ``SystemExit(128 + signal)`` on SIGTERM or SIGHUP, so that ``finally`` blocks clean up.
 
-    Must be entered from the main thread.
+    SIGHUP arrives when the terminal closes. Signals that are already ignored,
+    as under ``nohup``, stay ignored. Must be entered from the main thread.
     """
 
     def handler(signum, frame):
         raise SystemExit(128 + signum)
 
-    previous = signal.signal(signal.SIGTERM, handler)
+    signals = [
+        sig
+        for sig in (signal.SIGTERM, signal.SIGHUP)
+        if signal.getsignal(sig) is not signal.SIG_IGN
+    ]
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
     try:
         yield
     finally:
-        signal.signal(signal.SIGTERM, previous)
+        for sig, previous_handler in previous.items():
+            signal.signal(sig, previous_handler)
 
 
 def _debug_auto_reload(ctx, archive, no_browsers):
@@ -1203,8 +1511,9 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     # Dallinger's development server runs `flask run`, which reads this variable.
     os.environ["FLASK_RUN_PORT"] = str(port)
     debug_kwargs = {"skip_flask": False, "port": port}
-    if no_browsers:
-        develop_module.launch_app_and_open_browser = launch_app_without_browsers
+    develop_module.launch_app_and_open_browser = (
+        launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
+    )
 
     try:
         run_pre_auto_reload_checks()
@@ -1331,11 +1640,21 @@ def is_psynet_chrome_process(process):
 
 
 def _local_base_port():
-    """Return the port of this shell's local server (Dallinger's ``base_port``)."""
-    config = get_config()
-    if config.ready:
+    """Return the port of this shell's local server (Dallinger's ``base_port``).
+
+    Uses Dallinger's configuration if it is loaded already. Otherwise reads
+    the environment and configuration files with
+    :func:`psynet.isolated_environment.local_base_port`, because creating the
+    configuration would import the experiment.
+    """
+    import dallinger.config
+
+    from .isolated_environment import local_base_port
+
+    config = dallinger.config.config
+    if config is not None and config.ready:
         return config.get("base_port")
-    return int(os.environ.get("base_port", 5000))
+    return local_base_port()
 
 
 def psynet_browser_prefix(kind):
@@ -1346,8 +1665,12 @@ def psynet_browser_prefix(kind):
     The prefix includes a hash of ``DATABASE_URL``, which identifies a local
     run in the same way as :func:`uses_current_database`.
     """
-    tag = hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
-    return f"psynet-{kind}-{tag}-"
+    return f"psynet-{kind}-{_database_url_tag()}-"
+
+
+def _database_url_tag():
+    """Return a short hash of ``DATABASE_URL`` that identifies a local run."""
+    return hashlib.sha1(_current_database_url().encode()).hexdigest()[:8]
 
 
 def _current_database_url():
@@ -1473,11 +1796,13 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
 # pre deploy #
 ##############
 def run_pre_checks_deploy(local_, recruiter):
-    check_psynet_requirement_is_unambiguous()
     check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements()
     if not local_:
         confirm_deploying_development_psynet()
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm=user_confirms if _stdin_is_interactive() else None
+        )
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
         raise click.UsageError(
@@ -1504,18 +1829,22 @@ def _abort_if_app_exists(server, app, *, update=False):
 
     from dallinger.command_line.docker_ssh import get_apps
 
-    apps = get_apps(server)
-    existing_apps = {entry.name for entry in apps}
-    if app in existing_apps:
-        click.echo(
-            "\n".join(
-                [
-                    f"App with name {app} already exists: found on server. Aborting.",
-                    "Use a different name or destroy the current app.",
-                ]
+    existing = {entry.name: entry for entry in get_apps(server)}
+    if app in existing:
+        ingress_option = f"--ingress {existing[app].ingress}"
+        update_command = _ssh_app_update_command(server, app)
+        if update_command:
+            update_advice = f"run `{update_command} --server {server} {ingress_option}`"
+        else:
+            update_advice = (
+                f"add --update {ingress_option} to the command that created it"
             )
+        raise click.ClickException(
+            f"An app named {app} already exists on {server}.\n"
+            f"To ship changes to it, {update_advice}; this keeps its database.\n"
+            "To start over, use a different --app, or export its data and then run "
+            f"`psynet destroy ssh --app {app} --server {server}`."
         )
-        raise click.Abort
 
 
 _option_ssh_update = click.option(
@@ -1647,8 +1976,16 @@ def _pre_launch(
     update=False,
     local_packages=(),
     assume_yes=False,
-    confirm_update=True,
+    performance_test_app=False,
+    ingress=None,
 ):
+    """Check and prepare the experiment directory before a launch.
+
+    ``performance_test_app`` marks an app that ``psynet performance-test
+    ssh`` deploys for bots: an update isn't confirmed first, and the
+    experiment needn't have a consent page. ``ingress`` is the SSH deploy's
+    ``--ingress`` option; the resolved ingress is recorded in ``deployment_info``.
+    """
     from .experiment import get_experiment
 
     if docker:
@@ -1657,6 +1994,11 @@ def _pre_launch(
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
+    _check_local_image_packages(local_packages)
+
+    # performance-test ssh checked the credentials before contacting the server.
+    if ssh and not performance_test_app:
+        _check_ssh_deploy_credentials(server, ingress)
 
     from .services import ensure_local_services
 
@@ -1681,16 +2023,28 @@ def _pre_launch(
         ssh_host = server_info["host"]
         ssh_user = server_info.get("user")
 
-        deployment_info.write(ssh_host=ssh_host, ssh_user=ssh_user)
-
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
+        deployment_info.write(
+            ssh_host=ssh_host,
+            ssh_user=ssh_user,
+            ingress=server_ingress(server_info, ingress),
+            logs_command=logs_command(server_info, app) if app else None,
+        )
         if update:
-            _check_ssh_update(server, app, mode, confirm=confirm_update)
+            _check_ssh_update(server, app, mode, confirm=not performance_test_app)
 
-    run_pre_checks(mode, local_, heroku, docker, app, local_packages)
+    run_pre_checks(
+        mode,
+        local_,
+        heroku,
+        docker,
+        app,
+        local_packages,
+        check_consents=not performance_test_app,
+    )
 
     # An --update only rebuilds the image, so it leaves local data alone.
     if not update:
@@ -1714,12 +2068,12 @@ def _pre_launch(
     experiment.update_deployment_id()
 
     config = get_config()
-    if mode == "live" and config.get("performance_test_app", False):
-        raise click.UsageError(
-            "performance_test_app is set, which declares that the app's data is "
-            "disposable and lets performance tests reset it. Remove it from the "
-            "config to deploy in live mode."
-        )
+    for key in ("performance_test_app", "debug_ssh_app"):
+        if mode == "live" and config.get(key, False):
+            raise click.UsageError(
+                f"{key} is set, which declares that the app's data is disposable. "
+                "Remove it from the config to deploy in live mode."
+            )
     deployment_info.write(locale=config.get("locale", "en"))
 
     if config.get("check_dallinger_version"):
@@ -1736,6 +2090,36 @@ def _pre_launch(
         # Unimports the PsyNet experiment, because Dallinger will want to start from scratch when using Heroku.
         # We don't unimport it in other cases because reloading the experiment produces an unnecessary time overhead.
         clean_sys_modules()
+
+
+def _check_ssh_deploy_credentials(server, ingress):
+    """Stop an SSH launch early if the deploy's credentials are missing.
+
+    Run before the launch starts local services, contacts the server, resets
+    local data or runs ``prepare``. Dallinger versions with
+    ``check_deploy_credentials`` check that a Cloudflare-ingress deploy can
+    load its Cloudflare API token. Older versions lack it, so the check is
+    skipped and Dallinger's deploy checks the token later.
+
+    Parameters
+    ----------
+    server : str
+        The configured server to deploy to.
+    ingress : str or None
+        The ``--ingress`` option; ``None`` uses the server's default ingress.
+
+    Raises
+    ------
+    click.ClickException
+        If the deploy uses Cloudflare ingress and the token can't be loaded.
+    click.UsageError
+        If Dallinger doesn't know the server or the ingress.
+    """
+    try:
+        from dallinger.command_line.docker_ssh import check_deploy_credentials
+    except ImportError:
+        return
+    check_deploy_credentials(server=server, ingress=ingress)
 
 
 def _forget_tables_defined_in_experiment_directory():
@@ -1866,8 +2250,9 @@ def deploy__docker_ssh(
     Deploy the experiment to a remote server via Docker and SSH.
 
     The image always installs the PsyNet and Dallinger versions pinned in
-    requirements.txt. To try local checkouts, use ``psynet debug ssh`` with
-    ``--use-local-psynet`` or ``--use-local-dallinger``.
+    constraints.txt (requirements.txt if there is none). To try local
+    checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
+    ``--use-local-dallinger``.
     """
     try:
         _validate_ssh_deploy_update(app, archive, update)
@@ -1884,6 +2269,7 @@ def deploy__docker_ssh(
             app=app,
             update=update,
             assume_yes=assume_yes,
+            ingress=ingress,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -1900,9 +2286,10 @@ def deploy__docker_ssh(
             app=app,
             ingress=ingress,
             update=update,
+            dallinger_summary=False,
         )
 
-        _post_deploy(result)
+        _print_ssh_ready(result, _post_deploy(result))
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -1928,11 +2315,15 @@ def _invoke_docker_ssh_deploy(
     ingress=None,
     update=False,
     config_options=None,
+    dallinger_summary=True,
 ):
-    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding ingress when supported.
+    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding options it supports.
 
     ``config_options`` are config variables that the app gets in its
-    environment, on top of those of the local config.
+    environment, on top of those of the local config. Without
+    ``dallinger_summary``, Dallinger versions that support it skip their
+    closing summary, which includes the dashboard password, because the
+    caller prints its own.
     """
     kwargs = {
         "server": server,
@@ -1942,10 +2333,65 @@ def _invoke_docker_ssh_deploy(
         "archive_path": None,
         "update": bool(update),
     }
-    params = getattr(command, "params", ())
-    if any(getattr(param, "name", None) == "ingress" for param in params):
+    params = {getattr(param, "name", None) for param in getattr(command, "params", ())}
+    if "ingress" in params:
         kwargs["ingress"] = ingress
-    return ctx.invoke(command, **kwargs)
+    if "show_summary" in params:
+        kwargs["show_summary"] = dallinger_summary
+    output = io.StringIO()
+    with redirect_stdout(_OutputTee(sys.stdout, output)):
+        result = ctx.invoke(command, **kwargs)
+    if isinstance(result, dict):
+        link = _participant_link(result, output.getvalue())
+        if link:
+            result["participant_link"] = link
+    return result
+
+
+def _participant_link(result, output):
+    """Return the single recruitment link from a Dallinger deploy, or ``None``.
+
+    Dallinger versions that return ``recruitment_msg`` (``None`` for an
+    update) are read from it; older ones only print it, to ``output``.
+    Other URLs in the message, such as a bot's own link, aren't shareable.
+    """
+    message = result.get("recruitment_msg", output) or ""
+    match = re.search(r"Single recruitment link: (https?://[^\s\x1b]+)", message)
+    return match and match.group(1)
+
+
+def _print_ssh_ready(result, launch_info):
+    """End an SSH deployment with the links and commands the user needs next.
+
+    Also names the deployed Docker image, if Dallinger reports it.
+    Passwords are not printed, so that pasted logs don't leak them; they
+    are saved in ``launch_info``. Without a single participant link, the
+    recruitment message that Dallinger returned (for example a Prolific
+    study) is shown instead.
+    """
+    logs_url = result.get("logs_url")
+    log_viewer = logs_url and (
+        f"{logs_url} (user: dallinger; password saved as logs_password in "
+        f"{Path(launch_info).name})"
+    )
+    link = result.get("participant_link")
+    rows = [
+        ("Participant link", link),
+        ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
+        ("Password", f"saved in {launch_info}"),
+        ("Logs", result.get("log_command")),
+        ("Log viewer", log_viewer),
+        ("Image", result.get("image_name")),
+    ]
+    click.echo(f"\nReady: {result['app']} on {result['server']}")
+    for label, value in rows:
+        if value:
+            click.echo(f"  {label + ':':<18}{value}")
+    message = None if link else result.get("recruitment_msg")
+    if message:
+        click.echo("  Recruitment:")
+        for line in message.strip().splitlines():
+            click.echo(f"    {line}".rstrip())
 
 
 def _configure_dallinger_image_source(use_local_dallinger=False):
@@ -1961,10 +2407,11 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
+    user_set = bool(source)
     if not source:
-        from dallinger.utils import get_editable_dallinger_path
+        from .experiment_scaffold import get_editable_dallinger_source
 
-        source = get_editable_dallinger_path() or ""
+        source = str(get_editable_dallinger_source() or "")
     if not source:
         import dallinger as dallinger_pkg
 
@@ -1976,7 +2423,11 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
     os.environ["DALLINGER_SOURCE"] = source
-    click.echo(f"Baking local Dallinger from {source} into the experiment image.")
+    message = f"Baking local Dallinger from {source} into the experiment image."
+    if not user_set:
+        # Dallinger goes on to say that DALLINGER_SOURCE is set.
+        message += " PsyNet passes this checkout to Dallinger as DALLINGER_SOURCE."
+    click.echo(message)
 
 
 def _reject_leftover_local_image_files():
@@ -2117,7 +2568,7 @@ def _post_deploy(result):
     assert isinstance(result, dict)
     assert "dashboard_user" in result
     assert "dashboard_password" in result
-    export_launch_data(
+    return export_launch_data(
         deployment_id=deployment_info.read("deployment_id"),
         **result,
     )
@@ -2126,25 +2577,36 @@ def _post_deploy(result):
 def export_launch_data(deployment_id, **kwargs):
     """
     Retrieves dashboard credentials from the current config and
-    saves them to disk.
+    saves them to disk, returning the path of the saved file.
     """
     directory = Path("~/psynet-data/launch-data").expanduser() / deployment_id
-    directory.mkdir(parents=True, exist_ok=True)
-    _export_launch_info(directory, **kwargs)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return _export_launch_info(directory, **kwargs)
 
 
 def _export_launch_info(directory, dashboard_user, dashboard_password, **kwargs):
+    """Save launch details, including the dashboard password, readable only by this user."""
     file = directory.joinpath("launch-info.json")
-    with open(file, "w") as f:
-        json.dump(
-            {
-                "dashboard_user": dashboard_user,
-                "dashboard_password": dashboard_password,
-                **kwargs,
-            },
-            f,
-            indent=4,
-        )
+    # Replacing the file atomically means a failed write can't leave a
+    # half-written file that breaks later commands reading it.
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".launch-info-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            os.fchmod(f.fileno(), 0o600)
+            json.dump(
+                {
+                    "dashboard_user": dashboard_user,
+                    "dashboard_password": dashboard_password,
+                    **kwargs,
+                },
+                f,
+                indent=4,
+            )
+        os.replace(tmp_path, file)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+    return file
 
 
 ##############
@@ -2218,8 +2680,11 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
     require a Git commit for provenance; local debug and test runs may use a
     repository with no commits. Leftover generated ``.dockerignore`` files and
     ``docker/`` helper scripts are removed (custom copies are preserved with a
-    warning). These checks must run before ``redis_vars.clear()`` so users
-    without Redis still see actionable guidance.
+    warning). Standalone experiments must have ``requirements.txt`` and
+    ``constraints.txt`` unless ``SKIP_DEPENDENCY_CHECK`` is set; whether the
+    lockfile is up to date is only checked before remote deployments. These
+    checks must run before ``redis_vars.clear()`` so users without Redis still
+    see actionable guidance.
     """
     prepared = _prepare_in_repo_experiment()
     ensure_deployment_policy()
@@ -2241,6 +2706,8 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             f"({missing_paths}). "
             f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
         )
+    if not prepared and not os.environ.get("SKIP_DEPENDENCY_CHECK"):
+        _check_dependency_files_present()
     # Git provenance (commit SHA and dirty state) is recorded for deployments.
     if not git_repository_available():
         from .light_utils import git_command_available
@@ -2318,8 +2785,19 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
 
 
 def run_pre_checks(
-    mode, local_, heroku=False, docker=False, app=None, local_packages=()
+    mode,
+    local_,
+    heroku=False,
+    docker=False,
+    app=None,
+    local_packages=(),
+    check_consents=True,
 ):
+    """Check the experiment before a launch.
+
+    ``check_consents=False`` skips the consent page check, for apps that only
+    bots take part in.
+    """
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
@@ -2327,12 +2805,17 @@ def run_pre_checks(
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
     if not local_:
+        # A local-path pin can never deploy, so say so before asking for a
+        # constraints.txt refresh.
+        if mode == "live" or "psynet" not in local_packages:
+            check_psynet_requirement_is_unambiguous()
         _check_constraints_before_remote_deploy()
 
     exp = get_experiment()
     exp.check_config()
     exp.check_size(heroku=heroku)
-    exp.check_consents()
+    if check_consents:
+        exp.check_consents()
     exp.check_python_dependencies()
 
     try:
@@ -2348,9 +2831,7 @@ def run_pre_checks(
                 ):
                     raise click.Abort
     except FileNotFoundError:
-        raise click.ClickException(
-            f"requirements.txt is missing from your experiment directory ({os.getcwd()})."
-        )
+        raise click.ClickException(_missing_requirements_message())
 
     if (
         heroku
@@ -2442,7 +2923,6 @@ def run_pre_checks_sandbox(local_packages=()):
         decide what runs, so they are not checked.
     """
     if "psynet" not in local_packages:
-        check_psynet_requirement_is_unambiguous()
         check_psynet_requirement_includes_experiment_extra()
     check_core_dependency_versions_match_requirements(skip=local_packages)
 
@@ -2542,9 +3022,11 @@ def _debug_ssh(
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
+    The app's environment sets ``debug_ssh_app``, which lets ``psynet
+    destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
-    performance-test ssh`` deploys for its tests: its environment sets
-    ``performance_test_app``, and an update isn't confirmed first.
+    performance-test ssh`` deploys for its tests: its environment also sets
+    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -2552,7 +3034,6 @@ def _debug_ssh(
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
-        _check_local_image_packages(local_packages)
 
         _pre_launch(
             ctx,
@@ -2566,11 +3047,12 @@ def _debug_ssh(
             update=update,
             local_packages=local_packages,
             assume_yes=assume_yes,
-            confirm_update=not performance_test_app,
+            performance_test_app=performance_test_app,
+            ingress=ingress,
         )
-        config_options = {}
+        config_options = {"debug_ssh_app": "true"}
         if performance_test_app:
-            config_options = {"performance_test_app": "true"}
+            config_options["performance_test_app"] = "true"
 
         with _local_image_packages(local_packages):
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive_path=None.
@@ -2583,9 +3065,12 @@ def _debug_ssh(
                 ingress=ingress,
                 update=update,
                 config_options=config_options,
+                dallinger_summary=bool(performance_test_app),
             )
 
-        _post_deploy(result)
+        launch_info = _post_deploy(result)
+        if not performance_test_app:
+            _print_ssh_ready(result, launch_info)
     finally:
         _cleanup_exp_directory()
 
@@ -2644,9 +3129,7 @@ def install_autocomplete():
 #######################
 def _run_installation_update(dallinger_version, psynet_version, verbose):
     """Update the locally installed Dallinger and PsyNet packages."""
-    from dallinger.utils import get_editable_dallinger_path
-
-    from .experiment_scaffold import get_editable_source
+    from .experiment_scaffold import get_editable_dallinger_source
 
     def _git_checkout(version, cwd, capture_output):
         with yaspin(text=f"Checking out {version}...", color="green") as spinner:
@@ -2708,11 +3191,7 @@ def _run_installation_update(dallinger_version, psynet_version, verbose):
     # Dallinger
     log("Updating Dallinger...")
     cwd = dallinger_dir()
-    # Dallinger 12.4 and older only detect legacy .egg-link editable installs.
-    dallinger_is_editable = (
-        get_editable_source("dallinger") is not None
-        or get_editable_dallinger_path() is not None
-    )
+    dallinger_is_editable = get_editable_dallinger_source() is not None
     if dallinger_is_editable:
         _prepare(
             dallinger_version,
@@ -3031,38 +3510,48 @@ def check_dockerfile():
         )
 
 
-def _check_constraints(spinner=None):
-    directory = os.getcwd()
+def _missing_requirements_message():
+    """Explain how to recreate a missing ``requirements.txt``."""
+    return (
+        "requirements.txt is missing from this experiment "
+        f"({Path.cwd() / 'requirements.txt'}). Recreate it with "
+        "'psynet scripts scaffold' (or 'psynet setup', which also installs "
+        "the packages), then add any extra packages your experiment needs."
+    )
 
-    # Freshness uses the same MD5-in-lockfile rule as ``psynet setup``.
-    requirements_path = Path(directory) / "requirements.txt"
-    constraints_path = Path(directory) / "constraints.txt"
 
+def _check_dependency_files_present():
+    """Raise ``click.ClickException`` if ``requirements.txt`` or ``constraints.txt`` is missing."""
+    requirements_path = Path.cwd() / "requirements.txt"
+    constraints_path = Path.cwd() / "constraints.txt"
     if not requirements_path.exists():
-        if spinner:
-            spinner.fail("✘")
+        raise click.ClickException(_missing_requirements_message())
+    if not constraints_path.exists():
         raise click.ClickException(
-            "Experiment directory is missing a requirements.txt file. "
-            "You need to create this file and put your Python package dependencies (e.g. psynet) in it."
+            f"constraints.txt is missing from this experiment ({constraints_path}). "
+            "PsyNet needs it so every install and deployment uses the same "
+            "package versions. Create it with:\n"
+            "  psynet generate-constraints\n"
+            "or run 'psynet setup', which also installs the packages."
         )
-        # raise click.Abort()
 
+
+def _check_constraints(spinner=None):
+    # Freshness uses the same MD5-in-lockfile rule as ``psynet setup``.
+    requirements_path = Path.cwd() / "requirements.txt"
+    constraints_path = Path.cwd() / "constraints.txt"
     generate_constraints_cmd = (
         "    psynet setup\n"
         "or only refresh the lockfile with:\n"
         "    psynet generate-constraints"
     )
 
-    if not constraints_path.exists():
+    try:
+        _check_dependency_files_present()
+    except click.ClickException:
         if spinner:
             spinner.fail("✘")
-        raise click.ClickException(
-            "Error: Experiment directory is missing a constraints.txt file. "
-            "Standalone experiments need this lockfile so installs are "
-            "reproducible. Please check that your requirements.txt file is "
-            "up-to-date, then create constraints.txt by running:\n"
-            + generate_constraints_cmd
-        )
+        raise
 
     from .constraints_compile import (
         constraints_are_hand_written,
@@ -3097,7 +3586,7 @@ def check_psynet_requirement_is_unambiguous():
 
     Raises
     ------
-    ValueError
+    click.ClickException
         If the PsyNet requirement is missing or ambiguous.
     """
     environment_variable = "SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"
@@ -3107,23 +3596,23 @@ def check_psynet_requirement_is_unambiguous():
         )
         return
 
-    with yaspin(
-        text="Verifying PsyNet version in requirements.txt...",
-        color="green",
-    ) as spinner:
+    with spinner("Verifying PsyNet version in requirements.txt...") as sp:
         requirement = get_psynet_requirement()
         valid = requirement is not None and is_unambiguous_psynet_requirement(
             requirement
         )
 
-        if valid:
-            spinner.ok("✔")
-        else:
-            spinner.color = "red"
-            spinner.fail("✗")
+        if sp is not None:
+            if valid:
+                sp.ok("✔")
+            else:
+                sp.color = "red"
+                sp.fail("✗")
 
         if not valid:
-            raise ValueError(_ambiguous_psynet_requirement_message(requirement))
+            raise click.ClickException(
+                _ambiguous_psynet_requirement_message(requirement)
+            )
 
 
 def confirm_deploying_development_psynet():
@@ -3180,16 +3669,17 @@ def check_psynet_requirement_includes_experiment_extra():
         )
         return
 
-    with yaspin(
-        text="Verifying that requirements.txt installs psynet[experiment]...",
-        color="green",
-    ) as spinner:
+    with spinner(
+        "Verifying that requirements.txt installs psynet[experiment]..."
+    ) as sp:
         requirement = get_psynet_requirement()
         if requirement is None or requirement_includes_experiment_extra(requirement):
-            spinner.ok("✔")
+            if sp is not None:
+                sp.ok("✔")
             return
-        spinner.color = "red"
-        spinner.fail("✗")
+        if sp is not None:
+            sp.color = "red"
+            sp.fail("✗")
 
     suggested = _requirement_with_experiment_extra(requirement)
     raise ValueError(
@@ -3231,45 +3721,56 @@ def _requirement_with_experiment_extra(requirement: str) -> str:
 def _is_local_psynet_requirement(requirement: str) -> bool:
     """Return whether a PsyNet requirement points at a local filesystem path."""
     compact = requirement.lower().replace(" ", "")
-    return compact.startswith("-e") or "file://" in compact
+    return (
+        compact.startswith(("-e", ".", "/", "~"))
+        or "file://" in compact
+        or re.search(r"@[./~]", compact) is not None
+        or compact.endswith(".whl")
+    )
 
 
 def _ambiguous_psynet_requirement_message(requirement: str | None) -> str:
     """Build the deploy-time error for a missing or ambiguous PsyNet pin."""
-    branch_note = (
-        "This means you can't just give a branch name, e.g. master; you have to "
-        "specify a particular version or a commit hash."
-    )
+    is_release = re.fullmatch(r"\d+\.\d+\.\d+(?:rc\d+)?", __version__)
+    version = __version__ if is_release else "<version>"
+    commit = "45f317688af59350f9a6f3052fd73076318f2775"
     examples = [
-        "* psynet[experiment]==10.1.1",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v10.1.1#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@45f317688af59350f9a6f3052fd73076318f2775#egg=psynet",
-        "* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@45f31768#egg=psynet",
+        f"* psynet[experiment]=={version}",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@v{version}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@{commit}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/alice/PsyNet@{commit}#egg=psynet",
+        f"* psynet[experiment]@git+https://gitlab.com/PsyNetDev/PsyNet@{commit[:8]}#egg=psynet",
     ]
 
-    parts = [
-        "When deploying an experiment, you need to specify PsyNet in an "
-        "unambiguous way. " + branch_note,
-    ]
+    local = requirement is not None and _is_local_psynet_requirement(requirement)
+    if local:
+        parts = [
+            "requirements.txt installs PsyNet from a local path (an editable, "
+            "directory or wheel install), which the deploy server can't "
+            "install. Pin a published version or a pushed Git commit instead."
+        ]
+    else:
+        parts = [
+            "When deploying an experiment, you need to specify PsyNet in an "
+            "unambiguous way. This means you can't just give a branch name, "
+            "e.g. master; you have to specify a particular version or a "
+            "commit hash."
+        ]
     if requirement:
         parts.append(f"\n\nYour current requirements.txt entry is:\n  {requirement}")
-        if _is_local_psynet_requirement(requirement):
-            parts.append(
-                "\n\nLocal path, wheel and editable installs cannot be resolved "
-                "on a remote deploy server. Replace this entry with a published "
-                "version or a pushed Git commit (see the examples below). If you "
-                "developed against a local PsyNet checkout, re-run:\n"
-                "  psynet setup --psynet-source commit\n"
-                "to pin a pushed Git commit before deploying."
-            )
+    if local:
+        parts.append(
+            "\n\nIf you developed against a local PsyNet checkout, re-run:\n"
+            "  psynet setup --psynet-source commit\n"
+            "to pin a pushed Git commit before deploying."
+        )
     from .experiment_scaffold import get_editable_psynet_source
 
     if get_editable_psynet_source() is not None:
         parts.append(
             "\n\nTo try your editable PsyNet checkout on a server without "
-            "pinning it, run 'psynet debug ssh --use-local-psynet'. "
-            "'psynet deploy' always needs a pin."
+            "pinning it, add --use-local-psynet to 'psynet debug ssh' or "
+            "'psynet performance-test ssh'. 'psynet deploy' always needs a pin."
         )
     parts.append(
         "\n\nExamples:\n"
@@ -3463,6 +3964,8 @@ def export__docker_ssh(ctx, app, server, **kwargs):
     """
     Export the experiment from a remote server via Docker and SSH.
     """
+    if app:
+        _require_ssh_apps_exist(server, [app])
     app = _resolve_ssh_app(ctx, app, server)
     _awaken_ssh_app(server, app)
     export_(
@@ -3474,7 +3977,7 @@ def export__docker_ssh(ctx, app, server, **kwargs):
         local=False,
         server=server,
         docker_ssh=True,
-        pending_jobs=_fetch_ssh_pending_async_jobs(app, server),
+        pending_jobs=_fetch_ssh_pending_async_jobs_for_export(app, server),
         **kwargs,
     )
 
@@ -3538,7 +4041,7 @@ def export_(
     identity from an authenticated preflight instead.
 
     ``pending_jobs`` is a remote app's async job summary, taken before the
-    export (see :func:`_fetch_pending_async_jobs`); local exports read their
+    export (see :func:`_fetch_ssh_pending_async_jobs`); local exports read their
     own. A warning about pending jobs ends the output.
     """
     anonymize = kwargs.pop("anonymize", None)
@@ -3677,7 +4180,7 @@ def _normalize_public_origin(value):
 
 
 def _latest_launch_record(app, server):
-    """Return the newest local launch note for this app on this server."""
+    """Return the newest local launch note for this app on this server, with its ``deployment_id``."""
     root = Path("~/psynet-data/launch-data").expanduser()
     if not root.is_dir():
         return None
@@ -3692,7 +4195,7 @@ def _latest_launch_record(app, server):
         if payload.get("app") != app or payload.get("server") != server:
             continue
         if mtime >= chosen_mtime:
-            chosen = payload
+            chosen = {**payload, "deployment_id": path.parent.name}
             chosen_mtime = mtime
     return chosen
 
@@ -3727,8 +4230,7 @@ def _ssh_dashboard_endpoint(app, server, config):
     Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
     deploy records the public origin locally; the server manifest is the
     fallback when that note is missing. The note's dashboard credentials take
-    precedence over the local config, which may lack them, for example when
-    ``psynet destroy ssh`` runs outside the experiment directory.
+    precedence over the local config, which may lack them.
 
     Raises
     ------
@@ -3757,59 +4259,83 @@ def _ssh_dashboard_endpoint(app, server, config):
     return DashboardEndpoint(base_url=origin, auth=(user, password))
 
 
-def _fetch_pending_async_jobs(endpoint):
-    """Ask a deployed app which async jobs are still pending.
+_PENDING_JOB_CHECK_TIMEOUT_S = 30
 
-    Parameters
-    ----------
-    endpoint : psynet.export.client.DashboardEndpoint
-        The app's address and dashboard credentials.
 
-    Returns
-    -------
-    dict or None
-        The app's ``/async_job_status`` summary (see
-        :func:`psynet.async_job._get_pending_job_summary`), or ``None`` after
-        printing a warning if the app could not be checked.
-    """
-    import requests
-
-    try:
-        response = requests.get(
-            endpoint.url("async_job_status"), auth=endpoint.auth, timeout=30
-        )
-    except requests.RequestException as exc:
-        reason = f"could not reach the app ({exc})"
-    else:
-        if response.status_code == 404:
-            reason = "the app runs a PsyNet version without this check"
-        elif response.status_code == 503:
-            reason = "the app is unavailable (503 Service Unavailable)"
-        elif response.status_code != 200:
-            reason = f"the app returned {response.status_code} {response.reason}"
-        else:
-            try:
-                return response.json()
-            except ValueError:
-                reason = "the app's reply was not JSON; check the dashboard credentials"
-    log(f"WARNING: Skipped the check for pending async jobs: {reason}.")
-    return None
+class _PendingJobCheckError(Exception):
+    """The check for an SSH app's pending async jobs could not run; the message says why."""
 
 
 def _fetch_ssh_pending_async_jobs(app, server):
-    """Run :func:`_fetch_pending_async_jobs` for a docker-ssh app."""
-    config = get_config()
+    """Ask a docker-ssh app which async jobs are still pending.
+
+    ``psynet async-job-status`` runs in the app's web container over SSH, so
+    the check doesn't depend on the app's public address, which a Cloudflare
+    tunnel or DNS may make unreachable, or on dashboard credentials on this
+    computer. Wake a hibernated app first (see :func:`_awaken_ssh_app`).
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    server : str
+        The configured SSH server.
+
+    Returns
+    -------
+    dict
+        The summary of :func:`psynet.async_job._get_pending_job_summary`.
+
+    Raises
+    ------
+    _PendingJobCheckError
+        If the app could not be checked, including when it doesn't answer
+        within ``_PENDING_JOB_CHECK_TIMEOUT_S`` seconds.
+    """
+    import paramiko
+
+    from .perf_ssh import RemoteApp
+
     try:
-        if not config.ready:
-            config.load()
-        endpoint = _ssh_dashboard_endpoint(app, server, config)
-    except (KeyError, RuntimeError) as exc:
+        remote = RemoteApp(_ssh_executor(server), app, server)
+        return remote.run_psynet(
+            "async-job-status", timeout_s=_PENDING_JOB_CHECK_TIMEOUT_S
+        )
+    except (click.ClickException, RuntimeError, OSError, paramiko.SSHException) as e:
+        if "No such command" in str(e):
+            reason = f"{app} runs a PsyNet version without this check"
+        else:
+            reason = f"could not query {app}'s web container on {server} ({e})"
+        raise _PendingJobCheckError(reason) from e
+
+
+def _fetch_ssh_pending_async_jobs_for_export(app, server):
+    """Return :func:`_fetch_ssh_pending_async_jobs`, or ``None`` after a warning if the check can't run."""
+    try:
+        return _fetch_ssh_pending_async_jobs(app, server)
+    except _PendingJobCheckError as e:
         log(
-            "WARNING: Skipped the check for pending async jobs: "
-            f"could not find the dashboard credentials ({exc})."
+            f"WARNING: Skipped the check for pending async jobs: {e}. The export "
+            "continues, but it will not include the results of jobs that haven't "
+            "finished; check the app's logs to see whether any are still running."
         )
         return None
-    return _fetch_pending_async_jobs(endpoint)
+
+
+@psynet.command("async-job-status", hidden=True)
+@click.option("--json-output", required=True, type=click.Path(dir_okay=False))
+def async_job_status(json_output):
+    """
+    Write the running app's pending async jobs to --json-output; used by ``psynet destroy ssh`` and ``psynet export ssh``.
+    """
+    from .async_job import _get_pending_job_summary
+    from .experiment import get_experiment
+
+    load_runtime_server_config()
+    # Registers the experiment's own async job classes, whose rows count too.
+    get_experiment()
+    with open(json_output, "w") as f:
+        json.dump(_get_pending_job_summary(), f)
 
 
 def _warn_export_misses_pending_jobs(summary):
@@ -4211,18 +4737,19 @@ def destroy__heroku(ctx, app):
     """
     Destroy the experiment on Heroku.
     """
-    _destroy(
+    if not _destroy(
         ctx,
         dallinger.command_line.destroy,
         app=app,
-    )
+    ):
+        raise click.Abort()
 
 
 def user_confirms(question, default=False):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
     """
-    print(question + " Enter 'y' for yes, 'n' for no.")
+    print(question)
     return click.confirm("", default=default)
 
 
@@ -4240,12 +4767,11 @@ def _confirm_destroy_with_pending_jobs(
     ----------
     app : str
         The app name.
-    summary : dict or None
-        The output of :func:`_fetch_pending_async_jobs`; ``None`` means the
-        check was skipped, which allows the destroy.
+    summary : dict
+        The output of :func:`_fetch_ssh_pending_async_jobs`.
     ask_for_confirmation : bool
-        Whether the user may be asked. When ``False`` (batch mode, or a
-        future ``--yes``), or when stdin is not a terminal, an app with
+        Whether the user may be asked. When ``False`` (several apps, or
+        ``--yes``), or when stdin is not a terminal, an app with
         pending jobs is not destroyed.
     discard_pending_jobs : bool
         Destroy the app even if jobs are pending, after reporting them.
@@ -4271,8 +4797,106 @@ def _confirm_destroy_with_pending_jobs(
         "`psynet export ssh` again before destroying the app."
     )
     if ask_for_confirmation and _stdin_is_interactive():
-        return user_confirms("Destroy the app anyway?", default=False)
+        return user_confirms(f"Destroy {app} anyway?", default=False)
     log(f"Not destroying {app}. Pass --discard-pending-jobs to destroy it anyway.")
+    return False
+
+
+# Config values in a docker-ssh app's compose file, which Dallinger writes as
+# ``    key: "value"`` in the environment of the app's server processes.
+_COMPOSE_SETTING = r'(?m)^\s+{}:\s*"?([^"\n]*)"?\s*$'
+
+
+def _read_ssh_compose_file(server, app):
+    """Return an SSH app's compose file, or ``None`` if it can't be read in full.
+
+    The compose file is read rather than the app's config in its web
+    container, which may not be running. A read that fails or times out
+    returns ``None``, because part of the file could miss settings or services.
+    """
+    import paramiko
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    cmd = f"cat ~/dallinger/{shlex.quote(app)}/docker-compose.yml"
+    try:
+        status, compose, _ = _ssh_executor(server).run_with_status(
+            _with_remote_timeout(cmd, _PENDING_JOB_CHECK_TIMEOUT_S)
+        )
+    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
+        log(f"Could not read {app}'s compose file on {server}: {e}")
+        return None
+    return compose if status == 0 and compose else None
+
+
+def _compose_settings(compose, *keys):
+    """Return config values from an SSH app's compose file, or ``None`` for each that it lacks."""
+    matches = [re.search(_COMPOSE_SETTING.format(key), compose or "") for key in keys]
+    return [match[1].strip().lower() if match else None for match in matches]
+
+
+def _is_debug_ssh_app(compose):
+    """Say whether ``psynet debug ssh`` deployed an SSH app, from the ``debug_ssh_app`` config in its compose file.
+
+    Apps whose compose file couldn't be read (``None``) count as not deployed
+    by ``psynet debug ssh``.
+    """
+    (debug_ssh_app,) = _compose_settings(compose, "debug_ssh_app")
+    return debug_ssh_app == "true"
+
+
+def _ssh_app_update_command(server, app):
+    """Return the command that updates an SSH app in place, or ``None`` if its compose file doesn't say."""
+    mode, performance_test_app = _compose_settings(
+        _read_ssh_compose_file(server, app), "mode", "performance_test_app"
+    )
+    if performance_test_app == "true":
+        return f"psynet performance-test ssh --app {app}"
+    command = _SSH_COMMAND_FOR_MODE.get(mode)
+    return f"{command} --app {app} --update" if command else None
+
+
+def _destroy_without_pending_job_check(app, server, error, discard_pending_jobs):
+    """Decide whether to destroy an SSH app whose pending async jobs couldn't be checked.
+
+    It is destroyed with ``discard_pending_jobs`` (with a warning), or silently
+    if ``psynet debug ssh`` deployed it (see :func:`_is_debug_ssh_app`).
+
+    Parameters
+    ----------
+    app : str
+        The app name.
+    server : str
+        The configured SSH server.
+    error : _PendingJobCheckError
+        Why the check couldn't run.
+    discard_pending_jobs : bool
+        Whether ``--discard-pending-jobs`` was passed.
+
+    Returns
+    -------
+    bool
+        Whether the app may be destroyed.
+    """
+    problem = f"Could not check {app} for pending async jobs: {error}."
+    if discard_pending_jobs:
+        log(
+            f"WARNING: {problem} Destroying it anyway because "
+            "--discard-pending-jobs was passed."
+        )
+        return True
+    compose = _read_ssh_compose_file(server, app)
+    if _is_debug_ssh_app(compose):
+        return True
+    ingress = compose_ingress(compose) if compose else None
+    log(
+        f"{problem} Not destroying {app}, because destroying it would lose the "
+        "results of any jobs still running. If its web container isn't "
+        f"running, start it (see 'psynet apps ssh --server {server}' or its "
+        f"logs {where_to_read_logs(server, app, ingress)}) and run this command again. "
+        "Otherwise check in its "
+        "logs that its async jobs have finished, then pass "
+        "--discard-pending-jobs to destroy it anyway."
+    )
     return False
 
 
@@ -4283,60 +4907,132 @@ def _destroy(
     server=None,
     ask_for_confirmation=True,
     discard_pending_jobs=False,
+    destroy_kwargs=None,
+    deployed=True,
+    warn_unexported=False,
 ):
     """Destroy a single app.
 
-    For docker-ssh apps (``server`` given), first wake the app and check for
-    pending async jobs with :func:`_confirm_destroy_with_pending_jobs`.
+    For docker-ssh apps (``server`` given), the caller confirms first; this
+    wakes a ``deployed`` app and checks for pending async jobs with
+    :func:`_confirm_destroy_with_pending_jobs`, or
+    :func:`_destroy_without_pending_job_check` if the check can't run.
+    With ``warn_unexported``, :func:`_warn_if_not_exported` then reminds the
+    user to export, just before Dallinger asks whether to delete the data.
+    Other apps are confirmed here unless ``ask_for_confirmation`` is false.
+    ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
+    isn't covered by a spinner, as it may prompt or report what it kept.
+    For an app that is no longer ``deployed``, finding nothing left to delete
+    counts as success.
     """
-    target = app or "the app"
     if server:
-        target += f" from {server}"
-        _awaken_ssh_app(server, app)
-        if not _confirm_destroy_with_pending_jobs(
-            app,
-            _fetch_ssh_pending_async_jobs(app, server),
-            ask_for_confirmation,
-            discard_pending_jobs,
-        ):
-            return False
-    confirmed = (
-        user_confirms(f"Would you like to delete {target}?", default=True)
-        if ask_for_confirmation
-        else True
-    )
-
-    if confirmed:
-        with yaspin(f"Destroying {app}...") as spinner:
+        if deployed:
+            _awaken_ssh_app(server, app)
             try:
-                kwargs = {"app": app}
-                kwargs = {**kwargs, "server": server} if server else kwargs
-                # Dallinger still exposes this retired-platform option. Keep
-                # it disabled until the upstream command removes it.
-                if "expire_hit" in get_args(f_destroy):
-                    ctx.invoke(
-                        f_destroy,
-                        expire_hit=False,
-                        **kwargs,
-                    )
-                else:
-                    ctx.invoke(
-                        f_destroy,
-                        **kwargs,
-                    )
-                spinner.ok("✔")
-            except subprocess.CalledProcessError:
-                spinner.fail("✗")
-                click.echo(
-                    f"Failed to destroy {app}. "
-                    "Maybe it was already destroyed, or the app name was wrong?"
+                pending_jobs = _fetch_ssh_pending_async_jobs(app, server)
+            except _PendingJobCheckError as e:
+                may_destroy = _destroy_without_pending_job_check(
+                    app, server, e, discard_pending_jobs
                 )
+            else:
+                may_destroy = _confirm_destroy_with_pending_jobs(
+                    app, pending_jobs, ask_for_confirmation, discard_pending_jobs
+                )
+            if not may_destroy:
                 return False
-            except click.Abort:
-                spinner.fail("✗")
-                raise
-        return True
-    return False
+            if warn_unexported:
+                _warn_if_not_exported(app, server)
+    elif ask_for_confirmation and not user_confirms(
+        f"Destroy {app or 'the app'}?", default=False
+    ):
+        return False
+
+    kwargs = {"app": app, **({"server": server} if server else {})}
+    # Dallinger still exposes this retired-platform option. Keep it disabled
+    # until the upstream command removes it.
+    if "expire_hit" in _command_params(f_destroy):
+        kwargs["expire_hit"] = False
+    kwargs.update(destroy_kwargs or {})
+    log(
+        f"Destroying {app}..."
+        if deployed
+        else f"Deleting any leftover data of {app}..."
+    )
+    try:
+        ctx.invoke(f_destroy, **kwargs)
+    except click.Abort:
+        if deployed:
+            raise
+        # Older Dallinger versions abort when nothing is left to delete.
+        click.echo(f"Nothing left to delete for {app} on {server}.")
+    except subprocess.CalledProcessError:
+        click.echo(
+            f"Failed to destroy {app}. "
+            "Maybe it was already destroyed, or the app name was wrong?"
+        )
+        return False
+    return True
+
+
+def _command_params(command):
+    """Return the parameter names of a Click command."""
+    return {param.name for param in command.params}
+
+
+def _delete_data_command(app, server):
+    """Make Dallinger name ``psynet destroy ssh`` as the command that deletes kept data, if it can."""
+    from dallinger.command_line.docker_ssh import destroy
+
+    if "delete_data_command" not in _command_params(destroy):
+        return {}
+    command = f"psynet destroy ssh {app} --server {server} --remove-data"
+    return {"delete_data_command": command}
+
+
+_SSH_APP_DATA = "database, Redis and Postgres volumes, ~/dallinger-data/<app>"
+
+
+def _ssh_data_options(apps, server, remove_data, keep_data, exportable=()):
+    """Return the data options for Dallinger's ``docker-ssh destroy``.
+
+    Without ``remove_data`` or ``keep_data``, a single app gets no options, so
+    that Dallinger lists its data and asks; several apps are asked about once,
+    after a reminder to export any ``exportable`` app without a local export.
+    """
+    if keep_data:
+        return {"keep_data": True}
+    if not remove_data:
+        if len(apps) == 1:
+            return {}
+        for app in exportable:
+            _warn_if_not_exported(app, server)
+        remove_data = click.confirm(
+            f"Also delete the data of {', '.join(apps)} on {server} "
+            f"({_SSH_APP_DATA})? This cannot be undone. Answer no to keep it.",
+            default=False,
+        )
+    return {"remove_data": True, "yes": True} if remove_data else {"keep_data": True}
+
+
+def _warn_if_not_exported(app, server):
+    """Warn unless ``./exports`` holds an export of the app's newest local deployment."""
+    command = f"psynet export ssh --app {app} --server {server}"
+    record = _latest_launch_record(app, server)
+    if record is None:
+        log(f"Export the data of {app} first if you haven't: {command}")
+        return
+    exports = Path("exports")
+    for folder in [exports / "latest", *exports.glob("history/*")]:
+        try:
+            exported = json.loads((folder / "manifest.json").read_text("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if exported.get("deployment_id") == record["deployment_id"]:
+            return
+    log(
+        f"WARNING: Found no export of {app} in {exports.resolve()}. Export its "
+        f"data first if you haven't: {command}"
+    )
 
 
 @psynet.group("hibernate")
@@ -4389,7 +5085,9 @@ def _dallinger_hibernation_command(name):
 
 
 @destroy.command("ssh")
-@click.option("--app", default=None, help="Experiment id")
+@click.option(
+    "--app", default=None, help="Experiment id; same as giving it as an argument."
+)
 @click.argument("apps", required=False, nargs=-1)
 @option_server
 @click.option(
@@ -4403,70 +5101,235 @@ def _dallinger_hibernation_command(name):
     is_flag=True,
     default=False,
     help=(
-        "Destroy apps even if they still have pending async jobs, "
-        "losing those jobs' results."
+        "Destroy apps even if they still have pending async jobs, or if "
+        "they can't be checked for them, losing those jobs' results."
     ),
 )
+@click.option(
+    "--remove-data",
+    is_flag=True,
+    help=(
+        f"Also delete the apps' data on the server ({_SSH_APP_DATA}), with no separate question about "
+        "the data; the destroy confirmation (skipped by --yes) mentions it."
+    ),
+)
+@click.option("--keep-data", is_flag=True, help="Keep the apps' data on the server.")
 @click.pass_context
-def destroy__docker_ssh(ctx, app, apps, server, yes, discard_pending_jobs):
+def destroy__docker_ssh(
+    ctx, app, apps, server, yes, discard_pending_jobs, remove_data, keep_data
+):
     """
-    Destroy the experiment on a remote server via SSH.
+    Destroy one or more experiments on a remote server via SSH.
+
+    Give the apps as arguments, with --app, or both. Several apps are
+    confirmed once, then destroyed in turn; failures don't stop the rest.
+
+    Without --remove-data or --keep-data, asks whether to delete the apps'
+    data: Dallinger asks for a single app, listing its data, and PsyNet asks
+    once for several apps; --yes does not answer this. Non-interactive
+    runs must pass one of the two. Both need a Dallinger whose
+    `dallinger docker-ssh destroy` has them; older versions destroy apps as
+    before. With --remove-data, it also deletes the data left behind by an
+    app that was destroyed earlier with its data kept, and succeeds if
+    nothing is left. Before the question that decides whether data is
+    deleted, PsyNet reminds you to export apps without a local export.
 
     Apps with pending async jobs are not destroyed unless you confirm
     interactively or pass --discard-pending-jobs; --yes does not skip that.
+    Apps that can't be checked for pending jobs are not destroyed without
+    --discard-pending-jobs, except apps deployed with `psynet debug ssh` or
+    `psynet performance-test ssh`.
     """
     from dallinger.command_line.docker_ssh import destroy
 
-    example_usage = "`psynet destroy ssh <app> <app> [--server <server>]`"
-    if not app and not apps:
-        raise click.UsageError(f"Provide an app name. Example: {example_usage}")
-    if app:
-        assert len(apps) == 0, "You cannot provide both --app and a list of apps."
-        click.echo(f"Consider using the batch syntax: {example_usage}")
-        if not _destroy(
-            ctx,
-            destroy,
-            app=app,
-            server=server,
-            ask_for_confirmation=not yes,
-            discard_pending_jobs=discard_pending_jobs,
-        ):
-            raise click.Abort()
-    if len(apps) > 0:
-        assert app is None, "You cannot provide both --app and a list of apps."
-        confirmation = f"""
-            Are you sure you want to remove {len(apps)} apps on {server} ({apps})?
-            """
-        if yes or click.confirm(confirmation, abort=True):
-            failed = []
-            for app in apps:
-                try:
-                    if not _destroy(
-                        ctx,
-                        destroy,
-                        app=app,
-                        server=server,
-                        ask_for_confirmation=False,
-                        discard_pending_jobs=discard_pending_jobs,
-                    ):
-                        failed.append(app)
-                except click.Abort:
-                    click.echo(
-                        f"Failed to destroy {app}. "
-                        "Maybe it was already destroyed, or the app name was wrong?"
-                    )
-                    failed.append(app)
-                except Exception:
-                    logger.exception(
-                        "Failed to destroy app %s; continuing with remaining apps.",
-                        app,
-                    )
-                    click.echo(
-                        f"Failed to destroy {app}; continuing with remaining apps."
-                    )
-                    failed.append(app)
-            if failed:
-                raise click.Abort()
+    apps = list(dict.fromkeys(([app] if app else []) + list(apps)))
+    if not apps:
+        raise click.UsageError(
+            "Provide an app name. Example: "
+            "`psynet destroy ssh <app> [<app> ...] [--server <server>]`"
+        )
+    if remove_data and keep_data:
+        raise click.UsageError("Pass only one of --remove-data and --keep-data.")
+    data_choice = "remove_data" in _command_params(destroy)
+    if (remove_data or keep_data) and not data_choice:
+        raise click.UsageError(
+            "--remove-data and --keep-data need a newer Dallinger, whose "
+            "`dallinger docker-ssh destroy` has these options."
+        )
+    if data_choice and not (remove_data or keep_data or _stdin_is_interactive()):
+        raise click.UsageError(
+            "Choose what happens to the experiment data: pass --remove-data or "
+            "--keep-data in non-interactive sessions."
+        )
+
+    batch = len(apps) > 1
+    if remove_data and data_choice:
+        # An app destroyed with its data kept is no longer listed. Dallinger
+        # deletes its leftovers, or says that none are left.
+        undeployed = set(apps) - _ssh_app_names(server)
+    else:
+        _require_ssh_apps_exist(server, apps)
+        undeployed = set()
+    exportable = [name for name in apps if name not in undeployed]
+    if not yes:
+        _confirm_destroy_ssh_apps(server, apps, undeployed, remove_data)
+    data_options = (
+        _ssh_data_options(apps, server, remove_data, keep_data, exportable)
+        if data_choice
+        else {}
+    )
+    # Dallinger asks about a single app's data after the pending-job check.
+    warn_unexported = data_choice and not (remove_data or keep_data or batch)
+    failed = []
+    for name in apps:
+        try:
+            if not _destroy(
+                ctx,
+                destroy,
+                app=name,
+                server=server,
+                ask_for_confirmation=not (yes or batch),
+                discard_pending_jobs=discard_pending_jobs,
+                destroy_kwargs={**data_options, **_delete_data_command(name, server)},
+                deployed=name not in undeployed,
+                warn_unexported=warn_unexported,
+            ):
+                failed.append(name)
+        except Exception as e:
+            if not batch:
+                raise
+            if isinstance(e, click.ClickException):
+                click.echo(f"Problem destroying {name}: {e.format_message()}")
+            elif isinstance(e, click.Abort):
+                click.echo(
+                    f"Failed to destroy {name}; see the messages above. If it "
+                    "stopped while removing the app's Cloudflare tunnel or DNS "
+                    "record, fix that and run this command again."
+                )
+            else:
+                logger.exception(
+                    "Failed to destroy app %s; continuing with remaining apps.", name
+                )
+                click.echo(f"Failed to destroy {name}; continuing with remaining apps.")
+            failed.append(name)
+    if failed:
+        raise click.Abort()
+
+
+def _confirm_destroy_ssh_apps(server, apps, undeployed=(), remove_data=False):
+    """Ask before destroying ``apps``, or deleting the leftover data of ``undeployed`` ones.
+
+    Without a terminal to ask in, requires ``--yes``. With ``remove_data``,
+    the question says that the data is deleted too, after a reminder to
+    export any deployed app without a local export.
+    """
+    deployed = [app for app in apps if app not in undeployed]
+    leftovers = (
+        f"the leftover data of {', '.join(app for app in apps if app in undeployed)}"
+    )
+    if not deployed:
+        action = f"delete {leftovers} on {server}"
+    else:
+        noun = "app" if len(deployed) == 1 else "apps"
+        target = f"{len(deployed)} {noun} on {server}"
+        if remove_data:
+            its = "its" if len(deployed) == 1 else "their"
+            action = f"destroy {target} ({', '.join(deployed)}) and delete {its} data"
+            if undeployed:
+                action += f" and {leftovers}"
+        else:
+            action = f"destroy {target}: {', '.join(deployed)}"
+    if not _stdin_is_interactive():
+        raise click.ClickException(
+            f"Confirmation needed to {action}; re-run with --yes."
+        )
+    if remove_data:
+        for app in deployed:
+            _warn_if_not_exported(app, server)
+    question = f"{action[0].upper()}{action[1:]}?"
+    if remove_data:
+        whose = "the app's" if len(apps) == 1 else "each app's"
+        question += f" This deletes {whose} {_SSH_APP_DATA}. It cannot be undone."
+    if not click.confirm(question, default=False):
+        raise click.Abort()
+
+
+def _ssh_app_names(server):
+    """Return the names of the apps on an SSH server.
+
+    An app counts if Dallinger's ``destroy`` would find it: it has a Caddy
+    configuration, a compose file or, after a failed Cloudflare deploy, just
+    a tunnel token.
+
+    Raises
+    ------
+    click.ClickException
+        If the listing fails or times out, so that it isn't mistaken for a
+        server without apps.
+    """
+    import paramiko
+    from dallinger.command_line.docker_ssh import ExecuteException
+
+    cmd = (
+        "ls -1 ~/dallinger/caddy.d 2>/dev/null; "
+        "ls -1d ~/dallinger/*/docker-compose.yml "
+        "~/dallinger/*/secrets/cloudflare-tunnel-token 2>/dev/null; true"
+    )
+    marker = "psynet-app-listing-exit="
+    timeout_s = _PENDING_JOB_CHECK_TIMEOUT_S
+    # The outer sh keeps `$?` out of the login shell, which may be fish.
+    listing_cmd = f"{_with_remote_timeout(cmd, timeout_s)}; echo {marker}$?"
+    try:
+        output = _ssh_executor(server).run(
+            f"sh -c {shlex.quote(listing_cmd)}", raise_=False
+        )
+    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
+        problem = str(e)
+    else:
+        listing, _, status = (output or "").rpartition(marker)
+        status = status.strip()
+        problem = {
+            "0": None,
+            str(_REMOTE_TIMEOUT_STATUS): f"timed out after {timeout_s} s",
+            "127": "the server has no `timeout` command",
+            "": "no answer from the server",
+        }.get(status, f"exit code {status}")
+    if problem:
+        raise click.ClickException(
+            f"Couldn't list the apps on {server} ({problem}); check the SSH "
+            "connection and try again."
+        )
+    names = set()
+    for entry in listing.split():
+        match = re.search(
+            r"/([^/]+)/(?:docker-compose\.yml|secrets/cloudflare-tunnel-token)$",
+            entry,
+        )
+        names.add(match[1] if match else entry)
+    return names
+
+
+def _require_ssh_apps_exist(server, apps):
+    """Fail, listing the server's apps, if any of ``apps`` is not on ``server``."""
+    existing = sorted(_ssh_app_names(server))
+    missing = [app for app in apps if app not in existing]
+    if not missing:
+        return
+    names = ", ".join(f"'{app}'" for app in missing)
+    message = f"No app named {names} on {server}."
+    if len(missing) > 1:
+        message = f"No apps named {names} on {server}."
+    if not existing:
+        raise click.ClickException(f"{message} It has no apps.")
+    message += f" Apps there: {', '.join(existing)}"
+    suggestions = [
+        match
+        for app in missing
+        for match in difflib.get_close_matches(app, existing, n=1)
+    ]
+    if suggestions:
+        message += f" (did you mean {' or '.join(suggestions)}?)"
+    raise click.ClickException(message)
 
 
 @psynet.group("apps")
@@ -4585,7 +5448,7 @@ def _in_isolated_test_environment(func):
             except ValueError as e:
                 raise click.ClickException(str(e)) from e
             if isolate:
-                _rerun_in_isolated_test_environment()
+                _rerun_in_isolated_environment()
             warning = shared_environment_warning()
             if warning:
                 log(warning)
@@ -4677,7 +5540,7 @@ def test__local(
         sys.exit(exit_code)
 
 
-def _rerun_in_isolated_test_environment():
+def _rerun_in_isolated_environment(mode="test"):
     """Re-run this command in a child process with its own database, Redis and port.
 
     Dallinger connected to the shared database when this module was imported,
@@ -4685,32 +5548,48 @@ def _rerun_in_isolated_test_environment():
     The child re-runs the whole original command line (for example
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
-    0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM is passed on to the
-    child, which gets Ctrl+C from the terminal anyway. A second signal kills
-    the child.
+    0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
+    reach the child as SIGTERM; it gets Ctrl+C from the terminal anyway. A second signal kills
+    the child. The database and Redis are removed when the child exits.
+
+    Parameters
+    ----------
+    mode : str
+        ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
+        ``"debug"`` also prints how to reach the server's data and when it has
+        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
 
-    _check_no_debug_server_here()
+    _check_no_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
     # set up fails without advice about services it won't use.
-    _check_experiment_directory("test")
+    _check_experiment_directory(mode)
     ensure_local_services(assume_yes=False, strict=True)
     try:
         environment = IsolatedEnvironment.start()
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
+    env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
     exit_code = 130
     interrupted = None
-    with environment, _exit_on_sigterm():
+    with _exit_on_termination_signal(), environment:
         log(environment.describe())
+        if mode == "debug":
+            log(
+                "To use this server's data from another terminal (for example with "
+                "psynet export local), first run: export "
+                + " ".join(
+                    f"{key}={shlex.quote(env[key])}"
+                    for key in ("DATABASE_URL", "REDIS_URL", "base_port")
+                ),
+                chevrons=False,
+            )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
-        process = subprocess.Popen(
-            [sys.executable, *sys.orig_argv[1:]],
-            env={**environment.env, SERVICES_CHECKED_ENV_VAR: "1"},
-        )
+        process = subprocess.Popen([sys.executable, *sys.orig_argv[1:]], env=env)
         while True:
             try:
                 exit_code = process.wait()
@@ -4722,19 +5601,54 @@ def _rerun_in_isolated_test_environment():
                 elif isinstance(e, SystemExit):
                     process.terminate()
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
+        # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)
+    if mode == "debug":
+        log(
+            "The isolated debug server has stopped and its database and Redis "
+            "were removed. If you ran its export line in another terminal, run "
+            "'unset DATABASE_URL REDIS_URL base_port' there."
+        )
     # A child killed by signal N reports -N; shells report 128 + N.
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
 
 
-def _check_no_debug_server_here():
-    """Raise ``click.ClickException`` if ``psynet debug`` serves the current directory."""
-    from .isolated_environment import check_no_debug_server
+def _check_no_server_here():
+    """Raise ``click.ClickException`` if a local server holds the current directory."""
+    from .testing.locks import check_no_server
 
     try:
-        check_no_debug_server(os.getcwd())
-    except RuntimeError as e:
+        check_no_server(os.getcwd())
+    except (OSError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _hold_experiment_directory(stack, kind):
+    """Hold the current directory's lock until ``stack`` closes.
+
+    Parameters
+    ----------
+    stack : contextlib.ExitStack
+        The stack that releases the lock.
+    kind : str
+        :data:`psynet.testing.locks.SERVER` or
+        :data:`psynet.testing.locks.TEST_SESSION`; see
+        :func:`psynet.testing.locks.experiment_directory_lock`.
+
+    Raises
+    ------
+    click.ClickException
+        If the lock is held by a server, or ``kind`` is a server and the lock
+        is held at all, or the lock file can't be opened.
+    """
+    from .testing.locks import experiment_directory_lock
+
+    try:
+        stack.enter_context(experiment_directory_lock(os.getcwd(), kind=kind))
+    except (OSError, RuntimeError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -4764,7 +5678,18 @@ def _stop_when_disconnected(cmd):
     return f"sh -c {shlex.quote(script)}"
 
 
-def run_remote_experiment_command(executor, app, cmd):
+# GNU timeout's exit status for a command that it stopped.
+_REMOTE_TIMEOUT_STATUS = 124
+# How much longer than the server's timeout to wait for an answer over SSH.
+_SSH_TIMEOUT_GRACE_S = 10
+
+
+def _with_remote_timeout(cmd, timeout_s):
+    """Wrap the server shell command ``cmd`` so that the server stops it after ``timeout_s`` seconds."""
+    return f"timeout {int(timeout_s)} sh -c {shlex.quote(cmd)}"
+
+
+def run_remote_experiment_command(executor, app, cmd, timeout_s=None):
     """Run ``cmd`` in the app's web container, echoing its output as it arrives.
 
     Dallinger's ``Executor.run_and_echo`` also watches local stdin so that the user
@@ -4777,12 +5702,20 @@ def run_remote_experiment_command(executor, app, cmd):
     available. The exit status arrives before the last of the output, so polling
     on it drops whatever is still in flight -- typically the test summary, which
     is the part worth reading.
+
+    With ``timeout_s``, the command is stopped after that many seconds and
+    ``click.ClickException`` says so.
     """
     remote_cmd = build_remote_experiment_command(app, _stop_when_disconnected(cmd))
+    if timeout_s is not None:
+        remote_cmd = _with_remote_timeout(remote_cmd, timeout_s)
+        deadline = time.monotonic() + timeout_s + _SSH_TIMEOUT_GRACE_S
     channel = executor.client.get_transport().open_session()
     # Closing the channel, also after Ctrl-C, ends the remote command's stdin,
     # which stops it (see _stop_when_disconnected).
     try:
+        if timeout_s is not None:
+            channel.settimeout(timeout_s + _SSH_TIMEOUT_GRACE_S)
         # Interleaving two streams without threads risks reordering the output,
         # and the caller only wants to read it, so merge stderr into stdout.
         channel.set_combine_stderr(True)
@@ -4796,9 +5729,18 @@ def run_remote_experiment_command(executor, app, cmd):
                 sys.stdout.write(text)
                 sys.stdout.flush()
 
+        if timeout_s is not None:
+            while not channel.exit_status_ready():
+                if time.monotonic() > deadline:
+                    raise TimeoutError
+                time.sleep(0.1)
         status = channel.recv_exit_status()
+    except TimeoutError as e:
+        raise click.ClickException(f"no answer within {timeout_s} s") from e
     finally:
         channel.close()
+    if timeout_s is not None and status == _REMOTE_TIMEOUT_STATUS:
+        raise click.ClickException(f"no answer within {timeout_s} s")
     if status != 0:
         log(f"The following remote command failed with exit code {status}:\n{cmd}")
         raise click.ClickException(_remote_failure_summary(status, recent))
@@ -5209,7 +6151,7 @@ def performance_test__local(existing=False, json_output=None, debug=False, **opt
     This command never updates an experiment audit. Use
     ``psynet audit performance-test`` to collect audit evidence.
     """
-    with _exit_on_sigterm():
+    with _exit_on_termination_signal():
         return _run_performance_test_local(
             existing=existing, json_output=json_output, debug=debug, **options
         )
@@ -5293,28 +6235,20 @@ _KEPT_PERFORMANCE_LOGS = 20
 
 
 def _performance_log_directory():
-    """Return this user's folder for performance-test logs, pruning old logs.
+    """Return the folder for performance-test logs, pruning old logs.
 
-    Each run writes a server log and a bot log; only the newest
-    ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept. If the shared temporary
-    folder already holds that folder but another user owns it or may write
-    to it, a new private folder is used instead.
+    Logs go to ``~/psynet-data/performance-logs``, because the OS may purge
+    its temporary folder (macOS does). Each run writes a server log and a bot
+    log; only the newest ``_KEPT_PERFORMANCE_LOGS`` of each kind are kept.
     """
     try:
-        user = getpass.getuser()
-    except (KeyError, OSError):
-        # Containers run as the host uid, which may have no account or USER.
-        user = str(os.getuid())
-    directory = Path(tempfile.gettempdir()) / f"psynet-performance-logs-{user}"
-    directory.mkdir(mode=0o700, exist_ok=True)
-    info = directory.lstat()
-    if (
-        directory.is_symlink()
-        or info.st_uid != os.getuid()
-        or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-    ):
+        directory = Path("~/psynet-data/performance-logs").expanduser()
+        directory.mkdir(parents=True, exist_ok=True)
+    except (OSError, RuntimeError) as err:
+        # Containers may run as a uid without a home directory, or an unwritable one.
         logger.warning(
-            f"{directory} isn't private to this user, so the logs go to a new folder."
+            f"Can't create ~/psynet-data/performance-logs ({err}); "
+            "using a temporary folder."
         )
         return Path(tempfile.mkdtemp(prefix="psynet-performance-logs-"))
     for prefix in ("psynet_server_", "psynet_bots_"):
@@ -5516,6 +6450,7 @@ def _run_performance_suite(
     limits = _performance_limits(max_p95_ms, max_queue_p95_s)
     options = {
         **_performance_json_options(tester, limits, capacity_search=find_capacity),
+        "open_link_recruiter": _open_link_recruiter(),
         **(ssh_options or {}),
     }
     if find_capacity:
@@ -5541,6 +6476,7 @@ def _run_performance_suite(
         label=label,
         after_test=save_json,
         local=ssh_options is None,
+        open_link=options["open_link_recruiter"],
     )
     restore_error = cleanup_error = None
     try:
@@ -5708,6 +6644,17 @@ def _check_arrival_options(
         )
 
 
+def _open_link_recruiter():
+    """Return whether the configured recruiter supports ``max_concurrent_participants``."""
+    from psynet.capacity import recruiter_supports_participant_limits
+    from psynet.recruiters import named_recruiter_class
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    return recruiter_supports_participant_limits(named_recruiter_class(config))
+
+
 def _write_suite_json(
     json_output, suite, all_results, *, metadata, options, finished, quiet=False
 ):
@@ -5793,8 +6740,13 @@ def _check_no_real_participants(force, resetting=False):
 
 
 class _OutputTee:
+    """Write to several streams, behaving otherwise like the first (e.g. ``isatty``)."""
+
     def __init__(self, *streams):
         self.streams = streams
+
+    def __getattr__(self, name):
+        return getattr(self.streams[0], name)
 
     def write(self, data):
         for stream in self.streams:
@@ -6001,23 +6953,26 @@ def _stop_server(server_info):
 
 def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
     """Run performance test after starting a new experiment server."""
-    _check_no_debug_server_here()
-    # Prefer legacy debug: gunicorn with several workers is closer to a deployed
-    # server than the auto-reload develop path used by normal
-    # ``psynet debug local``.
-    server_info = _start_local_server_and_wait_for_ready(
-        ["debug", "local", "--legacy", "--no-browsers"],
-        debug=debug,
-        extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
-    )
-    try:
-        all_results = _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+    from .testing.locks import TEST_SESSION
+
+    with ExitStack() as stack:
+        _hold_experiment_directory(stack, TEST_SESSION)
+        # Prefer legacy debug: gunicorn with several workers is closer to a deployed
+        # server than the auto-reload develop path used by normal
+        # ``psynet debug local``.
+        server_info = _start_local_server_and_wait_for_ready(
+            ["debug", "local", "--legacy", "--no-browsers"],
+            debug=debug,
+            extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
         )
-        print("✓ Performance test completed")
-        return all_results
-    finally:
-        _stop_server(server_info)
+        try:
+            all_results = _run_performance_test_with_existing_server(
+                debug=debug, json_output=json_output, **options
+            )
+            print("✓ Performance test completed")
+            return all_results
+        finally:
+            _stop_server(server_info)
 
 
 def _performance_test_app_info():
@@ -6169,6 +7124,7 @@ def performance_test__prepare_reset(
     deployed in debug mode from this directory for performance tests.""",
 )
 @_add_ssh_deployment_options
+@_use_local_psynet_option
 @_use_local_dallinger_option
 @_performance_load_options
 @_test_options["performance_json_output"]
@@ -6199,6 +7155,7 @@ def performance_test__docker_ssh(
     server,
     dns_host=None,
     ingress=None,
+    use_local_psynet=False,
     use_local_dallinger=False,
     assume_yes=False,
     json_output=None,
@@ -6211,7 +7168,8 @@ def performance_test__docker_ssh(
 
     If the server has no app named --app, this deploys one from this
     directory in debug mode, as ``psynet debug ssh`` would, and marks it as
-    a performance-test app, whose data is disposable. Later runs update it
+    a performance-test app, whose data is disposable. Since only bots take
+    part, the experiment needn't have a consent page. Later runs update it
     in place from this directory before testing, keeping its database. They
     refuse apps that this command didn't deploy, or whose deploy didn't
     finish launching the experiment. The app is kept after the run; destroy
@@ -6236,6 +7194,7 @@ def performance_test__docker_ssh(
         server=server,
         dns_host=dns_host,
         ingress=ingress,
+        use_local_psynet=use_local_psynet,
         use_local_dallinger=use_local_dallinger,
         assume_yes=assume_yes,
     )
@@ -6276,6 +7235,10 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     """
     from dallinger.command_line.docker_ssh import get_apps
 
+    # Contacting the server loads the config, so a missing config.txt must be
+    # scaffolded first.
+    _check_experiment_directory("sandbox", require_git_commit=True)
+    _check_ssh_deploy_credentials(server, deploy_options.get("ingress"))
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
@@ -6362,7 +7325,7 @@ def _run_ssh_performance_test(
         estimated_duration_minutes=experiment["estimated_duration_minutes"],
         arrival_minutes=arrival_minutes,
     )
-    with bot_log_file, _exit_on_sigterm():
+    with bot_log_file, _exit_on_termination_signal():
         return _run_performance_suite(
             tester,
             bot_counts,
