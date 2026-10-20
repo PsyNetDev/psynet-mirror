@@ -103,9 +103,11 @@ you need next:
       Dashboard:        https://my-study.my-server.example.org/dashboard (user: admin)
       Password:         saved in ~/psynet-data/launch-data/<deployment-id>/launch-info.json
       Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
-      Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password)
+      Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password in launch-info.json)
+      Image:            ghcr.io/my-lab/my-study:3f2a9c1e
 
-The participant link appears for recruiters that print a single recruitment
+The image row names the deployed Docker image, with Dallinger versions that
+report it. The participant link appears for recruiters that print a single recruitment
 link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
 The log viewer row appears for apps with classic ingress.
@@ -232,27 +234,32 @@ See :doc:`/reference/api/async_job`.
 
 It also asks whether to delete the apps' data: the database and Postgres user
 in the shared PostgreSQL, the app's Redis and Postgres volumes, and
-``~/dallinger-data/<app>``. First it reminds you to export any app it finds no
-export of in ``exports/`` of the current directory. For a single app, Dallinger
-then lists the app's data with its sizes and asks, just before tearing the app
-down, and skips the question if there is no data. For several apps, PsyNet
-asks once for all of them, before checking any. Answer no, or pass
-``--keep-data``, to keep the data; each app's kept data is then listed with the
-command that deletes it later. Pass ``--remove-data`` to delete it without
-asking. ``--yes`` does not answer this question, so scripts and other
-non-interactive runs must pass one of the two flags:
+``~/dallinger-data/<app>``. For a single app, Dallinger lists the app's data
+with its sizes and asks, just before tearing the app down, and skips the
+question if there is no data. For several apps, PsyNet asks once for all of
+them, before checking any. Answer no, or pass ``--keep-data``, to keep the
+data; each app's kept data is then listed with the command that deletes it
+later. Pass ``--remove-data`` to delete it without a separate question; the
+confirmation then says that the data is deleted too. ``--yes`` does not answer
+the data question, so scripts and other non-interactive runs must pass one of
+the two flags:
 
 .. code-block:: bash
 
     psynet destroy ssh my-app --server my-server.example.org --yes --keep-data
 
+Just before the question that decides whether the data is deleted (the data
+question, or the confirmation with ``--remove-data``), PsyNet reminds you to
+export any app it finds no export of in ``exports/`` of the current directory,
+so you can still answer no. Nothing is asked about the data with
+``--remove-data --yes`` or ``--keep-data``, so there is no reminder either.
+
 To delete kept data after the app is gone, run the same command with
 ``--remove-data``. With ``--remove-data``, an app that is no longer on the
 server is not rejected: PsyNet skips the pending-job check and the export
 reminder for it, asks to delete its leftover data rather than to destroy it,
-and Dallinger deletes whatever data it left behind, or says that none is left.
-When destroying several apps, such an app with nothing left is reported but
-does not count as a failure.
+and Dallinger deletes whatever data it left behind. If nothing is left, it
+says so and this does not count as a failure, so the command succeeds.
 
 The data question and the two flags need a Dallinger version whose
 ``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
