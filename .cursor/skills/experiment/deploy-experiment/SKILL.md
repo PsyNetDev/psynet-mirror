@@ -158,6 +158,9 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
   <name>`), try that first; it restarts nothing. `dallinger docker-ssh servers
   upgrade --host <server>` briefly restarts the shared services, so on a server
   with other experiments, ask the user first.
+- `dallinger ec2 provision` fails while setting up the shared services: the
+  instance keeps running and costs money. Fix the printed problem and run the
+  printed `servers upgrade` / `servers add` commands, or tear it down.
 - A deploy fails with `PermissionError: [Errno 13] Permission denied` on
   `dallinger/docker-compose.yml`: the installed Dallinger predates
   `servers upgrade`, and the server's shared files are read-only. Update the

@@ -255,7 +255,8 @@ Each experiment's dashboard is protected by ``dashboard_user`` and
 generated for each deployment and printed at the end; ``dallinger ec2
 provision`` requires both to be set. ``contact_email_on_error`` must be a
 valid address: participants see it on error pages, and the server uses it to
-obtain HTTPS certificates from Let's Encrypt. ``dallinger docker-ssh servers
+obtain HTTPS certificates from Let's Encrypt, so ``dallinger ec2 provision``
+refuses to start without one. ``dallinger docker-ssh servers
 add`` saves it with the server unless you pass ``--contact-email``.
 
 .. code-block:: ini
@@ -380,15 +381,18 @@ Registering the server
       experiment keeps many participant uploads on the server with
       ``LocalStorage``.
 
-      Provisioning takes a few minutes. The server is registered twice, under
-      its AWS hostname and under the ``--dns-host`` name, so always pass the
-      ``--dns-host`` name as ``--server`` (here
-      ``memory-lab.cool-psychology.org``). Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``. Provisioning also
-      starts the shared services that experiments use (see
-      :ref:`ssh_server_shared_services`) and prints the log viewer's password
-      once; note it. For the other ``ec2`` commands and what provisioning
-      does, see :doc:`/deploy/reference/aws_automatic_provisioning`.
+      Provisioning takes a few minutes. It also starts the shared services
+      that experiments use (see :ref:`ssh_server_shared_services`) and prints
+      the log viewer's password once; note it. The server is registered
+      twice, under its AWS hostname and under the ``--dns-host`` name. Pass
+      the ``--dns-host`` name as ``--server`` (here
+      ``memory-lab.cool-psychology.org``) once your computer resolves it,
+      which can take up to about five minutes. Experiments are served at
+      ``https://<app>.memory-lab.cool-psychology.org``. If provisioning stops
+      while setting up the shared services, the instance keeps running: fix
+      the problem and run the commands that it prints. For the other ``ec2``
+      commands and what provisioning does, see
+      :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::
 

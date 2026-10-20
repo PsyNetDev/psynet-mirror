@@ -56,32 +56,44 @@ Options:
    configuration value, or ``dallinger``.
 ``--dns-host``
    Name to create in Route 53, for example ``memory-lab.cool-psychology.org``.
+   Without it, the server's DNS name is ``<public ip>.nip.io``, because Let's
+   Encrypt does not issue certificates for AWS hostnames.
 
 Provisioning runs these steps and prints each one to the terminal:
 
-1. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
+1. Checks that ``contact_email_on_error`` is an email address, which Caddy
+   gives Let's Encrypt, and stops before booting an instance if it is not.
+2. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
    last two parts (for example ``cool-psychology.org``). If records for the
    name already exist, Dallinger asks before overwriting them, because they
    may belong to another running server. It also removes the name's entries
    from ``~/.ssh/known_hosts``.
-2. Creates the security group if it does not exist in the region, allowing
+3. Creates the security group if it does not exist in the region, allowing
    incoming traffic from anywhere on ports 22, 80, 443 and 5000.
-3. Imports the key pair named by ``ec2_default_pem`` from
+4. Imports the key pair named by ``ec2_default_pem`` from
    ``~/.ssh/<ec2_default_pem>.pem`` if it does not exist in the region.
-4. Boots the instance, attaches the security group and grows the disk to
+5. Boots the instance, attaches the security group and grows the disk to
    ``--storage``.
-5. Checks that ``dashboard_user`` and ``dashboard_password`` are set, then
+6. Checks that ``dashboard_user`` and ``dashboard_password`` are set, then
    installs Docker on the instance. If this check fails, the instance is
    already running; set the credentials, tear the instance down and
    provision again.
-6. Creates CNAME records for the ``--dns-host`` name and its wildcard
+7. Creates CNAME records for the ``--dns-host`` name and its wildcard
    (``*.<dns-host>``), pointing at the instance's AWS hostname.
-7. Registers the server with Dallinger under both its AWS hostname and the
-   ``--dns-host`` name.
-8. Sets up the shared services that classic-ingress experiments use, as
-   ``dallinger docker-ssh servers add`` does (see
+8. Registers the server with Dallinger under its AWS hostname, saving the
+   ``--dns-host`` name (or ``<public ip>.nip.io``) as its DNS name. Over the
+   AWS hostname, it sets up the shared services that classic-ingress
+   experiments use, as ``dallinger docker-ssh servers add`` does (see
    :ref:`ssh_server_shared_services`), and prints the log viewer's password
-   once.
+   once. With ``--dns-host``, it also registers the server under that name.
+
+You can deploy straight away with ``--server <AWS hostname>``, and with
+``--server <dns-host>`` once your computer resolves the new DNS record (up to
+about five minutes). If setting up the shared services fails, the instance
+keeps running. Fix the problem that was printed, then run the commands that
+provisioning prints: ``dallinger docker-ssh servers upgrade --host <AWS
+hostname> --yes`` and, with ``--dns-host``, the ``dallinger docker-ssh servers
+add`` command that registers that name.
 
 At the end, you should see something like this:
 
