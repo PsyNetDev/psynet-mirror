@@ -1,0 +1,1 @@
+An `Experiment.config` key that PsyNet no longer recognizes, such as one from an older PsyNet version, is now reported as an invalid configuration key. SSH commands such as `psynet export ssh` call it a configuration problem instead of telling you to check the SSH connection, and they no longer suggest checking the connection for other server-side listing failures either.
