@@ -25,8 +25,10 @@ login fails. Never print the values, put them in `analysis.md`, or commit them
   not in `~/.dallingerconfig`): read the deploy output line
   `To view the logs for this experiment go to https://logs.... (user = ..., password = ...)`;
   extract the pair in a script for `/api/token` or the login form without
-  echoing it. If no deploy terminal is available, SSH to the server and
-  inspect the Dozzle setup (compose or reverse-proxy auth).
+  echoing it. The user is `dallinger`, and the password is set per server, not
+  the dashboard password. If no deploy terminal is available, read
+  `DOZZLE_PASSWORD` from `~/dallinger/.env.json` on the server over SSH,
+  without printing it.
 - **Recruiter tokens**: `prolific_api_token`, `lucid_api_key`, and
   `lucid_sha1_hashing_key` in `~/.dallingerconfig`; presence-check as in
   `references/deploy-from-test-branch.md`.

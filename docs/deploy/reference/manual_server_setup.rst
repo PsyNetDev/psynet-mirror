@@ -160,3 +160,7 @@ private key to ``~/.ssh`` on that computer, run ``chmod 600`` on it and set
 ``server_pem`` to it. If SSH is restricted to certain IP addresses, check that
 the computer uses one of them. Then log in once with ``ssh`` to check the
 connection, and register the server with ``dallinger docker-ssh servers add``.
+On a server that is already set up, this leaves the shared services alone.
+That computer needs a Dallinger version with ``servers upgrade``, because older
+versions can't deploy to an upgraded server (see
+:ref:`upgrading_an_existing_server`).

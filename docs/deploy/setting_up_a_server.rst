@@ -254,8 +254,9 @@ Each experiment's dashboard is protected by ``dashboard_user`` and
 ``dashboard_password``. If you leave the password out, a new random one is
 generated for each deployment and printed at the end; ``dallinger ec2
 provision`` requires both to be set. ``contact_email_on_error`` must be a
-valid address: the server uses it to obtain HTTPS certificates from Let's
-Encrypt, and participants see it on error pages.
+valid address: participants see it on error pages, and when you register a
+server, Dallinger saves it as the email the server uses to obtain HTTPS
+certificates from Let's Encrypt (unless you pass ``--contact-email``).
 
 .. code-block:: ini
 
@@ -299,12 +300,15 @@ Registering the server
 
       This takes a few minutes. If Docker is not installed, Dallinger installs
       it, including the Docker Compose plugin, and adds your user to the
-      ``docker`` group. The ``--host`` value is the name you pass as
+      ``docker`` group. It then starts the shared services that experiments
+      use (see :ref:`ssh_server_shared_services`) and prints the log
+      viewer's password. The ``--host`` value is the name you pass as
       ``--server`` in later commands, and experiments are served at
       ``https://<app>.my-server.example.org``.
 
-      You can register a server by IP address instead of a name. Deployments
-      then need ``--dns-host`` as well; see :ref:`ssh_server_addresses`.
+      You can register a server by IP address instead of a name. Then also
+      pass its public DNS name, for example ``--dns-host
+      my-server.example.org``; see :ref:`ssh_server_addresses`.
 
    .. tab-item:: AWS (automatic)
       :sync: aws
@@ -379,8 +383,17 @@ Registering the server
       its AWS hostname and under the ``--dns-host`` name, so always pass the
       ``--dns-host`` name as ``--server`` (here
       ``memory-lab.cool-psychology.org``). Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``. For the other ``ec2``
-      commands and what provisioning does, see
+      ``https://<app>.memory-lab.cool-psychology.org``.
+
+      Provisioning doesn't start the shared services that experiments use.
+      Start them, under the same name, and note the log viewer's password
+      that this prints:
+
+      .. code-block:: bash
+
+          dallinger docker-ssh servers upgrade --host memory-lab.cool-psychology.org --yes
+
+      For the other ``ec2`` commands and what provisioning does, see
       :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::
@@ -404,13 +417,37 @@ List the registered servers, then connect to yours:
 
 A new server reports ``No apps found.`` To check the whole path, deploy a
 pilot of any experiment and open ``https://<app>.<server>`` as described in
-:doc:`/deploy/running_a_study`. On a server with classic ingress, the first
-deployment also starts the log viewer at ``https://logs.<server>``. Its
-username is ``dallinger`` and its password is the dashboard password of that
-first deployment. Each deployment saves it as ``logs_password`` in its
-``launch-info.json``. To change it, run
+:doc:`/deploy/running_a_study`. On a server with classic ingress, the log
+viewer is at ``https://logs.<server>``. Its username is ``dallinger``, and its
+password is the random one printed when the shared services were set up. On a
+server set up by an older Dallinger, it is the dashboard password of the
+server's first deployment, and ``servers upgrade`` keeps it. Each deployment
+saves it as ``logs_password`` in
+its ``launch-info.json``, and the server keeps it as ``DOZZLE_PASSWORD`` in
+``~/dallinger/.env.json``. To change it, run
 ``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
 Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
+
+.. _upgrading_an_existing_server:
+
+Upgrading an existing server
+----------------------------
+
+A server set up by a Dallinger version without ``dallinger docker-ssh servers
+upgrade`` needs that command once, after you update Dallinger (for an
+experiment, by updating its PsyNet pin; see :ref:`dependencies_updating_psynet`).
+Run it when no classic experiment on the server is live, because it briefly
+restarts the shared services:
+
+.. code-block:: bash
+
+    dallinger docker-ssh servers upgrade --host my-server.example.org
+
+Make sure that everyone who deploys to that server updates Dallinger too.
+Older versions can no longer deploy there: their deployments fail with
+``PermissionError: [Errno 13] Permission denied`` before they change the
+shared files or other experiments. See :ref:`ssh_server_shared_services` for
+what the upgrade changes.
 
 Stopping and removing the server
 --------------------------------

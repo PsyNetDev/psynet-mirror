@@ -379,7 +379,7 @@ the Deployments tab (the deployment monitor) shows all of them at once.
 
 **Logs.** On servers with classic ingress, Dozzle shows the live logs of
 every container on the server. Its URL is printed at launch
-(``https://logs.your-server.example.org`` for servers that use subdomains);
+(``https://logs.your-server.example.org``);
 the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
 Cloudflare ingress, such as lab computers, have no Dozzle (see
 :ref:`ssh_server_cloudflare`); run the log command printed at launch instead.

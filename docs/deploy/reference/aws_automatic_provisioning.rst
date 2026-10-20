@@ -86,6 +86,14 @@ At the end, you should see something like this:
    Provisioning complete! Time taken: 192.402161359787. memory-lab is
    ready at ec2-52-91-24-127.compute-1.amazonaws.com
 
+Provisioning doesn't start the shared services that classic-ingress
+experiments use. Start them before the first deployment (see
+:ref:`ssh_server_shared_services`):
+
+.. code:: bash
+
+   dallinger docker-ssh servers upgrade --host <subdomain>.<your-domain> --yes
+
 Increasing storage
 ==================
 

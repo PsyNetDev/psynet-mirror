@@ -21,6 +21,35 @@ server's IP address. If it doesn't, check that the wildcard record
 reusing a name for a new server, wait about five minutes for DNS to update and
 try again.
 
+Server is not set up for this classic-ingress deploy
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Deployments don't set up the server's shared services, so Dallinger stops
+before building the image if they are missing or out of date. This happens on a
+server provisioned with ``dallinger ec2 provision``, and on a server set up by
+an older Dallinger. Run the command that the message names, when no classic
+experiment on the server is live, then deploy again:
+
+.. code:: bash
+
+    dallinger docker-ssh servers upgrade --host my-server.example.org
+
+The same applies if the message says that an older Dallinger version has
+rewritten the shared files. See :ref:`ssh_server_shared_services`.
+
+Deployment fails with ``PermissionError``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If the traceback ends with ``PermissionError: [Errno 13] Permission denied``
+at ``sftp.putfo(..., "dallinger/docker-compose.yml")``, the server was set up
+or upgraded by a newer Dallinger, which left its shared files read-only (see
+:ref:`upgrading_an_existing_server`), and your Dallinger is too old to deploy
+there. The deployment stopped before changing anything shared. Don't make the
+files writable. Instead, update the experiment's PsyNet pin, which brings a
+newer Dallinger (see :ref:`dependencies_updating_psynet`), and deploy again.
+An older Dallinger may first offer to destroy the server's other experiments;
+decline.
+
 .. _deploy_troubleshooting_host_key:
 
 Remote host identification has changed

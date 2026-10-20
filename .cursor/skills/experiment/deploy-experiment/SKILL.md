@@ -109,7 +109,12 @@ dallinger ec2 provision \
   --region <region> \
   --dns-host <server-name>.cap-experiments.com \
   --type m7i.xlarge
+dallinger docker-ssh servers upgrade --host <server-name>.cap-experiments.com --yes
 ```
+
+Provisioning doesn't start the shared Caddy, Postgres and Dozzle services, and
+deploys never do, so run `servers upgrade` once before the first deploy. It
+prints the Dozzle password; record that it exists, not its value.
 
 Deploy:
 
@@ -148,6 +153,15 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
 - Deployed Docker environment lacks local files, broken symlink targets, or
   external assets.
 - App/server/DNS names diverge between logs, commands, and config files.
+- A classic deploy stops before the build with "is not set up for this
+  classic-ingress deploy" or "An older Dallinger version has rewritten the
+  shared files". Run the named `dallinger docker-ssh servers upgrade --host
+  <server>`. It briefly restarts the shared services, so on a server with
+  other experiments, ask the user first.
+- A deploy fails with `PermissionError: [Errno 13] Permission denied` on
+  `dallinger/docker-compose.yml`: the installed Dallinger predates
+  `servers upgrade`, and the server's shared files are read-only. Update the
+  PsyNet pin; never `chmod` the shared files.
 - Export exists for one app but teardown is being planned for another.
 - SSL/TLS errors during first launch can be transient cold-start issues; retry
   after a short wait before changing code.
