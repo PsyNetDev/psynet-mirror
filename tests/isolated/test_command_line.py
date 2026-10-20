@@ -1666,22 +1666,12 @@ _MARKED = {"performance_test_app": True, "experiment": {"label": "Test"}}
 
 
 @pytest.mark.parametrize(
-    "args, apps, deployed",
-    [
-        ([], [], {"update": False}),
-        (["--yes"], [], {"update": False, "assume_yes": True}),
-        ([], ["my-app"], {"update": True}),
-    ],
-    ids=[
-        "deploys-a-missing-app",
-        "passes-yes-to-the-deploy",
-        "updates-an-existing-app",
-    ],
+    "apps, deployed",
+    [([], {"update": False}), (["my-app"], {"update": True})],
+    ids=["deploys-a-missing-app", "updates-an-existing-app"],
 )
-def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
-    result, deploy, run = _invoke_performance_test_ssh(
-        args, apps=apps, app_info=_MARKED
-    )
+def test_performance_test_ssh_manages_its_own_app(apps, deployed):
+    result, deploy, run = _invoke_performance_test_ssh([], apps=apps, app_info=_MARKED)
 
     assert result.exit_code == 0, result.output
     assert deploy.call_args.kwargs == {
@@ -1692,7 +1682,6 @@ def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
         "ingress": None,
         "use_local_psynet": False,
         "use_local_dallinger": False,
-        "assume_yes": False,
         **deployed,
     }
     assert run.call_args.args[2] == {"label": "Test"}
@@ -5322,7 +5311,6 @@ def remote_launch(monkeypatch, tmp_path):
     from psynet.command_line import _pre_launch
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger:secret@localhost/demo")
     for name in ("DALLINGER_NO_EGG_BUILD", "SKIP_DEPENDENCY_CHECK"):
         monkeypatch.setenv(name, "")
     for check in ("_check_experiment_directory", "run_pre_checks"):
@@ -5336,30 +5324,12 @@ def remote_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "psynet.experiment.get_experiment", Mock(side_effect=_LaunchContinued)
     )
-    confirm = Mock(return_value=True)
-    monkeypatch.setattr("click.confirm", confirm)
 
-    def launch(
-        *,
-        workers=0,
-        clients=(),
-        redis_clients=0,
-        interactive=True,
-        **kwargs,
-    ):
-        monkeypatch.setattr(
-            "psynet.command_line.list_psynet_worker_processes",
-            lambda: [Mock()] * workers,
-        )
-        monkeypatch.setattr("psynet.db.list_other_database_clients", lambda: clients)
-        monkeypatch.setattr(
-            "psynet.command_line._count_other_redis_clients", lambda: redis_clients
-        )
-        monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
+    def launch(**kwargs):
         with pytest.raises(_LaunchContinued):
             _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
 
-    return launch, resets, confirm
+    return launch, resets
 
 
 @pytest.mark.parametrize("performance_test_app", [False, True])
@@ -5368,89 +5338,17 @@ def test_only_performance_test_apps_skip_the_consent_check(
 ):
     from psynet import command_line
 
-    launch, _, _ = remote_launch
+    launch, _ = remote_launch
     launch(performance_test_app=performance_test_app)
     check_consents = command_line.run_pre_checks.call_args.kwargs["check_consents"]
     assert check_consents is not performance_test_app
 
 
-def test_remote_update_keeps_local_data(remote_launch):
-    launch, resets, confirm = remote_launch
-    launch(update=True, workers=1, redis_clients=2)
+@pytest.mark.parametrize("update", [False, True])
+def test_remote_launch_keeps_local_data(remote_launch, update):
+    launch, resets = remote_launch
+    launch(update=update)
     assert resets.mock_calls == []
-    confirm.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "in_use, reason",
-    [
-        ({}, None),
-        ({"workers": 1}, "1 local PsyNet server process(es)"),
-        (
-            {"clients": [(4321, "u", "flask", "idle", None, -1, None)]},
-            "pid 4321 (flask, idle, local socket)",
-        ),
-        ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
-        ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
-    ],
-)
-def test_remote_launch_asks_before_resetting_local_data_in_use(
-    remote_launch, capsys, in_use, reason
-):
-    launch, resets, confirm = remote_launch
-    launch(**in_use)
-    assert confirm.called == bool(reason)
-    resets.clear_redis.assert_called_once()
-    resets.kill_workers.assert_called_once()
-    output = capsys.readouterr().out
-    assert "postgresql://dallinger@localhost/demo" in output
-    assert "secret" not in output
-    if reason:
-        assert reason in output
-
-
-def test_remote_launch_resets_nothing_if_declined(remote_launch):
-    launch, resets, confirm = remote_launch
-    confirm.side_effect = click.Abort
-    with pytest.raises(click.Abort):
-        launch(workers=1)
-    assert resets.mock_calls == []
-
-
-def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
-    launch, resets, confirm = remote_launch
-    with pytest.raises(click.ClickException, match="--yes"):
-        launch(workers=1, interactive=False)
-    assert resets.mock_calls == []
-
-    launch(workers=1, interactive=False, assume_yes=True)
-    confirm.assert_not_called()
-    resets.kill_workers.assert_called_once()
-
-
-def test_other_redis_clients_are_counted_but_not_this_process():
-    from urllib.parse import urlsplit
-
-    import redis
-    from dallinger.db import redis_conn
-
-    from psynet.command_line import _count_other_redis_clients
-    from psynet.services import _redis_url
-
-    redis_conn.ping()
-    before = _count_other_redis_clients()
-    other = redis.Redis.from_url(_redis_url())
-    # Set the index in the URL path, which from_url prefers to a db argument.
-    own_db = int(other.connection_pool.connection_kwargs.get("db", 0))
-    other_db_url = urlsplit(_redis_url())._replace(path=f"/{(own_db + 1) % 16}")
-    other_db = redis.Redis.from_url(other_db_url.geturl())
-    other.ping()
-    other_db.ping()
-    try:
-        assert _count_other_redis_clients() == before + 1
-    finally:
-        other.close()
-        other_db.close()
 
 
 def test_other_database_clients_are_listed_but_not_this_process(
@@ -5509,29 +5407,6 @@ def test_own_pid_with_another_backend_start_is_another_client(monkeypatch):
         monkeypatch.setitem(psynet_db._backends, conn, reused)
         clients = psynet_db.list_other_database_clients(release_local=False)
     assert pid in [row.pid for row in clients]
-
-
-@pytest.mark.parametrize(
-    "command, args",
-    [
-        ("debug__heroku", ["--app", "test-app", "--docker", "--yes"]),
-        ("deploy__heroku", ["--app", "test-app", "--docker", "-y"]),
-        ("deploy__heroku", ["--app", "test-app", "--yes"]),
-    ],
-)
-def test_remote_launch_commands_pass_yes_to_pre_launch(
-    monkeypatch, tmp_path, command, args
-):
-    from psynet import command_line
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("psynet.command_line.reset_console", Mock())
-    pre_launch = Mock(side_effect=_LaunchContinued)
-    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
-    result = CliRunner().invoke(getattr(command_line, command), args)
-    assert isinstance(result.exception, _LaunchContinued)
-    pre_launch.assert_called_once()
-    assert pre_launch.call_args.kwargs["assume_yes"] is True
 
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
@@ -6204,7 +6079,7 @@ def test_deploy_heroku_docker_runs_only_the_docker_deploy(tmp_path, monkeypatch)
     calls = []
     monkeypatch.setattr(
         "psynet.command_line._deploy__docker_heroku",
-        lambda ctx, app, archive, assume_yes: calls.append("docker"),
+        lambda ctx, app, archive: calls.append("docker"),
     )
     monkeypatch.setattr(
         "psynet.command_line._pre_launch",

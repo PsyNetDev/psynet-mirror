@@ -72,11 +72,9 @@ its own database, Redis server and port as described in
 its own, so it can run alongside.
 
 Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
-``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
-and Redis while they prepare the experiment, so they wipe a local experiment
-that is running at the same time. They ask before doing so if the local data
-looks in use, that is, a local server or another program is connected to the
-database or Redis. ``--update`` launches leave local data alone.
+``psynet debug ssh`` and ``psynet debug heroku``) prepare the experiment in a
+scratch database and Redis of their own, so they leave a running local
+experiment alone.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

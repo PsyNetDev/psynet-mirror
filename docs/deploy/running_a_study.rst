@@ -244,15 +244,13 @@ registered, PsyNet asks you to choose.
 The command builds the experiment image on the server, starts the
 experiment's services, and opens recruitment; see
 :doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
-database on your computer first, which clears the local PostgreSQL database
-and Redis and stops local PsyNet workers, so stop any local experiment before
-you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
-commands ask before resetting if a local server or another program is connected
-to the local database or Redis; pass ``--yes`` to skip the question.
-``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints a *Ready* summary of the participant link, the dashboard link and
-user, where the password is saved, the logs command and, for apps with
-classic ingress, the log viewer in the browser. Without a single
+database on your computer first, in a scratch PostgreSQL database and Redis
+that are removed afterwards, so a local experiment can keep running while you
+deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
+participant link, the dashboard link and user, where the password is saved,
+the logs command and, for apps with classic ingress, the log viewer in the
+browser. Without a single
 participant link, the summary shows the recruiter's message instead (for
 Prolific, a link to the new draft study). Save these. Open the
 dashboard and check that the experiment is running.
