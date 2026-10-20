@@ -224,8 +224,9 @@ Use ``--slots 1`` to check whether the failure depends on tests running concurre
 Tests that use S3 run against a filesystem mock by default. The ``boto3``
 tests in ``tests/isolated/test_s3.py`` can also run against the real
 ``psynet-tests`` bucket, with the AWS credentials from your Dallinger config.
-Run them before changing PsyNet's S3 code, or when the mock may have drifted
-from real S3:
+The same setting runs the ``awscli`` transfer test, which needs the ``aws``
+CLI and real S3. Run them before changing PsyNet's S3 code, or when the mock
+may have drifted from real S3:
 
 .. code-block:: shell
 

@@ -90,17 +90,16 @@ def run_test(storage, remote_prefix=""):
         remove_test_folder(test_folder)
 
 
-def test_s3_storage_awscli():
-    # Only run the test if AWS CLI is installed
-    from shutil import which
-
-    if which("aws") is not None:
-        storage = get_s3_storage("awscli")
-        remote_prefix = f"s3-tests/{uuid4().hex}"
-        try:
-            run_test(storage, remote_prefix)
-        finally:
-            storage.delete_folder(remote_prefix)
+@pytest.mark.parametrize("s3_target", ["real"], indirect=True)
+def test_s3_storage_awscli(s3_target):
+    if shutil.which("aws") is None:
+        pytest.skip("The aws CLI is not installed.")
+    storage = get_s3_storage("awscli")
+    remote_prefix = f"s3-tests/{uuid4().hex}"
+    try:
+        run_test(storage, remote_prefix)
+    finally:
+        storage.delete_folder(remote_prefix)
 
 
 def test_s3_storage_boto3(s3_target):
