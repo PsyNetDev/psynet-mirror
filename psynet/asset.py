@@ -2127,8 +2127,9 @@ class LocalStorage(AssetStorage):
     def sftp_connection(cls, ssh_host, ssh_user):
         """Return an SFTP client for the host, reopening it if its SSH connection closed.
 
-        Dallinger may close or replace the SSH connection that the SFTP client
-        runs on, for example after the connection drops.
+        The SSH connection that the SFTP client runs on can drop, or be closed
+        elsewhere in the process, for example by Dallinger or by PsyNet's
+        export code.
         """
         from dallinger.command_line.docker_ssh import get_sftp
 

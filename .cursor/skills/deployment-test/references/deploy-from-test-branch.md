@@ -391,8 +391,11 @@ fails the two `audio_gibbs` apps while the first one proceeds.
 **Rule:** only one deploy may be in local prepare at a time. Start the
 next only after the previous log shows any of these build markers:
 `Attempting to build image on remote host`, `Experiment UID:` or
-`Building image`. Newer Dallinger versions print only `Building image`.
-From that point the expensive remote Docker builds and launches may
+`Building image`. Newer Dallinger versions print only `Building image`,
+and print it only for a default build. If the deploy reuses an image
+from the registry or `DALLINGER_VERBOSE_BUILD=1` is set, wait for
+`Image <name> found on remote registry`, `pushed to remote registry` or
+`not found - building` instead. From that point the expensive remote Docker builds and launches may
 overlap.
 
 If a deploy hits the `participant_status` UniqueViolation, treat it as
