@@ -5358,14 +5358,35 @@ def test_remote_launch_keeps_local_data(remote_launch, update, prepared_in):
     assert [name for name, *_ in resets.mock_calls] == [prepared_in]
 
 
-def test_remote_launch_refuses_beside_a_local_server_here(remote_launch, tmp_path):
+_SSH_ARGS = ["--app", "test-app", "--server", "lab.example.org"]
+
+
+@pytest.mark.parametrize(
+    "command, args",
+    [
+        ("deploy__heroku", ["--app", "test-app"]),
+        ("debug__heroku", ["--app", "test-app"]),
+        ("deploy__docker_ssh", _SSH_ARGS),
+        ("debug__docker_ssh", _SSH_ARGS),
+        ("performance_test__docker_ssh", _SSH_ARGS),
+    ],
+)
+def test_remote_launch_refuses_beside_a_local_server_here(
+    monkeypatch, tmp_path, command, args
+):
+    from psynet import command_line
     from psynet.testing.locks import SERVER, experiment_directory_lock
 
-    launch, resets = remote_launch
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    hosts = {"lab.example.org": {"host": "lab"}}
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+    monkeypatch.chdir(tmp_path)
+    pre_launch = Mock()
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
     with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
-        with pytest.raises(click.ClickException, match="replace its generated files"):
-            launch()
-    assert resets.mock_calls == []
+        result = CliRunner().invoke(getattr(command_line, command), args)
+    assert "replace its generated files" in result.output
+    pre_launch.assert_not_called()
 
 
 def test_other_database_clients_are_listed_but_not_this_process(

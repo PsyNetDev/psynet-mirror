@@ -247,8 +247,9 @@ experiment's services, and opens recruitment; see
 database on your computer first, in a scratch PostgreSQL database and Redis
 that are removed afterwards, so a local experiment can keep running while you
 deploy. Because the deploy replaces the experiment directory's generated
-files, it refuses to start while ``psynet debug local`` serves the same
-directory. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+files, it doesn't run at the same time as a ``psynet debug local`` or test
+session in the same directory: whichever starts second refuses to.
+``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
 ``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
 participant link, the dashboard link and user, where the password is saved,
 the logs command and, for apps with classic ingress, the log viewer in the

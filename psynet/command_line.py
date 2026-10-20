@@ -1147,29 +1147,52 @@ def _prepare_in_scratch_database(archive):
         postgres_connection_limit_message,
     )
 
-    try:
-        environment = IsolatedEnvironment.start()
-    except IsolationError as e:
-        advice = postgres_connection_limit_message(e.__cause__)
-        raise click.ClickException(
-            "Could not create a scratch database and Redis to prepare the launch "
-            f"in ({e.__cause__})." + (f" {advice}" if advice else "")
-        ) from e
-    with _exit_on_termination_signal(), environment:
-        database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
-        log(
-            f"Preparing the experiment in the scratch database {database}, "
-            "which is removed afterwards. Your local database and Redis are "
-            "left alone."
-        )
-        env = {
-            **os.environ,
-            **{key: environment.env[key] for key in ("DATABASE_URL", "REDIS_URL")},
-        }
-        command = [sys.executable, "-c", _PSYNET_CLI_CODE]
-        command += ["prepare"] + (["--archive", archive] if archive else [])
-        if subprocess.run(command, env=env).returncode != 0:
-            raise click.ClickException("Preparing the experiment failed; see above.")
+    with _exit_on_termination_signal():
+        try:
+            environment = IsolatedEnvironment.start()
+        except IsolationError as e:
+            advice = postgres_connection_limit_message(e.__cause__)
+            raise click.ClickException(
+                "Could not create a scratch database and Redis to prepare the "
+                f"launch in ({e.__cause__})." + (f" {advice}" if advice else "")
+            ) from e
+        with environment:
+            database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
+            log(
+                f"Preparing the experiment in the scratch database {database}, "
+                "which is removed afterwards. Your local database and Redis are "
+                "left alone."
+            )
+            env = {
+                **os.environ,
+                **{key: environment.env[key] for key in ("DATABASE_URL", "REDIS_URL")},
+            }
+            command = [sys.executable, "-c", _PSYNET_CLI_CODE]
+            command += ["prepare"] + (["--archive", archive] if archive else [])
+            # On any exception, including SystemExit, run() kills and reaps prepare.
+            if subprocess.run(command, env=env).returncode != 0:
+                raise click.ClickException(
+                    "Preparing the experiment failed; see above."
+                )
+
+
+def _holding_experiment_directory(func):
+    """Hold the experiment directory's server lock while a remote launch runs.
+
+    A remote launch replaces the directory's generated files and finally
+    removes ``.deploy``, so local servers and test sessions in the same
+    directory are refused while it runs, and it refuses to start beside them.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        from .testing.locks import SERVER
+
+        with ExitStack() as stack:
+            _hold_experiment_directory(stack, SERVER)
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 def _url_without_password(url):
@@ -1937,9 +1960,6 @@ def _pre_launch(
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
-    if not local_:
-        # A launch replaces the directory's generated files and removes .deploy.
-        _check_no_server_here()
     _check_local_image_packages(local_packages)
 
     # performance-test ssh checked the credentials before contacting the server.
@@ -2120,6 +2140,7 @@ def deploy__local(ctx, docker, archive, legacy, no_browsers):
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @click.option("--docker", is_flag=True, default=False, help="Deploy using Docker")
 @click.pass_context
+@_holding_experiment_directory
 def deploy__heroku(ctx, app, archive, docker):
     """
     Deploy the experiment to Heroku.
@@ -2179,6 +2200,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 @_add_ssh_deployment_options
 @_option_ssh_update
 @click.pass_context
+@_holding_experiment_directory
 def deploy__docker_ssh(
     ctx,
     app,
@@ -2875,6 +2897,7 @@ def run_pre_checks_sandbox(local_packages=()):
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
 @click.pass_context
+@_holding_experiment_directory
 def debug__heroku(ctx, app, docker, archive):
     """
     Debug the experiment on Heroku.
@@ -2936,6 +2959,7 @@ def debug__docker_heroku(ctx, app, archive):
 @_use_local_dallinger_option
 @_option_ssh_update
 @click.pass_context
+@_holding_experiment_directory
 def debug__docker_ssh(ctx, **options):
     """
     Debug the experiment on a remote server via SSH.
@@ -7083,6 +7107,7 @@ def performance_test__prepare_reset(
 )
 @_test_options["performance_force"]
 @click.pass_context
+@_holding_experiment_directory
 def performance_test__docker_ssh(
     ctx,
     app,

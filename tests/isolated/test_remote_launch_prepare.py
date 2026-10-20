@@ -35,4 +35,5 @@ def test_remote_launch_prepares_without_touching_the_local_database():
     db.session.remove()
     assert Network.query.filter_by(role="local-data").count() == 1
     with zipfile.ZipFile(database_template_path) as template:
-        assert any(n.endswith("experiment.csv") for n in template.namelist())
+        assert "data/experiment.csv" in template.namelist()
+        assert b"local-data" not in template.read("data/network.csv")

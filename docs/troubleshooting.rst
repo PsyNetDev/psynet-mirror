@@ -74,8 +74,9 @@ its own, so it can run alongside.
 Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
 ``psynet debug ssh`` and ``psynet debug heroku``) prepare the experiment in a
 scratch database and Redis of their own, so they leave a running local
-experiment alone. They refuse to start while a local server serves the same
-experiment directory, whose generated files they replace.
+experiment alone. Because they replace the experiment directory's generated
+files, they don't run at the same time as a local server or test session in
+the same directory: whichever starts second refuses to.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

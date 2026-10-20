@@ -182,7 +182,8 @@ running, ask the user to stop it rather than stopping it yourself, and record
 the wait in the audit timeline. Remote launches (`psynet deploy ssh`,
 `psynet deploy heroku`, `psynet debug ssh` and `psynet debug heroku`) prepare
 in a scratch database and Redis of their own, so they leave local data alone,
-but refuse to start while a local server serves the same directory.
+but they don't run at the same time as a local server or test session in the
+same directory.
 
 #### Coding
 
