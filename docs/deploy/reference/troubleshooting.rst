@@ -45,12 +45,26 @@ rewritten the shared files. See :ref:`ssh_server_shared_services`.
 If the message says that the server's ``Caddyfile`` does not serve the
 expected name, the server may already serve another DNS name, for example a
 server registered by IP address whose earlier deployments used ``--dns-host
-nip.io``. Save
-that name, which restarts nothing, and deploy again:
+nip.io``. Save that name, which restarts nothing, and deploy again:
 
 .. code:: bash
 
     dallinger docker-ssh servers add --host 121.101.152.23 --dns-host nip.io
+
+No Let's Encrypt contact email
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A deployment or server command stops with ``No Let's Encrypt contact email
+for <server>`` when no email is saved with the server and
+``contact_email_on_error`` is missing or a placeholder, such as the
+``XXX@gmail.com`` in PsyNet's experiment template. This often happens on a
+server registered by an older Dallinger. Set a real ``contact_email_on_error``
+in ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`), or save an
+email with the server, which restarts nothing, and deploy again:
+
+.. code:: bash
+
+    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
 
 Deployment fails with ``PermissionError``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

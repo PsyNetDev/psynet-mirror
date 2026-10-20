@@ -111,6 +111,13 @@ dallinger ec2 provision \
   --type m7i.xlarge
 ```
 
+Before provisioning or registering a server, check (without printing values)
+that `~/.dallingerconfig` sets `dashboard_password`, `server_pem` pointing at
+the unencrypted `~/.ssh/<ec2_default_pem>.pem`, and a real
+`contact_email_on_error`. Server commands ignore the experiment's
+`config.txt` and reject its template placeholder `XXX@gmail.com`; ask the
+user for the address rather than inventing one.
+
 Provisioning also starts the shared Caddy, Postgres and Dozzle services and
 prints the Dozzle password once; record that it exists, not its value.
 
@@ -158,9 +165,13 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
   <name>`), try that first; it restarts nothing. `dallinger docker-ssh servers
   upgrade --host <server>` briefly restarts the shared services, so on a server
   with other experiments, ask the user first.
-- `dallinger ec2 provision` fails while setting up the shared services: the
-  instance keeps running and costs money. Fix the printed problem and run the
-  printed `servers upgrade` / `servers add` commands, or tear it down.
+- `dallinger ec2 provision` fails after launching the instance: it keeps
+  running and costs money. Fix the printed problem, then run either the
+  printed `servers add` commands that finish the setup or the printed
+  `ec2 teardown`; teardown is irreversible, so ask the user first.
+- A deploy stops with "No Let's Encrypt contact email": save one with
+  `dallinger docker-ssh servers add --host <server> --contact-email <email>`
+  (restarts nothing), using an address the user gives.
 - A deploy fails with `PermissionError: [Errno 13] Permission denied` on
   `dallinger/docker-compose.yml`: the installed Dallinger predates
   `servers upgrade`, and the server's shared files are read-only. Update the

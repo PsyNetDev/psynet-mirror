@@ -429,36 +429,6 @@ guarded by a config option so existing behavior doesn't change silently.
 Before relying on the automatic approval described above, confirm it once end
 to end on a live Prolific study, since the documentation now depends on it.
 
-Check EC2 provisioning settings before booting
-----------------------------------------------
-
-Date
-++++
-
-2026-09-28
-
-Problem
-+++++++
-
-``dallinger ec2 provision`` checks that ``dashboard_user`` and
-``dashboard_password`` are set in ``~/.dallingerconfig`` only after it has
-booted the instance, resized its storage and connected over SSH (in
-``prepare_docker_experiment_setup``). If either setting is missing,
-provisioning stops with an assertion error and leaves a running instance
-that is being billed, which the researcher then has to find and tear down.
-
-Idea
-++++
-
-``server_pem`` is already checked before the instance boots. In Dallinger,
-load the configuration and also check the dashboard settings and AWS
-credentials at the start of ``prepare_instance``, before ``boot_instance``,
-and raise a
-``click.UsageError`` that names the missing keys. It's a short PR with a unit
-test that mocks the EC2 client and asserts that no instance is booted when a
-key is missing. Once it ships, update step 5 of the provisioning steps in
-:doc:`/deploy/reference/aws_automatic_provisioning`.
-
 Safer WebSocket elements
 ------------------------
 

@@ -323,10 +323,15 @@ commands do:
   upgrade when no classic experiment is live.
 
 These commands write the server's ``Caddyfile`` for its own DNS name (see
-:ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the
-``--contact-email`` saved with the server, or else ``contact_email_on_error``;
-``servers add`` saves ``contact_email_on_error`` unless you pass
-``--contact-email``. Caddy keeps its HTTPS certificates on the ``caddy_data``
+:ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
+saved with the server. ``servers add`` and ``servers upgrade`` save the one
+passed with ``--contact-email``, else ``contact_email_on_error`` from
+``~/.dallingerconfig`` or the environment (never from an experiment's
+``config.txt``), and print it with where it came from. Placeholders such as
+``XXX@gmail.com`` don't count. If a deployment stops because a server has no
+contact email, ``servers add --host <server> --contact-email <email>`` saves
+one without restarting anything (see :ref:`upgrading_an_existing_server`).
+Caddy keeps its HTTPS certificates on the ``caddy_data``
 Docker volume, so they survive recreating Caddy. On a server set up by an
 older Dallinger, the first ``servers upgrade`` adds this volume, and Caddy may
 obtain new certificates once. The log viewer moves to ``https://logs.<server

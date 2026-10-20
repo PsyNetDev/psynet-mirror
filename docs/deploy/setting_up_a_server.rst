@@ -253,11 +253,20 @@ Dashboard credentials and contact email
 Each experiment's dashboard is protected by ``dashboard_user`` and
 ``dashboard_password``. If you leave the password out, a new random one is
 generated for each deployment and printed at the end; ``dallinger ec2
-provision`` requires both to be set. ``contact_email_on_error`` must be a
-valid address: participants see it on error pages, and the server uses it to
-obtain HTTPS certificates from Let's Encrypt, so ``dallinger ec2 provision``
-refuses to start without one. ``dallinger docker-ssh servers
-add`` saves it with the server unless you pass ``--contact-email``.
+provision`` requires ``dashboard_password`` to be set (``dashboard_user``
+defaults to ``admin``).
+
+Set ``contact_email_on_error`` to a real address in ``~/.dallingerconfig``:
+participants see it on error pages, and the server uses it to obtain HTTPS
+certificates from Let's Encrypt. Server commands (``dallinger docker-ssh
+servers add``, ``servers upgrade`` and ``dallinger ec2 provision``) read it
+only from ``~/.dallingerconfig`` or the environment, never from an
+experiment's ``config.txt``, because a server isn't tied to one experiment.
+They reject placeholders such as ``XXX@gmail.com``, the value in PsyNet's
+experiment template, and ``dallinger ec2 provision`` refuses to start
+without a real address. ``servers add`` and ``servers upgrade`` save the
+address with the server, unless you pass ``--contact-email``, and print it
+with where it came from.
 
 .. code-block:: ini
 
@@ -349,7 +358,10 @@ Registering the server
       ``ec2_default_pem`` to the key pair's name, without path or extension,
       and ``server_pem`` to the file. Dallinger finds the file by this name,
       as ``~/.ssh/<ec2_default_pem>.pem``, so the file name must match the
-      key pair name. Keep only one ``server_pem`` line in
+      key pair name. A new instance accepts only this key pair, so
+      ``server_pem`` must be this same file, the key pair's private key,
+      without a passphrase; ``dallinger ec2 provision`` checks this before it
+      boots an instance. Keep only one ``server_pem`` line in
       ``~/.dallingerconfig``.
 
       .. code-block:: ini
@@ -384,14 +396,16 @@ Registering the server
       Provisioning takes a few minutes. It also starts the shared services
       that experiments use (see :ref:`ssh_server_shared_services`) and prints
       the log viewer's password once; note it. The server is registered
-      twice, under its AWS hostname and under the ``--dns-host`` name. Pass
-      the ``--dns-host`` name as ``--server`` (here
-      ``memory-lab.cool-psychology.org``) once your computer resolves it,
-      which can take up to about five minutes. Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``. If provisioning stops
-      while setting up the shared services, the instance keeps running: fix
-      the problem and run the commands that it prints. For the other ``ec2``
-      commands and what provisioning does, see
+      twice, under its AWS hostname and under the ``--dns-host`` name. You
+      can deploy straight away with ``--server`` set to the AWS hostname, and
+      with the ``--dns-host`` name (here ``memory-lab.cool-psychology.org``)
+      once your computer resolves it, which can take up to about five
+      minutes. Experiments are served at
+      ``https://<app>.memory-lab.cool-psychology.org``. If anything fails
+      after the instance is launched, it keeps running and costs money:
+      provisioning prints the ``dallinger ec2 teardown`` command that removes
+      it and, if the setup had started, the commands that finish it instead.
+      For the other ``ec2`` commands and what provisioning does, see
       :doc:`/deploy/reference/aws_automatic_provisioning`.
 
       .. lab-note::
@@ -446,6 +460,18 @@ shared services:
 .. code-block:: bash
 
     dallinger docker-ssh servers upgrade --host my-server.example.org
+
+The upgrade writes the Let's Encrypt contact email into the server's
+``Caddyfile``: the one saved with the server, else ``contact_email_on_error``
+from ``~/.dallingerconfig``, or the one you pass with ``--contact-email``. A
+server registered by an older Dallinger has no saved email, so a deployment
+there stops if the only ``contact_email_on_error`` it finds is a placeholder
+such as ``XXX@gmail.com``. To save an email without restarting anything,
+run:
+
+.. code-block:: bash
+
+    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
 
 Make sure that everyone who deploys to that server updates Dallinger too.
 Older versions can no longer deploy there: their deployments fail with
