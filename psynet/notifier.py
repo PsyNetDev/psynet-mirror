@@ -9,7 +9,7 @@ from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
@@ -122,9 +122,7 @@ class Notifier:
     @property
     def logs_message(self):
         info = self.deployment_information
-        logs_url = dozzle_url(
-            info["server"], info.get("ingress"), info.get("server_dns_host")
-        )
+        logs_url = recorded_dozzle_url(info)
         if logs_url is None:
             command = info.get("logs_command")
             if command is None:

@@ -4774,7 +4774,7 @@ def test_pre_launch_aborts_when_app_exists():
 def test_pre_launch_records_the_server_dns_host(ingress, expected):
     from psynet.command_line import _pre_launch
 
-    hosts = {"lab": {"host": "1.2.3.4", "user": "u", "dns_host": "lab.example.org"}}
+    hosts = {"lab": {"host": "1.2.3.4", "user": "u"}}
     with (
         patch("psynet.command_line._check_experiment_directory"),
         patch("psynet.command_line._check_ssh_deploy_credentials"),
@@ -4796,6 +4796,7 @@ def test_pre_launch_records_the_server_dns_host(ingress, expected):
                 server="lab",
                 app="study",
                 ingress=ingress,
+                dns_host="lab.example.org",
             )
 
     assert write.call_args.kwargs["server_dns_host"] == expected

@@ -72,6 +72,8 @@ def server_dns_host(server_info: dict, dns_host: Optional[str] = None) -> Option
     if "host" not in server_info:
         return None
     host = docker_ssh.split_ssh_host_port(server_info["host"])[0]
+    # Only Dallinger/Dallinger#10143 adds ``servers upgrade`` and saved DNS
+    # hosts. Remove the ``else`` branch once PsyNet pins a Dallinger with it.
     if "upgrade" in docker_ssh.servers.commands:
         name = server_info.get("dns_host") or (dns_host if _is_ip(host) else None)
     else:
@@ -95,23 +97,30 @@ def _is_ip(host: str) -> bool:
     return True
 
 
-def dozzle_url(
-    server: str, ingress: Optional[str], dns_host: Optional[str] = None
-) -> Optional[str]:
-    """Return the server's Dozzle URL, or ``None`` with Cloudflare ingress, which has no Dozzle.
+def dozzle_url(dns_host: Optional[str], ingress: Optional[str]) -> Optional[str]:
+    """Return the server's Dozzle URL, or ``None`` if it has none.
 
     Parameters
     ----------
-    server : str
-        The configured server name.
-    ingress : str, optional
-        The app's ingress.
     dns_host : str, optional
-        The server's DNS name, from :func:`server_dns_host`; defaults to ``server``.
+        The server's DNS name, from :func:`server_dns_host`. Without one there
+        is no Dozzle address.
+    ingress : str, optional
+        The app's ingress. Cloudflare ingress has no Dozzle.
     """
-    if ingress == INGRESS_CLOUDFLARE:
+    if not dns_host or ingress == INGRESS_CLOUDFLARE:
         return None
-    return f"https://logs.{dns_host or server}"
+    return f"https://logs.{dns_host}"
+
+
+def recorded_dozzle_url(info: dict) -> Optional[str]:
+    """Return the Dozzle URL for the deployment described by ``deployment_info``.
+
+    Deployments recorded before ``server_dns_host`` was saved use the server name.
+    """
+    return dozzle_url(
+        info.get("server_dns_host", info.get("server")), info.get("ingress")
+    )
 
 
 def _home_relative(path) -> str:
@@ -212,9 +221,9 @@ def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> 
     url = None
     if ingress != INGRESS_CLOUDFLARE:
         dns_host = record.get("server_dns_host") or server_dns_host(server_info)
-        # An IP server without a DNS name has no Dozzle address to give.
-        if dns_host or "host" not in server_info:
-            url = dozzle_url(server, ingress, dns_host)
+        if "host" not in server_info:
+            dns_host = dns_host or server
+        url = dozzle_url(dns_host, ingress)
     if url:
         where = f"in Dozzle at {url}"
     elif "host" not in server_info:

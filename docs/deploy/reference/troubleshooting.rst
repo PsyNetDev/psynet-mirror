@@ -8,7 +8,8 @@ Troubleshooting deployments
 When a deployment fails on the server, the real error is usually in the logs
 of the app's ``web`` service. Read them over SSH with the log command that
 the deployment prints (see :ref:`ssh_server_working_over_ssh`) or, on servers
-with classic ingress, in Dozzle at ``https://logs.<server>``. Apps with
+with classic ingress, in Dozzle at ``https://logs.<dns-host>``, whose link
+the deployment also prints. Apps with
 Cloudflare ingress have no Dozzle (see :ref:`ssh_server_cloudflare`).
 
 DNS resolution error

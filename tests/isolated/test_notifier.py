@@ -43,23 +43,30 @@ def test_logger_notifier_leaves_local_dashboard_details_to_the_banner(
 
 
 @pytest.mark.parametrize(
-    "ingress, logs_command, dns_host, expected",
+    "ingress, logs_command, dns_record, expected",
     [
-        (None, None, None, "https://logs.lab"),
-        ("classic", None, None, "https://logs.lab"),
-        ("classic", None, "lab.example.org", "https://logs.lab.example.org"),
-        ("cloudflare", "ssh lab logs", None, "`ssh lab logs`"),
-        ("cloudflare", None, None, "printed at the end of the deployment"),
+        (None, None, {}, "https://logs.lab"),
+        ("classic", None, {}, "https://logs.lab"),
+        (
+            "classic",
+            None,
+            {"server_dns_host": "lab.example.org"},
+            "https://logs.lab.example.org",
+        ),
+        # A deploy that found no DNS name for the server has no Dozzle link.
+        ("classic", "ssh lab logs", {"server_dns_host": None}, "`ssh lab logs`"),
+        ("cloudflare", "ssh lab logs", {}, "`ssh lab logs`"),
+        ("cloudflare", None, {}, "printed at the end of the deployment"),
     ],
 )
 def test_logs_message_follows_the_app_ingress(
-    monkeypatch, ingress, logs_command, dns_host, expected
+    monkeypatch, ingress, logs_command, dns_record, expected
 ):
     info = {
         "server": "lab",
         "ingress": ingress,
         "logs_command": logs_command,
-        "server_dns_host": dns_host,
+        **dns_record,
     }
     monkeypatch.setattr("psynet.deployment_info.read_all", lambda: info)
     monkeypatch.setattr(
@@ -69,4 +76,4 @@ def test_logs_message_follows_the_app_ingress(
     message = Notifier().logs_message
 
     assert expected in message
-    assert ("Dozzle" in message) is (ingress != "cloudflare")
+    assert ("Dozzle" in message) is expected.startswith("https://")
