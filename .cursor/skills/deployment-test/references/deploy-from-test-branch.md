@@ -315,8 +315,8 @@ source <psynet-root>/<venv>/bin/activate
   --app <payment-flows-prolific-app-name>) &
 ```
 
-Wait until that deploy prints `Attempting to build image on remote host`
-(fallback if that line is skipped: `Experiment UID:`). Then start the next:
+Wait until that deploy prints a build marker (see "Stagger Local Prepare,
+Then Overlap Remote Builds" below). Then start the next:
 
 ```bash
 (cd <prolific-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
@@ -389,8 +389,9 @@ CREATE TYPE participant_status AS ENUM (...)
 fails the two `audio_gibbs` apps while the first one proceeds.
 
 **Rule:** only one deploy may be in local prepare at a time. Start the
-next only after the previous log shows
-`Attempting to build image on remote host` (fallback: `Experiment UID:`).
+next only after the previous log shows any of these build markers:
+`Attempting to build image on remote host`, `Experiment UID:` or
+`Building image`. Newer Dallinger versions print only `Building image`.
 From that point the expensive remote Docker builds and launches may
 overlap.
 
