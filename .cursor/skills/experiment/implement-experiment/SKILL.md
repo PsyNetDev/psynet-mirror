@@ -181,10 +181,9 @@ port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is
 running, ask the user to stop it rather than stopping it yourself, and record
 the wait in the audit timeline. Remote launches (`psynet deploy ssh`,
 `psynet deploy heroku`, `psynet debug ssh`, `psynet debug heroku` and
-`psynet performance-test ssh`) prepare
-in a scratch database and Redis of their own, so they leave local data alone,
-but they don't run at the same time as a local server or test session in the
-same directory.
+`psynet performance-test ssh`) prepare in a scratch database and Redis of
+their own, so they leave local data alone, but they don't run at the same time
+as a local server or test session in the same directory.
 
 #### Coding
 

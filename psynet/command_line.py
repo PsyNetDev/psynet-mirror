@@ -1177,7 +1177,7 @@ def _prepare_in_scratch_database(archive):
 
 
 def _holding_experiment_directory(func):
-    """Hold the experiment directory's server lock while a remote launch runs.
+    """Hold the experiment directory's lock while a remote launch runs.
 
     A remote launch replaces the directory's generated files and finally
     removes ``.deploy``, so local servers and test sessions in the same
@@ -1186,10 +1186,10 @@ def _holding_experiment_directory(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        from .testing.locks import SERVER
+        from .testing.locks import REMOTE_LAUNCH
 
         with ExitStack() as stack:
-            _hold_experiment_directory(stack, SERVER)
+            _hold_experiment_directory(stack, REMOTE_LAUNCH)
             return func(*args, **kwargs)
 
     return wrapper
@@ -5593,15 +5593,17 @@ def _hold_experiment_directory(stack, kind):
     stack : contextlib.ExitStack
         The stack that releases the lock.
     kind : str
-        :data:`psynet.testing.locks.SERVER` or
+        :data:`psynet.testing.locks.SERVER`,
+        :data:`psynet.testing.locks.REMOTE_LAUNCH` or
         :data:`psynet.testing.locks.TEST_SESSION`; see
         :func:`psynet.testing.locks.experiment_directory_lock`.
 
     Raises
     ------
     click.ClickException
-        If the lock is held by a server, or ``kind`` is a server and the lock
-        is held at all, or the lock file can't be opened.
+        If the lock is held by anything but a test session, or ``kind`` isn't a
+        test session and the lock is held at all, or the lock file can't be
+        opened.
     """
     from .testing.locks import experiment_directory_lock
 
