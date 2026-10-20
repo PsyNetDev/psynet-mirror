@@ -1501,7 +1501,6 @@ def list_isolated_tests():
         # Only pytest-discoverable modules; shared helper modules live
         # alongside the tests and must not be run as empty test files.
         tests.extend(glob.glob(str(directory / "test_*.py")))
-    tests = sorted(tests)
 
     return tests
 
