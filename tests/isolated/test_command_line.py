@@ -878,10 +878,11 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     # setenv, unlike delenv of an unset variable, restores the variables it sets.
     monkeypatch.setenv("FLASK_RUN_PORT", "")
     monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
+    monkeypatch.setenv("base_port", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     assert calls == [({"skip_flask": False, "port": 5010}, job)]
-    assert os.environ["FLASK_RUN_PORT"] == "5010"
+    assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
     assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
         _reloader_exclude_patterns()
     )

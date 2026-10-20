@@ -77,7 +77,7 @@ def test_find_sessions_reads_base_port_from_the_session_config_txt(tmp_path):
     try:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            sessions = [s for s in find_sessions() if s.pids == [process.pid]]
+            sessions = [s for s in find_sessions() if process.pid in s.pids]
             if sessions:
                 break
             time.sleep(0.1)

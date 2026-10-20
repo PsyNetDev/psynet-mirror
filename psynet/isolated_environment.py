@@ -86,10 +86,24 @@ def local_base_port(environ=None, directory="."):
     """Return Dallinger's ``base_port`` without importing the experiment.
 
     Follows Dallinger's precedence: the ``base_port`` environment variable,
-    then ``config.txt`` in ``directory`` (by default the current directory),
-    then ``~/.dallingerconfig``, then 5000. Like Dallinger, a later section of
-    a file overrides an earlier one. A ``base_port`` set in the experiment
-    class's ``config`` dictionary is not seen.
+    then ``config.txt`` in ``directory``, then ``~/.dallingerconfig``, then
+    5000. Like Dallinger, a later section of a file overrides an earlier one.
+    A ``base_port`` set in the experiment class's ``config`` dictionary is not
+    seen. Files that don't exist or can't be opened are skipped.
+
+    Parameters
+    ----------
+    environ : mapping, optional
+        The environment to read, by default ``os.environ``. Its ``HOME``
+        locates ``~/.dallingerconfig``.
+    directory : str, optional
+        The directory whose ``config.txt`` is read, by default the current
+        directory.
+
+    Returns
+    -------
+    int
+        The port.
 
     Raises
     ------
@@ -101,14 +115,15 @@ def local_base_port(environ=None, directory="."):
     environ = os.environ if environ is None else environ
     if "base_port" in environ:
         return int(environ["base_port"])
+    home = environ.get("HOME") or os.path.expanduser("~")
     for path in (
         os.path.join(directory, "config.txt"),
-        os.path.expanduser("~/.dallingerconfig"),
+        os.path.join(home, ".dallingerconfig"),
     ):
         parser = configparser.ConfigParser(interpolation=None)
         try:
             parser.read(path)
-        except configparser.Error as e:
+        except (configparser.Error, UnicodeDecodeError) as e:
             raise ValueError(f"Could not read {path}: {e}") from e
         values = [
             parser[s]["base_port"]

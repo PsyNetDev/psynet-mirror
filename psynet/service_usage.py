@@ -4,8 +4,9 @@ Several debug servers, test runs and CI slots can share one machine, each
 with its own ``base_port``, ``DATABASE_URL`` and ``REDIS_URL``. Nothing
 records those claims centrally: the running processes are the record. This
 module reads them from the environments of the current user's PsyNet,
-Dallinger, Flask and pytest processes, then matches them against the local
-PostgreSQL databases and ``redis-server`` processes.
+Dallinger, Flask and pytest processes, falling back to each process's
+``config.txt`` and ``~/.dallingerconfig`` for ``base_port``, then matches them
+against the local PostgreSQL databases and ``redis-server`` processes.
 
 A process's environment shows only the settings it started with. Isolated
 sessions under plain ``pytest`` change theirs in-process (see
@@ -141,8 +142,9 @@ def _plain_pytest_key(process, environ):
 def _base_port(environ, directory):
     """Return the ``base_port`` a process started in ``directory`` uses, as a string.
 
-    Falls back to 5000 if a configuration file can't be read, so one broken
-    ``config.txt`` doesn't stop the listing.
+    Falls back to 5000 if a configuration file can't be parsed or its
+    ``base_port`` isn't a number, so one broken ``config.txt`` doesn't stop
+    the listing.
     """
     try:
         return str(local_base_port(environ, directory))

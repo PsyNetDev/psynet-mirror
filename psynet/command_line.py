@@ -1589,6 +1589,8 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
+    # Lets `psynet services list` see the port in the Flask and worker processes.
+    os.environ["base_port"] = str(port)
     # Replaced rather than extended: an inherited value can come from another
     # debug server and exclude this one's development folder.
     os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
