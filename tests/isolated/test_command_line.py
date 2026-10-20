@@ -6728,7 +6728,7 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
 @pytest.mark.parametrize(
     "default_ingress, services, compose_status, logs",
     [
-        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.musix)"),
+        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.lab)"),
         (
             "classic",
             "  web:\n  cloudflared:\n",

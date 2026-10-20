@@ -4,7 +4,7 @@ import pytest
 from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
 from psynet import deployment_info
-from psynet.server_logs import server_ingress, where_to_read_logs
+from psynet.server_logs import server_dns_host, server_ingress, where_to_read_logs
 
 CLOUDFLARE_HOST = {"host": "lab.example:2222", "default_ingress": "cloudflare"}
 COMPOSE_LOGS = '"docker compose -f ~/dallinger/study/docker-compose.yml logs -f"'
@@ -29,6 +29,23 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
 
 
 @pytest.mark.parametrize(
+    "server_info, dns_host, expected",
+    [
+        ({"host": "lab.example.org"}, None, "lab.example.org"),
+        (
+            {"host": "1.2.3.4", "dns_host": "lab.example.org"},
+            "x.org",
+            "lab.example.org",
+        ),
+        ({"host": "1.2.3.4:2222"}, "lab.example.org", "lab.example.org"),
+        ({"host": "1.2.3.4"}, "nip.io", "1.2.3.4.nip.io"),
+    ],
+)
+def test_server_dns_host_prefers_the_saved_name(server_info, dns_host, expected):
+    assert server_dns_host(server_info, dns_host) == expected
+
+
+@pytest.mark.parametrize(
     "host, pem, record, expected",
     [
         (
@@ -36,6 +53,12 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
             "/keys/lab.pem",
             None,
             f"in Dozzle at https://logs.lab{GUESSED}",
+        ),
+        (
+            {"host": "1.2.3.4", "dns_host": "lab.example.org"},
+            "/keys/lab.pem",
+            None,
+            f"in Dozzle at https://logs.lab.example.org{GUESSED}",
         ),
         (CLOUDFLARE_HOST, "/keys/lab.pem", None, CLOUDFLARE_LOGS + GUESSED),
         (
@@ -50,7 +73,7 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
             CLOUDFLARE_HOST,
             "/keys/lab.pem",
             ("study", "classic"),
-            "in Dozzle at https://logs.lab",
+            "in Dozzle at https://logs.lab.example",
         ),
         (
             {**CLOUDFLARE_HOST, "default_ingress": "classic"},

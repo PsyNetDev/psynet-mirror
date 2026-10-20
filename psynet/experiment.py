@@ -1343,6 +1343,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             logs_url = dozzle_url(
                 deployment_information.get("server"),
                 deployment_information.get("ingress"),
+                deployment_information.get("server_dns_host"),
             )
 
         def unpack_export(deployment_id):

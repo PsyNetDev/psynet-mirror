@@ -122,7 +122,9 @@ class Notifier:
     @property
     def logs_message(self):
         info = self.deployment_information
-        logs_url = dozzle_url(info["server"], info.get("ingress"))
+        logs_url = dozzle_url(
+            info["server"], info.get("ingress"), info.get("server_dns_host")
+        )
         if logs_url is None:
             command = info.get("logs_command")
             if command is None:
