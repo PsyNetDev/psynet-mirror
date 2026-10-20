@@ -1638,6 +1638,7 @@ def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
             "dallinger.command_line.docker_ssh.get_configured_hosts",
             return_value={"server": {}},
         ),
+        patch("dallinger.command_line.docker_ssh.CONFIGURED_HOSTS", {"server": {}}),
         patch("dallinger.command_line.docker_ssh.get_apps", calls.get_apps),
         patch(
             "psynet.command_line._check_experiment_directory",
@@ -4731,6 +4732,7 @@ def test_pre_launch_aborts_when_app_exists():
     from psynet.command_line import _pre_launch
 
     ctx = Mock()
+    hosts = {"test-server": {"host": "example.com", "user": "test-user"}}
     with (
         patch(
             "psynet.command_line._check_experiment_directory"
@@ -4741,10 +4743,8 @@ def test_pre_launch_aborts_when_app_exists():
         patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
         patch("psynet.command_line._abort_if_app_exists", side_effect=click.Abort),
         patch("psynet.command_line.run_pre_checks") as mock_run_pre_checks,
-        patch(
-            "psynet.command_line.CONFIGURED_HOSTS",
-            {"test-server": {"host": "example.com", "user": "test-user"}},
-        ),
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+        patch("dallinger.command_line.docker_ssh.CONFIGURED_HOSTS", hosts),
     ):
         with pytest.raises(click.Abort):
             _pre_launch(
@@ -4760,6 +4760,57 @@ def test_pre_launch_aborts_when_app_exists():
 
     mock_check_directory.assert_called_once_with("live", require_git_commit=True)
     mock_run_pre_checks.assert_not_called()
+
+
+@pytest.mark.parametrize("dallinger_has_check", [True, False])
+@pytest.mark.parametrize(
+    "command, args",
+    [
+        ("deploy__docker_ssh", ["--app", "test-app"]),
+        ("deploy__docker_ssh", ["--app", "test-app", "--update"]),
+        ("debug__docker_ssh", ["--app", "test-app"]),
+        ("performance_test__docker_ssh", ["--app", "test-app"]),
+    ],
+)
+def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
+    monkeypatch, tmp_path, command, args, dallinger_has_check
+):
+    from psynet import command_line
+
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    if dallinger_has_check and not hasattr(docker_ssh, "check_deploy_credentials"):
+        pytest.skip("Dallinger has no check_deploy_credentials")
+    from dallinger.command_line.lib.cloudflare import CloudflareError
+
+    hosts = {"lab.example.org": {"host": "lab", "default_ingress": "classic"}}
+    monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", hosts)
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+    monkeypatch.setattr(docker_ssh, "get_config", lambda load: MagicMock())
+    monkeypatch.setattr(
+        docker_ssh, "load_api_token", Mock(side_effect=CloudflareError("no token"))
+    )
+    if not dallinger_has_check:
+        monkeypatch.delattr(docker_ssh, "check_deploy_credentials", raising=False)
+    reached = Mock(side_effect=RuntimeError("went past the token check"))
+    monkeypatch.setattr(docker_ssh, "get_apps", reached)
+    monkeypatch.setattr("psynet.services.ensure_local_services", reached)
+    monkeypatch.setattr("psynet.command_line._check_experiment_directory", Mock())
+    monkeypatch.setattr("psynet.command_line.reset_console", Mock())
+    monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "")
+    monkeypatch.delenv("DALLINGER_SOURCE", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        getattr(command_line, command),
+        ["--server", "lab", "--ingress", "cloudflare", *args],
+    )
+
+    if dallinger_has_check:
+        assert result.exit_code == 1, result.output
+        assert "Error: Cloudflare error: no token" in result.output
+        reached.assert_not_called()
+    else:
+        assert str(result.exception) == "went past the token check"
 
 
 def test_pre_launch_skips_dependency_check_for_in_repo_experiments(

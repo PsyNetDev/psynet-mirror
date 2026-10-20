@@ -1,5 +1,6 @@
 """Tests for local PostgreSQL/Redis service checks and ensure helpers."""
 
+import importlib
 from unittest.mock import Mock
 
 import click
@@ -466,6 +467,8 @@ def test_pre_launch_ensures_services(monkeypatch, launch):
 
     ensure = Mock()
     monkeypatch.setattr("psynet.services.ensure_local_services", ensure)
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", {"s": {}})
     monkeypatch.setattr(
         "psynet.command_line._check_experiment_directory", lambda mode, **kwargs: None
     )

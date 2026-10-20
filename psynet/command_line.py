@@ -1996,6 +1996,10 @@ def _pre_launch(
     _check_experiment_directory(mode, require_git_commit=not local_)
     _check_local_image_packages(local_packages)
 
+    # performance-test ssh checked the credentials before contacting the server.
+    if ssh and not performance_test_app:
+        _check_ssh_deploy_credentials(server, ingress)
+
     from .services import ensure_local_services
 
     # All launch paths (local, SSH, Heroku, Docker) run ``prepare`` / Redis
@@ -2086,6 +2090,36 @@ def _pre_launch(
         # Unimports the PsyNet experiment, because Dallinger will want to start from scratch when using Heroku.
         # We don't unimport it in other cases because reloading the experiment produces an unnecessary time overhead.
         clean_sys_modules()
+
+
+def _check_ssh_deploy_credentials(server, ingress):
+    """Stop an SSH launch early if the deploy's credentials are missing.
+
+    Run before the launch starts local services, contacts the server, resets
+    local data or runs ``prepare``. Dallinger versions with
+    ``check_deploy_credentials`` check that a Cloudflare-ingress deploy can
+    load its Cloudflare API token. Older versions lack it, so the check is
+    skipped and Dallinger's deploy checks the token later.
+
+    Parameters
+    ----------
+    server : str
+        The configured server to deploy to.
+    ingress : str or None
+        The ``--ingress`` option; ``None`` uses the server's default ingress.
+
+    Raises
+    ------
+    click.ClickException
+        If the deploy uses Cloudflare ingress and the token can't be loaded.
+    click.UsageError
+        If Dallinger doesn't know the server or the ingress.
+    """
+    try:
+        from dallinger.command_line.docker_ssh import check_deploy_credentials
+    except ImportError:
+        return
+    check_deploy_credentials(server=server, ingress=ingress)
 
 
 def _forget_tables_defined_in_experiment_directory():
@@ -7167,6 +7201,7 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     # Contacting the server loads the config, so a missing config.txt must be
     # scaffolded first.
     _check_experiment_directory("sandbox", require_git_commit=True)
+    _check_ssh_deploy_credentials(server, deploy_options.get("ingress"))
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
