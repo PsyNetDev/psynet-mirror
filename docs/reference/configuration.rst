@@ -886,9 +886,6 @@ Internationalization
 ``disable_browser_autotranslate`` *bool* |dlgr-icon|
     Disable browser autotranslate feature. Default: ``True``.
 
-``google_translate_json_path`` *str* |psynet-icon| |sensitive-icon|
-    Path to the Google Translate JSON credentials file. Default: ``None``.
-
 ``language`` *str* |dlgr-icon|
     A ``gettext`` language code to be used for the experiment.
 
