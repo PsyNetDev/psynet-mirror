@@ -3325,6 +3325,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "ເລີ່ມຕົ້ນການທົດສອບ..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "ມີຄົນຈຳນວນຫຼາຍກຳລັງເຂົ້າຮ່ວມຢູ່ໃນຂະນະນີ້."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"ກະລຸນາເປີດໜ້ານີ້ໄວ້: ທ່ານຈະເຂົ້າຮ່ວມໂດຍອັດຕະໂນມັດທັນທີທີ່ມີບ່ອນວ່າງ. "
+"ທ່ານຍັງສາມາດກັບມາພາຍຫຼັງໄດ້."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3452,7 +3468,7 @@ msgstr "ອັງໂກລາ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Anguilla"
-msgstr "Anguilla"
+msgstr "ແອງກິວລາ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3632,7 +3648,7 @@ msgstr "ບູຣຸນດີ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Cabo Verde"
-msgstr "Cabo Verde"
+msgstr "ກາໂບແວກເດ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3728,7 +3744,7 @@ msgstr "ໝູ່ເກາະຄຸກ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Costa Rica"
-msgstr "Costa Rica"
+msgstr "ຄອສຕາຣິກາ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3764,7 +3780,7 @@ msgstr "ເຊັກໂກ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Côte d'Ivoire"
-msgstr "Côte d'Ivoire"
+msgstr "ໂກຕດິວົວ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3806,13 +3822,13 @@ msgstr "ປະເທດເອຢິບ"
 #, fuzzy
 msgctxt "country_name"
 msgid "El Salvador"
-msgstr "El Salvador"
+msgstr "ເອລຊັນວາດໍ"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Equatorial Guinea"
-msgstr "Equatorial Guinea"
+msgstr "ກິນີເສັ້ນສູນສູດ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3920,7 +3936,7 @@ msgstr "ການາ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Gibraltar"
-msgstr "Gibraltar"
+msgstr "ຈິບຣອນຕາ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3944,13 +3960,13 @@ msgstr "ກຣີນາດາ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Guadeloupe"
-msgstr "Guadeloupe"
+msgstr "ກວາເດີລູບ"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guam"
-msgstr "Guam"
+msgstr "ກວາມ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3974,7 +3990,7 @@ msgstr "ກີນີ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Guinea-Bissau"
-msgstr "Guinea-Bissau"
+msgstr "ກິນີ-ບິສເຊົາ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4058,7 +4074,7 @@ msgstr "ໄອແລນ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Isle of Man"
-msgstr "Isle of Man"
+msgstr "ເກາະແມນ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4220,7 +4236,7 @@ msgstr "ມາເລເຊຍ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Maldives"
-msgstr "Maldives"
+msgstr "ມັລດີຟ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4304,7 +4320,7 @@ msgstr "ມອນເຕເນໂກຣ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Montserrat"
-msgstr "Montserrat"
+msgstr "ມອນເຊີຣັດ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4466,7 +4482,7 @@ msgstr "ຟີລິບປິນ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Pitcairn"
-msgstr "Pitcairn"
+msgstr "ພິດແຄນ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4592,7 +4608,7 @@ msgstr "ເຊີເບຍ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Seychelles"
-msgstr "Seychelles"
+msgstr "ເຊເຊວ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4610,7 +4626,7 @@ msgstr "ສິງກະໂປ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Sint Maarten"
-msgstr "Sint Maarten"
+msgstr "ຊິນມາເທັນ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4676,7 +4692,7 @@ msgstr "ຊູດານ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Suriname"
-msgstr "Suriname"
+msgstr "ຊູຣິນາມ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4742,7 +4758,7 @@ msgstr "ໂຕໂກ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Tokelau"
-msgstr "Tokelau"
+msgstr "ໂຕເກເລົາ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4904,7 +4920,7 @@ msgstr "ໝູ່ເກາະເອແລນ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Abkhazian"
-msgstr "Abkhazian"
+msgstr "ອັບຄາຊຽນ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -4934,7 +4950,7 @@ msgstr "ອານບານີ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Amharic"
-msgstr "Amharic"
+msgstr "ອຳຮາຣິກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -4946,7 +4962,7 @@ msgstr "ອາຣັບ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Aragonese"
-msgstr "Aragonese"
+msgstr "ອາຣາໂກເນສ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -4958,25 +4974,25 @@ msgstr "ອາເມເນຍ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Assamese"
-msgstr "Assamese"
+msgstr "ອັສສຳ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Avaric"
-msgstr "Avaric"
+msgstr "ອາວາຣິກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Avestan"
-msgstr "Avestan"
+msgstr "ອາເວສຕານ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Aymara"
-msgstr "Aymara"
+msgstr "ອາຍມາຣາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -4994,13 +5010,13 @@ msgstr "ບັກບາຣາ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Bashkir"
-msgstr "Bashkir"
+msgstr "ບາຊກີຣ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Basque"
-msgstr "Basque"
+msgstr "ບາສກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5060,13 +5076,13 @@ msgstr "ຂະເໝນກາງ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Chamorro"
-msgstr "Chamorro"
+msgstr "ຊາມໍໂຣ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Chechen"
-msgstr "Chechen"
+msgstr "ເຊເຊນ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5084,19 +5100,19 @@ msgstr "ໂບດ Slavic"
 #, fuzzy
 msgctxt "language_name"
 msgid "Chuvash"
-msgstr "Chuvash"
+msgstr "ຊູວາຊ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Cornish"
-msgstr "Cornish"
+msgstr "ຄໍນິຊ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Corsican"
-msgstr "Corsican"
+msgstr "ຄໍຊິກັນ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5126,7 +5142,7 @@ msgstr "ເຊັກ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Dogri"
-msgstr "Dogri"
+msgstr "ໂດກຣີ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5138,7 +5154,7 @@ msgstr "ເດັນມາກ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Dhivehi"
-msgstr "Dhivehi"
+msgstr "ດິເວຮີ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5216,7 +5232,7 @@ msgstr "ກາລິຊຽນ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ganda"
-msgstr "Ganda"
+msgstr "ກັນດາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5234,13 +5250,13 @@ msgstr "ເຢຍລະມັນ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Gothic"
-msgstr "Gothic"
+msgstr "ໂກທິກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Guarani"
-msgstr "Guarani"
+msgstr "ກວາຣານີ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5288,7 +5304,7 @@ msgstr "ຮິນດູ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Hiri Motu"
-msgstr "Hiri Motu"
+msgstr "ຮິຣິ ໂມຕູ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5348,7 +5364,7 @@ msgstr "ອິນກຸຕິຕຸດ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Inupiaq"
-msgstr "Inupiaq"
+msgstr "ອິນູປຽກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5390,7 +5406,7 @@ msgstr "ແຄນນາດາ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kanuri"
-msgstr "Kanuri"
+msgstr "ການູຣິ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5420,7 +5436,7 @@ msgstr "ຄິນຍາວັນດາ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kirghiz"
-msgstr "Kirghiz"
+msgstr "ຄີກິສ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5498,13 +5514,13 @@ msgstr "ລິທົວເນຍ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Luba-Katanga"
-msgstr "Luba-Katanga"
+msgstr "ລູບາ-ຄາຕັງກາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Luxembourgish"
-msgstr "Luxembourgish"
+msgstr "ລັກເຊມເບີກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5540,7 +5556,7 @@ msgstr "ມາລາຢາລາມ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Maltese"
-msgstr "Maltese"
+msgstr "ມອນຕາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5552,25 +5568,25 @@ msgstr "ມະນີປູລີ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Manx"
-msgstr "Manx"
+msgstr "ແມນກຊ໌"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Maori"
-msgstr "Maori"
+msgstr "ເມົາຣີ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Marathi"
-msgstr "Marathi"
+msgstr "ມາຣາທີ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Marshallese"
-msgstr "Marshallese"
+msgstr "ມາຊັນເລສ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5600,7 +5616,7 @@ msgstr "ນາວາໂຈ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ndonga"
-msgstr "Ndonga"
+msgstr "ດອງກາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5630,13 +5646,13 @@ msgstr "ນໍເວ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Norwegian Bokmål"
-msgstr "Norwegian Bokmål"
+msgstr "ນໍເວ ບຸກມໍ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Norwegian Nynorsk"
-msgstr "Norwegian Nynorsk"
+msgstr "ນໍເວ ນີນໍສກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5654,7 +5670,7 @@ msgstr "ໂອຊິຕັນ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Odia"
-msgstr "Odia"
+msgstr "ໂອເດຍ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5672,7 +5688,7 @@ msgstr "ໂອໂຣໂມ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ossetian"
-msgstr "Ossetian"
+msgstr "ອອສເຊຕຽນ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5708,13 +5724,13 @@ msgstr "ພາສາປອກຕຸຍການ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Pushto"
-msgstr "Pushto"
+msgstr "ປາສໂຕ"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Quechua"
-msgstr "Quechua"
+msgstr "ເຄຊົວ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5726,7 +5742,7 @@ msgstr "ໂຣມາເນຍ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Romansh"
-msgstr "Romansh"
+msgstr "ໂຣແມນຊ໌"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5750,7 +5766,7 @@ msgstr "ຊາມົວ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Sango"
-msgstr "Sango"
+msgstr "ຊັງໂກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5774,7 +5790,7 @@ msgstr "ຊານຕາລີ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Scottish Gaelic"
-msgstr "Scottish Gaelic"
+msgstr "ສະກັອດ ເກລິກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5810,7 +5826,7 @@ msgstr "ຊິນດີ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Sinhala"
-msgstr "Sinhala"
+msgstr "ສິງຫາລາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5996,7 +6012,7 @@ msgstr "ອຸສເບກ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Venda"
-msgstr "Venda"
+msgstr "ເວນດາ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6008,7 +6024,7 @@ msgstr "ຫວຽດນາມ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Volapük"
-msgstr "Volapük"
+msgstr "ໂວລາພຸກ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6038,7 +6054,7 @@ msgstr "ຕາເວັນຕົກ Frisian"
 #, fuzzy
 msgctxt "language_name"
 msgid "Wolof"
-msgstr "Wolof"
+msgstr "ໂວລອຟ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6062,7 +6078,7 @@ msgstr "ໂຢຣູບາ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Zhuang"
-msgstr "Zhuang"
+msgstr "ຈ້ວງ"
 
 #: psynet/translation/languages.py
 #, fuzzy

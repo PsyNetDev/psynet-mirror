@@ -529,7 +529,7 @@ msgstr "تجربہ عارضی طور پر مصروف ہے۔ براہ کرم دو
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
-msgstr "Play"
+msgstr "چلائیں"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3369,6 +3369,22 @@ msgstr "حوالہ کوڈ"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "تجربہ شروع ہو رہا ہے..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "اس وقت بہت سے لوگ حصہ لے رہے ہیں۔"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"براہِ کرم یہ صفحہ کھلا رکھیں: جیسے ہی جگہ ہوگی، آپ خودکار طور پر شامل ہو "
+"جائیں گے۔ آپ بعد میں بھی واپس آ سکتے ہیں۔"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy

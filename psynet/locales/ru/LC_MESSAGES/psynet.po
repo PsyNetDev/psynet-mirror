@@ -532,7 +532,7 @@ msgstr "Эксперимент временно занят. Пожалуйста
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
-msgstr "Play"
+msgstr "Воспроизвести"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3407,6 +3407,22 @@ msgstr "Код подтверждения"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Начало эксперимента..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Сейчас в исследовании участвует много людей."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Пожалуйста, не закрывайте эту страницу: вы присоединитесь автоматически, как"
+" только появится свободное место. Вы также можете вернуться позже."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy

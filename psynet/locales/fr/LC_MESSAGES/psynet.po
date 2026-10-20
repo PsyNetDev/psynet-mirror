@@ -2403,7 +2403,7 @@ msgstr ""
 #, fuzzy
 msgctxt "consent-compensation"
 msgid "Compensation"
-msgstr "Compensation"
+msgstr "Dédommagement"
 
 #: psynet/templates/consents/main_consent.html
 #, fuzzy
@@ -3462,6 +3462,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Démarrage de l'expérience..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Beaucoup de personnes participent actuellement."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Veuillez garder cette page ouverte : vous pourrez participer automatiquement"
+" dès qu’une place se libérera. Vous pouvez également revenir plus tard."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3747,7 +3763,7 @@ msgstr "Territoire britannique de l'océan Indien"
 #, fuzzy
 msgctxt "country_name"
 msgid "Brunei Darussalam"
-msgstr "Brunei Darussalam"
+msgstr "Brunéi Darussalam"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3903,7 +3919,7 @@ msgstr "Tchéquie"
 #, fuzzy
 msgctxt "country_name"
 msgid "Côte d'Ivoire"
-msgstr "Côte d'Ivoire"
+msgstr "Côte d’Ivoire"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4605,7 +4621,7 @@ msgstr "Philippines"
 #, fuzzy
 msgctxt "country_name"
 msgid "Pitcairn"
-msgstr "Pitcairn"
+msgstr "Îles Pitcairn"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4653,7 +4669,7 @@ msgstr "Rwanda"
 #, fuzzy
 msgctxt "country_name"
 msgid "Réunion"
-msgstr "Réunion"
+msgstr "La Réunion"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4881,7 +4897,7 @@ msgstr "Togo"
 #, fuzzy
 msgctxt "country_name"
 msgid "Tokelau"
-msgstr "Tokelau"
+msgstr "Tokélaou"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5241,7 +5257,7 @@ msgstr "Corse"
 #, fuzzy
 msgctxt "language_name"
 msgid "Cree"
-msgstr "Cree"
+msgstr "Cri"
 
 #: psynet/translation/languages.py
 #, fuzzy

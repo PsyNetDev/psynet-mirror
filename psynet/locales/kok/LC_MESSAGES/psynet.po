@@ -29,7 +29,7 @@ msgstr "Purush"
 #, fuzzy
 msgctxt "gender"
 msgid "Non-binary"
-msgstr "Non-binary"
+msgstr "नॉन-बायनरी"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -113,19 +113,19 @@ msgstr "Konnuch"
 #, fuzzy
 msgctxt "formal-education"
 msgid "High school"
-msgstr "High school"
+msgstr "उच्च माध्यमिक शाळा"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "formal-education"
 msgid "College"
-msgstr "College"
+msgstr "महाविद्यालय"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "formal-education"
 msgid "Graduate School"
-msgstr "Graduate School"
+msgstr "पदव्युत्तर अभ्यासक्रम"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -3353,6 +3353,22 @@ msgstr "संदर्भ कोड"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "प्रयोग सुरू करप..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "आतां खूब लोक भाग घेतात."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"कृपया हें पान उगडें दवरात: जागो उपलब्ध जाताच तुमी आपोआप सामील जातले. तुमी "
+"मागीर परत येवंक शकतात."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy

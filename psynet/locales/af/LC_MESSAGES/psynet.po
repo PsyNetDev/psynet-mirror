@@ -3400,6 +3400,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Begin eksperiment..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Baie mense neem tans deel."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Hou asseblief hierdie bladsy oop: jy sal outomaties aansluit sodra daar plek"
+" beskikbaar is. Jy kan ook later terugkom."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3422,7 +3438,7 @@ msgstr "Stuur opmerking"
 #, fuzzy
 msgctxt "alert_ok"
 msgid "OK"
-msgstr "OK"
+msgstr "Goed"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -5874,7 +5890,7 @@ msgstr "Shona"
 #, fuzzy
 msgctxt "language_name"
 msgid "Sichuan Yi"
-msgstr "Sichuan Yi"
+msgstr "Sichuan-Yi"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6006,7 +6022,7 @@ msgstr "Tibettaans"
 #, fuzzy
 msgctxt "language_name"
 msgid "Tigrinya"
-msgstr "Tigrinya"
+msgstr "Tigrinja"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6048,7 +6064,7 @@ msgstr "Twi"
 #, fuzzy
 msgctxt "language_name"
 msgid "Uighur"
-msgstr "Uighur"
+msgstr "Oeigoers"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6132,7 +6148,7 @@ msgstr "Jiddisj"
 #, fuzzy
 msgctxt "language_name"
 msgid "Yoruba"
-msgstr "Yoruba"
+msgstr "Joroeba"
 
 #: psynet/translation/languages.py
 #, fuzzy

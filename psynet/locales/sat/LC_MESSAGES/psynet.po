@@ -29,7 +29,7 @@ msgstr "Ror"
 #, fuzzy
 msgctxt "gender"
 msgid "Non-binary"
-msgstr "Non-binary"
+msgstr "ᱱᱚᱱ-ᱵᱟᱭᱱᱟᱨᱤ"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -113,19 +113,19 @@ msgstr "Kichu nahi"
 #, fuzzy
 msgctxt "formal-education"
 msgid "High school"
-msgstr "High school"
+msgstr "ᱦᱟᱭ ᱥᱠᱩᱞ"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "formal-education"
 msgid "College"
-msgstr "College"
+msgstr "ᱠᱚᱞᱮᱡ"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "formal-education"
 msgid "Graduate School"
-msgstr "Graduate School"
+msgstr "ᱜᱨᱮᱡᱩᱭᱮᱴ ᱥᱠᱩᱞ"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -3212,12 +3212,12 @@ msgstr "ᱞᱩᱯ"
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
-msgstr "Video not found"
+msgstr "ᱵᱷᱤᱰᱤᱭᱳ ᱵᱟᱝ ᱧᱟᱢᱮᱱᱟ"
 
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Image not found"
-msgstr "Image not found"
+msgstr "ᱪᱤᱛᱟᱹᱨ ᱵᱟᱝ ᱧᱟᱢᱮᱱᱟ"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
@@ -3342,6 +3342,22 @@ msgstr "ᱨᱮᱯᱮᱸᱥ ᱠᱚᱫ"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "ᱮᱠᱥᱯᱮᱨᱤᱢᱮᱱᱴ ᱮᱦᱚᱵᱚᱜ ᱠᱟᱱᱟ..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "ᱱᱤᱛᱚᱜ ᱟᱹᱰᱤ ᱦᱚᱲ ᱥᱟᱹᱢᱤᱞ ᱠᱟᱱᱟᱠᱚ᱾"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"ᱱᱚᱶᱟ ᱥᱟᱦᱴᱟ ᱠᱷᱩᱞᱟ ᱛᱟᱦᱮᱱ ᱢᱮ: ᱡᱟᱭᱜᱟ ᱧᱟᱢᱚᱜ ᱥᱟᱶ ᱟᱢ ᱟᱡ ᱛᱮ ᱥᱟᱹᱢᱤᱞᱚᱜᱼᱟᱢ᱾ ᱟᱢ ᱛᱟᱭᱚᱢ "
+"ᱦᱚᱸ ᱦᱤᱡᱩᱜ ᱞᱮᱢ᱾"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
