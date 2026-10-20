@@ -98,20 +98,33 @@ def test_server_dns_host_follows_the_installed_dallinger(
         (
             CLOUDFLARE_HOST,
             "/keys/lab.pem",
-            ("study", "classic"),
+            {"app": "study", "ingress": "classic"},
             "in Dozzle at https://logs.lab.example",
         ),
         (
             {**CLOUDFLARE_HOST, "default_ingress": "classic"},
             "/keys/lab.pem",
-            ("study", "cloudflare"),
+            {"app": "study", "ingress": "cloudflare"},
             CLOUDFLARE_LOGS,
         ),
         (
             CLOUDFLARE_HOST,
             "/keys/lab.pem",
-            ("other", "classic"),
+            {"app": "other", "ingress": "classic"},
             CLOUDFLARE_LOGS + GUESSED,
+        ),
+        (
+            {"host": "1.2.3.4"},
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "classic", "server_dns_host": "lab.org"},
+            "in Dozzle at https://logs.lab.org",
+        ),
+        # A deploy that found no DNS name for the server gives no Dozzle link.
+        (
+            {"host": "lab"},
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "classic", "server_dns_host": None},
+            f"with 'ssh -i /keys/lab.pem ubuntu@lab {COMPOSE_LOGS}'",
         ),
     ],
 )
@@ -122,7 +135,6 @@ def test_where_to_read_logs_follows_the_app_ingress(
     monkeypatch.setitem(CONFIGURED_HOSTS, "lab", {**host, "user": "ubuntu"})
     monkeypatch.setattr("dallinger.command_line.utils.get_server_pem_path", lambda: pem)
     if record:
-        app, ingress = record
-        deployment_info.write_all({"server": "lab", "app": app, "ingress": ingress})
+        deployment_info.write_all({"server": "lab", **record})
 
     assert where_to_read_logs("lab", "study") == expected

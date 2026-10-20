@@ -116,7 +116,9 @@ def dozzle_url(dns_host: Optional[str], ingress: Optional[str]) -> Optional[str]
 def recorded_dozzle_url(info: dict) -> Optional[str]:
     """Return the Dozzle URL for the deployment described by ``deployment_info``.
 
-    Deployments recorded before ``server_dns_host`` was saved use the server name.
+    A recorded ``server_dns_host`` of ``None`` means the server has no Dozzle
+    address. Deployments recorded before ``server_dns_host`` was saved use the
+    server name.
     """
     return dozzle_url(
         info.get("server_dns_host", info.get("server")), info.get("ingress")
@@ -220,7 +222,10 @@ def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> 
         caveat = ", assuming it uses the server's default ingress"
     url = None
     if ingress != INGRESS_CLOUDFLARE:
-        dns_host = record.get("server_dns_host") or server_dns_host(server_info)
+        if "server_dns_host" in record:
+            dns_host = record["server_dns_host"]
+        else:
+            dns_host = server_dns_host(server_info)
         if "host" not in server_info:
             dns_host = dns_host or server
         url = dozzle_url(dns_host, ingress)
