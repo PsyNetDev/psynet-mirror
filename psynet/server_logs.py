@@ -10,11 +10,13 @@ The ingress of a new app comes from ``--ingress`` or the server registry's
 ``psynet debug ssh`` record it, the server's DNS name and the logs command in
 ``deployment_info``, because the app's own messages, such as Slack
 notifications, are built on the server, which knows none of them; deployments
-without a record count as classic and use the server name. Messages printed on this computer (:func:`where_to_read_logs`) use
-the ingress that the command read from the app's compose file, else that
-record, and only guess from ``default_ingress`` without either.
+without a record count as classic and use the server name. Messages printed
+on this computer (:func:`where_to_read_logs`) use the ingress that the command
+read from the app's compose file, else that record, and only guess from
+``default_ingress`` without either.
 """
 
+import importlib
 import ipaddress
 import logging
 import re
@@ -45,9 +47,12 @@ def server_ingress(server_info: dict, ingress: Optional[str] = None) -> str:
 def server_dns_host(server_info: dict, dns_host: Optional[str] = None) -> Optional[str]:
     """Return the DNS name that a classic-ingress server serves Dozzle under.
 
-    This is the DNS host saved with the server (Dallinger versions that save
-    one), else the deploy's ``--dns-host`` for a server registered by IP
-    address, else the server's hostname. ``nip.io`` means ``<ip>.nip.io``.
+    Dallinger versions with ``servers upgrade`` serve Dozzle under the DNS
+    host saved with the server, else the server's hostname, and only for a
+    server registered by IP address under the deploy's ``--dns-host``. Older
+    versions rewrite the server's Caddyfile on each deploy, so Dozzle follows
+    the deploy's ``--dns-host``, else the server's host. ``nip.io`` means
+    ``<ip>.nip.io``. A bare IP address is no DNS name, so it gives ``None``.
 
     Parameters
     ----------
@@ -55,22 +60,34 @@ def server_dns_host(server_info: dict, dns_host: Optional[str] = None) -> Option
         The server's entry in Dallinger's server registry.
     dns_host : str, optional
         The deploy's ``--dns-host`` option, if given.
+
+    Returns
+    -------
+    str or None
+        ``None`` if the entry has no ``host``, as for an unknown server, or
+        if the name would be an IP address.
     """
-    from dallinger.command_line.docker_ssh import split_ssh_host_port
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
 
     if "host" not in server_info:
         return None
-    host = split_ssh_host_port(server_info["host"])[0]
-    name = server_info.get("dns_host")
-    if not name and dns_host and _is_ip_address(host):
-        name = dns_host
+    host = docker_ssh.split_ssh_host_port(server_info["host"])[0]
+    if "upgrade" in docker_ssh.servers.commands:
+        name = server_info.get("dns_host") or (dns_host if _is_ip(host) else None)
+    else:
+        name = dns_host or server_info.get("dns_host")
     name = name or host
     if name == "nip.io":
-        name = f"{socket.gethostbyname(host)}.nip.io"
-    return name
+        try:
+            name = f"{socket.gethostbyname(host)}.nip.io"
+        except OSError as e:
+            logger.warning(f"Could not look up the IP address of {host}: {e}")
+            return None
+    return None if _is_ip(name) else name
 
 
-def _is_ip_address(host: str) -> bool:
+def _is_ip(host: str) -> bool:
+    """Return whether ``host`` is an IP address rather than a DNS name."""
     try:
         ipaddress.ip_address(host)
     except ValueError:
@@ -192,8 +209,12 @@ def where_to_read_logs(server: str, app: str, ingress: Optional[str] = None) -> 
     if ingress is None:
         ingress = server_ingress(server_info)
         caveat = ", assuming it uses the server's default ingress"
-    dns_host = record.get("server_dns_host") or server_dns_host(server_info)
-    url = dozzle_url(server, ingress, dns_host)
+    url = None
+    if ingress != INGRESS_CLOUDFLARE:
+        dns_host = record.get("server_dns_host") or server_dns_host(server_info)
+        # An IP server without a DNS name has no Dozzle address to give.
+        if dns_host or "host" not in server_info:
+            url = dozzle_url(server, ingress, dns_host)
     if url:
         where = f"in Dozzle at {url}"
     elif "host" not in server_info:

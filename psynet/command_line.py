@@ -84,6 +84,7 @@ from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .server_logs import (
+    INGRESS_CLASSIC,
     compose_ingress,
     logs_command,
     server_dns_host,
@@ -2030,11 +2031,16 @@ def _pre_launch(
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
+        resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
             ssh_user=ssh_user,
-            ingress=server_ingress(server_info, ingress),
-            server_dns_host=server_dns_host(server_info, dns_host),
+            ingress=resolved_ingress,
+            server_dns_host=(
+                server_dns_host(server_info, dns_host)
+                if resolved_ingress == INGRESS_CLASSIC
+                else None
+            ),
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:

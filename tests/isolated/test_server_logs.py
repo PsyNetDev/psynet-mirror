@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ CLOUDFLARE_LOGS = (
     f"with 'ssh -p 2222 -i /keys/lab.pem ubuntu@lab.example {COMPOSE_LOGS}'"
 )
 GUESSED = ", assuming it uses the server's default ingress"
+SERVERS = importlib.import_module("dallinger.command_line.docker_ssh").servers
 
 
 @pytest.mark.parametrize(
@@ -29,19 +31,36 @@ def test_server_ingress_prefers_the_option_to_the_server_default(
 
 
 @pytest.mark.parametrize(
-    "server_info, dns_host, expected",
+    "server_info, dns_host, with_upgrade, without_upgrade",
     [
-        ({"host": "lab.example.org"}, None, "lab.example.org"),
+        ({"host": "lab.example.org"}, None, "lab.example.org", "lab.example.org"),
+        ({"host": "lab.example.org"}, "x.org", "lab.example.org", "x.org"),
         (
             {"host": "1.2.3.4", "dns_host": "lab.example.org"},
             "x.org",
             "lab.example.org",
+            "x.org",
         ),
-        ({"host": "1.2.3.4:2222"}, "lab.example.org", "lab.example.org"),
-        ({"host": "1.2.3.4"}, "nip.io", "1.2.3.4.nip.io"),
+        (
+            {"host": "1.2.3.4:2222"},
+            "lab.example.org",
+            "lab.example.org",
+            "lab.example.org",
+        ),
+        ({"host": "1.2.3.4"}, "nip.io", "1.2.3.4.nip.io", "1.2.3.4.nip.io"),
+        ({"host": "1.2.3.4"}, None, None, None),
     ],
 )
-def test_server_dns_host_prefers_the_saved_name(server_info, dns_host, expected):
+@pytest.mark.parametrize("has_upgrade", [True, False])
+def test_server_dns_host_follows_the_installed_dallinger(
+    monkeypatch, server_info, dns_host, with_upgrade, without_upgrade, has_upgrade
+):
+    """Dallinger versions with ``servers upgrade`` keep Dozzle on the saved DNS host."""
+    if has_upgrade:
+        monkeypatch.setitem(SERVERS.commands, "upgrade", SERVERS)
+    else:
+        monkeypatch.delitem(SERVERS.commands, "upgrade", raising=False)
+    expected = with_upgrade if has_upgrade else without_upgrade
     assert server_dns_host(server_info, dns_host) == expected
 
 
@@ -59,6 +78,13 @@ def test_server_dns_host_prefers_the_saved_name(server_info, dns_host, expected)
             "/keys/lab.pem",
             None,
             f"in Dozzle at https://logs.lab.example.org{GUESSED}",
+        ),
+        # An IP server without a DNS name gets the logs command instead.
+        (
+            {"host": "1.2.3.4"},
+            "/keys/lab.pem",
+            None,
+            f"with 'ssh -i /keys/lab.pem ubuntu@1.2.3.4 {COMPOSE_LOGS}'{GUESSED}",
         ),
         (CLOUDFLARE_HOST, "/keys/lab.pem", None, CLOUDFLARE_LOGS + GUESSED),
         (
