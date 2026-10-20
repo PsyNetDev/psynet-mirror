@@ -49,7 +49,7 @@ nip.io``. Save that name, which restarts nothing, and deploy again:
 
 .. code:: bash
 
-    dallinger docker-ssh servers add --host 121.101.152.23 --dns-host nip.io
+    dallinger docker-ssh servers add --host 121.101.152.23 --user ubuntu --dns-host nip.io
 
 No Let's Encrypt contact email
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -64,7 +64,7 @@ email with the server, which restarts nothing, and deploy again:
 
 .. code:: bash
 
-    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
+    dallinger docker-ssh servers add --host my-server.example.org --user ubuntu --contact-email you@example.org
 
 Deployment fails with ``PermissionError``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

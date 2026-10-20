@@ -161,17 +161,17 @@ dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server
 - A classic deploy stops before the build with "is not set up for this
   classic-ingress deploy" or "An older Dallinger version has rewritten the
   shared files". Run the command the message names. If it suggests saving the
-  DNS name the server already serves (`servers add --host <ip> --dns-host
-  <name>`), try that first; it restarts nothing. `dallinger docker-ssh servers
-  upgrade --host <server>` briefly restarts the shared services, so on a server
-  with other experiments, ask the user first.
+  DNS name the server already serves (`servers add --host <ip> --user <user>
+  --dns-host <name>`), try that first; it restarts nothing. `dallinger
+  docker-ssh servers upgrade --host <server>` briefly restarts the shared
+  services, so on a server with other experiments, ask the user first.
 - `dallinger ec2 provision` fails after launching the instance: it keeps
   running and costs money. Fix the printed problem, then run either the
   printed `servers add` commands that finish the setup or the printed
   `ec2 teardown`; teardown is irreversible, so ask the user first.
 - A deploy stops with "No Let's Encrypt contact email": save one with
-  `dallinger docker-ssh servers add --host <server> --contact-email <email>`
-  (restarts nothing), using an address the user gives.
+  the `servers add … --contact-email <email>` command the message prints
+  (restarts nothing; keep its `--user`), using an address the user gives.
 - A deploy fails with `PermissionError: [Errno 13] Permission denied` on
   `dallinger/docker-compose.yml`: the installed Dallinger predates
   `servers upgrade`, and the server's shared files are read-only. Update the

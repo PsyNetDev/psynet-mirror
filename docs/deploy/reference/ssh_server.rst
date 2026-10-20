@@ -29,7 +29,7 @@ served at ``https://<app>.<server DNS name>``. Pass it:
 - if the server is registered by IP address without a saved DNS name.
   ``--server`` is then the IP address and ``--dns-host`` the public name, and
   leaving ``--dns-host`` out is an error. Saving the name once with
-  ``servers add --host <ip> --dns-host <name>`` avoids this:
+  ``servers add --host <ip> --user <user> --dns-host <name>`` avoids this:
 
   .. code:: bash
 
@@ -95,8 +95,8 @@ data or run ``prepare``. Until a server default is changed, omitting
 app at its public name rather than ``https://<app>.<ssh-host>``.
 
 Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS
-name>`` exists only on servers with classic ingress. Read a Cloudflare app's logs with the
-``ssh … docker compose … logs -f`` command printed at the end of the
+name>`` exists only on servers with classic ingress. Read a Cloudflare app's
+logs with the ``ssh … docker compose … logs -f`` command printed at the end of the
 deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
 The dashboard's **Monitor > Logger** page shows the experiment's own log
 output with either ingress.
@@ -324,15 +324,25 @@ commands do:
 
 These commands write the server's ``Caddyfile`` for its own DNS name (see
 :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
-saved with the server. ``servers add`` and ``servers upgrade`` save the one
-passed with ``--contact-email``, else ``contact_email_on_error`` from
-``~/.dallingerconfig`` or the environment (never from an experiment's
-``config.txt``), and print it with where it came from. Placeholders such as
-``XXX@gmail.com`` don't count. If a deployment stops because a server has no
-contact email, ``servers add --host <server> --contact-email <email>`` saves
-one without restarting anything (see :ref:`upgrading_an_existing_server`).
-Caddy keeps its HTTPS certificates on the ``caddy_data``
-Docker volume, so they survive recreating Caddy. On a server set up by an
+saved with the server. ``servers add`` and ``servers upgrade`` save, in this
+order, the one passed with ``--contact-email``, a valid one already saved, or
+``contact_email_on_error`` from ``~/.dallingerconfig`` or the environment
+(never from an experiment's ``config.txt``), and print it with where it came
+from. Placeholders such as ``XXX@gmail.com`` don't count. A deployment to a
+server saved without an email also accepts a valid ``contact_email_on_error``
+from the experiment's ``config.txt``. If a deployment stops because a server
+has no contact email, run the ``servers add … --contact-email <email>``
+command that it prints, which saves one without restarting anything (see
+:ref:`upgrading_an_existing_server`).
+
+Running ``servers add`` again replaces the server's record on your computer.
+It keeps a saved DNS name and contact email, but not the SSH user or the
+default ingress, so pass the same ``--user`` and ``--default-ingress`` as the
+first time. The commands that Dallinger's messages print already include
+them.
+
+Caddy keeps its HTTPS certificates on the ``caddy_data`` Docker volume, so
+they survive recreating Caddy. On a server set up by an
 older Dallinger, the first ``servers upgrade`` adds this volume, and Caddy may
 obtain new certificates once. The log viewer moves to ``https://logs.<server
 DNS name>`` if it was at ``https://<server>/logs``, so that name must also
@@ -340,14 +350,15 @@ resolve to the server.
 
 ``servers add`` and ``ec2 provision`` (when they set up a server) and
 ``servers upgrade`` leave the shared ``Caddyfile``, ``docker-compose.yml``,
-``dozzle-users.yml`` and ``.env.json`` read-only. Older Dallinger versions rewrite these files on every
-classic deployment, so on such a server their deployments fail with
-``PermissionError: [Errno 13] Permission denied``, after building the image
-but before changing anything shared. Everyone who deploys to the server must
-therefore use a Dallinger version with ``servers upgrade``. If an older
-version rewrote the files anyway (for example when it ran as ``root``, or
-after the files were made writable), deployments stop before the build and ask you to run ``servers
-upgrade`` again, which restores them.
+``dozzle-users.yml`` and ``.env.json`` read-only. Older Dallinger versions
+rewrite these files on every classic deployment, so on such a server their
+deployments fail with ``PermissionError: [Errno 13] Permission denied``,
+after building the image but before changing anything shared. Everyone who
+deploys to the server must therefore use a Dallinger version with ``servers
+upgrade``. If an older version rewrote the files anyway (for example when it
+ran as ``root``, or after the files were made writable), deployments stop
+before the build and ask you to run ``servers upgrade`` again, which restores
+them.
 
 Updating a running app
 ----------------------

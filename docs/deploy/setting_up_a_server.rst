@@ -264,9 +264,10 @@ only from ``~/.dallingerconfig`` or the environment, never from an
 experiment's ``config.txt``, because a server isn't tied to one experiment.
 They reject placeholders such as ``XXX@gmail.com``, the value in PsyNet's
 experiment template, and ``dallinger ec2 provision`` refuses to start
-without a real address. ``servers add`` and ``servers upgrade`` save the
-address with the server, unless you pass ``--contact-email``, and print it
-with where it came from.
+without a real address. ``servers add`` and ``servers upgrade`` save an
+address with the server and print it with where it came from: the one you
+pass with ``--contact-email``, else one already saved, else
+``contact_email_on_error``.
 
 .. code-block:: ini
 
@@ -313,8 +314,8 @@ Registering the server
       ``docker`` group. With classic ingress (the default), on a server that
       Dallinger hasn't set up yet, it then starts the shared services that
       experiments use (see :ref:`ssh_server_shared_services`) and prints the
-      log viewer's password once; note it. The ``--host`` value is the name you pass as
-      ``--server`` in later commands, and experiments are served at
+      log viewer's password once; note it. The ``--host`` value is the name
+      you pass as ``--server`` in later commands, and experiments are served at
       ``https://<app>.my-server.example.org``.
 
       You can register a server by IP address instead of a name. Then also
@@ -462,16 +463,16 @@ shared services:
     dallinger docker-ssh servers upgrade --host my-server.example.org
 
 The upgrade writes the Let's Encrypt contact email into the server's
-``Caddyfile``: the one saved with the server, else ``contact_email_on_error``
-from ``~/.dallingerconfig``, or the one you pass with ``--contact-email``. A
-server registered by an older Dallinger has no saved email, so a deployment
+``Caddyfile``: the one you pass with ``--contact-email``, else the one saved
+with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``.
+A server registered by an older Dallinger has no saved email, so a deployment
 there stops if the only ``contact_email_on_error`` it finds is a placeholder
-such as ``XXX@gmail.com``. To save an email without restarting anything,
-run:
+such as ``XXX@gmail.com``. To save an email without restarting anything, run
+``servers add`` with the same ``--user`` as when you registered the server:
 
 .. code-block:: bash
 
-    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
+    dallinger docker-ssh servers add --host my-server.example.org --user ubuntu --contact-email you@example.org
 
 Make sure that everyone who deploys to that server updates Dallinger too.
 Older versions can no longer deploy there: their deployments fail with
