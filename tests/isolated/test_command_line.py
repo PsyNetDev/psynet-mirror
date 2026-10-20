@@ -5302,7 +5302,7 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
 
 
 class _LaunchContinued(Exception):
-    """Raised where a launch loads the experiment, after any local reset."""
+    """Raised where a launch prepares the experiment, after any local reset."""
 
 
 @pytest.fixture
@@ -5321,9 +5321,13 @@ def remote_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "psynet.command_line.kill_psynet_worker_processes", resets.kill_workers
     )
-    monkeypatch.setattr(
-        "psynet.experiment.get_experiment", Mock(side_effect=_LaunchContinued)
-    )
+    monkeypatch.setattr("psynet.experiment.get_experiment", Mock())
+    config = Mock()
+    config.get.return_value = False
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    for prepare in ("prepare_in_scratch_database", "prepare_image_for_update"):
+        getattr(resets, prepare).side_effect = _LaunchContinued
+        monkeypatch.setattr(f"psynet.command_line._{prepare}", getattr(resets, prepare))
 
     def launch(**kwargs):
         with pytest.raises(_LaunchContinued):
@@ -5344,10 +5348,23 @@ def test_only_performance_test_apps_skip_the_consent_check(
     assert check_consents is not performance_test_app
 
 
-@pytest.mark.parametrize("update", [False, True])
-def test_remote_launch_keeps_local_data(remote_launch, update):
+@pytest.mark.parametrize(
+    "update, prepared_in",
+    [(False, "prepare_in_scratch_database"), (True, "prepare_image_for_update")],
+)
+def test_remote_launch_keeps_local_data(remote_launch, update, prepared_in):
     launch, resets = remote_launch
     launch(update=update)
+    assert [name for name, *_ in resets.mock_calls] == [prepared_in]
+
+
+def test_remote_launch_refuses_beside_a_local_server_here(remote_launch, tmp_path):
+    from psynet.testing.locks import SERVER, experiment_directory_lock
+
+    launch, resets = remote_launch
+    with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
+        with pytest.raises(click.ClickException, match="replace its generated files"):
+            launch()
     assert resets.mock_calls == []
 
 

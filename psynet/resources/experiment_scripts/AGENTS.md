@@ -47,7 +47,8 @@ when it stops (see "Run several experiments at once" in
 `code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
 `psynet debug ssh` and `psynet debug heroku`) prepare in a scratch database
-and Redis of their own, so they leave a running experiment alone.
+and Redis of their own, so they leave a running experiment alone, but refuse
+to start while a local server serves the same directory.
 `psynet test local` and `psynet performance-test local` get
 their own database, Redis server and port, so they leave a running experiment
 alone, unless it serves the same directory, where they refuse to run.

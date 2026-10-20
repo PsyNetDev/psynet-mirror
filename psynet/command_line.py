@@ -1141,16 +1141,21 @@ def _prepare_in_scratch_database(archive):
     click.ClickException
         If the scratch database or Redis can't be created, or ``prepare`` fails.
     """
-    from .isolated_environment import IsolatedEnvironment, IsolationError
+    from .isolated_environment import (
+        IsolatedEnvironment,
+        IsolationError,
+        postgres_connection_limit_message,
+    )
 
     try:
         environment = IsolatedEnvironment.start()
     except IsolationError as e:
+        advice = postgres_connection_limit_message(e.__cause__)
         raise click.ClickException(
             "Could not create a scratch database and Redis to prepare the launch "
-            f"in ({e.__cause__})."
+            f"in ({e.__cause__})." + (f" {advice}" if advice else "")
         ) from e
-    with environment:
+    with _exit_on_termination_signal(), environment:
         database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
         log(
             f"Preparing the experiment in the scratch database {database}, "
@@ -1932,6 +1937,9 @@ def _pre_launch(
     # Scaffold/git checks before Redis so missing-boilerplate guidance is visible
     # even when Redis is not running.
     _check_experiment_directory(mode, require_git_commit=not local_)
+    if not local_:
+        # A launch replaces the directory's generated files and removes .deploy.
+        _check_no_server_here()
     _check_local_image_packages(local_packages)
 
     # performance-test ssh checked the credentials before contacting the server.
