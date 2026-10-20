@@ -29,7 +29,7 @@ served at ``https://<app>.<server DNS name>``. Pass it:
 - if the server is registered by IP address without a saved DNS name.
   ``--server`` is then the IP address and ``--dns-host`` the public name, and
   leaving ``--dns-host`` out is an error. Saving the name once with
-  ``servers add --host <ip> --user <user> --dns-host <name>`` avoids this:
+  ``servers add --host <ip> --dns-host <name>`` avoids this:
 
   .. code:: bash
 
@@ -335,11 +335,10 @@ has no contact email, run the ``servers add … --contact-email <email>``
 command that it prints, which saves one without restarting anything (see
 :ref:`upgrading_an_existing_server`).
 
-Running ``servers add`` again replaces the server's record on your computer.
-It keeps a saved DNS name and contact email, but not the SSH user or the
-default ingress, so pass the same ``--user`` and ``--default-ingress`` as the
-first time. The commands that Dallinger's messages print already include
-them.
+Running ``servers add`` again for a saved server keeps every saved field
+(SSH user, default ingress, DNS name and a valid contact email) that you don't
+pass, so ``servers add --host <server> --contact-email <email>`` changes only
+the email.
 
 Caddy keeps its HTTPS certificates on the ``caddy_data`` Docker volume, so
 they survive recreating Caddy. On a server set up by an

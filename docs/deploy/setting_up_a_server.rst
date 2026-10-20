@@ -467,12 +467,12 @@ The upgrade writes the Let's Encrypt contact email into the server's
 with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``.
 A server registered by an older Dallinger has no saved email, so a deployment
 there stops if the only ``contact_email_on_error`` it finds is a placeholder
-such as ``XXX@gmail.com``. To save an email without restarting anything, run
-``servers add`` with the same ``--user`` as when you registered the server:
+such as ``XXX@gmail.com``. To save an email without restarting anything,
+run ``servers add`` again; it keeps the server's other saved settings:
 
 .. code-block:: bash
 
-    dallinger docker-ssh servers add --host my-server.example.org --user ubuntu --contact-email you@example.org
+    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
 
 Make sure that everyone who deploys to that server updates Dallinger too.
 Older versions can no longer deploy there: their deployments fail with
