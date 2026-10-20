@@ -82,14 +82,14 @@ _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
 
-def local_base_port(environ=None):
+def local_base_port(environ=None, directory="."):
     """Return Dallinger's ``base_port`` without importing the experiment.
 
     Follows Dallinger's precedence: the ``base_port`` environment variable,
-    then ``config.txt`` in the current directory, then ``~/.dallingerconfig``,
-    then 5000. Like Dallinger, a later section of a file overrides an earlier
-    one. A ``base_port`` set in the experiment class's ``config`` dictionary is
-    not seen.
+    then ``config.txt`` in ``directory`` (by default the current directory),
+    then ``~/.dallingerconfig``, then 5000. Like Dallinger, a later section of
+    a file overrides an earlier one. A ``base_port`` set in the experiment
+    class's ``config`` dictionary is not seen.
 
     Raises
     ------
@@ -101,7 +101,10 @@ def local_base_port(environ=None):
     environ = os.environ if environ is None else environ
     if "base_port" in environ:
         return int(environ["base_port"])
-    for path in ("config.txt", os.path.expanduser("~/.dallingerconfig")):
+    for path in (
+        os.path.join(directory, "config.txt"),
+        os.path.expanduser("~/.dallingerconfig"),
+    ):
         parser = configparser.ConfigParser(interpolation=None)
         try:
             parser.read(path)

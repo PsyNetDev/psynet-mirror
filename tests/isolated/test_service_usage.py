@@ -63,6 +63,31 @@ def test_find_sessions_reads_settings_from_running_processes(tmp_path):
         process.wait()
 
 
+def test_find_sessions_reads_base_port_from_the_session_config_txt(tmp_path):
+    """A plain debug server that sets ``base_port`` only in ``config.txt`` is listed there."""
+    (tmp_path / "config.txt").write_text("[Server]\nbase_port = 5993\n")
+    script = tmp_path / "psynet"
+    script.write_text("import time\ntime.sleep(60)\n")
+    shell = {
+        k: v for k, v in os.environ.items() if k not in {READY_ENV_VAR, "base_port"}
+    }
+    process = subprocess.Popen(
+        [sys.executable, str(script), "debug", "local"], env=shell, cwd=tmp_path
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            sessions = [s for s in find_sessions() if s.pids == [process.pid]]
+            if sessions:
+                break
+            time.sleep(0.1)
+        [session] = sessions
+        assert session.base_port == "5993"
+    finally:
+        process.kill()
+        process.wait()
+
+
 def test_plain_pytest_sessions_are_found_by_the_port_lock_they_hold(tmp_path):
     """Plain pytest isolates in-process, so its shell settings are not its own."""
     shell = {k: v for k, v in os.environ.items() if k != READY_ENV_VAR}

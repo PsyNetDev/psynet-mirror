@@ -37,6 +37,7 @@ from .isolated_environment import (
     DEFAULT_DATABASE_URL,
     DEFAULT_REDIS_URL,
     READY_ENV_VAR,
+    local_base_port,
     port_lock_path,
 )
 
@@ -137,6 +138,18 @@ def _plain_pytest_key(process, environ):
     return (port, f"{database}_test_{port}", redis_port)
 
 
+def _base_port(environ, directory):
+    """Return the ``base_port`` a process started in ``directory`` uses, as a string.
+
+    Falls back to 5000 if a configuration file can't be read, so one broken
+    ``config.txt`` doesn't stop the listing.
+    """
+    try:
+        return str(local_base_port(environ, directory))
+    except ValueError:
+        return _DEFAULT_BASE_PORT
+
+
 def find_sessions():
     """Return the current user's PsyNet sessions, keyed by their shared settings."""
     import psutil
@@ -164,7 +177,7 @@ def find_sessions():
         if command[0] == "flask" and "base_port" not in environ:
             continue
         key = key or (
-            environ.get("base_port", _DEFAULT_BASE_PORT),
+            _base_port(environ, cwd),
             _database_name(environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)),
             _redis_port(environ.get("REDIS_URL", DEFAULT_REDIS_URL)),
         )
