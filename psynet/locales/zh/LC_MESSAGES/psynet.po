@@ -261,43 +261,43 @@ msgstr "我从不跳舞"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "你上次跳舞是什么时候？（选择最准确的答案）："
+msgstr "你上一次跳舞是什么时候？（请选择最符合实际情况的答案）："
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "本周"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "本月"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "今年"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "几年前"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "很多年前"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
 msgstr "我从未跳过舞"
 
@@ -457,6 +457,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "结束了！"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "感谢您的参与。"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -516,6 +521,16 @@ msgstr "实验暂时繁忙。请稍后再试。"
 #, fuzzy
 msgid "Play"
 msgstr "播放"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "停止"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "循环"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -2842,26 +2857,6 @@ msgstr "播放提示"
 msgid "Play recording"
 msgstr "播放录音"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "停止"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "停止"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "循环"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "循环"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -2958,19 +2953,9 @@ msgstr "重试"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "感谢您的参与。"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "您选择了离开。"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "感谢您的参与。"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

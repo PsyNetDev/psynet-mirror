@@ -267,45 +267,45 @@ msgstr "Maka nrittya korta"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "Tuzo shevott nrittya kaddhacho? (sotim sarkho uttar chon):"
+msgstr "तुवें निमाणी फावट केन्ना नाच केला? (सगळ्यांत अचूक जाप निवडात):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
-msgstr "Hafta"
+msgstr "ह्या सप्तकांत"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
-msgstr "Mahina"
+msgstr "ह्या म्हयन्यांत"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
-msgstr "Vors"
+msgstr "ह्या वर्सा"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "Kite vorsam adim"
+msgstr "कित्येक वर्सां आदीं"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "Barek vorsam adim"
+msgstr "बर्‍याच वर्सां आदीं"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "Maka nrittya kaddhacho"
+msgstr "हांव केन्नाच नाच केला ना"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -467,6 +467,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "हें समाप्त आसा!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "वांटो घेतिल्ल्या खातीर तुमचे उपकार."
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -530,6 +535,16 @@ msgstr "प्रयोग तात्पुरत्यान व्यस्�
 #, fuzzy
 msgid "Play"
 msgstr "वाजव"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "राव"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "लूप"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3200,26 +3215,6 @@ msgstr "प्ले प्रॉम्प्ट"
 msgid "Play recording"
 msgstr "रेकॉर्डिंग वाजोवप"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "राव"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "राव"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "लूप"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "लूप"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3316,19 +3311,9 @@ msgstr "फाटोवपाचो प्रयत्न करा"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "वांटो घेतिल्ल्या खातीर तुमचे उपकार."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "तूं सोडून जायलें पसार केलें."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "वांटो घेतिल्ल्या खातीर तुमचे उपकार."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

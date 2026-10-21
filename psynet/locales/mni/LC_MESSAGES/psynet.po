@@ -11,19 +11,19 @@ msgstr ""
 #, fuzzy
 msgctxt "gender"
 msgid "How do you identify yourself?"
-msgstr "Nahakna karigino nahakki maru oirabage?"
+msgstr "নহাক্না মশামক অদু করমনা তাকপগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
 msgid "Female"
-msgstr "Nupi"
+msgstr "নুপী"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
 msgid "Male"
-msgstr "Nupa"
+msgstr "নুপা"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -41,67 +41,67 @@ msgstr "খন্নবা ফংদে"
 #, fuzzy
 msgctxt "gender"
 msgid "I prefer not to answer"
-msgstr "Eina khudong channa haiba ngamde"
+msgstr "ঐনা পাউখুম পীরদবা খন্নরে"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
 msgid "Specify yourself"
-msgstr "Nahakki maru phangba"
+msgstr "নহাক্কী মওংদা তাকপিয়ু"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "age"
 msgid "What is your age?"
-msgstr "Nahakki panba kayri?"
+msgstr "নহাক্কী চহি করিগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "age"
 msgid "You need to provide your age as an integer between 0 and 120!"
-msgstr "Nahakna panba 0 amasung 120 ki manungda integer oina pibiyu!"
+msgstr "নহাক্কী চহি 0 নত্রগা 120 গী মনুংদা পূর্ণ সংখ্যা অমা ওইনা পীরগদবনি!"
 
 #: psynet/demography/general.py
 #, fuzzy, python-brace-format
 msgctxt "age"
 msgid "Your answer was: '{AGE}'"
-msgstr "Nahakki khudong channa: '{AGE}'"
+msgstr "নহাক্কী পাউখুমসি: '{AGE}'"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "country-select"
 msgid "Other country"
-msgstr "Ahanba lainasinaba leiba leingak"
+msgstr "অতোপ্পা লায়বাক"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "country-select"
 msgid "Select a country"
-msgstr "Leingak khongdoklaba"
+msgstr "লায়বাক অমা খন্নবিয়ু"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "country-select"
 msgid "You need to select a country!"
-msgstr "Nahakna leingak khongdoklaba!"
+msgstr "লায়বাক অমা খন্নগদবনি!"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "country-select"
 msgid "What country are you from?"
-msgstr "Nahak karigi leingakna leibra?"
+msgstr "নহাক্কী লায়বাক করিগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "country-select"
 msgid "What is your current country of residence?"
-msgstr "Nahakki leingakna leiba leingak karino?"
+msgstr "হৌজিক নহাক হৌজিক ফাওবা হকথেংনবা লায়বাক করিগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "formal-education"
 msgid "What is your highest level of formal education?"
-msgstr "Nahakki mathakta leiba formal education gi level karino?"
+msgstr "নহাক্কী মথৌ তৌবা ফরমেল এডুকেশনগী মথক্তমক্কী লেভেল করিগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -140,31 +140,30 @@ msgid ""
 "What is your mother tongue - i.e., the language which you have grown up "
 "speaking from early childhood?"
 msgstr ""
-"Nahakki mother tongue karino - mahakna changphamda nungainaba waheina leiba "
-"waheigi maru?"
+"নহাক্কী মমা-মপাগী লোল করিগে—অর্থাৎ নহাক্না অচৌবা মতমদগী লৈরিবা লোল অদু?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "language-select"
 msgid "Select a language"
-msgstr "Waheigi khongdoklaba"
+msgstr "লোল অমা খন্নবিয়ু"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "language-select"
 msgid "You need to select a language!"
-msgstr "Nahakna waheigi khongdoklaba!"
+msgstr "লোল অমা খন্নগদবনি!"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "language-select"
 msgid "Do you speak more than one language?"
-msgstr "Nahakna amuk waheising khang-i?"
+msgstr "নহাক্না লোল অমত্তগী হেন্না হায়ব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgid "Yes"
-msgstr "Houjik"
+msgstr "হোই"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -175,7 +174,7 @@ msgstr "নত্তে"
 #, fuzzy
 msgctxt "language-select"
 msgid "Please list at least one language!"
-msgstr "Amuk waheising khang-i!"
+msgstr "লোল খরা অমত্তা পীরবিয়ু!"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -184,8 +183,8 @@ msgid ""
 "Please list the languages you speak in order of proficiency (first language "
 "first, second language second, ...)"
 msgstr ""
-"Nahakna proficiency gi maru waheising phangba (ahangba wahei ahanba, ani "
-"wahei ani, ...)"
+"নহাক্না হায়বা লোলশিং অদু লোল হায়বা মওংগী মতুং ইন্না (অহানবা লোল, অনিশুবা "
+"লোল, ...) পীরবিয়ু"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -194,8 +193,8 @@ msgid ""
 "Please list all languages you speak as mother tongues (i.e., which you grew "
 "up speaking since childhood)."
 msgstr ""
-"Nahakna changphamda nungainaba waheising phangba (i.e., mahakna changphamda "
-"nungainaba waheising)."
+"নহাক্না মমা-মপাগী লোল ওইনা হায়বা লোল পুম্নমক পীরবিয়ু (অর্থাৎ, নহাক্না "
+"অচৌবা মতমদগী হায়রিবা লোলশিং)"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -204,25 +203,26 @@ msgid ""
 "How many years of formal training on a musical instrument (including voice) "
 "have you had during your lifetime?"
 msgstr ""
-"Nahakna mahakki nungainaba musical instrument (voice amadi) gi maru kayri?"
+"নহাক্কী লাইফটাইম অসিদা মিউজিকেল ইনস্ট্রুমেন্ট অমদা (ভয়েসসহ) ফরমেল ট্রেনিং "
+"করম্বা চহি অমুক হায়বা ফংলিবগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "music"
 msgid "On average, how many hours do you listen to music daily?"
-msgstr "Nahakna numitkhangda music toubada kayri?"
+msgstr "এভারেজ ওইনা নহাক্না নুমিৎ অমদা মিউজিক করম্বা ঘণ্টা হায়বা তাবগে?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "music"
 msgid "Do you make money from playing music?"
-msgstr "Nahakna music toubada phangba piba?"
+msgstr "মিউজিক পীবদগী নহাক্না মমল ফংব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "music"
 msgid "Frequently"
-msgstr "Houjik"
+msgstr "মতম ইয়াম্না"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -240,13 +240,13 @@ msgstr "মতম অমত্তদা"
 #, fuzzy
 msgctxt "music"
 msgid "Do you have hearing loss or any other hearing issues?"
-msgstr "Nahakna hearing loss amadi hearing issues leirabage?"
+msgstr "নহাক্না মরাল ফংবা নত্রগা অহেনবা করিগুম্বা তা-ফিবগী মশক অমা লৈব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "dance"
 msgid "Do you dance socially or professionally?"
-msgstr "Nahakna socially amadi professionally dance toubage?"
+msgstr "নহাক্না মীয়ামগী মওংদা নত্রগা পেশাগত মওংদা থাব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -264,78 +264,80 @@ msgstr "পেশাগত মওংদা"
 #, fuzzy
 msgctxt "dance"
 msgid "I never dance"
-msgstr "Eina dance toude"
+msgstr "ঐনা থাবা অমত্তা তৌদ্রে"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "Nahakna karigi dance toure? (ahangba phangba khudong channa):"
+msgstr ""
+"নহাক্না মমাংদা থাবা মতং অদু করম্বা মতমদা ওইখিবগে? (অচুম্বা পাউখুম "
+"খন্নবিয়ু):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
-msgstr "Ahanba numit"
+msgstr "হৌজিক্কী সপ্তাহ অসিদা"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
-msgstr "Ahanba thang"
+msgstr "থা অসিদা"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
-msgstr "Ahanba kum"
+msgstr "চহি অসিদা"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "Kum khara"
+msgstr "চহি খরা মমাংদা"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "Kum khara"
+msgstr "চহি খরা ইয়াম্না মমাংদা"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "Eina dance toude"
+msgstr "ঐনা থাবা অমত্তা তৌদ্রে"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "speech-disorder"
 msgid "Did you get speech-language therapy as a child?"
-msgstr "Nahakna changphamda nungainaba speech-language therapy phangbire?"
+msgstr "নহাক্না অচৌবা মতমদা স্পীচ-ল্যাঙ্গুয়েজ থেরাপি ফংখিব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgid "I don’t know"
-msgstr "Eina khangde"
+msgstr "ঐ খঙদে"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "speech-disorder"
 msgid "Have you ever been diagnosed with dyslexia?"
-msgstr "Nahakna dyslexia gi maru phangbire?"
+msgstr "নহাক্না মতম অমদা ডিসলেক্সিয়া অমা থিব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "income"
 msgid "What is your total household income per year?"
-msgstr "Nahakki total household income per year karino?"
+msgstr "নহাক্কী ইমুংগী চহী অমদা মপুংফাবা ইনকাম করম্বা?"
 
 #: psynet/demography/general.py
 #, fuzzy, python-brace-format
 msgctxt "income"
 msgid "Less than 10,000 {CURRENCY}"
-msgstr "10,000 {CURRENCY} dagi amuk leirabadi"
+msgstr "10,000 {CURRENCY} দগী কম"
 
 #: psynet/demography/general.py
 #, fuzzy, python-brace-format
@@ -401,31 +403,31 @@ msgstr "100,000 দগী 149,999 {CURRENCY} ফাওবা"
 #, fuzzy, python-brace-format
 msgctxt "income"
 msgid "150,000 {CURRENCY} or more"
-msgstr "150,000 {CURRENCY} amuk leirabadi"
+msgstr "150,000 {CURRENCY} নত্রগা হেন্না"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "experiment-feedback"
 msgid "Did you like the experiment?"
-msgstr "Nahakna experiment phangbire?"
+msgstr "নহাক্না এক্সপেরিমেন্ট অদু পামখিব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "experiment-feedback"
 msgid "Did you find the experiment difficult?"
-msgstr "Nahakna experiment khara phangbire?"
+msgstr "নহাক্না এক্সপেরিমেন্ট অদু অসুবা ফাওখিব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "experiment-feedback"
 msgid "Did you encounter any technical problems during the experiment?"
-msgstr "Nahakna experiment gi matamda technical problems phangbire?"
+msgstr "এক্সপেরিমেন্ট অদু চলাকালে নহাক্না টেকনিক্যাল প্রবলেম অমত্তা ফংখিব্রা?"
 
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "experiment-feedback"
 msgid "If so, please provide a few words describing the problem."
-msgstr "Phangbadi, problem gi maru khudong channa pibiyu."
+msgstr "অদুগুম্বা ওইরবদি, প্রবলেম অদুগী মরমদা খরা ৱাহৈদা তাকপিয়ু।"
 
 #: psynet/end.py
 #, fuzzy
@@ -468,6 +470,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "মখা লোইনি!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "নাখোইনা শারুক ইয়াওবগী থাগৎচরি।"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -478,7 +485,7 @@ msgstr "দুঃখিত, নাখোইনা মখা থামজার�
 #, fuzzy
 msgctxt "final_page_unsuccessful"
 msgid "However, you will still be paid for the time you spent already."
-msgstr "Adubu nakhoina leiriba matamgi machatpa pibigani."
+msgstr "অদুবু, নাখোইনা ইতোমধ্যে মতম চৎখিবা অদুগী পিবা ফংগনি।"
 
 #: psynet/end.py
 #, fuzzy
@@ -503,8 +510,7 @@ msgid ""
 "When continuing to the next page you may see a permissions request; please "
 "grant it."
 msgstr ""
-"Nongmada macha page-da chatkhiduna permissions request amuk hangdokpa "
-"ngammi; kari khangdoktuna pibiyu."
+"মথংগী পেজদা চৎপা মতমদা অনুমতি হায়জবা অমা উৎপা য়াই; মদুদা অনুমতি পিয়ু।"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -519,9 +525,9 @@ msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
-"Synchronization problem phangkhre. Nakhoina experiment asi ahanba browser "
-"tab singda thokpibra? Tab sing adu khudingbu khangdoktuna page asi refresh "
-"tou."
+"সিঙ্ক্রোনাইজেশনগী সমস্যা অমা থেংনরে। নঙনা এক্সপেরিমেন্ট অসি ব্রাউজার ট্যাব "
+"কয়া অমদা একসননা শিজিন্নরিব্রা? ট্যাব অতোপ্পা পুম্নমক লোইশিনবিয়ু অমসুং পেজ "
+"অসি রিফ্রেশ তৌবিয়ু।"
 
 #: psynet/experiment.py
 #, fuzzy
@@ -532,6 +538,16 @@ msgstr "এক্সপেরিমেন্ট অসি মতম খরগী
 #, fuzzy
 msgid "Play"
 msgstr "খেল"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "লেপ্পু"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "লুপ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -561,77 +577,70 @@ msgstr "থবক তৌরি..."
 #, fuzzy
 msgctxt "color_blindness_test"
 msgid "Write down the number in the image."
-msgstr "Image-da number asi thadok-u."
+msgstr "ছবী অসিদা উরিবা নম্বর অদু ইবা।"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "We will now perform a quick test to check your ability to perceive colors."
-msgstr ""
-"Eina houjik ngakthokpa ngamba adu tinnaba chatpa khongchat ama tougadabani."
+msgstr "ঐখোয়না হৌজিক রং খঙবা নহাক্কী মতিক পরীক্ষা তৌনবা খুদম অমা তৌগনি।"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "color_blindness_test_intro_1"
 msgid ""
 "In each trial, you will be presented with an image that contains a number."
-msgstr ""
-"Trial khudingda, nangonda image ama utpa thokani adudi number ama lakkani."
+msgstr "ট্রায়াল খুদিংমক্তা নম্বর অমা ইয়াওরিবা ছবী অমা নহাক্না উৎপিগনি।"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy, python-brace-format
 msgctxt "color_blindness_test_intro_1"
 msgid "This image will disappear after {HIDE_AFTER} seconds."
-msgstr "Image asi {HIDE_AFTER} second makha taret haina thadoktuna chatkani."
+msgstr "ছবী অসি {HIDE_AFTER} সেকেন্দগী মতুংদা মাংখ্রোগনি।"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "color_blindness_test_intro_1"
 msgid "You must enter the number that you see into the text box."
-msgstr "Nangna uhiba number asi text box-da thadokpa ngamgani."
+msgstr "নহাক্না উরিবা নম্বর অদু টেক্সট বক্সতা ইবা দরকারি।"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
 msgctxt "Beep-headphone-test"
 msgid "Which sound is different from the other two: 1, 2, or 3?"
-msgstr "Ahum amagi marakta hangi changba kanano: 1, 2, amasung 3?"
+msgstr "আওবা অহুমদগী খেন্নবা আওবা অদু করিনো: 1, 2 নত্রগা 3?"
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
-msgstr ""
-"Nanggi thoujal adu <strong>hangi changba kanano</strong> haina judge toubagi"
-" oigani."
+msgstr "নহাক্কী থবকদি <strong>আওবা অহুমদগী খেন্নবা অদু</strong> খঙবা ওইগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "Your score was"
-msgstr "Nakhoigi score asi"
+msgstr "নহাক্কী স্কোর অসি"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "Press the button to continue."
-msgstr "Nongmai button asi damkhiduna chatlu."
+msgstr "মখা চৎনবগী বাটনদু নম্মু।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "We will perform a test to check your language abilities."
-msgstr ""
-"Eikhoina nakhoigi language khudongchaba tinnaba test ama piba ngamgani."
+msgstr "নহাক্কী লোলগী মপাঙ্গল খংদোক্নবগী ঐখোয়না অমা টেস্ট তৌগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "In each trial, you will see a string of characters."
-msgstr ""
-"Trial khudingda, nakhoina character sing amadi mathakta string ama uba "
-"ngamgani."
+msgstr "ট্রায়ল খুদিংমক্তা নহাক্না ময়েক ময়েক্না পনবা অক্ষরশিং অমা উগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "The string will automatically disappear."
-msgstr "String asi mahut tinnaba awabaniduna thadokle."
+msgstr "অক্ষরশিং অসি মথন্তনা মায়থোং তৌগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy, python-brace-format
@@ -639,8 +648,8 @@ msgid ""
 "Your task is to decide whether this is an existing word in {LANGUAGE_NAME} "
 "or not."
 msgstr ""
-"Nakhoigi thoujannadi makhoina {LANGUAGE_NAME} da leiriba waheigi waheiba "
-"oirabadi masi neinaraga matam pumnamakta oiri haiyu."
+"অসি {LANGUAGE_NAME} দা শেম্বা ৱাহৈ অমা নত্রগা নত্তে হায়বদু নহাক্না খঙদোকপা "
+"নহাক্কী থবকনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy, python-brace-format
@@ -648,9 +657,9 @@ msgid ""
 "If you don’t know the exact meaning of the word, but you are certain that it"
 " exists in {LANGUAGE_NAME}, you should mark the it as a real word."
 msgstr ""
-"Nakhoina waheigi waheiba exact meaning asi khangdaba wangaidabani, adubu "
-"nakhoina mahak {LANGUAGE_NAME} da leiriba waheigi waheiba oirabani haina "
-"khangneirabadi, nakhoina mahak real waheigi waheiba oiri haiyu."
+"ৱাহৈ অদুগী অশেংবা অর্থ নহাক্না খংদোক্ত্রবসু, অদুবু মসি {LANGUAGE_NAME} দা "
+"লৈবা ৱাহৈনি হায়না নহাক্না শোর্না খঙলবদি, মসি অশেংবা ৱাহৈনি হায়না চাংয়েংদা"
+" তাকউ।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy, python-brace-format
@@ -658,88 +667,74 @@ msgid ""
 "If you are not sure whether the word exists in {LANGUAGE_NAME}, you should "
 "mark it as a fake word."
 msgstr ""
-"Nakhoina mahak {LANGUAGE_NAME} da leiriba waheigi waheiba oirabadi khangdaba"
-" wangaidabani, nakhoina mahak fake waheigi waheiba oiri haiyu."
+"ৱাহৈ অসি {LANGUAGE_NAME} দা লৈব্রা লৈত্রা হায়বদু নহাক্না শোর্না খঙদ্রবদি, "
+"মসি অরানবা ৱাহৈনি হায়না চাংয়েংদা তাকউ।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "In this experiment, you might find a mix between spelling variants."
-msgstr ""
-"Experiment asi da, nakhoina spelling variants singgi mix ama thokchaba "
-"ngamgani."
+msgstr "মসিগী এক্সপেরিমেন্ট অসিদা, বানানগী ভিন্নতা ময়াম অমত্তা ফংবা য়াই।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "You should not pay attention to subtle spelling differences."
-msgstr "Nakhoina subtle spelling differences singda khudong sabada puthokle."
+msgstr "বানানগী অহেনবা অমসুং অমত্তা খুদমখুদমগী ভিন্নতাশিংদা মতম পীযু।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "The words are presented in either only uppercase or lowercase letters."
-msgstr ""
-"Waheising asi uppercase amadi lowercase letters khudingda leiriba oigani."
+msgstr "ৱাহৈশিং অসি ময়েক অপীকপা নত্রগা ময়েক চাউবা মতমখক্তদা উৎপা ওইগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "You can ignore the case of the word."
-msgstr "Nakhoina waheigi case asibu khudong sabada puthokle."
+msgstr "ৱাহৈ অদুগী ময়েক চাউবা নত্রগা অপীকপা হায়বদু নহাক্না য়েংদ্রবসু য়াই।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "To do the task quickly, you should use the keys on your keyboard."
-msgstr ""
-"Nakhoina thoujal asi khara khudong sabada, nakhoina keyboard asi thiyu."
+msgstr "থবক অসি হেক্তা তৌনবা, নহাক্কী কীবোর্ডগী কি-শিং শিজিন্নগদবনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "You can use the following keys:"
-msgstr "Nakhoina matam makhada nungaiba keys asi thiyu:"
+msgstr "নহাক্না মখাগী কি-শিং শিজিন্নবা য়াগনি:"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "Press <kbd>A</kbd> if the presented word is <strong>real</strong>"
-msgstr ""
-"Nakhoina <kbd>A</kbd> damkhidabadi, present thiba waheigi waheiba "
-"<strong>real</strong> oiri haina khangba ngamgani."
+msgstr "উৎলিবা ৱাহৈ অসি <strong>অশেংবা</strong> ওইরবদি <kbd>A</kbd> নম্মু"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "Press <kbd>L</kbd> if the presented word is <strong>fake</strong>"
-msgstr ""
-"Nakhoina <kbd>L</kbd> damkhidabadi, present thiba waheigi waheiba "
-"<strong>fake</strong> oiri haina khangba ngamgani."
+msgstr "উৎলিবা ৱাহৈ অসি <strong>অরানবা</strong> ওইরবদি <kbd>L</kbd> নম্মু"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "Familiarize yourself with the two keys on your keyboard."
-msgstr "Nakhoina keyboard asi mathakta nungaiba ani key asi thiyu."
+msgstr "নহাক্কী কীবোর্ডদা লৈবা কি অনী অসি মশক খঙবিয়ু।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "If you press them, they will light up in the keyboard on the right."
-msgstr ""
-"Nakhoina makhoibu damkhidabadi, mahak makhoigi keyboard asi mathakta light "
-"up oigani."
+msgstr "নহাক্না কি অনী অসি নম্বদা, মফম ওইবা কীবোর্ডদা মখোয়না মশক তাক্কনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid ""
 "You need to press both keys at least once to progress to the next page."
-msgstr ""
-"Nakhoina matam pumnamakta chatpa ngamgani haina khangnaba ani key asi "
-"damkhiduna chatpa ngamgani."
+msgstr "মথংগী পেজদা চৎনবা, কি অনী অসি খুদিংমক হেক্তা অমুক নম্বা দরকার ওই।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "In case you forget the keys, they will be printed on every page."
-msgstr ""
-"Nakhoina keys asi khangba ngangdaba wangaidabadi, makhoina page pumnamakta "
-"print oigani."
+msgstr "কি-শিং নহাক্না মরুমদ্রবদি, মখোয় পেজ খুদিংমক্তা ইবা ওইগনি।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
 msgid "The test will start on the next page."
-msgstr "Test asi matam asida hourakani."
+msgstr "টেস্ট অসি মথংগী পেজদা হৌগনি।"
 
 #: psynet/recruiters.py
 #, fuzzy, python-brace-format
@@ -1136,7 +1131,7 @@ msgstr "আপোনাৰ পেনেললৈ উভতি যাওক।"
 #, fuzzy
 msgctxt "ad"
 msgid "Thanks for your interest in this experiment."
-msgstr "ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ"
+msgstr "মসী এক্সপেরিমেন্ট অসিদা নুংঙাইবা উৎপিরকপগীদমক থাগৎচরি।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -1144,37 +1139,39 @@ msgctxt "ad"
 msgid ""
 "By clicking the following URL link, you will be taken to the experiment, "
 "including complete instructions and an informed consent agreement."
-msgstr "ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ"
+msgstr ""
+"মখাগী URL লিংক অসি ক্লিক তৌরবদি, পূর্ণ নির্দেশনা অমসুং সম্মতি পীবা চুক্তি "
+"ইয়াওনা এক্সপেরিমেন্টদা নাঙো।"
 
 #: psynet/templates/ad.html
 #, fuzzy
 msgctxt "ad"
 msgid "Warning"
-msgstr "ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ"
+msgstr "সতর্কতা"
 
 #: psynet/templates/ad.html
 #, fuzzy
 msgctxt "ad"
 msgid "Please disable pop-up blockers before continuing."
-msgstr "ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ"
+msgstr "মখা চৎথরিঙৈ মমাংদা পপ-আপ ব্লকারশিং অসি অফ তৌবিয়ু।"
 
 #: psynet/templates/ad.html
 #, fuzzy
 msgctxt "ad"
 msgid "Begin Experiment"
-msgstr "ꯑꯃꯅꯤ ꯑꯃꯁꯤꯡꯗꯥ"
+msgstr "এক্সপেরিমেন্ট হৌবিয়ু"
 
 #: psynet/templates/consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "To proceed, click the button below."
-msgstr "ꯍꯟꯗꯨꯠꯕ ꯑꯃꯁꯤꯕ, ꯃꯊꯣꯗꯣ ꯍꯥꯡꯅꯕ ꯃꯇꯝ ꯆꯤꯡꯕꯤꯡ ꯍꯟꯅꯕꯤ."
+msgstr "মখা চৎনবগীদমক, মখাদা পীখিবা বুটনদু ক্লিক তৌ।"
 
 #: psynet/templates/consent.html psynet/templates/keyboard.html
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Next"
-msgstr "ꯅꯦꯛꯇꯁꯤ"
+msgstr "মথং"
 
 #: psynet/templates/consents/audiovisual_consent.html
 #, fuzzy
@@ -1182,8 +1179,7 @@ msgctxt "consent-title"
 msgid ""
 "In this experiment, you may be asked to make a voice or video recording."
 msgstr ""
-"Houjik asi mathakta nangonda voice amasung video recording touribagi maikei "
-"kanaba haibikhi."
+"এক্সপেরিমেন্ট অসিদা, অদোমবু ৱয়েস নত্রগা ভিডিঅো রেকর্ডিং অমা তৌনবা হায়জগনি।"
 
 #: psynet/templates/consents/audiovisual_consent.html
 #, fuzzy
@@ -1192,22 +1188,22 @@ msgid ""
 "For example, you may be asked to record your finger-tapping in response to a"
 " sound or video, or to record yourself speaking or singing."
 msgstr ""
-"Houjik eina haina makhal makha nangonda sound amasung video da phajinduna "
-"finger-tapping touribagi maikei kanaba amasung nanggi waheigi maramda aduga "
-"gi maramda asingba touri."
+"মতৌ অসুম্না, অদোমবু সাউন্ড নত্রগা ভিডিঅো অমগী মখাদা অদোমগী মাইচেৎ থাপক-থাপক "
+"তৌবদু রেকর্ড তৌনবা, নত্রগা অদোমনা ৱাখল হায়বদু নত্রগা ঈশৈ শকপদু রেকর্ড তৌনবা"
+" হায়জগনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent-title"
 msgid "Research Participant Consent Form for Image/Sound Recordings"
-msgstr "Image/Sound Recordings gi Research Participant Consent Form"
+msgstr "ইমেজ/সাউন্ড রেকর্ডিংগী গবেষণা অংশগ্রহণগী সম্মতি ফর্ম"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "Title of study:"
-msgstr "Loushing-gi ming:"
+msgstr "গবেষণাগী মিং:"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1216,8 +1212,8 @@ msgid ""
 "I have received oral and written information about the fact that "
 "<i>audiovisual</i> recordings will be made in this study."
 msgstr ""
-"Ei khangbada oral amasung written information pei eikhoibu "
-"<i>audiovisual</i> recordings asi study asi da touba ngamgani haina."
+"ঐনা মসিগী গবেষণাদা <i>অডিওভিজুয়েল</i> রেকর্ডিং তৌগনি হায়বা ৱারোল মহৌশাগী "
+"অমসুং ইশাগী ময়েক্তা ফংখ্রে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1226,8 +1222,8 @@ msgid ""
 "The recording serves the purpose of understanding how humans perceive and "
 "process information from sound and visual."
 msgstr ""
-"Recording asi khangbada matamda sound amasung visual gi information houba "
-"amasung leiba yamna tamliba makhal ama khangnanaba touba ngamgani."
+"রেকর্ডিং অসিনা মীওইশিংনা শব্দ অমসুং দৃশ্যগী ৱারোল করম্না খঙবগে অমসুং প্রসেস "
+"তৌবগে হায়বদু খঙনবা তঙাই ফদে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1236,9 +1232,8 @@ msgid ""
 "For example, we would like to understand how predictive mechanisms in "
 "perception rely on experience, learning, and memory."
 msgstr ""
-"Madu mahutta, eikhoina khangnanaba leitrabasu perception gi predictive "
-"mechanisms asi experience, learning amasung memory dagi kibana rely tou-i "
-"haina."
+"মশক-মতৌদা, অনুভবগী পূর্বানুমান তৌবা মেকানিজমশিংনা অনুভব, শিজিন্নবা অমসুং "
+"মরালদা করম্না নির্ভর তৌবগে হায়বদু খঙনিং।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1247,9 +1242,9 @@ msgid ""
 "By making recording people while moving, singing, tapping to rhythms, or "
 "speaking, we can infer the mechanisms of the auditory and visual systems."
 msgstr ""
-"Eikhoina mi karigumba leiringeida, singing, tapping to rhythms, nattraga "
-"speaking touba matamda recording touba yamna auditory amasung visual systems"
-" gi mechanisms asi khangnanaba ngamgani."
+"মীওইশিংনা চল্লিবা, ঈশৈ শকপা, তালদা থাপ্পা নত্রগা ৱারী শান্নবা মতমদা রেকর্ডিং"
+" তৌদুনা, ঐখোয়না শব্দ অমসুং দৃশ্য সিস্টেমশিংগী মেকানিজমশিংদু অনুমান তৌবা "
+"য়াগনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1260,10 +1255,9 @@ msgid ""
 "i.e., using a number and without containing my name, and that there is a "
 "coding list that links my name to the number."
 msgstr ""
-"Eina khangbada <i>audiovisual</i> recording asi pseudonymized form-da "
-"storage amasung processing touba ngamgani haina. Aduga madu number amadi ei "
-"gi ming houba ngamdraba iyoina touba ngamgani amasung madu da ei gi ming "
-"amasung number asi link touba coding list ama leinaba khang-i."
+"ঐনা খঙহল্লে মদুদি <i>অডিওভিজুয়েল</i> রেকর্ডিং অসিগী স্টোরেজ অমসুং প্রসেসিং "
+"অদু ছদ্মনাম শিজিন্নদুনা তৌগনি—অর্থাৎ, ঐগী মিংদা নত্তনা নম্বর শিজিন্নগনি; "
+"অমসুং ঐগী মিং অমসুং নম্বর অসি মরী শম্নবা কোডিং লিস্ট অমা লৈগনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1272,8 +1266,8 @@ msgid ""
 "The investigators are the only persons who have access to this coding list, "
 "which will be destroyed after completion of the research project."
 msgstr ""
-"Investigators asi eina coding list asi access touba ama khang-i, aduga "
-"research project asi completion chaorepa matamda madu pithokpa ngamgani."
+"গবেষকশিংনা মতম অদুদা কোডিং লিস্ট অসি ইয়েংবা য়াবা মীওই ওই; গবেষণা প্রজেক্ট "
+"লোইরবা মতুংদা লিস্ট অসি মাঙহল্লগনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1283,8 +1277,8 @@ msgid ""
 "<i>audiovisual</i> data during the recording and the analysis of the "
 "material."
 msgstr ""
-"Project asi da leiba researchers asi ei gi <i>audiovisual</i> data asi "
-"recording amasung material asi analysis matamda access touba ngamgani."
+"প্রজেক্ট অসিগা মরী লৈনবা গবেষকশিংনা রেকর্ডিং অমসুং মটেরিয়েল অ্যানালাইসিস "
+"তৌবা মতমদা ঐগী <i>অডিওভিজুয়েল</i> ডেটা ইয়েংবা য়াগনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
@@ -1294,20 +1288,21 @@ msgid ""
 "I understand that I am free to withdraw my consent to the collection and "
 "storage of my personal data without negative consequences."
 msgstr ""
-"Ei-na khang-i ei-na ei-gi atoppa leeba amasung lairik-gi maramda yaolhanba "
-"leeba phang-i amasung thourang leitre."
+"ঐনা খঙই মদুদি ঐগী পার্সনেল ডেটা কালেক্ট অমসুং স্টোর তৌবগী সম্মতি অদু নেগেটিভ"
+" পরিণাম লৈত্রগা লৌথোকপা য়াই।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent-audiovisual"
 msgid "I agree to the handling of the recordings as described above."
-msgstr "Ei cheirak leitraba makhal asi yamna record touba ngamgani haina hei."
+msgstr ""
+"মথক্তা শেমদোক্লিবা মতুং ইন্না রেকর্ডিংশিং হ্যান্ডেল তৌবদা ঐ সম্মতি পীজে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "Addendum for demonstrations"
-msgstr "Demonstrations gi ahenba wahe"
+msgstr "ডেমনস্ট্রেশনগী অদেন্ডাম"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1317,15 +1312,15 @@ msgid ""
 "purposes in presentations with a limited number of participants (e.g., "
 "teaching courses or scientific presentations)."
 msgstr ""
-"Ei khang-i ei gi <i>audiovisual</i> recordings asi demonstration purposes gi"
-" yamna presentations da touba ngamgani (e.g., teaching courses nattraga "
-"scientific presentations)."
+"ঐগী <i>অডিওভিজুয়েল</i> রেকর্ডিংশিং অসি অংশগ্রহণগী মশিং অল্পা লৈবা "
+"প্রেজেন্টেশনশিংদা (মখল ওইনা, তম্নবা ক্লাস নত্রগা সায়েন্টিফিক "
+"প্রেজেন্টেশনশিংদা) ডেমনস্ট্রেশনগী থবকদা শিজিন্নবা য়াবদা ঐ সম্মতি পীজে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "(Please tick where applicable)"
-msgstr "(Yamna oirabadi tick touba fanglabani)"
+msgstr "(চৎনবা মতুং ইন্না টিক তৌবিয়ু)"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1344,14 +1339,13 @@ msgstr "নত্তে"
 msgctxt "consent-audiovisual"
 msgid ""
 "The declaration of consent for <i>audiovisual</i> recordings is voluntary."
-msgstr ""
-"Audiovisual recordings gi declaration of consent asi voluntary oina tou-i."
+msgstr "<i>অডিওভিজুয়েল</i> রেকর্ডিংগী সম্মতিগী ঘোষণা অসি স্বেচ্ছাগীনি।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent-audiovisual"
 msgid "I may withdraw my consent at any time."
-msgstr "Ei khang-i eina ei gi consent amatamda withdraw touba ngamgani."
+msgstr "ঐনা মতম খুদিংদা ঐগী সম্মতি লৌথোকপা য়াই।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1361,15 +1355,14 @@ msgid ""
 "be other negative consequences; however, in this case, participation in the "
 "study will not be possible."
 msgstr ""
-"Refusal nattraga withdrawal oina leirabadi, maduda costs leitrabadi amasung "
-"negative consequences leitrabadi; madudi, study asi da participation touba "
-"ngamdrabani."
+"সম্মতি পীথোকপা নত্রগা লৌথোকপা মতমদা খরচ অমত্তা ফংলোই অমসুং নেগেটিভ পরিণাম "
+"অমত্তা ওইরোই; অদুবু মসিগী মতমদা গবেষণাদা শরুক য়াওবা য়ারোইদে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent-audiovisual"
 msgid "I had sufficient time for this decision."
-msgstr "Ei ei gi decision asi gi matamda sufficient time pe-i."
+msgstr "মসিগী সিদ্ধান্ত লৌনবগী থৌরাংদা ঐগী মতম পর্যাপ্ত লৈখ্রে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
@@ -1378,14 +1371,14 @@ msgid ""
 "I have read and understood everything and hereby agree that "
 "<i>audiovisual</i> recordings of me may be taken."
 msgstr ""
-"Ei loubada amasung khangba ngam-i aduga ei gi <i>audiovisual</i> recordings "
-"asi touba ngamgani haina hei."
+"ঐনা পুন্নমক পাবা অমসুং খঙখ্রে, অদুগা মসিনা <i>অডিওভিজুয়েল</i> রেকর্ডিং ঐগী "
+"মথক্তা তৌবা য়াবদা সম্মতি পীজে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #, fuzzy
 msgctxt "consent-audiovisual"
 msgid "I have received a copy of this consent form."
-msgstr "Ei consent form asi gi copy ama pe-i."
+msgstr "ঐনা সম্মতিগী ফর্ম অসিগী কপি অমা ফংখ্রে।"
 
 #: psynet/templates/consents/cap-recruiter_audiovisual_consent.html
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
@@ -1398,7 +1391,7 @@ msgstr "Oja"
 #, fuzzy
 msgctxt "consent-title"
 msgid "Research Participant Consent Form"
-msgstr "Thourang Piba Yaolhanba Leeba Phongdokpiba Loushing"
+msgstr "রিসার্চ পার্টিসিপেন্টগী সম্মতি ফর্ম"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1406,17 +1399,13 @@ msgctxt "consent-cap"
 msgid ""
 "I have received written information about the study and the procedure of the"
 " study."
-msgstr ""
-"Ei-na loushing amasung loushing-gi thabak adugi maramda pao pambi amasung "
-"eikhoigi pao pambi."
+msgstr "ঐনা রিসার্চ অসিগী মরম অমসুং রিসার্চগী পদ্ধতিগী ৱাফম লিখিত ওইনা ফংলম।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
 msgctxt "consent-cap"
 msgid "I have read and understood all of the information completely."
-msgstr ""
-"Ei-na maram pumnamak khang-i amasung leirabadi makhoigi maramda pukning "
-"thok-i."
+msgstr "ঐনা পাউখুম পুম্নমক মচাক-মচাকনা পাঠনা খঙলম।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1425,8 +1414,8 @@ msgid ""
 "If I had questions concerning the upcoming study, they were answered "
 "completely and to my satisfaction."
 msgstr ""
-"Eikhoigi loushing adugi maramda ei-na hanglakpa khang-i aduga khanglakpa "
-"pumnamaksing ei-na henna phang-i amasung eikhoigi pukning phang-i."
+"মতুংদা পাংথোক্কদবা রিসার্চ অসিগী মরমদা ঐগী প্রশ্ন লৈরম্বদি, মখোয়না ঐগী "
+"সন্তুষ্টি ফাওবগী ওইনা পুম্নমক পাউখুম পীখ্রে।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1435,8 +1424,8 @@ msgid ""
 "I agree to the described collecting and processing of my age, gender, and "
 "country of birth."
 msgstr ""
-"Ei-na ei-gi atoppa amasung eikhoigi thawai, nupi-nupa amasung ei-gi leipak-"
-"gi maramda leeba amasung lairik gi maramda yaofang-i."
+"ঐগী চহি, জেন্ডর অমসুং পোকপগী লমগী মখল অসিগী মশিংগা অমসুং প্রসেস তৌবগা ঐনা "
+"সম্মতি পীজে।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1445,15 +1434,14 @@ msgid ""
 "The recording and processing of these data are carried out in pseudonymized "
 "form by means of a code and do not contain my name."
 msgstr ""
-"Loushing amasung lairik leeba madu pseudonymized form-gi mapanna code-gi "
-"mapanna leitre amasung ei-gi ming leitre."
+"ডেটা অসিগী রেকর্ডিং অমসুং প্রসেসিং কোড অমা শিজিন্নদুনা ছদ্মনাম ওইবা মওংদা "
+"তৌই, অমসুং মসিদা ঐগী মিং য়াওদে।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
 msgctxt "consent-cap"
 msgid "There is a coding list on paper that links my name to this number."
-msgstr ""
-"Ei-gi ming adu number asidagi link touriba coding list ama paper-da leitre."
+msgstr "ঐগী মিং অসি নম্বর অসিগা শম্নহনবা কোডিং লিস্ট অমা কাগজদা লৈ।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1462,16 +1450,15 @@ msgid ""
 "The investigators are the only persons who have access to this coding list "
 "and who are thus able to link the collected data to my name."
 msgstr ""
-"Oja-sing adu makhoi-gi coding list asi phangba ama amadi makhoising aduna "
-"thourang piba yaolhanba leeba amasung ei-gi ming aduda link touriba amasung "
-"lairik thokpa ama phang-i."
+"ইনভেস্টিগেটরশিং অদুমকনা কোডিং লিস্ট অসি ওইবা য়াই, মসিনা মখোয়দুমকনা "
+"থোক্লকপা ডেটা ঐগী মিংগা শম্নহনবা য়াই।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
 msgctxt "consent-cap"
 msgid ""
 "After completion of the research project, the coding list will be destroyed."
-msgstr "Loushing thabak puduna chatpani, coding list asi mangkhrabani."
+msgstr "রিসার্চ প্রজেক্ট লোইরবা মতুংদা, কোডিং লিস্ট অসি মাংহনগনি।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1480,8 +1467,8 @@ msgid ""
 "From this point on, my data are anonymous, which means that they cannot be "
 "linked to my person any longer."
 msgstr ""
-"Madu chatkhre, ei-gi lairik mangthokpani, madu ei-gi hakchang amasung ming "
-"aduda link toukhraba leitre."
+"মদুগী মতুংদা ঐগী ডেটাশিং অসি অ্যানোনিমাস ওইগনি; মসিনা মখোয় অসি হৌজিক ঐগা "
+"শম্নহনবা য়ারোই হায়বনি।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1489,8 +1476,7 @@ msgctxt "consent-cap"
 msgid ""
 "I have been informed that I may request deletion of all my data at any time."
 msgstr ""
-"Ei-na khang-i ei-na eikhoigi atoppa lairik asi khudol touriba matam "
-"khudingmakta yaofang-i."
+"ঐনা মতম খুদিংদা ঐগী ডেটা পুম্নমক লৌথোকপা হায়জবা য়াই হায়না ঐদা খঙহল্লে।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1499,8 +1485,8 @@ msgid ""
 "However, if the coding list has already been destroyed, it will no longer be"
 " possible to identify and thus to delete my data set."
 msgstr ""
-"Adubu, coding list asi mangkhre haina chatkhre, madu ei-gi lairik amasung "
-"lairik set adu khudol touriba leitre amasung mangthokpa leitre."
+"অদুবু, কোডিং লিস্ট অসি হান্না মাংহনখ্রবদি, ঐগী ডেটা সেট অসি খঙদোকপা অমসুং "
+"মাংহনবা হৌজিক য়ারোই।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1509,8 +1495,8 @@ msgid ""
 "The participant information sheet about the examination is part of this "
 "consent form."
 msgstr ""
-"Loushing-gi maramda yaolhanba leeba asi eikhoigi phongdokpiba loushing gi "
-"lambi asi phangba leiba."
+"পরীক্ষাগী মরমদা পার্টিসিপেন্টশিংদা পীবা ইনফরমেশন শীট অসি সম্মতি ফর্ম অসিগী "
+"শরুক অমনি।"
 
 #: psynet/templates/consents/cap-recruiter_standard_consent.html
 #, fuzzy
@@ -1518,9 +1504,7 @@ msgctxt "consent-cap"
 msgid ""
 "I have received a copy of the participant information sheet and of the "
 "consent form."
-msgstr ""
-"Ei-na loushing gi maramda yaolhanba leeba amasung phongdokpiba loushing gi "
-"lambi asi pao pambi."
+msgstr "ঐনা পার্টিসিপেন্ট ইনফরমেশন শীট অমসুং সম্মতি ফর্মগী কপি অমা ফংলম।"
 
 #: psynet/templates/consents/database_consent.html
 #: psynet/templates/consents/lucid_consent.html
@@ -1530,7 +1514,7 @@ msgstr ""
 #, fuzzy
 msgctxt "consent-title"
 msgid "We need your consent to proceed"
-msgstr "Eikhoi-na thoujal touba ngamgani haibadu nakhoina yaona pibiyu"
+msgstr "মখা চৎথনবগীদমক নঙোন্দগী অয়াবা দরকারি"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1540,9 +1524,9 @@ msgid ""
 "data we collect when you register for our participant pool and for what "
 "purposes we process this data."
 msgstr ""
-"Masigi privacy policy asi yaipha amadi mafamdagi eikhoina nakhoigi personal "
-"data collec touribage haibadu amadi adubu eikhoina kari maramna process "
-"touribage haibadu nakhoibu khanghansillu."
+"মসিগী প্রাইভেসী পলিসী অসিনা, পার্টিসিপেন্ট পুলদা রেজিস্টার তৌরিবা মতমদা "
+"ঐখোয়না খল্লিবা পার্সোনেল ডাটা অমসুং ডাটা অসি করিগী পাম্বদা প্রসেস তৌরিবগে "
+"হায়বদু নঙোন্দা খঙহল্লি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1551,14 +1535,14 @@ msgid ""
 "In addition, we would like to inform you about your rights with regard to "
 "the processing of personal data."
 msgstr ""
-"Aduga atoppa maramda, nakhoigi personal datagi processing-ga leiriba "
-"nakhoigi matik yathang adugi maramda khanghanbada eikhoina leplu."
+"অদুগা, পার্সোনেল ডাটাগী প্রসেসিংগা মরী লৈননা নঙোন্দা লৈরিবা অধিকারশিংসু "
+"খঙহল্লি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-purpose"
 msgid "Purposes of Processing"
-msgstr "Processing-gi Maram"
+msgstr "প্রসেসিংগী মতাংশিং"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1568,23 +1552,21 @@ msgid ""
 "communication with you and for planning studies at the Max Planck Institute "
 "for Empirical Aesthetics (MPIEA)."
 msgstr ""
-"Eikhoina nakhoigi data asi Max Planck Institute for Empirical Aesthetics "
-"(MPIEA)-da nakhoiga chatkhiduna leinana ngamgani amadi processing-gi maramna"
-" phangminnabagidamak matung-inna store amadi process touri."
+"নঙোন্দা পাউ ফাওনবগী অমসুং Max Planck Institute for Empirical Aesthetics "
+"(MPIEA) দা স্টাডিশিং প্লান তৌনবগীদমকখক্তং ঐখোয়না নঙোন্দগী ডাটা স্টোর অমসুং "
+"প্রসেস তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-purpose"
 msgid "This data will never be shared with third parties."
-msgstr ""
-"Masigi data asi atoppa mayamna eikhoina parts amadi share toudana "
-"leiminnagadabani."
+msgstr "ডাটা অসি মতম অমত্তদা থার্ড পার্টিশিংদা শেয়ার তৌদে।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-data"
 msgid "Which Data are stored"
-msgstr "Karigi Data Store Touri"
+msgstr "করম্বা ডাটাশিং স্টোর তৌরি"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1594,9 +1576,9 @@ msgid ""
 "demographic data requested in the log in (i.e., age, gender, and "
 "nationality), we also store the date and time when you made the entry."
 msgstr ""
-"Nakhoigi contact details (i.e., ming amadi email) amadi login-da demand "
-"touriba demographic data (i.e., age, gender, amadi nationality) adu mapanna,"
-" nakhoina entry toukhraba tarikh amadi thawaini adu eikhoi-na store touri."
+"নঙোন্দগী কন্টাক্ট ডিটেইলশিং (মদুদি মমিং অমসুং ইমেইল) অমসুং লগ-ইন তৌবা মতমদা "
+"হায়জরিবা ডেমোগ্রাফিক ডাটা (মদুদি চহী, জেন্ডর অমসুং ন্যাশনালিটি) অদুগা, নঙোই"
+" এন্ট্রি তৌখিবা তারিখ অমসুং মতমসু ঐখোয়না স্টোর তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1604,8 +1586,7 @@ msgctxt "consent-data"
 msgid ""
 "In addition, we save the date and time when you verified your email address."
 msgstr ""
-"Aduga atoppa maramda, nakhoigi email address verify tourakpa tarikh amadi "
-"thawaini adubu eikhoina save touri."
+"অদুগা, নঙোই ইমেইল এড্রেস ভেরিফাই তৌখিবা তারিখ অমসুং মতমসু ঐখোয়না সেভ তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1614,8 +1595,8 @@ msgid ""
 "If we invite you to participate in a study, we will store the date and time "
 "of this communication."
 msgstr ""
-"Eikhoina nakhoibu study-da leplaba pao puraklaba matamda, communication-gi "
-"tarikh amadi thawaini adubu store touri."
+"ঐখোয়না নঙোন্দা স্টাডি অমদা শরুক য়ানবগী নিমন্ত্রণ পীরবদি, ঐখোয়না পাউ "
+"ফাওনখিবা তারিখ অমসুং মতম স্টোর তৌগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1625,9 +1606,9 @@ msgid ""
 "communication of this choice, and whether you completed the experiment "
 "successfully or not."
 msgstr ""
-"Nakhoina leplaba agree tourakkhani haibadi, nakhoigi leplaba pao purakpa "
-"thawaini amadi nakhoina experiment asi success-faruk-e haibadu eikhoina "
-"store touri."
+"নঙোই শরুক য়ানবা য়ারবদি, নঙোই মসিগী মতমদা পাউ ফাওখিবা তারিখ অমসুং মতম, "
+"অমসুং এক্সপেরিমেন্ট অদু মপুং ফানা তৌখিবরা নত্ত্রগা তৌদ্রিবরা—মদুসু ঐখোয়না "
+"স্টোর তৌগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1637,9 +1618,8 @@ msgid ""
 " about the procedure of the study and the collection of data during the "
 "study."
 msgstr ""
-"Eikhoina leplaba pao purakpa matamda, study-gi procedure amadi study-da data"
-" collect touriba khanghanbada taibangpanba amadi nakhoibu yaipha "
-"khanghansillu."
+"অয়ুকপদা, স্টাডি অমদা শরুক য়ানিংঙৈ মমাংদা, স্টাডি অদুগী পদ্ধতি অমসুং স্টাডি"
+" অদুগী মতমদা ডাটা লৌখিবা অদুগী মতিক চানা নঙোন্দা খঙহনগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1648,14 +1628,14 @@ msgid ""
 "Your consent to participate in a study will be obtained separately for each "
 "study you participate in."
 msgstr ""
-"Nakhoina leplaba pao purakpa matamda, nakhoina leplaba pao purakpagi matik "
-"yathang asi khara khara study leplaga nakhoibu yaipha khanghansillu."
+"নঙোই শরুক য়ারিবা স্টাডি খুদিংমক্তা শরুক য়ানবগী নঙোন্দগী অয়াবা পৃথকভাবে "
+"লৌগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-duration"
 msgid "Duration of Data Storage"
-msgstr "Data Storage-gi Matam"
+msgstr "ডাটা স্টোর তৌবগী মতম"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1665,30 +1645,27 @@ msgid ""
 "of such storage, i.e., to contact you about participating in a study, "
 "remains in effect."
 msgstr ""
-"Nakhoigi data asi contact database-da store toude taramna aduga adugi "
-"maramda leplaba, i.e., nakhoibu study-da leplaba pao puraktaba matamda "
-"leiriba maramna leiminnagadabani."
+"স্টাডিদা শরুক য়ানবা মতাংদা নঙোন্দা কন্টাক্ট তৌনবগী মওংদা ডাটা স্টোর তৌবগী "
+"পাম্বা অদু লৈরিবা ফাওবগী, নঙোন্দগী ডাটা কন্টাক্ট ডাটাবেসদা স্টোর তৌগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-duration"
 msgid "You may request the deletion of your data at any time."
-msgstr ""
-"Nakhoina nakhoigi data asi leichinba taibang panba demand tourakpa ngamgani."
+msgstr "নঙোই মতম খুদিংদা নঙোন্দগী ডাটা ডিলিট তৌনবগী হায়জবা য়াগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-duration"
 msgid "To do so, send an e-mail with the subject “Delete” to:"
 msgstr ""
-"Adubu touba matamda, nakhoina subject asi “Delete” haibagi maramda e-mail "
-"thokpa: "
+"মদু তৌনবগীদমক, ইমেইল অমা সাবজেক্টদা “ডিলিট” হায়বা লিখদুনা মসিদা থাগদবনি:"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-duration"
 msgid "Your personal data will then be deleted immediately."
-msgstr "Nakhoigi personal data asi matung-inna leichinbada leiminnagani."
+msgstr "মতুংদা নঙোন্দগী পার্সোনেল ডাটা হৌজিক-হৌজিক ডিলিট তৌগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1697,9 +1674,8 @@ msgid ""
 "You can also delete your data from the database by deleting your account "
 "(i.e., press 'Delete account'  in the cap-recruiter log-in page)."
 msgstr ""
-"Nakhoina nakhoigi account delete tourakpa matamda database-gi data asi "
-"leichinbada leiminnaba ngamgani (i.e., cap-recruiter log-in page-da 'Delete "
-"account' press tourakpa matamda)."
+"নঙোই একাউন্ট ডিলিট তৌদুনা ডাটাবেসদগী নঙোন্দগী ডাটা ডিলিট তৌবা য়াগনি (মদুদি,"
+" cap-recruiter লগ-ইন পেজদা 'ডিলিট একাউন্ট' প্রেস তৌ)।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1708,8 +1684,8 @@ msgid ""
 "Note that all information, including the experiment and payment history will"
 " be removed from our database."
 msgstr ""
-"Experiment amadi payment history adi mapanna eikhoigi database-dagi "
-"leichinbada leiminnagadabani."
+"এক্সপেরিমেন্ট অমসুং পেমেন্ট হিস্টোরী যাউনা, ইনফরমেশন পুম্নমক ঐখোয়গী "
+"ডাটাবেসদগী মুত্থৎলগনি হায়বদু খঙবিয়ু।"
 
 #: psynet/templates/consents/database_consent.html
 #: psynet/templates/consents/main_consent.html
@@ -1718,7 +1694,7 @@ msgstr ""
 #, fuzzy
 msgctxt "consent-security"
 msgid "Security"
-msgstr "Security"
+msgstr "সিকিউরিটি"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1727,8 +1703,8 @@ msgid ""
 "The data entered in the form you fill out are transferred in encrypted form "
 "to an internal server."
 msgstr ""
-"Nakhoina fill touriba form-gi data asi encrypted form-da internal server-da "
-"transfer touri."
+"নঙোই ফিল তৌবা ফর্মদা এন্ট্রি তৌরিবা ডাটাশিং এনক্রিপ্ট তৌরবা ফর্মদা ইন্টারনেল"
+" সার্ভরদা ট্রান্সফার তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1737,8 +1713,8 @@ msgid ""
 "We will then send you an e-mail with a confirmation link to verify your "
 "e-mail address."
 msgstr ""
-"Matungda, nakhoigi email address verify tourakpa confirmation link leplaba "
-"e-mail sen touri."
+"মতুংদা নঙোই ইমেইল এড্রেস ভেরিফাই তৌনবগীদমক কনফার্মেশন লিঙ্ক যাউবা ইমেইল অমা "
+"থাগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1747,8 +1723,8 @@ msgid ""
 "We take all necessary technical and organizational security measures to "
 "protect your personal data from loss and abuse."
 msgstr ""
-"Eikhoina nakhoigi personal data loss amadi abuse touriba ngamloi haibagi "
-"maramda technical amadi organizational security measures pumnamak touri."
+"নঙোন্দগী পার্সোনেল ডাটা মুত্থৎপা অমসুং মিসইউজ তৌবদগী য়ান্নবা, ঐখোয়না দরকার"
+" লৈবা টেকনিকেল অমসুং অর্গানাইজেশনেল সিকিউরিটি মেজরশিং পুম্নমক লৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1757,8 +1733,8 @@ msgid ""
 "Your data are stored in a secure operating environment that is not "
 "accessible to the public."
 msgstr ""
-"Nakhoigi data asi public-ga phangba ngamloi haibagi maramna secure operating"
-" environment-da store touri."
+"নঙোন্দগী ডাটা সিকিউর অপারেটিং এনভায়রনমেন্ট অমদা স্টোর তৌই, অদু পাবলিকনা "
+"অ্যাক্সেস তৌবা ঙমদে।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1766,13 +1742,14 @@ msgctxt "consent-security"
 msgid ""
 "All connections between your computer and the web server are encrypted."
 msgstr ""
-"Nakhoigi computer amadi web server-gi connection pumnamak encrypted touri."
+"নঙোন্দগী কম্পিউটার অমসুং ওয়েব সার্ভরগী মরক্তা লৈবা কানেকশন পুম্নমক "
+"এনক্রিপ্ট তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Data Protection: Rights of Data Subjects"
-msgstr "Data Protection: Data Subjects-gi Yathang"
+msgstr "ডাটা প্রোটেকশন: ডাটা সাবজেক্টশিংগী অধিকার"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1782,9 +1759,9 @@ msgid ""
 "data, the General Data Protection Regulation (GDPR) of the European Union "
 "provides information about the rights of data subjects."
 msgstr ""
-"Personal data processing-gi maramda transparency leihouraba ngamloi haibagi "
-"maramda, European Union-gi General Data Protection Regulation (GDPR)-na data"
-" subjects-gi yathang asi khanghansillu."
+"পার্সোনেল ডাটাগী প্রসেসিংগা মরী লৈননা ট্রান্সপারেন্সি থম্নবগীদমক, ইউরোপীয়ন "
+"ইউনিয়নগী জেনারেল ডাটা প্রোটেকশন রেগুলেশন (GDPR) না ডাটা সাবজেক্টশিংগী "
+"অধিকারশিংগী মতিক খঙহল্লি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1794,54 +1771,52 @@ msgid ""
 "participation in our studies, you have the following rights in principle and"
 " insofar as no legal exceptions apply in individual cases:"
 msgstr ""
-"Nakhoigi personal data processing touriba data subject oiriba maramna "
-"nakhoigi study-da leplaba, nakhoina matik yathang asi phangba ngamgani amadi"
-" adugi maramna leiriba legal exceptions asi individual cases-da "
-"leiminnagadabani:"
+"ঐখোয়গী স্টাডিশিংদা নঙোই শরুক য়াবগা মরী লৈননা নঙোন্দগী পার্সোনেল ডাটা "
+"প্রসেস তৌরিবা ডাটা সাবজেক্ট অমা ওইনা, পৃথক কেসশিংদা লিগেল এক্সেপশন অমত্তা "
+"লৈত্রবদি, নঙোন্দা নীতিগতভাবে মখাগী অধিকারশিং লৈ:"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Access (GDPR art. 15)"
-msgstr "Data phangba yathang (GDPR art. 15)"
+msgstr "অ্যাক্সেস (GDPR আর্ট. 15)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Rectification (GDPR art. 16)"
-msgstr "Data correct touriba yathang (GDPR art. 16)"
+msgstr "রেক্টিফিকেশন (GDPR আর্ট. 16)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Erasure (GDPR art. 17, para. 1)"
-msgstr "Data erase touriba yathang (GDPR art. 17, para. 1)"
+msgstr "ইরেজার (GDPR আর্ট. 17, প্যারা. 1)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Restriction of processing (GDPR art. 18)"
-msgstr "Processing restrict touriba yathang (GDPR art. 18)"
+msgstr "প্রসেসিংগী সীমাবদ্ধতা (GDPR আর্ট. 18)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Data portability (GDPR art. 20)"
-msgstr "Data portability touriba yathang (GDPR art. 20)"
+msgstr "ডাটা পোর্টেবিলিটি (GDPR আর্ট. 20)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid "Withdrawal of consent (GDPR art. 7, para. 3)"
-msgstr "Consent withdraw touriba (GDPR art. 7, para. 3)"
+msgstr "অয়াবা প্রত্যাহার (GDPR আর্ট. 7, প্যারা. 3)"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-protection"
 msgid ""
 "Right to lodge a complaint with a supervisory authority (GDPR art. 77)."
-msgstr ""
-"Supervisory authority-ga complaint lodge touriba yathang (GDPR art. 77)."
+msgstr "সুপারভাইজরি অথরিটিদা কমপ্লেইন্ট লৌথোকপগী অধিকার (GDPR আর্ট. 77)।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1850,8 +1825,8 @@ msgid ""
 "For the Max Planck Society, this is the Data Protection Authority of "
 "Bavaria, Postfach 1349, 91504 Ansbach, Germany."
 msgstr ""
-"Max Planck Society-gi maramda, Bavaria-gi Data Protection Authority asi, "
-"Postfach 1349, 91504 Ansbach, Germany."
+"Max Planck Societyগীদমক, মসিদি Bavariaগী Data Protection Authorityনি, "
+"Postfach 1349, 91504 Ansbach, Germany।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1861,16 +1836,16 @@ msgid ""
 "a participant, please do not hesitate to contact the Computational Auditory "
 "Perception Group at the Max Planck Institute for Empirical Aesthetics:"
 msgstr ""
-"Research asi, nakhoigi yathang, amadi participant oiriba maramna nakhoigi "
-"treatment asi maramda khanghanbada eikhoigi Computational Auditory "
-"Perception Group Max Planck Institute for Empirical Aesthetics-da contact "
-"tourakpa ngamloi:"
+"মসিগী রিসার্চ, নঙোন্দগী অধিকারশিং, নত্ত্রগা পার্টিসিপেন্ট অমা ওইনা নঙোন্দা "
+"তৌরিবা ব্যবহারগী মতাংদা নঙোন্দা হায়ফম অমত্তা লৈরবদি, Max Planck Institute "
+"for Empirical Aestheticsগী Computational Auditory Perception Groupদা পাউ "
+"ফাওবদা নুংশি নত্তে:"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-payment"
 msgid "Payment and Compensation"
-msgstr "Payment amadi Compensation"
+msgstr "পেমেন্ট অমসুং ক্ষতিপূরণ"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1879,8 +1854,8 @@ msgid ""
 "We will not store any banking information or payment information in our "
 "system."
 msgstr ""
-"Eikhoina banking information amadi payment information asi system-da store "
-"touribani."
+"ঐখোয়না ঐখোয়গী সিস্টেমদা ব্যাংকিং ইনফরমেশন নত্ত্রগা পেমেন্ট ইনফরমেশন অমত্তা"
+" স্টোর তৌরোই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1889,8 +1864,8 @@ msgid ""
 "However we do store completion records and payment details of every task you"
 " completed."
 msgstr ""
-"Aduga atoppa maramda nakhoina completion records amadi nakhoina complete "
-"touriba task pumnamakki payment details adu store touri."
+"অদুম ওইনমক, নঙোই মপুং ফানা তৌখিবা টাস্ক খুদিংগী কমপ্লিশন রেকর্ডশিং অমসুং "
+"পেমেন্ট ডিটেইলশিং ঐখোয়না স্টোর তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1899,8 +1874,7 @@ msgid ""
 "This information will be available for you to review it when you login to "
 "the database."
 msgstr ""
-"Information asi nakhoina database-da login tourakpa matamda nakhoigi "
-"khanghanbada phangba ngamganu."
+"নঙোই ডাটাবেসদা লগ-ইন তৌরবা মতমদা, ইনফরমেশন অসি নঙোইনা রিভিউ তৌবা য়াগনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1909,8 +1883,8 @@ msgid ""
 "Based on this information we allow you to receive payment via an external "
 "system such as PayPAL/WISE."
 msgstr ""
-"Information asi mapanna nakhoina PayPAL/WISE amadi nattraga external system "
-"asi mapanna payment phangba ngamgani haibagi maramda eikhoina leplu."
+"ইনফরমেশন অসিগী মতুং ইন্না, PayPAL/WISE হায়বদি এক্সটার্নেল সিস্টেম অমগী "
+"মখাদা নঙোইনা পেমেন্ট ফংবা য়াহনবগী মওং ঐখোয়না পীরি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1919,9 +1893,8 @@ msgid ""
 "It is your responsibility to make sure you can receive payment through this "
 "system and that you would want to consent to use it."
 msgstr ""
-"System asi mapanna nakhoina payment phangba ngamgani haiba khanghansillu "
-"aduga nakhoina system asi leplaga use touriba ngamgani haiba nakhoigi "
-"khanghanba maramda leplu."
+"সিস্টেম অসিগী মখাদা নঙোইনা পেমেন্ট ফংবা য়াবরা অমসুং মদু শিজিন্ননবা অয়াবা "
+"পীবা পাম্বরা হায়বদু শেমদোকপা নঙোইগী দায়িত্বনি।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1931,9 +1904,9 @@ msgid ""
 "please search your bank in their website to ensure that you will be able to "
 "receive payment prior to taking part in our experiments."
 msgstr ""
-"System asi taibangpanba bank pumnamakki money transfer touriba support "
-"touri, nakhoigi bank asi aduga website-da search tourakpa matamda nakhoina "
-"payment phangba ngamgani haiba khanghanbada eikhoibu yaipha khanghansillu."
+"সিস্টেম অসিনা মপুংফানা মতমদা জগৎগী ময়ামগী ব্যাংকশিংদা মশিং পীথোকপা "
+"য়াহল্লি। ঐখোয়গী এক্সপেরিমেন্টশিংদা শরুক য়ামদ্রিঙৈ মমাংদা পেমেন্ট ফংবা "
+"য়াগদ্রা খঙনবগীদমক, মখোয়গী ওয়েবসাইটতা নঙোইগী ব্যাংক খঙদোকউ।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1942,9 +1915,9 @@ msgid ""
 "We also recommend checking the term of service and it’s privacy statement "
 "and see if you consent to use their system for payment."
 msgstr ""
-"Eikhoina term of service amadi privacy statement asi check tourakpa yaipha "
-"khanghanbada leplu aduga nakhoina payment phangba ngamgani haiba nakhoigi "
-"khanghanba maramda leplu."
+"অদুগা, সার্ভিসগী টার্মশিং অমসুং মখোয়গী প্রাইভেসী স্টেটমেন্টদু য়েংশিনবা "
+"অমসুং পেমেন্টগীদমক মখোয়গী সিস্টেম শিজিন্ননবা অয়াবা পীবা পাম্বরা হায়বদু "
+"থিবা ঐখোয়না রেকমেন্ড তৌই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1954,15 +1927,15 @@ msgid ""
 " not be able to pay you, however you can still participate in our "
 "experiments voluntarily, without payment."
 msgstr ""
-"System asi mapanna nakhoina payment phangba ngamloi aduga nakhoina leplaba "
-"ngamloi haiba khanghanbada, eikhoina nakhoibu payment toude, adubu nakhoina "
-"voluntary, without payment, eikhoigi experiments-da leplaba ngamgani."
+"নঙোই সিস্টেম অসিগী মখাদা পেমেন্ট ফংবা য়ারদ্রবদি নত্ত্রগা ফংবা পামদ্রবদি, "
+"ঐখোয়না নঙোন্দা পেমেন্ট পীবা ঙমলোই; অদুবু নঙোই পেমেন্ট অমত্তা ফংদনা ঐখোয়গী "
+"এক্সপেরিমেন্টশিংদা ভলান্টারিলি শরুক য়াবা য়াই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
 msgctxt "consent-payment"
 msgid "In this case you will not receive any compensation for your time."
-msgstr "Matungda, nakhoigi matamgi khudong-chaba compensation phangde."
+msgstr "মসিগী কেসতা, নঙোইগী মতমগীদমক ক্ষতিপূরণ অমত্তা ফংলোই।"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1972,10 +1945,9 @@ msgid ""
 "Regulation in the context of personal data being processed in our studies, "
 "please contact the Data Protection Officer of the Max Planck Society:"
 msgstr ""
-"General Data Protection Regulation asi personal data eikhoigi study-da "
-"process touriba maramda nakhoina khanghanbada atoppa khudong-chaba yathang "
-"asi eikhoigi Max Planck Society-gi Data Protection Officer-na contact touba "
-"ngamgani."
+"ঐখোয়গী স্টাডিশিংদা পার্সোনেল ডাটা প্রসেস তৌবগী কনটেক্স্ততা General Data "
+"Protection Regulationগী মতাংদা অতোপ্পা হংদোকপা লৈরবদি, Max Planck Societyগী "
+"Data Protection Officerদা পাউ ফাওউ:"
 
 #: psynet/templates/consents/database_consent.html
 #, fuzzy
@@ -1984,15 +1956,15 @@ msgid ""
 "You may also address your inquiries directly to the Max Planck Institute for"
 " Empirical Aesthetics:"
 msgstr ""
-"Nakhoina nakhoigi inquiries asi Max Planck Institute for Empirical "
-"Aesthetics-da direct contact touba ngamgani:"
+"নঙোই হংদোকপাশিং মখাগী Max Planck Institute for Empirical Aestheticsদাসু মখা "
+"তানা পীরকপা য়াগনি:"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-purpose"
 msgid "Purpose"
-msgstr "Thouram"
+msgstr "উদ্দেশ্য"
 
 #: psynet/templates/consents/main_consent.html
 #, fuzzy
@@ -2002,16 +1974,16 @@ msgid ""
 "the world experience sounds (e.g., speech, music) and images (e.g., faces, "
 "color)."
 msgstr ""
-"Masibu thoudang asi henna asi: leibak ama-ama dagi nungsibasingna sound "
-"(madu asida, wa, ishei) amasung images (madu asida, nupi macha, color) "
-"kangdana kari ngamgani haiba kangaidaba."
+"প্রজেক্ট অসিগী উদ্দেশ্যদি পৃথিবীগী নানান মফমদগী মীওইশিংনা সাউন্ডশিং (মদুদি, "
+"ৱা-হাইবা, মিউজিক) অমসুং ইমেজশিং (মদুদি, মখল, কালার) কদায়না অনুভব তৌবগে "
+"হায়বদু স্টাডি তৌবনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-procedure"
 msgid "Procedure"
-msgstr "Thabak"
+msgstr "প্রসিডিউর"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2022,9 +1994,9 @@ msgid ""
 "simple tasks using your keyboard or mouse while listening to sounds, or "
 "while observing images or videos."
 msgstr ""
-"Nakhoina study asi participate touraba volunteer tourabadi, nakhoina sounds "
-"tabada amasung images amasung videos yengba matamda keyboard amadi mouse "
-"phangba simple tasks tourakle."
+"নহাক্না মসিগী স্টাডিদা স্বেচ্ছায় পার্টিসিপেট তৌরবদি, সাউন্ডশিং তাবা মতমদা "
+"নত্রগা ইমেজশিং নত্রগা ভিডিওশিং য়েংবা মতমদা কীবোর্ড নত্রগা মাউস শিজিন্নদুনা "
+"অচৌবা নত্তবা থৌদাংশিং তৌবা তাখিবনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2037,11 +2009,12 @@ msgid ""
 "images (e.g., how frequently do you encounter this type of sound or image? "
 "how aesthetically pleasing you consider a particular sound or image?)."
 msgstr ""
-"Eikhoina nakhoida sounds amasung images (e.g., karigi amadi sanglenda sound "
-"amadi image asi kibage haibagi yamna) categorize tourakle, amasung sounds "
-"amadi images-singi basic features (e.g., nakhoina sounds amadi images asi "
-"karigumba matamda phangbe? nakhoina sound amadi image asi aesthetically "
-"pleasing haina khangbe?) judge tourakle."
+"মদুদি, নহাকপু খুদম ওইনা অমা সাউন্ড নত্রগা ইমেজ অমা কদায়না নুংঙাইবা হায়বদু "
+"ৱারী শানবা, নত্রগা সাউন্ডশিং নত্রগা ইমেজশিং মখল তৌবা (মদুদি, সাউন্ড নত্রগা "
+"ইমেজ অমা কার নত্রগা কাও অমগীনি হায়বদু), নত্রগা সাউন্ডশিং নত্রগা ইমেজশিংগী "
+"অতোপ্পা অহেনবা ফিচারশিংগী মতাংদা ৱারী শানবা (মদুদি, নহাক্না মসিগুম্বা সাউন্ড"
+" নত্রগা ইমেজ অমা করম্না হেন্না ফংবা? সাউন্ড নত্রগা ইমেজ অমা অদু নহাক্না "
+"কদায়না নুংঙাইবা, এসথেটিক ওইনা লোইবা হায়না ফাওবা?) তাখিবনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2053,10 +2026,11 @@ msgid ""
 "naturalistic images, animated images, comics, faces, objects, geometric "
 "shapes, fractal images, or videos of natural environments."
 msgstr ""
-"Eikhoina phangba sounds, images, amasung videos asi vary tourammi haibadi, "
-"ambient sounds, noise-bursts, speech, music, simple tones, naturalistic "
-"images, animated images, comics, faces, objects, geometric shapes, fractal "
-"images, amasung videos of natural environments asi phanglambage."
+"শিজিন্নবা সাউন্ড, ইমেজ অমসুং ভিডিওশিং মখল নানাতনা ওইগনি, অদুবু মসিশিং "
+"ইয়াওবা য়াই: পরিবেশগী সাউন্ডশিং, নয়েজ-বর্স্টশিং, ৱা-হাইবা, মিউজিক, অচৌবা "
+"নত্তবা টোনশিং, ন্যাচারালিস্টিক ইমেজশিং, অ্যানিমেটেড ইমেজশিং, কমিকশিং, মখল, "
+"পোৎশিং, জিওমেট্রিক শেপশিং, ফ্র্যাক্টাল ইমেজশিং, নত্রগা ন্যাচারাল "
+"এনভায়রনমেন্টশিংগী ভিডিওশিং।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2068,10 +2042,10 @@ msgid ""
 " that an image was generated by an artificial computer system and not a "
 "human)."
 msgstr ""
-"Khudol experiment-singda eikhoina mild deception phangba ngammi haibadi, "
-"experiment task kharabda eikhoigi full truth asi chattuna khanghangani "
-"haibasi aduga (e.g., artificial computer system-na image asi puthokpa "
-"haibagi ningthina khanghangani)."
+"খরা এক্সপেরিমেন্টশিংদা, মখা-তানা মীশিংগী ফাওবা হেনগৎহনগদবা মীথিবা অমা "
+"শিজিন্নবা য়াই; মসিনা এক্সপেরিমেন্টগী থৌদাংগী অশেংবা ৱাফম পুম্নমক ফোঙদোক্লোই"
+" (খুদম ওইনা, ইমেজ অমা মীওই অমনা শেমদে, কম্পিউটার সিস্টেম অমনা শেমনি হায়বদু "
+"নহাকপু তাগদ্রোই)।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2081,9 +2055,8 @@ msgid ""
 "Mild deception will only be used in some experiments where we need to "
 "prevent biasing the participants before taking the experiment."
 msgstr ""
-"Mild deception asi experiment kharabda eikhoina participants-sing bias "
-"thoknaba ngamba ngammi haibadi, eikhoina participants-singda experiment "
-"phangba mamangda bias thokpa thadokpa ngamba ngammi."
+"এক্সপেরিমেন্ট হৌদ্রিঙৈগী মমাংদা পার্টিসিপেন্টশিংগী মতামত অমা খুদংথিবা "
+"ওইহনদবা দরকার ওইবা এক্সপেরিমেন্ট খরদদা মখা-তানা মীথিবা শিজিন্নগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2094,9 +2067,9 @@ msgid ""
 "recording, for example, you may be asked to record your finger-tapping in "
 "response to a sound or video, or to record yourself speaking or singing."
 msgstr ""
-"Maram oirabadi, experiment kharabda nakhoi voice amadi video recording "
-"tourakle haibadi, nakhoina sounds amadi videos-sigi finger-tapping record "
-"tourakle, amasung nakhoi speaking amadi singing record tourakle."
+"অরোইবদা, এক্সপেরিমেন্ট খরদদা নহাকপু ভয়েস নত্রগা ভিডিও রেকর্ডিং তৌবা "
+"হায়জগনি। খুদম ওইনা, সাউন্ড নত্রগা ভিডিও অমগী মতুং ইন্না আঙোথোং তৌবদু রেকর্ড"
+" তৌবা, নত্রগা নহাক্না ৱা-হাইবা নত্রগা ইসৈ শকপদু রেকর্ড তৌবা হায়জগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2105,9 +2078,7 @@ msgctxt "consent-procedure"
 msgid ""
 "If the experiment will contain these elements we will ask for an additional "
 "consent."
-msgstr ""
-"Experiment-na matik haina elements phangba ngammi haibadi, eikhoina nakhoida"
-" additional consent phangbani."
+msgstr "এক্সপেরিমেন্ট অসিদা মখোয় অসিশিং ইয়াওরবদি, মখা তান্না কনসেন্ট লৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2121,8 +2092,7 @@ msgstr "স্বেচ্ছামূলক পার্টিসিপেশ�
 #, fuzzy
 msgctxt "consent-voluntary"
 msgid "Your participation in this research is voluntary."
-msgstr ""
-"Eikhoigi research asi-da nakhoigi participation asi voluntary oina leibani."
+msgstr "মসিগী রিসার্চদা নহাক্কী পার্টিসিপেশন স্বেচ্ছামূলকনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2132,8 +2102,8 @@ msgid ""
 "You are free to refuse to take part, and you may stop taking part at any "
 "time."
 msgstr ""
-"Nakhoina eikhoigi research asi-da participation touraba thadok-u, amasung "
-"nakhoina karamba matamda thadok-u."
+"নহাক্না শরুক য়াবা অমত্তা ঙাকপা য়াই, অমসুং করিগুম্বা মতমদসু শরুক য়াবা "
+"লেপ্পা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2143,8 +2113,8 @@ msgid ""
 "You are free to discontinue participation in this study at any time without "
 "penalty."
 msgstr ""
-"Nakhoina eikhoigi study asi-da participation touraba karamba matamda "
-"thadok-u karisu iduna."
+"মসিগী স্টাডিদা শরুক য়াবা করিগুম্বা মতমদসু শাস্তি ফংদনা লেপ্পা নহাক্কী মথৌ "
+"ওই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2154,8 +2124,7 @@ msgid ""
 "The investigator may withdraw you from this research if circumstances arise "
 "which warrant doing so."
 msgstr ""
-"Research asi-da investigator-na nakhoi withdraw tourakle oirabadi matik "
-"adugi warrant yamna circumstances phangba ngammi."
+"অৱস্থা অমা তৌগৎলবদি, ইনভেস্টিগেটরনা নহাকপু রিসার্চ অসিদগী লৌথোকপা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/consents/open_science_consent.html
@@ -2173,15 +2142,15 @@ msgid ""
 "No personal identifiers (e.g. your name or contact data) will be collected "
 "or used at any stage of the experiment."
 msgstr ""
-"Personal identifiers (e.g., nakhoigi name amasung contact data) eikhoigi "
-"experiment adugi stage pumnamakda collect amadi phangba ngammi."
+"এক্সপেরিমেন্টগী মতম পুম্নমকতা নহাক্কী মীং নত্রগা কন্টাক্ট ডেটা হায়বগুম্বা "
+"মীওই অমত্তগী আইডেন্টিফায়ারশিং কালেক্ট নত্রগা শিজিন্নরোই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-confidentiality"
 msgid "Thus, the experimental data is anonymous."
-msgstr "Adudagi experimental data asi anonymous oinani."
+msgstr "মরম অসিনা, এক্সপেরিমেন্টগী ডেটা অদু অ্যানোনিমাসনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2193,9 +2162,10 @@ msgid ""
 "(e.g. musical experience playing an instrument, years of formal education, "
 "languages spoken)."
 msgstr ""
-"Eikhoina demographic data (e.g., age, gender, country of residence) amasung "
-"nakhoigi learning amasung exposure history (e.g., musical experience playing"
-" an instrument, years of formal education, languages spoken) phangba ngammi."
+"এজ, জেন্ডর, লিভিং কান্ট্রি হায়বগুম্বা ডেমোগ্রাফিক ডেটা খরা, অমসুং নহাক্কী "
+"লার্নিং অমসুং এক্সপোজার হিস্ট্রিগী ৱাফম (খুদম ওইনা, মিউজিক ইনস্ট্রুমেন্ট অমা"
+" শিজিন্নবা মিউজিকগী এক্সপেরিয়েন্স, ফরমাল এডুকেশনগী চহী, অমসুং হায়বা "
+"লোলশিং) কালেক্ট তৌবা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2205,15 +2175,16 @@ msgid ""
 "If an experiment is collecting data that cannot be fully anonymized, we will"
 " inform you and also ask for additional consent."
 msgstr ""
-"Experiment kharabda data asi fully anonymized oirabadi ngammi haibadi "
-"eikhoina nakhoida inform tourakle amasung additional consent phangbani."
+"এক্সপেরিমেন্ট অমনা মপুংফানা অ্যানোনিমাইজ তৌবা ঙমদবা ডেটা কালেক্ট তৌরবদি, "
+"নহাকপু তাগনি অমসুং মখা তান্না কনসেন্টসু লৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-confidentiality"
 msgid "Consenting to these additional requirements is also fully voluntary."
-msgstr "Additional requirements asi consent touraba fully voluntary oirabani."
+msgstr ""
+"মখা তান্না রিকোয়ারমেন্টশিং অসিদা কনসেন্ট পীবসুসু মপুংফানা স্বেচ্ছামূলকনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2224,8 +2195,9 @@ msgid ""
 "need your contact details to contact you in the future to take another "
 "experiment."
 msgstr ""
-"Kharasi experiment asi-da audio-visual recordings puthokpa ngammi amasung "
-"nakhoi contact details phangba ngammi future experiment thamjaba."
+"মসিদা অডিও-ভিজুয়েল রেকর্ডিংশিং তৌবা এক্সপেরিমেন্টশিং, নত্রগা মথংগী মতমদা "
+"অতোপ্পা এক্সপেরিমেন্ট অমদা শরুক য়ানবা নহাক্কী কন্টাক্ট ডিটেইলশিং দরকার ওইবা"
+" এক্সপেরিমেন্টশিং ইয়াওই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2234,8 +2206,7 @@ msgctxt "consent-confidentiality"
 msgid ""
 "All of the information we obtain during the research will be kept "
 "confidential."
-msgstr ""
-"Eikhoina research asi-da phangba information pumnamak confidential oinani."
+msgstr "রিসার্চগী মতমদা ফংবা ইনফরমেশন পুম্নমক গোপনীয় ওইনা থম্লগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2246,9 +2217,9 @@ msgid ""
 " to distinguish participants who have already taken part in this or other "
 "experiments."
 msgstr ""
-"Eikhoina nakhoigi anonymized alpha numeric code asi eikhoigi system-da save "
-"tourani, aduga asi participate touraba participants kharamak distinguish "
-"touraba ngammi."
+"মসিগী নত্রগা অতোপ্পা এক্সপেরিমেন্টশিংদা মমাংদা শরুক য়াখিবা পার্টিসিপেন্টশিং"
+" অদু খেন্না খন্নবা, নহাক্কী অ্যানোনিমাইজ তৌখিবা আলফা-নিউমেরিক কোড অদুমক্তা "
+"সিস্টেমদা সেভ তৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2258,8 +2229,8 @@ msgid ""
 "This code will not be used to derive your real identity, will not be shared "
 "with anyone outside of the research team and will be deleted after use."
 msgstr ""
-"Code asi nakhoigi real identity puthokpa ngammi, research team adugi "
-"manungda share touraba ngammi amasung use tourakpa matamda delete tourani."
+"কোড অসি নহাক্কী অশেংবা আইডেন্টিটি খঙনবা শিজিন্নরোই, রিসার্চ টীমগী মখাদা "
+"লৈতবা মীওইদা শেয়ার তৌরোই, অমসুং শিজিন্নরবা মতুংদা মুত্থৎকনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2270,9 +2241,9 @@ msgid ""
 "real identity, this record could be linked in some cases to your public "
 "profile page if a data breach takes place."
 msgstr ""
-"Researchers-singna nakhoigi alpha numeric code asi nakhoigi real identity "
-"puthokpa ngammi haibadi, record asi data breach tourakpa ngakholgi matamda "
-"nakhoigi public profile page-da link oirabadi ngammi."
+"রিসার্চরশিংনা নহাক্কী অশেংবা আইডেন্টিটি খঙনবা নহাক্কী আলফা-নিউমেরিক কোড "
+"শিজিন্নদ্রবসু, ডেটা ব্রিচ অমা ওইরবদি রেকর্ড অসি করিগুম্বা কেসশিংদা নহাক্কী "
+"পাবলিক প্রোফাইল পেজগা লিংক তৌবা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2282,8 +2253,8 @@ msgid ""
 "Thus, you may wish to restrict what information you choose to share "
 "publicly."
 msgstr ""
-"Adudagi, nakhoina public touraba information kharab share touraba yamna "
-"restrict tourabirakpa ngammi."
+"মরম অসিনা, পাবলিক ওইনা শেয়ার তৌনিংবা ইনফরমেশন অদু নহাক্না হেনগৎ-হেন্না "
+"কন্ট্রোল তৌবা পাম্বা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2300,8 +2271,8 @@ msgid ""
 "For the purpose of helping scientific progress and replication, sometimes we"
 " may share the data with research collaborators."
 msgstr ""
-"Scientific progress amasung replication thouramda thagatpa yamna, eikhoina "
-"research collaborators-singda data share touraba ngammi."
+"সায়েন্সগী মখা চৎপা অমসুং রিপ্লিকেশনগী মথৌ তৌনবা, করিগুম্বা মতমদা ডেটা অদু "
+"রিসার্চ সহযোগীশিংগা শেয়ার তৌবা য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2311,9 +2282,9 @@ msgid ""
 "In these cases, we will only share fully anonymized data, such as "
 "demographic, aggregated, or extracted data without any personal identifiers."
 msgstr ""
-"Khara asi aduda, eikhoina fully anonymized data, e.g., demographic, "
-"aggregated, amasung extracted data phangba ngammi nakhoigi personal "
-"identifiers kharabdung."
+"মসিগুম্বা কেসশিংদা, ডেমোগ্রাফিক, এগ্রিগেটেড নত্রগা এক্সট্র্যাক্ট তৌখিবা ডেটা"
+" অদুগুম্বা, মীওই অমত্তগী আইডেন্টিফায়ার ইয়াওদবা মপুংফানা অ্যানোনিমাইজ "
+"তৌখিবা ডেটামক্তা শেয়ার তৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2323,8 +2294,8 @@ msgid ""
 "Data will be stored temporarily on external servers and desktops/laptops "
 "that are password protected."
 msgstr ""
-"Data asi temporary oina external servers amasung desktops/laptops-da store "
-"tourani password protected oina."
+"ডেটা অদু পাসওয়ার্ড প্রোটেক্ট তৌখিবা এক্সটার্নেল সার্ভারশিং অমসুং "
+"ডেস্কটপ/ল্যাপটপশিংদা মতম খরাগী ওইনা স্টোর তৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2334,8 +2305,9 @@ msgid ""
 "The data will be then stored permanently in the institute servers with hard "
 "disks encrypted using industry-standard encryption software."
 msgstr ""
-"Data asi aduna institute servers-da permanent oina store tourani encrypted "
-"hard disks phangba ngammi industry-standard encryption software-na."
+"মতুংদা ডেটা অদু ইন্ডাস্ট্রি-স্ট্যান্ডার্ড এনক্রিপশন সফটৱেয়ার শিজিন্নদুনা "
+"হার্ড ডিস্ক এনক্রিপ্ট তৌখিবা ইনস্টিটিউটগী সার্ভারশিংদা পার্মানেন্ট ওইনা "
+"স্টোর তৌগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2359,8 +2331,8 @@ msgid ""
 "There are no risks for participating in this study beyond those associated "
 "with normal computer use."
 msgstr ""
-"Study asi participate touraba matamda normal computer use yamna risks leiba "
-"ngammi."
+"কম্পিউটার নরমাল ওইনা শিজিন্নবদা লৈবা রিস্কশিং অদুগী মতুং ইন্না, স্টাডি অসিদা"
+" শরুক য়াবদা অতোপ্পা রিস্ক অমত্তা লৈতে।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2380,12 +2352,11 @@ msgid ""
 "abilities (e.g. in sound recognition and computer vision) and to help "
 "improve perceptual abilities in people whose hearing or sight is impaired."
 msgstr ""
-"Nakhoida directly benefits phangba ngammi oina leirabadi, study asi society-"
-"da benefits phangba ngammi eikhoigi sound amasung vision yamna humans-na "
-"derive touraba khanghanbinaba, amasung machines-nabu replicate touraba "
-"ngammi eikhoigi abilities (e.g., sound recognition amasung computer vision) "
-"engineer touraba amasung hearing amasung sight impair touraba people-singda "
-"perceptual abilities improve touraba."
+"নহাক্কা মরমদা মখা তান্না ফায়দা ফংদ্রবসু, মীওইশিংনা সাউন্ড অমসুং ভিশনদগী "
+"করম্না তথ্য ফংবগে হায়বদু খংবদা মসিগী স্টাডিনা সমাজদা ফায়দা পীগনি। অমসুং "
+"মীওইশিংগী ক্ষমতাশিং (মদুদি, সাউন্ড রিকগনিশন অমসুং কম্পিউটার ভিশন) অনুকরণ "
+"তৌবা য়াবা মেশিনশিং শেম্বদা অমসুং তাবা নত্রগা য়েংবা ক্ষমতা হেন্না "
+"হেনগৎহনবদা ফায়দা পীগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/consents/voluntary_with_no_compensation_consent.html
@@ -2402,8 +2373,8 @@ msgid ""
 "If you satisfactorily complete the study, we compensate you for your "
 "participation:"
 msgstr ""
-"Study asi kari satisfactorily complete toubirakkani haiba ngamgani masibu "
-"nungsibana compensation tourakkani:"
+"নহাক্না স্টাডি অদু সন্তোষজনক ওইনা লোইশিল্লবদি, নহাক্কী পার্টিসিপেশনগী "
+"পারিশ্রমিক পীগনি:"
 
 #: psynet/templates/consents/main_consent.html
 #, fuzzy
@@ -2417,23 +2388,21 @@ msgid ""
 "You may also receive an additional payment based on your performance in the "
 "task."
 msgstr ""
-"Task asi kari performance asi kari additional payment receive toubirakkani "
-"haiba ngamgani masibu."
+"থৌদাং অদুদা নহাক্কী পারফরমেন্সগী মতুং ইন্না মখা তান্না পেমেন্ট অমা ফংবা "
+"য়াই।"
 
 #: psynet/templates/consents/main_consent.html
 #, fuzzy
 msgctxt "consent-compensation"
 msgid "We appreciate your contribution to science!"
-msgstr ""
-"Science asi kari contribution toubirakkani haiba masibu appreciate "
-"tourakkani!"
+msgstr "বিজ্ঞানদা নহাক্কী অবদানদা মখোয়না নুংঙাই!"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-rights"
 msgid "Your rights"
-msgstr "Nakhoigi rights"
+msgstr "নহাক্কী অধিকারশিং"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2445,9 +2414,9 @@ msgid ""
 "and the right to demand the deletion of data in cases of inadmissible data "
 "storage and the right to data portability."
 msgstr ""
-"Max-Planck-Institute-da nakhoigi data relating to you, correct inaccurate "
-"data rights phangba ngammi ama amasung demand touraba data deletion "
-"inadmissible data storage aduda phangba ngammi amasung data portability."
+"Max-Planck-Institute-দা থম্বা নহাক্কা মরী লৈনবা ডেটাগী মতাংদা তথ্য ফংবা, "
+"শোয়বা ডেটা শুদ্ধি তৌবা, ডেটা থম্বা অশুদ্ধ ওইরবদি ডেটা মুত্থৎহনবা হায়জবা, "
+"অমসুং ডেটা পোর্টেবিলিটিগী অধিকার নহাক্কী লৈ।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2458,9 +2427,9 @@ msgid ""
 "we will ask you specifically to consent to this procedure in a separate "
 "consent form."
 msgstr ""
-"Khudol studies-da data deletion ngammi oirabadi, eikhoina nakhoida "
-"specifically inform tourani amasung separate consent form-da consent "
-"phangbani."
+"স্টাডি খরদা ডেটা মুত্থৎপা য়ারোই হায়বদু খঙজিনবিয়ু। মসিগুম্বা ওইরবদি, পৃথক "
+"কনসেন্ট ফর্ম অমদা মসিগী প্রসিডিউর অসিদা কনসেন্ট পীবা নহাকপু খুদম ওইনা "
+"হায়জগনি।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
@@ -2468,16 +2437,14 @@ msgstr ""
 msgctxt "consent-rights"
 msgid ""
 "You also have the right to submit an objection to the supervisory authority."
-msgstr ""
-"Nakhoina supervisory authority-da objection submit touraba rights phangba "
-"ngammi."
+msgstr "নহাক্কী সুপারভাইজরি অথরিটীদা আপত্তি দাখিল তৌবগী অধিকারসু লৈ।"
 
 #: psynet/templates/consents/main_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-rights"
 msgid "For the Max-Planck-Society, this is:"
-msgstr "Max-Planck-Society-gi, asi oirabani:"
+msgstr "Max-Planck-Society-গী মতাংদা, মসিনি:"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2487,9 +2454,9 @@ msgid ""
 "replicability, we may want to publish the dataset collected in this "
 "experiment as soon as the study is finished."
 msgstr ""
-"Science reusability amasung replicability phangba ngamdan singdang touba "
-"open science practices singbasinggi matung inna, eikhoina masi experiment "
-"asi leite haibada collected touriba dataset asi published toubirakle."
+"বিজ্ঞানগী পুনঃব্যবহার অমসুং পুনরায় ফলতৌবা য়াবা হেনগৎহনবগীদমক ওপেন সাইন্সগী"
+" মখলশিং শিজিন্নদুনা, স্টাডি অদু লোইরকপা মতুংদা খ্বাইদগী হেন্না খুদক্তা "
+"এক্সপেরিমেন্ট অসিদা খঙহন্নবা লৌখিবা ডেটাসেট অদু পাবলিশ তৌবা পাম্বা য়াই।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2499,9 +2466,9 @@ msgid ""
 "tapping in response to a sound or video, or to record yourself speaking or "
 "singing."
 msgstr ""
-"Masi adugi maramda audio-visual recordings asi include tou-i, madu haiba "
-"sound amadi video gi matung inna nakhoigi finger-tapping asi ama recording "
-"tourakpa, nattraga nakhoina speak nattraga sing tourakpa recording tourakpa."
+"মসিদা অডিও-ভিজুয়েল রেকর্ডিংশিং য়াওই—মসিগুম্না, ইকাইখুম্নবা অমা অমসুং "
+"সাউন্ড নত্রগা ভিডিও অমগী মখাদা নোংমা নোংমা আঙুল থাপ্পগী রেকর্ডিং, নত্রগা "
+"নহাকনা ৱারী শানবা নত্রগা ঈশৈ শকপা রেকর্ড তৌবা।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2510,9 +2477,8 @@ msgid ""
 "We may also want to publish certain materials as part of the scientific "
 "publication, such as a demo video of the task or part of an interview."
 msgstr ""
-"Eikhoina scientific publication asi gi maramna certain materials singbasing "
-"amasung published touba ngamgani, madu haiba task ama gi demo video nattraga"
-" interview gi part ama touba ngamgani."
+"সায়েন্টিফিক পাবলিকেশনগী শরুক অমা ওইনা মখলগী মখলশিংসু পাবলিশ তৌবা পাম্বা "
+"য়াই, মসিগুম্না টাস্ক অদুগী ডেমো ভিডিও নত্রগা ইন্টারভিউ অমগী শরুক অমা।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2522,9 +2488,9 @@ msgid ""
 "public, we cannot guarantee anonymity of your data if you participate in "
 "this experiment."
 msgstr ""
-"Masi experiment asi leite haibada collected touriba audio-visual recordings "
-"asi public touba ngamgani, madu maramna nakhoigi data asi anonymity ngakpa "
-"ngamde haibasi experiment asi leite haibadi."
+"এক্সপেরিমেন্ট অসিদা লৌখিবা অডিও-ভিজুয়েল রেকর্ডিংশিং পাবলিক ওইবা য়াবা মরনা,"
+" এক্সপেরিমেন্ট অসিদা শরুক য়াবা মতমদা নহাক্কী ডেটাগী অ্যানোনিমিটি গ্যারান্টি"
+" তৌবা ঙমদে।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2534,9 +2500,9 @@ msgid ""
 "identifiers in any way (we will not specify your name when presenting "
 "audio/video materials of yours)."
 msgstr ""
-"Adum oirabadi, nakhoigi data asi nakhoigi ming nattraga identifier "
-"singbasing asi masamakna associate toude (eikhoina nakhoigi audio/video "
-"materials asi present tourakpa matung inna nakhoigi ming specify toude)."
+"অদুবু নহাক্কী ডেটা অদু নহাক্কী মমিং নত্রগা অতোপ্পা আইডেন্টিফায়ারশিংগা মখা "
+"তানা মরি শেমদে (নহাক্কী অডিও/ভিডিও মেটেরিয়েলশিং উত্পা মতমদা নহাক্কী মমিং "
+"হায়জদে)।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2545,9 +2511,8 @@ msgid ""
 "Data will be published on open science frameworks/websites such as OSF "
 "(https://osf.io/) and will be available to everybody with internet access."
 msgstr ""
-"Data asi OSF (https://osf.io/) haibagi open science frameworks/websites "
-"singbasingda published toujari amasung internet access leiba makhoi "
-"pumnamakna available toujari."
+"ডেটা অদু OSF (https://osf.io/) গুম্বা ওপেন সাইন্স ফ্রেমৱার্কশিং/ৱেবসাইটশিংদা"
+" পাবলিশ তৌগনি অমসুং ইন্টারনেট এক্সেস লৈবা মীওই পুম্নমক্না ফংবা ঙমগনি।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2563,10 +2528,9 @@ msgid ""
 "publication, you will not be able to delete such materials, as they will "
 "become public (either immediately or soon after data collection)."
 msgstr ""
-"Some materials singbasing scientific publication asi gi maramna published "
-"toubirakle haibagi maramda, nakhoina masi materials asi delete tourakpa "
-"ngamde, madu haiba public (data collection asi leite nattraga soon after) "
-"toubirakle."
+"মেটেরিয়েলশিংগী মখল অমা সায়েন্টিফিক পাবলিকেশনগী শরুক অমা ওইনা পাবলিশ "
+"তৌগদবনা, মেটেরিয়েল অদুশিং নহাক্না ডিলিট তৌবা ঙমলোই, মরমদি মখোয় পাবলিক "
+"ওইরক্কনি (খুদক্তা নত্রগা ডেটা লৌখিবা মতুংদা খুদক্তা)।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2575,8 +2539,7 @@ msgid ""
 "Thus, you may wish to make sure you do not record any materials you do not "
 "want to make public."
 msgstr ""
-"Madu maramna nakhoina nakhoigi public touba ngamde haiba materials "
-"singbasing record touriba masak leitre haiba sure tourakpa ngamgani."
+"অদুনা, নহাক্না পাবলিক ওইবা পামদ্রিবা মেটেরিয়েল অমত্তা রেকর্ড তৌদ্রবদি ফগনি।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2585,9 +2548,9 @@ msgid ""
 "By consenting to this experiment you are committing not to use profanity "
 "while recording audio or nudity while recording video."
 msgstr ""
-"Masi experiment asi leite haibagi matung inna nakhoina audio recording "
-"touriba matungda profanity nattraga video recording touriba matungda nudity "
-"touba ngamgani haibagi commitment tou-i."
+"এক্সপেরিমেন্ট অসিদা মতদং পীবা মতমদা অডিও রেকর্ড তৌবা মতমদা অশ্লীল ৱাহৈ "
+"শিজিন্নদ্রবা, অমসুং ভিডিও রেকর্ড তৌবা মতমদা নুডিটি উতদ্রবা হায়না নহাক্না "
+"চঙশিনবা অঙনবা লৌরে।"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -2596,9 +2559,8 @@ msgid ""
 "Although your data will not be associated with personal identifiers, it is "
 "possible to link your personal information based on audio-visual recordings"
 msgstr ""
-"Nakhoigi data asi personal identifiers singbasing asi masamakna associate "
-"toude oirabadi, audio-visual recordings asi gi matung inna nakhoigi personal"
-" information asi link tourakpa ngammi."
+"নহাক্কী ডেটা অদু পার্সোনেল আইডেন্টিফায়ারশিংগা মরি শেমদ্রবসু, অডিও-ভিজুয়েল "
+"রেকর্ডিংশিংগী মখা তানা নহাক্কী পার্সোনেল ইনফরমেশনগা মরি শেম্বা য়াই।"
 
 #: psynet/templates/consents/voluntary_with_no_compensation_consent.html
 #: psynet/templates/macros/consent.html
@@ -2608,16 +2570,15 @@ msgid ""
 "This study is completely voluntary; you will not receive any monetary "
 "compensation for participation."
 msgstr ""
-"Study asi voluntary oina leibani; nakhoina participation touraba monetary "
-"compensation phangba ngammi."
+"মসী অধ্যয়ন অসি মপুং ফানা স্বেচ্ছায়নি; শরুক যাবগীদমক নহাক্না মনা অমত্তা "
+"ফংলোই।"
 
 #: psynet/templates/consents/voluntary_with_no_compensation_consent.html
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-compensation"
 msgid "By doing the task you are helping science, thank you!"
-msgstr ""
-"Task asi tourakpa nakhoina science-thouramda help tourabage, thagatchari!"
+msgstr "টাস্ক অসি তৌদুনা নহাক্না বিজ্ঞানদা মতেং পাংজরি, থাগৎচরি!"
 
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
@@ -2662,32 +2623,30 @@ msgstr "আবার চেষ্টা কৰক"
 #: psynet/templates/keyboard.html
 #, fuzzy
 msgid "Select a keyboard layout:"
-msgstr "Keyboard layout ama chois tou:"
+msgstr "কী-বোর্ডগী মওং অমা খনবিয়ু:"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
 msgid "You did not press all required keys."
-msgstr "Nangna khangba keyboard key khuding makhoi ama toude."
+msgstr "অদোম্না দরকার ওইবা কী পুম্নমক নৎথোকপা ঙমদ্রে।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You need to use Google Chrome to take part in the experiment."
-msgstr "Experiment-tagi Google Chrome si thoujal touba ngaijarak-i."
+msgstr "এক্সপেরিমেন্টদা শরুক য়ানবা Google Chrome শিজিন্নগদবনি।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You are using"
-msgstr "Nangna houjikna thoujal touba browser asi"
+msgstr "নহাক্না শিজিন্নরি"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Please follow the instructions below to continue."
-msgstr ""
-"Hannadi aduga matam asi phamjaba ngamdaba henna ngamjaba irang asi ningba "
-"henna tarani."
+msgstr "মখাদা পীরিবা ইনস্ট্রাকশনশিংগী মতুং ইন্না মখা চৎথো।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2696,69 +2655,67 @@ msgid ""
 "You need to use the latest version of Google Chrome to take part in the "
 "experiment."
 msgstr ""
-"Experiment-tagi masi michammi Google Chrome si thoujal touba ngaijarak-i."
+"এক্সপেরিমেন্টদা শরুক য়ানবা Google Chrome গী অরোইবা ভার্সন শিজিন্নগদবনি।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You are using:"
-msgstr "Nangna houjikna thoujal touba browser asi:"
+msgstr "নহাক্না শিজিন্নরি:"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You need to use the incognito mode to take part in the experiment."
-msgstr "Experiment-tagi incognito mode si thoujal touba ngaijarak-i."
+msgstr "এক্সপেরিমেন্টদা শরুক য়ানবা ইনকগনিটো মোড শিজিন্নগদবনি।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Warning!"
-msgstr "Cheitup!"
+msgstr "ৱার্নিং!"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Click here"
-msgstr "Houjikna"
+msgstr "মসিদা ক্লিক তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Install the latest version of Google Chrome"
-msgstr ""
-"Masibu adu download touba Google Chrome si thoujal touba ngamdaba henna "
-"ngamjaba irang asi ningba henna tarani."
+msgstr "Google Chrome গী অরোইবা ভার্সন ইনস্টল তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Install Google Chrome if you haven't"
-msgstr "Google Chrome si download touba ngammi adubu houjikna tou."
+msgstr "নহাক্না হৌজিক ফাওবা ইনস্টল তৌদ্রবদি Google Chrome ইনস্টল তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Copy the link below"
-msgstr "Ahanba link asi copy tou."
+msgstr "মখাদা পীরিবা লিংক কপি তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Open Google Chrome"
-msgstr "Google Chrome si thoujal tou."
+msgstr "Google Chrome হাংদোকউ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "On your computer, open Chrome."
-msgstr "Nanggi computer-da, Chrome si thoujal tou."
+msgstr "নহাক্কী কম্পিউটরদা Chrome হাংদোকউ।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "At the top right, click More"
-msgstr "Yupna mapal-da, More si click tou."
+msgstr "মথক্তা অহানবা মায়থোংদা ‘মোর’ ক্লিক তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2770,14 +2727,14 @@ msgstr "অনৌবা ইনকগনিটো উইন্ডো"
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "A new window appears. In the top corner, check for the Incognito icon"
-msgstr "Yupna amuk yaona. Mapal longda, Incognito icon asi check tou."
+msgstr ""
+"অনৌবা উইন্ডো অমা উৎলগনি। মথক্কী কোনদা ইনকগনিটো আইকন অমা য়াওরি হায়বদু ইয়েংউ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You can also use a keyboard shortcut to open an Incognito window"
-msgstr ""
-"Incognito window amuk open touraba keyboard shortcut asi houjikna ngammi:"
+msgstr "ইনকগনিটো উইন্ডো হাংদোকনবা কীবোর্ড শর্টকাটসু শিজিন্নবা য়াই"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2789,113 +2746,110 @@ msgstr "প্রেস তৌ"
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Open a new incognito window"
-msgstr "Incognito window amuk open tou."
+msgstr "অনৌবা ইনকগনিটো উইন্ডো হাংদোকউ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Paste the link into the incognito window to continue the experiment"
-msgstr "Experiment-tagi link asi incognito window-da paste tou."
+msgstr "এক্সপেরিমেন্ট মখা চৎথনবা লিংক ইনকগনিটো উইন্ডোদা পেস্ট তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Paste the link into the incognito window to start the experiment"
-msgstr "Experiment hougatnaba link asu Incognito window-da piba."
+msgstr "এক্সপেরিমেন্ট হৌদোকনবা লিংক ইনকগনিটো উইন্ডোদা পেস্ট তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Paste the link into the Chrome browser to continue the experiment"
-msgstr "Experiment-tagi link asi Chrome browser-da paste tou."
+msgstr "এক্সপেরিমেন্ট মখা চৎথনবা লিংক Chrome ব্রাউজরদা পেস্ট তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Paste the link into the Chrome browser to start the experiment"
-msgstr "Experiment hougatnaba link asu Chrome browser-da piba."
+msgstr "এক্সপেরিমেন্ট হৌদোকনবা লিংক Chrome ব্রাউজরদা পেস্ট তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "You cannot take part in the experiment from a mobile device."
-msgstr "Mobile device-dagi experiment asi part touba ngamde."
+msgstr "মোবাইল ডিভাইস অমদগী এক্সপেরিমেন্টদা শরুক য়ারোই।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Please open the survey on your computer."
-msgstr "Survey asi nanggi computer-da open tou."
+msgstr "নহাক্কী কম্পিউটরদা সার্ভে হাংদোকউ।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "This site requires JavaScript to function properly."
-msgstr "Site asi JavaScript si houjikna ngammi."
+msgstr "সাইট অসি মওংগী মতুং ইন্না থবক তৌনবা JavaScript দরকারি।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Please enable JavaScript in your browser."
-msgstr "Nanggi browser-da JavaScript si enable tou."
+msgstr "নহাক্কী ব্রাউজরদা JavaScript এনেবল তৌবিয়ু।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Follow the steps below to make sure the experiment works."
-msgstr "Experiment asi houjikna ngammi hainaba matam asi ningba henna tarani."
+msgstr ""
+"এক্সপেরিমেন্ট অসি মওংদা থবক তৌবগীদমক মখাদা পীরিবা খুদমশিংগী মতুং ইন্না চৎথো।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Install the latest version of Google Chrome on your computer"
-msgstr ""
-"Nanggi computer-da masibu adu download touba Google Chrome si houjikna "
-"ngammi"
+msgstr "নহাক্কী কম্পিউটরদা Google Chrome গী অরোইবা ভার্সন ইনস্টল তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Copy the current URL to the clipboard:"
-msgstr "Houjikna URL asi clipboard-da copy tou:"
+msgstr "হৌজিক্কী URL ক্লিপবোর্ডদা কপি তৌ:"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "Open a new incognito window with  the following keyboard shortcuts:"
 msgstr ""
-"Incognito window amuk open touba keyboard shortcut asi houjikna ngammi:"
+"মখাগী কীবোর্ড শর্টকাটশিং শিজিন্নদুনা অনৌবা ইনকগনিটো উইন্ডো অমা হাংদোকউ:"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "On Windows, Linux, or Chrome OS: Press"
-msgstr "Windows, Linux, nattraga Chrome OS-da: Press"
+msgstr "Windows, Linux, নত্রগা Chrome OS দা: প্রেস তৌ"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "On Mac: Press"
-msgstr "Mac-da: Press"
+msgstr "ম্যাক্তা: প্রেস তৌ"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgid "Do you understand and consent to these terms?"
-msgstr ""
-"Nakhoina houjik asida sawri amasung matik chattuna nungshi haibasi ningthina"
-" khangbigadage?"
+msgstr "নহাক্না মখাগী শর্তশিং অসি খঙব্রা অমসুং মসিগী কনসেন্ট পীব্রা?"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "I agree"
-msgstr "Ei houbigini"
+msgstr "ঐ ইকায়খুম্না"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent"
 msgid "No, thank you (return task)"
-msgstr "Nakhoi nahaknadi (task da thengnaba)"
+msgstr "নত্তে, থাগৎচরি (টাস্কতা হন্না হল্লকউ)"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2907,7 +2861,7 @@ msgstr "মুখ্য গবেষক"
 #, fuzzy
 msgctxt "consent-overview"
 msgid "Overview"
-msgstr "Khudol"
+msgstr "মতাংদা"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2916,8 +2870,8 @@ msgid ""
 "This research is being conducted by researchers at the Max-Planck-Institute "
 "for Empirical Aesthetics."
 msgstr ""
-"Ibungo nungshi haibasi Max-Planck-Institute for Empirical Aesthetics-ki "
-"researcher-singna thouram toubire."
+"রিসার্চ অসি Max-Planck-Institute for Empirical Aesthetics-তা থৌরম তৌরিবা "
+"রিসার্চরশিংনা পাঙথোকপনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2926,8 +2880,8 @@ msgid ""
 "If you have any questions about this research, do not hesitate to contact "
 "the main researcher in this project, Nori Jacoby at:"
 msgstr ""
-"Ibungo nungshi haibasi masibu khangbigani haiduna ngaihakna khangbada "
-"ngamdaba matamda Nori Jacoby-da contact touru:"
+"রিসার্চ অসিগা মরি লৈনবা হায়রিবা খঙনিংবা অমত্তা লৈরবদি, নত্তে হায়দুনা "
+"প্রজেক্ট অসিগী মুখ্য গবেষক Nori Jacoby-দা খঙহল্লু:"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2936,8 +2890,8 @@ msgid ""
 "The purpose of this online form is to give you information to help you "
 "decide whether you want to take part in a research study."
 msgstr ""
-"Eigi online form-gi matamda nakhoi mangal part touba haibada eikhoigi "
-"sheitha kangbiduna decision toubagi yamna khanghanbi."
+"অনলাইন ফর্ম অসিগী মরমদি, রিসার্চ স্টাডি অমদা শরুক ইয়াগদ্রা ইয়াগদ্রব্রা "
+"হায়বসি লেপ্পদা মতমগী মথৌ তৌবা ৱাহৈ-পারিং পীবনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2946,8 +2900,9 @@ msgid ""
 "The purpose of this project is to study the role of experience and exposure "
 "in creating and affecting our perception, decisions and actions."
 msgstr ""
-"Maramgidamak eikhoigi thouram asi experience amasung exposure-na eikhoigi "
-"perception, decision amasung action puthokpagi hakhangbagidamak oihanninge."
+"প্রজেক্ট অসিগী মরমদি, মীওইগী খঙবা, লৌথোকপা অমসুং মথৌ তৌবা অসিশিংদা অভিজ্ঞতা "
+"অমসুং এক্সপোজারনা করিগুম্না শিংজিন্নগে অমসুং হেনগৎ-হ্রাস তৌগে হায়বদু "
+"তাকপনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2958,10 +2913,11 @@ msgid ""
 "and process external conditions, both in the auditory (e.g., speech, music) "
 "and visual (e.g., faces, color) domains."
 msgstr ""
-"Khanghanbinaba eikhoina masi eikhoigi wide range of behavioural "
-"methodologies phaoba oihanninge haibadi, eikhoigi auditory (e.g., speech, "
-"music) amasung visual (e.g., faces, color) domain-singda people-singna "
-"external conditions-singi puthokpa amasung processing yamna khanghanbire."
+"মরুওইনা, অতোপ্পা পাম্বা মফমদগী লক্ষণ-পাম্বা মীওইশিংনা বহিরাগত "
+"অৱস্থাশিং—শব্দগী (মশক-মতৌনা, ৱাহৈ, মিউজিক) অমসুং য়েংবা মফমগী (মশক-মতৌনা, "
+"মীথোং, মচু) ডোমেইনশিংদা—করিগুম্না মখোয়গী মনা-মনুংদা লৌথোকপা অমসুং প্রসেস "
+"তৌবগে হায়বদু খন্নবা, ঐখোয়না আচরণগী মেথডশিংগী ময়াম অমা পুন্না শরুক "
+"ইয়াগদবনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2970,8 +2926,8 @@ msgid ""
 "We are also interested in the way that these internal representations affect"
 " human decision making and behaviour."
 msgstr ""
-"Eikhoina matam pumnamakta eikhoigi internal representations-singi human "
-"decision making amasung behaviour-da puthokpagi yamna khanghanbire."
+"মীওইগী ডিসিশন লৌবা অমসুং আচরণদা মনা-মনুংগী রিপ্রেজেনটেশনশিংনা করিগুম্না শাফু"
+" পীগে হায়বদসু ঐখোয়না পাম্নৈ।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2981,9 +2937,9 @@ msgid ""
 " and nobody outside the group of researchers will be able to share or store "
 "them."
 msgstr ""
-"Eikhoigi research asi-da eikhoina phangba recordings pumnamak confidential "
-"oina leinani, amasung researchers-singgi group adugi manungda share amadi "
-"store touribra ngammi."
+"রিসার্চ অসিগী মখাদা ঐখোয়না থৌদোক্কদবা রেকর্ডিং পুম্নমক গোপন থমগনি, অমসুং "
+"রিসার্চরশিংগী গ্রুপকী মখাদা লৈত্রবা মীওই অমত্তনা মখোয়বু শেয়ার তৌবা নত্রগা "
+"স্টোর তৌবা ঙমলোই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2994,10 +2950,10 @@ msgid ""
 " materials (for example replicate a rhythm that you created, or continue a "
 "melody that you sang)."
 msgstr ""
-"Khudol experiment-singda nakhoigi recordings asi participants-sing adugi "
-"attributes kharaminge yamna evaluate touraba, amasung new materials "
-"puthokpada ngammi (e.g., nakhoina puthokpa rhythm replicate touraba, amasung"
-" nakhoina sangba melody continue touraba)."
+"অদুবু, এক্সপেরিমেন্ট খরদা, নহাক্না থৌদোকপা রেকর্ডিংশিংবু মখোয়গী গুণশিং "
+"খন্নবা নত্রগা মতুনদা মরম ওইবা নতুনা মেটেরিয়েলশিং শেম্বা (মশক-মতৌনা, নহাক্না"
+" শেম্বা রিদম অমা হন্না শেম্বা নত্রগা নহাক্না ইশৈশা মেলোডি অমা মখা চৎথহনবা) "
+"পাম্লবা অতোপ্পা পার্টিসিপেন্টশিংনা য়েংবা নত্রগা তাবা ঙমগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3006,8 +2962,8 @@ msgid ""
 "Your recordings will not be associated with your name or other identifiers "
 "in any way."
 msgstr ""
-"Nakhoigi recordings asi nakhoigi name amasung identifiers kharaminge "
-"associate touraba ngammi."
+"নহাক্কী রেকর্ডিংশিং নহাক্কী মিং নত্রগা অতোপ্পা আইডেন্টিফায়ার অমত্তগা মতম "
+"অমত্তদা মরি শম্নদ্রোই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3016,8 +2972,8 @@ msgid ""
 "Your recordings will not be used to derive your real identity, and they will"
 " not be made public."
 msgstr ""
-"Nakhoigi recordings asi nakhoigi real identity puthokpa ngammi, amasung "
-"public touraba ngammi."
+"নহাক্কী রেকর্ডিংশিং নহাক্কী আসল আইডেন্টিটি খঙনবা শিজিন্নদ্রোই, অমসুং মখোয়বু"
+" পাব্লিক তৌদ্রোই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3026,9 +2982,8 @@ msgid ""
 "Raw audio/video will not be shared with collaborators (we will only share "
 "extracted data from recordings without personal identifiers)."
 msgstr ""
-"Raw audio/video asi collaborators-singda share touraba ngammi (eikhoina "
-"recordings adugi extracted data share tourabani nakhoigi personal "
-"identifiers kharabdung)."
+"অডিও/ভিডিওগী র’ ডেটা কোলাবোরেটরশিংগা শেয়ার তৌদ্রোই (ঐখোয়না রেকর্ডিংশিংদগী "
+"লৌথোক্লবা, পার্সোনেল আইডেন্টিফায়ার লৈতবা ডেটামক শেয়ার তৌগনি)।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3038,9 +2993,9 @@ msgid ""
 "identity, personal information could be leaked if you are not in an isolated"
 " environment."
 msgstr ""
-"Researchers-singna nakhoigi recordings asi nakhoigi real identity puthokpa "
-"ngammi, nakhoi isolated environment-da leiringe haibadi personal information"
-" asi leak oirabadi ngammi."
+"রিসার্চরশিংনা নহাক্কী রেকর্ডিংশিং শিজিন্নদুনা নহাক্কী আসল আইডেন্টিটি খঙনবা "
+"তৌদ্রবসু, নহাক্না আইসোলেট তৌদবা পরিবেশ অমদা লৈরবদি পার্সোনেল ইনফরমেশন লিক "
+"ওইবা য়াই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3052,12 +3007,12 @@ msgid ""
 "or video, for example the camera can capture another family member, or the "
 "microphone can capture something you say to another person."
 msgstr ""
-"Nakhoina nakhoida sounds/visual material phangba ngammi haibadi nakhoigi "
-"personal information asi link touraba ngammi haibasi ensure touraga ngammi. "
-"Recording touraba matamda, microphone amasung camera-na unintended audio "
-"amasung video capture touraba ngammi, e.g., camera-na family member kharab "
-"capture touraba ngammi, amasung microphone-na nakhoina person kharabu "
-"haibana khangba ngammi."
+"নহাক্কী পরিবেশদা লৈবা শব্দ নত্রগা ভিজুৱেল মেটেরিয়েল অমত্তা নহাক্কী "
+"পার্সোনেল ইনফরমেশনগা মরি শম্নবা ঙমদ্রব্রা হায়বসি নহাক্না চেক তৌবা য়াগনি। "
+"অদুগা, রেকর্ডিং তৌরমদা মাইক্রোফোন নত্রগা কেমেরানা নহাক্না রেকর্ড তৌনিংদবা "
+"অডিও নত্রগা ভিডিওসু ক্যাপচার তৌবা য়াই; মশক-মতৌনা, কেমেরানা অতোপ্পা পরিবারগী"
+" মীওই অমা ক্যাপচার তৌবা য়াই, নত্রগা মাইক্রোফোননা অতোপ্পা মীওই অমগা নহাক্না "
+"হায়বা অমা ক্যাপচার তৌবা য়াই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3067,9 +3022,9 @@ msgid ""
 "responsibility to make sure that while you record audio and video nothing "
 "that you don’t intend to be recorded is recorded."
 msgstr ""
-"Experiment-da participate touraba choose tourabadi, nakhoina audio amasung "
-"video record touraba matamda nakhoina record toubagi ngammi haibasi nakhoigi"
-" responsibility amasung important oini."
+"এক্সপেরিমেন্ট অসিদা শরুক ইয়াগে হায়না নহাক্না খনরবদি, অডিও অমসুং ভিডিও "
+"রেকর্ড তৌরমদা নহাক্না রেকর্ড তৌনিংদবা অমত্তা রেকর্ড তৌদবা হায়বসি চেক তৌবা "
+"মরম ওই অমসুং মসিগী দায়িত্ব নহাক্কীনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3078,8 +3033,8 @@ msgid ""
 "For example, you may want to sit in a room that is isolated from the rest of"
 " the house."
 msgstr ""
-"Nakhoina room aduda leiringe haibadi nakhoigi yum adugi rest adu isolated "
-"tounaba ngammi."
+"মশক-মতৌনা, নহাক্না য়ুমগী অতোপ্পা মফমশিংদগী আইসোলেট ওইবা রুম অমদা ফমবা "
+"পামগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3088,8 +3043,8 @@ msgid ""
 "By consenting to this experiment, you are committing not to use profanity "
 "while recording audio or nudity while recording video."
 msgstr ""
-"Experiment-da consent touraba nakhoina audio record touraba profanity "
-"phangba amasung video record touraba nudity phangba ngammi."
+"এক্সপেরিমেন্ট অসিদা কনসেন্ট পীবনা, অডিও রেকর্ড তৌরমদা অশ্লীল ৱাহৈ শিজিন্নদবা"
+" অমসুং ভিডিও রেকর্ড তৌরমদা নগ্নতা পুদবা হায়বদা নহাক্না অঙ্গীকার পীবনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3098,8 +3053,9 @@ msgid ""
 "In these cases, we may share your audio-visual material along with fully "
 "anonymized data, such as demographic, aggregated, or extracted data."
 msgstr ""
-"Khara asi aduda, nakhoigi audio-visual material asi fully anonymized data, "
-"e.g., demographic, aggregated, amasung extracted data phangba ngammi."
+"মসিগুম্বা মফমশিংদা, নহাক্কী অডিও-ভিজুৱেল মেটেরিয়েলগা লোয়ননা পুরোপুরি "
+"অ্যানোনিমাইজ তৌরবা ডেটা—মশক-মতৌনা, ডেমোগ্রাফিক, এগ্রিগেট তৌরবা নত্রগা "
+"এক্সট্র্যাক্ট তৌরবা ডেটা—শেয়ার তৌবা য়াই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3109,9 +3065,9 @@ msgid ""
 "directly to your image or sound recording, even though it is off course "
 "possible to recognize individuals based on audio-visual material."
 msgstr ""
-"Nakhoigi real name amasung personal information asi nakhoigi image amasung "
-"sound recording-na direct connect touraba ngammi, aduga audio-visual "
-"material-na individuals recognize touraba ngammi oina leirabadi."
+"নহাক্কী আসল মিং নত্রগা নহাক্কী পার্সোনেল ইনফরমেশন অমত্তা নহাক্কী মীথোং "
+"নত্রগা শব্দগী রেকর্ডিংগা মরি শম্নদুনা ঐখোয়না মতম অমত্তদা থমলোই; অদুবু, "
+"অডিও-ভিজুৱেল মেটেরিয়েলগী মখাদা মীওইশিংবু খঙবা য়াই।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3120,8 +3076,8 @@ msgid ""
 "Audio-visual material will be shared only if your consent to an additional "
 "consent form as explained above."
 msgstr ""
-"Audio-visual material asi additional consent form-da nakhoigi consent "
-"phangba ngammi oina share tourani."
+"মখাদা শেমদোক্না তাকপা অতোপ্পা কনসেন্ট ফর্মদা নহাক্না কনসেন্ট পীরবতমক্তা "
+"অডিও-ভিজুৱেল মেটেরিয়েল শেয়ার তৌগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3130,8 +3086,7 @@ msgid ""
 "During data collection, audio-visual material will be recorded on a separate"
 " server."
 msgstr ""
-"Data collection matamda, audio-visual material asi separate server-da record"
-" tourani."
+"ডেটা লৌথোকপগী মতমদা অডিও-ভিজুৱেল মেটেরিয়েল আলাদা সার্ভর অমদা রেকর্ড তৌগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3140,8 +3095,8 @@ msgid ""
 "Audio-visual material will not be indexed by personal information but will "
 "be linked to personal information by a key (such as “afasd12314asdasd”)."
 msgstr ""
-"Audio-visual material asi personal information-na index touraba ngammi aduga"
-" personal information-na key (e.g., “afasd12314asdasd”) link tourani."
+"অডিও-ভিজুৱেল মেটেরিয়েলবু পার্সোনেল ইনফরমেশনগী মখাদা ইনডেক্স তৌদ্রোই, অদুবু "
+"কী অমনা (মশক-মতৌনা, “afasd12314asdasd”) পার্সোনেল ইনফরমেশনগা লিঙ্ক তৌগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3151,9 +3106,9 @@ msgid ""
 "and encrypted using a strong encryption protocol (such as Advanced "
 "Encryption Standard)."
 msgstr ""
-"Personal information asi audio-visual materials-na separately store tourani "
-"amasung encryption protocol (e.g., Advanced Encryption Standard) phangba "
-"ngammi."
+"পার্সোনেল ইনফরমেশন অদুবু অডিও-ভিজুৱেল মেটেরিয়েলশিংদগী আলাদা স্টোর তৌগনি "
+"অমসুং শক্তি লৈবা এনক্রিপশন প্রোটোকল (মশক-মতৌনা, Advanced Encryption "
+"Standard) শিজিন্নদুনা এনক্রিপ্ট তৌগনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3175,39 +3130,38 @@ msgid ""
 "older, have read this consent form, agree to its contents, and agree to take"
 " part in this research."
 msgstr ""
-"Participate touraba consent phangbadi, nakhoina 18 years amasung older "
-"oirabage, consent form asi read tourage, contents asi agree tourage amasung "
-"research asi-da participate touraba agree tourani haibasi acknowledgement "
-"oirabage."
+"শরুক ইয়ানবা কনসেন্ট পীবনা, নহাকনা চহি ১৮ নত্রগা হেন্না ওই, কনসেন্ট ফর্ম অসি"
+" পড়ে, মসিগী ৱাফমশিংদা ইকায়খুম্নৈ অমসুং রিসার্চ অসিদা শরুক ইয়াগে হায়বসি "
+"নহাক্না স্বীকার তৌবনি।"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
 msgctxt "consent-consent"
 msgid "If you do not wish to consent, please close this page."
-msgstr "Consent phangbada ngammi oirabadi, page asi close touru."
+msgstr "নহাক্না কনসেন্ট পীবা পামদ্রবদি, পেজ অসি লোথোকউ।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Reset"
-msgstr "ꯔꯦꯁꯦꯇꯁꯤ"
+msgstr "হন্না সেট তৌ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgctxt "audio_meter"
 msgid "Microphone level"
-msgstr "ꯃꯥꯏꯀ꯭ꯔꯣꯐꯣꯟ ꯂꯦꯚꯦꯜ"
+msgstr "মাইক্রোফোনগী লেভেল"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
-msgstr "ꯁꯂꯥꯏꯗꯔꯁꯤ"
+msgstr "স্লাইডরশিং"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Documentation"
-msgstr "ꯗꯣꯄꯣꯛꯇꯔꯣꯆꯤ"
+msgstr "ডকুমেন্টেশন"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3216,8 +3170,8 @@ msgid ""
 "The <strong>decay</strong> parameters determine the amount of smoothing that"
 " happens to the signal, and have units of seconds."
 msgstr ""
-"ꯇꯦ <strong>ꯗꯦꯀꯥꯢ</strong> ꯄꯦꯅꯔꯦꯃꯦꯔꯁꯁꯤ ꯁꯤꯒꯤꯅꯂ ꯇꯦꯡꯗꯥ ꯑꯣꯏꯂ ꯃꯦꯟꯗꯨꯡꯊꯤ ꯑꯃꯇꯝꯗ "
-"ꯁꯤꯟꯕꯨꯡꯁꯤ, ꯑꯟꯗ ꯁꯦꯒꯦꯟꯁꯤ ꯃꯦꯟꯗꯨ ꯑꯃꯇꯝꯂꯤ ꯁꯦꯝꯒꯤ꯫"
+"<strong>ডিকে</strong> প্যারামিটারশিংনা সিগনেলদা মসৃণতা মতমদা করম্না হোংগদগে "
+"হায়বা থৌদাং পাঙথোকই, অমসুং মখোয়গী একক সেকেন্ডনি।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3226,8 +3180,8 @@ msgid ""
 "A high decay parameter means that the signal takes a long time to decay "
 "(i.e. high smoothing)."
 msgstr ""
-"ꯑꯃꯊꯤ ꯗꯦꯀꯥꯢ ꯄꯦꯅꯔꯦꯃꯦꯔ ꯑꯃꯇꯝꯗ ꯁꯤꯟꯕꯨꯡ ꯌꯥꯌꯦ ꯈꯤꯠꯆꯤꯡ ꯇꯦꯢꯅꯕ ꯇꯦꯝꯆꯗ ꯆꯦꯟꯗꯁꯤ (i.e. ꯑꯃꯊꯤ "
-"ꯃꯦꯟꯗꯨꯡꯊꯤ)."
+"ডিকে প্যারামিটার অচৌবা ওইরবদি, সিগনেল ডিকে ওইনবা খঙদোকপা মতম যাম্না চৎথোকই "
+"(অর্থাৎ মসৃণতা অচৌবা ওই)।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3236,8 +3190,8 @@ msgid ""
 "There are three decay parameters: one for the displayed audio meter, one for"
 " the 'too-high' detector, and one for the 'too-low' detector."
 msgstr ""
-"ꯑꯃꯇꯝꯗ ꯗꯦꯀꯥꯢ ꯄꯦꯅꯔꯦꯃꯦꯔꯁꯁꯤ: ꯑꯃꯗꯩꯅꯕ ꯑꯃꯇꯝꯗ ꯑꯣꯏꯂ ꯃꯦꯇꯔ, ꯑꯃꯇꯝꯗ 'ꯇꯨꯌꯧ-ꯑꯍꯥꯢ' ꯗꯦꯇꯦꯀꯔ "
-"ꯑꯃꯇꯝꯗ 'ꯇꯨꯌꯧ-ꯂꯧ' ꯗꯦꯇꯦꯀꯔ ꯑꯃꯇꯝꯗ ꯁꯤꯟꯕꯨꯡꯁꯤ."
+"ডিকে প্যারামিটার অহুম লৈ—অমা প্রদর্শিত অডিও মিটারগীদমক, অমা 'য়াম্না চাওবা' "
+"ডিটেক্টরগীদমক, অমসুং অমা 'য়াম্না নাকপা' ডিটেক্টরগীদমক।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3246,8 +3200,8 @@ msgid ""
 "The <strong>threshold</strong> parameters determine the point at which the "
 "volume is determined to be 'too high' or 'too low'."
 msgstr ""
-"ꯇꯦ <strong>ꯊꯔꯦꯁꯦꯄꯦꯜꯊꯣꯗꯁꯤ</strong> ꯄꯦꯅꯔꯦꯃꯦꯔꯁꯁꯤ ꯑꯃꯅꯕ ꯑꯃꯇꯝꯗ ꯂꯣꯏꯃ ꯗꯦꯇꯦꯔꯁꯤ ꯈꯤꯠꯆꯤꯡ"
-" ꯗꯦꯗ ꯑꯅꯉꯕ 'ꯇꯨꯌꯧ-ꯑꯍꯥꯢ' ꯑꯃꯇꯝꯗ 'ꯇꯨꯌꯧ-ꯂꯧ' ꯀꯅꯗꯒꯨ ꯁꯤꯟꯕꯨꯡꯁꯤ."
+"<strong>থ্রেশহোল্ড</strong> প্যারামিটারশিংনা ভলিউম 'য়াম্না চাওবা' নত্রগা "
+"'য়াম্না নাকপা' হায়না থিবগী পয়েন্ট অদু নির্ধারণ তৌই।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3256,8 +3210,8 @@ msgid ""
 "The <strong>grace</strong> parameters determine how long the volume must be "
 "outside the respective threshold for a warning message to be triggered."
 msgstr ""
-"ꯇꯦ <strong>ꯒꯔꯦꯁꯦ</strong> ꯄꯦꯅꯔꯦꯃꯦꯔꯁꯁꯤ ꯑꯃꯅꯕ ꯑꯃꯇꯝꯗ ꯂꯣꯏꯃ ꯈꯤꯠꯆꯤꯡ ꯗꯦꯗ ꯂꯧꯏꯡꯇꯦꯝ ꯃꯃꯇ"
-" ꯂꯣꯏꯃ ꯑꯃꯇꯝꯗ ꯇꯦꯝꯆꯗ ꯆꯦꯟꯗ ꯖꯠꯅꯧ ꯁꯤꯟꯕꯨꯡꯁꯤ."
+"<strong>গ্রেস</strong> প্যারামিটারশিংনা ওয়ার্নিং মেসেজ অমা থোকহনবগীদমক, "
+"ভলিউম অদু মথং-মথংগী থ্রেশহোল্ডদগী করিমতম ফাওবদা লৈগদগে হায়বা নির্ধারণ তৌই।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3266,48 +3220,28 @@ msgid ""
 "The <strong>message duration</strong> parameters determine how long warning "
 "messages are displayed for."
 msgstr ""
-"ꯇꯦ <strong>ꯃꯦꯁꯁꯦꯁ ꯗꯨꯔꯥꯇꯤꯏꯟ</strong> ꯄꯦꯅꯔꯦꯃꯦꯔꯁꯁꯤ ꯑꯃꯅꯕ ꯑꯃꯇꯝꯗ ꯈꯤꯠꯆꯤꯡ ꯃꯦꯁꯁꯦꯁ "
-"ꯇꯦꯝꯆꯗ ꯖꯠꯅꯧ ꯁꯤꯟꯕꯨꯡꯁꯤ."
+"<strong>মেসেজগী মতম</strong> প্যারামিটারশিংনা ওয়ার্নিং মেসেজশিং করিমতম "
+"ফাওবদা উৎলগে হায়বা নির্ধারণ তৌই।"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Record from start"
-msgstr "ꯔꯦꯕꯣꯔꯗ ꯐꯝ ꯁ꯭ꯇꯥꯔꯠꯁꯤ"
+msgstr "অহানবদগী রেকর্ড তৌ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Play all"
-msgstr "ꯄ꯭ꯂꯦ ꯑꯑꯜꯂꯤ"
+msgstr "পুম্নমক প্লে তৌ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Play prompt"
-msgstr "ꯄ꯭ꯂꯦ ꯄ꯭ꯔꯣꯃ꯭ꯄꯁ꯭ꯇꯁꯤ"
+msgstr "প্রম্পট প্লে তৌ"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Play recording"
-msgstr "ꯄ꯭ꯂꯦ ꯔꯣꯀꯥꯔꯗꯤꯟꯒꯁꯤ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Khudongchaba"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Khudongchaba"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "লুপ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "লুপ"
+msgstr "রেকর্ডিং প্লে তৌ"
 
 #: psynet/templates/macros/prompt.html
 #, fuzzy
@@ -3323,67 +3257,67 @@ msgstr "ছবি খুংদা তৌবিরগনি"
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Comment stored."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "মতামত থম্লে।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Please wait for the page to load."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "পেজ লোড তৌবা ফাওবা ঙাইরো।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Try again in a couple of seconds."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "সেকেণ্ড কয়ামুক অমা মথংদা অমুক হন্না তৌবিয়ু।"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Getting ready, please wait..."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "শেমজরিবা মতমদা ঙাইরো..."
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline"
 msgid "Reward"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "পুরস্কার"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "Reward earned so far"
-msgstr "ꯍꯧꯖꯤꯛ ꯐꯪꯈꯤꯕ ꯔꯤꯋꯥꯔꯗ"
+msgstr "হৌজিক ফাওবা ফংলিবা পুরস্কার"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for time"
-msgstr "ꯃꯇꯝꯒꯤ"
+msgstr "মতমগীদমক"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_reward"
 msgid "for performance"
-msgstr "ꯊꯧꯅꯤꯖꯕꯒꯤ"
+msgstr "তৌবগীদমক"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline"
 msgid "Comment"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "মতামত"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave"
-msgstr "ꯊꯣꯛꯄ"
+msgstr "থাদোকপা"
 
 #: psynet/templates/macros/timeline-shell.html
 #, fuzzy
 msgctxt "timeline_problem"
 msgid "Leave without finishing."
-msgstr "ꯂꯣꯏꯔꯣꯏꯗꯅꯥ ꯊꯣꯛꯄ"
+msgstr "লোইশিনদনা থাদোকউ।"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
@@ -3405,19 +3339,9 @@ msgstr "আনবােৰ চেষ্টা কৰক"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "Khangbire nakhoigi leppa aduda."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "নহাক্না চৎনবা খনবিরে।"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Khangbire nakhoigi leppa aduda."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
@@ -3441,7 +3365,7 @@ msgstr "রেফারেন্স কোড"
 #, fuzzy
 msgctxt "start"
 msgid "Starting experiment..."
-msgstr "ꯋꯥꯔꯤꯡ ꯏꯃꯦꯕꯔꯤꯕꯦꯝꯇ..."
+msgstr "এক্সপেরিমেন্ট হৌজিক হৌরিবা..."
 
 #: psynet/templates/start.html
 #, fuzzy
@@ -3463,37 +3387,37 @@ msgstr ""
 #, fuzzy
 msgctxt "timeline_comment"
 msgid "Leave a comment"
-msgstr "ꯃꯇꯝ ꯃꯥꯏ ꯂꯣꯟꯕ"
+msgstr "মতামত অমা থাদোকউ"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
 msgid "Write a comment here"
-msgstr "ꯃꯇꯝ ꯃꯥꯏ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "মতামত অমা মসিদা ইবিয়ু"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
 msgid "Send comment"
-msgstr "ꯃꯇꯝ ꯃꯥꯏ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "মতামত থাগৎপিয়ু"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "alert_ok"
 msgid "OK"
-msgstr "ꯑꯣꯀꯤ"
+msgstr "অক্কে"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_resume"
 msgid "Are you ready?"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ?"
+msgstr "নহাক প্রস্তুতরা?"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_resume"
 msgid "Click the button when you're ready to continue the experiment."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "পরীক্ষা মখা চত্থবা য়ারবা মতমদা বাটন অদু ক্লিক তৌ।"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -3503,13 +3427,18 @@ msgid ""
 " incompatible extension installed (e.g. adblocker). Please try opening this "
 "page in an incognito window instead (you can just copy and paste the URL "
 "from the current page), and/or try manually disabling your extensions."
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr ""
+"নোট: মেসেজ অসি নুমিৎ কয়া অমুক ইয়াওরবদি, অদুদি নহাক্কী ব্রাউজরদা অসুবা "
+"এক্সটেনশন অমা ইনস্টল তৌরবনি হায়বদু য়াই (মদুদি এডব্লকার)। মসিগী পেজ অসি "
+"ইনকগনিটো উইন্ডো অমদা হাংদোকপা হোৎনবিয়ু (নহাক্কী বর্তমান পেজদগী URL কপি "
+"অমসুং পেস্ট তৌবা য়াগনি), অমসুং/নত্রগা এক্সটেনশনশিং অদু ম্যানুয়েলি অফ তৌবা "
+"হোৎনবিয়ু।"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_resume"
 msgid "Resume"
-msgstr "ꯑꯃꯥ ꯂꯣꯟꯕ"
+msgstr "মখা চত্থো"
 
 #: psynet/timeline_hold.py
 #, fuzzy, python-brace-format

@@ -270,43 +270,43 @@ msgstr "ਮੈਂ ਕਦੇ ਨਹੀਂ ਨੱਚਦਾ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "ਆਖਰੀ ਵਾਰ ਤੁਸੀਂ ਕਦੋਂ ਨੱਚੇ ਸੀ? (ਸਭ ਤੋਂ ਸਹੀ ਜਵਾਬ ਚੁਣੋ):"
+msgstr "ਤੁਸੀਂ ਆਖਰੀ ਵਾਰ ਕਦੋਂ ਨੱਚੇ ਸੀ? (ਸਭ ਤੋਂ ਸਹੀ ਜਵਾਬ ਚੁਣੋ):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "ਇਸ ਹਫ਼ਤੇ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "ਇਸ ਮਹੀਨੇ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "ਇਸ ਸਾਲ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "ਕੁਝ ਸਾਲ ਪਹਿਲਾਂ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "ਕਈ ਸਾਲ ਪਹਿਲਾਂ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
 msgstr "ਮੈਂ ਕਦੇ ਨਹੀਂ ਨੱਚਿਆ"
 
@@ -470,6 +470,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "ਇਹ ਅੰਤ ਹੈ!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "ਭਾਗ ਲੈਣ ਲਈ ਧੰਨਵਾਦ।"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -533,6 +538,16 @@ msgstr "ਤਜਰਬਾ ਅਸਥਾਈ ਤੌਰ 'ਤੇ ਵਿਅਸਤ ਹੈ
 #, fuzzy
 msgid "Play"
 msgstr "ਚਲਾਓ"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "ਰੋਕੋ"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "ਲੂਪ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3234,26 +3249,6 @@ msgstr "ਪ੍ਰੌਂਪਟ ਚਲਾਓ"
 msgid "Play recording"
 msgstr "ਰਿਕਾਰਡਿੰਗ ਚਲਾਓ"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ਰੋਕੋ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ਰੋਕੋ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ਲੂਪ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ਲੂਪ"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3350,19 +3345,9 @@ msgstr "ਮੁੜ ਕੋਸ਼ਿਸ ਕਰੋ"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "ਭਾਗ ਲੈਣ ਲਈ ਧੰਨਵਾਦ।"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "ਤੁਸੀਂ ਛੱਡਣ ਦਾ ਫੈਸਲਾ ਕੀਤਾ ਹੈ।"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "ਭਾਗ ਲੈਣ ਲਈ ਧੰਨਵਾਦ।"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

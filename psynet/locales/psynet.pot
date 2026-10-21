@@ -221,37 +221,37 @@ msgid "I never dance"
 msgstr ""
 
 #: psynet/demography/general.py:652
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
 
 #: psynet/demography/general.py:666
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr ""
 
 #: psynet/demography/general.py:667
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr ""
 
 #: psynet/demography/general.py:668
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr ""
 
 #: psynet/demography/general.py:669
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr ""
 
 #: psynet/demography/general.py:670
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr ""
 
 #: psynet/demography/general.py:671
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
 msgstr ""
 
@@ -400,6 +400,8 @@ msgid "That's the end!"
 msgstr ""
 
 #: psynet/end.py:179 psynet/end.py:318
+#: psynet/templates/psynet_exit_recruiter.html:18
+#: psynet/templates/psynet_exit_recruiter.html:22
 msgid "Thank you for taking part."
 msgstr ""
 
@@ -433,19 +435,19 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:3692
+#: psynet/experiment.py:3696
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:3736 psynet/experiment.py:7121
+#: psynet/experiment.py:3740 psynet/experiment.py:7126
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:3983
+#: psynet/experiment.py:3987
 msgid "The experiment is temporarily busy. Please try again."
 msgstr ""
 
@@ -453,11 +455,11 @@ msgstr ""
 msgid "Play"
 msgstr ""
 
-#: psynet/modular_page.py:218
+#: psynet/modular_page.py:218 psynet/templates/macros/control.html:1164
 msgid "Stop"
 msgstr ""
 
-#: psynet/modular_page.py:219
+#: psynet/modular_page.py:219 psynet/templates/macros/control.html:1173
 msgid "Loop"
 msgstr ""
 
@@ -2487,14 +2489,6 @@ msgstr ""
 msgid "Play recording"
 msgstr ""
 
-#: psynet/templates/macros/control.html:1164
-msgid "Stop"
-msgstr ""
-
-#: psynet/templates/macros/control.html:1173
-msgid "Loop"
-msgstr ""
-
 #: psynet/templates/macros/prompt.html:139
 msgid "Video not found"
 msgstr ""
@@ -2577,11 +2571,6 @@ msgstr ""
 #: psynet/templates/psynet_exit_recruiter.html:22
 msgctxt "exit"
 msgid "You chose to leave."
-msgstr ""
-
-#: psynet/templates/psynet_exit_recruiter.html:18
-#: psynet/templates/psynet_exit_recruiter.html:22
-msgid "Thank you for taking part."
 msgstr ""
 
 #: psynet/templates/psynet_exit_recruiter.html:26

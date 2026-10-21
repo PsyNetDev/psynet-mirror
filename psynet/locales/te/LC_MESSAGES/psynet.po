@@ -265,45 +265,44 @@ msgstr "నేను ఎప్పుడూ నృత్యం చేయను"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
-"మీరు చివరిసారిగా ఎప్పుడు నృత్యం చేశారు? (అత్యంత ఖచ్చితమైన సమాధానాన్ని "
-"ఎంచుకోండి):"
+"మీరు చివరిసారిగా ఎప్పుడు నృత్యం చేశారు? (అత్యంత సరైన సమాధానాన్ని ఎంచుకోండి):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "ఈ వారం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "ఈ నెల"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "ఈ సంవత్సరం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "కొన్ని సంవత్సరాల క్రితం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "చాలా సంవత్సరాల క్రితం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
 msgstr "నేను ఎప్పుడూ నృత్యం చేయలేదు"
 
@@ -467,6 +466,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "ఇది ముగిసింది!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "పాల్గొన్నందుకు ధన్యవాదాలు."
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -531,6 +535,16 @@ msgstr "ప్రయోగం తాత్కాలికంగా బిజీ�
 #, fuzzy
 msgid "Play"
 msgstr "ప్లే"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "ఆపి వేయండి"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "లూప్"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3215,26 +3229,6 @@ msgstr "ప్రాంప్ట్ ప్లే చేయండి"
 msgid "Play recording"
 msgstr "రికార్డింగ్ ప్లే చేయండి"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ఆపి వేయండి"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ఆపి వేయండి"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "లూప్"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "లూప్"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3331,19 +3325,9 @@ msgstr "మళ్లీ ప్రయత్నించండి"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "పాల్గొన్నందుకు ధన్యవాదాలు."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "మీరు వెళ్లిపోవాలని ఎంచుకున్నారు."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "పాల్గొన్నందుకు ధన్యవాదాలు."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

@@ -267,45 +267,46 @@ msgstr "ខ្ញុំមិនដែលរាំ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "ពេលចុងក្រោយដែលអ្នកបានរាំគឺពេលណា? (ជ្រើសរើសចម្លើយដែលត្រឹមត្រូវបំផុត):"
+msgstr ""
+"តើអ្នកបានរាំលើកចុងក្រោយនៅពេលណា? (សូមជ្រើសរើសចម្លើយដែលត្រឹមត្រូវបំផុត)៖"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "សប្តាហ៍នេះ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "ខែនេះ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "ឆ្នាំនេះ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "ប៉ុន្មានឆ្នាំមុន"
+msgstr "កាលពីប៉ុន្មានឆ្នាំមុន"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "ច្រើនឆ្នាំមុន"
+msgstr "កាលពីច្រើនឆ្នាំមុន"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "ខ្ញុំមិនដែលរាំ"
+msgstr "ខ្ញុំមិនដែលរាំទេ"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -467,6 +468,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "វាជាចុងបញ្ចប់ហើយ!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "អរគុណសម្រាប់ការចូលរួម។"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -531,6 +537,16 @@ msgstr "ការសាកល្បងកំពុងមានការរវល
 #, fuzzy
 msgid "Play"
 msgstr "លេង"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "បញ្ឈប់"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "ធ្វើចម្លង"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3202,26 +3218,6 @@ msgstr "ចាក់ឥទាន"
 msgid "Play recording"
 msgstr "ចាក់ការថត"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "បញ្ឈប់"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "បញ្ឈប់"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ធ្វើចម្លង"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ធ្វើចម្លង"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3318,19 +3314,9 @@ msgstr "សូមព្យាយាមម្តងទៀត"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "អរគុណសម្រាប់ការចូលរួម។"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "អ្នកបានជ្រើសចាកចេញ។"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "អរគុណសម្រាប់ការចូលរួម។"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

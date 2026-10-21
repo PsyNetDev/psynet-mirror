@@ -268,45 +268,46 @@ msgstr "Я никогда не танцую"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "Когда вы в последний раз танцевали? (выберите наиболее точный ответ):"
+msgstr ""
+"Когда вы танцевали в последний раз? (выберите наиболее подходящий ответ):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "На этой неделе"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "В этом месяце"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "В этом году"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "Несколько лет назад"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "Много лет назад"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "Я никогда не танцевал"
+msgstr "Я никогда не танцевал(а)"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -469,6 +470,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "Это конец!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "Спасибо за участие."
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -533,6 +539,16 @@ msgstr "Эксперимент временно занят. Пожалуйста
 #, fuzzy
 msgid "Play"
 msgstr "Воспроизвести"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "Остановить"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "Повтор"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3254,26 +3270,6 @@ msgstr "Воспроизвести подсказку"
 msgid "Play recording"
 msgstr "Воспроизвести запись"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Остановить"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Остановить"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "Повтор"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "Повтор"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3370,19 +3366,9 @@ msgstr "Попробуйте снова"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "Спасибо за участие."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "Вы решили уйти."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "Спасибо за участие."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

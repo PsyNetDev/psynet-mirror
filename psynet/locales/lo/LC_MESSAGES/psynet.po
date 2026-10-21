@@ -265,45 +265,45 @@ msgstr "ຂ້ອຍບໍ່ເຄີຍເຕັ້ນ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "ເມື່ອໃດທີ່ທ່ານເຕັ້ນຄັ້ງສຸດທ້າຍ? (ເລືອກຄຳຕອບທີ່ຖືກຕ້ອງທີ່ສຸດ):"
+msgstr "ທ່ານເຕັ້ນລຳຄັ້ງລ່າສຸດເມື່ອໃດ? (ເລືອກຄຳຕອບທີ່ຖືກຕ້ອງທີ່ສຸດ):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "ອາທິດນີ້"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "ເດືອນນີ້"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "ປີນີ້"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "ບາງປີທີ່ຜ່ານມາ"
+msgstr "ສອງສາມປີກ່ອນ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "ຫຼາຍປີທີ່ຜ່ານມາ"
+msgstr "ຫຼາຍປີກ່ອນ"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "ຂ້ອຍບໍ່ເຄີຍເຕັ້ນ"
+msgstr "ຂ້ອຍບໍ່ເຄີຍເຕັ້ນລຳ"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -465,6 +465,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "ນີ້ແມ່ນສິ້ນສຸດ!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "ຂອບໃຈທີ່ເຂົ້າຮ່ວມ."
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -526,6 +531,16 @@ msgstr "ການທົດສອບຊົ່ວຄາວກຳລັງມີຄ
 #, fuzzy
 msgid "Play"
 msgstr "ຫຼິ້ນ"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "ຢຸດ"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "ວົງ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3171,26 +3186,6 @@ msgstr "ຫຼິ້ນສັນຍານ"
 msgid "Play recording"
 msgstr "ຫຼິ້ນການບັນທຶກ"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ຢຸດ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ຢຸດ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ວົງ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ວົງ"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3287,19 +3282,9 @@ msgstr "ລອງອີກຄັ້ງ"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "ຂອບໃຈທີ່ເຂົ້າຮ່ວມ."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "ທ່ານເລືອກທີ່ຈະອອກ."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "ຂອບໃຈທີ່ເຂົ້າຮ່ວມ."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

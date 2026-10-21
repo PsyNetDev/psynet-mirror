@@ -261,45 +261,45 @@ msgstr "私はダンスをしません"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "最後にダンスをしたのはいつですか？（最も正確な答えを選んでください）"
+msgstr "最後に踊ったのはいつですか？（最も当てはまる回答を選んでください）："
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "今週"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "今月"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "今年"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "数年前"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "何年も前"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "私はダンスをしたことがありません"
+msgstr "踊ったことがありません"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -458,6 +458,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "これで終了です！"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "ご参加いただきありがとうございます。"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -517,6 +522,16 @@ msgstr "実験が一時的に混雑しています。もう一度お試しくだ
 #, fuzzy
 msgid "Play"
 msgstr "再生"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "停止"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "ループ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -2883,26 +2898,6 @@ msgstr "プロンプトを再生"
 msgid "Play recording"
 msgstr "録音を再生"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "停止"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "停止"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ループ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ループ"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -2999,19 +2994,9 @@ msgstr "再試行"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "ご参加いただきありがとうございます。"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "途中で退出することを選択しました。"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "ご参加いただきありがとうございます。"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
@@ -3070,7 +3055,7 @@ msgid "Send comment"
 msgstr "コメントを送信"
 
 #: psynet/templates/timeline-page.html
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "alert_ok"
 msgid "OK"
 msgstr "OK"

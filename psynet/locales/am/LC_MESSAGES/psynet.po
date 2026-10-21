@@ -263,45 +263,45 @@ msgstr "አልደነሰም"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
-msgstr "መጨረሻ ጊዜ መደነስዎ መቼ ነበር? (በትክክል መልስ ይምረጡ):"
+msgstr "መጨረሻ ጊዜ መቼ ነበር የዳንሱት? (በጣም ትክክለኛውን መልስ ይምረጡ):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "በዚህ ሳምንት"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "በዚህ ወር"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "በዚህ ዓመት"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "ከአንድ ዓመት በላይ"
+msgstr "ከጥቂት ዓመታት በፊት"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "ከብዙ ዓመታት በፊት"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "አልደነሰም"
+msgstr "ፈጽሞ አልደነስኩም"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -460,6 +460,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "እዚህ ላይ ተጠናቀቀ።"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "ስለተሳተፉ እናመሰግናለን።"
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -521,6 +526,16 @@ msgstr "ሙከራው በጊዜያዊነት እየተጠመደ ነው። እባ�
 #, fuzzy
 msgid "Play"
 msgstr "ክፈት"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "ተወ"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "ሉፕ"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3024,26 +3039,6 @@ msgstr "ጥያቄን አጫውት።"
 msgid "Play recording"
 msgstr "ቀረጻን አጫውት።"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ተወ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ተወ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ሉፕ"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "ሉፕ"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3140,19 +3135,9 @@ msgstr "እንደገና ይሞክሩ"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "ስለተሳተፉ እናመሰግናለን።"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "ለመሄድ ወሰኑ።"
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "ስለተሳተፉ እናመሰግናለን።"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy

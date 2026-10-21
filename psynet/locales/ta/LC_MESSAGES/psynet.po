@@ -270,47 +270,47 @@ msgstr "நான் ஒருபோதும் நடனமாடவில்�
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
-"நீங்கள் கடைசியாக எப்போது நடனமாடினீர்கள்? (மிகவும் சரியான பதிலைத் "
+"நீங்கள் கடைசியாக எப்போது நடனமாடினீர்கள்? (மிகவும் துல்லியமான பதிலைத் "
 "தேர்ந்தெடுக்கவும்):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "இந்த வாரம்"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "இந்த மாதம்"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "இந்த ஆண்டு"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "சில ஆண்டுகளுக்கு முன்பு"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "பல ஆண்டுகளுக்கு முன்பு"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "நான் ஒருபோதும் நடனமாடவில்லை"
+msgstr "நான் ஒருபோதும் நடனமாடியதில்லை"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -472,6 +472,11 @@ msgctxt "final_page_successful"
 msgid "That's the end!"
 msgstr "அது முடிவாகும்!"
 
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgid "Thank you for taking part."
+msgstr "பங்கேற்றதற்காக நன்றி."
+
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_unsuccessful"
@@ -538,6 +543,16 @@ msgstr ""
 #, fuzzy
 msgid "Play"
 msgstr "பிளே"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Stop"
+msgstr "நிறுத்து"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "மீண்டும் மீண்டும்"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -3284,26 +3299,6 @@ msgstr "உரையை விளையாடு"
 msgid "Play recording"
 msgstr "பதிவு விளையாடு"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "நிறுத்து"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "நிறுத்து"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "மீண்டும் மீண்டும்"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "மீண்டும் மீண்டும்"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3400,19 +3395,9 @@ msgstr "மீண்டும் முயற்சிக்கவும்"
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Thank you for taking part."
-msgstr "பங்கேற்றதற்காக நன்றி."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
 msgctxt "exit"
 msgid "You chose to leave."
 msgstr "நீங்கள் வெளியேற தேர்வு செய்தீர்கள்."
-
-#: psynet/templates/psynet_exit_recruiter.html
-#, fuzzy
-msgid "Thank you for taking part."
-msgstr "பங்கேற்றதற்காக நன்றி."
 
 #: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
