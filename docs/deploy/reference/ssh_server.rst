@@ -80,8 +80,8 @@ Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
 records. With a Dallinger version that includes `Dallinger PR #10118
 <https://github.com/Dallinger/Dallinger/pull/10118>`_, ``psynet deploy ssh``,
 ``psynet debug ssh`` and ``psynet performance-test ssh`` check that the token
-can be read before they start local services, contact the server, reset local
-data or run ``prepare``. Until a server default is changed, omitting
+can be read before they start local services, contact the server or run
+``prepare``. Until a server default is changed, omitting
 ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
 app at its public name rather than ``https://<app>.<ssh-host>``.
 

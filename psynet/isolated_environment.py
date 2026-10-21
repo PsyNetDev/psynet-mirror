@@ -27,7 +27,10 @@ the URLs differ the tests leave a running ``psynet debug local`` alone.
 
 ``psynet debug local --isolated`` gives a debug server the same kind of
 environment, so that it runs next to other servers and test sessions; like a
-test session's, its database and Redis are removed when it stops.
+test session's, its database and Redis are removed when it stops. Remote
+launches (``psynet debug ssh``, ``psynet deploy heroku`` and so on) run
+``psynet prepare`` in one too, so building the starting database they ship to
+the server leaves the local database and Redis alone.
 
 Design constraints
 ------------------
@@ -42,7 +45,8 @@ module therefore imports nothing from Dallinger. It is used in two places:
 - ``psynet test local``, ``psynet performance-test local`` and
   ``psynet debug local --isolated``, which have already imported Dallinger
   by the time they run, and so re-run themselves in a child process inside
-  the environment.
+  the environment. Remote launches likewise run only ``psynet prepare`` in a
+  child process.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
@@ -278,7 +282,7 @@ class IsolatedEnvironment:
                 number = _spare_redis_database(redis_url, slot)
                 env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    f"redis-server is not on PATH, so these tests use Redis database "
+                    f"redis-server is not on PATH, so this session uses Redis database "
                     f"{number} on the shared server. Live notifications can still "
                     "reach a local debug server's participants.",
                     file=sys.stderr,
