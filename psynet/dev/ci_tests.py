@@ -14,9 +14,10 @@ Two things make this faster than running items one after another:
   local PsyNet environment: its own Postgres database, Redis server, web
   port and Dallinger develop directory. A Redis server (not just a database
   number) is needed because Redis pub/sub channels are shared across
-  database numbers. Slot 0 uses the caller's environment, so ``--slots 1``
-  behaves like a plain serial run (outside CI, its pytest sessions still
-  isolate themselves; see :mod:`psynet.isolated_environment`).
+  database numbers. In CI, slot 0 uses the caller's environment, so
+  ``--slots 1`` behaves like a plain serial run. Outside CI, slot 0 is
+  isolated too (see :mod:`psynet.isolated_environment`), so that stopping
+  the run removes every slot's services.
 
 Items that share an experiment directory are serialized by
 :func:`psynet.testing.locks.experiment_directory_lock`.
@@ -37,6 +38,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import threading
@@ -47,7 +49,11 @@ from pathlib import Path
 
 import click
 
-from psynet.isolated_environment import IsolatedEnvironment, IsolationError
+from psynet.isolated_environment import (
+    IsolatedEnvironment,
+    IsolationError,
+    should_isolate,
+)
 from psynet.testing.locks import HELD_LOCK_ENV_VAR, experiment_directory_lock
 from psynet.utils import get_psynet_root, list_experiment_dirs, list_isolated_tests
 
@@ -150,17 +156,17 @@ def load_durations():
 class _Slot:
     """An isolated local environment (database, Redis, port) for one worker.
 
-    Slots other than 0 claim their port with the same lock as other isolated
+    Isolated slots claim their port with the same lock as other isolated
     sessions, so they never collide with a test session or debug server.
     """
 
     def __init__(self, index):
         self.index = index
         self._environment = None
-        if index == 0:
+        if index == 0 and not should_isolate():
             self.env = dict(os.environ)
             return
-        if shutil.which("redis-server") is None:
+        if index > 0 and shutil.which("redis-server") is None:
             raise click.ClickException(
                 "--slots > 1 needs redis-server on PATH to give each slot its own Redis."
             )
@@ -188,24 +194,57 @@ def _junit_args(item, junit_dir, python_version):
 
 
 _running = set()
+_running_lock = threading.Lock()
+_stopping = threading.Event()
+_STOP_GRACE_S = 30
 
 
-def _run(cmd, env, cwd=None):
-    """Run ``cmd`` and return its exit code and output, tracking it in ``_running``."""
-    with subprocess.Popen(
-        cmd,
-        env=env,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ) as process:
-        _running.add(process)
+def _run(cmd, env, cwd=None, stoppable=True):
+    """Run ``cmd`` and return its exit code and output.
+
+    Once :func:`_stop_running_processes` has been called, stoppable commands
+    are not started.
+    """
+    with _running_lock:
+        if stoppable and _stopping.is_set():
+            return 1, f"Not started because the run was stopped: {' '.join(cmd)}\n"
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if stoppable:
+            _running.add(process)
+    with process:
         try:
             output = process.communicate()[0]
         finally:
             _running.discard(process)
     return process.returncode, output
+
+
+def _stop_running_processes(threads):
+    """Terminate the running test processes and wait for the workers.
+
+    Processes still running after a grace period are killed. Workers that
+    are still blocked after that, e.g. on a pipe held open by a
+    grandchild, are abandoned; they are daemon threads.
+    """
+    with _running_lock:
+        _stopping.set()
+        processes = list(_running)
+    for process in processes:
+        process.terminate()
+    deadline = time.monotonic() + _STOP_GRACE_S
+    for thread in threads:
+        thread.join(max(0, deadline - time.monotonic()))
+    for process in processes:
+        process.kill()
+    for thread in threads:
+        thread.join(5)
 
 
 def _run_item(item, slot, timeout, junit_dir, python_version):
@@ -235,7 +274,10 @@ def _run_item(item, slot, timeout, junit_dir, python_version):
             )
             output += test_output
         prune_code, prune_output = _run(
-            ["psynet", "scripts", "prune", "--include-modified"], env, cwd=directory
+            ["psynet", "scripts", "prune", "--include-modified"],
+            env,
+            cwd=directory,
+            stoppable=False,
         )
         output += prune_output
         if prune_code != 0:
@@ -284,32 +326,42 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
 
     from psynet.command_line import _exit_on_termination_signal
 
+    _stopping.clear()
     slots = []
     threads = []
+    ignored_signals = {}
     try:
         with _exit_on_termination_signal():
             for index in range(n_slots):
                 slots.append(_Slot(index))
-            threads = [threading.Thread(target=worker, args=(slot,)) for slot in slots]
+            threads = [
+                threading.Thread(target=worker, args=(slot,), daemon=True)
+                for slot in slots
+            ]
             for thread in threads:
                 thread.start()
             for thread in threads:
                 thread.join()
     except BaseException as e:
+        # A second SIGTERM or SIGHUP must not cut the cleanup short.
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            ignored_signals[signum] = signal.signal(signum, signal.SIG_IGN)
         # Emptying the queue stops workers from starting new items. Ctrl+C in
         # the terminal also interrupts the running pytest processes; SIGTERM
         # and SIGHUP reach only this process, so they are passed on.
         with lock:
             queue.clear()
-        if not isinstance(e, KeyboardInterrupt):
-            for process in _running.copy():
-                process.terminate()
-        for thread in threads:
-            thread.join()
+        if isinstance(e, KeyboardInterrupt):
+            for thread in threads:
+                thread.join()
+        else:
+            _stop_running_processes(threads)
         raise
     finally:
         for slot in slots:
             slot.close()
+        for signum, handler in ignored_signals.items():
+            signal.signal(signum, handler)
     return results
 
 

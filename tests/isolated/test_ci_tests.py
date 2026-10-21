@@ -144,6 +144,15 @@ def test_slots_get_their_own_services(monkeypatch):
         first.close()
 
 
+def test_slot_0_is_isolated_outside_ci(monkeypatch):
+    monkeypatch.setattr(ci_tests, "should_isolate", lambda: True)
+    slot = ci_tests._Slot(0)
+    try:
+        assert slot.env["DATABASE_URL"] != os.environ.get("DATABASE_URL")
+    finally:
+        slot.close()
+
+
 def test_extra_slots_need_their_own_redis_server(monkeypatch):
     monkeypatch.setattr(ci_tests.shutil, "which", lambda name: None)
 
