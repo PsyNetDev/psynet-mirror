@@ -1195,7 +1195,7 @@ class ManagedAsset(Asset):
     def after_deposit(self):
         # logger.info("Calling after_deposit.")
         if self.trial:
-            logger.info(
+            logger.debug(
                 "Calling check_if_can_run_async_post_trial as part of after_deposit."
             )
             self.trial.check_if_can_run_async_post_trial()
