@@ -2439,18 +2439,23 @@ def _invoke_docker_ssh_deploy(
         result = ctx.invoke(command, **kwargs)
     if isinstance(result, dict):
         link = _participant_link(result, output.getvalue())
-        if update and not link:
-            link = _recorded_participant_link()
+        if update:
+            # Dallinger doesn't open recruitment again, so keep what the
+            # first deploy recorded, before _post_deploy overwrites it.
+            recorded = _recorded_launch_info()
+            link = link or recorded.get("participant_link")
+            if not result.get("recruitment_msg") and recorded.get("recruitment_msg"):
+                result["recruitment_msg"] = recorded["recruitment_msg"]
         if link:
             result["participant_link"] = link
     return result
 
 
-def _recorded_participant_link():
-    """Return the participant link saved when this deployment was launched, or ``None``.
+def _recorded_launch_info():
+    """Return the launch data saved for this deployment, or an empty dict.
 
-    An update keeps the deployment ID, so its launch data is the file that
-    the first deploy from this computer wrote.
+    An update keeps the deployment ID, so this is the file that the first
+    deploy from this computer wrote.
     """
     try:
         path = (
@@ -2458,12 +2463,13 @@ def _recorded_participant_link():
             / deployment_info.read("deployment_id")
             / "launch-info.json"
         )
-        return json.loads(path.read_text(encoding="utf-8")).get("participant_link")
+        recorded = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None
+        return {}
     except (OSError, ValueError, KeyError) as err:
-        logger.warning("Could not read the recorded participant link: %r", err)
-        return None
+        logger.warning("Could not read the recorded launch data: %r", err)
+        return {}
+    return recorded if isinstance(recorded, dict) else {}
 
 
 def _participant_link(result, output):
@@ -2486,8 +2492,8 @@ def _print_ssh_ready(result, launch_info, update=False):
     are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead. An ``update`` doesn't open recruitment again,
-    so when this computer has no record of the participant link, the user
-    is pointed to the first deploy's output.
+    so it shows what the first deploy recorded on this computer, or, without
+    a record, points the user to the first deploy's output.
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
@@ -2495,7 +2501,8 @@ def _print_ssh_ready(result, launch_info, update=False):
         f"{Path(launch_info).name})"
     )
     link = result.get("participant_link")
-    if update and not link:
+    message = None if link else result.get("recruitment_msg")
+    if update and not (link or message):
         link = "unchanged; shown when the app was first deployed"
     rows = [
         ("Participant link", link),
@@ -2509,9 +2516,12 @@ def _print_ssh_ready(result, launch_info, update=False):
     for label, value in rows:
         if value:
             click.echo(f"  {label + ':':<18}{value}")
-    message = None if link else result.get("recruitment_msg")
     if message:
-        click.echo("  Recruitment:")
+        click.echo(
+            "  Recruitment (unchanged since the app was deployed):"
+            if update
+            else "  Recruitment:"
+        )
         for line in message.strip().splitlines():
             click.echo(f"    {line}".rstrip())
 

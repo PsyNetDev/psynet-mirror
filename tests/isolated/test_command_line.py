@@ -380,18 +380,39 @@ class TestCommandLine(object):
         assert launch_info.stat().st_mode & 0o777 == 0o600
         assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
 
-    @pytest.mark.parametrize("recorded", [True, False])
-    def test_ssh_update_ready_block_keeps_the_participant_link(
-        self, monkeypatch, tmp_path, recorded
+    @pytest.mark.parametrize(
+        "recorded, shown",
+        [
+            (
+                {"participant_link": "https://my-app.example.org/ad"},
+                ["  Participant link: https://my-app.example.org/ad"],
+            ),
+            (
+                {"recruitment_msg": "Study created on Prolific"},
+                [
+                    "  Recruitment (unchanged since the app was deployed):",
+                    "    Study created on Prolific",
+                ],
+            ),
+            (
+                None,
+                [
+                    "  Participant link: unchanged; shown when the app was first "
+                    "deployed"
+                ],
+            ),
+        ],
+    )
+    def test_ssh_update_ready_block_keeps_the_recruitment_details(
+        self, monkeypatch, tmp_path, recorded, shown
     ):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         (tmp_path / "experiment.py").touch()
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
-        link = "https://my-app.example.org/ad?mode=debug"
         if recorded:
             launch_info.parent.mkdir(parents=True)
-            launch_info.write_text(json.dumps({"participant_link": link}))
+            launch_info.write_text(json.dumps(recorded))
 
         def sandbox(**kwargs):
             return {
@@ -403,15 +424,15 @@ class TestCommandLine(object):
                 "server": "host",
             }
 
-        result, _ = _invoke_stubbed_ssh_command(
+        result, pre_launch = _invoke_stubbed_ssh_command(
             click.Command("sandbox", callback=sandbox), "debug", "--update", "--yes"
         )
 
         assert result.exit_code == 0, result.output
-        shown = link if recorded else "unchanged; shown when the app was first deployed"
-        assert f"  Participant link: {shown}" in result.output.splitlines()
-        saved = json.loads(launch_info.read_text()).get("participant_link")
-        assert saved == (link if recorded else None)
+        assert "\n".join(shown) + "\n" in result.output.split("Ready:")[1]
+        saved = json.loads(launch_info.read_text())
+        assert {key: saved[key] for key in recorded or ()} == (recorded or {})
+        assert pre_launch.call_args.kwargs["confirm_update"] is False
 
     @pytest.mark.parametrize("command", ["deploy", "debug"])
     def test_ssh_update_without_a_terminal_needs_yes(
@@ -1887,6 +1908,7 @@ def test_performance_test_deploys_mark_the_app(capsys):
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
+    assert pre_launch.call_args.kwargs["confirm_update"] is False
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
     assert "Ready:" not in capsys.readouterr().out
 

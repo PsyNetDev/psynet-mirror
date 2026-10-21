@@ -114,6 +114,9 @@ The image row names the deployed Docker image, with Dallinger versions that
 report it. The participant link appears for recruiters that print a single recruitment
 link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
+An update (see `Updating a running app`_) doesn't recruit again, so it shows
+the participant link or recruiter's message saved when the app was deployed
+from this computer; without that record, it says the link is unchanged.
 The log viewer row appears for apps with classic ingress.
 Passwords are not printed; they are saved in ``launch-info.json`` together
 with the other details. With older Dallinger versions, Dallinger's own
@@ -291,8 +294,8 @@ update keeps:
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
 - participants' sessions;
-- the participant link, which PsyNet shows again if this computer saved it
-  when the app was deployed.
+- its recruitment, which is not opened again, so the participant link stays
+  the same.
 
 An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
