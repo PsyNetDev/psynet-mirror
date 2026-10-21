@@ -178,18 +178,31 @@ def test_system_prompt_names_the_locale_script():
     assert "Ol Chiki script" in prompt
 
 
-def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
+def _fake_chat_gpt(
+    monkeypatch,
+    temperature,
+    reject_temperature=False,
+    replies=(),
+    model="gpt-6-luna",
+):
+    """Route ChatGptTranslator to a fake ``openai`` module and return its requests.
+
+    The fake answers with ``replies`` in turn, then with "Bonjour".
+    """
+
     class BadRequestError(Exception):
         def __init__(self, param):
             self.param = param
 
     requests = []
+    replies = list(replies)
 
     def create(**kwargs):
         requests.append(kwargs)
-        if "temperature" in kwargs:
+        if reject_temperature and "temperature" in kwargs:
             raise BadRequestError(param="temperature")
-        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
+        reply = replies.pop(0) if replies else "Bonjour"
+        message = SimpleNamespace(content=json.dumps({"1": reply}), refusal=None)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=message, finish_reason="stop")]
         )
@@ -203,43 +216,37 @@ def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch):
         SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=BadRequestError),
     )
     monkeypatch.setattr(translators, "_MODELS_WITHOUT_TEMPERATURE", set())
-    config = {
-        "openai_api_key": "key",
-        "openai_default_model": "gpt-6-luna",
-        "openai_default_temperature": "0",
-    }
+    config = {"openai_api_key": "key", "openai_default_model": model}
+    if temperature is not None:
+        config["openai_default_temperature"] = temperature
     monkeypatch.setattr(translators, "get_config", lambda: config)
+    return requests
+
+
+@pytest.mark.parametrize(
+    "temperature, expected", [(None, ["absent", "absent"]), ("0", [0.0, 0.7])]
+)
+def test_temperature_is_sent_only_when_configured(monkeypatch, temperature, expected):
+    """The first reply is empty, so the request is retried."""
+    requests = _fake_chat_gpt(monkeypatch, temperature, replies=[""])
+
+    assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
+
+    assert [request.get("temperature", "absent") for request in requests] == expected
+
+
+def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
+    requests = _fake_chat_gpt(monkeypatch, "0", reject_temperature=True)
 
     for _ in range(2):
         assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
 
     assert ["temperature" in request for request in requests] == [True, False, False]
+    assert "openai_default_temperature is ignored" in capsys.readouterr().out
 
 
 def test_gpt_4o_reply_limit_stays_within_what_it_accepts(monkeypatch):
-    requests = []
-
-    def create(**kwargs):
-        requests.append(kwargs)
-        message = SimpleNamespace(content=json.dumps({"1": "Bonjour"}), refusal=None)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=message, finish_reason="stop")]
-        )
-
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "openai",
-        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=Exception),
-    )
-    config = {
-        "openai_api_key": "key",
-        "openai_default_model": "gpt-4o",
-        "openai_default_temperature": "0",
-    }
-    monkeypatch.setattr(translators, "get_config", lambda: config)
+    requests = _fake_chat_gpt(monkeypatch, "0", model="gpt-4o")
 
     ChatGptTranslator().translate(["a" * 5_000], "en", "fr")
 

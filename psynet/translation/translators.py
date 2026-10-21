@@ -22,7 +22,9 @@ SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
 ISO_LOCALE_CODES = {"od": "or"}
 
 # At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
-# one word in a low-resource script, so retries sample more freely.
+# one word in a low-resource script, so retries sample more freely. Without a
+# configured temperature the model's default (1 for OpenAI) already varies
+# replies between retries.
 RETRY_TEMPERATURE = 0.7
 
 # Models such as gpt-6-luna reject any temperature but their own default. A
@@ -335,9 +337,9 @@ class ChatGptTranslator(Translator):
             raise CredentialsError(
                 "Please provide an OpenAI API key in your .dallingerconfig file under `openai_api_key`"
             )
-        temperature = float(config.get("openai_default_temperature"))
-        if attempt > 0:
-            temperature = max(temperature, RETRY_TEMPERATURE)
+        # Models such as gpt-6-luna reject any temperature but their own, so a
+        # temperature is only sent when one is configured.
+        temperature = config.get("openai_default_temperature", None)
         openai_default_model = config.get("openai_default_model")
 
         ids = [str(i) for i in range(1, len(texts) + 1)]
@@ -373,7 +375,13 @@ class ChatGptTranslator(Translator):
                 8_000 + 5 * sum(len(text) for text in texts),
             ),
         )
-        if openai_default_model not in _MODELS_WITHOUT_TEMPERATURE:
+        if (
+            temperature is not None
+            and openai_default_model not in _MODELS_WITHOUT_TEMPERATURE
+        ):
+            temperature = float(temperature)
+            if attempt > 0:
+                temperature = max(temperature, RETRY_TEMPERATURE)
             request["temperature"] = temperature
         client = OpenAI(api_key=openai_api_key)
         try:
@@ -382,6 +390,10 @@ class ChatGptTranslator(Translator):
             if "temperature" not in request or e.param != "temperature":
                 raise
             _MODELS_WITHOUT_TEMPERATURE.add(openai_default_model)
+            print(
+                f"{openai_default_model} rejects temperature {request['temperature']}, "
+                "so openai_default_temperature is ignored for it."
+            )
             del request["temperature"]
             response = client.chat.completions.create(**request)
         choice = response.choices[0]
