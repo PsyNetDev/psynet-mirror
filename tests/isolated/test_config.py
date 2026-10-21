@@ -192,6 +192,25 @@ def test_override_warning_redacts_sensitive_values(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_unknown_experiment_config_key_is_named(in_experiment_directory, monkeypatch):
+    exp = get_experiment()
+    monkeypatch.setattr(
+        type(exp), "config", {**exp.config, "min_accumulated_reward_for_abort": 0.1}
+    )
+
+    with pytest.raises(
+        KeyError,
+        match=(
+            r"min_accumulated_reward_for_abort is not a valid configuration key\. "
+            rf"Remove it from {type(exp).__name__}\.config"
+        ),
+    ):
+        type(exp).config_settings()
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 def test_no_override_warning_when_values_match(in_experiment_directory, caplog):
     import logging
 

@@ -41,10 +41,9 @@ variants show the approved cultural-foundation consent (vendored
 use the `MAIN` consent and the Lucid variant uses the `CINT` consent.
 
 By default a full deployment test produces **three apps**: the two Prolific
-experiments plus the Lucid variant of `audio_gibbs`. Overlap the long
-remote image builds to save wall-clock time, but **do not start all three
-`psynet deploy ssh` commands at once** (see "Stagger Local Prepare, Then
-Overlap Remote Builds"). The paid `audio_gibbs` variants deploy from
+experiments plus the Lucid variant of `audio_gibbs`. Start the three
+`psynet deploy ssh` commands together so that the long remote image builds
+overlap. The paid `audio_gibbs` variants deploy from
 temporary git worktrees; see "Prepare The Recruiter Variants".
 Deploy a subset only when the user explicitly asks for it.
 Prepare both experiment directories on a **single fresh deployment branch
@@ -302,9 +301,9 @@ Deploy all three apps from their own directories with their own app names:
 swap is committed on the deployment branch), and the two paid `audio_gibbs`
 variants from temporary worktrees (both swaps prepared as described in
 "Prepare The Recruiter Variants" below). Start each deploy as a background
-process (or in a separate terminal) and monitor all launch outputs, but
-**stagger the starts** so only one deploy is in local prepare at a time
-(see the next section). Do not background all three in one shot.
+process (or in a separate terminal) and monitor all launch outputs. Each
+deploy prepares its starting database in a scratch database and Redis of its
+own, so they can start at the same time.
 
 ```bash
 source <psynet-root>/<venv>/bin/activate
@@ -313,28 +312,17 @@ source <psynet-root>/<venv>/bin/activate
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <payment-flows-prolific-app-name>) &
-```
 
-Wait until that deploy prints a build marker (see "Stagger Local Prepare,
-Then Overlap Remote Builds" below). Then start the next:
-
-```bash
 (cd <prolific-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-prolific-app-name>) &
-```
 
-Wait for the same marker, then start the third:
-
-```bash
 (cd <lucid-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-lucid-app-name>) &
 ```
-
-After all three have passed the marker, the remote builds overlap.
 
 Do not let one deployment's failure silently abort the others: check each
 launch output separately, and report per-app success/failure.
@@ -363,44 +351,4 @@ For `audio_gibbs` variants, also run the post-launch container source check
 in `recruiter-variants.md` before calling the deploy a success. A matching
    git branch is not enough: Dallinger can reuse a Docker image that still
    contains the other variant's `experiment.py`.
-
-## Stagger Local Prepare, Then Overlap Remote Builds
-
-Every `psynet deploy ssh` uses the **developer's local Postgres** before it
-touches the remote host. `_pre_launch` calls `prepare`, which runs
-`db.init_db(drop_all=True)` and `experiment.pre_deploy()` against the shared
-`dallinger` database (schema create includes
-`CREATE TYPE participant_status AS ENUM ...`). After that local work
-finishes, the deploy no longer needs local Postgres: it builds the image
-and launches on the server.
-
-Starting two or more deploys at the same instant races that local
-`init_db`. The typical failure is **not** a remote crash-loop. It dies
-during local prepare with:
-
-```text
-IntegrityError / UniqueViolation
-Key (typname, typnamespace)=(participant_status, 2200) already exists
-CREATE TYPE participant_status AS ENUM (...)
-```
-
-`audio_gibbs` `pre_deploy` (assets / snapshot) can take longer than
-`payment_flows_prolific`, so a "start all three and hope" launch often
-fails the two `audio_gibbs` apps while the first one proceeds.
-
-**Rule:** only one deploy may be in local prepare at a time. Start the
-next only after the previous log shows any of these build markers:
-`Attempting to build image on remote host`, `Experiment UID:` or
-`Building image`. Newer Dallinger versions print only `Building image`,
-and print it only for a default build. If the deploy reuses an image
-from the registry or `DALLINGER_VERBOSE_BUILD=1` is set, wait for
-`Image <name> found on remote registry`, `pushed to remote registry` or
-`not found - building` instead. From that point the expensive remote Docker builds and launches may
-overlap.
-
-If a deploy hits the `participant_status` UniqueViolation, treat it as
-this local race. Leave any deploy that already passed the marker running.
-Retry **only** the failed command, and only after every in-flight deploy
-has printed the marker (or finished). Do not restart the whole trio at
-once.
 

@@ -25,6 +25,7 @@ from psynet.isolated_environment import (
 )
 from psynet.testing.locks import (
     HELD_LOCK_ENV_VAR,
+    REMOTE_LAUNCH,
     SERVER,
     TEST_SESSION,
     DirectoryInUseError,
@@ -68,7 +69,14 @@ def test_shared_environment_warns_once():
 
 
 @pytest.mark.parametrize(
-    "holder, kind", [(SERVER, TEST_SESSION), (SERVER, SERVER), (TEST_SESSION, SERVER)]
+    "holder, kind",
+    [
+        (SERVER, TEST_SESSION),
+        (SERVER, SERVER),
+        (TEST_SESSION, SERVER),
+        (REMOTE_LAUNCH, TEST_SESSION),
+        (TEST_SESSION, REMOTE_LAUNCH),
+    ],
 )
 def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
     tmp_path, monkeypatch, holder, kind
@@ -80,7 +88,7 @@ def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
         with pytest.raises(DirectoryInUseError, match=message):
             with experiment_directory_lock(tmp_path, kind=kind):
                 pass
-        if holder == SERVER:
+        if holder != TEST_SESSION:
             with pytest.raises(DirectoryInUseError, match=message):
                 check_no_server(tmp_path)
         else:

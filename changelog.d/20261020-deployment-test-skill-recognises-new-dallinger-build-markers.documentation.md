@@ -1,1 +1,0 @@
-Updated the `deployment-test` skill so that staggered release-candidate deploys also recognise the build lines that newer Dallinger versions print (such as `Building image`) instead of `Attempting to build image on remote host` and `Experiment UID:`.
