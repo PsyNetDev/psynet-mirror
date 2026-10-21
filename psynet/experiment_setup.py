@@ -300,8 +300,9 @@ def _warn_foreign_virtualenv_sync(active, expected):
 def _resolve_foreign_virtualenv_action(*, force_foreign_env):
     """Decide whether package sync may target a non-experiment virtualenv.
 
-    Returns ``"sync"`` or ``"cancel"``. PsyNet's shared checkout ``.venv`` is
-    handled earlier by ``_resolve_shared_checkout_venv_action``; this guard
+    Returns ``"sync"`` or ``"cancel"``; without a terminal to ask, it cancels.
+    PsyNet's shared checkout ``.venv`` is handled earlier by
+    ``_resolve_shared_checkout_venv_action``; this guard
     covers other foreign environments (for example another project's
     ``.venv``). Scaffolding is intentionally allowed before this check so an
     empty experiment directory can still receive boilerplate.
@@ -320,27 +321,41 @@ def _resolve_foreign_virtualenv_action(*, force_foreign_env):
         f"(active: {active}; expected: {expected}). Syncing would install "
         "packages into that environment."
     )
-    if not _is_interactive():
-        raise click.UsageError(
-            f"{summary} Create a dedicated environment with "
-            f"'uv venv --python={_recommended_python()}', activate it with "
-            "'source .venv/bin/activate', install PsyNet, and re-run setup; "
-            "or use --force-foreign-env to sync anyway."
-        )
-
     click.echo(summary)
-    if not click.confirm(
+    if not _is_interactive() or not click.confirm(
         "Continue syncing into the active environment?",
         default=False,
     ):
-        click.echo(
-            "Cancelled setup; experiment files may have been prepared, but no "
-            "packages were installed."
-        )
         return "cancel"
 
     _warn_foreign_virtualenv_sync(active, expected)
     return "sync"
+
+
+def _psynet_install_hint():
+    """Return the command that installs the running PsyNet into a new environment."""
+    editable_source = get_editable_psynet_source()
+    if editable_source is not None:
+        return f"uv pip install -e {editable_source}"
+    if _is_psynet_checkout_virtualenv():
+        return f"uv pip install -e {get_psynet_root()}"
+    return "uv pip install psynet"
+
+
+def _echo_foreign_sync_declined():
+    """Explain how to finish setup after declining to sync a foreign environment."""
+    click.echo(
+        "Skipped installing packages; the experiment files and constraints.txt "
+        "are ready.\n\n"
+        "To finish setup, create this experiment's own environment and "
+        "re-run setup there:\n"
+        f"  uv venv --python {_recommended_python()}\n"
+        "  source .venv/bin/activate\n"
+        f"  {_psynet_install_hint()}\n"
+        "  psynet setup\n"
+        "Or install into the active environment with "
+        "'psynet setup --force-foreign-env'."
+    )
 
 
 def _psynet_command_env_mismatch_error():
@@ -359,19 +374,12 @@ def _psynet_command_env_mismatch_error():
     if prefix == virtual_env_path or prefix.is_relative_to(virtual_env_path):
         return None
 
-    install_hint = "uv pip install psynet"
-    editable_source = get_editable_psynet_source()
-    if editable_source is not None:
-        install_hint = f"uv pip install -e {editable_source}"
-    elif _is_psynet_checkout_virtualenv():
-        install_hint = f"uv pip install -e {get_psynet_root()}"
-
     return (
         f"Your shell has VIRTUAL_ENV={virtual_env_path}, but this `psynet` "
         f"command is running from {prefix}. PsyNet is probably not installed "
         "in the activated environment yet.\n\n"
         "Finish setup with:\n"
-        f"  {install_hint}\n"
+        f"  {_psynet_install_hint()}\n"
         "  psynet setup\n\n"
         "If `psynet` still points at the old environment afterward, run "
         "`hash -r` or open a new shell."
@@ -664,7 +672,7 @@ def _resolve_shared_checkout_venv_action(*, no_install, force_shared_env):
             "The active virtual environment appears to be PsyNet's shared "
             "checkout environment. Refusing to synchronize without an explicit "
             "choice. Create a dedicated environment with "
-            f"'uv venv --python={_recommended_python()}', activate it, and "
+            f"'uv venv --python {_recommended_python()}', activate it, and "
             "re-run setup; or use --no-install to scaffold and generate "
             "constraints without installing packages; or use "
             "--force-shared-env to sync anyway (this can remove packages from "
@@ -1130,6 +1138,10 @@ def setup_experiment(
         _resolve_foreign_virtualenv_action(force_foreign_env=force_foreign_env)
         == "cancel"
     ):
+        _ensure_git_repository()
+        _echo_foreign_sync_declined()
+        if not _is_interactive():
+            raise click.exceptions.Exit(1)
         return
 
     dallinger_source = _editable_dallinger_to_reinstall(psynet_source)

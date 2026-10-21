@@ -1,3 +1,4 @@
+import copy
 import os
 import time
 from dataclasses import dataclass
@@ -194,14 +195,19 @@ def reuse_translations(po: polib.POFile, old_po: Optional[polib.POFile]) -> int:
     Copy every existing translation from ``old_po`` into ``po``, message by message.
 
     A message keeps its translation, including its fuzzy flag, for as long as its
-    text and context are unchanged. Returns the number of reused translations.
+    text and context are unchanged. A fuzzy translation that is still the
+    English text is usually a failed machine translation, so it is not reused
+    and gets translated again; once a reviewer clears its fuzzy flag, it is kept.
+    Returns the number of reused translations.
     """
     if old_po is None:
         return 0
     previous = {
         (entry.msgctxt, entry.msgid): entry
         for entry in old_po
-        if entry.msgstr and not entry.obsolete
+        if entry.msgstr
+        and not entry.obsolete
+        and not (entry.fuzzy and entry.msgstr == entry.msgid)
     }
     n_reused = 0
     for i, entry in enumerate(po):
@@ -219,7 +225,28 @@ class TranslationBatch:
 
     file: Optional[str]
     entries: List[polib.POEntry]
-    examples: List[tuple[str, str]]
+    file_entries: List[polib.POEntry]
+    """All messages from the same file, including those of other batches."""
+
+    @property
+    def examples(self) -> List[tuple[str, str]]:
+        """
+        Translated messages from the same file, preferring those that share a
+        gettext context with the batch.
+
+        These are read when the batch is sent, so they include the translations
+        of earlier batches from the same file.
+        """
+        labels = {entry.msgctxt for entry in self.entries}
+        # A translation identical to its source is usually an English fallback;
+        # as an example it would invite the model to leave text untranslated.
+        translated = [
+            entry
+            for entry in self.file_entries
+            if entry.msgstr and entry.msgstr != entry.msgid
+        ]
+        translated.sort(key=lambda entry: entry.msgctxt not in labels)
+        return [(e.msgid, e.msgstr) for e in translated[:MAX_EXAMPLES]]
 
     def translate(self, source_lang, target_lang, continue_on_error, translator):
         texts = [entry.msgid for entry in self.entries]
@@ -253,9 +280,9 @@ def batch_untranslated(po: polib.POFile) -> List[TranslationBatch]:
     Group untranslated messages by source file, in source order.
 
     Each file is split into batches of at most ``MAX_BATCH_SIZE`` messages.
-    Translated messages from the same file are attached as examples, preferring
-    those that share a gettext context with the batch, so new translations stay
-    consistent with existing ones.
+    Each batch is sent with translated messages from the same file as examples
+    (see :attr:`TranslationBatch.examples`), so new translations stay consistent
+    with existing ones and with each other.
     """
     files = {}
     for entry in po:
@@ -265,20 +292,12 @@ def batch_untranslated(po: polib.POFile) -> List[TranslationBatch]:
     for file, entries in files.items():
         entries.sort(key=lambda entry: _line_number(entry) or 0)
         untranslated = [entry for entry in entries if not entry.msgstr]
-        # A translation identical to its source is usually an English fallback;
-        # as an example it would invite the model to leave text untranslated.
-        translated = [
-            entry for entry in entries if entry.msgstr and entry.msgstr != entry.msgid
-        ]
         for i in range(0, len(untranslated), MAX_BATCH_SIZE):
-            batch_entries = untranslated[i : i + MAX_BATCH_SIZE]
-            labels = {entry.msgctxt for entry in batch_entries}
-            examples = sorted(translated, key=lambda entry: entry.msgctxt not in labels)
             batches.append(
                 TranslationBatch(
                     file=file,
-                    entries=batch_entries,
-                    examples=[(e.msgid, e.msgstr) for e in examples[:MAX_EXAMPLES]],
+                    entries=untranslated[i : i + MAX_BATCH_SIZE],
+                    file_entries=entries,
                 )
             )
     return batches
@@ -307,18 +326,17 @@ def translate_po(
         old_po = polib.pofile(po_path) if os.path.exists(po_path) else None
         po = initialize_po(pot_path, po_path, target_lang)
         reuse_translations(po, old_po)
+        _save_po(po, po_path)
         batches = batch_untranslated(po)
 
         total_entries = sum(len(batch.entries) for batch in batches)
         for i, batch in enumerate(batches):
             spinner.text = f"{bold_language}: Translating batch {1 + i}/{len(batches)} ({batch.file}, {len(batch.entries)} of {total_entries} entries)."
             batch.translate(source_lang, target_lang, continue_on_error, translator)
+            # Saving after every batch keeps finished batches if the run stops early;
+            # the next run only sends what is still untranslated.
+            _save_po(po, po_path)
 
-        # Line numbers are only needed for sorting and prompts; they are not saved.
-        po = sort_po(po)
-        po = remove_line_numbers(po)
-
-        po.save(po_path)
         try:
             check_translations(locales=[target_lang], recreate_pot=False)
             # TODO TranslationCheckError
@@ -338,6 +356,12 @@ def translate_po(
             spinner.text = f"{bold_language}: No new text found to translate."
             spinner.ok("⚠️")
         return True
+
+
+def _save_po(po: polib.POFile, po_path: str):
+    """Save ``po`` sorted and without line numbers, leaving ``po`` itself unchanged."""
+    # Line numbers are only needed for sorting and prompts; they are not saved.
+    remove_line_numbers(sort_po(copy.deepcopy(po))).save(po_path)
 
 
 def initialize_po(pot_path, po_path, output_lang):

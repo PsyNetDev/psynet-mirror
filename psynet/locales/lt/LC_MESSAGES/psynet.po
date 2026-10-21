@@ -3374,6 +3374,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Pradedamas eksperimentas..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Šiuo metu dalyvauja daug žmonių."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Palikite šį puslapį atidarytą: prisijungsite automatiškai, kai tik atsiras "
+"vietos. Taip pat galite sugrįžti vėliau."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -5067,7 +5083,7 @@ msgstr "Bengalų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Bislama"
-msgstr "Bislama"
+msgstr "Bislamos"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5175,7 +5191,7 @@ msgstr "Čekų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Dogri"
-msgstr "Dogri"
+msgstr "Dogrų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5223,7 +5239,7 @@ msgstr "Estų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ewe"
-msgstr "Ewe"
+msgstr "Evių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5253,7 +5269,7 @@ msgstr "Prancūzų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Fulah"
-msgstr "Fulah"
+msgstr "Fulų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5265,7 +5281,7 @@ msgstr "Galisų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ganda"
-msgstr "Ganda"
+msgstr "Gandų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5325,7 +5341,7 @@ msgstr "Hebrajų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Herero"
-msgstr "Herero"
+msgstr "Hererų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5379,7 +5395,7 @@ msgstr "Indoneziečių"
 #, fuzzy
 msgctxt "language_name"
 msgid "Interlingua"
-msgstr "Interlingua"
+msgstr "Interlingvos"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5427,7 +5443,7 @@ msgstr "Javos"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kalaallisut"
-msgstr "Kalaallisut"
+msgstr "Kalaalisutų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5457,13 +5473,13 @@ msgstr "Kazachų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kikuyu"
-msgstr "Kikuyu"
+msgstr "Kikujų"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Kinyarwanda"
-msgstr "Kinyarwanda"
+msgstr "Kinyarvandų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5475,7 +5491,7 @@ msgstr "Kirghizų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Komi"
-msgstr "Komi"
+msgstr "Komių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5499,7 +5515,7 @@ msgstr "Korėjiečių"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kuanyama"
-msgstr "Kuanyama"
+msgstr "Kuanyamų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5511,7 +5527,7 @@ msgstr "Kurdų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "Laoso"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5535,7 +5551,7 @@ msgstr "Limburgo"
 #, fuzzy
 msgctxt "language_name"
 msgid "Lingala"
-msgstr "Lingala"
+msgstr "Lingalų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5547,7 +5563,7 @@ msgstr "Lietuvių"
 #, fuzzy
 msgctxt "language_name"
 msgid "Luba-Katanga"
-msgstr "Luba-Katanga"
+msgstr "Luba-Katangų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5565,7 +5581,7 @@ msgstr "Macedonų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Maithili"
-msgstr "Maithili"
+msgstr "Maitilių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5637,7 +5653,7 @@ msgstr "Mongolų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Nauru"
-msgstr "Nauru"
+msgstr "Nauriečių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5649,7 +5665,7 @@ msgstr "Navaho"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ndonga"
-msgstr "Ndonga"
+msgstr "Ndongų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5691,7 +5707,7 @@ msgstr "Norvegų Nynorsk"
 #, fuzzy
 msgctxt "language_name"
 msgid "Nyanja"
-msgstr "Nyanja"
+msgstr "Njanžų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5709,13 +5725,13 @@ msgstr "Odija"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ojibwa"
-msgstr "Ojibwa"
+msgstr "Odžibvų"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Oromo"
-msgstr "Oromo"
+msgstr "Oromų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5781,7 +5797,7 @@ msgstr "Retoromanų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Rundi"
-msgstr "Rundi"
+msgstr "Rundžių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5817,7 +5833,7 @@ msgstr "Sardinų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Santali"
-msgstr "Santali"
+msgstr "Santalių"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5985,13 +6001,13 @@ msgstr "Tigrajų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Tonga"
-msgstr "Tonga"
+msgstr "Tongų"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Tsonga"
-msgstr "Tsonga"
+msgstr "Tsongų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6033,7 +6049,7 @@ msgstr "Ukrainiečių"
 #, fuzzy
 msgctxt "language_name"
 msgid "Urdu"
-msgstr "Urdu"
+msgstr "Urdų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6093,7 +6109,7 @@ msgstr "Volofų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Xhosa"
-msgstr "Xhosa"
+msgstr "Kosų"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6117,4 +6133,4 @@ msgstr "Džuangų"
 #, fuzzy
 msgctxt "language_name"
 msgid "Zulu"
-msgstr "Zulu"
+msgstr "Zulų"

@@ -27,9 +27,9 @@ See `references/browser-and-dashboard.md` for default URLs and credential lookup
    Prepare paid variants per `references/recruiter-variants.md`. Prolific
    swaps `config.txt` only; Lucid `audio_gibbs` also copies
    `experiment.py.lucid`. Diff-check before deploy and inspect the running
-   container after launch — do not trust the git branch alone. Stagger
-   local prepare, then overlap remote builds — do not start all
-   `psynet deploy ssh` commands at once. Name branches and apps with the
+   container after launch — do not trust the git branch alone. Start
+   the `psynet deploy ssh` commands together so their remote builds
+   overlap. Name branches and apps with the
    PsyNet version from `pyproject.toml` (including alpha, e.g.
    `v13.4.0a0`), then the commit hash when the base is not that tag (see
    naming in `deploy-from-test-branch.md`).

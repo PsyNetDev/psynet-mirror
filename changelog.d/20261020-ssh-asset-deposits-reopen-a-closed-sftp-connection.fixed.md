@@ -1,0 +1,1 @@
+Fixed asset uploads to an SSH server failing with a closed-socket error after the SSH connection dropped or was closed earlier in the same Python process; PsyNet now opens a new SFTP connection instead of reusing the dead one.

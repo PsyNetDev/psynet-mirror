@@ -145,7 +145,7 @@ from .recruiters import (  # noqa: F401
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .static_resources import (
     apply_versioned_static_cache_headers,
     get_static_package_extra_files,
@@ -1340,10 +1340,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         logs_url = None
         if is_ssh_deployment:
-            logs_url = dozzle_url(
-                deployment_information.get("server"),
-                deployment_information.get("ingress"),
-            )
+            logs_url = recorded_dozzle_url(deployment_information)
 
         def unpack_export(deployment_id):
             exp = get_experiment()
@@ -2262,8 +2259,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "notifier": "logger",
             "leave_comments_on_every_page": False,
             "force_incognito_mode": False,
-            "openai_default_model": "gpt-4o",
-            "openai_default_temperature": 0,
+            "openai_default_model": "gpt-6-luna",
             "host": "0.0.0.0",
             "initial_recruitment_size": INITIAL_RECRUITMENT_SIZE,
             "label": cls.get_experiment_folder_name(),
@@ -2333,7 +2329,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 # We should probably update this behavior in the future.
                 value = serialize(value)
 
-            expected_type = config_types[key]
+            expected_type = config_types.get(key)
+            if expected_type is None:
+                message = f"{key} is not a valid configuration key."
+                if key in cls.config:
+                    message += (
+                        f" Remove it from {cls.__name__}.config, or use its new "
+                        "name if it was renamed."
+                    )
+                raise KeyError(message)
             value = expected_type(value)
 
             config[key] = value
@@ -4374,6 +4378,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
+        # No longer used; still registered so that config files that set them load.
         config.register("google_translate_json_path", str, sensitive=True)
         config.register("google_translate_project_id", str, sensitive=True)
         config.register("initial_recruitment_size", int)

@@ -1,0 +1,1 @@
+Removed Google Translate support from `psynet translate`, along with `GoogleTranslator` and `UnsupportedLanguageError`; use ChatGPT (`chat_gpt`, the default) instead. If you set `default_translator = google_translate`, remove that line. `google_translate_json_path` and `google_translate_project_id` are now ignored, so existing config files that set them still load.

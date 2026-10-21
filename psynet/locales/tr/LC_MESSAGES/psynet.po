@@ -3366,6 +3366,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Deney başlatılıyor..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Şu anda çok sayıda kişi katılıyor."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Lütfen bu sayfayı açık tutun: yer açılır açılmaz otomatik olarak "
+"katılacaksınız. Daha sonra tekrar da gelebilirsiniz."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3648,7 +3664,7 @@ msgstr "Britanya Hint Okyanusu Toprakları"
 #, fuzzy
 msgctxt "country_name"
 msgid "Brunei Darussalam"
-msgstr "Brunei Darussalam"
+msgstr "Brunei Darüsselam"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3984,7 +4000,7 @@ msgstr "Grenada"
 #, fuzzy
 msgctxt "country_name"
 msgid "Guadeloupe"
-msgstr "Guadeloupe"
+msgstr "Guadelup"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4302,7 +4318,7 @@ msgstr "Mauritius"
 #, fuzzy
 msgctxt "country_name"
 msgid "Mayotte"
-msgstr "Mayotte"
+msgstr "Mayot"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4554,13 +4570,13 @@ msgstr "Ruanda"
 #, fuzzy
 msgctxt "country_name"
 msgid "Réunion"
-msgstr "Réunion"
+msgstr "Reunion"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Barthélemy"
-msgstr "Saint Barthélemy"
+msgstr "Saint Barthelemy"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4770,7 +4786,7 @@ msgstr "Tayland"
 #, fuzzy
 msgctxt "country_name"
 msgid "Timor-Leste"
-msgstr "Timor-Leste"
+msgstr "Doğu Timor"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5370,13 +5386,13 @@ msgstr "Endonezce"
 #, fuzzy
 msgctxt "language_name"
 msgid "Interlingua"
-msgstr "Interlingua"
+msgstr "İnterlingua"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Interlingue"
-msgstr "Interlingue"
+msgstr "İnterlingue"
 
 #: psynet/translation/languages.py
 #, fuzzy

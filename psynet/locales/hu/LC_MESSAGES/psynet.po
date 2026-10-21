@@ -3387,6 +3387,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Kísérlet indítása..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Jelenleg sokan vesznek részt a kísérletben."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Kérjük, hagyja nyitva ezt az oldalt: amint felszabadul egy hely, "
+"automatikusan csatlakozhat. Később is visszatérhet."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3409,7 +3425,7 @@ msgstr "Megjegyzés küldése"
 #, fuzzy
 msgctxt "alert_ok"
 msgid "OK"
-msgstr "OK"
+msgstr "Rendben"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -4978,7 +4994,7 @@ msgstr "Afar"
 #, fuzzy
 msgctxt "language_name"
 msgid "Afrikaans"
-msgstr "Afrikaans"
+msgstr "Afrikánsz"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5080,7 +5096,7 @@ msgstr "Bengáli"
 #, fuzzy
 msgctxt "language_name"
 msgid "Bislama"
-msgstr "Bislama"
+msgstr "Biszlama"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5164,7 +5180,7 @@ msgstr "Korzika"
 #, fuzzy
 msgctxt "language_name"
 msgid "Cree"
-msgstr "Cree"
+msgstr "Krí"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5524,7 +5540,7 @@ msgstr "Kurd"
 #, fuzzy
 msgctxt "language_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "Laoszi"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5560,7 +5576,7 @@ msgstr "Litván"
 #, fuzzy
 msgctxt "language_name"
 msgid "Luba-Katanga"
-msgstr "Luba-Katanga"
+msgstr "Luba-katangai"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5614,7 +5630,7 @@ msgstr "Manipuri"
 #, fuzzy
 msgctxt "language_name"
 msgid "Manx"
-msgstr "Manx"
+msgstr "Manxi"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5704,7 +5720,7 @@ msgstr "Norvég Nynorsk"
 #, fuzzy
 msgctxt "language_name"
 msgid "Nyanja"
-msgstr "Nyanja"
+msgstr "Nyandzsa"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5722,7 +5738,7 @@ msgstr "Odia"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ojibwa"
-msgstr "Ojibwa"
+msgstr "Ojibva"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5812,7 +5828,7 @@ msgstr "Szamoai"
 #, fuzzy
 msgctxt "language_name"
 msgid "Sango"
-msgstr "Sango"
+msgstr "Szangó"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5854,7 +5870,7 @@ msgstr "Szerbhorvát"
 #, fuzzy
 msgctxt "language_name"
 msgid "Shona"
-msgstr "Shona"
+msgstr "Sona"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6106,7 +6122,7 @@ msgstr "Wolof"
 #, fuzzy
 msgctxt "language_name"
 msgid "Xhosa"
-msgstr "Xhosa"
+msgstr "Xhosza"
 
 #: psynet/translation/languages.py
 #, fuzzy

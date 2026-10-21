@@ -16,8 +16,9 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet setup``
      - Prepare a standalone experiment: files, ``constraints.txt``,
        packages and Git (see `Set up an experiment (setup)`_).
-   * - ``psynet services check`` / ``ensure``
-     - Check, or start in Docker, the local PostgreSQL and Redis
+   * - ``psynet services check`` / ``ensure`` / ``list``
+     - Check, or start in Docker, the local PostgreSQL and Redis, or list
+       which local sessions use them
        (see `Local PostgreSQL and Redis (services)`_).
    * - ``psynet scripts scaffold`` / ``update`` / ``prune``
      - Create, refresh or remove boilerplate files
@@ -127,8 +128,8 @@ it:
 
 Useful flags:
 
-* ``--no-install`` — do steps 1–2 only (write files and pin; ensure
-  constraints when missing or stale; do not install packages). After a
+* ``--no-install`` — skip step 3: write files, pin PsyNet, ensure
+  constraints and the Git repository, but do not install packages. After a
   full ``psynet setup``, use ``psynet debug local --docker`` or a Docker
   deploy command when you want Docker.
 * ``--force-shared-env`` — allow installing into the PsyNet repository's
@@ -160,9 +161,12 @@ offers a numeric menu: create a dedicated ``.venv`` here (recommended),
 cancel, write files only, or install into the repository ``.venv`` anyway.
 
 If the active environment is some other foreign virtualenv (not this
-experiment's ``./.venv``), setup still scaffolds and writes constraints, but
-refuses to ``uv pip sync`` into that environment unless you confirm
-interactively or pass ``--force-foreign-env``.
+experiment's ``./.venv``), setup still scaffolds, writes constraints and
+ensures the Git repository, but refuses to ``uv pip sync`` into that
+environment unless you confirm interactively or pass ``--force-foreign-env``.
+If you decline, setup prints the commands that create and use a dedicated
+``./.venv`` instead. Without a terminal to ask, it does the same and exits
+with status 1.
 
 In a demo inside a PsyNet source checkout, ``psynet setup`` only adds the
 boilerplate files; it never installs packages or rewrites requirements, so
@@ -190,6 +194,25 @@ that publish those host ports (``--yes`` skips the prompt). ``psynet debug``,
 ``psynet deploy``, and ``psynet test local`` call ``ensure`` automatically
 before launch or packaging, including SSH deployments that still prepare the
 experiment against local Postgres/Redis on this machine.
+
+When several experiments or test runs share a machine, ``psynet services list``
+shows the port, database, Redis server and directory of each of your running
+sessions, read from your PsyNet, Dallinger and pytest processes and the port
+locks they hold, followed by every local Redis server and database and the
+session that uses it. Use it to pick free settings before starting another
+session.
+
+.. code:: bash
+
+  psynet services list
+
+Isolated test and debug sessions drop their own databases when they end, so
+a ``<database>_test_<port>`` database (such as ``dallinger_test_5100``) with
+no session is left over from a killed session. Drop it with:
+
+.. code:: bash
+
+  PGPASSWORD=dallinger dropdb -h localhost -U dallinger dallinger_test_5100
 
 
 .. _scripts:

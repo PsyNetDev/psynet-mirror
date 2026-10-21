@@ -29,7 +29,7 @@ msgstr "Owesilisa"
 #, fuzzy
 msgctxt "gender"
 msgid "Non-binary"
-msgstr "Non-binary"
+msgstr "Ongaziboni njengowesilisa noma owesifazane"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -3405,6 +3405,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Ukuqala ukuhlola..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Baningi abantu ababamba iqhaza njengamanje."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Sicela ugcine leli khasi livuliwe: uzojoyina ngokuzenzakalelayo lapho nje "
+"sekuba nesikhala. Ungabuya futhi kamuva."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3496,1489 +3512,1489 @@ msgstr "Sicela ulinde, ucwaningo luzoqhubeka ngokushesha..."
 #, fuzzy
 msgctxt "country_name"
 msgid "Afghanistan"
-msgstr "Afghanistan"
+msgstr "i-Afghanistan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Albania"
-msgstr "Albania"
+msgstr "i-Albania"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Algeria"
-msgstr "Algeria"
+msgstr "i-Algeria"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "American Samoa"
-msgstr "American Samoa"
+msgstr "iSamoa yaseMelika"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Andorra"
-msgstr "Andorra"
+msgstr "i-Andorra"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Angola"
-msgstr "Angola"
+msgstr "i-Angola"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Anguilla"
-msgstr "Anguilla"
+msgstr "i-Anguilla"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Antarctica"
-msgstr "Antarctica"
+msgstr "i-Antarctica"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Antigua and Barbuda"
-msgstr "Antigua and Barbuda"
+msgstr "i-Antigua ne-Barbuda"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Argentina"
-msgstr "Argentina"
+msgstr "i-Argentina"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Armenia"
-msgstr "Armenia"
+msgstr "i-Armenia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Aruba"
-msgstr "Aruba"
+msgstr "i-Aruba"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Australia"
-msgstr "Australia"
+msgstr "i-Australia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Austria"
-msgstr "Austria"
+msgstr "i-Austria"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Azerbaijan"
-msgstr "Azerbaijan"
+msgstr "i-Azerbaijan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bahamas"
-msgstr "Bahamas"
+msgstr "i-Bahamas"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bahrain"
-msgstr "Bahrain"
+msgstr "i-Bahrain"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bangladesh"
-msgstr "Bangladesh"
+msgstr "i-Bangladesh"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Barbados"
-msgstr "Barbados"
+msgstr "i-Barbados"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Belarus"
-msgstr "Belarus"
+msgstr "i-Belarus"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Belgium"
-msgstr "Belgium"
+msgstr "i-Belgium"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Belize"
-msgstr "Belize"
+msgstr "i-Belize"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Benin"
-msgstr "Benin"
+msgstr "i-Benin"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bermuda"
-msgstr "Bermuda"
+msgstr "i-Bermuda"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bhutan"
-msgstr "Bhutan"
+msgstr "i-Bhutan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bolivia"
-msgstr "Bolivia"
+msgstr "i-Bolivia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bonaire, Sint Eustatius and Saba"
-msgstr "Bonaire, Sint Eustatius and Saba"
+msgstr "i-Bonaire, iSint Eustatius neSaba"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bosnia and Herzegovina"
-msgstr "Bosnia and Herzegovina"
+msgstr "i-Bosnia ne-Herzegovina"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Botswana"
-msgstr "Botswana"
+msgstr "i-Botswana"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bouvet Island"
-msgstr "Bouvet Island"
+msgstr "i-Bouvet Island"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Brazil"
-msgstr "Brazil"
+msgstr "i-Brazil"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "British Indian Ocean Territory"
-msgstr "British Indian Ocean Territory"
+msgstr "i-British Indian Ocean Territory"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Brunei Darussalam"
-msgstr "Brunei Darussalam"
+msgstr "i-Brunei Darussalam"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Bulgaria"
-msgstr "Bulgaria"
+msgstr "i-Bulgaria"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Burkina Faso"
-msgstr "Burkina Faso"
+msgstr "i-Burkina Faso"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Burundi"
-msgstr "Burundi"
+msgstr "i-Burundi"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cabo Verde"
-msgstr "Cabo Verde"
+msgstr "i-Cabo Verde"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cambodia"
-msgstr "Cambodia"
+msgstr "i-Cambodia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cameroon"
-msgstr "Cameroon"
+msgstr "i-Cameroon"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Canada"
-msgstr "Canada"
+msgstr "i-Canada"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cayman Islands"
-msgstr "Cayman Islands"
+msgstr "i-Cayman Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Central African Republic"
-msgstr "Central African Republic"
+msgstr "i-Central African Republic"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Chad"
-msgstr "Chad"
+msgstr "i-Chad"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Chile"
-msgstr "Chile"
+msgstr "i-Chile"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "China"
-msgstr "China"
+msgstr "i-China"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Christmas Island"
-msgstr "Christmas Island"
+msgstr "i-Christmas Island"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cocos  Islands"
-msgstr "Cocos  Islands"
+msgstr "i-Cocos Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Colombia"
-msgstr "Colombia"
+msgstr "i-Colombia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Comoros"
-msgstr "Comoros"
+msgstr "i-Comoros"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Congo"
-msgstr "Congo"
+msgstr "i-Congo"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Congo (Democratic Republic)"
-msgstr "Congo (Democratic Republic)"
+msgstr "i-Congo (Democratic Republic)"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cook Islands"
-msgstr "Cook Islands"
+msgstr "i-Cook Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Costa Rica"
-msgstr "Costa Rica"
+msgstr "i-Costa Rica"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Croatia"
-msgstr "Croatia"
+msgstr "i-Croatia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cuba"
-msgstr "Cuba"
+msgstr "i-Cuba"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Curaçao"
-msgstr "Curaçao"
+msgstr "i-Curaçao"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Cyprus"
-msgstr "Cyprus"
+msgstr "i-Cyprus"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Czechia"
-msgstr "Czechia"
+msgstr "i-Czechia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Côte d'Ivoire"
-msgstr "Côte d'Ivoire"
+msgstr "i-Côte d'Ivoire"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Denmark"
-msgstr "Denmark"
+msgstr "i-Denmark"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Djibouti"
-msgstr "Djibouti"
+msgstr "i-Djibouti"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Dominica"
-msgstr "Dominica"
+msgstr "i-Dominica"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Dominican Republic"
-msgstr "Dominican Republic"
+msgstr "i-Dominican Republic"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Ecuador"
-msgstr "Ecuador"
+msgstr "i-Ecuador"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Egypt"
-msgstr "Egypt"
+msgstr "i-Egypt"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "El Salvador"
-msgstr "El Salvador"
+msgstr "i-El Salvador"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Equatorial Guinea"
-msgstr "Equatorial Guinea"
+msgstr "i-Equatorial Guinea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Eritrea"
-msgstr "Eritrea"
+msgstr "i-Eritrea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Estonia"
-msgstr "Estonia"
+msgstr "i-Estonia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Eswatini"
-msgstr "Eswatini"
+msgstr "i-Eswatini"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Ethiopia"
-msgstr "Ethiopia"
+msgstr "i-Ethiopia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Falkland Islands (Malvinas)"
-msgstr "Falkland Islands (Malvinas)"
+msgstr "i-Falkland Islands (Malvinas)"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Faroe Islands"
-msgstr "Faroe Islands"
+msgstr "i-Faroe Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Fiji"
-msgstr "Fiji"
+msgstr "i-Fiji"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Finland"
-msgstr "Finland"
+msgstr "i-Finland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "France"
-msgstr "France"
+msgstr "i-France"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "French Guiana"
-msgstr "French Guiana"
+msgstr "i-French Guiana"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "French Polynesia"
-msgstr "French Polynesia"
+msgstr "i-French Polynesia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "French Southern Territories"
-msgstr "French Southern Territories"
+msgstr "i-French Southern Territories"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Gabon"
-msgstr "Gabon"
+msgstr "i-Gabon"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Gambia"
-msgstr "Gambia"
+msgstr "i-Gambia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Georgia"
-msgstr "Georgia"
+msgstr "i-Georgia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Germany"
-msgstr "Germany"
+msgstr "i-Germany"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Ghana"
-msgstr "Ghana"
+msgstr "i-Ghana"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Gibraltar"
-msgstr "Gibraltar"
+msgstr "i-Gibraltar"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Greece"
-msgstr "Greece"
+msgstr "i-Greece"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Greenland"
-msgstr "Greenland"
+msgstr "i-Greenland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Grenada"
-msgstr "Grenada"
+msgstr "i-Grenada"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guadeloupe"
-msgstr "Guadeloupe"
+msgstr "i-Guadeloupe"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guam"
-msgstr "Guam"
+msgstr "i-Guam"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guatemala"
-msgstr "Guatemala"
+msgstr "i-Guatemala"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guernsey"
-msgstr "Guernsey"
+msgstr "i-Guernsey"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guinea"
-msgstr "Guinea"
+msgstr "i-Guinea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guinea-Bissau"
-msgstr "Guinea-Bissau"
+msgstr "i-Guinea-Bissau"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Guyana"
-msgstr "Guyana"
+msgstr "i-Guyana"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Haiti"
-msgstr "Haiti"
+msgstr "i-Haiti"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Heard Island and McDonald Islands"
-msgstr "Heard Island and McDonald Islands"
+msgstr "i-Heard Island ne-McDonald Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Vatican City State"
-msgstr "Vatican City State"
+msgstr "i-Vatican City State"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Honduras"
-msgstr "Honduras"
+msgstr "i-Honduras"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Hong Kong"
-msgstr "Hong Kong"
+msgstr "i-Hong Kong"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Hungary"
-msgstr "Hungary"
+msgstr "i-Hungary"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Iceland"
-msgstr "Iceland"
+msgstr "i-Iceland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "India"
-msgstr "India"
+msgstr "i-India"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Indonesia"
-msgstr "Indonesia"
+msgstr "i-Indonesia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Iran"
-msgstr "Iran"
+msgstr "i-Iran"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Iraq"
-msgstr "Iraq"
+msgstr "i-Iraq"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Ireland"
-msgstr "Ireland"
+msgstr "i-Ireland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Isle of Man"
-msgstr "Isle of Man"
+msgstr "i-Isle of Man"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Israel"
-msgstr "Israel"
+msgstr "i-Israel"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Italy"
-msgstr "Italy"
+msgstr "i-Italy"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Jamaica"
-msgstr "Jamaica"
+msgstr "i-Jamaica"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Japan"
-msgstr "Japan"
+msgstr "i-Japan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Jersey"
-msgstr "Jersey"
+msgstr "i-Jersey"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Jordan"
-msgstr "Jordan"
+msgstr "i-Jordan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Kazakhstan"
-msgstr "Kazakhstan"
+msgstr "i-Kazakhstan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Kenya"
-msgstr "Kenya"
+msgstr "i-Kenya"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Kiribati"
-msgstr "Kiribati"
+msgstr "i-Kiribati"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "North Korea"
-msgstr "North Korea"
+msgstr "i-North Korea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "South Korea"
-msgstr "South Korea"
+msgstr "i-South Korea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Kuwait"
-msgstr "Kuwait"
+msgstr "i-Kuwait"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Kyrgyzstan"
-msgstr "Kyrgyzstan"
+msgstr "i-Kyrgyzstan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "i-Lao"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Latvia"
-msgstr "Latvia"
+msgstr "i-Latvia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Lebanon"
-msgstr "Lebanon"
+msgstr "i-Lebanon"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Lesotho"
-msgstr "Lesotho"
+msgstr "i-Lesotho"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Liberia"
-msgstr "Liberia"
+msgstr "i-Liberia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Libya"
-msgstr "Libya"
+msgstr "i-Libya"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Liechtenstein"
-msgstr "Liechtenstein"
+msgstr "i-Liechtenstein"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Lithuania"
-msgstr "Lithuania"
+msgstr "i-Lithuania"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Luxembourg"
-msgstr "Luxembourg"
+msgstr "i-Luxembourg"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Macao"
-msgstr "Macao"
+msgstr "i-Macao"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Madagascar"
-msgstr "Madagascar"
+msgstr "i-Madagascar"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Malawi"
-msgstr "Malawi"
+msgstr "i-Malawi"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Malaysia"
-msgstr "Malaysia"
+msgstr "i-Malaysia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Maldives"
-msgstr "Maldives"
+msgstr "i-Maldives"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mali"
-msgstr "Mali"
+msgstr "i-Mali"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Malta"
-msgstr "Malta"
+msgstr "i-Malta"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Marshall Islands"
-msgstr "Marshall Islands"
+msgstr "i-Marshall Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Martinique"
-msgstr "Martinique"
+msgstr "i-Martinique"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mauritania"
-msgstr "Mauritania"
+msgstr "i-Mauritania"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mauritius"
-msgstr "Mauritius"
+msgstr "i-Mauritius"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mayotte"
-msgstr "Mayotte"
+msgstr "i-Mayotte"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mexico"
-msgstr "Mexico"
+msgstr "i-Mexico"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Micronesia"
-msgstr "Micronesia"
+msgstr "i-Micronesia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Moldova"
-msgstr "Moldova"
+msgstr "i-Moldova"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Monaco"
-msgstr "Monaco"
+msgstr "i-Monaco"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mongolia"
-msgstr "Mongolia"
+msgstr "i-Mongolia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Montenegro"
-msgstr "Montenegro"
+msgstr "i-Montenegro"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Montserrat"
-msgstr "Montserrat"
+msgstr "i-Montserrat"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Morocco"
-msgstr "Morocco"
+msgstr "i-Morocco"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Mozambique"
-msgstr "Mozambique"
+msgstr "i-Mozambique"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Myanmar"
-msgstr "Myanmar"
+msgstr "i-Myanmar"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Namibia"
-msgstr "Namibia"
+msgstr "i-Namibia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Nauru"
-msgstr "Nauru"
+msgstr "i-Nauru"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Nepal"
-msgstr "Nepal"
+msgstr "i-Nepal"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Netherlands"
-msgstr "Netherlands"
+msgstr "i-Netherlands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "New Caledonia"
-msgstr "New Caledonia"
+msgstr "i-New Caledonia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "New Zealand"
-msgstr "New Zealand"
+msgstr "i-New Zealand"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Nicaragua"
-msgstr "Nicaragua"
+msgstr "i-Nicaragua"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Niger"
-msgstr "Niger"
+msgstr "i-Niger"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Nigeria"
-msgstr "Nigeria"
+msgstr "i-Nigeria"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Niue"
-msgstr "Niue"
+msgstr "i-Niue"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Norfolk Island"
-msgstr "Norfolk Island"
+msgstr "i-Norfolk Island"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "North Macedonia"
-msgstr "North Macedonia"
+msgstr "i-North Macedonia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Northern Mariana Islands"
-msgstr "Northern Mariana Islands"
+msgstr "i-Northern Mariana Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Norway"
-msgstr "Norway"
+msgstr "i-Norway"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Oman"
-msgstr "Oman"
+msgstr "i-Oman"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Pakistan"
-msgstr "Pakistan"
+msgstr "i-Pakistan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Palau"
-msgstr "Palau"
+msgstr "i-Palau"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Palestine"
-msgstr "Palestine"
+msgstr "i-Palestine"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Panama"
-msgstr "Panama"
+msgstr "i-Panama"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Papua New Guinea"
-msgstr "Papua New Guinea"
+msgstr "i-Papua New Guinea"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Paraguay"
-msgstr "Paraguay"
+msgstr "i-Paraguay"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Peru"
-msgstr "Peru"
+msgstr "i-Peru"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Philippines"
-msgstr "Philippines"
+msgstr "i-Philippines"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Pitcairn"
-msgstr "Pitcairn"
+msgstr "i-Pitcairn"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Poland"
-msgstr "Poland"
+msgstr "i-Poland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Portugal"
-msgstr "Portugal"
+msgstr "i-Portugal"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Puerto Rico"
-msgstr "Puerto Rico"
+msgstr "i-Puerto Rico"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Qatar"
-msgstr "Qatar"
+msgstr "i-Qatar"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Romania"
-msgstr "Romania"
+msgstr "i-Romania"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Russian Federation"
-msgstr "Russian Federation"
+msgstr "i-Russian Federation"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Rwanda"
-msgstr "Rwanda"
+msgstr "i-Rwanda"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Réunion"
-msgstr "Réunion"
+msgstr "i-Réunion"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Barthélemy"
-msgstr "Saint Barthélemy"
+msgstr "i-Saint Barthélemy"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Helena, Ascension and Tristan da Cunha"
-msgstr "Saint Helena, Ascension and Tristan da Cunha"
+msgstr "i-Saint Helena, Ascension ne-Tristan da Cunha"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Kitts and Nevis"
-msgstr "Saint Kitts and Nevis"
+msgstr "i-Saint Kitts ne-Nevis"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Lucia"
-msgstr "Saint Lucia"
+msgstr "i-Saint Lucia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Pierre and Miquelon"
-msgstr "Saint Pierre and Miquelon"
+msgstr "i-Saint Pierre ne-Miquelon"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Vincent and the Grenadines"
-msgstr "Saint Vincent and the Grenadines"
+msgstr "i-Saint Vincent nama-Grenadines"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Samoa"
-msgstr "Samoa"
+msgstr "iSamoa"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "San Marino"
-msgstr "San Marino"
+msgstr "i-San Marino"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sao Tome and Principe"
-msgstr "Sao Tome and Principe"
+msgstr "i-Sao Tome ne-Principe"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Saudi Arabia"
-msgstr "Saudi Arabia"
+msgstr "i-Saudi Arabia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Senegal"
-msgstr "Senegal"
+msgstr "i-Senegal"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Serbia"
-msgstr "Serbia"
+msgstr "i-Serbia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Seychelles"
-msgstr "Seychelles"
+msgstr "i-Seychelles"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sierra Leone"
-msgstr "Sierra Leone"
+msgstr "i-Sierra Leone"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Singapore"
-msgstr "Singapore"
+msgstr "i-Singapore"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sint Maarten"
-msgstr "Sint Maarten"
+msgstr "i-Sint Maarten"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Slovakia"
-msgstr "Slovakia"
+msgstr "i-Slovakia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Slovenia"
-msgstr "Slovenia"
+msgstr "i-Slovenia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Solomon Islands"
-msgstr "Solomon Islands"
+msgstr "i-Solomon Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Somalia"
-msgstr "Somalia"
+msgstr "i-Somalia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "South Africa"
-msgstr "South Africa"
+msgstr "iNingizimu Afrika"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "South Georgia and the South Sandwich Islands"
-msgstr "South Georgia and the South Sandwich Islands"
+msgstr "i-South Georgia ne-South Sandwich Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "South Sudan"
-msgstr "South Sudan"
+msgstr "i-South Sudan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Spain"
-msgstr "Spain"
+msgstr "i-Spain"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sri Lanka"
-msgstr "Sri Lanka"
+msgstr "i-Sri Lanka"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sudan"
-msgstr "Sudan"
+msgstr "i-Sudan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Suriname"
-msgstr "Suriname"
+msgstr "i-Suriname"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Svalbard and Jan Mayen"
-msgstr "Svalbard and Jan Mayen"
+msgstr "i-Svalbard ne-Jan Mayen"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Sweden"
-msgstr "Sweden"
+msgstr "i-Sweden"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Switzerland"
-msgstr "Switzerland"
+msgstr "i-Switzerland"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Syria"
-msgstr "Syria"
+msgstr "i-Syria"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Taiwan"
-msgstr "Taiwan"
+msgstr "i-Taiwan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tajikistan"
-msgstr "Tajikistan"
+msgstr "i-Tajikistan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tanzania"
-msgstr "Tanzania"
+msgstr "i-Tanzania"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Thailand"
-msgstr "Thailand"
+msgstr "i-Thailand"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Timor-Leste"
-msgstr "Timor-Leste"
+msgstr "i-Timor-Leste"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Togo"
-msgstr "Togo"
+msgstr "i-Togo"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tokelau"
-msgstr "Tokelau"
+msgstr "i-Tokelau"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tonga"
-msgstr "Tonga"
+msgstr "i-Tonga"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Trinidad and Tobago"
-msgstr "Trinidad and Tobago"
+msgstr "i-Trinidad ne-Tobago"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tunisia"
-msgstr "Tunisia"
+msgstr "i-Tunisia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Turkey"
-msgstr "Turkey"
+msgstr "i-Turkey"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Turkmenistan"
-msgstr "Turkmenistan"
+msgstr "i-Turkmenistan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Turks and Caicos Islands"
-msgstr "Turks and Caicos Islands"
+msgstr "i-Turks ne-Caicos Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Tuvalu"
-msgstr "Tuvalu"
+msgstr "i-Tuvalu"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Uganda"
-msgstr "Uganda"
+msgstr "i-Uganda"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Ukraine"
-msgstr "Ukraine"
+msgstr "i-Ukraine"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "United Arab Emirates"
-msgstr "United Arab Emirates"
+msgstr "i-United Arab Emirates"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "United Kingdom"
-msgstr "United Kingdom"
+msgstr "i-United Kingdom"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "United States"
-msgstr "United States"
+msgstr "i-United States"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "United States Minor Outlying Islands"
-msgstr "United States Minor Outlying Islands"
+msgstr "i-United States Minor Outlying Islands"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Uruguay"
-msgstr "Uruguay"
+msgstr "i-Uruguay"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Uzbekistan"
-msgstr "Uzbekistan"
+msgstr "i-Uzbekistan"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Vanuatu"
-msgstr "Vanuatu"
+msgstr "i-Vanuatu"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Venezuela"
-msgstr "Venezuela"
+msgstr "i-Venezuela"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Vietnam"
-msgstr "Vietnam"
+msgstr "i-Vietnam"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Virgin Islands (British)"
-msgstr "Virgin Islands (British)"
+msgstr "i-Virgin Islands zaseBrithani"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Virgin Islands (U.S.)"
-msgstr "Virgin Islands (U.S.)"
+msgstr "i-Virgin Islands zase-U.S."
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Wallis and Futuna"
-msgstr "Wallis and Futuna"
+msgstr "i-Wallis ne-Futuna"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Western Sahara"
-msgstr "Western Sahara"
+msgstr "iSahara yaseNtshonalanga"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Yemen"
-msgstr "Yemen"
+msgstr "i-Yemen"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Zambia"
-msgstr "Zambia"
+msgstr "i-Zambia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Zimbabwe"
-msgstr "Zimbabwe"
+msgstr "i-Zimbabwe"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Åland Islands"
-msgstr "Åland Islands"
+msgstr "i-Åland Islands"
 
 #: psynet/translation/languages.py
 #, fuzzy

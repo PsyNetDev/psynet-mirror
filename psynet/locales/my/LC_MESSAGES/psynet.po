@@ -2748,7 +2748,7 @@ msgstr "ညာဘက်အပေါ်ထောင့်တွင် More ကိ
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid "New Incognito Window"
-msgstr "New Incognito Window"
+msgstr "Incognito window အသစ်"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -3430,6 +3430,22 @@ msgstr "ကိုးကားကုဒ်"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "စမ်းသပ်မှုကို စတင်နေသည်..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "လက်ရှိတွင် လူအများအပြား ပါဝင်နေကြပါသည်။"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"နေရာလွတ်ရသည်နှင့် အလိုအလျောက် ပါဝင်နိုင်မည်ဖြစ်သောကြောင့် ဤစာမျက်နှာကို "
+"ဖွင့်ထားပါ။ နောက်မှလည်း ပြန်လာနိုင်ပါသည်။"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy

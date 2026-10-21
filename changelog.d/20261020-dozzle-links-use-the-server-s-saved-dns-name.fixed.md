@@ -1,0 +1,1 @@
+Fixed Dozzle log viewer links in Slack launch notifications, the deployment monitor and `psynet destroy ssh` / `psynet performance-test ssh` messages pointing at `https://logs.<--server>` when the server's DNS name differs, for example for a server registered by IP address or selected by a short name. The links now follow where the installed Dallinger serves Dozzle.

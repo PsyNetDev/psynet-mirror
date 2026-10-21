@@ -1,0 +1,1 @@
+`psynet translate` now works with OpenAI models that only accept their default temperature, such as gpt-6-luna. When the API rejects `openai_default_temperature`, the request is sent again without it, and later requests for that model leave it out.

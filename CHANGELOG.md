@@ -778,7 +778,7 @@
   and ``url`` columns only if the deployment is still running.
 - Added a `playwright-testing` experiment skill that owns participant-flow Playwright walks and `psynetLayout.check()` layout checks. Experiment authors find it under `.cursor/skills/psynet/playwright-testing` after `psynet scripts update`.
 - Fixed documentation links that ``psynet dev docs linkcheck`` reported as broken: internal pages now use Sphinx ``:doc:`` roles, and 404ing, missing-anchor, bot-blocked, or TLS-failing URLs now point at current official pages or are ignored only when the official page still works in a browser.
-- Updated the deployment-test skill (version-first naming, staggered prepares, running-container inspect) and abort ``audio_gibbs`` Lucid and Prolific launch if the configured recruiter does not match that variant.
+- Updated the deployment-test skill (version-first naming, running-container inspect) and abort ``audio_gibbs`` Lucid and Prolific launch if the configured recruiter does not match that variant.
 - The PsyNet 14 upgrade checklist now includes recruiter configuration, leave and error-recovery APIs, and changed participant-theme defaults.
 - Documented how timeline holds resume on ``GET /timeline`` versus ``POST /response``, including last-arrival traces and the invariants tests must witness. Playwright hold-release tests log overlay linger and fail only if it exceeds a 30-second hung-overlay cap.
 - Stopped the Sphinx docs build from failing on Flask ``make_response`` autodoc and SQLAlchemy's inherited ``cache_ok`` reference.

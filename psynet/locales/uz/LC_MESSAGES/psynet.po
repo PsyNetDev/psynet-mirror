@@ -3417,6 +3417,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Tajriba boshlanmoqda..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Hozir ko‘p odamlar ishtirok etmoqda."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Iltimos, bu sahifani ochiq qoldiring: joy bo‘shashi bilan avtomatik ravishda"
+" ishtirok etasiz. Keyinroq qaytib kelishingiz ham mumkin."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3439,7 +3455,7 @@ msgstr "Izohni yuboring"
 #, fuzzy
 msgctxt "alert_ok"
 msgid "OK"
-msgstr "OK"
+msgstr "Xo‘p"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -4822,7 +4838,7 @@ msgstr "Tailand"
 #, fuzzy
 msgctxt "country_name"
 msgid "Timor-Leste"
-msgstr "Timor-Leste"
+msgstr "Sharqiy Timor"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5008,7 +5024,7 @@ msgstr "Afar tili"
 #, fuzzy
 msgctxt "language_name"
 msgid "Afrikaans"
-msgstr "Afrikaans"
+msgstr "Afrikaans tili"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5254,7 +5270,7 @@ msgstr "Ingliz tili"
 #, fuzzy
 msgctxt "language_name"
 msgid "Esperanto"
-msgstr "Esperanto"
+msgstr "Esperanto tili"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5422,13 +5438,13 @@ msgstr "Indonez tili"
 #, fuzzy
 msgctxt "language_name"
 msgid "Interlingua"
-msgstr "Interlingua"
+msgstr "Interlingua tili"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Interlingue"
-msgstr "Interlingue"
+msgstr "Interlingue tili"
 
 #: psynet/translation/languages.py
 #, fuzzy

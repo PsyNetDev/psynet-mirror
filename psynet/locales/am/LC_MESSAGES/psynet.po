@@ -3178,6 +3178,20 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "ሙከራን በመጀመር ላይ..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "በአሁኑ ጊዜ ብዙ ሰዎች እየተሳተፉ ነው።"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr "እባክዎ ይህን ገጽ ክፍት ያቆዩ፤ ቦታ እንደተገኘ በራስ-ሰር ይቀላቀላሉ። በኋላም መመለስ ይችላሉ።"
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3483,7 +3497,7 @@ msgstr "ቡሩንዲ"
 #, fuzzy
 msgctxt "country_name"
 msgid "Cabo Verde"
-msgstr "Cabo Verde"
+msgstr "ኬፕ ቨርዴ"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5793,7 +5807,7 @@ msgstr "ቶንጋ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Tsonga"
-msgstr "Tsonga"
+msgstr "ጾንጋ"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5859,7 +5873,7 @@ msgstr "ቪትናሜሴ"
 #, fuzzy
 msgctxt "language_name"
 msgid "Volapük"
-msgstr "Volapük"
+msgstr "ቮላፒክ"
 
 #: psynet/translation/languages.py
 #, fuzzy

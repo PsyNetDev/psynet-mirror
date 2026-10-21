@@ -3355,6 +3355,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "प्रयोग आरम्भ भ' रहल अछि..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "एखन बहुत लोक एहि में भाग ल' रहल छथि।"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"कृपया एहि पृष्ठ केँ खुलल राखू: जगह उपलब्ध होइतहि अहाँ स्वतः शामिल भ' जाएब। "
+"अहाँ बादो में फेर आबि सकैत छी।"
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
