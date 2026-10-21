@@ -5007,10 +5007,20 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
     assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
 
 
-def test_isolated_wrapper_without_a_terminal_passes_sigint_on(tmp_path):
-    """An agent's SIGINT to the wrapper alone must still stop the child."""
-    pid_file = tmp_path / "child.pid"
-    child = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+@pytest.mark.parametrize("target", ["pid", "group"])
+def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(tmp_path, target):
+    """An agent's SIGINT to the wrapper reaches the child exactly once."""
+    pid_file, count_file = tmp_path / "child.pid", tmp_path / "count"
+    child = (
+        "import os, signal, time\n"
+        "got = []\n"
+        "signal.signal(signal.SIGINT, lambda *args: got.append(1))\n"
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        "while not got:\n"
+        "    time.sleep(0.05)\n"
+        "time.sleep(0.5)\n"
+        f"open({str(count_file)!r}, 'w').write(str(len(got)))\n"
+    )
     wrapper = (
         "import sys\n"
         "from unittest.mock import MagicMock, Mock, patch\n"
@@ -5035,9 +5045,12 @@ def test_isolated_wrapper_without_a_terminal_passes_sigint_on(tmp_path):
             time.sleep(0.1)
         pids.append(int(pid_file.read_text()))
 
-        process.send_signal(signal.SIGINT)
-        assert process.wait(timeout=30) != 0
-        assert not psutil.pid_exists(pids[1])
+        if target == "pid":
+            os.kill(process.pid, signal.SIGINT)
+        else:
+            os.killpg(process.pid, signal.SIGINT)
+        assert process.wait(timeout=30) == 130
+        assert count_file.read_text() == "1"
     finally:
         for pid in pids:
             with contextlib.suppress(ProcessLookupError):
@@ -5045,19 +5058,18 @@ def test_isolated_wrapper_without_a_terminal_passes_sigint_on(tmp_path):
 
 
 def test_a_foreground_terminal_job_gets_ctrl_c_directly():
-    import pexpect
-
-    check = pexpect.spawn(
-        sys.executable,
-        [
-            "-c",
-            "from psynet.command_line import _ctrl_c_reaches_this_process_group as f; "
-            "print(f())",
-        ],
-        timeout=30,
+    # pexpect runs in a fresh process, because forking this multi-threaded one can deadlock.
+    script = (
+        "import sys, pexpect\n"
+        "check = pexpect.spawn(sys.executable, ['-c', 'from psynet.command_line "
+        "import _ctrl_c_reaches_this_process_group as f; print(f())'], timeout=30)\n"
+        "check.expect(pexpect.EOF)\n"
+        "print(check.before.decode().strip())\n"
     )
-    check.expect(pexpect.EOF)
-    assert check.before.strip().endswith(b"True")
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    assert result.stdout.strip().endswith("True"), result.stderr
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
