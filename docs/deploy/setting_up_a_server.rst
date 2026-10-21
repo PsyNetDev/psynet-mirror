@@ -234,10 +234,11 @@ running still needs the public key in its ``authorized_keys``.
 Docker image name
 ^^^^^^^^^^^^^^^^^
 
-``psynet debug ssh`` and ``psynet deploy ssh`` build the image on the server
-and do not push it, so you need neither ``docker_image_base_name`` nor a
-Docker registry account. The image is named after the app (``--app``). If
-you do set ``docker_image_base_name``, it names the image instead.
+``psynet debug ssh``, ``psynet deploy ssh`` and ``psynet performance-test
+ssh`` build the image on the server and do not push it, so you need neither
+``docker_image_base_name`` nor a Docker registry account. The image is named
+after the app (``--app``), or ``psynet-experiment`` without one. If you do set
+``docker_image_base_name``, it names the image instead.
 
 A registry is needed only if you push images, for example with
 ``psynet deploy heroku --docker``; see :ref:`docker_registry`.

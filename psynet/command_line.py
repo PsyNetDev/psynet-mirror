@@ -2401,7 +2401,7 @@ def _invoke_docker_ssh_deploy(
         "server": server,
         "dns_host": dns_host,
         "app_name": app,
-        "config_options": {**_default_image_base_name(app), **(config_options or {})},
+        "config_options": config_options or {},
         "archive_path": None,
         "update": bool(update),
     }
@@ -2410,6 +2410,7 @@ def _invoke_docker_ssh_deploy(
         kwargs["ingress"] = ingress
     if "show_summary" in params:
         kwargs["show_summary"] = dallinger_summary
+    _default_image_base_name(app)
     output = io.StringIO()
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
@@ -2421,28 +2422,25 @@ def _invoke_docker_ssh_deploy(
 
 
 def _default_image_base_name(app):
-    """Return a ``docker_image_base_name`` config option for an SSH deploy.
+    """Name an SSH deploy's image after the app if ``docker_image_base_name`` is unset.
 
     PsyNet's SSH deploys build the image on the server and never push it, so
-    any valid Docker repository name works. If the setting is unset, name the
-    image after the app. Dallinger versions with Dallinger#10166 do this
-    themselves; remove this once PsyNet pins one.
+    any valid Docker repository name works. The name goes on the loaded
+    config, not into ``config_options``: the pinned Dallinger reads it before
+    applying those. Dallinger versions with Dallinger#10166 fall back to the
+    app name themselves; remove this once PsyNet pins one.
 
     Parameters
     ----------
     app : str or None
         The ``--app`` name, which ``verify_id`` limits to ``a-z``, ``0-9``
-        and ``-``.
-
-    Returns
-    -------
-    dict
-        ``{}`` if ``docker_image_base_name`` is set, otherwise
-        ``{"docker_image_base_name": <name>}``.
+        and ``-``. Without one, the image is named ``psynet-experiment``.
     """
-    if get_config(load=True).get("docker_image_base_name", None):
-        return {}
-    return {"docker_image_base_name": (app or "").strip("-") or "psynet-experiment"}
+    config = get_config(load=True)
+    if not config.get("docker_image_base_name", None):
+        config.set(
+            "docker_image_base_name", (app or "").strip("-") or "psynet-experiment"
+        )
 
 
 def _participant_link(result, output):
