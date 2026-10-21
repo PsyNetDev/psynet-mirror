@@ -5007,12 +5007,22 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
     assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
 
 
-@pytest.mark.parametrize("target", ["pid", "group"])
-def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(tmp_path, target):
-    """An agent's SIGINT to the wrapper reaches the child exactly once."""
+@pytest.mark.parametrize(
+    "target, started_with_sigint_ignored",
+    [("pid", False), ("group", False), ("pid", True)],
+)
+def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(
+    tmp_path, target, started_with_sigint_ignored
+):
+    """An agent's SIGINT to the wrapper reaches the child exactly once.
+
+    That includes a wrapper started in the background by a script, which
+    starts with SIGINT ignored.
+    """
     pid_file, count_file = tmp_path / "child.pid", tmp_path / "count"
     child = (
         "import os, signal, time\n"
+        "assert signal.getsignal(signal.SIGINT) is signal.default_int_handler\n"
         "got = []\n"
         "signal.signal(signal.SIGINT, lambda *args: got.append(1))\n"
         f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
@@ -5022,17 +5032,21 @@ def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(tmp_path, tar
         f"open({str(count_file)!r}, 'w').write(str(len(got)))\n"
     )
     wrapper = (
-        "import sys\n"
+        "import signal, sys\n"
+        # As a non-interactive shell starts a background job.
+        f"if {started_with_sigint_ignored}:\n"
+        "    signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
         "from unittest.mock import MagicMock, Mock, patch\n"
-        "from psynet.command_line import _rerun_in_isolated_environment\n"
+        "from psynet.command_line import _in_isolated_test_environment\n"
         "environment = MagicMock(env={})\n"
         "environment.__enter__.return_value = environment\n"
         f"sys.orig_argv = ['python', '-c', {child!r}]\n"
         "with patch('psynet.command_line._check_experiment_directory'), "
         "patch('psynet.services.ensure_local_services'), "
+        "patch('psynet.isolated_environment.should_isolate', return_value=True), "
         "patch('psynet.isolated_environment.IsolatedEnvironment.start', "
         "return_value=environment):\n"
-        "    _rerun_in_isolated_environment()\n"
+        "    _in_isolated_test_environment(lambda: None)()\n"
     )
     process = subprocess.Popen(
         [sys.executable, "-c", wrapper], cwd=tmp_path, start_new_session=True

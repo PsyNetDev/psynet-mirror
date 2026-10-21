@@ -1061,6 +1061,7 @@ def _debug_in_isolated_environment_if_requested(func):
     def wrapper(*args, **kwargs):
         from .isolated_environment import READY_ENV_VAR
 
+        _handle_sigint_even_if_ignored()
         if kwargs["isolated"] and not os.environ.get(READY_ENV_VAR):
             if kwargs["docker"]:
                 raise click.UsageError(
@@ -1583,6 +1584,19 @@ def _other_develop_folder_patterns(develop_path):
     ]
     patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
     return patterns
+
+
+def _handle_sigint_even_if_ignored():
+    """Make SIGINT raise ``KeyboardInterrupt`` even if this process started with it ignored.
+
+    A non-interactive shell starts background jobs (``psynet debug local &``
+    in a script) with SIGINT ignored. Python then never raises
+    ``KeyboardInterrupt``, and the processes it starts inherit the ignored
+    signal, so ``kill -INT`` wouldn't stop the session. Must be called from
+    the main thread.
+    """
+    if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 @contextmanager
@@ -5621,6 +5635,7 @@ def _in_isolated_test_environment(func):
             should_isolate,
         )
 
+        _handle_sigint_even_if_ignored()
         if not kwargs.get("existing"):
             try:
                 isolate = should_isolate()
@@ -5731,8 +5746,10 @@ def _rerun_in_isolated_environment(mode="test"):
     reach the child as SIGTERM. If this process is the foreground job of a
     terminal, Ctrl+C reaches the child directly. Otherwise (for example if it
     has no terminal, as when an agent runs it), the child runs in its own
-    process group and SIGINT is passed on to that group. A second signal kills
-    the child. The database and Redis are removed when the child exits.
+    process group and SIGINT is passed on to that group; a SIGINT that arrives
+    after this process stopped being the foreground job is passed on to the
+    child. A second signal kills the child. The database and Redis are removed
+    when the child exits.
 
     Parameters
     ----------
@@ -5794,6 +5811,12 @@ def _rerun_in_isolated_environment(mode="test"):
                     # macOS reports EPERM for a group that only has zombies left.
                     with suppress(ProcessLookupError, PermissionError):
                         os.killpg(process.pid, signal.SIGINT)
+                elif not _ctrl_c_reaches_this_process_group():
+                    # Started as a terminal's foreground job but no longer one
+                    # (say the script that started it in the background has
+                    # exited), so this SIGINT wasn't a Ctrl+C the child also got.
+                    with suppress(ProcessLookupError):
+                        process.send_signal(signal.SIGINT)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):
