@@ -4768,6 +4768,40 @@ def test_pre_launch_aborts_when_app_exists():
     mock_run_pre_checks.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "ingress, expected", [(None, "lab.example.org"), ("cloudflare", None)]
+)
+def test_pre_launch_records_the_server_dns_host(ingress, expected):
+    from psynet.command_line import _pre_launch
+
+    hosts = {"lab": {"host": "1.2.3.4", "user": "u"}}
+    with (
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line._check_ssh_deploy_credentials"),
+        patch("psynet.command_line.deployment_info.init"),
+        patch("psynet.command_line.deployment_info.write") as write,
+        patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
+        patch("psynet.command_line._abort_if_app_exists"),
+        patch("psynet.command_line.run_pre_checks", side_effect=click.Abort),
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+    ):
+        with pytest.raises(click.Abort):
+            _pre_launch(
+                Mock(),
+                mode="live",
+                archive=None,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server="lab",
+                app="study",
+                ingress=ingress,
+                dns_host="lab.example.org",
+            )
+
+    assert write.call_args.kwargs["server_dns_host"] == expected
+
+
 @pytest.mark.parametrize("dallinger_has_check", [True, False])
 @pytest.mark.parametrize(
     "command, args",
@@ -6728,7 +6762,7 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
 @pytest.mark.parametrize(
     "default_ingress, services, compose_status, logs",
     [
-        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.musix)"),
+        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.lab)"),
         (
             "classic",
             "  web:\n  cloudflared:\n",

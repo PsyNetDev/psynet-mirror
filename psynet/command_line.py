@@ -84,8 +84,10 @@ from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
 from .serialize import serialize, unserialize
 from .server_logs import (
+    INGRESS_CLASSIC,
     compose_ingress,
     logs_command,
+    server_dns_host,
     server_ingress,
     where_to_read_logs,
 )
@@ -1978,13 +1980,15 @@ def _pre_launch(
     assume_yes=False,
     performance_test_app=False,
     ingress=None,
+    dns_host=None,
 ):
     """Check and prepare the experiment directory before a launch.
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``ingress`` is the SSH deploy's
-    ``--ingress`` option; the resolved ingress is recorded in ``deployment_info``.
+    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
+    the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
+    ingress and the server's DNS name are recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
@@ -2027,10 +2031,16 @@ def _pre_launch(
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
         _abort_if_app_exists(server, app, update=update)
+        resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
             ssh_user=ssh_user,
-            ingress=server_ingress(server_info, ingress),
+            ingress=resolved_ingress,
+            server_dns_host=(
+                server_dns_host(server_info, dns_host)
+                if resolved_ingress == INGRESS_CLASSIC
+                else None
+            ),
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:
@@ -2270,6 +2280,7 @@ def deploy__docker_ssh(
             update=update,
             assume_yes=assume_yes,
             ingress=ingress,
+            dns_host=dns_host,
         )
 
         from dallinger.command_line.docker_ssh import (
@@ -3049,6 +3060,7 @@ def _debug_ssh(
             assume_yes=assume_yes,
             performance_test_app=performance_test_app,
             ingress=ingress,
+            dns_host=dns_host,
         )
         config_options = {"debug_ssh_app": "true"}
         if performance_test_app:

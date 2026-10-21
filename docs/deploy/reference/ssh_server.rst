@@ -85,7 +85,7 @@ data or run ``prepare``. Until a server default is changed, omitting
 ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
 app at its public name rather than ``https://<app>.<ssh-host>``.
 
-Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server>`` exists
+Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS name>`` exists
 only on servers with classic ingress. Read a Cloudflare app's logs with the
 ``ssh … docker compose … logs -f`` command printed at the end of the
 deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
@@ -185,7 +185,7 @@ All classic apps share these services, defined in ``~/dallinger/docker-compose.y
 - ``postgresql``, which holds one database for each app;
 - ``httpserver``, a `Caddy <https://caddyserver.com/>`_ server that routes
   each address to its app and obtains HTTPS certificates;
-- ``dozzle``, the log viewer at ``https://logs.<dns-host>``.
+- ``dozzle``, the log viewer at ``https://logs.<server DNS name>``.
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
