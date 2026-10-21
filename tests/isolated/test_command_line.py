@@ -7043,6 +7043,42 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, sta
         time.sleep(0.1)
 
 
+def test_ctrl_c_stops_a_server_in_its_own_session_without_waiting(tmp_path):
+    """Ctrl-C can't reach such a child, and a resource tracker never exits on it."""
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess\n"
+        "from multiprocessing import resource_tracker\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "resource_tracker.ensure_running()\n"
+        "with _stop_child_processes_on_signal():\n"
+        "    child = subprocess.Popen(['sleep', '60'], start_new_session=True)\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "    child.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    started = time.monotonic()
+    parent.send_signal(signal.SIGINT)
+    assert parent.wait(timeout=30) == -signal.SIGINT
+    # The handler waits 3 s for children that the Ctrl-C reached.
+    assert time.monotonic() - started < 3
+    assert not psutil.pid_exists(child_pid) or (
+        psutil.Process(child_pid).status() == psutil.STATUS_ZOMBIE
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="needs POSIX signals")
 @pytest.mark.parametrize("signum, status", [("SIGINT", 1), ("SIGTERM", 143)])
 def test_a_signalled_command_that_imports_the_experiment_fails(signum, status):

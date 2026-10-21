@@ -488,6 +488,9 @@ def ensure_local_services(
 ) -> bool:
     """Check local services and optionally start them with Docker.
 
+    Prints one line if both services are running, and each service's status
+    otherwise.
+
     Parameters
     ----------
     assume_yes :
@@ -503,17 +506,17 @@ def ensure_local_services(
     # Only within an isolated session, so a stray export can't hide stopped services.
     if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
         return True
-    if remote_launch:
-        click.echo(
-            "Checking PostgreSQL and Redis on this computer "
-            "(needed to prepare the remote launch)..."
-        )
-    else:
-        click.echo("Checking local PostgreSQL and Redis...")
     checks = check_local_services()
-    all_ok = report_service_checks(checks)
-    if all_ok:
+    if remote_launch:
+        services = "PostgreSQL and Redis on this computer"
+        purpose = " (needed to prepare the remote launch)"
+    else:
+        services, purpose = "local PostgreSQL and Redis", ""
+    if all(check.ok for check in checks):
+        click.echo(f"{services[0].upper()}{services[1:]}{purpose}: OK.")
         return True
+    click.echo(f"Checking {services}{purpose}...")
+    report_service_checks(checks)
 
     if not assume_yes:
         if not _is_interactive():

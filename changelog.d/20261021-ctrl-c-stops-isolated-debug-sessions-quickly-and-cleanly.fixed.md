@@ -1,0 +1,1 @@
+Ctrl+C now stops `psynet debug local --isolated` in about 2 seconds instead of about 10, and without the screens of Redis connection tracebacks that the worker and clock printed after the session's own Redis server was stopped too early.

@@ -99,6 +99,13 @@ def test_ensure_local_services_explains_remote_launch_use(monkeypatch, capsys):
     assert "needed to prepare the remote launch" in capsys.readouterr().out
 
 
+def test_ensure_local_services_prints_one_line_when_healthy(monkeypatch, capsys):
+    monkeypatch.setattr("psynet.services.check_local_services", _ok_checks)
+    monkeypatch.delenv("_PSYNET_LOCAL_SERVICES_CHECKED", raising=False)
+    assert ensure_local_services() is True
+    assert capsys.readouterr().out == "Local PostgreSQL and Redis: OK.\n"
+
+
 def test_verify_local_services_soft_warns(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
     assert verify_local_services(strict=False) is False

@@ -135,6 +135,22 @@ If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the
 smallest version that still fails when you ask for help.
 
+See PsyNet's detailed log messages
+----------------------------------
+
+By default the server log shows warnings, errors and important events, such
+as the experiment launching and recruitment decisions. PsyNet logs routine
+steps at DEBUG level, for example which node a trial maker selected for a
+participant, each evaluation of a while loop's condition, each received
+response and the timings of requests that took less than a second. To show
+them too, add this to ``experiment.py``:
+
+.. code-block:: python
+
+    import logging
+
+    logging.getLogger("psynet").setLevel(logging.DEBUG)
+
 Inspect the experiment in the dashboard
 ---------------------------------------
 

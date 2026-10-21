@@ -1,6 +1,7 @@
 import configparser
 import inspect
 import json
+import logging
 import os
 import re
 import shutil
@@ -194,6 +195,14 @@ from .utils import (
 )
 
 logger = get_logger()
+
+# Requests at least this slow log their phase timings at INFO; faster ones at DEBUG.
+_SLOW_REQUEST_MS = 1000
+
+
+def _request_timing_log_level(total_ms):
+    """Return the log level for a request timing line that took ``total_ms``."""
+    return logging.INFO if total_ms >= _SLOW_REQUEST_MS else logging.DEBUG
 
 
 database_template_path = ".deploy/database_template.zip"
@@ -1040,6 +1049,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         # This log message is used by the testing logic to identify when the experiment has been launched
         logger.info("Experiment launch complete!")
+
+    def log(self, text, key="?????", force=False):
+        """Log ``text`` at INFO on the ``psynet`` logger, prefixed with ``key``.
+
+        Replaces Dallinger's version, which prints to stdout, so that messages
+        such as recruiter notifications get the server's log format and level.
+
+        Parameters
+        ----------
+        text : str
+            The message.
+        key : str
+            A short tag shown before the message.
+        force : bool
+            Log even if ``self.verbose`` is false.
+        """
+        if force or self.verbose:
+            logger.info("%s %s", key, text)
 
     @classproperty
     def creation_time(cls):  # noqa
@@ -2911,7 +2938,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         need_more = False
         for i, criterion in enumerate(self.recruitment_criteria):
-            logger.info(
+            logger.debug(
                 "Evaluating recruitment criterion %i/%i...",
                 i + 1,
                 len(self.recruitment_criteria),
@@ -3658,7 +3685,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ``**kwargs`` or this argument.
         """
         _p = get_translator(context=True)
-        logger.info(
+        logger.debug(
             f"Received a response from participant {participant_id} on page {page_uuid}."
         )
         # Ordinary Next submits wait up to ``timeline_lock_timeout_seconds``.
@@ -6887,6 +6914,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Attach ``Server-Timing`` phases and log GET /timeline duration.
 
+        The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
+
         ``lock`` is the participant ``FOR UPDATE`` load. ``page`` is
         ``get_current_page`` through the first commit. ``barriers`` is hold
         skip plus last-arrival checks. ``render`` is the HTML or JSON body.
@@ -6896,7 +6925,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ("lock", "page", "barriers", "render"), phases, total_ms
         )
         flask_response = cls._attach_server_timing(response, metrics)
-        logger.info(
+        logger.log(
+            _request_timing_log_level(total_ms),
             "GET /timeline timing participant=%s pid=%s "
             "lock_ms=%s page_ms=%s barriers_ms=%s render_ms=%s "
             "total_ms=%.0f mode=%s",
@@ -6926,6 +6956,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Attach ``Server-Timing`` and log POST /response phase durations.
 
+        The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
+
         ``process`` is ``process_response``. ``barriers`` is queued last-arrival
         work. ``render`` includes inplace prepare plus fragment rendering.
         Unclosed phases are omitted rather than reported as zero.
@@ -6934,7 +6966,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ("process", "barriers", "render"), phases, total_ms
         )
         flask_response = cls._attach_server_timing(response, metrics)
-        logger.info(
+        logger.log(
+            _request_timing_log_level(total_ms),
             "POST /response timing participant=%s hold_resume=%s inplace=%s pid=%s "
             "process_ms=%s barriers_ms=%s render_ms=%s total_ms=%.0f "
             "barrier_checks=%s page=%s submission=%s",
@@ -7261,7 +7294,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         string = f"[CLIENT {participant.id}]: {message}"
 
         if level == "info":
-            logger.info(string)
+            # Browsers send several of these per page.
+            logger.debug(string)
         elif level == "warning":
             logger.warning(string)
         elif level == "error":

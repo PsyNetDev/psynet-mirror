@@ -1466,12 +1466,22 @@ def _stop_child_processes_on_signal():
     """
 
     def handler(signum, frame):
-        children = psutil.Process().children(recursive=True)
+        # Multiprocessing's helpers ignore these signals and exit with this
+        # process, so waiting for them would only delay the shutdown.
+        children = [
+            child
+            for child in psutil.Process().children(recursive=True)
+            if not _is_multiprocessing_helper(child)
+        ]
         if signum == signal.SIGINT:
-            # A terminal Ctrl-C has usually reached the children already, and a
-            # second signal makes Dallinger's worker do a cold shutdown, which
-            # prints a traceback.
-            _, children = psutil.wait_procs(children, timeout=3)
+            # A terminal Ctrl-C has usually reached the children in this
+            # process group already, and a second signal makes Dallinger's
+            # worker do a cold shutdown, which prints a traceback. Children in
+            # their own session, like the server of newer Dallinger versions,
+            # don't get it, so they are stopped straight away.
+            reached = [child for child in children if _in_own_process_group(child)]
+            _, still_running = psutil.wait_procs(reached, timeout=3)
+            children = still_running + [c for c in children if c not in reached]
         for child in children:
             try:
                 child.terminate()
@@ -1489,6 +1499,26 @@ def _stop_child_processes_on_signal():
     finally:
         for sig, previous_handler in previous.items():
             signal.signal(sig, previous_handler)
+
+
+def _in_own_process_group(process):
+    """Return whether ``process`` is in this process's group (and still exists)."""
+    try:
+        return os.getpgid(process.pid) == os.getpgrp()
+    except OSError:
+        return False
+
+
+def _is_multiprocessing_helper(process):
+    """Return whether ``process`` is a ``multiprocessing`` resource tracker or fork server."""
+    try:
+        command = " ".join(process.cmdline())
+    except psutil.Error:
+        return False
+    return any(
+        f"from multiprocessing.{module} import main" in command
+        for module in ("resource_tracker", "forkserver")
+    )
 
 
 def _reloader_exclude_patterns():

@@ -329,7 +329,7 @@ def wait_while(
                 participant=participant,
                 experiment=experiment,
             )
-            logger.info(
+            logger.debug(
                 "Evaluating timeline hold (%s) condition: result = %s",
                 label,
                 result,

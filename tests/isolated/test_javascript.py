@@ -360,6 +360,35 @@ def test_timeline_timing_omits_unclosed_phases():
     assert "render;" not in header
 
 
+@pytest.mark.parametrize("total_ms, level", [(100.0, "DEBUG"), (1500.0, "INFO")])
+def test_only_slow_requests_log_their_timing_at_info(caplog, total_ms, level):
+    from flask import Flask, make_response
+
+    from psynet.experiment import Experiment
+
+    with Flask(__name__).app_context(), caplog.at_level("DEBUG", logger="psynet"):
+        Experiment._apply_timeline_timing(
+            make_response("ok"),
+            participant_id=1,
+            phases={},
+            total_ms=total_ms,
+            mode=None,
+        )
+    [record] = [r for r in caplog.records if "GET /timeline timing" in r.message]
+    assert record.levelname == level
+
+
+def test_experiment_log_uses_the_psynet_logger(caplog, capsys):
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    with caplog.at_level("INFO", logger="psynet"):
+        Experiment.log(SimpleNamespace(verbose=True), "Participant 1 done.", "-----")
+    assert "----- Participant 1 done." in caplog.messages
+    assert capsys.readouterr().out == ""
+
+
 def test_html_timeline_lock_timeout_returns_html_busy_page(monkeypatch):
     import sqlalchemy
     from flask import Flask

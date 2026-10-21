@@ -434,6 +434,10 @@ def _flush_redis_database(redis_url):
 def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
+    The server runs in its own session, so a Ctrl+C in the terminal doesn't
+    stop it before the experiment's server processes, which still need it
+    while they shut down. The caller must stop it.
+
     Raises
     ------
     RuntimeError
@@ -447,6 +451,7 @@ def start_redis_server(port):
         + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         deadline = time.monotonic() + 10
