@@ -109,9 +109,12 @@ def local_project_identity(experiment_class) -> ProjectIdentity:
 def server_project_identity() -> dict:
     """Describe the running experiment, for the export preflight response.
 
-    Runs inside the deployed experiment.
+    Runs inside the deployed experiment. The Git provenance comes from the
+    running image's deployment info, which ``--update`` rewrites, rather than
+    from the experiment variables recorded at launch.
     """
     from psynet import __version__ as psynet_version
+    from psynet import deployment_info
     from psynet.experiment import get_experiment
 
     try:
@@ -120,12 +123,19 @@ def server_project_identity() -> dict:
         dallinger_version = None
 
     experiment = get_experiment()
+    image_info = deployment_info.read_all() if deployment_info.is_available() else {}
+
+    def provenance(key):
+        if key in image_info:
+            return image_info[key]
+        return experiment.var.get(key, None)
+
     return {
         "experiment_label": experiment.label,
         "deployment_id": experiment.deployment_id,
-        "git_commit_sha": experiment.var.get("git_commit_sha", None),
-        "git_dirty": experiment.var.get("git_dirty", None),
-        "git_dirty_paths": experiment.var.get("git_dirty_paths", None),
+        "git_commit_sha": provenance("git_commit_sha"),
+        "git_dirty": provenance("git_dirty"),
+        "git_dirty_paths": provenance("git_dirty_paths"),
         "psynet_version": psynet_version,
         "dallinger_version": dallinger_version,
         "export_format_version": EXPORT_FORMAT_VERSION,
