@@ -1,0 +1,1 @@
+`psynet translate` now lists a text once in the translation template when it is used in several files, for example in both a Python file and an HTML template. Previously each copy was translated separately, and when the copies got different translations the catalog check failed with an empty error message; that message now names the text and both translations.

@@ -189,7 +189,7 @@ def create_pot(input_path: str, pot_path):
             raise ValueError("Input file must be a Python or HTML file.")
 
         pot = new_pot(pot_path)
-        pot.extend(entries)
+        pot.extend(_merge_duplicate_entries(entries))
 
         pot = sort_po(pot)
         pot = make_file_paths_relative(pot)
@@ -223,6 +223,28 @@ def create_pot(input_path: str, pot_path):
         sp.ok("✅")
 
     return pot
+
+
+def _merge_duplicate_entries(entries):
+    """Merge entries with the same context and text into one entry with all their occurrences.
+
+    pybabel extracts the HTML templates and xgettext each Python file separately,
+    so a text used in several of them comes back once per extraction.
+    """
+    merged = {}
+    for entry in entries:
+        key = (entry.msgctxt, entry.msgid)
+        if key in merged:
+            first = merged[key]
+            first.occurrences.extend(entry.occurrences)
+            first.flags.extend(flag for flag in entry.flags if flag not in first.flags)
+        else:
+            merged[key] = entry
+    for entry in merged.values():
+        entry.occurrences.sort(
+            key=lambda occurrence: (occurrence[0], int(occurrence[1]))
+        )
+    return list(merged.values())
 
 
 def _get_entries_from_dir(input_path, sp):
@@ -289,9 +311,10 @@ def po_to_dict(po):
         key = (entry.msgid, entry.msgctxt)
         if key in entries_dict:
             old_entry = entries_dict[key]
-            assert old_entry.msgid == entry.msgid
-            assert old_entry.msgctxt == entry.msgctxt
-            assert old_entry.msgstr == entry.msgstr
+            assert old_entry.msgstr == entry.msgstr, (
+                f"{entry.msgid!r} (context {entry.msgctxt!r}) appears twice with "
+                f"different translations: {old_entry.msgstr!r} and {entry.msgstr!r}."
+            )
         else:
             entries_dict[key] = entry
     return entries_dict
