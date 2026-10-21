@@ -76,6 +76,50 @@ def test_crashed_item_counts_as_failure(tmp_path, monkeypatch):
     assert "scaffold vanished" in results[0].output
 
 
+def test_sigterm_stops_running_tests_and_closes_the_slots(tmp_path):
+    import signal
+    import subprocess
+    import sys
+
+    import psutil
+
+    pid_file, closed_file = tmp_path / "test.pid", tmp_path / "closed"
+    test = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    script = (
+        "import os, pathlib, sys\n"
+        "from psynet.dev import ci_tests\n"
+        "class Slot:\n"
+        "    def __init__(self, index):\n"
+        "        self.index, self.env = index, dict(os.environ)\n"
+        "    def close(self):\n"
+        f"        open({str(closed_file)!r}, 'w').close()\n"
+        "ci_tests._Slot = Slot\n"
+        "ci_tests._run_item = lambda item, slot, *args: ci_tests._run("
+        f"[sys.executable, '-c', {test!r}], slot.env)\n"
+        "items = [ci_tests.SuiteItem('sleeps', 'isolated', estimate=1)]\n"
+        f"ci_tests.run_items(items, 1, 60, None, '3.13', pathlib.Path({str(tmp_path)!r}))\n"
+    )
+    runner = subprocess.Popen([sys.executable, "-c", script])
+    pids = [runner.pid]
+    try:
+        deadline = time.monotonic() + 60
+        while not pid_file.exists() or not pid_file.read_text():
+            assert runner.poll() is None and time.monotonic() < deadline
+            time.sleep(0.1)
+        pids.append(int(pid_file.read_text()))
+
+        runner.send_signal(signal.SIGTERM)
+        assert runner.wait(timeout=30) == 128 + signal.SIGTERM
+        assert not psutil.pid_exists(pids[1])
+        assert closed_file.exists()
+    finally:
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
 def test_shard_fails_when_an_item_has_no_result(tmp_path, monkeypatch):
     items = [SuiteItem("lost", "isolated", estimate=1)]
     monkeypatch.setattr(ci_tests, "collect_items", lambda scope, durations: items)

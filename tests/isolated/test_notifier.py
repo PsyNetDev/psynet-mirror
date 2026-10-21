@@ -38,7 +38,8 @@ def test_logger_notifier_leaves_local_dashboard_details_to_the_banner(
     with caplog.at_level(logging.INFO):
         _DemoNotifier().on_launch()
 
-    assert 'Launched experiment "Demo" (`abc`) locally' in caplog.text
+    assert 'Launched experiment "Demo" locally' in caplog.text
+    assert "abc" not in caplog.text
     assert "Password:" not in caplog.text
 
 

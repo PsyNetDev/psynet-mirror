@@ -187,16 +187,25 @@ def _junit_args(item, junit_dir, python_version):
     ]
 
 
+_running = set()
+
+
 def _run(cmd, env, cwd=None):
-    completed = subprocess.run(
+    """Run ``cmd`` and return its exit code and output, tracking it in ``_running``."""
+    with subprocess.Popen(
         cmd,
         env=env,
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-    )
-    return completed.returncode, completed.stdout
+    ) as process:
+        _running.add(process)
+        try:
+            output = process.communicate()[0]
+        finally:
+            _running.discard(process)
+    return process.returncode, output
 
 
 def _run_item(item, slot, timeout, junit_dir, python_version):
@@ -273,21 +282,28 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
                 if code != 0:
                     print(f"----- output of {item.path} -----\n{output}", flush=True)
 
+    from psynet.command_line import _exit_on_termination_signal
+
     slots = []
     threads = []
     try:
-        for index in range(n_slots):
-            slots.append(_Slot(index))
-        threads = [threading.Thread(target=worker, args=(slot,)) for slot in slots]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-    except BaseException:
-        # On Ctrl+C the terminal also interrupts the running pytest processes;
-        # emptying the queue stops workers from starting new ones.
+        with _exit_on_termination_signal():
+            for index in range(n_slots):
+                slots.append(_Slot(index))
+            threads = [threading.Thread(target=worker, args=(slot,)) for slot in slots]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+    except BaseException as e:
+        # Emptying the queue stops workers from starting new items. Ctrl+C in
+        # the terminal also interrupts the running pytest processes; SIGTERM
+        # and SIGHUP reach only this process, so they are passed on.
         with lock:
             queue.clear()
+        if not isinstance(e, KeyboardInterrupt):
+            for process in _running.copy():
+                process.terminate()
         for thread in threads:
             thread.join()
         raise

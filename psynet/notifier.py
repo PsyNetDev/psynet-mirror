@@ -96,7 +96,7 @@ class Notifier:
             msg = f"@{username} launched experiment "
         else:
             msg = "Launched experiment "
-        msg += f'"{self.exp.label}" (`{self.deployment_information["secret"]}`)'
+        msg += f'"{self.exp.label}"'
         if self.deployment_information["is_local_deployment"]:
             msg = f"{msg} locally"
         elif self.deployment_information["is_ssh_deployment"]:
