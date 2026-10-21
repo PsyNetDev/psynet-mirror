@@ -116,7 +116,7 @@ link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
 An update (see `Updating a running app`_) doesn't recruit again, so it shows
 the participant link or recruiter's message saved when the app was deployed
-from this computer; without that record, it says the link is unchanged.
+from this computer; without that record, it says that recruitment is unchanged.
 The log viewer row appears for apps with classic ingress.
 Passwords are not printed; they are saved in ``launch-info.json`` together
 with the other details. With older Dallinger versions, Dallinger's own
@@ -288,8 +288,8 @@ for example in a script or another session without a terminal, add ``--yes``::
 
     psynet debug ssh --app your-app-name --server your-server --update --yes
 
-Without a terminal, PsyNet stops with an error unless you pass ``--yes``. The
-update keeps:
+Without a terminal, PsyNet reads the answer from standard input, and stops
+with an error asking for ``--yes`` if there is none. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;

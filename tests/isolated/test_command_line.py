@@ -379,6 +379,8 @@ class TestCommandLine(object):
         assert "secret" not in result.output.split("Ready:")[1]
         assert launch_info.stat().st_mode & 0o777 == 0o600
         assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
+        saved = json.loads(launch_info.read_text())
+        assert saved["participant_link"] == "https://my-app.example.org/ad?mode=live"
 
     @pytest.mark.parametrize(
         "recorded, shown",
@@ -396,10 +398,7 @@ class TestCommandLine(object):
             ),
             (
                 None,
-                [
-                    "  Participant link: unchanged; shown when the app was first "
-                    "deployed"
-                ],
+                ["  Recruitment:      unchanged; see the first deploy's output"],
             ),
         ],
     )
@@ -433,21 +432,6 @@ class TestCommandLine(object):
         saved = json.loads(launch_info.read_text())
         assert {key: saved[key] for key in recorded or ()} == (recorded or {})
         assert pre_launch.call_args.kwargs["confirm_update"] is False
-
-    @pytest.mark.parametrize("command", ["deploy", "debug"])
-    def test_ssh_update_without_a_terminal_needs_yes(
-        self, monkeypatch, tmp_path, command
-    ):
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / "experiment.py").touch()
-        result, pre_launch = _invoke_stubbed_ssh_command(Mock(), command, "--update")
-
-        assert result.exit_code == 1
-        assert result.output.splitlines()[-1] == (
-            "Error: Confirmation needed to rebuild and restart my-app on host, "
-            "keeping its database; re-run with --yes."
-        )
-        pre_launch.assert_not_called()
 
     @pytest.mark.parametrize(
         "recruitment_msg",
@@ -1908,7 +1892,6 @@ def test_performance_test_deploys_mark_the_app(capsys):
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
-    assert pre_launch.call_args.kwargs["confirm_update"] is False
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
     assert "Ready:" not in capsys.readouterr().out
 
@@ -2268,6 +2251,23 @@ def test_ssh_update_refuses_unsafe_updates(
     monkeypatch.setattr("psynet.command_line.user_confirms", lambda *a, **k: confirmed)
     with pytest.raises(error, match=message):
         _check_ssh_update("musix", "consonance", "live")
+
+
+def test_ssh_update_without_an_answer_needs_yes(monkeypatch, capsys):
+    from psynet.command_line import _check_ssh_update
+
+    running = {"deployment_id": "d", "secret": "s", "mode": "sandbox"}
+    monkeypatch.setattr(
+        "psynet.command_line._read_running_deployment_info", lambda *a: running
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    with pytest.raises(click.ClickException) as error:
+        _check_ssh_update("musix", "consonance", "sandbox")
+    assert error.value.message == (
+        "Confirmation needed to rebuild and restart consonance on musix, "
+        "keeping its database; re-run with --yes."
+    )
+    assert capsys.readouterr().out.endswith("[Y/n]: \n")
 
 
 def test_scripts_update_installs_managed_skills_and_preserves_user_skills():
@@ -4970,7 +4970,7 @@ def test_pre_launch_records_the_server_dns_host(ingress, expected):
     "command, args",
     [
         ("deploy__docker_ssh", ["--app", "test-app"]),
-        ("deploy__docker_ssh", ["--app", "test-app", "--update", "--yes"]),
+        ("deploy__docker_ssh", ["--app", "test-app", "--update"]),
         ("debug__docker_ssh", ["--app", "test-app"]),
         ("performance_test__docker_ssh", ["--app", "test-app"]),
     ],

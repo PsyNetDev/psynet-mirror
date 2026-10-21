@@ -2002,7 +2002,9 @@ def _check_ssh_update(server, app, mode, confirm=True):
     mode : str
         ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
     confirm : bool
-        Ask the user to confirm the update first.
+        Ask the user to confirm the update first. Without a terminal, the
+        answer is read from stdin; if there is none, the error says to pass
+        ``--yes``.
     """
     try:
         running = _read_running_deployment_info(server, app)
@@ -2018,14 +2020,25 @@ def _check_ssh_update(server, app, mode, confirm=True):
             f"{app} was created with `{original}`. Update it with "
             f"`{original} --app {app} --update`."
         )
-    if confirm and not user_confirms(
-        f"This rebuilds and restarts {app} on {server}, keeping its database. "
-        "Participants may see a short interruption. New assets are not deposited, "
-        "and networks and pre-deploy routines are not run again. Don't change the "
-        "timeline while participants are still taking part. Continue?",
-        default=mode != "live",
-    ):
-        raise click.Abort
+    if confirm:
+        try:
+            confirmed = user_confirms(
+                f"This rebuilds and restarts {app} on {server}, keeping its database. "
+                "Participants may see a short interruption. New assets are not "
+                "deposited, and networks and pre-deploy routines are not run again. "
+                "Don't change the timeline while participants are still taking "
+                "part. Continue?",
+                default=mode != "live",
+            )
+        except click.Abort:
+            if _stdin_is_interactive():
+                raise
+            raise click.ClickException(
+                f"Confirmation needed to rebuild and restart {app} on {server}, "
+                "keeping its database; re-run with --yes."
+            ) from None
+        if not confirmed:
+            raise click.Abort
     deployment_info.write(
         deployment_id=identity["deployment_id"],
         secret=identity["secret"],
@@ -2341,7 +2354,7 @@ def deploy__docker_ssh(
     ``--use-local-dallinger``.
     """
     try:
-        _validate_ssh_deploy_update(app, archive, update, server, confirm=not yes)
+        _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
@@ -2382,23 +2395,14 @@ def deploy__docker_ssh(
         reset_console()
 
 
-def _validate_ssh_deploy_update(app, archive, update, server=None, confirm=False):
-    """Reject an in-place SSH update that cannot keep an existing app.
-
-    With ``confirm``, the update is to be confirmed, which needs a terminal
-    to ask in; ``--yes`` skips the question.
-    """
+def _validate_ssh_deploy_update(app, archive, update):
+    """Reject an in-place SSH update that cannot keep an existing app."""
     if not update:
         return
     if not app:
         raise click.UsageError("Updating an SSH app requires --app.")
     if archive is not None:
         raise click.UsageError("--archive and --update cannot be used together.")
-    if confirm and not _stdin_is_interactive():
-        raise click.ClickException(
-            f"Confirmation needed to rebuild and restart {app} on {server}, "
-            "keeping its database; re-run with --yes."
-        )
 
 
 def _invoke_docker_ssh_deploy(
@@ -2502,10 +2506,10 @@ def _print_ssh_ready(result, launch_info, update=False):
     )
     link = result.get("participant_link")
     message = None if link else result.get("recruitment_msg")
-    if update and not (link or message):
-        link = "unchanged; shown when the app was first deployed"
+    unrecorded = update and not (link or message)
     rows = [
         ("Participant link", link),
+        ("Recruitment", unrecorded and "unchanged; see the first deploy's output"),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
@@ -3153,10 +3157,7 @@ def _debug_ssh(
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        confirm_update = not (yes or performance_test_app)
-        _validate_ssh_deploy_update(
-            app, archive, update, server, confirm=confirm_update
-        )
+        _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
 
@@ -3170,7 +3171,7 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
-            confirm_update=confirm_update,
+            confirm_update=not yes,
             local_packages=local_packages,
             performance_test_app=performance_test_app,
             ingress=ingress,
@@ -4931,10 +4932,11 @@ def user_confirms(question, default=False):
     A piped answer isn't echoed, so the prompt line is ended here instead.
     """
     print(question)
-    answer = click.confirm("", default=default)
-    if not _stdin_is_interactive():
-        click.echo()
-    return answer
+    try:
+        return click.confirm("", default=default)
+    finally:
+        if not _stdin_is_interactive():
+            click.echo()
 
 
 def _stdin_is_interactive():
