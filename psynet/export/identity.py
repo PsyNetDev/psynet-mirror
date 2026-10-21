@@ -215,14 +215,14 @@ def describe_identity_problems(
         and remote.git_commit_sha != local.git_commit_sha
     ):
         warnings.append(
-            f"The deployment was launched from Git commit "
+            f"The deployment runs code from Git commit "
             f"{remote.git_commit_sha[:12]}, but this directory is on "
             f"{local.git_commit_sha[:12]}. 'git diff --stat "
             f"{remote.git_commit_sha[:12]} HEAD -- .' lists the changed files."
         )
     if remote.git_dirty:
         warnings.append(
-            "The deployment was launched from a Git working tree with "
+            "The deployment runs code from a Git working tree with "
             "uncommitted changes" + _path_list_suffix(remote.git_dirty_paths)
         )
     if local.git_dirty:

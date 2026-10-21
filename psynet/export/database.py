@@ -293,8 +293,10 @@ def write_export_manifest(
 ) -> str:
     """Write ``manifest.json`` describing the export.
 
-    The manifest records ``git_commit_sha`` and ``git_dirty`` from launch
-    provenance. Exports do not bundle experiment source code. Empty table CSVs
+    The manifest records ``git_commit_sha`` and ``git_dirty`` of the code the
+    server runs (see :func:`psynet.export.identity.running_git_provenance`),
+    which must agree with the export preflight. Exports do not bundle
+    experiment source code. Empty table CSVs
     are omitted from ``database/``; ``table_row_counts`` still includes those
     tables with a count of ``0``.
 

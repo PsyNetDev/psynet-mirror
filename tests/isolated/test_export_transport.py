@@ -408,7 +408,7 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
     confirm_project_identity(
         local, remote, confirm=lambda message: True, emit=warnings.append
     )
-    assert any("was launched from Git commit" in message for message in warnings)
+    assert any("runs code from Git commit" in message for message in warnings)
 
     with pytest.raises(ProjectMismatch, match="cancelled"):
         confirm_project_identity(
