@@ -166,7 +166,7 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
-def test_test_redis_is_out_of_reach_of_the_terminals_ctrl_c():
+def test_isolated_redis_is_out_of_reach_of_a_terminal_ctrl_c():
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]

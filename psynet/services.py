@@ -506,16 +506,16 @@ def ensure_local_services(
     # Only within an isolated session, so a stray export can't hide stopped services.
     if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
         return True
+    label = (
+        "PostgreSQL and Redis on this computer (needed to prepare the remote launch)"
+        if remote_launch
+        else "Local PostgreSQL and Redis"
+    )
     checks = check_local_services()
-    if remote_launch:
-        services = "PostgreSQL and Redis on this computer"
-        purpose = " (needed to prepare the remote launch)"
-    else:
-        services, purpose = "local PostgreSQL and Redis", ""
     if all(check.ok for check in checks):
-        click.echo(f"{services[0].upper()}{services[1:]}{purpose}: OK.")
+        click.echo(f"{label}: OK.")
         return True
-    click.echo(f"Checking {services}{purpose}...")
+    click.echo(f"{label}:")
     report_service_checks(checks)
 
     if not assume_yes:
