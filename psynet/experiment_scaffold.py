@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -1386,13 +1387,22 @@ def scaffold_missing_files():
     dict
         The result returned by :func:`scaffold_experiment_directory`.
     """
+    directory = os.getcwd()
     original_paths, original_modes = _snapshot_scaffold_context_paths()
     try:
         with _without_deployment_policy_review():
             yield scaffold_experiment_directory()
     finally:
-        _remove_new_scaffold_context_paths(original_paths)
-        _restore_scaffold_context_modes(original_modes)
+        # The cleanup removes relative paths, so it must not run elsewhere,
+        # e.g. in the repository root when an interrupted pytest session
+        # closes this context during interpreter shutdown.
+        cwd = os.getcwd()
+        os.chdir(directory)
+        try:
+            _remove_new_scaffold_context_paths(original_paths)
+            _restore_scaffold_context_modes(original_modes)
+        finally:
+            os.chdir(cwd)
 
 
 # Shared Click help for the prune command (bootstrap + full CLI).
