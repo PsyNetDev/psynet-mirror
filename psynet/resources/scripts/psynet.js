@@ -3901,6 +3901,8 @@
       })
         .fail(function (request) {
           if (psynet.isUnknownParticipantResponse(request)) {
+            clearInterval(psynet.progressAndRewardTimer);
+            psynet.stopTimelineHold();
             psynetErrorPage.go({
               uniqueId: psynet.uniqueId,
               participantId: psynetTemplateData.participantId,
@@ -3929,7 +3931,7 @@
   psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
-    setInterval(updateProgressAndReward, 1000);
+    psynet.progressAndRewardTimer = setInterval(updateProgressAndReward, 1000);
   }
 
   function alertParticipantOpenedDevtools() {
