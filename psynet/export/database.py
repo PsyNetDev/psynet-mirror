@@ -258,8 +258,11 @@ def _provenance_for_manifest() -> dict:
         if provenance["deployment_id"] is None and deployment_info.is_available():
             provenance["deployment_id"] = experiment.deployment_id
         provenance["experiment_label"] = experiment.label
-        provenance["git_commit_sha"] = experiment.var.get("git_commit_sha", None)
-        provenance["git_dirty"] = experiment.var.get("git_dirty", None)
+        from psynet.export.identity import running_git_provenance
+
+        git = running_git_provenance(experiment)
+        provenance["git_commit_sha"] = git["git_commit_sha"]
+        provenance["git_dirty"] = git["git_dirty"]
         return provenance
     except Exception:
         logger.warning(

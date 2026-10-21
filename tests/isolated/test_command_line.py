@@ -7334,3 +7334,11 @@ def test_performance_tests_get_their_own_services_unless_existing(
         pass
 
     assert rerun.called is not existing
+
+
+def test_export_steps_print_one_plain_line_when_redirected(capsys):
+    from psynet.command_line import _export_step
+
+    with _export_step("Downloading export"):
+        pass
+    assert capsys.readouterr().out == "Downloading export...\n"

@@ -4535,6 +4535,21 @@ def _warn_export_misses_pending_jobs(summary):
         )
 
 
+@contextmanager
+def _export_step(text):
+    """Show ``text`` with a spinner in a terminal, ticked when the step succeeds.
+
+    Redirected output gets the text once, without spinner frames.
+    """
+    if not sys.stdout.isatty():
+        click.echo(f"{text}...")
+        yield
+        return
+    with yaspin(text=text, color="green") as spinner:
+        yield
+        spinner.ok("✔")
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -4619,11 +4634,10 @@ def _fetch_remote_export(
             download_dir = tempfile.mkdtemp(prefix="psynet-export-download-")
             try:
                 archive_path = os.path.join(download_dir, "export.zip")
-                with yaspin(text="Downloading export", color="green") as spinner:
+                with _export_step("Downloading export"):
                     download_archive(
                         endpoint, archive_path, assets=assets, asset_bytes=asset_bytes
                     )
-                    spinner.ok("✔")
                 return extract_archive(archive_path, export_path)
             finally:
                 shutil.rmtree(download_dir, ignore_errors=True)
@@ -4633,16 +4647,13 @@ def _fetch_remote_export(
             try:
                 plan = plan_asset_transfer(export_path)
                 rsync_source, ssh_command = ssh_rsync_source(server, ssh_session)
-                with yaspin(
-                    text="Fetching missing asset bytes", color="green"
-                ) as spinner:
+                with _export_step("Fetching missing asset bytes"):
                     materialized = hydrate_assets(
                         export_path,
                         plan,
                         rsync_source=rsync_source,
                         ssh_command=ssh_command,
                     )
-                    spinner.ok("✔")
             except TransferError as exc:
                 # The server can always read its own asset files, so an archive
                 # is still worth trying before giving up on the export.
