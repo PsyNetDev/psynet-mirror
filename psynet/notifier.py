@@ -284,9 +284,13 @@ class LoggerNotifier(Notifier):
         return msg
 
     def on_launch(self):
-        """Log the launch, leaving local dashboard details to the launch banner."""
+        """Log the launch, leaving local dashboard details to the launch banner.
+
+        A local launch is logged at DEBUG: the server prints "Experiment
+        launch complete!" straight afterwards.
+        """
         if self.deployment_information["is_local_deployment"]:
-            self.notify(self.launch_message)
+            self.notify(self.launch_message, level="debug")
         else:
             super().on_launch()
 
