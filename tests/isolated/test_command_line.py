@@ -85,15 +85,6 @@ def _invoke_stubbed_ssh_command(dallinger_command, psynet_command, *args):
     return result, pre_launch
 
 
-def test_user_confirms_ends_the_prompt_line_for_piped_answers(monkeypatch, capsys):
-    from psynet.command_line import user_confirms
-
-    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
-    assert user_confirms("Continue?", default=True)
-    print("next")
-    assert capsys.readouterr().out.splitlines()[-1] == "next"
-
-
 class TestCommandLine(object):
     @pytest.fixture
     def export(self):

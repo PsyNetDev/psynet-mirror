@@ -2074,9 +2074,9 @@ def _pre_launch(
     ``confirm_update`` asks the user to confirm an SSH ``update``.
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: the experiment needn't have a consent page.
-    ``ingress`` and ``dns_host`` are
-    the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
-    ingress and the server's DNS name are recorded in ``deployment_info``.
+    ``ingress`` and ``dns_host`` are the SSH deploy's ``--ingress`` and
+    ``--dns-host`` options; the resolved ingress and the server's DNS name
+    are recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
