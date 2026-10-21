@@ -97,13 +97,25 @@ def check_postgres() -> ServiceCheck:
         conn = psycopg2.connect(dsn, connect_timeout=3)
         conn.close()
     except Exception as exc:
+        # libpq repeats its error and a hint for every address it tried.
+        lines = str(exc).strip().splitlines()
         return ServiceCheck(
             "PostgreSQL",
             False,
-            str(exc).strip()
-            or "Failed to connect to PostgreSQL. Is it running on port 5432?",
+            (lines[0] if lines else "Failed to connect to PostgreSQL.")
+            + f" Is PostgreSQL running on {_service_address(dsn, 5432)}?",
         )
     return ServiceCheck("PostgreSQL", True, "reachable")
+
+
+def _service_address(url: str, default_port: int) -> str:
+    """Return ``host:port`` of a service URL, without its credentials."""
+    parsed = urlparse(url)
+    try:
+        port = parsed.port or default_port
+    except ValueError:
+        port = default_port
+    return f"{parsed.hostname or 'localhost'}:{port}"
 
 
 def _check_postgres_without_psycopg2(dsn: str) -> ServiceCheck:
@@ -143,7 +155,8 @@ def _check_postgres_without_psycopg2(dsn: str) -> ServiceCheck:
             "PostgreSQL",
             False,
             str(exc).strip()
-            or "Failed to connect to PostgreSQL. Is it running on port 5432?",
+            or "Failed to connect to PostgreSQL. Is it running on "
+            f"{_service_address(dsn, 5432)}?",
         )
     return ServiceCheck("PostgreSQL", True, "PostgreSQL protocol responded")
 
@@ -279,7 +292,8 @@ def check_redis() -> ServiceCheck:
         return ServiceCheck(
             "Redis",
             False,
-            f"Failed to connect to Redis ({exc}). Is Redis running on port 6379?",
+            f"Failed to connect to Redis ({exc}). Is Redis running on "
+            f"{_service_address(url, 6379)}?",
         )
     return ServiceCheck("Redis", True, "responded to PING")
 

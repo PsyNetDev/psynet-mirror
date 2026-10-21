@@ -10,6 +10,8 @@ from click.testing import CliRunner
 from psynet.command_line import psynet
 from psynet.services import (
     ServiceCheck,
+    check_postgres,
+    check_redis,
     ensure_local_services,
     verify_local_services,
 )
@@ -132,6 +134,22 @@ def test_ensure_local_services_trusts_a_parent_that_checked_them(monkeypatch):
         ensure_local_services(assume_yes=False, strict=True)
     monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
     assert ensure_local_services(assume_yes=False, strict=True) is True
+
+
+def test_unreachable_services_name_the_address_they_tried(monkeypatch):
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setenv("REDIS_URL", f"redis://127.0.0.1:{port}")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://u:secret@127.0.0.1:{port}/db")
+
+    redis, postgres = check_redis(), check_postgres()
+
+    assert redis.detail.endswith(f"Is Redis running on 127.0.0.1:{port}?")
+    assert postgres.detail.endswith(f"Is PostgreSQL running on 127.0.0.1:{port}?")
+    assert "\n" not in postgres.detail and "secret" not in postgres.detail
 
 
 def test_check_redis_ping_over_socket(monkeypatch):
