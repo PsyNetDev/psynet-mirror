@@ -521,7 +521,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             msg += "no, because the trial is not finalized yet."
             outcome = False
 
-        logger.info(msg)
+        logger.debug(msg)
         return outcome
 
     def __init__(
