@@ -1,5 +1,6 @@
 import json
 import os.path
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
@@ -17,9 +18,17 @@ SOURCE_SNIPPET_RADIUS_LINES = 8
 # CLDR's default (Latin for Kurdish, Cyrillic for Serbian).
 SCRIPT_OVERRIDES = {"ku": "Arabic", "sr": "Latin"}
 
+# PsyNet locale codes that are not ISO 639 codes, which CLDR needs.
+ISO_LOCALE_CODES = {"od": "or"}
+
 # At temperature 0 a retry repeats the same reply, e.g. a model stuck repeating
 # one word in a low-resource script, so retries sample more freely.
 RETRY_TEMPERATURE = 0.7
+
+# Models such as gpt-6-luna reject any temperature but their own default. A
+# model is added here when the API rejects its temperature, so later requests
+# leave the temperature out.
+_MODELS_WITHOUT_TEMPERATURE: set[str] = set()
 
 
 @dataclass
@@ -37,7 +46,6 @@ class TranslationContext:
 
 class Translator:
     nickname = None
-    use_codebook = True
 
     def translate(
         self,
@@ -67,31 +75,18 @@ class Translator:
         List[str]
             The translated texts
         """
-        if self.use_codebook:
-            codebooks = [self._get_codebook(text) for text in texts]
-            encoded_texts = [
-                self._encode(text, codebook) for text, codebook in zip(texts, codebooks)
-            ]
-            translated_encoded_texts = self._translate_texts(
-                encoded_texts, source_lang, target_lang, context, attempt=0
-            )
-            translated_texts = [
-                self._decode(text, codebook)
-                for text, codebook in zip(translated_encoded_texts, codebooks)
-            ]
-        else:
-            for i in range(n_retries):
-                try:
-                    translated_texts = self._translate_texts(
-                        texts, source_lang, target_lang, context, attempt=i
-                    )
-                    _validate_translations(texts, translated_texts, target_lang)
-                    break
-                except Exception as e:
-                    if i == n_retries - 1:
-                        raise e
-                    else:
-                        print(f"Retrying translation ({i + 1}/{n_retries})... {e}")
+        for i in range(n_retries):
+            try:
+                translated_texts = self._translate_texts(
+                    texts, source_lang, target_lang, context, attempt=i
+                )
+                _validate_translations(texts, translated_texts, target_lang)
+                break
+            except Exception as e:
+                if i == n_retries - 1:
+                    raise e
+                else:
+                    print(f"Retrying translation ({i + 1}/{n_retries})... {e}")
 
         return [self.fix_translation(text) for text in translated_texts]
 
@@ -128,101 +123,6 @@ class Translator:
         raise NotImplementedError
 
     @classmethod
-    def _get_codebook(cls, text: str) -> List[tuple[str, str]]:
-        """Get codebook mapping text patterns to encoded placeholders.
-
-        Parameters
-        ----------
-        text : str
-            Input text to analyze for patterns that need encoding
-
-        Returns
-        -------
-        list of tuple
-            List of (original_text, encoded_placeholder) pairs
-        """
-        import re
-
-        def process_pattern(
-            pattern: str, text: str, codebook: list, counter: int
-        ) -> tuple[str, int]:
-            """Process a regex pattern and update codebook.
-
-            Returns
-            -------
-            tuple[str, int]
-                Updated text and counter
-            """
-            matches = list(re.finditer(pattern, text))
-            for match in matches:
-                original = match.group(0)
-                encoded = f"■{counter}■"
-                codebook.append((original, encoded))
-                text = text.replace(original, encoded)
-                counter += 1
-            return text, counter
-
-        patterns = [
-            r"\{\{[^}]+\}\}",  # Jinja variables
-            r"\{[^}]+\}",  # Simple variables
-            r"<[^/>][^>]*>",  # Opening HTML tags with optional attributes
-            r"</[^>]+>",  # Closing HTML tags
-        ]
-
-        codebook = []
-        counter = 0
-        working_text = text
-
-        for pattern in patterns:
-            working_text, counter = process_pattern(
-                pattern, working_text, codebook, counter
-            )
-
-        return codebook
-
-    @classmethod
-    def _encode(cls, text: str, codebook: List[tuple[str, str]]) -> str:
-        """Encode text by replacing patterns with placeholders.
-
-        Parameters
-        ----------
-        text : str
-            Text to encode
-        codebook : list of tuple
-            List of (original_text, encoded_placeholder) pairs
-
-        Returns
-        -------
-        str
-            Encoded text with patterns replaced by placeholders
-        """
-        result = text
-        for original, encoded in codebook:
-            result = result.replace(original, encoded)
-        return result
-
-    @classmethod
-    def _decode(cls, text: str, codebook: List[tuple[str, str]]) -> str:
-        """Decode text by replacing placeholders with original patterns.
-
-        Parameters
-        ----------
-        text : str
-            Text to decode
-        codebook : list of tuple
-            List of (original_text, encoded_placeholder) pairs
-
-        Returns
-        -------
-        str
-            Decoded text with placeholders replaced by original patterns
-        """
-        result = text
-        for original, encoded in codebook:
-            result = result.replace(encoded, original)
-        return result
-
-    @classmethod
     def fix_translation(cls, translation: str) -> str:
         """Fix any issues in the translated text.
 
@@ -239,18 +139,37 @@ class Translator:
         return translation
 
 
+def _html_tag_names(text: str) -> set[str]:
+    """The kinds of HTML tags in ``text``, e.g. ``{"i", "/i"}``, ignoring how often each occurs."""
+    return {name.lower() for name in re.findall(r"<(/?[A-Za-z][\w-]*)", text)}
+
+
 def _validate_translations(texts, translated_texts, target_lang):
-    """Reject replies that a retry might fix: wrong length or altered variables."""
+    """
+    Reject replies that a retry might fix: wrong length, empty translations,
+    altered variables, or HTML tags that were dropped or changed.
+
+    A translation may use a tag fewer times than its source, e.g. when two
+    italicized words become one compound word.
+    """
     if len(translated_texts) != len(texts):
         raise InvalidTranslationError(
             f"Number of translated texts for '{target_lang}' does not match number of input texts: {len(translated_texts)} != {len(texts)}."
         )
     for text, translation in zip(texts, translated_texts):
+        if text.strip() and not translation.strip():
+            raise InvalidTranslationError(
+                f"The '{target_lang}' translation of {text!r} is empty."
+            )
         if sorted(extract_variable_names(text)) != sorted(
             extract_variable_names(translation)
         ):
             raise InvalidTranslationError(
                 f"The '{target_lang}' translation of {text!r} does not keep its variables: {translation!r}"
+            )
+        if _html_tag_names(text) != _html_tag_names(translation):
+            raise InvalidTranslationError(
+                f"The '{target_lang}' translation of {text!r} does not keep its HTML tags: {translation!r}"
             )
 
 
@@ -262,59 +181,8 @@ class CredentialsError(TranslationError):
     pass
 
 
-class UnsupportedLanguageError(TranslationError):
-    pass
-
-
 class InvalidTranslationError(TranslationError):
     pass
-
-
-class GoogleTranslator(Translator):
-    nickname = "google_translate"
-
-    def _translate_texts(
-        self,
-        texts: List[str],
-        source_lang: str,
-        target_lang: str,
-        context: Optional[TranslationContext] = None,
-        attempt: int = 0,
-    ):
-        from google.cloud import translate_v3
-
-        config = get_config()
-        google_translate_json_path = config.get("google_translate_json_path", None)
-        if google_translate_json_path is None:
-            raise CredentialsError(
-                "Please provide a Google Cloud Translate API key in your .dallingerconfig file under `google_translate_json_path`"
-            )
-
-        google_translate_json_path = os.path.expanduser(google_translate_json_path)
-
-        with open(google_translate_json_path, "r") as f:
-            auth_dict = json.load(f)
-
-        client = translate_v3.TranslationServiceClient.from_service_account_json(
-            google_translate_json_path
-        )
-        parent = f"projects/{auth_dict['project_id']}/locations/global"
-        try:
-            response = client.translate_text(
-                contents=texts,
-                target_language_code=target_lang,
-                parent=parent,
-                mime_type="text/html",
-                source_language_code=source_lang,
-            )
-        except Exception as e:
-            if e.args[0] == "Target language is invalid.":
-                raise UnsupportedLanguageError(f"Invalid language code: {target_lang}")
-            else:
-                raise e
-
-        # Display the translation for each input text provided
-        return [translation.translated_text for translation in response.translations]
 
 
 def source_context_for_prompt(
@@ -325,7 +193,9 @@ def source_context_for_prompt(
 
     Small files are returned whole, because they usually are the page the
     texts appear on. For larger files, only the lines around each text are
-    returned, within the same character budget.
+    returned, within the same character budget. Each block of lines gets an
+    equal share of what is left of the budget, so every text gets some context;
+    a block longer than its share keeps its middle, where the text is.
     """
     with open(file_path, "r", encoding="utf-8") as f:
         source = f.read()
@@ -344,12 +214,15 @@ def source_context_for_prompt(
 
     blocks = []
     budget = MAX_SOURCE_CONTEXT_CHARS
-    for start, end in windows:
-        block = f"Lines {start}-{end}:\n" + "\n".join(lines[start - 1 : end])
-        if len(block) > budget:
-            break
-        blocks.append(block)
-        budget -= len(block)
+    for i, (start, end) in enumerate(windows):
+        share = budget // (len(windows) - i)
+        header = f"Lines {start}-{end}:\n"
+        body = "\n".join(lines[start - 1 : end])
+        excess = len(header) + len(body) - share
+        if excess > 0:
+            body = body[excess // 2 : len(body) - (excess - excess // 2)]
+        blocks.append(header + body)
+        budget -= len(blocks[-1])
     return "\n\n".join(blocks)
 
 
@@ -366,6 +239,7 @@ def _script_name(locale: str) -> Optional[str]:
 
     if locale in SCRIPT_OVERRIDES:
         return SCRIPT_OVERRIDES[locale]
+    locale = ISO_LOCALE_CODES.get(locale, locale)
     parts = get_global("likely_subtags").get(locale, "").split("_")
     if len(parts) < 3:
         return None
@@ -391,7 +265,6 @@ def _response_format(ids: List[str]) -> dict:
 
 class ChatGptTranslator(Translator):
     nickname = "chat_gpt"
-    use_codebook = False
 
     def get_system_prompt(
         self,
@@ -444,7 +317,7 @@ class ChatGptTranslator(Translator):
         context: Optional[TranslationContext] = None,
         attempt: int = 0,
     ):
-        from openai import OpenAI
+        from openai import BadRequestError, OpenAI
 
         language_dict = get_language_dict("en")
         assert source_lang in language_dict, (
@@ -473,8 +346,7 @@ class ChatGptTranslator(Translator):
             id_: {"text": text, "label": label} if label else {"text": text}
             for id_, text, label in zip(ids, texts, labels)
         }
-        client = OpenAI(api_key=openai_api_key)
-        response = client.chat.completions.create(
+        request = dict(
             model=openai_default_model,
             messages=[
                 {
@@ -491,14 +363,27 @@ class ChatGptTranslator(Translator):
                     "content": json.dumps(items, ensure_ascii=False),
                 },
             ],
-            temperature=temperature,
             response_format=_response_format(ids),
             # Generous even for scripts that need several tokens per character,
-            # but stops a repetition loop well before the model's own limit.
+            # plus room for reasoning models' hidden reasoning, which counts
+            # toward the limit; still stops a repetition loop well before the
+            # model's own limit. gpt-4o rejects limits above 16,384 tokens.
             max_completion_tokens=min(
-                16_000, 1_000 + 5 * sum(len(text) for text in texts)
+                16_000 if "gpt-4o" in openai_default_model else 32_000,
+                8_000 + 5 * sum(len(text) for text in texts),
             ),
         )
+        if openai_default_model not in _MODELS_WITHOUT_TEMPERATURE:
+            request["temperature"] = temperature
+        client = OpenAI(api_key=openai_api_key)
+        try:
+            response = client.chat.completions.create(**request)
+        except BadRequestError as e:
+            if "temperature" not in request or e.param != "temperature":
+                raise
+            _MODELS_WITHOUT_TEMPERATURE.add(openai_default_model)
+            del request["temperature"]
+            response = client.chat.completions.create(**request)
         choice = response.choices[0]
         if choice.message.refusal:
             raise InvalidTranslationError(
@@ -524,14 +409,12 @@ class DefaultTranslator(Translator):
         context: Optional[TranslationContext] = None,
     ):
         config = get_config()
-        default_translator = config.get("default_translator")
-        translator_class = get_descendent_class_by_name(Translator, default_translator)
+        translator_class = _translator_class(config.get("default_translator"))
         return translator_class().translate(texts, source_lang, target_lang, context)
 
 
 class NullTranslator(Translator):
     nickname = "null"
-    use_codebook = False
 
     def translate(
         self,
@@ -543,8 +426,18 @@ class NullTranslator(Translator):
         return texts
 
 
+def _translator_class(name: str) -> type[Translator]:
+    """The translator class with this class name or nickname."""
+    if name == "google_translate":
+        raise ValueError(
+            "PsyNet no longer supports Google Translate. Remove "
+            "`default_translator = google_translate` from your config to use "
+            "ChatGPT (`chat_gpt`), the default."
+        )
+    return get_descendent_class_by_name(Translator, name)
+
+
 def get_translator_from_name(name: Optional[str] = None) -> Translator:
     if name is None:
         return DefaultTranslator()
-    translator_class = get_descendent_class_by_name(Translator, name)
-    return translator_class()
+    return _translator_class(name)()

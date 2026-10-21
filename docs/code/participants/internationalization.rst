@@ -124,18 +124,7 @@ Each locale's translations are stored in
 Translators
 ~~~~~~~~~~~
 
-PsyNet supports two machine translators:
-
-- OpenAI ChatGPT (``chat_gpt``, the default)
-- Google Translate (``google_translate``)
-
-Set the default in ``config.txt`` or ``~/.dallingerconfig``, or pass
-``--translator`` to ``psynet translate``:
-
-.. code-block:: text
-
-    [Translator]
-    default_translator = <translator_name>
+PsyNet translates with OpenAI ChatGPT (``chat_gpt``).
 
 ``psynet translate`` only sends strings that have no translation yet. It
 groups them by source file, at most 30 strings per request. ChatGPT also
@@ -149,7 +138,7 @@ receives, for disambiguation:
   Santali), except where PsyNet's catalogs use another script (Arabic for
   Kurdish, Latin for Serbian).
 
-**OpenAI ChatGPT** needs an OpenAI API key in ``~/.dallingerconfig``:
+ChatGPT needs an OpenAI API key in ``~/.dallingerconfig``:
 
 .. code-block:: text
 
@@ -161,26 +150,6 @@ It also needs the ``openai`` package:
 .. code-block:: console
 
     pip install openai
-
-**Google Translate** needs a Google Cloud service account:
-
-1. Create a project in the Google Cloud Console.
-2. Enable the Cloud Translation API.
-3. Create a service account.
-4. On the service account's **Keys** tab, create a JSON key and save it on
-   your computer, for example in your home directory.
-5. Add the key's path to ``~/.dallingerconfig``:
-
-   .. code-block:: text
-
-       [Translator]
-       google_translate_json_path = <path_to_your_json_file>
-
-It also needs the ``google-cloud-translate`` package:
-
-.. code-block:: console
-
-    pip install google-cloud-translate
 
 Reviewing and revising
 ----------------------
@@ -200,6 +169,10 @@ When you run ``psynet translate`` again:
 
 - existing translations, fuzzy or checked, are kept as long as their English
   text and context are unchanged;
+- fuzzy translations that are identical to the English text are translated
+  again, because they are usually failed machine translations. If the
+  English text is the right translation (for example "OK"), remove the fuzzy
+  flag to keep it;
 - translations of strings that no longer occur in the source code are
   removed.
 
