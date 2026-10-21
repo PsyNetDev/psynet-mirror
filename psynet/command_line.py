@@ -36,6 +36,7 @@ from dallinger.command_line.docker_ssh import (
     remote_postgres,
     resolve_server_option,
 )
+from dallinger.command_line.utils import check_valid_subdomain
 from dallinger.command_line.utils import verify_id as dallinger_verify_id
 from dallinger.config import experiment_available, get_config
 from dallinger.deployment_plan import DeploymentPolicyError
@@ -182,6 +183,17 @@ def verify_id(ctx, param, app):
     if app is None:
         return
     return dallinger_verify_id(ctx, param, app)
+
+
+def _verify_existing_ssh_app(ctx, param, app):
+    """Check the name of an app already on an SSH server.
+
+    Unlike :func:`verify_id`, this accepts names such as ``dlgr-d8f9f2c4``,
+    which Dallinger gives to apps deployed without ``--app``.
+    """
+    if app is not None:
+        check_valid_subdomain("app", app)
+    return app
 
 
 def _suppress_dallinger_header():
@@ -4007,8 +4019,11 @@ def export__heroku(ctx, app, **kwargs):
     "--app",
     default=None,
     required=False,
-    callback=verify_id,
-    help=("Name of the app to export (optional if only one running app is available)"),
+    callback=_verify_existing_ssh_app,
+    help=(
+        "Name of the app to export, as listed by `psynet apps ssh` (optional if "
+        "only one running app is available)"
+    ),
 )
 @option_server
 @export_arguments
@@ -4254,7 +4269,14 @@ def _latest_launch_record(app, server):
 
 
 def _remote_public_origin(app, server):
-    """Read ``public_origin`` from the server's deployment manifest."""
+    """Return an SSH app's public origin as recorded on the server.
+
+    The app's deployment manifest gives it when present. Older classic apps
+    have no manifest, so their Caddy routes give it instead: an app with its
+    own site in ``caddy.d/<app>`` is served at that site's address, and one
+    on the server's root domain (``root.d/<app>``, or older Dallinger's
+    Caddyfile routing the root site to the app) at the Caddyfile's own site.
+    """
     if not isinstance(app, str) or not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", app
     ):
@@ -4263,26 +4285,65 @@ def _remote_public_origin(app, server):
 
     from .export.client import SshSession
 
-    command = f'cat "$HOME/dallinger/{shlex.quote(app)}/deployment.json"'
+    marker = "#== psynet-file "
+    command = (
+        "cd ~/dallinger || exit 0; "
+        f"echo '{marker}manifest'; cat {app}/deployment.json 2>/dev/null; "
+        f"echo '{marker}site'; cat caddy.d/{app} 2>/dev/null; "
+        f"echo '{marker}caddyfile'; cat Caddyfile 2>/dev/null; "
+        f"test -f root.d/{app} && echo '{marker}root'; true"
+    )
     try:
         with SshSession(server) as session:
-            raw = session.executor.run(command, raise_=False)
+            raw = session.executor.run(f"sh -c {shlex.quote(command)}", raise_=False)
     except (ExecuteException, OSError, KeyError) as exc:
-        log(f"Could not read the remote deployment manifest: {exc}")
+        log(f"Could not read the app's deployment record on the server: {exc}")
         return None
+    files = dict(
+        section.partition("\n")[::2] for section in (raw or "").split(marker)[1:]
+    )
     try:
-        payload = json.loads(raw or "")
+        manifest = json.loads(files.get("manifest") or "{}")
     except json.JSONDecodeError:
-        return None
-    return _normalize_public_origin(payload.get("public_origin"))
+        manifest = {}
+    origin = _normalize_public_origin(
+        manifest.get("public_origin") if isinstance(manifest, dict) else None
+    )
+    # Older Dallinger's root Caddyfile doesn't import caddy.d, so a leftover
+    # site there isn't served; the root route takes precedence.
+    caddyfile = files.get("caddyfile") or ""
+    if origin is None and (
+        "root" in files or f"reverse_proxy {app}_web:5000" in caddyfile
+    ):
+        origin = _caddy_site_origin(caddyfile)
+    if origin is None and files.get("site"):
+        origin = _caddy_site_origin(files["site"])
+    return origin
+
+
+def _caddy_site_origin(caddy_config):
+    """Return the HTTPS origin of the first site in a Caddy configuration, or ``None``."""
+    for line in caddy_config.splitlines():
+        # Site blocks start unindented; the directives inside them don't.
+        # Snippets start with "(" and named matchers with "@".
+        match = re.fullmatch(r"([^\s{}#(@][^{}#]*?)\s*\{\s*(#.*)?", line)
+        if not match:
+            continue
+        address = match[1].replace(",", " ").split()[0]
+        if "://" not in address:
+            address = f"https://{address}"
+        # Later sites, such as the logs site, belong to something else.
+        return _normalize_public_origin(address)
+    return None
 
 
 def _ssh_dashboard_endpoint(app, server, config):
     """Dashboard address and credentials for an SSH deployment.
 
-    Cloudflare apps are not served at ``https://<app>.<ssh-host>``. The
-    deploy records the public origin locally; the server manifest is the
-    fallback when that note is missing. The note's dashboard credentials take
+    Cloudflare apps and apps on the server's root domain are not served at
+    ``https://<app>.<ssh-host>``. The deploy records the public origin
+    locally; the server (see :func:`_remote_public_origin`) is the fallback
+    when that note is missing. The note's dashboard credentials take
     precedence over the local config, which may lack them.
 
     Raises
@@ -4309,6 +4370,10 @@ def _ssh_dashboard_endpoint(app, server, config):
         origin = _remote_public_origin(app, server)
     if origin is None:
         origin = get_experiment_url(app, server)
+        log(
+            f"Found no record of {app}'s address on this computer or {server}; "
+            f"assuming {origin}."
+        )
     return DashboardEndpoint(base_url=origin, auth=(user, password))
 
 
@@ -5097,7 +5162,12 @@ def hibernate():
 
 
 @hibernate.command("ssh")
-@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    required=True,
+    callback=_verify_existing_ssh_app,
+    help="Name of the app, as listed by `psynet apps ssh`",
+)
 @option_server
 @click.pass_context
 def hibernate__ssh(ctx, app, server):
@@ -5116,7 +5186,12 @@ def awaken():
 
 
 @awaken.command("ssh")
-@click.option("--app", required=True, callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    required=True,
+    callback=_verify_existing_ssh_app,
+    help="Name of the app, as listed by `psynet apps ssh`",
+)
 @option_server
 @click.pass_context
 def awaken__ssh(ctx, app, server):
@@ -5318,11 +5393,13 @@ def _ssh_app_names(server):
     ------
     click.ClickException
         If the listing fails or times out, so that it isn't mistaken for a
-        server without apps.
+        server without apps. Only connection problems suggest checking the
+        SSH connection; an invalid configuration is reported as such.
     """
     import paramiko
     from dallinger.command_line.docker_ssh import ExecuteException
 
+    connection_hint = "; check the SSH connection and try again."
     cmd = (
         "ls -1 ~/dallinger/caddy.d 2>/dev/null; "
         "ls -1d ~/dallinger/*/docker-compose.yml "
@@ -5336,21 +5413,29 @@ def _ssh_app_names(server):
         output = _ssh_executor(server).run(
             f"sh -c {shlex.quote(listing_cmd)}", raise_=False
         )
-    except (ExecuteException, OSError, KeyError, paramiko.SSHException) as e:
-        problem = str(e)
+    except KeyError as e:
+        # Loading the configuration (e.g. for ``server_pem``) raises KeyError
+        # for invalid keys, such as ones an older PsyNet accepted.
+        raise click.ClickException(
+            f"Couldn't list the apps on {server} because of a configuration "
+            f"problem: {e.args[0] if e.args else e}"
+        ) from e
+    except (ExecuteException, OSError, paramiko.SSHException) as e:
+        problem, hint = str(e), connection_hint
     else:
         listing, _, status = (output or "").rpartition(marker)
-        status = status.strip()
-        problem = {
-            "0": None,
-            str(_REMOTE_TIMEOUT_STATUS): f"timed out after {timeout_s} s",
-            "127": "the server has no `timeout` command",
-            "": "no answer from the server",
-        }.get(status, f"exit code {status}")
+        problem, hint = {
+            "0": (None, None),
+            str(_REMOTE_TIMEOUT_STATUS): (
+                f"timed out after {timeout_s} s",
+                connection_hint,
+            ),
+            "127": ("the server has no `timeout` command", "."),
+            "": ("no answer from the server", connection_hint),
+        }.get(status.strip(), (f"exit code {status.strip()}", "."))
     if problem:
         raise click.ClickException(
-            f"Couldn't list the apps on {server} ({problem}); check the SSH "
-            "connection and try again."
+            f"Couldn't list the apps on {server} ({problem}){hint}"
         )
     names = set()
     for entry in listing.split():
@@ -5375,10 +5460,15 @@ def _require_ssh_apps_exist(server, apps):
     if not existing:
         raise click.ClickException(f"{message} It has no apps.")
     message += f" Apps there: {', '.join(existing)}"
+    # An app deployed without --app is named after its experiment UUID.
     suggestions = [
         match
         for app in missing
-        for match in difflib.get_close_matches(app, existing, n=1)
+        for match in (
+            [f"dlgr-{app[:8]}"]
+            if f"dlgr-{app[:8]}" in existing
+            else difflib.get_close_matches(app, existing, n=1)
+        )
     ]
     if suggestions:
         message += f" (did you mean {' or '.join(suggestions)}?)"
