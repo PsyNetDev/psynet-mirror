@@ -5006,6 +5006,39 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
     assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
 
 
+def test_isolated_wrapper_without_a_terminal_passes_sigint_on(tmp_path):
+    """An agent's SIGINT to the wrapper alone must still stop the child."""
+    pid_file = tmp_path / "child.pid"
+    child = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    wrapper = (
+        "import sys\n"
+        "from unittest.mock import MagicMock, Mock, patch\n"
+        "from psynet.command_line import _rerun_in_isolated_environment\n"
+        "environment = MagicMock(env={})\n"
+        "environment.__enter__.return_value = environment\n"
+        f"sys.orig_argv = ['python', '-c', {child!r}]\n"
+        "with patch('psynet.command_line._check_experiment_directory'), "
+        "patch('psynet.services.ensure_local_services'), "
+        "patch('psynet.isolated_environment.IsolatedEnvironment.start', "
+        "return_value=environment):\n"
+        "    _rerun_in_isolated_environment()\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", wrapper], cwd=tmp_path, start_new_session=True
+    )
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+
+    process.send_signal(signal.SIGINT)
+    try:
+        assert process.wait(timeout=30) != 0
+    finally:
+        process.kill()
+    assert not psutil.pid_exists(int(pid_file.read_text()))
+
+
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
 def test_termination_signals_exit_through_cleanup_unless_ignored(signum):
     """Closing the terminal runs ``finally`` blocks like SIGTERM, but not under nohup."""

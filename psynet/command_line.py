@@ -5722,8 +5722,11 @@ def _rerun_in_isolated_environment(mode="test"):
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
     0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
-    reach the child as SIGTERM; it gets Ctrl+C from the terminal anyway. A second signal kills
-    the child. The database and Redis are removed when the child exits.
+    reach the child as SIGTERM. A Ctrl+C in the terminal reaches the child
+    directly, so SIGINT is only passed on if this process isn't in the
+    terminal's foreground process group (for example if it has no terminal,
+    as when an agent runs it). A second signal kills the child. The database
+    and Redis are removed when the child exits.
 
     Parameters
     ----------
@@ -5773,6 +5776,8 @@ def _rerun_in_isolated_environment(mode="test"):
                     process.kill()
                 elif isinstance(e, SystemExit):
                     process.terminate()
+                elif not _ctrl_c_reaches_this_process_group():
+                    process.send_signal(signal.SIGINT)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):
@@ -5787,6 +5792,20 @@ def _rerun_in_isolated_environment(mode="test"):
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
+
+
+def _ctrl_c_reaches_this_process_group():
+    """Return whether this process is in the foreground process group of its terminal."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
 
 
 def _check_no_server_here():
