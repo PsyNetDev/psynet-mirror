@@ -2,6 +2,7 @@ import collections
 import datetime
 import difflib
 import functools
+import glob
 import hashlib
 import importlib
 import io
@@ -421,11 +422,17 @@ def _validate_location(ctx, param, value):
     default=None,
     help="Name of the experiment app (required for non-local deployments)",
 )
-@option_server
+@click.option(
+    "--server",
+    default=None,
+    help="Name of the remote server (for the ssh location)",
+)
 def experiment_variables(location, app, server):
     """
     Show the variables of the experiment.
     """
+    # Not Dallinger's shared --server option, which insists on a configured
+    # server even for local experiments; db_connection resolves it for ssh.
     with db_connection(location, app, server) as connection:
         return _experiment_variables(connection, echo=True, location=location, app=app)
 
@@ -1363,6 +1370,11 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+_BROWSER_WINDOWS_SENTENCE = (
+    "Recruitment requests will open browser windows automatically."
+)
+
+
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
@@ -1372,7 +1384,7 @@ def launch_app_without_browsers(port, **kwargs):
     credentials instead; the server log leaves the password out.
     It must stay importable by module path because RQ workers resolve it that way.
     """
-    _launch_app_and_report(port)
+    _launch_app_and_report(port, no_browsers=True)
 
 
 def launch_app_and_open_browsers(port, **kwargs):
@@ -1403,7 +1415,7 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port):
+def _launch_app_and_report(port, no_browsers=False):
     """Launch the development app and print the recruitment message and dashboard login."""
     from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
@@ -1411,8 +1423,12 @@ def _launch_app_and_report(port):
     launch_data = handle_launch_data(
         BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
     )
-    if launch_data.get("recruitment_msg"):
-        log(launch_data["recruitment_msg"], chevrons=False)
+    message = launch_data.get("recruitment_msg") or ""
+    if no_browsers:
+        # Dallinger's HotAir recruiter says this regardless of --no-browsers.
+        message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
+    if message:
+        log(message, chevrons=False)
 
     config = get_config()
     if not config.ready:
@@ -1437,6 +1453,11 @@ def _stop_child_processes_on_signal():
 
     def handler(signum, frame):
         children = psutil.Process().children(recursive=True)
+        if signum == signal.SIGINT:
+            # A terminal Ctrl-C has usually reached the children already, and a
+            # second signal makes Dallinger's worker do a cold shutdown, which
+            # prints a traceback.
+            _, children = psutil.wait_procs(children, timeout=3)
         for child in children:
             try:
                 child.terminate()
@@ -1454,6 +1475,64 @@ def _stop_child_processes_on_signal():
     finally:
         for sig, previous_handler in previous.items():
             signal.signal(sig, previous_handler)
+
+
+def _reloader_exclude_patterns():
+    """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
+
+    Flask's reloader watches every ``.py`` file under each non-system
+    ``sys.path`` entry, and an editable install puts the whole PsyNet (or
+    Dallinger) checkout there. Without these patterns, editing a test or
+    scaffolding a demo restarts every debug server. The served experiment is
+    watched through Dallinger's development folder, so it is unaffected, but
+    other debug servers' development folders are excluded.
+    """
+    import dallinger
+    from dallinger.utils import develop_target_path
+
+    import psynet
+
+    config = get_config()
+    if not config.ready:
+        config.load()
+    develop_path = Path(develop_target_path(config))
+    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
+    own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
+    patterns = []
+    for path in own_paths:
+        patterns += _other_develop_folder_patterns(path)
+    for package in (psynet, dallinger):
+        root = Path(package.__file__).resolve().parent.parent
+        if not (root / "pyproject.toml").exists():
+            continue
+        for folder in ("demos", "tests", "docs"):
+            if (root / folder).is_dir():
+                patterns.append(f"{root / folder}{os.sep}*")
+    return patterns
+
+
+def _other_develop_folder_patterns(develop_path):
+    """Return reloader exclusions for the other debug servers' development folders.
+
+    ``flask run`` puts the parent of the development folder (usually ``/tmp``)
+    on ``sys.path``, so without these patterns each debug server would also
+    watch, and restart for, the folders that other debug servers write next
+    to it. ``fnmatch`` has no negation, so the patterns match every
+    ``dallinger_develop*`` name that differs from this server's own folder
+    at some character, plus every longer name.
+    """
+    develop_path = Path(develop_path)
+    parent = glob.escape(str(develop_path.parent)) + os.sep
+    prefix = "dallinger_develop"
+    name = develop_path.name
+    if not name.startswith(prefix):
+        return [f"{parent}{prefix}*"]
+    patterns = [
+        f"{parent}{glob.escape(name[:i])}[!{name[i]}]*"
+        for i in range(len(prefix), len(name))
+    ]
+    patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
+    return patterns
 
 
 @contextmanager
@@ -1487,8 +1566,15 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     develop_module = importlib.import_module("dallinger.command_line.develop")
     launch_job = develop_module.launch_app_and_open_browser
     port = _local_base_port()
-    # Dallinger's development server runs `flask run`, which reads this variable.
+    # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
+    # Lets `psynet services list` see the port in the Flask and worker processes.
+    os.environ["base_port"] = str(port)
+    # Replaced rather than extended: an inherited value can come from another
+    # debug server and exclude this one's development folder.
+    os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
+        _reloader_exclude_patterns()
+    )
     debug_kwargs = {"skip_flask": False, "port": port}
     develop_module.launch_app_and_open_browser = (
         launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
@@ -2588,35 +2674,35 @@ def check_prolific_payment(experiment, config):
     )
 
 
-def _missing_boilerplate_fix(*, mode=None, missing_paths=None):
-    """Return actionable guidance when experiment boilerplate is missing."""
+def _missing_boilerplate_message(missing_paths):
+    """Return the error for an experiment directory that lacks boilerplate files."""
     if is_in_repo_experiment():
         command = "psynet scripts scaffold"
-        context = (
+        details = [
             "This looks like a PsyNet bundled demo or test experiment, so only "
             "template files are needed."
-        )
+        ]
     else:
         command = "psynet setup"
-        context = (
-            "For a standalone experiment this prepares files, pins PsyNet, "
-            "writes constraints.txt, and installs packages into your active "
-            "virtual environment. If you only need template files, run "
-            "'psynet scripts scaffold' instead."
-        )
-
-    mode_clause = ""
-    if mode is not None:
-        mode_clause = f" before running 'psynet {mode} ...'"
-
-    message = f"{context} Run '{command}' to generate the missing files{mode_clause}."
-    if missing_paths and "config.txt" in missing_paths:
-        message += (
-            " If you are upgrading an experiment that already sets options in "
+        details = [
+            "It also pins PsyNet, writes constraints.txt, installs packages into "
+            "your active virtual environment, and initialises Git.",
+            "If you only need the template files, run 'psynet scripts scaffold' "
+            "and then 'git init' instead.",
+        ]
+    if "config.txt" in missing_paths:
+        details.append(
+            "If you are upgrading an experiment that already sets options in "
             "Experiment.config, create an empty config.txt with 'touch config.txt' "
             "instead of scaffolding a full template."
         )
-    return message
+    return "\n".join(
+        [
+            f"Run '{command}' to create the PsyNet files this experiment is "
+            f"missing ({', '.join(missing_paths)}).",
+            *details,
+        ]
+    )
 
 
 def _prepare_in_repo_experiment():
@@ -2661,13 +2747,9 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
             "deployment exclusions to deploy.toml, then remove .dockerignore."
         )
 
-    missing_boilerplate = missing_after_policy_creation
-    if missing_boilerplate:
-        missing_paths = ", ".join(missing_boilerplate)
+    if missing_after_policy_creation:
         raise click.ClickException(
-            "Experiment directory is missing required PsyNet boilerplate files "
-            f"({missing_paths}). "
-            f"{_missing_boilerplate_fix(mode=mode, missing_paths=missing_boilerplate)}"
+            _missing_boilerplate_message(missing_after_policy_creation)
         )
     if not prepared and not os.environ.get("SKIP_DEPENDENCY_CHECK"):
         _check_dependency_files_present()

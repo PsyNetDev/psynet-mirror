@@ -841,6 +841,21 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("own", ["dallinger_develop", "dallinger_develop_5100"])
+def test_reloader_ignores_only_other_develop_folders(own):
+    """A debug server watches its own development folder but not its neighbours'."""
+    from fnmatch import fnmatch
+
+    from psynet.command_line import _other_develop_folder_patterns
+
+    patterns = _other_develop_folder_patterns(f"/tmp/{own}")
+    names = {"", "_5100", "_51", "_51000", "_5200"}
+    for name in {f"dallinger_develop{suffix}" for suffix in names} - {own}:
+        assert any(fnmatch(f"/tmp/{name}/app.py", p) for p in patterns), name
+    for path in (f"/tmp/{own}/app.py", "/tmp/review/psynet/psynet/experiment.py"):
+        assert not any(fnmatch(path, p) for p in patterns), path
+
+
 @pytest.mark.parametrize("no_browsers", [True, False])
 def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch, capsys, no_browsers
@@ -848,6 +863,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     """PsyNet's launch job prints the login once and never logs it in a URL."""
     from psynet.command_line import (
         _debug_auto_reload,
+        _reloader_exclude_patterns,
         launch_app_and_open_browsers,
         launch_app_without_browsers,
     )
@@ -865,11 +881,17 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
-    monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
+    # setenv, unlike delenv of an unset variable, restores the variables it sets.
+    monkeypatch.setenv("FLASK_RUN_PORT", "")
+    monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
+    monkeypatch.setenv("base_port", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     assert calls == [({"skip_flask": False, "port": 5010}, job)]
-    assert os.environ["FLASK_RUN_PORT"] == "5010"
+    assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
+    assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
+        _reloader_exclude_patterns()
+    )
     assert develop.launch_app_and_open_browser is original_job
 
     config = Mock(ready=True)
@@ -880,7 +902,10 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
-        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+        lambda url, **kwargs: {
+            "recruitment_msg": "Single recruitment link: ...\n\n"
+            "Recruitment requests will open browser windows automatically."
+        },
     )
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
@@ -889,7 +914,8 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
     output = capsys.readouterr().out
-    assert "Prolific study simulated" in output
+    assert "Single recruitment link" in output
+    assert ("browser windows" in output) is not no_browsers
     assert "http://127.0.0.1:5001/dashboard" in output
     assert "Dashboard user: admin password: s3cret" in output
     assert output.count("s3cret") == 1
@@ -3173,14 +3199,19 @@ def test_setup_shared_env_force_syncs_with_warning(tmp_path, monkeypatch):
     ]
 
 
-def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
+def test_setup_foreign_env_noninteractive_declines_sync_and_fails(
     tmp_path, monkeypatch
 ):
+    """Without a terminal, setup does what declining does, then exits nonzero."""
     foreign = tmp_path / "other" / ".venv"
     foreign.mkdir(parents=True)
     experiment = tmp_path / "experiment"
     experiment.mkdir()
     _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
     monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: False)
     monkeypatch.setattr(
         "psynet.experiment_setup._run_uv",
@@ -3190,9 +3221,39 @@ def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
     with working_directory(experiment):
         result = CliRunner().invoke(psynet, ["setup"])
 
-    assert result.exit_code != 0
-    assert "--force-foreign-env" in result.output
+    assert result.exit_code == 1, result.output
     assert (experiment / "Dockerfile").exists()
+    assert (experiment / ".git").is_dir()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
+
+
+def test_setup_declining_foreign_sync_still_initialises_git(tmp_path, monkeypatch):
+    """Declining the sync leaves a directory that only needs packages installed."""
+    foreign = tmp_path / "other" / ".venv"
+    foreign.mkdir(parents=True)
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
+    monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv",
+        lambda *args, **kwargs: pytest.fail("declined sync must not install"),
+    )
+
+    with working_directory(experiment):
+        result = CliRunner().invoke(psynet, ["setup"], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment / ".git").is_dir()
+    assert (experiment / "constraints.txt").exists()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
 
 
 def test_setup_foreign_env_force_flag_syncs_with_warning(tmp_path, monkeypatch):
@@ -3816,7 +3877,7 @@ def test_check_experiment_directory_reports_missing_boilerplate(tmp_path):
         with pytest.raises(click.ClickException, match="psynet setup") as exc:
             _check_experiment_directory("debug")
     message = str(exc.value)
-    assert "standalone" in message.lower()
+    assert message.index("Run 'psynet setup'") < message.index("pins PsyNet")
     for required_path in (
         ".gitignore",
         ".python-version",
@@ -3872,18 +3933,22 @@ def test_check_experiment_directory_reports_partial_boilerplate(tmp_path, monkey
     assert "touch config.txt" not in str(exc.value)
 
 
-def test_missing_boilerplate_fix_mentions_blank_config_for_upgrades():
-    from psynet.command_line import _missing_boilerplate_fix
+def test_missing_boilerplate_message_mentions_blank_config_for_upgrades(
+    monkeypatch,
+):
+    from psynet.command_line import _missing_boilerplate_message
 
-    message = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["config.txt", "Dockerfile"]
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    message = _missing_boilerplate_message(["config.txt", "Dockerfile"])
+    assert message.splitlines()[0] == (
+        "Run 'psynet setup' to create the PsyNet files this experiment is "
+        "missing (config.txt, Dockerfile)."
     )
     assert "touch config.txt" in message
     assert "Experiment.config" in message
+    assert "'psynet scripts scaffold' and then 'git init'" in message
 
-    without_config = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["Dockerfile"]
-    )
+    without_config = _missing_boilerplate_message(["Dockerfile"])
     assert "touch config.txt" not in without_config
 
 
@@ -4053,7 +4118,7 @@ def test_scripts_scaffold_allows_incomplete_experiment_py():
             assert Path("requirements.txt").exists()
 
 
-def test_scripts_scaffold_reports_when_nothing_is_needed():
+def test_scripts_scaffold_is_quiet_when_nothing_is_needed():
     runner = CliRunner()
 
     with tempfile.TemporaryDirectory() as dir:
@@ -4063,10 +4128,7 @@ def test_scripts_scaffold_reports_when_nothing_is_needed():
 
             second = runner.invoke(psynet, ["scripts", "scaffold"])
             assert second.exit_code == 0, second.output
-            assert (
-                "Nothing to scaffold; experiment boilerplate is already present."
-                in second.output
-            )
+            assert "Scaffolded" not in second.output
 
 
 def test_scripts_scaffold_preserves_existing_authored_files():
@@ -6849,7 +6911,9 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch, error, message):
     assert message in result.output
 
 
-def test_signalled_debug_process_stops_its_child_processes(tmp_path):
+@pytest.mark.parametrize("signum, status", [("SIGTERM", 143), ("SIGINT", -2)])
+def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, status):
+    """Children that the signal didn't reach are stopped, after a pause on SIGINT."""
     import signal
     import sys
     import time
@@ -6872,8 +6936,8 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
     child_pid = int(pid_file.read_text())
 
-    parent.send_signal(signal.SIGTERM)
-    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    parent.send_signal(getattr(signal, signum))
+    assert parent.wait(timeout=30) == status
     deadline = time.monotonic() + 10
     while psutil.pid_exists(child_pid):
         assert time.monotonic() < deadline, "child process outlived its parent"
@@ -6922,6 +6986,50 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_subcommand_help_works_outside_an_experiment(tmp_path, monkeypatch):
+    args = ["performance-test", "local", "--help"]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["psynet", *args])
+
+    result = CliRunner().invoke(psynet, args)
+
+    assert result.exit_code == 0, result.output
+    assert "performance-test local [OPTIONS]" in result.output
+
+
+def test_local_experiment_variables_need_no_ssh_server(monkeypatch):
+    from contextlib import contextmanager
+
+    connections = []
+
+    @contextmanager
+    def fake_connection(location, app, server):
+        connections.append((location, server))
+        yield Mock()
+
+    monkeypatch.setattr("psynet.command_line.db_connection", fake_connection)
+    monkeypatch.setattr(
+        "psynet.command_line._experiment_variables", lambda *args, **kwargs: {}
+    )
+
+    result = CliRunner().invoke(psynet, ["experiment-variables", "local"])
+
+    assert result.exit_code == 0, result.output
+    assert connections == [("local", None)]
+
+
+def test_debug_reloader_skips_checkout_tests_demos_and_docs():
+    import psynet as psynet_package
+    from psynet.command_line import _reloader_exclude_patterns
+
+    root = Path(psynet_package.__file__).resolve().parent.parent
+    patterns = _reloader_exclude_patterns()
+
+    for folder in ["demos", "tests", "docs"]:
+        assert f"{root / folder}{os.sep}*" in patterns
+    assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)
 
 
 def _invoke_db_ssh(monkeypatch, hosts):
