@@ -3898,8 +3898,7 @@
         url: "/timeline/progress_and_reward",
         cache: false,
         data: { participantId: psynet.participantId },
-      })
-        .fail(function (request) {
+        error: function (request) {
           if (psynet.isUnknownParticipantResponse(request)) {
             clearInterval(psynet.progressAndRewardTimer);
             psynet.stopTimelineHold();
@@ -3908,8 +3907,8 @@
               participantId: psynetTemplateData.participantId,
             });
           }
-        })
-        .done(function (data) {
+        },
+      }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
         // The bar carries the width and the accessible value; the visible
