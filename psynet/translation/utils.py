@@ -55,7 +55,7 @@ def get_pot_from_command(cmd, tmp_pot_file, sp):
     p = pexpect.spawn(cmd, timeout=timeout)
     while not p.eof():
         line = p.readline().decode("utf-8")
-        sp.text = line
+        sp.text = line.strip()
     p.close()
     if p.exitstatus > 0:
         sys.exit(p.exitstatus)
