@@ -30,6 +30,8 @@ def _check_missing_entry(monkeypatch, namespace, *, mode=None):
 @pytest.mark.parametrize("mode", [None, "debug"])
 def test_missing_package_entry_is_tolerated_in_debug(monkeypatch, mode):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    # GitLab sets this on release-* jobs; local debug is not a release CI run.
+    monkeypatch.delenv("CI_COMMIT_REF_NAME", raising=False)
     _check_missing_entry(monkeypatch, "psynet", mode=mode)
 
 
@@ -40,6 +42,7 @@ def test_missing_package_entry_is_tolerated_in_feature_branch_tests(monkeypatch)
 
 def test_missing_package_entry_raises_in_sandbox(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("CI_COMMIT_REF_NAME", raising=False)
     with pytest.raises(TranslationNotFoundError):
         _check_missing_entry(monkeypatch, "psynet", mode="sandbox")
 
