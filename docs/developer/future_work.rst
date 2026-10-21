@@ -667,7 +667,13 @@ Once PsyNet pins a Dallinger release that includes
   go too, because Dallinger tests them.
 - Stop applying ``verify_id`` to the SSH commands, and use
   ``_verify_existing_ssh_app`` as the single ``--app`` check for every SSH
-  command; Dallinger itself refuses an ``--app`` deploy that would move an
-  app off the server's own host. Heroku commands keep ``verify_id``.
+  command. Dallinger accepts ``--app dlgr-…``: a new name deploys to a
+  subdomain, and an existing app on the server's own host is refused without
+  ``--update`` and updated in place with it. Heroku commands keep
+  ``verify_id``.
+- PsyNet's own new-deploy check (``get_apps`` followed by "App with name …
+  already exists") runs before Dallinger's. It could add the same
+  ``--update --app <app>`` hint for an app on the server's own host, or leave
+  that case to Dallinger.
 - Keep ``_require_ssh_apps_exist``'s ``dlgr-<first 8 characters>`` suggestion
   for a full experiment UUID; that is PsyNet's own help.
