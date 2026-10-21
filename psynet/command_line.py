@@ -4671,7 +4671,8 @@ def _fetch_remote_export(
                 shutil.rmtree(export_path, ignore_errors=True)
                 manifest = download_into_staging("include")
             else:
-                log(f"Materialized {materialized} asset(s) from the local cache.")
+                if materialized:
+                    log(f"Materialized {materialized} asset(s) from the local cache.")
                 from .export.asset_cache import warn_if_cache_oversized
 
                 oversized = warn_if_cache_oversized()
