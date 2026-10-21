@@ -32,7 +32,7 @@ from psynet.experiment_scaffold import (
 @click.option(
     "--no-install",
     is_flag=True,
-    help="Scaffold and generate constraints without installing packages.",
+    help="Scaffold, generate constraints and set up Git without installing packages.",
 )
 @click.option(
     "--force-shared-env",
@@ -162,7 +162,7 @@ def scripts_prune(ctx, include_modified, include_tracked):
 
 @click.group("services")
 def services():
-    """Check and ensure local PostgreSQL and Redis services."""
+    """Check, ensure and list local PostgreSQL and Redis services."""
     pass
 
 
@@ -194,6 +194,17 @@ def services_ensure(assume_yes):
     from psynet.services import ensure_local_services
 
     ensure_local_services(assume_yes=assume_yes, strict=True)
+
+
+@services.command("list")
+def services_list():
+    """Show which local sessions use which ports, databases and Redis servers.
+
+    Reads the settings of your running PsyNet, Dallinger and pytest processes.
+    """
+    from psynet.service_usage import list_services
+
+    list_services()
 
 
 @click.command("generate-constraints")

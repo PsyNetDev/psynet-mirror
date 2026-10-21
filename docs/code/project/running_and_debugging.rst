@@ -63,7 +63,7 @@ database, Redis server, port and development folder instead:
 
 .. code-block:: bash
 
-    createdb -h localhost -U dallinger dallinger_2
+    PGPASSWORD=dallinger createdb -h localhost -U dallinger dallinger_2
     redis-server --port 6381 --bind 127.0.0.1 --dir "$(mktemp -d)" --save "" --daemonize yes
 
     export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2
@@ -86,6 +86,9 @@ automatically, but tests and servers refuse to start while a server
 uses the same directory, and servers refuse while tests use it; to debug and
 test at once, or to debug twice, use a separate copy (such as a git worktree)
 of the experiment.
+
+``psynet services list`` shows which ports, databases and Redis servers the
+sessions you are running already use.
 
 Set a breakpoint
 ----------------

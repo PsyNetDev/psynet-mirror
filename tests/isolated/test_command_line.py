@@ -213,6 +213,27 @@ class TestCommandLine(object):
             with pytest.raises(click.UsageError, match="does not support"):
                 _dallinger_hibernation_command("hibernate")
 
+    @pytest.mark.parametrize("action", ["hibernate", "awaken"])
+    def test_hibernation_ssh_accepts_names_of_apps_deployed_without_app(self, action):
+        received = []
+
+        @click.command()
+        @click.option("--server")
+        @click.option("--app")
+        def dallinger_command(server, app):
+            received.append(app)
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        with (
+            patch.object(dssh, action, dallinger_command, create=True),
+            patch.object(dssh, "get_configured_hosts", lambda: {"musix": {}}),
+        ):
+            result = CliRunner().invoke(
+                psynet, [action, "ssh", "--app", "dlgr-d8f9f2c4", "--server", "musix"]
+            )
+        assert result.exit_code == 0, result.output
+        assert received == ["dlgr-d8f9f2c4"]
+
     def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
         from psynet.command_line import _configure_dallinger_image_source
 
@@ -841,6 +862,21 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("own", ["dallinger_develop", "dallinger_develop_5100"])
+def test_reloader_ignores_only_other_develop_folders(own):
+    """A debug server watches its own development folder but not its neighbours'."""
+    from fnmatch import fnmatch
+
+    from psynet.command_line import _other_develop_folder_patterns
+
+    patterns = _other_develop_folder_patterns(f"/tmp/{own}")
+    names = {"", "_5100", "_51", "_51000", "_5200"}
+    for name in {f"dallinger_develop{suffix}" for suffix in names} - {own}:
+        assert any(fnmatch(f"/tmp/{name}/app.py", p) for p in patterns), name
+    for path in (f"/tmp/{own}/app.py", "/tmp/review/psynet/psynet/experiment.py"):
+        assert not any(fnmatch(path, p) for p in patterns), path
+
+
 @pytest.mark.parametrize("no_browsers", [True, False])
 def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch, capsys, no_browsers
@@ -848,6 +884,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     """PsyNet's launch job prints the login once and never logs it in a URL."""
     from psynet.command_line import (
         _debug_auto_reload,
+        _reloader_exclude_patterns,
         launch_app_and_open_browsers,
         launch_app_without_browsers,
     )
@@ -865,11 +902,17 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
     monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
-    monkeypatch.delenv("FLASK_RUN_PORT", raising=False)
+    # setenv, unlike delenv of an unset variable, restores the variables it sets.
+    monkeypatch.setenv("FLASK_RUN_PORT", "")
+    monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
+    monkeypatch.setenv("base_port", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     assert calls == [({"skip_flask": False, "port": 5010}, job)]
-    assert os.environ["FLASK_RUN_PORT"] == "5010"
+    assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
+    assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
+        _reloader_exclude_patterns()
+    )
     assert develop.launch_app_and_open_browser is original_job
 
     config = Mock(ready=True)
@@ -880,7 +923,10 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
-        lambda url, **kwargs: {"recruitment_msg": "Prolific study simulated"},
+        lambda url, **kwargs: {
+            "recruitment_msg": "Single recruitment link: ...\n\n"
+            "Recruitment requests will open browser windows automatically."
+        },
     )
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
@@ -889,7 +935,8 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
     output = capsys.readouterr().out
-    assert "Prolific study simulated" in output
+    assert "Single recruitment link" in output
+    assert ("browser windows" in output) is not no_browsers
     assert "http://127.0.0.1:5001/dashboard" in output
     assert "Dashboard user: admin password: s3cret" in output
     assert output.count("s3cret") == 1
@@ -1666,22 +1713,12 @@ _MARKED = {"performance_test_app": True, "experiment": {"label": "Test"}}
 
 
 @pytest.mark.parametrize(
-    "args, apps, deployed",
-    [
-        ([], [], {"update": False}),
-        (["--yes"], [], {"update": False, "assume_yes": True}),
-        ([], ["my-app"], {"update": True}),
-    ],
-    ids=[
-        "deploys-a-missing-app",
-        "passes-yes-to-the-deploy",
-        "updates-an-existing-app",
-    ],
+    "apps, deployed",
+    [([], {"update": False}), (["my-app"], {"update": True})],
+    ids=["deploys-a-missing-app", "updates-an-existing-app"],
 )
-def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
-    result, deploy, run = _invoke_performance_test_ssh(
-        args, apps=apps, app_info=_MARKED
-    )
+def test_performance_test_ssh_manages_its_own_app(apps, deployed):
+    result, deploy, run = _invoke_performance_test_ssh([], apps=apps, app_info=_MARKED)
 
     assert result.exit_code == 0, result.output
     assert deploy.call_args.kwargs == {
@@ -1692,7 +1729,6 @@ def test_performance_test_ssh_manages_its_own_app(args, apps, deployed):
         "ingress": None,
         "use_local_psynet": False,
         "use_local_dallinger": False,
-        "assume_yes": False,
         **deployed,
     }
     assert run.call_args.args[2] == {"label": "Test"}
@@ -3184,14 +3220,19 @@ def test_setup_shared_env_force_syncs_with_warning(tmp_path, monkeypatch):
     ]
 
 
-def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
+def test_setup_foreign_env_noninteractive_declines_sync_and_fails(
     tmp_path, monkeypatch
 ):
+    """Without a terminal, setup does what declining does, then exits nonzero."""
     foreign = tmp_path / "other" / ".venv"
     foreign.mkdir(parents=True)
     experiment = tmp_path / "experiment"
     experiment.mkdir()
     _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
     monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: False)
     monkeypatch.setattr(
         "psynet.experiment_setup._run_uv",
@@ -3201,9 +3242,39 @@ def test_setup_foreign_env_noninteractive_scaffolds_then_refuses_sync(
     with working_directory(experiment):
         result = CliRunner().invoke(psynet, ["setup"])
 
-    assert result.exit_code != 0
-    assert "--force-foreign-env" in result.output
+    assert result.exit_code == 1, result.output
     assert (experiment / "Dockerfile").exists()
+    assert (experiment / ".git").is_dir()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
+
+
+def test_setup_declining_foreign_sync_still_initialises_git(tmp_path, monkeypatch):
+    """Declining the sync leaves a directory that only needs packages installed."""
+    foreign = tmp_path / "other" / ".venv"
+    foreign.mkdir(parents=True)
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "requirements.txt").write_text("psynet==0.0.0\n")
+    _mock_foreign_experiment_venv(monkeypatch, foreign)
+    monkeypatch.setattr(
+        "psynet.experiment_setup.git_repository_available", lambda: False
+    )
+    monkeypatch.setattr("psynet.experiment_setup.git_command_available", lambda: True)
+    monkeypatch.setattr("psynet.experiment_setup._is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "psynet.experiment_setup._run_uv",
+        lambda *args, **kwargs: pytest.fail("declined sync must not install"),
+    )
+
+    with working_directory(experiment):
+        result = CliRunner().invoke(psynet, ["setup"], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment / ".git").is_dir()
+    assert (experiment / "constraints.txt").exists()
+    assert "  psynet setup\n" in result.output
+    assert "--force-foreign-env" in result.output
 
 
 def test_setup_foreign_env_force_flag_syncs_with_warning(tmp_path, monkeypatch):
@@ -3827,7 +3898,7 @@ def test_check_experiment_directory_reports_missing_boilerplate(tmp_path):
         with pytest.raises(click.ClickException, match="psynet setup") as exc:
             _check_experiment_directory("debug")
     message = str(exc.value)
-    assert "standalone" in message.lower()
+    assert message.index("Run 'psynet setup'") < message.index("pins PsyNet")
     for required_path in (
         ".gitignore",
         ".python-version",
@@ -3883,18 +3954,22 @@ def test_check_experiment_directory_reports_partial_boilerplate(tmp_path, monkey
     assert "touch config.txt" not in str(exc.value)
 
 
-def test_missing_boilerplate_fix_mentions_blank_config_for_upgrades():
-    from psynet.command_line import _missing_boilerplate_fix
+def test_missing_boilerplate_message_mentions_blank_config_for_upgrades(
+    monkeypatch,
+):
+    from psynet.command_line import _missing_boilerplate_message
 
-    message = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["config.txt", "Dockerfile"]
+    monkeypatch.setattr("psynet.command_line.is_in_repo_experiment", lambda: False)
+    message = _missing_boilerplate_message(["config.txt", "Dockerfile"])
+    assert message.splitlines()[0] == (
+        "Run 'psynet setup' to create the PsyNet files this experiment is "
+        "missing (config.txt, Dockerfile)."
     )
     assert "touch config.txt" in message
     assert "Experiment.config" in message
+    assert "'psynet scripts scaffold' and then 'git init'" in message
 
-    without_config = _missing_boilerplate_fix(
-        mode="debug", missing_paths=["Dockerfile"]
-    )
+    without_config = _missing_boilerplate_message(["Dockerfile"])
     assert "touch config.txt" not in without_config
 
 
@@ -4064,7 +4139,7 @@ def test_scripts_scaffold_allows_incomplete_experiment_py():
             assert Path("requirements.txt").exists()
 
 
-def test_scripts_scaffold_reports_when_nothing_is_needed():
+def test_scripts_scaffold_is_quiet_when_nothing_is_needed():
     runner = CliRunner()
 
     with tempfile.TemporaryDirectory() as dir:
@@ -4074,10 +4149,7 @@ def test_scripts_scaffold_reports_when_nothing_is_needed():
 
             second = runner.invoke(psynet, ["scripts", "scaffold"])
             assert second.exit_code == 0, second.output
-            assert (
-                "Nothing to scaffold; experiment boilerplate is already present."
-                in second.output
-            )
+            assert "Scaffolded" not in second.output
 
 
 def test_scripts_scaffold_preserves_existing_authored_files():
@@ -4768,6 +4840,40 @@ def test_pre_launch_aborts_when_app_exists():
     mock_run_pre_checks.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "ingress, expected", [(None, "lab.example.org"), ("cloudflare", None)]
+)
+def test_pre_launch_records_the_server_dns_host(ingress, expected):
+    from psynet.command_line import _pre_launch
+
+    hosts = {"lab": {"host": "1.2.3.4", "user": "u"}}
+    with (
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line._check_ssh_deploy_credentials"),
+        patch("psynet.command_line.deployment_info.init"),
+        patch("psynet.command_line.deployment_info.write") as write,
+        patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
+        patch("psynet.command_line._abort_if_app_exists"),
+        patch("psynet.command_line.run_pre_checks", side_effect=click.Abort),
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+    ):
+        with pytest.raises(click.Abort):
+            _pre_launch(
+                Mock(),
+                mode="live",
+                archive=None,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server="lab",
+                app="study",
+                ingress=ingress,
+                dns_host="lab.example.org",
+            )
+
+    assert write.call_args.kwargs["server_dns_host"] == expected
+
+
 @pytest.mark.parametrize("dallinger_has_check", [True, False])
 @pytest.mark.parametrize(
     "command, args",
@@ -5313,7 +5419,7 @@ def test_pre_launch_stops_workers_before_prepare(monkeypatch):
 
 
 class _LaunchContinued(Exception):
-    """Raised where a launch loads the experiment, after any local reset."""
+    """Raised where a launch prepares the experiment, after any local reset."""
 
 
 @pytest.fixture
@@ -5322,7 +5428,6 @@ def remote_launch(monkeypatch, tmp_path):
     from psynet.command_line import _pre_launch
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("DATABASE_URL", "postgresql://dallinger:secret@localhost/demo")
     for name in ("DALLINGER_NO_EGG_BUILD", "SKIP_DEPENDENCY_CHECK"):
         monkeypatch.setenv(name, "")
     for check in ("_check_experiment_directory", "run_pre_checks"):
@@ -5333,33 +5438,19 @@ def remote_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "psynet.command_line.kill_psynet_worker_processes", resets.kill_workers
     )
-    monkeypatch.setattr(
-        "psynet.experiment.get_experiment", Mock(side_effect=_LaunchContinued)
-    )
-    confirm = Mock(return_value=True)
-    monkeypatch.setattr("click.confirm", confirm)
+    monkeypatch.setattr("psynet.experiment.get_experiment", Mock())
+    config = Mock()
+    config.get.return_value = False
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    for prepare in ("prepare_in_scratch_database", "prepare_image_for_update"):
+        getattr(resets, prepare).side_effect = _LaunchContinued
+        monkeypatch.setattr(f"psynet.command_line._{prepare}", getattr(resets, prepare))
 
-    def launch(
-        *,
-        workers=0,
-        clients=(),
-        redis_clients=0,
-        interactive=True,
-        **kwargs,
-    ):
-        monkeypatch.setattr(
-            "psynet.command_line.list_psynet_worker_processes",
-            lambda: [Mock()] * workers,
-        )
-        monkeypatch.setattr("psynet.db.list_other_database_clients", lambda: clients)
-        monkeypatch.setattr(
-            "psynet.command_line._count_other_redis_clients", lambda: redis_clients
-        )
-        monkeypatch.setattr("psynet.services._is_interactive", lambda: interactive)
+    def launch(**kwargs):
         with pytest.raises(_LaunchContinued):
             _pre_launch(Mock(), mode="sandbox", archive=None, local_=False, **kwargs)
 
-    return launch, resets, confirm
+    return launch, resets
 
 
 @pytest.mark.parametrize("performance_test_app", [False, True])
@@ -5368,89 +5459,51 @@ def test_only_performance_test_apps_skip_the_consent_check(
 ):
     from psynet import command_line
 
-    launch, _, _ = remote_launch
+    launch, _ = remote_launch
     launch(performance_test_app=performance_test_app)
     check_consents = command_line.run_pre_checks.call_args.kwargs["check_consents"]
     assert check_consents is not performance_test_app
 
 
-def test_remote_update_keeps_local_data(remote_launch):
-    launch, resets, confirm = remote_launch
-    launch(update=True, workers=1, redis_clients=2)
-    assert resets.mock_calls == []
-    confirm.assert_not_called()
+@pytest.mark.parametrize(
+    "update, prepared_in",
+    [(False, "prepare_in_scratch_database"), (True, "prepare_image_for_update")],
+)
+def test_remote_launch_keeps_local_data(remote_launch, update, prepared_in):
+    launch, resets = remote_launch
+    launch(update=update)
+    assert [name for name, *_ in resets.mock_calls] == [prepared_in]
+
+
+_SSH_ARGS = ["--app", "test-app", "--server", "lab.example.org"]
 
 
 @pytest.mark.parametrize(
-    "in_use, reason",
+    "command, args",
     [
-        ({}, None),
-        ({"workers": 1}, "1 local PsyNet server process(es)"),
-        (
-            {"clients": [(4321, "u", "flask", "idle", None, -1, None)]},
-            "pid 4321 (flask, idle, local socket)",
-        ),
-        ({"redis_clients": 2}, "2 other client(s) are connected to local Redis"),
-        ({"redis_clients": None}, "Couldn't list the clients of local Redis"),
+        ("deploy__heroku", ["--app", "test-app"]),
+        ("debug__heroku", ["--app", "test-app"]),
+        ("deploy__docker_ssh", _SSH_ARGS),
+        ("debug__docker_ssh", _SSH_ARGS),
+        ("performance_test__docker_ssh", _SSH_ARGS),
     ],
 )
-def test_remote_launch_asks_before_resetting_local_data_in_use(
-    remote_launch, capsys, in_use, reason
+def test_remote_launch_refuses_beside_a_local_server_here(
+    monkeypatch, tmp_path, command, args
 ):
-    launch, resets, confirm = remote_launch
-    launch(**in_use)
-    assert confirm.called == bool(reason)
-    resets.clear_redis.assert_called_once()
-    resets.kill_workers.assert_called_once()
-    output = capsys.readouterr().out
-    assert "postgresql://dallinger@localhost/demo" in output
-    assert "secret" not in output
-    if reason:
-        assert reason in output
+    from psynet import command_line
+    from psynet.testing.locks import SERVER, experiment_directory_lock
 
-
-def test_remote_launch_resets_nothing_if_declined(remote_launch):
-    launch, resets, confirm = remote_launch
-    confirm.side_effect = click.Abort
-    with pytest.raises(click.Abort):
-        launch(workers=1)
-    assert resets.mock_calls == []
-
-
-def test_remote_launch_needs_yes_without_a_terminal(remote_launch):
-    launch, resets, confirm = remote_launch
-    with pytest.raises(click.ClickException, match="--yes"):
-        launch(workers=1, interactive=False)
-    assert resets.mock_calls == []
-
-    launch(workers=1, interactive=False, assume_yes=True)
-    confirm.assert_not_called()
-    resets.kill_workers.assert_called_once()
-
-
-def test_other_redis_clients_are_counted_but_not_this_process():
-    from urllib.parse import urlsplit
-
-    import redis
-    from dallinger.db import redis_conn
-
-    from psynet.command_line import _count_other_redis_clients
-    from psynet.services import _redis_url
-
-    redis_conn.ping()
-    before = _count_other_redis_clients()
-    other = redis.Redis.from_url(_redis_url())
-    # Set the index in the URL path, which from_url prefers to a db argument.
-    own_db = int(other.connection_pool.connection_kwargs.get("db", 0))
-    other_db_url = urlsplit(_redis_url())._replace(path=f"/{(own_db + 1) % 16}")
-    other_db = redis.Redis.from_url(other_db_url.geturl())
-    other.ping()
-    other_db.ping()
-    try:
-        assert _count_other_redis_clients() == before + 1
-    finally:
-        other.close()
-        other_db.close()
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    hosts = {"lab.example.org": {"host": "lab"}}
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+    monkeypatch.chdir(tmp_path)
+    pre_launch = Mock()
+    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
+    with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
+        result = CliRunner().invoke(getattr(command_line, command), args)
+    assert "replace its generated files" in result.output
+    pre_launch.assert_not_called()
 
 
 def test_other_database_clients_are_listed_but_not_this_process(
@@ -5509,29 +5562,6 @@ def test_own_pid_with_another_backend_start_is_another_client(monkeypatch):
         monkeypatch.setitem(psynet_db._backends, conn, reused)
         clients = psynet_db.list_other_database_clients(release_local=False)
     assert pid in [row.pid for row in clients]
-
-
-@pytest.mark.parametrize(
-    "command, args",
-    [
-        ("debug__heroku", ["--app", "test-app", "--docker", "--yes"]),
-        ("deploy__heroku", ["--app", "test-app", "--docker", "-y"]),
-        ("deploy__heroku", ["--app", "test-app", "--yes"]),
-    ],
-)
-def test_remote_launch_commands_pass_yes_to_pre_launch(
-    monkeypatch, tmp_path, command, args
-):
-    from psynet import command_line
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("psynet.command_line.reset_console", Mock())
-    pre_launch = Mock(side_effect=_LaunchContinued)
-    monkeypatch.setattr("psynet.command_line._pre_launch", pre_launch)
-    result = CliRunner().invoke(getattr(command_line, command), args)
-    assert isinstance(result.exception, _LaunchContinued)
-    pre_launch.assert_called_once()
-    assert pre_launch.call_args.kwargs["assume_yes"] is True
 
 
 def test_prepare_does_not_refuse_other_database_clients(monkeypatch):
@@ -6204,7 +6234,7 @@ def test_deploy_heroku_docker_runs_only_the_docker_deploy(tmp_path, monkeypatch)
     calls = []
     monkeypatch.setattr(
         "psynet.command_line._deploy__docker_heroku",
-        lambda ctx, app, archive, assume_yes: calls.append("docker"),
+        lambda ctx, app, archive: calls.append("docker"),
     )
     monkeypatch.setattr(
         "psynet.command_line._pre_launch",
@@ -6319,21 +6349,33 @@ def _patch_ssh_listing(monkeypatch, executor):
 
 
 @pytest.mark.parametrize(
-    "status, problem",
-    [("124", "timed out after 30 s"), ("127", "the server has no `timeout` command")],
+    "listing, message",
+    [
+        (
+            "psynet-app-listing-exit=124\n",
+            " (timed out after 30 s); check the SSH connection and try again.",
+        ),
+        ("psynet-app-listing-exit=127\n", " (the server has no `timeout` command)."),
+        (
+            KeyError("old_key is not a valid configuration key"),
+            " because of a configuration problem: old_key is not a valid "
+            "configuration key",
+        ),
+    ],
 )
-def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, status, problem):
+def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, listing, message):
     executor = Mock()
-    executor.run.return_value = f"psynet-app-listing-exit={status}\n"
+    if isinstance(listing, Exception):
+        executor.run.side_effect = listing
+    else:
+        executor.run.return_value = listing
     _patch_ssh_listing(monkeypatch, executor)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one", "--yes"])
     assert result.exit_code == 1, result.output
-    assert (
-        f"Couldn't list the apps on musix ({problem}); check the SSH "
-        "connection and try again." in result.output
-    )
+    assert f"Couldn't list the apps on musix{message}" in result.output
     assert "no apps" not in result.output
+    assert ("check the SSH" in result.output) == ("check the SSH" in message)
 
 
 def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
@@ -6358,6 +6400,38 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
             "No app named 'dogfood-dpe' on musix. Apps there: dogfood-cf, "
             "dogfood-dbg, dogfood-dep (did you mean dogfood-dep?)" in result.output
         )
+
+
+def test_export_ssh_accepts_the_short_name_of_an_app_deployed_without_app(
+    monkeypatch,
+):
+    from psynet.command_line import export__docker_ssh
+
+    executor = Mock()
+    executor.run.return_value = (
+        "/home/dallinger/dallinger/dlgr-d8f9f2c4/docker-compose.yml\n"
+        "psynet-app-listing-exit=0\n"
+    )
+    _patch_ssh_listing(monkeypatch, executor)
+    monkeypatch.setattr("psynet.command_line._awaken_ssh_app", lambda server, app: None)
+    monkeypatch.setattr(
+        "psynet.command_line._fetch_ssh_pending_async_jobs_for_export",
+        lambda app, server: None,
+    )
+    exported = []
+    monkeypatch.setattr(
+        "psynet.command_line.export_", lambda ctx, **kwargs: exported.append(kwargs)
+    )
+
+    result = CliRunner().invoke(
+        export__docker_ssh, ["--app", "d8f9f2c4-0b1e-4c43-9d52-5f0c3b7a1e2d"]
+    )
+    assert "(did you mean dlgr-d8f9f2c4?)" in result.output
+    assert exported == []
+
+    result = CliRunner().invoke(export__docker_ssh, ["--app", "dlgr-d8f9f2c4"])
+    assert result.exit_code == 0, result.output
+    assert [kwargs["app"] for kwargs in exported] == ["dlgr-d8f9f2c4"]
 
 
 def test_destroy_ssh_combines_app_option_and_arguments(monkeypatch):
@@ -6728,7 +6802,7 @@ def test_destroy_ssh_refuses_apps_that_cannot_be_checked(monkeypatch, args, mode
 @pytest.mark.parametrize(
     "default_ingress, services, compose_status, logs",
     [
-        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.musix)"),
+        ("cloudflare", "  web:\n", 0, "its logs in Dozzle at https://logs.lab)"),
         (
             "classic",
             "  web:\n  cloudflared:\n",
@@ -6936,7 +7010,9 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch, error, message):
     assert message in result.output
 
 
-def test_signalled_debug_process_stops_its_child_processes(tmp_path):
+@pytest.mark.parametrize("signum, status", [("SIGTERM", 143), ("SIGINT", -2)])
+def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, status):
+    """Children that the signal didn't reach are stopped, after a pause on SIGINT."""
     import signal
     import sys
     import time
@@ -6959,8 +7035,8 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path):
         time.sleep(0.1)
     child_pid = int(pid_file.read_text())
 
-    parent.send_signal(signal.SIGTERM)
-    assert parent.wait(timeout=30) == 128 + signal.SIGTERM
+    parent.send_signal(getattr(signal, signum))
+    assert parent.wait(timeout=30) == status
     deadline = time.monotonic() + 10
     while psutil.pid_exists(child_pid):
         assert time.monotonic() < deadline, "child process outlived its parent"
@@ -7009,6 +7085,50 @@ def test_prolific_listing_warnings():
     assert "shorter than the estimated 8.5 minutes" in warnings(2, 0.85)[0]
     assert "£5.00/hour" in " ".join(warnings(12, 1.00))
     assert "£4.24/hour" in " ".join(warnings(5, 0.60))
+
+
+def test_subcommand_help_works_outside_an_experiment(tmp_path, monkeypatch):
+    args = ["performance-test", "local", "--help"]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["psynet", *args])
+
+    result = CliRunner().invoke(psynet, args)
+
+    assert result.exit_code == 0, result.output
+    assert "performance-test local [OPTIONS]" in result.output
+
+
+def test_local_experiment_variables_need_no_ssh_server(monkeypatch):
+    from contextlib import contextmanager
+
+    connections = []
+
+    @contextmanager
+    def fake_connection(location, app, server):
+        connections.append((location, server))
+        yield Mock()
+
+    monkeypatch.setattr("psynet.command_line.db_connection", fake_connection)
+    monkeypatch.setattr(
+        "psynet.command_line._experiment_variables", lambda *args, **kwargs: {}
+    )
+
+    result = CliRunner().invoke(psynet, ["experiment-variables", "local"])
+
+    assert result.exit_code == 0, result.output
+    assert connections == [("local", None)]
+
+
+def test_debug_reloader_skips_checkout_tests_demos_and_docs():
+    import psynet as psynet_package
+    from psynet.command_line import _reloader_exclude_patterns
+
+    root = Path(psynet_package.__file__).resolve().parent.parent
+    patterns = _reloader_exclude_patterns()
+
+    for folder in ["demos", "tests", "docs"]:
+        assert f"{root / folder}{os.sep}*" in patterns
+    assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)
 
 
 def _invoke_db_ssh(monkeypatch, hosts):
