@@ -445,9 +445,10 @@ Docker registries
 -----------------
 
 ``psynet debug ssh`` and ``psynet deploy ssh`` never push the image, so they
-need no registry. A registry is needed only to deploy a prebuilt image named
-by ``docker_image_name``, or to push images with Dallinger's ``dallinger
-docker-ssh deploy --push-build`` or ``--local_build``. For pushing,
+need no registry and no ``docker_image_base_name``. A registry is needed only
+to deploy a prebuilt image named by ``docker_image_name``, to deploy with
+``psynet deploy heroku --docker``, or to push images with Dallinger's
+``dallinger docker-ssh deploy --push-build`` or ``--local_build``. For pushing,
 ``docker_image_base_name`` must name a registry you can push to. The server
 must be able to pull from the registry: run the same ``docker login`` on the
 server as on your computer.

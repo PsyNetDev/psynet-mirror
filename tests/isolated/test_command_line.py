@@ -293,6 +293,36 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
+    @pytest.mark.parametrize(
+        "config_txt, expected",
+        [
+            ("[Docker]\n", {"docker_image_base_name": "consonance"}),
+            ("[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n", {}),
+        ],
+    )
+    def test_invoke_docker_ssh_deploy_names_an_unnamed_image_after_the_app(
+        self, monkeypatch, tmp_path, config_txt, expected
+    ):
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("dallinger.config.config", None)
+        (tmp_path / "config.txt").write_text(config_txt)
+        ctx = Mock()
+        _invoke_docker_ssh_deploy(
+            ctx,
+            Mock(params=[]),
+            server="musix",
+            dns_host=None,
+            app="consonance",
+            config_options={"debug_ssh_app": "true"},
+        )
+        assert ctx.invoke.call_args.kwargs["config_options"] == {
+            **expected,
+            "debug_ssh_app": "true",
+        }
+
     @pytest.mark.parametrize("new_dallinger", [False, True])
     def test_deploy_ssh_ends_with_a_ready_block(
         self, monkeypatch, tmp_path, new_dallinger
@@ -1813,9 +1843,9 @@ def test_performance_test_deploys_mark_the_app(capsys):
             performance_test_app=True,
         )
 
-    assert ctx.invoke.call_args.kwargs["config_options"] == {
-        "debug_ssh_app": "true",
-        "performance_test_app": "true",
+    assert ctx.invoke.call_args.kwargs["config_options"].items() >= {
+        ("debug_ssh_app", "true"),
+        ("performance_test_app", "true"),
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
