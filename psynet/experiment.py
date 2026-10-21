@@ -2333,7 +2333,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 # We should probably update this behavior in the future.
                 value = serialize(value)
 
-            expected_type = config_types[key]
+            expected_type = config_types.get(key)
+            if expected_type is None:
+                message = f"{key} is not a valid configuration key."
+                if key in cls.config:
+                    message += (
+                        f" Remove it from {cls.__name__}.config, or use its new "
+                        "name if it was renamed."
+                    )
+                raise KeyError(message)
             value = expected_type(value)
 
             config[key] = value

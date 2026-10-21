@@ -213,6 +213,27 @@ class TestCommandLine(object):
             with pytest.raises(click.UsageError, match="does not support"):
                 _dallinger_hibernation_command("hibernate")
 
+    @pytest.mark.parametrize("action", ["hibernate", "awaken"])
+    def test_hibernation_ssh_accepts_names_of_apps_deployed_without_app(self, action):
+        received = []
+
+        @click.command()
+        @click.option("--server")
+        @click.option("--app")
+        def dallinger_command(server, app):
+            received.append(app)
+
+        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
+        with (
+            patch.object(dssh, action, dallinger_command, create=True),
+            patch.object(dssh, "get_configured_hosts", lambda: {"musix": {}}),
+        ):
+            result = CliRunner().invoke(
+                psynet, [action, "ssh", "--app", "dlgr-d8f9f2c4", "--server", "musix"]
+            )
+        assert result.exit_code == 0, result.output
+        assert received == ["dlgr-d8f9f2c4"]
+
     def test_configure_dallinger_image_source_sets_source(self, monkeypatch, tmp_path):
         from psynet.command_line import _configure_dallinger_image_source
 
@@ -6319,21 +6340,33 @@ def _patch_ssh_listing(monkeypatch, executor):
 
 
 @pytest.mark.parametrize(
-    "status, problem",
-    [("124", "timed out after 30 s"), ("127", "the server has no `timeout` command")],
+    "listing, message",
+    [
+        (
+            "psynet-app-listing-exit=124\n",
+            " (timed out after 30 s); check the SSH connection and try again.",
+        ),
+        ("psynet-app-listing-exit=127\n", " (the server has no `timeout` command)."),
+        (
+            KeyError("old_key is not a valid configuration key"),
+            " because of a configuration problem: old_key is not a valid "
+            "configuration key",
+        ),
+    ],
 )
-def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, status, problem):
+def test_destroy_ssh_reports_a_failed_app_listing(monkeypatch, listing, message):
     executor = Mock()
-    executor.run.return_value = f"psynet-app-listing-exit={status}\n"
+    if isinstance(listing, Exception):
+        executor.run.side_effect = listing
+    else:
+        executor.run.return_value = listing
     _patch_ssh_listing(monkeypatch, executor)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one", "--yes"])
     assert result.exit_code == 1, result.output
-    assert (
-        f"Couldn't list the apps on musix ({problem}); check the SSH "
-        "connection and try again." in result.output
-    )
+    assert f"Couldn't list the apps on musix{message}" in result.output
     assert "no apps" not in result.output
+    assert ("check the SSH" in result.output) == ("check the SSH" in message)
 
 
 def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
@@ -6358,6 +6391,38 @@ def test_ssh_commands_reject_apps_that_are_not_on_the_server(monkeypatch):
             "No app named 'dogfood-dpe' on musix. Apps there: dogfood-cf, "
             "dogfood-dbg, dogfood-dep (did you mean dogfood-dep?)" in result.output
         )
+
+
+def test_export_ssh_accepts_the_short_name_of_an_app_deployed_without_app(
+    monkeypatch,
+):
+    from psynet.command_line import export__docker_ssh
+
+    executor = Mock()
+    executor.run.return_value = (
+        "/home/dallinger/dallinger/dlgr-d8f9f2c4/docker-compose.yml\n"
+        "psynet-app-listing-exit=0\n"
+    )
+    _patch_ssh_listing(monkeypatch, executor)
+    monkeypatch.setattr("psynet.command_line._awaken_ssh_app", lambda server, app: None)
+    monkeypatch.setattr(
+        "psynet.command_line._fetch_ssh_pending_async_jobs_for_export",
+        lambda app, server: None,
+    )
+    exported = []
+    monkeypatch.setattr(
+        "psynet.command_line.export_", lambda ctx, **kwargs: exported.append(kwargs)
+    )
+
+    result = CliRunner().invoke(
+        export__docker_ssh, ["--app", "d8f9f2c4-0b1e-4c43-9d52-5f0c3b7a1e2d"]
+    )
+    assert "(did you mean dlgr-d8f9f2c4?)" in result.output
+    assert exported == []
+
+    result = CliRunner().invoke(export__docker_ssh, ["--app", "dlgr-d8f9f2c4"])
+    assert result.exit_code == 0, result.output
+    assert [kwargs["app"] for kwargs in exported] == ["dlgr-d8f9f2c4"]
 
 
 def test_destroy_ssh_combines_app_option_and_arguments(monkeypatch):
