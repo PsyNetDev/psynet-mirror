@@ -5832,7 +5832,7 @@ def _rerun_in_isolated_environment(mode="test"):
             signal.signal(sig, signal.SIG_IGN)
     if mode == "debug":
         log(
-            "The isolated debug server has stopped and its database and Redis "
+            "The isolated debug session has ended and its database and Redis "
             "were removed. If you ran its export line in another terminal, run "
             "'unset DATABASE_URL REDIS_URL base_port' there."
         )
