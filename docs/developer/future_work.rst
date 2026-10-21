@@ -632,3 +632,42 @@ Move state-changing dashboard actions to POST and set
 ``SESSION_COOKIE_SAMESITE`` (``"Lax"`` or ``"Strict"``) on the experiment
 server, so browsers don't send the session cookie with cross-site requests.
 Update the dashboard JavaScript and the Slack "Trigger export" link to match.
+
+Use Dallinger's app addresses and app-name checks for SSH commands
+------------------------------------------------------------------
+
+Date
+++++
+
+2026-10-21
+
+Problem
++++++++
+
+PsyNet works out a docker-ssh app's address itself. ``_remote_public_origin``
+and ``_caddy_site_origin`` in ``psynet/command_line.py`` parse the server's
+Caddy files (released Dallinger's root ``Caddyfile``, ``root.d/<app>`` and
+``caddy.d/<app>``), about 70 lines that copy Dallinger's server layout into
+PsyNet. PsyNet also applies Dallinger's Heroku-era ``verify_id`` to
+``deploy ssh``, ``debug ssh`` and ``performance-test ssh``, so
+``deploy ssh --update`` and ``performance-test ssh`` can't target an app on
+the server's own host, whose name starts with ``dlgr-``.
+
+Idea
+++++
+
+Once PsyNet pins a Dallinger release that includes
+`Dallinger PR #10163 <https://github.com/Dallinger/Dallinger/pull/10163>`_:
+
+- Drop ``_remote_public_origin`` and ``_caddy_site_origin``.
+  ``_ssh_dashboard_endpoint`` can take the address from Dallinger, for example
+  ``next((a.public_origin for a in get_apps(server) if a.name == app), None)``.
+  Keep the local launch note first and the ``https://<app>.<server>`` guess
+  last. The layout cases in ``tests/isolated/test_ssh_export_origin.py`` can
+  go too, because Dallinger tests them.
+- Stop applying ``verify_id`` to the SSH commands, and use
+  ``_verify_existing_ssh_app`` as the single ``--app`` check for every SSH
+  command; Dallinger itself refuses an ``--app`` deploy that would move an
+  app off the server's own host. Heroku commands keep ``verify_id``.
+- Keep ``_require_ssh_apps_exist``'s ``dlgr-<first 8 characters>`` suggestion
+  for a full experiment UUID; that is PsyNet's own help.
