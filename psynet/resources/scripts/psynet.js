@@ -3435,9 +3435,13 @@
     // The server answers 404 with this status when the participant is no
     // longer in its database, e.g. a tab left open across a restart.
     psynet.isUnknownParticipantResponse = function (request) {
-      if (request.status !== 404) return false;
+      if (!request || request.status !== 404) return false;
       try {
-        return JSON.parse(request.response).status === "unknown_participant";
+        // An XMLHttpRequest has `response`; a jQuery jqXHR `responseText`.
+        let body =
+          request.responseJSON ||
+          JSON.parse(request.responseText || request.response || "");
+        return body.status === "unknown_participant";
       } catch (error) {
         return false;
       }
@@ -3718,6 +3722,7 @@
               } else if (psynet.isUnknownParticipantResponse(request)) {
                 // Retrying (as a timeline hold would) can't bring the session
                 // back; the error page explains.
+                psynet.stopTimelineHold();
                 onErrorResponse(request);
               } else if (options.timelineHoldResume) {
                 passedValidation =

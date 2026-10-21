@@ -47,6 +47,7 @@ def test_a_browser_tab_of_an_unknown_session_gets_a_short_page(client):
     assert response.status_code == 404
     assert "This session is no longer available." in response.text
     assert "researcher" not in response.text
+    assert "automatic-early-exit" not in response.text
 
 
 @pytest.mark.parametrize(
