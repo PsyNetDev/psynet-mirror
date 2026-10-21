@@ -19,7 +19,13 @@ import tempfile
 import threading
 import time
 import zipfile
-from contextlib import ExitStack, contextmanager, nullcontext, redirect_stdout
+from contextlib import (
+    ExitStack,
+    contextmanager,
+    nullcontext,
+    redirect_stdout,
+    suppress,
+)
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -5722,11 +5728,11 @@ def _rerun_in_isolated_environment(mode="test"):
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
     0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
-    reach the child as SIGTERM. A Ctrl+C in the terminal reaches the child
-    directly, so SIGINT is only passed on if this process isn't in the
-    terminal's foreground process group (for example if it has no terminal,
-    as when an agent runs it). A second signal kills the child. The database
-    and Redis are removed when the child exits.
+    reach the child as SIGTERM. If this process is the foreground job of a
+    terminal, Ctrl+C reaches the child directly. Otherwise (for example if it
+    has no terminal, as when an agent runs it), the child runs in its own
+    process group and SIGINT is passed on to that group. A second signal kills
+    the child. The database and Redis are removed when the child exits.
 
     Parameters
     ----------
@@ -5765,7 +5771,15 @@ def _rerun_in_isolated_environment(mode="test"):
             )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
-        process = subprocess.Popen([sys.executable, *sys.orig_argv[1:]], env=env)
+        # The child must get exactly one SIGINT: a second one cuts its cleanup
+        # short. A terminal's Ctrl+C reaches it in this process group. Otherwise
+        # it gets a group of its own, which only the SIGINT passed on below reaches.
+        own_group = not _ctrl_c_reaches_this_process_group()
+        process = subprocess.Popen(
+            [sys.executable, *sys.orig_argv[1:]],
+            env=env,
+            process_group=0 if own_group else None,
+        )
         while True:
             try:
                 exit_code = process.wait()
@@ -5776,8 +5790,10 @@ def _rerun_in_isolated_environment(mode="test"):
                     process.kill()
                 elif isinstance(e, SystemExit):
                     process.terminate()
-                elif not _ctrl_c_reaches_this_process_group():
-                    process.send_signal(signal.SIGINT)
+                elif own_group:
+                    # macOS reports EPERM for a group that only has zombies left.
+                    with suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGINT)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):

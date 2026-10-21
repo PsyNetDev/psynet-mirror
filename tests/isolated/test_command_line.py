@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import importlib
 import io
@@ -5026,17 +5027,37 @@ def test_isolated_wrapper_without_a_terminal_passes_sigint_on(tmp_path):
     process = subprocess.Popen(
         [sys.executable, "-c", wrapper], cwd=tmp_path, start_new_session=True
     )
-    deadline = time.monotonic() + 60
-    while not pid_file.exists() or not pid_file.read_text():
-        assert time.monotonic() < deadline, "child process did not start"
-        time.sleep(0.1)
-
-    process.send_signal(signal.SIGINT)
+    pids = [process.pid]
     try:
+        deadline = time.monotonic() + 60
+        while not pid_file.exists() or not pid_file.read_text():
+            assert process.poll() is None and time.monotonic() < deadline
+            time.sleep(0.1)
+        pids.append(int(pid_file.read_text()))
+
+        process.send_signal(signal.SIGINT)
         assert process.wait(timeout=30) != 0
+        assert not psutil.pid_exists(pids[1])
     finally:
-        process.kill()
-    assert not psutil.pid_exists(int(pid_file.read_text()))
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+
+def test_a_foreground_terminal_job_gets_ctrl_c_directly():
+    import pexpect
+
+    check = pexpect.spawn(
+        sys.executable,
+        [
+            "-c",
+            "from psynet.command_line import _ctrl_c_reaches_this_process_group as f; "
+            "print(f())",
+        ],
+        timeout=30,
+    )
+    check.expect(pexpect.EOF)
+    assert check.before.strip().endswith(b"True")
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
