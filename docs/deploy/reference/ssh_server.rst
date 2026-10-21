@@ -294,8 +294,8 @@ with an error asking for ``--yes`` if there is none. The update keeps:
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
 - participants' sessions;
-- its recruitment, which is not opened again, so the participant link stays
-  the same.
+- its recruitment, which is not opened again; a participant link stays the
+  same.
 
 An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh

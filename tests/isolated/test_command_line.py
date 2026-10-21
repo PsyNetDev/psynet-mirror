@@ -1892,6 +1892,7 @@ def test_performance_test_deploys_mark_the_app(capsys):
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
+    assert pre_launch.call_args.kwargs["confirm_update"] is False
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
     assert "Ready:" not in capsys.readouterr().out
 
@@ -2253,20 +2254,28 @@ def test_ssh_update_refuses_unsafe_updates(
         _check_ssh_update("musix", "consonance", "live")
 
 
-def test_ssh_update_without_an_answer_needs_yes(monkeypatch, capsys):
+@pytest.mark.parametrize("answer", ["y\n", ""])
+def test_ssh_update_reads_a_piped_answer(tmp_path, monkeypatch, capsys, answer):
+    from psynet import deployment_info
     from psynet.command_line import _check_ssh_update
 
+    monkeypatch.chdir(tmp_path)
+    deployment_info.write_all({"mode": "sandbox"})
     running = {"deployment_id": "d", "secret": "s", "mode": "sandbox"}
     monkeypatch.setattr(
         "psynet.command_line._read_running_deployment_info", lambda *a: running
     )
-    monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    with pytest.raises(click.ClickException) as error:
+    monkeypatch.setattr("sys.stdin", io.StringIO(answer))
+    if answer:
         _check_ssh_update("musix", "consonance", "sandbox")
-    assert error.value.message == (
-        "Confirmation needed to rebuild and restart consonance on musix, "
-        "keeping its database; re-run with --yes."
-    )
+        assert deployment_info.read("secret") == "s"
+    else:
+        with pytest.raises(click.ClickException) as error:
+            _check_ssh_update("musix", "consonance", "sandbox")
+        assert error.value.message == (
+            "Confirmation needed to rebuild and restart consonance on musix, "
+            "keeping its database; re-run with --yes."
+        )
     assert capsys.readouterr().out.endswith("[Y/n]: \n")
 
 

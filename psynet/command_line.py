@@ -2071,10 +2071,10 @@ def _pre_launch(
 ):
     """Check and prepare the experiment directory before a launch.
 
-    ``confirm_update`` asks the user to confirm an SSH ``update``; it is false
-    with ``--yes``. ``performance_test_app`` marks an app that ``psynet
-    performance-test ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
+    ``confirm_update`` asks the user to confirm an SSH ``update``.
+    ``performance_test_app`` marks an app that ``psynet performance-test
+    ssh`` deploys for bots: the experiment needn't have a consent page.
+    ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
     """
@@ -2132,9 +2132,7 @@ def _pre_launch(
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:
-            _check_ssh_update(
-                server, app, mode, confirm=confirm_update and not performance_test_app
-            )
+            _check_ssh_update(server, app, mode, confirm=confirm_update)
 
     run_pre_checks(
         mode,
@@ -3151,8 +3149,8 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks,
-    including the update confirmation that ``yes`` skips.
+    ``performance_test_app``, :func:`_pre_launch` relaxes its checks, and an
+    update isn't confirmed first, as with ``yes``.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -3171,7 +3169,7 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
-            confirm_update=not yes,
+            confirm_update=not (yes or performance_test_app),
             local_packages=local_packages,
             performance_test_app=performance_test_app,
             ingress=ingress,
