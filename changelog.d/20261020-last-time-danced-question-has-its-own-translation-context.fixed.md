@@ -1,0 +1,1 @@
+The "When was the last time you danced?" demography question (`LastTimeDanced`) now has its own translation context, `last_time_danced`. It shared the context `dance` with `DanceSociallyOrProfessionally`, so `psynet translate` warned in every locale that translates "I never dance" and "I never danced" the same way, as languages without tense do.
