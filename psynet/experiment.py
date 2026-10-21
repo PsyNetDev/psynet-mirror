@@ -145,7 +145,7 @@ from .recruiters import (  # noqa: F401
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .static_resources import (
     apply_versioned_static_cache_headers,
     get_static_package_extra_files,
@@ -1340,10 +1340,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         logs_url = None
         if is_ssh_deployment:
-            logs_url = dozzle_url(
-                deployment_information.get("server"),
-                deployment_information.get("ingress"),
-            )
+            logs_url = recorded_dozzle_url(deployment_information)
 
         def unpack_export(deployment_id):
             exp = get_experiment()
