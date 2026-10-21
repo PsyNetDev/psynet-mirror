@@ -302,14 +302,19 @@ class TestCommandLine(object):
         assert ctx.invoke.call_args.kwargs["update"] is True
 
     @pytest.mark.parametrize(
-        "config_txt, expected",
+        "config_txt, app, expected",
         [
-            ("[Docker]\n", "consonance"),
-            ("[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n", "ghcr.io/me/exp"),
+            ("[Docker]\n", "consonance", "consonance"),
+            ("[Docker]\n", None, "psynet-experiment"),
+            (
+                "[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n",
+                "consonance",
+                "ghcr.io/me/exp",
+            ),
         ],
     )
     def test_invoke_docker_ssh_deploy_names_an_unnamed_image_after_the_app(
-        self, fresh_dallinger_config, config_txt, expected
+        self, fresh_dallinger_config, config_txt, app, expected
     ):
         from dallinger.config import get_config
 
@@ -321,7 +326,7 @@ class TestCommandLine(object):
             "docker_image_base_name"
         )
         result = _invoke_docker_ssh_deploy(
-            ctx, Mock(params=[]), server="musix", dns_host=None, app="consonance"
+            ctx, Mock(params=[]), server="musix", dns_host=None, app=app
         )
         assert result == expected
 
