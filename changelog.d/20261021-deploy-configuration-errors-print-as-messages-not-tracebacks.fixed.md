@@ -1,0 +1,1 @@
+`psynet debug ssh`, `psynet deploy` and related commands now print two common set-up problems as a short error message instead of a long traceback: an experiment without a consent page ("It looks like your experiment is missing a consent page…"), and an SSH deploy without the `server_pem` setting.

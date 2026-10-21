@@ -4931,6 +4931,33 @@ def test_pre_launch_aborts_when_app_exists():
     mock_run_pre_checks.assert_not_called()
 
 
+def test_pre_launch_reports_a_missing_server_pem_without_a_traceback():
+    from psynet.command_line import _pre_launch
+
+    hosts = {"lab": {"host": "1.2.3.4", "user": "u"}}
+    with (
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line._check_ssh_deploy_credentials"),
+        patch("psynet.command_line.deployment_info.init"),
+        patch(
+            "dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts",
+            side_effect=FileNotFoundError("You have not configured server_pem!"),
+        ),
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+    ):
+        with pytest.raises(click.ClickException, match="configured server_pem"):
+            _pre_launch(
+                Mock(),
+                mode="debug",
+                archive=None,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server="lab",
+                app="study",
+            )
+
+
 @pytest.mark.parametrize(
     "ingress, expected", [(None, "lab.example.org"), ("cloudflare", None)]
 )

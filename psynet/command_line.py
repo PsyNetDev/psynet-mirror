@@ -2117,7 +2117,11 @@ def _pre_launch(
 
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
-        ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        try:
+            ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        except FileNotFoundError as e:
+            # Dallinger's message says how to set server_pem.
+            raise click.ClickException(str(e)) from e
         _abort_if_app_exists(server, app, update=update)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
@@ -2940,7 +2944,11 @@ def run_pre_checks(
     exp.check_config()
     exp.check_size(heroku=heroku)
     if check_consents:
-        exp.check_consents()
+        try:
+            exp.check_consents()
+        except RuntimeError as e:
+            # The message explains how to add a consent page.
+            raise click.ClickException(str(e)) from e
     exp.check_python_dependencies()
 
     try:
