@@ -5,17 +5,8 @@ To run these tests locally (requires API credentials):
 
     pytest tests/isolated/translation/test_translator.py -v
 
-These tests require either:
-- OpenAI API key (for ChatGptTranslator) - set `openai_api_key` in .dallingerconfig
-- Google Cloud Translate API key (for GoogleTranslator) - set `google_translate_json_path` in .dallingerconfig
-
-If only OpenAI credentials are available, run ChatGPT tests only:
-
-    pytest tests/isolated/translation/test_translator.py -k "ChatGpt" -v
-
+These tests require an OpenAI API key: set `openai_api_key` in .dallingerconfig.
 """
-
-import os
 
 import pytest
 
@@ -23,7 +14,6 @@ from psynet.experiment import import_local_experiment
 from psynet.pytest_psynet import local_only, path_to_test_experiment
 from psynet.translation.translators import (
     ChatGptTranslator,
-    GoogleTranslator,
     TranslationContext,
 )
 
@@ -33,33 +23,30 @@ TEST_TRANSLATIONS = [
         ['<div class="alert alert-primary" role="alert">Hello</div>'],
         ['<div class="alert alert-primary" role="alert">Bonjour</div>'],
     ),
-    (["Goodbye ■0■!"], ["Au revoir ■0■!"]),  # The variable {NAME} gets encoded as ■0■
+    (["Goodbye {NAME}!"], ["Au revoir {NAME}!"]),
     (["Thank you"], ["Merci"]),
 ]
 
 
-@local_only  # We don't run this in the CI because it requires an API keys for the autotranslators
+@local_only  # We don't run this in the CI because it requires an OpenAI API key
 @pytest.mark.usefixtures("in_experiment_directory")
-@pytest.mark.parametrize("translator_class", [GoogleTranslator, ChatGptTranslator])
 @pytest.mark.parametrize("english,expected_french", TEST_TRANSLATIONS)
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("translation")], indirect=True
 )
-def test_translator(translator_class, english, expected_french, experiment_directory):
+def test_translator(english, expected_french, experiment_directory):
     """
-    Test that translators correctly handle basic English to French translations.
+    Test that ChatGPT correctly handles basic English to French translations.
 
     Parameters
     ----------
-    translator_class : class
-        The translator class to test
     english : list
         Input English texts
     expected_french : list
         Expected French translation
     """
     import_local_experiment()
-    translator = translator_class()
+    translator = ChatGptTranslator()
     assert len(english) == len(expected_french)
     result = translator.translate(texts=english, source_lang="en", target_lang="fr")
 
@@ -71,51 +58,46 @@ def test_translator(translator_class, english, expected_french, experiment_direc
 
 
 @local_only
-def test_translator_with_file_path():
+def test_translator_with_file_path(monkeypatch):
     """Test that translators properly handle file paths."""
     translator = ChatGptTranslator()
-    os.chdir(path_to_test_experiment("translation"))
+    monkeypatch.chdir(path_to_test_experiment("translation"))
 
+    texts = [
+        "Hello, welcome to my experiment!",
+        "What is your name?",
+        "Hello, {NAME}!",
+        "What is your favorite pet?",
+        "dog",
+        "cat",
+        "fish",
+        "hamster",
+        "bird",
+        "snake",
+        "Great, I like {PET} too!",
+    ]
     translations = translator.translate(
-        texts=[
-            "Hello, welcome to my experiment!",
-            "What is your name?",
-            "Hello, {NAME}!",  # ChatGptTranslator uses use_codebook=False, so variables are not encoded
-            "What is your favorite pet?",
-            "dog",
-            "cat",
-            "fish",
-            "hamster",
-            "bird",
-            "snake",
-            "Great, I like {PET} too!",  # ChatGptTranslator uses use_codebook=False, so variables are not encoded
-        ],
+        texts=texts,
         source_lang="en",
         target_lang="fr",
         context=TranslationContext(file_path="experiment.py"),
     )
 
-    expected_translations = [
-        "Bonjour, bienvenue dans mon expérience !",
-        "Quel est votre nom ?",
-        "Bonjour, {NAME} !",
-        "Quel est votre animal préféré?",
+    # Sentences have several valid translations, so only the single words are
+    # pinned; the sentences must be translated and keep their variables.
+    assert len(translations) == 11
+    for i in [0, 1, 2, 3, 10]:
+        assert translations[i] != texts[i]
+    assert [preprocess_translation(t) for t in translations[4:10]] == [
         "chien",
         "chat",
         "poisson",
         "hamster",
         "oiseau",
         "serpent",
-        "Super, j'aime {PET} aussi!",
     ]
-
-    for i, translation in enumerate(translations):
-        expected_translation = expected_translations[i]
-        assert preprocess_translation(translation) == preprocess_translation(
-            expected_translation
-        ), (
-            f"Translation {i} does not match expected translation. Expected: {expected_translation}, Got: {translation}"
-        )
+    assert "{NAME}" in translations[2]
+    assert "{PET}" in translations[10]
 
 
 def preprocess_translation(text: str) -> str:
@@ -141,7 +123,7 @@ def preprocess_translation(text: str) -> str:
 @local_only
 def test_invalid_language():
     """Test that translators properly handle invalid language codes."""
-    translator = GoogleTranslator()
+    translator = ChatGptTranslator()
 
     # TODO - raise a more specific exception here
     with pytest.raises(Exception):

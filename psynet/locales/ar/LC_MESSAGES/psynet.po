@@ -3267,6 +3267,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "بدء التجربة..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "يشارك الكثير من الأشخاص الآن."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"يرجى إبقاء هذه الصفحة مفتوحة: ستنضم تلقائيًا بمجرد توفر مكان. ويمكنك أيضًا "
+"العودة لاحقًا."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"

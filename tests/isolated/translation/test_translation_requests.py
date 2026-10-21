@@ -1,28 +1,36 @@
 """Tests for what is sent to the translator, how often, and in which batches."""
 
+import json
+import sys
+from types import SimpleNamespace
+
 import polib
 import pytest
 
+from psynet.translation import translators
 from psynet.translation.translate import (
     MAX_BATCH_SIZE,
     batch_untranslated,
     reuse_translations,
+    translate_po,
 )
 from psynet.translation.translators import (
     MAX_SOURCE_CONTEXT_CHARS,
     ChatGptTranslator,
     InvalidTranslationError,
     TranslationContext,
+    TranslationError,
     Translator,
     _response_format,
     _script_name,
+    _validate_translations,
+    get_translator_from_name,
+    source_context_for_prompt,
 )
 
 
 class CountingTranslator(Translator):
     """A translator that records its calls instead of contacting a provider."""
-
-    use_codebook = False
 
     def __init__(self, failures=0, drop_variables=0):
         self.failures = failures
@@ -71,6 +79,27 @@ def test_translation_that_drops_a_variable_is_retried():
     assert translator.attempts == [0, 1]
 
 
+@pytest.mark.parametrize(
+    "text, translation, valid",
+    [
+        ("<i>audiovisual</i> recordings", "<i>audiovisuelle</i> Aufnahmen", True),
+        ("<I>Agreement</I> of the <I>Data</I>", "<I>Datenvereinbarung</I>", True),
+        ("<i>audiovisual</i> recordings", "audiovisuelle Aufnahmen", False),
+        ("<i>audiovisual</i> recordings", "<em>audiovisuelle</em> Aufnahmen", False),
+        ("Hello", " ", False),
+    ],
+)
+def test_validation_rejects_lost_html_tags_and_empty_translations(
+    text, translation, valid
+):
+    try:
+        _validate_translations([text], [translation], "de")
+    except InvalidTranslationError:
+        assert not valid
+    else:
+        assert valid
+
+
 def test_translation_gives_up_after_retries():
     translator = CountingTranslator(failures=3)
 
@@ -109,6 +138,20 @@ def test_system_prompt_quotes_only_nearby_lines_of_a_large_file(tmp_path):
     assert len(prompt) < 2_000
 
 
+def test_oversized_source_blocks_are_cut_not_dropped(tmp_path):
+    source = tmp_path / "recruiters.py"
+    lines = ["#" * 2_000] * 2_000
+    lines[999] = '_p("lucid", "Save")'
+    lines[1_499] = '_p("lucid", "Cancel")'
+    source.write_text("\n".join(lines), encoding="utf-8")
+
+    context = source_context_for_prompt(str(source), [1_000, 1_500])
+
+    assert '_p("lucid", "Save")' in context
+    assert '_p("lucid", "Cancel")' in context
+    assert len(context) <= MAX_SOURCE_CONTEXT_CHARS + 2
+
+
 def test_system_prompt_asks_to_translate_ui_labels():
     prompt = ChatGptTranslator().get_system_prompt("English", "Japanese")
 
@@ -125,7 +168,7 @@ def test_system_prompt_includes_existing_translations():
 
 def test_system_prompt_names_the_locale_script():
     assert _script_name("sat") == "Ol Chiki"
-    assert _script_name("od") is None
+    assert _script_name("od") == "Odia"
     assert _script_name("sr") == "Latin"
 
     prompt = ChatGptTranslator().get_system_prompt(
@@ -135,6 +178,86 @@ def test_system_prompt_names_the_locale_script():
     assert "Ol Chiki script" in prompt
 
 
+def _fake_chat_gpt(
+    monkeypatch,
+    temperature,
+    reject_temperature=False,
+    replies=(),
+    model="gpt-6-luna",
+):
+    """Route ChatGptTranslator to a fake ``openai`` module and return its requests.
+
+    The fake answers with ``replies`` in turn, then with "Bonjour".
+    """
+
+    class BadRequestError(Exception):
+        def __init__(self, param):
+            self.param = param
+
+    requests = []
+    replies = list(replies)
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        if reject_temperature and "temperature" in kwargs:
+            raise BadRequestError(param="temperature")
+        reply = replies.pop(0) if replies else "Bonjour"
+        message = SimpleNamespace(content=json.dumps({"1": reply}), refusal=None)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=lambda api_key: client, BadRequestError=BadRequestError),
+    )
+    monkeypatch.setattr(translators, "_MODELS_WITHOUT_TEMPERATURE", set())
+    config = {"openai_api_key": "key", "openai_default_model": model}
+    if temperature is not None:
+        config["openai_default_temperature"] = temperature
+    monkeypatch.setattr(translators, "get_config", lambda: config)
+    return requests
+
+
+@pytest.mark.parametrize(
+    "temperature, expected", [(None, ["absent", "absent"]), ("0", [0.0, 0.7])]
+)
+def test_temperature_is_sent_only_when_configured(monkeypatch, temperature, expected):
+    """The first reply is empty, so the request is retried."""
+    requests = _fake_chat_gpt(monkeypatch, temperature, replies=[""])
+
+    assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
+
+    assert [request.get("temperature", "absent") for request in requests] == expected
+
+
+def test_temperature_is_dropped_for_models_that_reject_it(monkeypatch, capsys):
+    requests = _fake_chat_gpt(monkeypatch, "0", reject_temperature=True)
+
+    for _ in range(2):
+        assert ChatGptTranslator().translate(["Hello"], "en", "fr") == ["Bonjour"]
+
+    assert ["temperature" in request for request in requests] == [True, False, False]
+    assert "openai_default_temperature is ignored" in capsys.readouterr().out
+
+
+def test_gpt_4o_reply_limit_stays_within_what_it_accepts(monkeypatch):
+    requests = _fake_chat_gpt(monkeypatch, "0", model="gpt-4o")
+
+    ChatGptTranslator().translate(["a" * 5_000], "en", "fr")
+
+    assert requests[0]["max_completion_tokens"] <= 16_384
+
+
+def test_removed_google_translator_has_a_clear_error():
+    with pytest.raises(ValueError, match="no longer supports Google Translate"):
+        get_translator_from_name("google_translate")
+
+
 def test_response_format_requires_exactly_one_translation_per_text():
     schema = _response_format(["1", "2"])["json_schema"]["schema"]
 
@@ -142,10 +265,37 @@ def test_response_format_requires_exactly_one_translation_per_text():
     assert schema["additionalProperties"] is False
 
 
-def _entry(msgid, file, line, msgctxt=None, msgstr=""):
+def _entry(msgid, file, line, msgctxt=None, msgstr="", fuzzy=False):
     return polib.POEntry(
-        msgid=msgid, msgctxt=msgctxt, msgstr=msgstr, occurrences=[(file, str(line))]
+        msgid=msgid,
+        msgctxt=msgctxt,
+        msgstr=msgstr,
+        occurrences=[(file, str(line))],
+        flags=["fuzzy"] if fuzzy else [],
     )
+
+
+def test_finished_batches_are_saved_when_a_later_batch_fails(tmp_path):
+    class FailingTranslator(Translator):
+        def translate(self, texts, source_lang, target_lang, context=None):
+            if context.file_path == "b.py":
+                raise TranslationError("provider outage")
+            return [f"{text}-{target_lang}" for text in texts]
+
+    pot = polib.POFile()
+    pot.append(_entry("Hello", "a.py", 1))
+    pot.append(_entry("Goodbye", "b.py", 1))
+    pot_path = tmp_path / "experiment.pot"
+    pot.save(str(pot_path))
+    po_path = tmp_path / "experiment.po"
+
+    with pytest.raises(TranslationError):
+        translate_po(
+            str(pot_path), str(po_path), "en", "fr", False, FailingTranslator()
+        )
+
+    saved = {entry.msgid: entry.msgstr for entry in polib.pofile(str(po_path))}
+    assert saved == {"Hello": "Hello-fr", "Goodbye": ""}
 
 
 class RecordingTranslator(Translator):
@@ -159,20 +309,23 @@ def test_only_new_messages_are_sent_in_batches_per_file():
     old_po.append(_entry("Back", "consent.html", "", "navigation", "Retour"))
     old_po.append(_entry("I agree", "consent.html", "", "consent", "J'accepte"))
     old_po.append(_entry("Leave", "consent.html", "", "consent", "Leave"))
+    old_po.append(_entry("Stay", "consent.html", "", "consent", "Stay", fuzzy=True))
 
     po = polib.POFile()
     po.append(_entry("Back", "consent.html", 1, "navigation"))
     po.append(_entry("I agree", "consent.html", 2, "consent"))
     po.append(_entry("Leave", "consent.html", 3, "consent"))
-    po.append(_entry("I disagree", "consent.html", 4, "consent"))
-    po.append(_entry("Save", "recruiters.py", 5, "lucid"))
+    po.append(_entry("Stay", "consent.html", 4, "consent"))
+    po.append(_entry("I disagree", "consent.html", 5, "consent"))
+    po.append(_entry("Save", "recruiters.py", 6, "lucid"))
     for i in range(MAX_BATCH_SIZE + 1):
         po.append(_entry(f"Country {i}", "countries.py", i + 1, "country_name"))
 
+    # The reviewed English copy is kept; the fuzzy one is translated again.
     assert reuse_translations(po, old_po) == 3
     consent, recruiters, *countries = batch_untranslated(po)
 
-    assert [e.msgid for e in consent.entries] == ["I disagree"]
+    assert [e.msgid for e in consent.entries] == ["Stay", "I disagree"]
     assert consent.examples[0] == ("I agree", "J'accepte")
     assert ("Leave", "Leave") not in consent.examples
     assert recruiters.file == "recruiters.py"
@@ -180,6 +333,10 @@ def test_only_new_messages_are_sent_in_batches_per_file():
 
     translator = RecordingTranslator()
     consent.translate("en", "fr", False, translator)
-    assert translator.context.labels == ["consent"]
-    assert consent.entries[0].msgstr == "I disagree-fr"
-    assert consent.entries[0].fuzzy
+    assert translator.context.labels == ["consent", "consent"]
+    assert consent.entries[1].msgstr == "I disagree-fr"
+    assert consent.entries[1].fuzzy
+
+    assert countries[1].examples == []
+    countries[0].translate("en", "fr", False, translator)
+    assert ("Country 0", "Country 0-fr") in countries[1].examples

@@ -304,7 +304,6 @@
  "tests/isolated/test_zip_utils.py": 4.2,
  "tests/isolated/translation/test_babel_extraction.py": 5.8,
  "tests/isolated/translation/test_check.py": 3.6,
- "tests/isolated/translation/test_codebook.py": 5.1,
  "tests/isolated/translation/test_directory_filtering.py": 7.7,
  "tests/isolated/translation/test_get_translator.py": 11.1,
  "tests/isolated/translation/test_missing_catalog.py": 4.1,

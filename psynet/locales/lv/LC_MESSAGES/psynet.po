@@ -3373,6 +3373,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Eksperiments tiek sākts..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Šobrīd piedalās ļoti daudz cilvēku."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Lūdzu, atstājiet šo lapu atvērtu: jūs automātiski pievienosieties, tiklīdz "
+"būs brīva vieta. Varat arī atgriezties vēlāk."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3554,7 +3570,7 @@ msgstr "Azerbaidžāna"
 #, fuzzy
 msgctxt "country_name"
 msgid "Bahamas"
-msgstr "Bahamas"
+msgstr "Bahamu salas"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5222,7 +5238,7 @@ msgstr "Igauņu"
 #, fuzzy
 msgctxt "language_name"
 msgid "Ewe"
-msgstr "Ewe"
+msgstr "Eve"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5438,7 +5454,7 @@ msgstr "Kannadu"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kanuri"
-msgstr "Kanuri"
+msgstr "Kanūru"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5474,7 +5490,7 @@ msgstr "Kirgīzu"
 #, fuzzy
 msgctxt "language_name"
 msgid "Komi"
-msgstr "Komi"
+msgstr "Komiešu"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5498,7 +5514,7 @@ msgstr "Korejiešu"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kuanyama"
-msgstr "Kuanyama"
+msgstr "Kuanjama"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5510,7 +5526,7 @@ msgstr "Kurdu"
 #, fuzzy
 msgctxt "language_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "Laosiešu"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5642,13 +5658,13 @@ msgstr "Nauru"
 #, fuzzy
 msgctxt "language_name"
 msgid "Navajo"
-msgstr "Navajo"
+msgstr "Navahu"
 
 #: psynet/translation/languages.py
 #, fuzzy
 msgctxt "language_name"
 msgid "Ndonga"
-msgstr "Ndonga"
+msgstr "Ndongu"
 
 #: psynet/translation/languages.py
 #, fuzzy

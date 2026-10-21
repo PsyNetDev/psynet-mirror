@@ -1157,7 +1157,7 @@ msgstr "Schakel alstublieft pop-upblokkeringen uit voordat u doorgaat."
 #, fuzzy
 msgctxt "ad"
 msgid "Begin Experiment"
-msgstr "Begin Experiment"
+msgstr "Begin het experiment"
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2560,7 +2560,7 @@ msgstr ""
 #, fuzzy
 msgctxt "consent-disclaimer"
 msgid "Disclaimer"
-msgstr "Disclaimer"
+msgstr "Voorbehoud"
 
 #: psynet/templates/consents/open_science_consent.html
 #, fuzzy
@@ -3193,7 +3193,7 @@ msgstr "Als u niet wilt instemmen, sluit dan deze pagina."
 #: psynet/templates/macros/control.html
 #, fuzzy
 msgid "Reset"
-msgstr "Reset"
+msgstr "Resetten"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
@@ -3447,6 +3447,22 @@ msgstr "Referentiecode"
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Experiment starten..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Veel mensen doen op dit moment mee."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Houd deze pagina open: u neemt automatisch deel zodra er plaats is. U kunt "
+"ook later terugkomen."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -4182,7 +4198,7 @@ msgstr "Ierland"
 #, fuzzy
 msgctxt "country_name"
 msgid "Isle of Man"
-msgstr "Isle of Man"
+msgstr "Eiland Man"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4662,7 +4678,7 @@ msgstr "Saint Kitts en Nevis"
 #, fuzzy
 msgctxt "country_name"
 msgid "Saint Lucia"
-msgstr "Saint Lucia"
+msgstr "Sint Lucia"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5034,7 +5050,7 @@ msgstr "Abchazisch"
 #, fuzzy
 msgctxt "language_name"
 msgid "Afar"
-msgstr "Afar"
+msgstr "Afarisch"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5214,7 +5230,7 @@ msgstr "Tsjoevasjisch"
 #, fuzzy
 msgctxt "language_name"
 msgid "Cornish"
-msgstr "Cornish"
+msgstr "Cornisch"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5472,7 +5488,7 @@ msgstr "Inuktitut"
 #, fuzzy
 msgctxt "language_name"
 msgid "Inupiaq"
-msgstr "Inupiaq"
+msgstr "Inupiak"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5502,7 +5518,7 @@ msgstr "Javaans"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kalaallisut"
-msgstr "Kalaallisut"
+msgstr "Groenlands"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5586,7 +5602,7 @@ msgstr "Koerdisch"
 #, fuzzy
 msgctxt "language_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "Laotiaans"
 
 #: psynet/translation/languages.py
 #, fuzzy

@@ -3444,6 +3444,22 @@ msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Memulakan eksperimen..."
 
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Ramai orang sedang menyertai kajian ini sekarang."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Sila biarkan halaman ini terbuka: anda akan menyertai kajian secara "
+"automatik sebaik sahaja terdapat ruang. Anda juga boleh kembali kemudian."
+
 #: psynet/templates/timeline-page.html
 #, fuzzy
 msgctxt "timeline_comment"
@@ -3763,7 +3779,7 @@ msgstr "Kemboja"
 #, fuzzy
 msgctxt "country_name"
 msgid "Cameroon"
-msgstr "Cameroon"
+msgstr "Kamerun"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3793,7 +3809,7 @@ msgstr "Chad"
 #, fuzzy
 msgctxt "country_name"
 msgid "Chile"
-msgstr "Chile"
+msgstr "Cili"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3817,13 +3833,13 @@ msgstr "Kepulauan Cocos"
 #, fuzzy
 msgctxt "country_name"
 msgid "Colombia"
-msgstr "Colombia"
+msgstr "Kolombia"
 
 #: psynet/translation/countries.py
 #, fuzzy
 msgctxt "country_name"
 msgid "Comoros"
-msgstr "Comoros"
+msgstr "Komoro"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3883,7 +3899,7 @@ msgstr "Czechia"
 #, fuzzy
 msgctxt "country_name"
 msgid "Côte d'Ivoire"
-msgstr "Côte d'Ivoire"
+msgstr "Pantai Gading"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3901,7 +3917,7 @@ msgstr "Djibouti"
 #, fuzzy
 msgctxt "country_name"
 msgid "Dominica"
-msgstr "Dominica"
+msgstr "Dominika"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4045,7 +4061,7 @@ msgstr "Gibraltar"
 #, fuzzy
 msgctxt "country_name"
 msgid "Greece"
-msgstr "Greece"
+msgstr "Yunani"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4177,7 +4193,7 @@ msgstr "Ireland"
 #, fuzzy
 msgctxt "country_name"
 msgid "Isle of Man"
-msgstr "Isle of Man"
+msgstr "Pulau Man"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4261,7 +4277,7 @@ msgstr "Kyrgyzstan"
 #, fuzzy
 msgctxt "country_name"
 msgid "Lao"
-msgstr "Lao"
+msgstr "Laos"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4273,7 +4289,7 @@ msgstr "Latvia"
 #, fuzzy
 msgctxt "country_name"
 msgid "Lebanon"
-msgstr "Lebanon"
+msgstr "Lubnan"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4393,7 +4409,7 @@ msgstr "Mexico"
 #, fuzzy
 msgctxt "country_name"
 msgid "Micronesia"
-msgstr "Micronesia"
+msgstr "Mikronesia"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -5053,7 +5069,7 @@ msgstr "Albania"
 #, fuzzy
 msgctxt "language_name"
 msgid "Amharic"
-msgstr "Amharic"
+msgstr "Amhara"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5131,7 +5147,7 @@ msgstr "Belarus"
 #, fuzzy
 msgctxt "language_name"
 msgid "Bengali"
-msgstr "Bengali"
+msgstr "Benggali"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5143,7 +5159,7 @@ msgstr "Bislama"
 #, fuzzy
 msgctxt "language_name"
 msgid "Bosnian"
-msgstr "Bosnian"
+msgstr "Bosnia"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5167,7 +5183,7 @@ msgstr "Burma"
 #, fuzzy
 msgctxt "language_name"
 msgid "Catalan"
-msgstr "Catalan"
+msgstr "Katalan"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5215,7 +5231,7 @@ msgstr "Cornish"
 #, fuzzy
 msgctxt "language_name"
 msgid "Corsican"
-msgstr "Corsican"
+msgstr "Korsika"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5257,7 +5273,7 @@ msgstr "Denmark"
 #, fuzzy
 msgctxt "language_name"
 msgid "Dhivehi"
-msgstr "Dhivehi"
+msgstr "Divehi"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5371,7 +5387,7 @@ msgstr "Gujarati"
 #, fuzzy
 msgctxt "language_name"
 msgid "Haitian"
-msgstr "Haitian"
+msgstr "Haiti"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5539,7 +5555,7 @@ msgstr "Kinyarwanda"
 #, fuzzy
 msgctxt "language_name"
 msgid "Kirghiz"
-msgstr "Kirghiz"
+msgstr "Kirgiz"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5641,7 +5657,7 @@ msgstr "Maithili"
 #, fuzzy
 msgctxt "language_name"
 msgid "Malagasy"
-msgstr "Malagasy"
+msgstr "Malagasi"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -5917,7 +5933,7 @@ msgstr "Shona"
 #, fuzzy
 msgctxt "language_name"
 msgid "Sichuan Yi"
-msgstr "Sichuan Yi"
+msgstr "Yi Sichuan"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6007,7 +6023,7 @@ msgstr "Tagalog"
 #, fuzzy
 msgctxt "language_name"
 msgid "Tahitian"
-msgstr "Tahitian"
+msgstr "Tahiti"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -6091,7 +6107,7 @@ msgstr "Twi"
 #, fuzzy
 msgctxt "language_name"
 msgid "Uighur"
-msgstr "Uighur"
+msgstr "Uyghur"
 
 #: psynet/translation/languages.py
 #, fuzzy
