@@ -896,10 +896,14 @@ Internationalization
     The OpenAI API key for machine translation. Default: ``None``.
 
 ``openai_default_model`` *str* |psynet-icon|
-    The default OpenAI model to use for translations. Default: ``gpt-4o``.
+    The default OpenAI model to use for translations. Default: ``gpt-6-luna``.
 
 ``openai_default_temperature`` *str* |psynet-icon|
-    The default temperature setting for OpenAI translations. Default: ``0``.
+    The temperature setting for OpenAI translations. Default: not set, so the
+    model's own default is used. Do not set it when using ``gpt-6-luna``,
+    which only accepts its own default; if it is set, PsyNet prints that the
+    model rejected it and leaves it out. Set it for models that accept it,
+    such as ``gpt-4o``.
 
 ``supported_locales`` *list* |psynet-icon|
     Locales (ISO language codes) that the experiment is translated into, e.g.,
