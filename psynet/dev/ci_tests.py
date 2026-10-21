@@ -202,7 +202,7 @@ _STOP_GRACE_S = 30
 def _run(cmd, env, cwd=None, stoppable=True):
     """Run ``cmd`` and return its exit code and output.
 
-    Once :func:`_stop_running_processes` has been called, stoppable commands
+    Once :func:`_stop_starting_processes` has been called, stoppable commands
     are not started.
     """
     with _running_lock:
@@ -218,24 +218,29 @@ def _run(cmd, env, cwd=None, stoppable=True):
         )
         if stoppable:
             _running.add(process)
-    with process:
-        try:
+    try:
+        with process:
             output = process.communicate()[0]
-        finally:
-            _running.discard(process)
+    finally:
+        _running.discard(process)
     return process.returncode, output
 
 
-def _stop_running_processes(threads):
-    """Terminate the running test processes and wait for the workers.
+def _stop_starting_processes():
+    """Stop :func:`_run` from starting test processes; return the running ones."""
+    with _running_lock:
+        _stopping.set()
+        return list(_running)
+
+
+def _stop_running_processes(processes, threads):
+    """Terminate ``processes`` and wait for the workers.
 
     Processes still running after a grace period are killed. Workers that
     are still blocked after that, e.g. on a pipe held open by a
     grandchild, are abandoned; they are daemon threads.
     """
-    with _running_lock:
-        _stopping.set()
-        processes = list(_running)
+    threads = [thread for thread in threads if thread.ident is not None]
     for process in processes:
         process.terminate()
     deadline = time.monotonic() + _STOP_GRACE_S
@@ -343,19 +348,22 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
             for thread in threads:
                 thread.join()
     except BaseException as e:
+        # Emptying the queue stops workers from starting new items. This must
+        # happen before SIGTERM is ignored, which new processes would inherit.
+        with lock:
+            queue.clear()
+        processes = _stop_starting_processes()
         # A second SIGTERM or SIGHUP must not cut the cleanup short.
         for signum in (signal.SIGTERM, signal.SIGHUP):
             ignored_signals[signum] = signal.signal(signum, signal.SIG_IGN)
-        # Emptying the queue stops workers from starting new items. Ctrl+C in
-        # the terminal also interrupts the running pytest processes; SIGTERM
-        # and SIGHUP reach only this process, so they are passed on.
-        with lock:
-            queue.clear()
+        # Ctrl+C in the terminal also interrupts the running pytest processes;
+        # SIGTERM and SIGHUP reach only this process, so they are passed on.
         if isinstance(e, KeyboardInterrupt):
             for thread in threads:
-                thread.join()
+                if thread.ident is not None:
+                    thread.join()
         else:
-            _stop_running_processes(threads)
+            _stop_running_processes(processes, threads)
         raise
     finally:
         for slot in slots:

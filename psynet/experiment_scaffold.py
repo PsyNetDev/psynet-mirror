@@ -1396,13 +1396,14 @@ def scaffold_missing_files():
         # The cleanup removes relative paths, so it must not run elsewhere,
         # e.g. in the repository root when an interrupted pytest session
         # closes this context during interpreter shutdown.
-        cwd = os.getcwd()
-        os.chdir(directory)
-        try:
-            _remove_new_scaffold_context_paths(original_paths)
-            _restore_scaffold_context_modes(original_modes)
-        finally:
-            os.chdir(cwd)
+        if os.path.isdir(directory):
+            cwd = os.getcwd()
+            os.chdir(directory)
+            try:
+                _remove_new_scaffold_context_paths(original_paths)
+                _restore_scaffold_context_modes(original_modes)
+            finally:
+                os.chdir(cwd)
 
 
 # Shared Click help for the prune command (bootstrap + full CLI).
