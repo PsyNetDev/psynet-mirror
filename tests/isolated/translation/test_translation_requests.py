@@ -340,3 +340,28 @@ def test_only_new_messages_are_sent_in_batches_per_file():
     assert countries[1].examples == []
     countries[0].translate("en", "fr", False, translator)
     assert ("Country 0", "Country 0-fr") in countries[1].examples
+
+
+def test_source_copy_is_retried_once_then_kept(tmp_path):
+    class CopyingTranslator(Translator):
+        def translate(self, texts, source_lang, target_lang, context=None):
+            self.texts = texts
+            return list(texts)
+
+    pot = polib.POFile()
+    pot.append(_entry("Andorra", "countries.py", 1, "country_name"))
+    pot_path = tmp_path / "psynet.pot"
+    pot.save(str(pot_path))
+    po_path = tmp_path / "psynet.po"
+    translator = CopyingTranslator()
+
+    def run():
+        translator.texts = []
+        translate_po(str(pot_path), str(po_path), "en", "fr", False, translator)
+        return translator.texts
+
+    assert run() == ["Andorra"]
+    assert run() == ["Andorra"]
+    assert run() == []
+    [entry] = polib.pofile(str(po_path))
+    assert entry.msgstr == "Andorra" and entry.fuzzy

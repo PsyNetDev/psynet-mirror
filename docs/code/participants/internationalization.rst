@@ -170,9 +170,11 @@ When you run ``psynet translate`` again:
 - existing translations, fuzzy or checked, are kept as long as their English
   text and context are unchanged;
 - fuzzy translations that are identical to the English text are translated
-  again, because they are usually failed machine translations. If the
-  English text is the right translation (for example "OK"), remove the fuzzy
-  flag to keep it;
+  once more, because they are often failed machine translations. If the
+  model returns the English text again, as is right for many country names
+  and for "OK", the entry is marked ``psynet-kept-source`` and kept on later
+  runs. To keep an English translation without the retry, remove the fuzzy
+  flag;
 - translations of strings that no longer occur in the source code are
   removed.
 
