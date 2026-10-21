@@ -177,6 +177,8 @@ def check_locales(locales: Iterable[str]):
 
 MAX_BATCH_SIZE = 30
 MAX_EXAMPLES = 20
+KEPT_SOURCE_FLAG = "psynet-kept-source"
+"""Marks a translation that the model returned as the source text twice in a row."""
 
 
 def _line_number(entry: polib.POEntry) -> Optional[int]:
@@ -196,8 +198,11 @@ def reuse_translations(po: polib.POFile, old_po: Optional[polib.POFile]) -> int:
 
     A message keeps its translation, including its fuzzy flag, for as long as its
     text and context are unchanged. A fuzzy translation that is still the
-    English text is usually a failed machine translation, so it is not reused
-    and gets translated again; once a reviewer clears its fuzzy flag, it is kept.
+    English text is often a failed machine translation, so it is translated
+    once more. The retried message is left empty but fuzzy; if the model
+    returns the English text again, :meth:`TranslationBatch.translate` marks it
+    with :data:`KEPT_SOURCE_FLAG` and it is kept from then on, as it is once a
+    reviewer clears its fuzzy flag.
     Returns the number of reused translations.
     """
     if old_po is None:
@@ -205,18 +210,28 @@ def reuse_translations(po: polib.POFile, old_po: Optional[polib.POFile]) -> int:
     previous = {
         (entry.msgctxt, entry.msgid): entry
         for entry in old_po
-        if entry.msgstr
-        and not entry.obsolete
-        and not (entry.fuzzy and entry.msgstr == entry.msgid)
+        if entry.msgstr and not entry.obsolete
     }
     n_reused = 0
     for i, entry in enumerate(po):
         old_entry = previous.get((entry.msgctxt, entry.msgid))
-        if old_entry is not None:
-            old_entry.occurrences = entry.occurrences
-            po[i] = old_entry
-            n_reused += 1
+        if old_entry is None:
+            continue
+        if _should_retry(old_entry):
+            entry.fuzzy = True
+            continue
+        old_entry.occurrences = entry.occurrences
+        po[i] = old_entry
+        n_reused += 1
     return n_reused
+
+
+def _should_retry(entry: polib.POEntry) -> bool:
+    return (
+        entry.fuzzy
+        and entry.msgstr == entry.msgid
+        and KEPT_SOURCE_FLAG not in entry.flags
+    )
 
 
 @dataclass
@@ -271,6 +286,8 @@ class TranslationBatch:
         assert len(translated_texts) == len(texts)
 
         for entry, translated_text in zip(self.entries, translated_texts):
+            if entry.fuzzy and translated_text == entry.msgid:
+                entry.flags.append(KEPT_SOURCE_FLAG)
             entry.msgstr = translated_text
             entry.fuzzy = True  # Signals that the translation needs to be reviewed
 
