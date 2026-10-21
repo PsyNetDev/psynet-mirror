@@ -280,11 +280,19 @@ command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
 was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
 the existing app and prints the update command for it. PsyNet asks you to
-confirm, then rebuilds the image and restarts the app. The update keeps:
+confirm, then rebuilds the image and restarts the app. To skip the question,
+for example in a script or another session without a terminal, add ``--yes``::
+
+    psynet debug ssh --app your-app-name --server your-server --update --yes
+
+Without a terminal, PsyNet stops with an error unless you pass ``--yes``. The
+update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
-- participants' sessions.
+- participants' sessions;
+- the participant link, which PsyNet shows again if this computer saved it
+  when the app was deployed.
 
 An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh

@@ -1926,11 +1926,20 @@ def _abort_if_app_exists(server, app, *, update=False):
         )
 
 
-_option_ssh_update = click.option(
-    "--update",
-    is_flag=True,
-    help="Rebuild a running app in place, keeping its database and skipping launch.",
-)
+def _option_ssh_update(command):
+    """Attach ``--update`` and ``--yes``, which skips the update's confirmation."""
+    command = click.option(
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="With --update, skip the confirmation prompt.",
+    )(command)
+    return click.option(
+        "--update",
+        is_flag=True,
+        help="Rebuild a running app in place, keeping its database and skipping launch.",
+    )(command)
+
 
 _ssh_deployment_options = [
     option_server,
@@ -2041,6 +2050,7 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    confirm_update=True,
     local_packages=(),
     performance_test_app=False,
     ingress=None,
@@ -2048,8 +2058,9 @@ def _pre_launch(
 ):
     """Check and prepare the experiment directory before a launch.
 
-    ``performance_test_app`` marks an app that ``psynet performance-test
-    ssh`` deploys for bots: an update isn't confirmed first, and the
+    ``confirm_update`` asks the user to confirm an SSH ``update``; it is false
+    with ``--yes``. ``performance_test_app`` marks an app that ``psynet
+    performance-test ssh`` deploys for bots: an update isn't confirmed first, and the
     experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
@@ -2108,7 +2119,9 @@ def _pre_launch(
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:
-            _check_ssh_update(server, app, mode, confirm=not performance_test_app)
+            _check_ssh_update(
+                server, app, mode, confirm=confirm_update and not performance_test_app
+            )
 
     run_pre_checks(
         mode,
@@ -2317,6 +2330,7 @@ def deploy__docker_ssh(
     server,
     ingress=None,
     update=False,
+    yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
@@ -2327,7 +2341,7 @@ def deploy__docker_ssh(
     ``--use-local-dallinger``.
     """
     try:
-        _validate_ssh_deploy_update(app, archive, update)
+        _validate_ssh_deploy_update(app, archive, update, server, confirm=not yes)
         _configure_dallinger_image_source(use_local_dallinger=False)
 
         _pre_launch(
@@ -2340,6 +2354,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not yes,
             ingress=ingress,
             dns_host=dns_host,
         )
@@ -2361,20 +2376,29 @@ def deploy__docker_ssh(
             dallinger_summary=False,
         )
 
-        _print_ssh_ready(result, _post_deploy(result))
+        _print_ssh_ready(result, _post_deploy(result), update=update)
     finally:
         _cleanup_exp_directory()
         reset_console()
 
 
-def _validate_ssh_deploy_update(app, archive, update):
-    """Reject an in-place SSH update that cannot keep an existing app."""
+def _validate_ssh_deploy_update(app, archive, update, server=None, confirm=False):
+    """Reject an in-place SSH update that cannot keep an existing app.
+
+    With ``confirm``, the update is to be confirmed, which needs a terminal
+    to ask in; ``--yes`` skips the question.
+    """
     if not update:
         return
     if not app:
         raise click.UsageError("Updating an SSH app requires --app.")
     if archive is not None:
         raise click.UsageError("--archive and --update cannot be used together.")
+    if confirm and not _stdin_is_interactive():
+        raise click.ClickException(
+            f"Confirmation needed to rebuild and restart {app} on {server}, "
+            "keeping its database; re-run with --yes."
+        )
 
 
 def _invoke_docker_ssh_deploy(
@@ -2415,9 +2439,31 @@ def _invoke_docker_ssh_deploy(
         result = ctx.invoke(command, **kwargs)
     if isinstance(result, dict):
         link = _participant_link(result, output.getvalue())
+        if update and not link:
+            link = _recorded_participant_link()
         if link:
             result["participant_link"] = link
     return result
+
+
+def _recorded_participant_link():
+    """Return the participant link saved when this deployment was launched, or ``None``.
+
+    An update keeps the deployment ID, so its launch data is the file that
+    the first deploy from this computer wrote.
+    """
+    try:
+        path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_info.read("deployment_id")
+            / "launch-info.json"
+        )
+        return json.loads(path.read_text(encoding="utf-8")).get("participant_link")
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError) as err:
+        logger.warning("Could not read the recorded participant link: %r", err)
+        return None
 
 
 def _participant_link(result, output):
@@ -2432,14 +2478,16 @@ def _participant_link(result, output):
     return match and match.group(1)
 
 
-def _print_ssh_ready(result, launch_info):
+def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
     Also names the deployed Docker image, if Dallinger reports it.
     Passwords are not printed, so that pasted logs don't leak them; they
     are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
-    study) is shown instead.
+    study) is shown instead. An ``update`` doesn't open recruitment again,
+    so when this computer has no record of the participant link, the user
+    is pointed to the first deploy's output.
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
@@ -2447,6 +2495,8 @@ def _print_ssh_ready(result, launch_info):
         f"{Path(launch_info).name})"
     )
     link = result.get("participant_link")
+    if update and not link:
+        link = "unchanged; shown when the app was first deployed"
     rows = [
         ("Participant link", link),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
@@ -2479,7 +2529,6 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
-    user_set = bool(source)
     if not source:
         from .experiment_scaffold import get_editable_dallinger_source
 
@@ -2494,12 +2543,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
+    # Dallinger says which tree it bakes when it builds the image.
     os.environ["DALLINGER_SOURCE"] = source
-    message = f"Baking local Dallinger from {source} into the experiment image."
-    if not user_set:
-        # Dallinger goes on to say that DALLINGER_SOURCE is set.
-        message += " PsyNet passes this checkout to Dallinger as DALLINGER_SOURCE."
-    click.echo(message)
 
 
 def _reject_leftover_local_image_files():
@@ -3083,6 +3128,7 @@ def _debug_ssh(
     use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    yes=False,
     performance_test_app=False,
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
@@ -3091,12 +3137,16 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
+    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks,
+    including the update confirmation that ``yes`` skips.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
 
-        _validate_ssh_deploy_update(app, archive, update)
+        confirm_update = not (yes or performance_test_app)
+        _validate_ssh_deploy_update(
+            app, archive, update, server, confirm=confirm_update
+        )
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
 
@@ -3110,6 +3160,7 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=confirm_update,
             local_packages=local_packages,
             performance_test_app=performance_test_app,
             ingress=ingress,
@@ -3135,7 +3186,7 @@ def _debug_ssh(
 
         launch_info = _post_deploy(result)
         if not performance_test_app:
-            _print_ssh_ready(result, launch_info)
+            _print_ssh_ready(result, launch_info, update=update)
     finally:
         _cleanup_exp_directory()
 
@@ -4866,9 +4917,14 @@ def destroy__heroku(ctx, app):
 def user_confirms(question, default=False):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
+
+    A piped answer isn't echoed, so the prompt line is ended here instead.
     """
     print(question)
-    return click.confirm("", default=default)
+    answer = click.confirm("", default=default)
+    if not _stdin_is_interactive():
+        click.echo()
+    return answer
 
 
 def _stdin_is_interactive():

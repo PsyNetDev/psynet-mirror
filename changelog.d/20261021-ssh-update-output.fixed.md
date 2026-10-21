@@ -1,0 +1,1 @@
+Fixed the output of `psynet debug ssh` and `psynet deploy ssh`: after `--update`, the closing summary shows the participant link again (or says that it is unchanged) and the launch data keeps it; a confirmation answered through a pipe no longer runs onto the next line; and `--use-local-dallinger` no longer repeats Dallinger's message about the checkout it deploys.
