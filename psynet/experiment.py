@@ -4032,8 +4032,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "study may have been restarted since you opened this page.",
         )
         if cls._busy_response_should_be_html():
-            response = cls.error_page(error_text=message)
-            response.status_code = 404
+            # Not error_page(): its recruiter text (such as a promised return
+            # to the panel) is about a session that still exists.
+            response = make_response(
+                render_template_with_translations(
+                    "psynet_error.html",
+                    error_text=message,
+                    error_page_presentation=None,
+                ),
+                404,
+            )
+            response.headers["Cache-Control"] = "no-store"
             return response
         return (
             jsonify(

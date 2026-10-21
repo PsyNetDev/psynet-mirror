@@ -2,8 +2,10 @@
 
 import json
 import logging
+from importlib import resources
 
 import pytest
+from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -18,10 +20,33 @@ pytestmark = [
 
 
 @pytest.fixture
-def client(db_session, deployment_info):
+def client(db_session, deployment_info, monkeypatch):
     from dallinger.experiment_server.experiment_server import app
 
+    # Deployments copy PsyNet's templates next to Dallinger's; tests don't.
+    layout = (
+        "<html>{% block title %}{% endblock %}{% block body %}{% endblock %}</html>"
+    )
+    loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader({"base/layout.html": layout}),
+            app.jinja_loader,
+        ]
+    )
+    monkeypatch.setattr(app, "jinja_loader", loader)
+    monkeypatch.setattr(app.jinja_env, "loader", loader)
     return app.test_client()
+
+
+def test_a_browser_tab_of_an_unknown_session_gets_a_short_page(client):
+    response = client.get(
+        "/timeline?unique_id=gone:gone", headers={"Accept": "text/html"}
+    )
+
+    assert response.status_code == 404
+    assert "This session is no longer available." in response.text
+    assert "researcher" not in response.text
 
 
 @pytest.mark.parametrize(

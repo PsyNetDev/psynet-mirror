@@ -3432,6 +3432,17 @@
       }
     };
 
+    // The server answers 404 with this status when the participant is no
+    // longer in its database, e.g. a tab left open across a restart.
+    psynet.isUnknownParticipantResponse = function (request) {
+      if (request.status !== 404) return false;
+      try {
+        return JSON.parse(request.response).status === "unknown_participant";
+      } catch (error) {
+        return false;
+      }
+    };
+
     psynet.timelineHoldBusyRetryMs = 250;
 
     // How long a submission keeps retrying while a docker-ssh app wakes;
@@ -3704,6 +3715,10 @@
                   request,
                   options,
                 );
+              } else if (psynet.isUnknownParticipantResponse(request)) {
+                // Retrying (as a timeline hold would) can't bring the session
+                // back; the error page explains.
+                onErrorResponse(request);
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
@@ -3878,7 +3893,16 @@
         url: "/timeline/progress_and_reward",
         cache: false,
         data: { participantId: psynet.participantId },
-      }).done(function (data) {
+      })
+        .fail(function (request) {
+          if (psynet.isUnknownParticipantResponse(request)) {
+            psynetErrorPage.go({
+              uniqueId: psynet.uniqueId,
+              participantId: psynetTemplateData.participantId,
+            });
+          }
+        })
+        .done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
         // The bar carries the width and the accessible value; the visible
