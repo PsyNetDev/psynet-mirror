@@ -606,16 +606,7 @@ timeline-hold wakes and Dallinger's chat channels) are shared by all database
 numbers on a server; prefixing channel names with the database identity in
 both packages would let runs share one server. And ``psynet debug local
 --isolated`` picks a free slot for a debug server, but other commands, such as
-``psynet deploy``, still need these variables set by hand.
-
-Remote launches have a similar problem. ``psynet deploy ssh``,
-``psynet debug ssh`` and their Heroku equivalents build the starting database
-on the local PostgreSQL and Redis: they clear every Redis key, drop the local
-tables and stop the local ``dallinger_heroku_*`` processes that use the same
-database. They ask first when a local server or another program is connected,
-but if the author agrees they still wipe the local experiment. Building the
-template in a temporary database, and clearing only PsyNet's own Redis keys,
-would avoid this.
+``psynet deploy local``, still need these variables set by hand.
 
 Cross-site request protection for dashboard actions
 ---------------------------------------------------
