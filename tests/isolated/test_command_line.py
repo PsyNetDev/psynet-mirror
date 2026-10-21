@@ -936,11 +936,14 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
     output = capsys.readouterr().out
-    assert "Single recruitment link" in output
+    assert output.index("Ready.") < output.index("Single recruitment link")
     assert ("browser windows" in output) is not no_browsers
-    assert "http://127.0.0.1:5001/dashboard" in output
-    assert "Dashboard user: admin password: s3cret" in output
+    assert (
+        "Dashboard: http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
+        in output
+    )
     assert output.count("s3cret") == 1
+    assert "Press Ctrl+C to stop." in output
     if no_browsers:
         assert opened == []
     else:

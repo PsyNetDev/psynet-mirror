@@ -1996,11 +1996,11 @@ class TrialMaker(Module):
         return call_function(function, self=self, experiment=experiment)
 
     def null_criterion(self, experiment):
-        logger.info("Recruitment is disabled for this module.")
+        logger.debug("Recruitment is disabled for this module.")
         return False
 
     def n_participants_criterion(self, experiment):
-        logger.info(
+        logger.debug(
             "Target number of participants = %i, completion counted at %s, number of completed participants = %i, number of working participants = %i.",
             self.target_n_participants,
             self.n_participants_completion,

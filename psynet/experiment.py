@@ -2945,8 +2945,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             res = call_function(criterion.function, experiment=self)
             assert isinstance(res, bool)
-            logger.info(
-                "Recruitment criterion %i/%i ('%s') %s.",
+            logger.debug(
+                "Recruitment criterion %i/%i ('%s') %s",
                 i + 1,
                 len(self.recruitment_criteria),
                 criterion.label,

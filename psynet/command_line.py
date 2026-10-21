@@ -1437,7 +1437,11 @@ def _open_browser_async(url):
 
 
 def _launch_app_and_report(port, no_browsers=False):
-    """Launch the development app and print the recruitment message and dashboard login."""
+    """Launch the development app, then print a ``Ready.`` block.
+
+    The block has the recruitment message, the dashboard login and how to
+    stop the server, as printed by ``dallinger develop debug``.
+    """
     from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
 
@@ -1448,18 +1452,22 @@ def _launch_app_and_report(port, no_browsers=False):
     if no_browsers:
         # Dallinger's HotAir recruiter says this regardless of --no-browsers.
         message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
-    if message:
-        log(message, chevrons=False)
 
     config = get_config()
     if not config.ready:
         config.load()
-    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
-    log(
-        f"Dashboard user: {config.get('dashboard_user')} "
-        f"password: {config.get('dashboard_password')}",
-        chevrons=False,
+    lines = [message] if message else []
+    lines.append(
+        f"Dashboard: {BASE_URL.format(port)}dashboard (user "
+        f"{config.get('dashboard_user')}, password {config.get('dashboard_password')})"
     )
+    develop = importlib.import_module("dallinger.command_line.develop")
+    echo_ready = getattr(develop, "echo_ready", None)
+    if echo_ready is not None:
+        echo_ready(lines)
+    else:
+        # Dallinger versions before echo_ready().
+        click.echo("\n".join(["Ready.", *lines, "Press Ctrl+C to stop."]))
 
 
 @contextmanager
@@ -5779,7 +5787,7 @@ def _rerun_in_isolated_environment(mode="test"):
         if mode == "debug":
             log(
                 "To use this server's data from another terminal (for example with "
-                "psynet export local), first run: export "
+                "psynet export local), first run:\n  export "
                 + " ".join(
                     f"{key}={shlex.quote(env[key])}"
                     for key in ("DATABASE_URL", "REDIS_URL", "base_port")
