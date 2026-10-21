@@ -15,6 +15,18 @@ Start the local database and cache, then the experiment:
 they aren't running. ``psynet debug local`` starts the same web, worker and
 clock processes that a deployed experiment runs, which takes 10 to 15
 seconds, then opens the dashboard and a participant session in your browser.
+Start-up ends with a block like this (with ``--no-browsers``, nothing is
+opened, and this block is how you reach the experiment):
+
+.. code-block:: console
+
+    Ready.
+    Initial recruitment list:
+    http://127.0.0.1:5000/ad?recruiter=hotair&assignmentId=...&mode=debug
+    ...
+    Dashboard: http://127.0.0.1:5000/dashboard (user admin, password ...)
+    Press Ctrl+C to stop.
+
 Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 When a script or a coding agent starts ``psynet debug local`` in a
@@ -49,7 +61,8 @@ different experiments on one machine, add ``--isolated``:
 
     $ psynet debug local --isolated
     ❯❯ Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
-    To use this server's data from another terminal (for example with psynet export local), first run: export DATABASE_URL=... REDIS_URL=... base_port=5100
+    To use this server's data from another terminal (for example with psynet export local), first run:
+      export DATABASE_URL=... REDIS_URL=... base_port=5100
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on

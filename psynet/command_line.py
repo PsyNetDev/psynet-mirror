@@ -1413,8 +1413,8 @@ def launch_app_and_open_browsers(port, **kwargs):
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
-    with the password embedded; this one prints the login once and logs the
-    dashboard without it. It must stay importable by module path because RQ
+    with the password embedded; this one prints the login once, in the
+    ``Ready.`` block, and logs the dashboard URL without it. It must stay importable by module path because RQ
     workers resolve it that way.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
@@ -5755,8 +5755,10 @@ def _rerun_in_isolated_environment(mode="test"):
     terminal, Ctrl+C reaches the child directly. Otherwise (for example if it
     has no terminal, as when an agent runs it), the child runs in its own
     process group and SIGINT is passed on to that group; a SIGINT that arrives
-    after this process stopped being the foreground job is passed on to the
-    child. A second signal kills the child. The database and Redis are removed
+    after this process stopped being the foreground job is passed on as a
+    Ctrl+C would have been, to the child and its processes in this group. A
+    SIGINT sent only to this process while it is still the foreground job
+    looks like a Ctrl+C and isn't passed on. A second signal kills the child. The database and Redis are removed
     when the child exits.
 
     Parameters
@@ -5823,8 +5825,7 @@ def _rerun_in_isolated_environment(mode="test"):
                     # Started as a terminal's foreground job but no longer one
                     # (say the script that started it in the background has
                     # exited), so this SIGINT wasn't a Ctrl+C the child also got.
-                    with suppress(ProcessLookupError):
-                        process.send_signal(signal.SIGINT)
+                    _send_sigint_as_ctrl_c_would(process.pid)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):
@@ -5839,6 +5840,19 @@ def _rerun_in_isolated_environment(mode="test"):
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
+
+
+def _send_sigint_as_ctrl_c_would(pid):
+    """Send SIGINT to ``pid`` and its descendants in this process group, but not to this process."""
+    try:
+        process = psutil.Process(pid)
+        processes = [process, *process.children(recursive=True)]
+    except psutil.NoSuchProcess:
+        return
+    for target in processes:
+        if _in_own_process_group(target):
+            with suppress(psutil.NoSuchProcess):
+                target.send_signal(signal.SIGINT)
 
 
 def _ctrl_c_reaches_this_process_group():

@@ -5011,16 +5011,22 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize(
-    "target, started_with_sigint_ignored",
-    [("pid", False), ("group", False), ("pid", True)],
+    "target, started_with_sigint_ignored, lost_foreground",
+    [
+        ("pid", False, False),
+        ("group", False, False),
+        ("pid", True, False),
+        ("pid", True, True),
+    ],
 )
 def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(
-    tmp_path, target, started_with_sigint_ignored
+    tmp_path, target, started_with_sigint_ignored, lost_foreground
 ):
     """An agent's SIGINT to the wrapper reaches the child exactly once.
 
     That includes a wrapper started in the background by a script, which
-    starts with SIGINT ignored.
+    starts with SIGINT ignored, and one that was the terminal's foreground
+    job when it started but no longer is.
     """
     pid_file, count_file = tmp_path / "child.pid", tmp_path / "count"
     child = (
@@ -5047,6 +5053,9 @@ def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(
         "with patch('psynet.command_line._check_experiment_directory'), "
         "patch('psynet.services.ensure_local_services'), "
         "patch('psynet.isolated_environment.should_isolate', return_value=True), "
+        "patch('psynet.command_line._ctrl_c_reaches_this_process_group', "
+        f"side_effect=[True, False] if {lost_foreground} else None, "
+        f"return_value=False), "
         "patch('psynet.isolated_environment.IsolatedEnvironment.start', "
         "return_value=environment):\n"
         "    _in_isolated_test_environment(lambda: None)()\n"
