@@ -938,7 +938,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
         monkeypatch.setenv("base_port", "5100")
     else:
         # This test session is itself isolated.
-        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY")
+        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
     job(5001)
