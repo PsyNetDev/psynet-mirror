@@ -818,8 +818,7 @@ def _report_scaffold_result(written, *, overwrite):
 
     if overwrite:
         if summary:
-            click.echo(f"Updated experiment scripts in {directory_name}")
-            click.echo(f"  updated: {summary}")
+            click.echo(f"Updated experiment scripts in {directory_name}: {summary}.")
         else:
             click.echo(
                 f"Experiment scripts in {directory_name} are already up to date."
@@ -827,8 +826,7 @@ def _report_scaffold_result(written, *, overwrite):
         return
 
     if summary:
-        click.echo(f"Scaffolded experiment in {directory_name}")
-        click.echo(f"  created: {summary}")
+        click.echo(f"Scaffolded experiment in {directory_name}: created {summary}.")
 
 
 def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
@@ -1262,7 +1260,7 @@ def _update_experiment_skills(*, overwrite: bool = False) -> bool:
         ):
             return False
 
-        click.echo(f"...updating {target} directory.")
+        click.echo(f"Updating {target}.")
         if target.exists():
             shutil.rmtree(target)
         target.parent.mkdir(parents=True, exist_ok=True)

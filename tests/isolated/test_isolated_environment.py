@@ -245,7 +245,7 @@ def test_description_hides_the_redis_password():
 
     description = environment.describe()
 
-    assert "Redis at redis.example:6380/3," in description
+    assert "Redis redis.example:6380/3 and" in description
     assert "secret" not in description
 
 

@@ -60,9 +60,21 @@ different experiments on one machine, add ``--isolated``:
 .. code-block:: console
 
     $ psynet debug local --isolated
-    ❯❯ Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
-    To use this server's data from another terminal (for example with psynet export local), first run:
-      export DATABASE_URL=... REDIS_URL=... base_port=5100
+    Local PostgreSQL and Redis: OK.
+    Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
+    Experiment files OK (config.txt, experiment.py; 0 MB).
+    07:56:05 web    Development server on http://127.0.0.1:5100 (auto-reload on, debugger PIN 477-455-893)
+    07:56:08 web    Experiment launch complete!
+
+    Ready.
+      Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop_5100/logs.jsonl
+      Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
+    Press Ctrl+C to stop.
+
+Run the ``Other terminals`` line in another terminal to use the server's data
+there, for example with ``psynet export local`` or ``psynet run-bot``.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on

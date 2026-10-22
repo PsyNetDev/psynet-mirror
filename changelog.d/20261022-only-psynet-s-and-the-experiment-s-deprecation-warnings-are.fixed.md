@@ -1,0 +1,1 @@
+Importing PsyNet no longer turns on every package's `DeprecationWarning`s, so `psynet debug local` and other commands no longer print warnings meant for other packages' maintainers, such as Flask-Login's `datetime.utcnow()` warning. PsyNet's and the experiment's own deprecation warnings are still shown.

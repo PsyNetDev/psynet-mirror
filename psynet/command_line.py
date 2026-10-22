@@ -218,12 +218,13 @@ _suppress_dallinger_header()
 
 
 def log(msg, chevrons=True, verbose=True, **kw):
-    """Log a message to stdout."""
+    """Print a message to stdout, as one plain line.
+
+    ``chevrons`` is ignored; messages used to start with a blank line and
+    ``❯❯``. Nothing is printed unless ``verbose``.
+    """
     if verbose:
-        if chevrons:
-            click.echo("\n❯❯ " + msg, **kw)
-        else:
-            click.echo(msg, **kw)
+        click.echo(msg, **kw)
 
 
 def clean_sys_modules():
@@ -1406,42 +1407,38 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-_BROWSER_WINDOWS_SENTENCE = (
-    "Recruitment requests will open browser windows automatically."
-)
+# In the launch message of Dallinger's hotair and cli recruiters.
+_SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
 
 
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response, so this job prints the recruitment message and the dashboard
-    credentials instead; the server log leaves the password out.
-    It must stay importable by module path because RQ workers resolve it that way.
+    auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
+    :func:`_launch_app_and_report`). The server log leaves the dashboard
+    password out. It must stay importable by module path because RQ workers
+    resolve it that way.
     """
-    _launch_app_and_report(port, no_browsers=True)
+    _launch_app_and_report(port)
 
 
 def launch_app_and_open_browsers(port, **kwargs):
-    """Launch the development app, print its details, then open the browsers.
+    """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
     with the password embedded; this one prints the login once, in the
-    ``Ready.`` block, and logs the dashboard URL without it. It must stay importable by module path because RQ
+    ``Ready.`` block. It must stay importable by module path because RQ
     workers resolve it that way.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
     _launch_app_and_report(port)
     config = get_config()
-    log("Opening dashboard")
     _open_browser_async(develop.dashboard_url(config, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    ad_url = develop.ad_url(config, port)
-    log(f"Opening ad: {ad_url}")
-    _open_browser_async(ad_url)
+    _open_browser_async(develop.ad_url(config, port))
 
 
 def _open_browser_async(url):
@@ -1451,38 +1448,81 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port, no_browsers=False):
-    """Launch the development app, then print a ``Ready.`` block.
+def _launch_app_and_report(port):
+    """Launch the development app, then print the ``Ready.`` block.
 
-    The block has the recruitment message, the dashboard login and how to
-    stop the server, as printed by ``dallinger develop debug``.
+    The block has the participant link (the recruiter's single recruitment
+    link, or else its whole launch message), the dashboard login, the
+    location of the full log and, in an isolated session, the ``export``
+    line that lets other terminals use the session's database and Redis.
     """
     from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
 
+    from .isolated_environment import READY_ENV_VAR
+
     launch_data = handle_launch_data(
         BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
     )
-    message = launch_data.get("recruitment_msg") or ""
-    if no_browsers:
-        # Dallinger's HotAir recruiter says this regardless of --no-browsers.
-        message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
+    message = (launch_data.get("recruitment_msg") or "").strip()
+    link = _SINGLE_RECRUITMENT_LINK.search(message)
+    if link:
+        details = [("Participant link", link.group(1))]
+    else:
+        details = [("Recruitment", message)] if message else []
 
     config = get_config()
     if not config.ready:
         config.load()
-    lines = [message] if message else []
-    lines.append(
-        f"Dashboard: {BASE_URL.format(port)}dashboard (user "
-        f"{config.get('dashboard_user')}, password {config.get('dashboard_password')})"
+    details.append(
+        (
+            "Dashboard",
+            f"{BASE_URL.format(port)}dashboard (user {config.get('dashboard_user')}, "
+            f"password {config.get('dashboard_password')})",
+        )
     )
-    develop = importlib.import_module("dallinger.command_line.develop")
-    echo_ready = getattr(develop, "echo_ready", None)
-    if echo_ready is not None:
-        echo_ready(lines)
-    else:
-        # Dallinger versions before echo_ready().
-        click.echo("\n".join(["Ready.", *lines, "Press Ctrl+C to stop."]))
+    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
+    if log_file:
+        details.append(("Full log", str(_develop_path(config) / log_file)))
+    if os.environ.get(READY_ENV_VAR):
+        details.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    _echo_ready(details)
+
+
+def _echo_ready(details):
+    """Print the block that ends a local debug session's start-up.
+
+    After a blank line come ``Ready.``, ``details`` as aligned
+    ``label: value`` lines, and how to stop the server, in one write so
+    that server log lines don't split the block::
+
+        Ready.
+          Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&…
+          Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password …)
+        Press Ctrl+C to stop.
+
+    Parameters
+    ----------
+    details : list of (str, str)
+        Labels and values. Lines after the first of a value are indented to
+        line up with it.
+    """
+    width = max(len(label) for label, _ in details) + 1
+    lines = ["", click.style("Ready.", fg="green", bold=True)]
+    for label, value in details:
+        first, *rest = str(value).splitlines() or [""]
+        lines.append(f"  {label + ':':<{width}} {first}")
+        lines.extend((" " * (width + 3) + line).rstrip() for line in rest)
+    lines.append("Press Ctrl+C to stop.")
+    click.echo("\n".join(lines))
+
+
+def _isolated_session_export_line(env):
+    """Return the ``export`` command that points another terminal at an isolated session."""
+    return "export " + " ".join(
+        f"{key}={shlex.quote(env[key])}"
+        for key in ("DATABASE_URL", "REDIS_URL", "base_port")
+    )
 
 
 @contextmanager
@@ -5779,8 +5819,8 @@ def _rerun_in_isolated_environment(mode="test"):
     ----------
     mode : str
         ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
-        ``"debug"`` also prints how to reach the server's data and when it has
-        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        ``"debug"`` also prints when the session has
+        ended (its ``Ready.`` block shows how to reach its data). (The ``--isolated`` decorator holds the experiment directory's
         lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
@@ -5800,16 +5840,6 @@ def _rerun_in_isolated_environment(mode="test"):
     interrupted = None
     with _exit_on_termination_signal(), environment:
         log(environment.describe())
-        if mode == "debug":
-            log(
-                "To use this server's data from another terminal (for example with "
-                "psynet export local), first run:\n  export "
-                + " ".join(
-                    f"{key}={shlex.quote(env[key])}"
-                    for key in ("DATABASE_URL", "REDIS_URL", "base_port")
-                ),
-                chevrons=False,
-            )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
         # The child must get exactly one SIGINT: a second one cuts its cleanup

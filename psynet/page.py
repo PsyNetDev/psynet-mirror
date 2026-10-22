@@ -28,7 +28,11 @@ from .timeline import (
 from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-warnings.simplefilter("always", DeprecationWarning)
+# Only PsyNet's and the experiment's: other packages' deprecation warnings
+# are for their maintainers.
+warnings.filterwarnings(
+    "always", category=DeprecationWarning, module=r"(psynet|dallinger_experiment)(\.|$)"
+)
 
 
 class InfoPage(ModularPage):

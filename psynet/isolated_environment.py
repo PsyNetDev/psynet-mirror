@@ -320,10 +320,11 @@ class IsolatedEnvironment:
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         redis = urlsplit(self.env["REDIS_URL"])
-        redis_database = redis.path.lstrip("/") or "0"
+        redis_database = redis.path.lstrip("/")
+        redis_database = f"/{redis_database}" if redis_database not in ("", "0") else ""
         return (
-            f"Using database {database}, Redis at {redis.hostname}:"
-            f"{redis.port or 6379}/{redis_database}, and port {self.env['base_port']}."
+            f"Using database {database}, Redis {redis.hostname}:"
+            f"{redis.port or 6379}{redis_database} and port {self.env['base_port']}."
         )
 
     def close(self):

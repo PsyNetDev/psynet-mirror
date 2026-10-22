@@ -920,30 +920,51 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     config.get.side_effect = {
         "dashboard_user": "admin",
         "dashboard_password": "s3cret",
+        "dallinger_develop_directory": "/tmp/dallinger_develop",
     }.get
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: {
-            "recruitment_msg": "Single recruitment link: ...\n\n"
+            "recruitment_msg": "Initial recruitment list:\nhttp://x/ad?a=1\n"
+            "Additional details:\nSingle recruitment link: http://x/ad?t=1\n\n"
             "Recruitment requests will open browser windows automatically."
         },
     )
+    if no_browsers:
+        monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db_5100")
+        monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6479")
+        monkeypatch.setenv("base_port", "5100")
+    else:
+        # This test session is itself isolated.
+        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY")
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
     job(5001)
     deadline = time.monotonic() + 5
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
-    output = capsys.readouterr().out
-    assert output.index("Ready.") < output.index("Single recruitment link")
-    assert ("browser windows" in output) is not no_browsers
-    assert (
-        "Dashboard: http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
-        in output
+    lines = capsys.readouterr().out.splitlines()
+    ready = lines.index("Ready.")
+    assert lines[ready - 1] == "" and lines[-1] == "Press Ctrl+C to stop."
+    rows = [line.split(":", 1) for line in lines[ready + 1 : -1]]
+    block = {label.strip(): value.strip() for label, value in rows}
+    assert block["Participant link"] == "http://x/ad?t=1"
+    assert block["Dashboard"] == (
+        "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
     )
+    assert ("Other terminals" in block) is no_browsers
+    if no_browsers:
+        assert block["Other terminals"] == (
+            "export DATABASE_URL=postgresql://localhost/db_5100 "
+            "REDIS_URL=redis://127.0.0.1:6479 base_port=5100"
+        )
+    # The values line up.
+    assert len({len(label + value) - len(value.lstrip()) for label, value in rows}) == 1
+    output = "\n".join(lines)
+    assert "Initial recruitment list" not in output and "❯❯" not in output
     assert output.count("s3cret") == 1
-    assert "Press Ctrl+C to stop." in output
     if no_browsers:
         assert opened == []
     else:
@@ -2236,7 +2257,7 @@ def test_scripts_scaffold_bootstraps_empty_directory():
 
             assert result.exit_code == 0, result.output
             assert "Scaffolded experiment in" in result.output
-            assert "created: experiment.py, requirements.txt, and" in result.output
+            assert "created experiment.py, requirements.txt, and" in result.output
             assert "boilerplate files" in result.output
             assert "tip:" not in result.output
             assert "...creating" not in result.output
@@ -4351,7 +4372,7 @@ def test_scripts_update_reports_only_actual_changes(tmp_path):
         Path("Dockerfile").write_text("FROM outdated\n")
         changed = runner.invoke(psynet, ["scripts", "update"])
         assert changed.exit_code == 0, changed.output
-        assert "updated: 1 boilerplate file" in changed.output
+        assert ": 1 boilerplate file." in changed.output
         assert "FROM outdated" not in Path("Dockerfile").read_text()
 
 
