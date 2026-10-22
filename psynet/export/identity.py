@@ -213,6 +213,7 @@ def describe_identity_problems(
         remote.git_commit_sha
         and local.git_commit_sha
         and remote.git_commit_sha != local.git_commit_sha
+        and not _directory_unchanged_since(remote.git_commit_sha)
     ):
         warnings.append(
             f"The deployment runs code from Git commit "
@@ -243,6 +244,25 @@ def describe_identity_problems(
             )
 
     return blocking, warnings, notes
+
+
+def _directory_unchanged_since(commit_sha) -> bool:
+    """Return True if Git knows ``commit_sha`` and the current directory's files match it at ``HEAD``.
+
+    Commits elsewhere in the repository then don't make the deployment's
+    code differ from this directory's.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--quiet", commit_sha, "HEAD", "--", "."],
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
 
 
 def _path_list_suffix(paths) -> str:

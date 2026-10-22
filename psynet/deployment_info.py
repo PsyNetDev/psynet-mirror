@@ -235,12 +235,29 @@ def uncommitted_deployment_paths():
         return None
 
     selected = plan.destinations
-    selected_untracked = selected - tracked
+    selected_untracked = selected - tracked - _ignored_scaffold_paths()
     selected_changed = selected & changed
     selected_deleted = {
         path for path in deleted if policy_selects_path(path, plan.policy)
     }
     return sorted(selected_untracked | selected_changed | selected_deleted)
+
+
+def _ignored_scaffold_paths():
+    """Return the Git-ignored deployment files that the scaffold manages.
+
+    An experiment that leaves them out of Git, as PsyNet's bundled demos do,
+    gets them from the scaffold rather than from its commits, so they are
+    not uncommitted changes.
+    """
+    from .experiment_scaffold import scaffold_managed_paths
+
+    managed = scaffold_managed_paths()
+    return {
+        path
+        for path in _git_ignored_deployment_paths() or ()
+        if path in managed or any(path.startswith(f"{m}/") for m in managed)
+    }
 
 
 def format_path_list(paths, limit=10):

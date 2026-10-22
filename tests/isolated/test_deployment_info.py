@@ -126,6 +126,21 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
             )
 
 
+def test_git_ignored_scaffold_files_are_not_uncommitted_changes(tmp_path):
+    with working_directory(tmp_path):
+        _git("init", "--quiet")
+        _git("config", "user.email", "test@example.com")
+        _git("config", "user.name", "Test User")
+        Path(".gitignore").write_text("Dockerfile\nAGENTS.md\nstimuli.csv\n")
+        Path("deploy.toml").write_text("version = 1\n[exclude]\nnames = []\n")
+        _git("add", ".")
+        _git("commit", "--quiet", "-m", "Initial commit")
+        for name in ("Dockerfile", "AGENTS.md", "stimuli.csv"):
+            Path(name).write_text("generated")
+
+        assert deployment_info.uncommitted_deployment_paths() == ["stimuli.csv"]
+
+
 @pytest.mark.parametrize(
     "mode, tty, prompted",
     [("live", True, True), ("live", False, False), ("sandbox", True, False)],
