@@ -131,14 +131,18 @@ def test_git_ignored_scaffold_files_are_not_uncommitted_changes(tmp_path):
         _git("init", "--quiet")
         _git("config", "user.email", "test@example.com")
         _git("config", "user.name", "Test User")
-        Path(".gitignore").write_text("Dockerfile\nAGENTS.md\nstimuli.csv\n")
+        Path(".gitignore").write_text("Dockerfile\nAGENTS.md\nREADME.md\nstimuli.csv\n")
         Path("deploy.toml").write_text("version = 1\n[exclude]\nnames = []\n")
         _git("add", ".")
         _git("commit", "--quiet", "-m", "Initial commit")
-        for name in ("Dockerfile", "AGENTS.md", "stimuli.csv"):
+        for name in ("Dockerfile", "AGENTS.md", "README.md", "stimuli.csv"):
             Path(name).write_text("generated")
 
-        assert deployment_info.uncommitted_deployment_paths() == ["stimuli.csv"]
+        # README.md is the author's own once it differs from its template.
+        assert deployment_info.uncommitted_deployment_paths() == [
+            "README.md",
+            "stimuli.csv",
+        ]
 
 
 @pytest.mark.parametrize(

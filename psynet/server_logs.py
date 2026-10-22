@@ -146,7 +146,12 @@ def _home_relative(path) -> str:
 
 
 def logs_command(server_info: dict, app: str) -> str:
-    """Return the ``ssh`` command that follows an app's Compose logs, as Dallinger prints it.
+    """Return the ``ssh`` command that follows an app's Compose logs.
+
+    It is shared with others (for example in notifications), so unlike the
+    one Dallinger prints at the end of a deploy, it doesn't use the
+    deploying user's SSH alias for the server. A user name with an ``@`` is
+    passed with ``-l``.
 
     Parameters
     ----------
@@ -168,7 +173,10 @@ def logs_command(server_info: dict, app: str) -> str:
         parts += ["-i", _home_relative(get_server_pem_path())]
     except FileNotFoundError:
         pass  # Without server_pem, ssh falls back to the user's own keys.
-    parts.append(quote(f"{user}@{host}" if user else host))
+    if user and "@" in user:
+        parts += ["-l", quote(user), quote(host)]
+    else:
+        parts.append(quote(f"{user}@{host}" if user else host))
     parts.append(f'"docker compose -f ~/dallinger/{app}/docker-compose.yml logs -f"')
     return " ".join(parts)
 

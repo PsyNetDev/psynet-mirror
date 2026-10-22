@@ -244,19 +244,19 @@ def uncommitted_deployment_paths():
 
 
 def _ignored_scaffold_paths():
-    """Return the Git-ignored deployment files that the scaffold manages.
+    """Return the Git-ignored deployment files that are scaffold boilerplate.
 
     An experiment that leaves them out of Git, as PsyNet's bundled demos do,
     gets them from the scaffold rather than from its commits, so they are
-    not uncommitted changes.
+    not uncommitted changes. See
+    :func:`psynet.experiment_scaffold.is_stock_scaffold_path`.
     """
-    from .experiment_scaffold import scaffold_managed_paths
+    from .experiment_scaffold import is_stock_scaffold_path
 
-    managed = scaffold_managed_paths()
     return {
         path
         for path in _git_ignored_deployment_paths() or ()
-        if path in managed or any(path.startswith(f"{m}/") for m in managed)
+        if is_stock_scaffold_path(path)
     }
 
 
