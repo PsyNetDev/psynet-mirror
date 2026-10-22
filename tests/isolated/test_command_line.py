@@ -7273,6 +7273,17 @@ def test_debug_reports_an_unusable_develop_directory_in_one_line(monkeypatch):
     assert "\n" not in error.value.message
 
 
+def test_debug_reports_a_develop_directory_with_a_period_in_one_line(monkeypatch):
+    from psynet.command_line import run_pre_auto_reload_checks
+
+    config = Mock(ready=True)
+    config.get.return_value = "/tmp/with.period/dallinger_develop"
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+
+    with pytest.raises(click.ClickException, match="contains a period"):
+        run_pre_auto_reload_checks()
+
+
 def _invoke_db_ssh(monkeypatch, hosts):
     from contextlib import contextmanager
 

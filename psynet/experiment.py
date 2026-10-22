@@ -1052,7 +1052,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         logger.info("Experiment launch complete!")
 
     def log(self, text, key="?????", force=False):
-        """Log ``text`` at INFO on the ``psynet`` logger, prefixed with ``key``.
+        """Log ``text`` at INFO on the ``psynet`` logger, after ``key``.
 
         Replaces Dallinger's version, which prints to stdout, so that messages
         such as recruiter notifications get the server's log format and level.
@@ -3456,9 +3456,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 f"No remaining bonus to post for participant {participant.id}.",
             )
         logger.info(
-            "Dashboard retry: reporting outcome with bonus %s for participant %s",
-            to_post,
+            "Dashboard retry: reporting participant %s's outcome to the recruiter "
+            "(bonus %s).",
             participant.id,
+            to_post,
         )
         record_bonus_attempt_detail(participant, BONUS_PAY_IN_PROGRESS)
         transferred = recruiter.report_submission_outcome(
