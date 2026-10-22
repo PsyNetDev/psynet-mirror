@@ -27,6 +27,7 @@ from statistics import median
 from typing import Any, List, Optional, Type, Union
 from urllib.parse import urlencode
 
+import dallinger.config
 import dallinger.experiment
 import dallinger.models
 import flask
@@ -7439,9 +7440,14 @@ def handle_shutdown_signal(signum, frame):
     This is installed when the module is imported, so it replaces handlers
     installed before then, such as those of gunicorn's workers, and is
     replaced by those installed later, such as those of RQ's ``work()``.
+    A clock stopped before its configuration has loaded, for example by
+    Ctrl+C while it reimports the experiment after a code change, exits
+    without recording anything: loading the configuration would import the
+    half-imported experiment again and fail.
     """
     process_name = os.path.basename(sys.argv[0])
-    if process_name.endswith("clock"):
+    config = dallinger.config.config
+    if process_name.endswith("clock") and config is not None and config.ready:
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
     if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):
