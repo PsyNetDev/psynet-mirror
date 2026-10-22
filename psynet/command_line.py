@@ -1455,9 +1455,8 @@ def _launch_app_and_report(port):
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
     log and, in an isolated session, the ``export`` line that lets other
-    terminals use the session's database and Redis. Dallinger versions
-    without ``echo_ready(after=...)`` get the block from :func:`_echo_ready`,
-    without the full log, which they don't write.
+    terminals use the session's database and Redis. With Dallinger versions
+    without ``echo_ready(after=...)``, :func:`_echo_ready` prints it.
     """
     from dallinger.deployment import handle_launch_data
 
@@ -1499,8 +1498,11 @@ def _launch_app_and_report(port):
     echo_ready = getattr(develop, "echo_ready", None)
     if echo_ready and "after" in inspect.signature(echo_ready).parameters:
         echo_ready(details, after=after)
-    else:
-        _echo_ready(details + after)
+        return
+    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
+    if log_file:
+        details.append(("Full log", str(_develop_path(config) / log_file)))
+    _echo_ready(details + after)
 
 
 def _echo_ready(details):
