@@ -450,6 +450,19 @@ def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
         confirm_project_identity(local, remote, emit=lambda message: None)
 
 
+def test_out_of_sync_code_asks_in_a_terminal(monkeypatch):
+    local = ProjectIdentity(experiment_label="d", git_dirty=True)
+    remote = ProjectIdentity(experiment_label="d", export_format_version=1)
+    monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
+    questions = []
+    monkeypatch.setattr(
+        "psynet.command_line.user_confirms", lambda q: questions.append(q) or True
+    )
+
+    confirm_project_identity(local, remote, emit=lambda message: None)
+    assert questions and "Export anyway?" in questions[0]
+
+
 def test_matching_identity_requires_no_confirmation():
     identity = ProjectIdentity(
         experiment_label="d", git_commit_sha="a" * 40, export_format_version=1

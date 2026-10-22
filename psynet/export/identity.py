@@ -320,7 +320,7 @@ def confirm_project_identity(
                 "(see the warnings above). Re-run with "
                 "--allow-project-mismatch to export anyway."
             )
-        from psynet.utils import user_confirms
+        from psynet.command_line import user_confirms
 
         def confirm(message):
             return user_confirms(message)
