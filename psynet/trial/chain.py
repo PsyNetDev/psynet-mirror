@@ -2195,12 +2195,13 @@ class ChainTrialMaker(NetworkTrialMaker):
         if len(nodes) == 0:
             raise ValueError(f"No nodes provided for trial maker {self.id}")
 
-        for node in tqdm(nodes, desc="Creating networks", disable=None):
+        # leave=False: a finished bar is cleared rather than left as a blank line.
+        for node in tqdm(nodes, desc="Creating networks", disable=None, leave=False):
             self.create_network(experiment, start_node=node)
 
         db.session.flush()
 
-        for node in tqdm(nodes, desc="Staging assets", disable=None):
+        for node in tqdm(nodes, desc="Staging assets", disable=None, leave=False):
             if node is not None:
                 node.stage_assets(experiment)
 

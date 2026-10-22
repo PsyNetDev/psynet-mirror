@@ -2945,6 +2945,7 @@ class AssetRegistry:
             self._staged_asset_specifications,
             desc="Generating/uploading assets...",
             disable=None if self._staged_asset_specifications else True,
+            leave=False,
         ):
             a.prepare_for_deployment(registry=self)
         db.session.commit()
