@@ -4537,17 +4537,18 @@ def _warn_export_misses_pending_jobs(summary):
 
 @contextmanager
 def _export_step(text):
-    """Show ``text`` with a spinner in a terminal, ticked when the step succeeds.
+    """Print ``text`` as a step line, such as ``Downloading export...``.
 
-    Redirected output gets the text once, without spinner frames.
+    A terminal shows a spinner while the step runs and keeps the same line
+    as redirected output once it succeeds.
     """
     if not sys.stdout.isatty():
         click.echo(f"{text}...")
         yield
         return
-    with yaspin(text=text, color="green") as spinner:
+    with yaspin(text=f"{text}...", color="green"):
         yield
-        spinner.ok("✔")
+    click.echo(f"{text}...")
 
 
 def _fetch_remote_export(
