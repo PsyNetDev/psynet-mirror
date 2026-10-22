@@ -1,0 +1,1 @@
+Bots now answer `PushButtonControl`, `DropdownControl` and `RadioButtonControl` pages with the chosen value as a string, and `CheckboxControl` pages with a list of strings, matching what a browser submits. Bot tests can now catch code that treats a numeric choice as a number without converting it first.
