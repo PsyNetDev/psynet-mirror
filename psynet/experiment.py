@@ -1061,12 +1061,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text : str
             The message.
         key : str
-            A short tag shown before the message.
+            A short tag shown before the message. Tags without letters or
+            digits, such as Dallinger's ``-----`` and ``?????``, are left out.
         force : bool
             Log even if ``self.verbose`` is false.
         """
         if force or self.verbose:
-            logger.info("%s %s", key, text)
+            if any(c.isalnum() for c in key):
+                logger.info("%s %s", key, text)
+            else:
+                logger.info("%s", text)
 
     @classproperty
     def creation_time(cls):  # noqa
@@ -3344,7 +3348,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant.planned_bonus = planned
         record_bonus_attempt_detail(participant, NO_BONUS_ATTEMPT_RESULT)
         self.commit_payment_state()
-        logger.info("Reporting outcome with bonus %s for %s", bonus, participant.id)
+        logger.info(
+            "Reporting participant %s's outcome to the recruiter (bonus %s).",
+            participant.id,
+            bonus,
+        )
         transferred = participant.recruiter.report_submission_outcome(
             participant,
             bonus,
