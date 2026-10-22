@@ -95,8 +95,10 @@ def get_timeline():
         ),
         for_loop(
             label="counting",
+            # Dropdown answers arrive as strings. Adding 1 to that string
+            # raises TypeError and fails the participant.
             iterate_over=lambda participant: list(
-                range(1, participant.var.target_number + 1)
+                range(1, int(participant.var.target_number) + 1)
             ),
             logic=lambda x: InfoPage(str(x), time_estimate=5),
             time_estimate_per_iteration=5,
