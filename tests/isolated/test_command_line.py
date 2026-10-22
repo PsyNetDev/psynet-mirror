@@ -7259,6 +7259,20 @@ def test_debug_reloader_skips_checkout_tests_demos_and_docs():
     assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)
 
 
+def test_debug_reports_an_unusable_develop_directory_in_one_line(monkeypatch):
+    from psynet.command_line import _reloader_exclude_patterns
+
+    config = Mock(ready=True)
+    config.get.return_value = "/tmp/not-an-identifier"
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+
+    with pytest.raises(click.ClickException) as error:
+        _reloader_exclude_patterns()
+
+    assert "dallinger_develop_directory" in error.value.message
+    assert "\n" not in error.value.message
+
+
 def _invoke_db_ssh(monkeypatch, hosts):
     from contextlib import contextmanager
 

@@ -1275,22 +1275,37 @@ def _cleanup_exp_directory():
             pass
 
 
+def _develop_path(config):
+    """Return Dallinger's development folder for ``config``.
+
+    Raises
+    ------
+    click.ClickException
+        If the ``dallinger_develop_directory`` setting can't be used, so the
+        problem is reported in one ``Error:`` line instead of a traceback.
+    """
+    from dallinger.utils import develop_target_path
+
+    try:
+        return Path(develop_target_path(config))
+    except ValueError as err:
+        raise click.ClickException(" ".join(str(err).split())) from err
+
+
 def run_pre_auto_reload_checks():
     config = get_config()
     if not config.ready:
         config.load()
 
-    from dallinger.utils import develop_target_path
-
     from .experiment_scaffold import get_editable_psynet_source
 
-    _develop_path = str(develop_target_path(config))
-    if "." in _develop_path:
-        raise ValueError(
-            f"The target path for your app's temporary development directory ({_develop_path}) "
-            "contains a period ('.'). Unfortunately Dallinger doesn't support this."
-            "You should set a revised path in your .dallingerconfig file. "
-            "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
+    develop_path = _develop_path(config)
+    if "." in str(develop_path):
+        raise click.ClickException(
+            f'The dallinger_develop_directory setting "{develop_path}" contains '
+            "a period, which Dallinger doesn't support. Set another folder in "
+            "~/.dallingerconfig, for example "
+            "dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
     if get_editable_psynet_source() is not None:
@@ -1547,14 +1562,13 @@ def _reloader_exclude_patterns():
     other debug servers' development folders are excluded.
     """
     import dallinger
-    from dallinger.utils import develop_target_path
 
     import psynet
 
     config = get_config()
     if not config.ready:
         config.load()
-    develop_path = Path(develop_target_path(config))
+    develop_path = _develop_path(config)
     # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
     own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
     patterns = []
