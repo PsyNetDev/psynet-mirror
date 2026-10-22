@@ -954,6 +954,8 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     assert block["Dashboard"] == (
         "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
     )
+    if hasattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE"):
+        assert block["Full log"].endswith("logs.jsonl")
     assert ("Other terminals" in block) is no_browsers
     if no_browsers:
         assert block["Other terminals"] == (
