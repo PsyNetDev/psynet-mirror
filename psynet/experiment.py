@@ -197,6 +197,27 @@ from .utils import (
 
 logger = get_logger()
 
+try:
+    from dallinger.dev_logging import hide_requests
+except ImportError:  # Dallinger releases before the development console.
+    pass
+else:
+    # Assets, the browser's log messages and polling would bury the pages
+    # participants take in the development server's console.
+    hide_requests(
+        "/asset/",
+        "/on-demand-asset",
+        "/log/",
+        "/timeline/arrival_notice",
+        "/timeline/progress_and_reward",
+        "/module/progress_info",
+        "/module/tooltip",
+        "/participant_status/",
+        "/get_participant_info_for_debug_mode",
+        "/request_statistics",
+        "/async_job_cpu_time",
+    )
+
 # Requests at least this slow log their phase timings at INFO; faster ones at DEBUG.
 _SLOW_REQUEST_MS = 1000
 
