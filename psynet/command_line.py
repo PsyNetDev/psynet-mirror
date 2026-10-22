@@ -2662,7 +2662,10 @@ def _build_local_psynet_wheel():
     from .experiment_scaffold import get_editable_psynet_source
 
     source = get_editable_psynet_source()
-    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    click.echo(
+        f"Using the PsyNet checkout at {source} instead of the version in "
+        "requirements.txt."
+    )
     return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
 
 
@@ -4648,7 +4651,7 @@ def _fetch_remote_export(
             try:
                 plan = plan_asset_transfer(export_path)
                 rsync_source, ssh_command = ssh_rsync_source(server, ssh_session)
-                with _export_step("Fetching missing asset bytes"):
+                with _export_step("Downloading media files"):
                     materialized = hydrate_assets(
                         export_path,
                         plan,
