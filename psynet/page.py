@@ -28,10 +28,13 @@ from .timeline import (
 from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-# Only PsyNet's and the experiment's: other packages' deprecation warnings
-# are for their maintainers.
+# Other packages' deprecation warnings are for their maintainers, as in
+# Python's defaults; PsyNet's, Dallinger's and the experiment's are shown.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings(
-    "always", category=DeprecationWarning, module=r"(psynet|dallinger_experiment)(\.|$)"
+    "always",
+    category=DeprecationWarning,
+    module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
 )
 
 

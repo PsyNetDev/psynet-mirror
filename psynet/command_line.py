@@ -5,6 +5,7 @@ import functools
 import glob
 import hashlib
 import importlib
+import inspect
 import io
 import json
 import os
@@ -1451,25 +1452,35 @@ def _open_browser_async(url):
 def _launch_app_and_report(port):
     """Launch the development app, then print the ``Ready.`` block.
 
-    The block has the participant link (the recruiter's single recruitment
-    link, or else its whole launch message), the dashboard login, the
-    location of the full log and, in an isolated session, the ``export``
-    line that lets other terminals use the session's database and Redis.
+    The block has the participant link (see Dallinger's
+    ``launch_message_rows``), the dashboard login, the location of the full
+    log and, in an isolated session, the ``export`` line that lets other
+    terminals use the session's database and Redis. Dallinger versions
+    without ``echo_ready(after=...)`` get the block from :func:`_echo_ready`,
+    without the full log, which they don't write.
     """
-    from dallinger.command_line.develop import BASE_URL
     from dallinger.deployment import handle_launch_data
 
     from .isolated_environment import READY_ENV_VAR
 
+    develop = importlib.import_module("dallinger.command_line.develop")
     launch_data = handle_launch_data(
-        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+        develop.BASE_URL.format(port) + "launch",
+        error=log,
+        delay=1.0,
+        context="local",
     )
-    message = (launch_data.get("recruitment_msg") or "").strip()
-    link = _SINGLE_RECRUITMENT_LINK.search(message)
-    if link:
-        details = [("Participant link", link.group(1))]
+    message = launch_data.get("recruitment_msg")
+    launch_message_rows = getattr(develop, "launch_message_rows", None)
+    if launch_message_rows is not None:
+        details = launch_message_rows(message)
     else:
-        details = [("Recruitment", message)] if message else []
+        message = (message or "").strip()
+        link = _SINGLE_RECRUITMENT_LINK.search(message)
+        if link:
+            details = [("Participant link", link.group(1))]
+        else:
+            details = [("Recruitment", message)] if message else []
 
     config = get_config()
     if not config.ready:
@@ -1477,20 +1488,23 @@ def _launch_app_and_report(port):
     details.append(
         (
             "Dashboard",
-            f"{BASE_URL.format(port)}dashboard (user {config.get('dashboard_user')}, "
-            f"password {config.get('dashboard_password')})",
+            f"{develop.BASE_URL.format(port)}dashboard (user "
+            f"{config.get('dashboard_user')}, password "
+            f"{config.get('dashboard_password')})",
         )
     )
-    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
-    if log_file:
-        details.append(("Full log", str(_develop_path(config) / log_file)))
+    after = []
     if os.environ.get(READY_ENV_VAR):
-        details.append(("Other terminals", _isolated_session_export_line(os.environ)))
-    _echo_ready(details)
+        after.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    echo_ready = getattr(develop, "echo_ready", None)
+    if echo_ready and "after" in inspect.signature(echo_ready).parameters:
+        echo_ready(details, after=after)
+    else:
+        _echo_ready(details + after)
 
 
 def _echo_ready(details):
-    """Print the block that ends a local debug session's start-up.
+    """Print the block that ends a local debug session's start-up, as Dallinger's ``echo_ready`` does.
 
     After a blank line come ``Ready.``, ``details`` as aligned
     ``label: value`` lines, and how to stop the server, in one write so

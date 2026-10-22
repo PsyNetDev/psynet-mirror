@@ -21,10 +21,9 @@ opened, and this block is how you reach the experiment):
 .. code-block:: console
 
     Ready.
-    Initial recruitment list:
-    http://127.0.0.1:5000/ad?recruiter=hotair&assignmentId=...&mode=debug
-    ...
-    Dashboard: http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop/logs.jsonl
     Press Ctrl+C to stop.
 
 Press :kbd:`Ctrl+C` in the terminal to stop it.

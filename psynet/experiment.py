@@ -2929,13 +2929,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     def recruit(self):
         # The local debug console shows a conclusion once, not again for every
-        # participant who finishes, until it changes.
-        topic = {"dallinger_console_topic": "psynet recruitment conclusion"}
+        # participant who finishes, until it changes. Recruiting also ends the
+        # repeats of Dallinger's "Recruitment closed." (its "recruitment" topic).
+        topic = "psynet recruitment conclusion"
         if self.need_more_participants:
-            logger.info("Conclusion: recruiting another participant.", extra=topic)
+            logger.info(
+                "Conclusion: recruiting another participant.",
+                extra={"dallinger_console_topic": (topic, "recruitment")},
+            )
             self.recruiter.recruit(n=1)
         else:
-            logger.info("Conclusion: no recruitment required.", extra=topic)
+            logger.info(
+                "Conclusion: no recruitment required.",
+                extra={"dallinger_console_topic": topic},
+            )
             self.recruiter.close_recruitment()
 
     @property
