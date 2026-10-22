@@ -1,3 +1,4 @@
+import sys
 import warnings
 from importlib import resources
 from math import ceil
@@ -28,14 +29,15 @@ from .timeline import (
 from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-# Other packages' deprecation warnings are for their maintainers, as in
-# Python's defaults; PsyNet's, Dallinger's and the experiment's are shown.
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings(
-    "always",
-    category=DeprecationWarning,
-    module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
-)
+# Other packages' deprecation warnings are for their maintainers; PsyNet's,
+# Dallinger's and the experiment's are shown. -W and PYTHONWARNINGS win.
+if not sys.warnoptions:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings(
+        "always",
+        category=DeprecationWarning,
+        module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
+    )
 
 
 class InfoPage(ModularPage):
