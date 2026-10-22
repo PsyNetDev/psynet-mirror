@@ -1,0 +1,1 @@
+Removed the unused Norwegian Bokmål (`nb`) catalog. PsyNet translates Norwegian as `no`; experiments could not select `nb`, and the translation dashboard listed it as complete although it lacked 122 texts.
