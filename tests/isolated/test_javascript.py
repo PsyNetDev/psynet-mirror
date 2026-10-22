@@ -378,14 +378,18 @@ def test_only_slow_requests_log_their_timing_at_info(caplog, total_ms, level):
     assert record.levelname == level
 
 
-def test_experiment_log_uses_the_psynet_logger(caplog, capsys):
+@pytest.mark.parametrize(
+    "key, expected",
+    [("-----", "Participant 1 done."), ("NOTE", "NOTE Participant 1 done.")],
+)
+def test_experiment_log_uses_the_psynet_logger(caplog, capsys, key, expected):
     from types import SimpleNamespace
 
     from psynet.experiment import Experiment
 
     with caplog.at_level("INFO", logger="psynet"):
-        Experiment.log(SimpleNamespace(verbose=True), "Participant 1 done.", "-----")
-    assert "----- Participant 1 done." in caplog.messages
+        Experiment.log(SimpleNamespace(verbose=True), "Participant 1 done.", key)
+    assert caplog.messages == [expected]
     assert capsys.readouterr().out == ""
 
 
