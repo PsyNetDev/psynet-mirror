@@ -106,6 +106,48 @@ def test_browser_capability_check_page_has_module():
     assert any("browser-capability-check.js" in m for m in page.js_page_modules)
 
 
+def test_capability_failure_prompt_per_token():
+    from psynet.prescreen import _capability_failure_prompt
+
+    # Each known token produces a distinct, non-empty message.
+    tokens = ["microphone", "camera", "screen_capture", "video_recording", "audio_playback"]
+    messages = [str(_capability_failure_prompt(t)) for t in tokens]
+    assert all(messages), "at least one token produced an empty message"
+    assert len(set(messages)) == len(tokens), "two tokens produced the same message"
+
+    # Unknown token falls back gracefully.
+    fallback = str(_capability_failure_prompt("unknown_token"))
+    assert fallback, "fallback message is empty"
+    assert fallback not in messages, "fallback collides with a known-token message"
+
+
+def test_capability_failure_page_appears_in_conditional():
+    from unittest.mock import MagicMock
+
+    from psynet.page import InfoPage, UnsuccessfulEndPage
+    from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker
+
+    check = BrowserCapabilityCheck(capabilities={"audio_playback"})
+    outer_page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
+
+    mock_participant = MagicMock()
+    mock_participant.answer = {"passed": False, "missing": "audio_playback"}
+    resolved = outer_page_maker.resolve(MagicMock(), mock_participant, position=[0])
+
+    # The conditional body contains a PageMaker (the fail explanation page)
+    # followed by UnsuccessfulEndPage. Resolve the inner PageMaker to check content.
+    inner_makers = [e for e in resolved if isinstance(e, PageMaker)]
+    assert inner_makers, "No inner PageMaker found for failure explanation page."
+    fail_pages = inner_makers[-1].resolve(MagicMock(), mock_participant, position=[0])
+    info_pages = [e for e in fail_pages if isinstance(e, InfoPage)]
+    assert any(
+        "audio playback" in p.prompt.text.lower() for p in info_pages
+    ), "Failure InfoPage does not mention 'audio playback'."
+
+    assert any(isinstance(e, UnsuccessfulEndPage) for e in resolved)
+
+
 def test_browser_capability_check_page_no_next_button():
     from psynet.prescreen import BrowserCapabilityCheckPage
 
