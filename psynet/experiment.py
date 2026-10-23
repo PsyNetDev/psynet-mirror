@@ -7347,7 +7347,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if deployment_info.read("mode") != "sandbox":
                 raise
             raise RuntimeError(
-                f"{e} For a debug deploy, you can also rerun with --no-consent."
+                f"{e} For a debug deploy, you can also skip the consent checks with "
+                "--no-consent."
             ) from None
 
     def check_python_dependencies(self):

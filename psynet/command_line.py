@@ -2875,7 +2875,7 @@ def run_pre_checks(
     """Check the experiment before a launch.
 
     ``check_consents=False`` skips the consent page check, for apps that only
-    bots take part in.
+    bots take part in and for ``--no-consent`` debug deploys.
     """
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment

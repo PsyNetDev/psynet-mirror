@@ -1,3 +1,4 @@
+import click
 import pytest
 
 from psynet import deployment_info
@@ -32,5 +33,7 @@ class TestCheckConsents:
         run_pre_checks(mode="live", check_consents=False, **pre_check_args)
 
         deployment_info.write(mode="sandbox", is_local_deployment=False)
-        with pytest.raises(RuntimeError, match="rerun with --no-consent"):
+        with pytest.raises(
+            (RuntimeError, click.ClickException), match="checks with --no-consent"
+        ):
             run_pre_checks(mode="sandbox", **pre_check_args)
