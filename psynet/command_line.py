@@ -1179,11 +1179,7 @@ def _prepare_in_scratch_database(archive):
             ) from e
         with environment:
             database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
-            log(
-                f"Preparing the experiment in the scratch database {database}, "
-                "which is removed afterwards. Your local database and Redis are "
-                "left alone."
-            )
+            log(f"Preparing the experiment in the scratch database {database}.")
             env = {
                 **os.environ,
                 **{key: environment.env[key] for key in ("DATABASE_URL", "REDIS_URL")},
