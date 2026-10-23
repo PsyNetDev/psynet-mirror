@@ -112,8 +112,10 @@ Move load-once classic libraries to ``js_dependencies`` /
 :doc:`/code/pages/custom_front_ends` (Managing JavaScript lifecycles).
 
 Timeline pages load SurveyJS only when they contain a ``SurveyJSControl``.
-A custom template that uses ``Survey`` without that control must list
-``/static/scripts/survey-jquery/survey.jquery.min.js`` in
+Pages that use ``SurveyJSControl``, ``MultiRatingControl`` or
+``RatingControl`` need no change. If a custom page builds a survey with
+``new Survey.Model(...)`` instead, add
+``/static/scripts/survey-jquery/survey.jquery.min.js`` to its
 ``js_dependencies``.
 
 5. Migrate per-page behavior
