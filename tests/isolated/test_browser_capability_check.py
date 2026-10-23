@@ -110,7 +110,13 @@ def test_capability_failure_prompt_per_token():
     from psynet.prescreen import _capability_failure_prompt
 
     # Each known token produces a distinct, non-empty message.
-    tokens = ["microphone", "camera", "screen_capture", "video_recording", "audio_playback"]
+    tokens = [
+        "microphone",
+        "camera",
+        "screen_capture",
+        "video_recording",
+        "audio_playback",
+    ]
     messages = [str(_capability_failure_prompt(t)) for t in tokens]
     assert all(messages), "at least one token produced an empty message"
     assert len(set(messages)) == len(tokens), "two tokens produced the same message"
@@ -141,9 +147,9 @@ def test_capability_failure_page_appears_in_conditional():
     assert inner_makers, "No inner PageMaker found for failure explanation page."
     fail_pages = inner_makers[-1].resolve(MagicMock(), mock_participant, position=[0])
     info_pages = [e for e in fail_pages if isinstance(e, InfoPage)]
-    assert any(
-        "audio playback" in p.prompt.text.lower() for p in info_pages
-    ), "Failure InfoPage does not mention 'audio playback'."
+    assert any("audio playback" in p.prompt.text.lower() for p in info_pages), (
+        "Failure InfoPage does not mention 'audio playback'."
+    )
 
     assert any(isinstance(e, UnsuccessfulEndPage) for e in resolved)
 

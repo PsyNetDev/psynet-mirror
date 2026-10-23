@@ -2091,9 +2091,9 @@ def _browser_capability_permission_intro(perm_caps):
         "Please click Allow when prompted.",
     )
     return InfoPage(
-        Markup(
-            "<p>{}</p><p>{} {}</p>"
-        ).format(check_sentence, access_sentence, allow_sentence),
+        Markup("<p>{}</p><p>{} {}</p>").format(
+            check_sentence, access_sentence, allow_sentence
+        ),
         time_estimate=5.0,
     )
 
@@ -2179,13 +2179,16 @@ class BrowserCapabilityCheck(Module):
             if perm_caps:
                 pages.append(_browser_capability_permission_intro(perm_caps))
             pages.append(BrowserCapabilityCheckPage(caps, label=label))
+
             def _make_fail_page(experiment, participant):
                 missing = (
                     participant.answer.get("missing")
                     if isinstance(participant.answer, dict)
                     else None
                 )
-                return [InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)]
+                return [
+                    InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)
+                ]
 
             pages.extend(
                 conditional(
@@ -2202,7 +2205,11 @@ class BrowserCapabilityCheck(Module):
             )
             return pages
 
-        perm_caps = capabilities & PERMISSION_CAPABILITY_TOKENS if capabilities is not None else frozenset()
+        perm_caps = (
+            capabilities & PERMISSION_CAPABILITY_TOKENS
+            if capabilities is not None
+            else frozenset()
+        )
         pm_time_estimate = 5.0 if perm_caps else 0.0
 
         elts = PageMaker(_make_pages, time_estimate=pm_time_estimate)
