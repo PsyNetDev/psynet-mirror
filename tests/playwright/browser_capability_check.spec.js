@@ -63,7 +63,9 @@ test(
   async ({ page, context }) => {
     await context.addInitScript(() => {
       const mockStream = { getTracks: () => [{ stop: () => {} }] };
-      navigator.mediaDevices.getUserMedia = async () => mockStream;
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia = async () => mockStream;
+      }
     });
 
     const absDir = path.resolve(PERMISSION_EXPERIMENT_DIR);
@@ -84,12 +86,14 @@ test(
   { tag: "@both" },
   async ({ page, context }) => {
     await context.addInitScript(() => {
-      navigator.mediaDevices.getUserMedia = async (constraints) => {
-        if (constraints.audio) {
-          throw new DOMException("Permission denied", "NotAllowedError");
-        }
-        return { getTracks: () => [{ stop: () => {} }] };
-      };
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          if (constraints.audio) {
+            throw new DOMException("Permission denied", "NotAllowedError");
+          }
+          return { getTracks: () => [{ stop: () => {} }] };
+        };
+      }
     });
 
     const absDir = path.resolve(PERMISSION_EXPERIMENT_DIR);
@@ -116,12 +120,14 @@ test(
   { tag: "@both" },
   async ({ page, context }) => {
     await context.addInitScript(() => {
-      navigator.mediaDevices.getUserMedia = async (constraints) => {
-        if (constraints.video) {
-          throw new DOMException("Permission denied", "NotAllowedError");
-        }
-        return { getTracks: () => [{ stop: () => {} }] };
-      };
+      if (navigator.mediaDevices) {
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          if (constraints.video) {
+            throw new DOMException("Permission denied", "NotAllowedError");
+          }
+          return { getTracks: () => [{ stop: () => {} }] };
+        };
+      }
     });
 
     const absDir = path.resolve(PERMISSION_EXPERIMENT_DIR);
