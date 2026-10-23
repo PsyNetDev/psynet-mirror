@@ -341,6 +341,16 @@ def test_format_performance_summary_no_export():
     assert "Export" not in text
 
 
+def test_format_performance_summary_export_only_on_last_row_no_ratio():
+    """--existing stamps export on last row only; summary shows value but no vs-base ratio."""
+    r1 = _base_result(n_bots=5)
+    r2 = _base_result(n_bots=10, export_duration_s=2.5)
+    lines = format_performance_summary([r1, r2])
+    assert "Export" in _join(lines)
+    # Row with export value should end with N/A (no baseline to ratio against)
+    assert any("2.5" in line and line.strip().endswith("N/A") for line in lines)
+
+
 # --- PerformanceTester.run ---
 
 
