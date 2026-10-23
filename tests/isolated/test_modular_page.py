@@ -14,6 +14,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     PushButtonControl,
     RadioButtonControl,
     RatingScale,
+    TimedPushButtonControl,
 )
 
 # from importlib import resources
@@ -487,10 +488,21 @@ def test_option_controls_reject_choices_with_the_same_text():
         RadioButtonControl([1, "1"])
 
 
-def test_push_button_visualization_highlights_a_numeric_answer():
-    html = PushButtonControl([1, 2]).visualize_response(
-        answer=2, response=None, trial=None
-    )
+@pytest.mark.parametrize(
+    "control, answer",
+    [
+        (PushButtonControl([1, 2]), 2),
+        (
+            TimedPushButtonControl([1, 2]),
+            [
+                {"eventType": "trialStart", "info": None},
+                {"eventType": "pushButtonClicked", "info": {"buttonId": "2"}},
+            ],
+        ),
+    ],
+)
+def test_push_button_visualization_highlights_a_numeric_answer(control, answer):
+    html = control.visualize_response(answer=answer, response=None, trial=None)
     assert html.count("btn-success") == 1
     assert html.index("btn-success") > html.index('id="1"')
 

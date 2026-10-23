@@ -1255,19 +1255,19 @@ class PushButtonControl(OptionControl):
         return {"choices": self.choices, "labels": self.labels}
 
     def visualize_response(self, answer, response, trial):
+        return self._visualize_buttons(lambda choice: choice == answer)
+
+    def _visualize_buttons(self, is_highlighted):
+        """Render the buttons, highlighting those whose choice passes ``is_highlighted``."""
+        mode = "timed" if self.timed else "submit"
         html = tags.div()
         with html:
             for choice, label in zip(self.choices, self.labels):
-                _class = "btn push-button btn-primary response submit"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if answer == choice
-                    else _class
-                )
+                color = "btn-success" if is_highlighted(choice) else "btn-primary"
                 tags.button(
                     type="button",
                     id=choice,
-                    _class=_class,
+                    _class=f"btn push-button {color} response {mode}",
                     style=self.style,
                 ).add(label)
                 tags.br()
@@ -1380,24 +1380,13 @@ class TimedPushButtonControl(PushButtonControl):
         return {**kwargs}["metadata"]["event_log"]
 
     def visualize_response(self, answer, response, trial):
-        html = tags.div()
-        with html:
-            for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response timed"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
-                tags.button(
-                    type="button",
-                    id=choice,
-                    _class=_class,
-                    style=self.style,
-                ).add(label)
-                tags.br()
-        return html.render()
+        """Highlight every button that the event log records as pressed."""
+        pressed = {
+            event["info"]["buttonId"]
+            for event in answer or []
+            if event["eventType"] == "pushButtonClicked"
+        }
+        return self._visualize_buttons(lambda choice: str(choice) in pressed)
 
     def get_bot_response(self, experiment, bot, page, prompt):
         event_log = [
