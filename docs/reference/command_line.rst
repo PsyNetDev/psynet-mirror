@@ -39,11 +39,25 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Deploy the experiment for data collection; see
        :doc:`/deploy/running_a_study`. ``--archive`` redeploys from a
        previous export; see :doc:`/deploy/reference/deploy_from_archive`.
+   * - ``psynet apps ssh``
+     - List the apps on a server; see :doc:`/deploy/setting_up_a_server`.
+   * - ``psynet hibernate ssh`` / ``psynet awaken ssh``
+     - Put a deployed app to sleep or wake it; see
+       :doc:`/deploy/reference/ssh_server`.
+   * - ``psynet destroy ssh``
+     - Remove one or more apps from a server; see
+       :doc:`/deploy/running_a_study`.
    * - ``psynet export local`` / ``ssh``
      - Export the data to ``exports/latest/``; see
        :doc:`/data/exporting_data`.
+   * - ``psynet assets cache info`` / ``list`` / ``prune``
+     - Inspect or clear the local cache of exported asset files; see
+       :doc:`/data/exporting_data`.
    * - ``psynet test local``
      - Run the experiment's automated tests with bots; see
+       :doc:`/test/backend`.
+   * - ``psynet test ssh``
+     - Run bots against a debug deployment (experimental); see
        :doc:`/test/backend`.
    * - ``psynet performance-test local`` / ``ssh``
      - Measure how the server copes with many participants; see
@@ -51,6 +65,12 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet audit ...``
      - Create, validate and render the experiment audit; see
        :doc:`/test/audit_reference`.
+   * - ``psynet translate`` / ``psynet locales``
+     - Machine-translate the experiment's text, or list the locales PsyNet
+       supports; see :doc:`/code/participants/internationalization`.
+   * - ``psynet lucid ...``
+     - Manage Cint (Lucid) surveys, costs and compensation; see
+       :doc:`/deploy/recruiters/cint`.
    * - ``psynet estimate``
      - Estimate the completion time and maximum reward
        (see `Estimate maximum reward and completion time (estimate)`_).

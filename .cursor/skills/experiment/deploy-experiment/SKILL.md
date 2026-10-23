@@ -22,7 +22,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   exported and record the export path or blocker.
 - Export and destroy only once no async jobs are pending. `psynet export ssh`
   and `psynet export local` end with a warning that the export misses
-  pending jobs (`psynet export heroku` does not check); `psynet destroy ssh`
+  pending jobs; `psynet destroy ssh`
   refuses when it cannot ask. Wait for the jobs, then export again; never
   add `--discard-pending-jobs` unless the user accepts losing those results.
   If destroy prints "Skipped the check for pending async jobs", it destroys

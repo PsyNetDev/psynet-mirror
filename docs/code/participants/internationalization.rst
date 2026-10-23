@@ -151,6 +151,11 @@ It also needs the ``openai`` package:
 
     pip install openai
 
+Google Translate is no longer supported. Remove
+``default_translator = google_translate`` from your configuration if it is
+there; ``google_translate_json_path`` and ``google_translate_project_id`` are
+ignored.
+
 Reviewing and revising
 ----------------------
 
