@@ -486,9 +486,17 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
     assert control.format_answer(raw_answer) == answer
 
 
-def test_option_controls_save_numpy_choices_as_python_values():
-    answer = DropdownControl(list(np.arange(1, 4))).format_answer("3")
-    assert answer == 3 and type(answer) is int
+@pytest.mark.parametrize(
+    "choices, raw_answer, answer",
+    [(list(np.arange(1, 4)), "3", 3), ([np.float32(0.1)], "0.1", 0.1)],
+)
+def test_option_controls_save_numpy_choices_as_python_values(
+    choices, raw_answer, answer
+):
+    control = DropdownControl(choices)
+    saved = control.format_answer(raw_answer)
+    assert saved == answer and type(saved) is type(answer)
+    assert str(control.labels[-1]) == raw_answer
 
 
 def test_option_controls_reject_choices_with_the_same_text():

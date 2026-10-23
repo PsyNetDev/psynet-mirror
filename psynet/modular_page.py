@@ -1016,6 +1016,9 @@ def _is_html_markup(x):
 
 def _as_python_value(x):
     """Convert a NumPy scalar to the equivalent Python value, so it is stored as plain JSON."""
+    if isinstance(x, np.floating):
+        # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
+        return float(str(x))
     return x.item() if isinstance(x, np.generic) else x
 
 
