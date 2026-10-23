@@ -1319,11 +1319,7 @@ def _prepare_in_scratch_database(archive):
             ) from e
         with environment:
             database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
-            log(
-                f"Preparing the experiment in the scratch database {database}, "
-                "which is removed afterwards. Your local database and Redis are "
-                "left alone."
-            )
+            log(f"Preparing the experiment in the scratch database {database}.")
             env = {
                 **os.environ,
                 **{key: environment.env[key] for key in ("DATABASE_URL", "REDIS_URL")},
@@ -2185,11 +2181,20 @@ def _abort_if_app_exists(server, app, *, update=False):
         )
 
 
-_option_ssh_update = click.option(
-    "--update",
-    is_flag=True,
-    help="Rebuild a running app in place, keeping its database and skipping launch.",
-)
+def _option_ssh_update(command):
+    """Attach ``--update`` and ``--yes``, which skips the update's confirmation."""
+    command = click.option(
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="With --update, skip the confirmation prompt.",
+    )(command)
+    return click.option(
+        "--update",
+        is_flag=True,
+        help="Rebuild a running app in place, keeping its database and skipping launch.",
+    )(command)
+
 
 _ssh_deployment_options = [
     option_server,
@@ -2252,7 +2257,9 @@ def _check_ssh_update(server, app, mode, confirm=True):
     mode : str
         ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
     confirm : bool
-        Ask the user to confirm the update first.
+        Ask the user to confirm the update first. Without a terminal, the
+        answer is read from stdin; if there is none, the error says to pass
+        ``--yes``.
     """
     try:
         running = _read_running_deployment_info(server, app)
@@ -2268,14 +2275,25 @@ def _check_ssh_update(server, app, mode, confirm=True):
             f"{app} was created with `{original}`. Update it with "
             f"`{original} --app {app} --update`."
         )
-    if confirm and not user_confirms(
-        f"This rebuilds and restarts {app} on {server}, keeping its database. "
-        "Participants may see a short interruption. New assets are not deposited, "
-        "and networks and pre-deploy routines are not run again. Don't change the "
-        "timeline while participants are still taking part. Continue?",
-        default=mode != "live",
-    ):
-        raise click.Abort
+    if confirm:
+        try:
+            confirmed = user_confirms(
+                f"This rebuilds and restarts {app} on {server}, keeping its database. "
+                "Participants may see a short interruption. New assets are not "
+                "deposited, and networks and pre-deploy routines are not run again. "
+                "Don't change the timeline while participants are still taking "
+                "part. Continue?",
+                default=mode != "live",
+            )
+        except click.Abort:
+            if _stdin_is_interactive():
+                raise
+            raise click.ClickException(
+                f"Confirmation needed to rebuild and restart {app} on {server}, "
+                "keeping its database; re-run with --yes."
+            ) from None
+        if not confirmed:
+            raise click.Abort
     deployment_info.write(
         deployment_id=identity["deployment_id"],
         secret=identity["secret"],
@@ -2300,6 +2318,7 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    confirm_update=True,
     local_packages=(),
     performance_test_app=False,
     check_consents=True,
@@ -2308,11 +2327,12 @@ def _pre_launch(
 ):
     """Check and prepare the experiment directory, and return the app name.
 
+    ``confirm_update`` asks the user to confirm an SSH ``update``.
     ``performance_test_app`` marks an app that ``psynet performance-test
-    ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
-    the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
-    ingress and the server's DNS name are recorded in ``deployment_info``.
+    ssh`` deploys for bots: the experiment needn't have a consent page.
+    ``ingress`` and ``dns_host`` are the SSH deploy's ``--ingress`` and
+    ``--dns-host`` options; the resolved ingress and the server's DNS name
+    are recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
@@ -2353,7 +2373,11 @@ def _pre_launch(
 
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
-        ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        try:
+            ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        except FileNotFoundError as e:
+            # Dallinger's message says how to set server_pem.
+            raise click.ClickException(str(e)) from e
         _abort_if_app_exists(server, app, update=update)
         if app is None:
             app = _default_ssh_app_name(server)
@@ -2371,7 +2395,7 @@ def _pre_launch(
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:
-            _check_ssh_update(server, app, mode, confirm=not performance_test_app)
+            _check_ssh_update(server, app, mode, confirm=confirm_update)
 
     run_pre_checks(
         mode,
@@ -2586,6 +2610,7 @@ def deploy__docker_ssh(
     server,
     ingress=None,
     update=False,
+    yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
@@ -2609,6 +2634,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not yes,
             ingress=ingress,
             dns_host=dns_host,
         )
@@ -2630,7 +2656,7 @@ def deploy__docker_ssh(
             dallinger_summary=False,
         )
 
-        _print_ssh_ready(result, _post_deploy(result))
+        _print_ssh_ready(result, _post_deploy(result), update=update)
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -2684,9 +2710,37 @@ def _invoke_docker_ssh_deploy(
         result = ctx.invoke(command, **kwargs)
     if isinstance(result, dict):
         link = _participant_link(result, output.getvalue())
+        if update:
+            # Dallinger doesn't open recruitment again, so keep what the
+            # first deploy recorded, before _post_deploy overwrites it.
+            recorded = _recorded_launch_info()
+            link = link or recorded.get("participant_link")
+            if not result.get("recruitment_msg") and recorded.get("recruitment_msg"):
+                result["recruitment_msg"] = recorded["recruitment_msg"]
         if link:
             result["participant_link"] = link
     return result
+
+
+def _recorded_launch_info():
+    """Return the launch data saved for this deployment, or an empty dict.
+
+    An update keeps the deployment ID, so this is the file that the first
+    deploy from this computer wrote.
+    """
+    try:
+        path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_info.read("deployment_id")
+            / "launch-info.json"
+        )
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError, KeyError) as err:
+        logger.warning("Could not read the recorded launch data: %r", err)
+        return {}
+    return recorded if isinstance(recorded, dict) else {}
 
 
 def _participant_link(result, output):
@@ -2701,14 +2755,16 @@ def _participant_link(result, output):
     return match and match.group(1)
 
 
-def _print_ssh_ready(result, launch_info):
+def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
     Also names the deployed Docker image, if Dallinger reports it.
     Passwords are not printed, so that pasted logs don't leak them; they
     are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
-    study) is shown instead.
+    study) is shown instead. An ``update`` doesn't open recruitment again,
+    so it shows what the first deploy recorded on this computer, or, without
+    a record, points the user to the first deploy's output.
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
@@ -2716,8 +2772,11 @@ def _print_ssh_ready(result, launch_info):
         f"{Path(launch_info).name})"
     )
     link = result.get("participant_link")
+    message = None if link else result.get("recruitment_msg")
+    unrecorded = update and not (link or message)
     rows = [
         ("Participant link", link),
+        ("Recruitment", unrecorded and "unchanged; see the first deploy's output"),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
@@ -2728,9 +2787,12 @@ def _print_ssh_ready(result, launch_info):
     for label, value in rows:
         if value:
             click.echo(f"  {label + ':':<18}{value}")
-    message = None if link else result.get("recruitment_msg")
     if message:
-        click.echo("  Recruitment:")
+        click.echo(
+            "  Recruitment (unchanged since the app was deployed):"
+            if update
+            else "  Recruitment:"
+        )
         for line in message.strip().splitlines():
             click.echo(f"    {line}".rstrip())
 
@@ -2748,7 +2810,6 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
-    user_set = bool(source)
     if not source:
         from .experiment_scaffold import get_editable_dallinger_source
 
@@ -2763,12 +2824,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
+    # Dallinger says which tree it bakes when it builds the image.
     os.environ["DALLINGER_SOURCE"] = source
-    message = f"Baking local Dallinger from {source} into the experiment image."
-    if not user_set:
-        # Dallinger goes on to say that DALLINGER_SOURCE is set.
-        message += " PsyNet passes this checkout to Dallinger as DALLINGER_SOURCE."
-    click.echo(message)
 
 
 def _reject_leftover_local_image_files():
@@ -2870,7 +2927,10 @@ def _build_local_psynet_wheel():
     from .experiment_scaffold import get_editable_psynet_source
 
     source = get_editable_psynet_source()
-    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    click.echo(
+        f"Using the PsyNet checkout at {source} instead of the version in "
+        "requirements.txt."
+    )
     return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
 
 
@@ -3152,7 +3212,11 @@ def run_pre_checks(
     exp.check_config()
     exp.check_size(heroku=heroku)
     if check_consents:
-        exp.check_consents()
+        try:
+            exp.check_consents()
+        except RuntimeError as e:
+            # The message explains how to add a consent page.
+            raise click.ClickException(str(e)) from e
     exp.check_python_dependencies()
 
     try:
@@ -3359,6 +3423,7 @@ def _debug_ssh(
     use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    yes=False,
     performance_test_app=False,
     check_consents=True,
 ):
@@ -3368,7 +3433,8 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
+    ``performance_test_app``, :func:`_pre_launch` relaxes its checks, and an
+    update isn't confirmed first, as with ``yes``.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -3387,6 +3453,7 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not (yes or performance_test_app),
             local_packages=local_packages,
             performance_test_app=performance_test_app,
             check_consents=check_consents,
@@ -3413,7 +3480,7 @@ def _debug_ssh(
 
         launch_info = _post_deploy(result)
         if not performance_test_app:
-            _print_ssh_ready(result, launch_info)
+            _print_ssh_ready(result, launch_info, update=update)
     finally:
         _cleanup_exp_directory()
 
@@ -4745,6 +4812,22 @@ def _warn_export_misses_pending_jobs(summary):
         )
 
 
+@contextmanager
+def _export_step(text):
+    """Print ``text`` as a step line, such as ``Downloading export...``.
+
+    A terminal shows a spinner while the step runs and keeps the same line
+    as redirected output once it succeeds.
+    """
+    if not sys.stdout.isatty():
+        click.echo(f"{text}...")
+        yield
+        return
+    with yaspin(text=f"{text}...", color="green"):
+        yield
+    click.echo(f"{text}...")
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -4829,11 +4912,10 @@ def _fetch_remote_export(
             download_dir = tempfile.mkdtemp(prefix="psynet-export-download-")
             try:
                 archive_path = os.path.join(download_dir, "export.zip")
-                with yaspin(text="Downloading export", color="green") as spinner:
+                with _export_step("Downloading export"):
                     download_archive(
                         endpoint, archive_path, assets=assets, asset_bytes=asset_bytes
                     )
-                    spinner.ok("✔")
                 return extract_archive(archive_path, export_path)
             finally:
                 shutil.rmtree(download_dir, ignore_errors=True)
@@ -4843,16 +4925,13 @@ def _fetch_remote_export(
             try:
                 plan = plan_asset_transfer(export_path)
                 rsync_source, ssh_command = ssh_rsync_source(server, ssh_session)
-                with yaspin(
-                    text="Fetching missing asset bytes", color="green"
-                ) as spinner:
+                with _export_step("Downloading media files"):
                     materialized = hydrate_assets(
                         export_path,
                         plan,
                         rsync_source=rsync_source,
                         ssh_command=ssh_command,
                     )
-                    spinner.ok("✔")
             except TransferError as exc:
                 # The server can always read its own asset files, so an archive
                 # is still worth trying before giving up on the export.
@@ -4870,7 +4949,8 @@ def _fetch_remote_export(
                 shutil.rmtree(export_path, ignore_errors=True)
                 manifest = download_into_staging("include")
             else:
-                log(f"Materialized {materialized} asset(s) from the local cache.")
+                if materialized:
+                    log(f"Materialized {materialized} asset(s) from the local cache.")
                 from .export.asset_cache import warn_if_cache_oversized
 
                 oversized = warn_if_cache_oversized()
@@ -5144,9 +5224,15 @@ def destroy__heroku(ctx, app):
 def user_confirms(question, default=False):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
+
+    A piped answer isn't echoed, so the prompt line is ended here instead.
     """
     print(question)
-    return click.confirm("", default=default)
+    try:
+        return click.confirm("", default=default)
+    finally:
+        if not _stdin_is_interactive():
+            click.echo()
 
 
 def _stdin_is_interactive():
