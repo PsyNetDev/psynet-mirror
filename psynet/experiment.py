@@ -1115,8 +1115,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return response
 
         params = dict(request.args)
+        unique_id = params.get("unique_id", None)
+        if getattr(flask_app_globals, "unknown_participant", False):
+            unique_id = None
         request_obj = Request(
-            unique_id=params.get("unique_id", None),
+            unique_id=unique_id,
             duration=diff,
             method=request.method,
             endpoint=endpoint,
@@ -3675,6 +3678,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 .populate_existing()
                 .get(participant_id)
             )
+        if participant is None:
+            return ResponseResult(
+                payload={"submission": "rejected"},
+                flask_response=Experiment._unknown_participant_response(),
+            )
 
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
@@ -3997,6 +4005,54 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 }
             ),
             503,
+        )
+
+    @classmethod
+    def _unknown_participant_response(cls):
+        """Answer a participant request whose participant doesn't exist.
+
+        This usually comes from a browser tab opened before the database was
+        reset, for example by restarting ``psynet debug local``. The
+        participant sees a short "session no longer available" page (JSON for
+        POSTs and ``mode=json``), the server logs one warning line, and the
+        HTTP status is 404. The log line leaves out the request's IDs, which
+        can be recruiter worker IDs.
+        """
+        flask_app_globals.unknown_participant = True
+        logger.warning(
+            "%s %s: unknown participant, answered 'session no longer available' "
+            "(a browser tab from an earlier session?).",
+            request.method,
+            request.path,
+        )
+        _p = get_translator(context=True)
+        message = _p(
+            "error",
+            "This session is no longer available. It may have ended, or the "
+            "study may have been restarted since you opened this page.",
+        )
+        if cls._busy_response_should_be_html():
+            # Not error_page(): its recruiter text (such as a promised return
+            # to the panel) is about a session that still exists.
+            response = make_response(
+                render_template_with_translations(
+                    "psynet_error.html",
+                    error_text=message,
+                    error_page_presentation=None,
+                ),
+                404,
+            )
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return (
+            jsonify(
+                {
+                    "status": "unknown_participant",
+                    "submission": "rejected",
+                    "message": message,
+                }
+            ),
+            404,
         )
 
     @classmethod
@@ -5774,9 +5830,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = cls._get_request_participant_from_unique_id(
-                unique_id, for_update=True
-            )
+            try:
+                participant = cls._get_request_participant_from_unique_id(
+                    unique_id, for_update=True
+                )
+            except sqlalchemy.orm.exc.NoResultFound:
+                return cls._unknown_participant_response()
             participant_id = participant.id
             clock.close("lock")
             experiment = get_experiment()
@@ -6829,6 +6888,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def get_progress_and_reward(cls):
         participant_id = request.args.get("participantId")
         participant = Participant.query.get(participant_id)
+        if participant is None:
+            return cls._unknown_participant_response()
         progress_percentage = round(participant.progress * 100)
         data = {
             "progressPercentage": progress_percentage,
@@ -7248,7 +7309,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def http_log(cls, level, unique_id):
-        participant = cls.get_participant_from_unique_id(unique_id, for_update=False)
+        try:
+            participant = cls.get_participant_from_unique_id(unique_id)
+        except sqlalchemy.orm.exc.NoResultFound:
+            return cls._unknown_participant_response()
         try:
             cls.check_unique_id(participant, unique_id)
         except cls.UniqueIdError as e:
@@ -7287,7 +7351,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def participant_opened_devtools(cls, unique_id):
-        participant = cls.get_participant_from_unique_id(unique_id, for_update=False)
+        try:
+            participant = cls.get_participant_from_unique_id(unique_id)
+        except sqlalchemy.orm.exc.NoResultFound:
+            return cls._unknown_participant_response()
 
         cls.check_unique_id(participant, unique_id)
 
