@@ -55,15 +55,15 @@ Check the code and dependencies
   uncommitted changes, and the names of up to 20 such files.
   ``psynet export`` compares them with your checkout later, so commit
   everything before you deploy and push to your remote.
-  ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
+  ``psynet deploy ssh`` lists any deployed files
   with uncommitted changes and, in a terminal, ask whether to continue (the
   default is no). Without a terminal they only warn.
 - The PsyNet and Dallinger versions you tested locally must match their
   pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
   commit or release tag) takes precedence; otherwise its pin in
   ``constraints.txt`` is used, which is where Dallinger is usually pinned.
-  ``psynet deploy ssh``, ``psynet deploy heroku``, ``psynet debug ssh``,
-  ``psynet debug heroku`` and ``psynet performance-test ssh`` check both
+  ``psynet deploy ssh``, ``psynet debug ssh`` and
+  ``psynet performance-test ssh`` check both
   packages and stop if they differ; ``psynet debug ssh --use-local-psynet``
   and ``--use-local-dallinger`` skip the check for that package. If you change
   ``requirements.txt``, regenerate and commit ``constraints.txt`` with
@@ -249,7 +249,7 @@ that are removed afterwards, so a local experiment can keep running while you
 deploy. Because the deploy replaces the experiment directory's generated
 files, it doesn't run at the same time as a ``psynet debug local`` or test
 session in the same directory: whichever starts second refuses to.
-``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+``psynet debug ssh`` does the same. When
 ``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
 participant link, the dashboard link and user, where the password is saved,
 the logs command and, for apps with classic ingress, the log viewer in the
@@ -454,8 +454,7 @@ so treat data you have not exported as lost.
 If async jobs are still running, for example analyses of participants'
 recordings, ``psynet export ssh`` (and ``psynet export local``) ends with a
 warning that the export does not include their results. Wait for them to
-finish and export again; see :doc:`/reference/api/async_job`.
-``psynet export heroku`` does not check. Jobs that were lost before
+finish and export again; see :doc:`/reference/api/async_job`. Jobs that were lost before
 starting, for example when Redis restarted, are failed about an hour after
 they were enqueued and then stop counting as pending.
 
