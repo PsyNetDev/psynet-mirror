@@ -2209,10 +2209,25 @@ def test_ssh_launch_without_app_asks_for_a_name(
         assert "invalid characters" in output
         assert (
             "An app named my-study already exists on lab. Type another name, "
-            "use --app my-study --update to ship changes to it, or run "
-            "`psynet destroy ssh --app my-study` first."
+            "rerun with --app my-study --update to update that app and keep "
+            "its data, or delete it first with psynet destroy ssh --app my-study."
         ) in output
         assert "at most 63 characters" in output
+
+
+@pytest.mark.parametrize("command", ["debug", "deploy", "performance-test"])
+@pytest.mark.parametrize("app", ["my-study-", "x" * 64])
+def test_ssh_launches_reject_app_names_that_are_not_one_dns_label(
+    monkeypatch, tmp_path, command, app
+):
+    from psynet.command_line import psynet
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "experiment.py").touch()
+    result = CliRunner().invoke(psynet, [command, "ssh", "--app", app])
+
+    assert result.exit_code == 2
+    assert "at most 63 characters" in result.output
 
 
 def test_ssh_pre_launch_names_and_records_an_app_without_app(monkeypatch, tmp_path):

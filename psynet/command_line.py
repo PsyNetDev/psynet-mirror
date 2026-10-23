@@ -295,8 +295,9 @@ def _default_ssh_app_name(server):
         if name in taken:
             raise click.BadParameter(
                 f"An app named {name} already exists on {server}. Type another "
-                f"name, use --app {name} --update to ship changes to it, or run "
-                f"`psynet destroy ssh --app {name}` first."
+                f"name, rerun with --app {name} --update to update that app and "
+                f"keep its data, or delete it first with "
+                f"psynet destroy ssh --app {name}."
             )
         return name
 
@@ -7395,7 +7396,7 @@ def performance_test__prepare_reset(
 @click.option(
     "--app",
     required=True,
-    callback=verify_id,
+    callback=_verify_ssh_app,
     help="""
     Name of the app to test. If the server has no app of that name, it is
     deployed in debug mode from this directory for performance tests.""",

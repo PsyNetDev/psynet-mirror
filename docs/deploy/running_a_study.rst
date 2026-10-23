@@ -232,8 +232,8 @@ from the experiment directory:
    psynet deploy ssh --app my-study --server your-server.example.org
 
 ``--app`` becomes the first part of the participant URL
-(``https://my-study.your-server.example.org``), so use lowercase letters,
-digits and hyphens. If your DNS record only publishes a fixed list of
+(``https://my-study.your-server.example.org``), so use up to 63 lowercase
+letters, digits and hyphens, not starting or ending with a hyphen. If your DNS record only publishes a fixed list of
 subdomains, the app name must be one of them. Several experiments can run
 on one server with different app names. Without ``--app``, PsyNet offers
 the experiment directory's name, made lowercase with hyphens, and adds
