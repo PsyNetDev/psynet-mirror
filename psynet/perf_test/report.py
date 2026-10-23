@@ -327,17 +327,23 @@ def _request_lines(result):
     lines.append("")
 
     n_succeeded = result.bots_succeeded
-    bot_word = "bot" if n_succeeded == 1 else "bots"
-    lines += _section(
-        f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)"
-    )
-    lines += _label_table(
-        [
-            ["Min", result.min_trial_count or 0],
-            ["Median", result.median_trial_count or 0],
-            ["Max", result.max_trial_count or 0],
+    if n_succeeded:
+        bot_word = "bot" if n_succeeded == 1 else "bots"
+        lines += _section(
+            f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)"
+        )
+        lines += _label_table(
+            [
+                ["Min", result.min_trial_count or 0],
+                ["Median", result.median_trial_count or 0],
+                ["Max", result.max_trial_count or 0],
+            ]
+        )
+    else:
+        lines += [
+            *_section("TRIALS PER BOT"),
+            "  No bot completed the experiment successfully.",
         ]
-    )
     lines += [
         f"  {describe_busy_early_finish(result, trial_maker_id, detail=True)}."
         for trial_maker_id in result.busy_early_finishes or {}

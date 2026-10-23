@@ -173,24 +173,23 @@ class PerformanceSuite:
             if self.before_test is not None
             else "pauses between tests"
         )
-        search_minutes = max_tests * tester.duration_minutes
+        total_minutes = max_tests * tester.duration_minutes
+        plan = f"Up to {max_tests} search tests of {tester.duration_minutes:g} min"
         if self.confirmation_skipped:
-            confirming = f"no validation test ({self.confirmation_skipped})"
+            plan += f", and no validation test ({self.confirmation_skipped})."
         else:
+            total_minutes += confirm_minutes
             arriving = (
                 f", bots arriving over {confirm_arrival:g} min"
                 if confirm_arrival
                 else ""
             )
-            confirming = (
-                f"then a {confirm_minutes:g}-min validation test at the recommended "
-                f"number of participants{arriving}; up to "
-                f"{search_minutes + confirm_minutes:g} min in all"
+            plan += (
+                f", then a {confirm_minutes:g}-min validation test at the "
+                f"recommended number of participants{arriving}."
             )
         logger.info(
-            f"Expected run time:    up to {max_tests} tests of "
-            f"{tester.duration_minutes:g} min ({search_minutes:g} min), "
-            f"{confirming}, plus {between}"
+            f"Expected run time:    up to {total_minutes:g} min, plus {between}"
         )
         highest_pass = lowest_fail = None
         confirming_cap = None
@@ -229,7 +228,7 @@ class PerformanceSuite:
             next_test,
             bot_log_file,
             confirmation_planned=not self.confirmation_skipped,
-            notes=self._notes(search=True),
+            notes=[plan, *self._notes(search=True)],
         )
         if self.reset_error and not any(r.confirmation for r in results):
             self.confirmation_skipped = (

@@ -693,14 +693,25 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     ):
         PerformanceSuite(tester).run([2])
 
-    assert "Estimated session:    13.0 min" in caplog.text
-    assert ("sees mostly the start of the study" in caplog.text) == warns
-    messages = caplog.messages
+    text = caplog.text
+    assert "Estimated session:    13.0 min" in text
+    assert ("sees mostly the start of the study" in text) == warns
     if warns:
-        # A note after the aligned settings, which end with the bot processes.
-        note = next(i for i, m in enumerate(messages) if "sees mostly" in m)
-        assert messages[note - 2].startswith("Bot processes:")
-        assert messages[note - 1] == ""
+        # A note after the settings, which end with the bot processes.
+        assert text.index("Bot processes:") < text.index("sees mostly")
+
+
+def test_capacity_search_header_lists_the_limits_after_the_settings(caplog):
+    with caplog.at_level("INFO"):
+        _search(
+            _session_tester(),
+            lambda n, *_: _base_result(n_bots=n, p95_response_time=0.9 * (n > 15)),
+            confirm=False,
+        )
+
+    text = caplog.text
+    assert "Bots per test:        automatic, from 10\n" in text
+    assert text.index("Bot processes:") < text.index("Each search test must keep")
 
 
 def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
@@ -2026,8 +2037,17 @@ _ASYNC_JOB_STATS = [
             ["ASYNC JOB TIMES", "tm1", "create_trial", "Q Med"],
         ),
         (dict(async_job_stats=None), ["No completed async jobs"]),
+        (dict(bots_succeeded=0), ["No bot completed the experiment successfully"]),
     ],
-    ids=["basic", "no-responses", "bots-not-in-db", "wait-pages", "jobs", "no-jobs"],
+    ids=[
+        "basic",
+        "no-responses",
+        "bots-not-in-db",
+        "wait-pages",
+        "jobs",
+        "no-jobs",
+        "no-completions",
+    ],
 )
 def test_format_test_results(overrides, expected):
     text = _join(format_test_results(_base_result(**overrides)))
