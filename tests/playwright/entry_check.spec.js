@@ -44,10 +44,12 @@ test(
   { tag: "@both" },
   async ({ page }) => {
     await withAdPage(page, {}, async (adPage) => {
-      // Begin button visible = browser check passed.
-      await expect(
-        adPage.locator("#begin-button, button.btn-primary")
-      ).toBeVisible({ timeout: CHECK_TIMEOUT_MS });
+      // Wait for the async browser check to complete, not just the Begin button
+      // which appears before detectIncognito() resolves.
+      await adPage.waitForFunction(
+        () => window.browser?.isValidated === true,
+        { timeout: CHECK_TIMEOUT_MS }
+      );
       await expect(adPage.locator("#browser-compatibility-modal")).toBeHidden();
     });
   }
@@ -61,9 +63,10 @@ test(
       page,
       { env: { force_google_chrome: "true" } },
       async (adPage) => {
-        await expect(
-          adPage.locator("#begin-button, button.btn-primary")
-        ).toBeVisible({ timeout: CHECK_TIMEOUT_MS });
+        await adPage.waitForFunction(
+          () => window.browser?.isValidated === true,
+          { timeout: CHECK_TIMEOUT_MS }
+        );
         await expect(adPage.locator("#browser-compatibility-modal")).toBeHidden();
       }
     );
