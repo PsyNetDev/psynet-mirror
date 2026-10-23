@@ -2138,15 +2138,13 @@ def _pre_launch(
     ingress=None,
     dns_host=None,
 ):
-    """Check and prepare the experiment directory before a launch.
+    """Check and prepare the experiment directory, and return the app name.
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
     experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
-    An SSH launch without ``app`` is named by :func:`_default_ssh_app_name`
-    once the server is connected. Returns the app name.
     """
     from .experiment import get_experiment
 
@@ -2188,11 +2186,10 @@ def _pre_launch(
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        _abort_if_app_exists(server, app, update=update)
         if app is None:
             app = _default_ssh_app_name(server)
             deployment_info.write(app=app)
-        else:
-            _abort_if_app_exists(server, app, update=update)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
