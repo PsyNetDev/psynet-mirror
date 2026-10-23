@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from flask import Flask
 from jinja2 import DictLoader
@@ -483,6 +484,11 @@ def test_option_control_bots_answer_like_the_browser(control, expected):
 def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, answer):
     """The browser's string becomes the matching choice; other answers pass through."""
     assert control.format_answer(raw_answer) == answer
+
+
+def test_option_controls_save_numpy_choices_as_python_values():
+    answer = DropdownControl(list(np.arange(1, 4))).format_answer("3")
+    assert answer == 3 and type(answer) is int
 
 
 def test_option_controls_reject_choices_with_the_same_text():

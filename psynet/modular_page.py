@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
+import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
@@ -920,6 +921,7 @@ class OptionControl(Control):
 
     The saved answer is the element of ``choices`` that the participant picked,
     with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
+    NumPy scalars in ``choices`` become the equivalent Python values.
     """
 
     def __init__(
@@ -931,8 +933,8 @@ class OptionControl(Control):
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
-        self.choices = choices
-        self.labels = choices if labels is None else labels
+        self.choices = [_as_python_value(choice) for choice in choices]
+        self.labels = self.choices if labels is None else labels
         self.style = style
 
         assert isinstance(self.labels, list)
@@ -1010,6 +1012,11 @@ class OptionControl(Control):
 
 def _is_html_markup(x):
     return isinstance(x, Markup) or isinstance(x, tags.html_tag)
+
+
+def _as_python_value(x):
+    """Convert a NumPy scalar to the equivalent Python value, so it is stored as plain JSON."""
+    return x.item() if isinstance(x, np.generic) else x
 
 
 class CheckboxControl(OptionControl):
