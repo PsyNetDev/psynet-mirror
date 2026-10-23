@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from flask import Flask
 from jinja2 import DictLoader
@@ -489,20 +491,27 @@ def test_option_controls_reject_choices_with_the_same_text():
 
 
 @pytest.mark.parametrize(
-    "control, answer",
+    "control, answer, response",
     [
-        (PushButtonControl([1, 2]), 2),
+        (PushButtonControl([1, 2]), 2, None),
         (
             TimedPushButtonControl([1, 2]),
-            [
-                {"eventType": "trialStart", "info": None},
-                {"eventType": "pushButtonClicked", "info": {"buttonId": "2"}},
-            ],
+            [0.5],  # Subclasses may save press times instead of the event log.
+            SimpleNamespace(
+                metadata={
+                    "event_log": [
+                        {"eventType": "trialStart", "info": None},
+                        {"eventType": "pushButtonClicked", "info": {"buttonId": "2"}},
+                    ]
+                }
+            ),
         ),
     ],
 )
-def test_push_button_visualization_highlights_a_numeric_answer(control, answer):
-    html = control.visualize_response(answer=answer, response=None, trial=None)
+def test_push_button_visualization_highlights_a_numeric_answer(
+    control, answer, response
+):
+    html = control.visualize_response(answer=answer, response=response, trial=None)
     assert html.count("btn-success") == 1
     assert html.index("btn-success") > html.index('id="1"')
 

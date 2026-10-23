@@ -1380,10 +1380,15 @@ class TimedPushButtonControl(PushButtonControl):
         return {**kwargs}["metadata"]["event_log"]
 
     def visualize_response(self, answer, response, trial):
-        """Highlight every button that the event log records as pressed."""
+        """Highlight every button that the response's event log records as pressed."""
+        # Subclasses may reformat the answer, so read the presses from the
+        # browser's event log instead.
+        event_log = []
+        if response is not None and response.metadata:
+            event_log = response.metadata.get("event_log") or []
         pressed = {
             event["info"]["buttonId"]
-            for event in answer or []
+            for event in event_log
             if event["eventType"] == "pushButtonClicked"
         }
         return self._visualize_buttons(lambda choice: str(choice) in pressed)
