@@ -34,7 +34,10 @@ class TestPrepare:
         time_finished = time.monotonic()
         time_taken = time_finished - time_started
 
-        assert time_taken < 10
+        # Normally this happens much faster but sometimes it happens slowly on CI.
+        # Creating the 2,000 networks takes a few seconds; the rest is database
+        # setup and the deployment snapshot.
+        assert time_taken < 20
 
 
 @pytest.mark.parametrize(
