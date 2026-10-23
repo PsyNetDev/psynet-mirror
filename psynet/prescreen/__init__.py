@@ -2057,13 +2057,43 @@ class BrowserCapabilityCheckPage(ModularPage):
 
 def _browser_capability_permission_intro(perm_caps):
     """InfoPage explaining an upcoming browser permission prompt."""
-    device = " and ".join(sorted(perm_caps))
+    has_mic = "microphone" in perm_caps
+    has_cam = "camera" in perm_caps
+    if has_mic and has_cam:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone and camera are working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone and camera.",
+        )
+    elif has_mic:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone.",
+        )
+    else:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your camera is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your camera.",
+        )
+    allow_sentence = _p(
+        "browser_capability_check",
+        "Please click Allow when prompted.",
+    )
     return InfoPage(
         Markup(
-            f"<p>This experiment needs to check that your {device} is working.</p>"
-            f"<p>Your browser will ask for permission to access your {device}. "
-            "Please click <strong>Allow</strong> when prompted.</p>"
-        ),
+            "<p>{}</p><p>{} {}</p>"
+        ).format(check_sentence, access_sentence, allow_sentence),
         time_estimate=5.0,
     )
 
