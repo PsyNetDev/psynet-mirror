@@ -2059,13 +2059,12 @@ def _pre_launch(
 ):
     """Check and prepare the experiment directory before a launch.
 
+    ``check_consents=False`` skips the consent page check (``--no-consent``).
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
     experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
-
-    ``check_consents=False`` skips the consent page check (``--no-consent``).
     """
     from .experiment import get_experiment
 
