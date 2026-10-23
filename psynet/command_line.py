@@ -176,9 +176,9 @@ def _use_local_dallinger_option(func):
 
 
 def verify_id(ctx, param, app):
-    # An omitted --app is allowed: SSH launches then default it with
-    # _default_ssh_app_name, and debug heroku lets Dallinger pick a random one.
-    # dallinger_verify_id would reject None, so we bypass it in this case.
+    # Some commands allow --app to be omitted; debug heroku, for example, then
+    # lets Dallinger pick a random app name. dallinger_verify_id would reject
+    # None, so we bypass it in this case.
     if app is None:
         return
     return dallinger_verify_id(ctx, param, app)
@@ -188,10 +188,32 @@ _FALLBACK_APP_NAME = "experiment"
 _MAX_APP_NAME_LENGTH = 63
 
 
+def _check_app_name(name):
+    """Check a new SSH app name like ``--app``, and that it is one DNS label.
+
+    Raises
+    ------
+    click.BadParameter
+        If ``name`` can't be used.
+    """
+    dallinger_verify_id(None, None, name)
+    if len(name) > _MAX_APP_NAME_LENGTH or name.startswith("-") or name.endswith("-"):
+        raise click.BadParameter(
+            f"The app name must be at most {_MAX_APP_NAME_LENGTH} characters "
+            "and can't start or end with a hyphen."
+        )
+    return name
+
+
+def _verify_ssh_app(ctx, param, app):
+    """Check an SSH launch's ``--app``; ``None`` is named later."""
+    return None if app is None else _check_app_name(app)
+
+
 def _is_valid_app_name(name):
-    """Return whether ``name`` passes the same checks as ``--app``."""
+    """Return whether ``name`` passes :func:`_check_app_name`."""
     try:
-        dallinger_verify_id(None, None, name)
+        _check_app_name(name)
     except click.BadParameter:
         return False
     return True
@@ -200,10 +222,12 @@ def _is_valid_app_name(name):
 def _directory_app_name(directory_name):
     """Return ``directory_name`` made into a valid app name, or ``None``.
 
-    The name is lowercased, runs of other characters become one hyphen, and
-    leading and trailing hyphens are dropped.
+    The name is lowercased, runs of other characters become one hyphen,
+    leading and trailing hyphens are dropped, and it is shortened to one
+    DNS label.
     """
     name = re.sub(r"[^a-z0-9]+", "-", directory_name.lower()).strip("-")
+    name = name[:_MAX_APP_NAME_LENGTH].rstrip("-")
     return name if _is_valid_app_name(name) else None
 
 
@@ -267,9 +291,12 @@ def _default_ssh_app_name(server):
         return suggestion
 
     def check(name):
-        name = dallinger_verify_id(None, None, name.strip())
+        name = _check_app_name(name.strip())
         if name in taken:
-            raise click.BadParameter(f"{server} already has an app named {name}.")
+            raise click.BadParameter(
+                f"An app named {name} already exists on {server}. Type another "
+                f"name, or rerun with --app {name} --update to ship changes to it."
+            )
         return name
 
     return click.prompt(
@@ -2401,7 +2428,7 @@ def _deploy__docker_heroku(ctx, app, archive):
 @deploy.command("ssh")
 @click.option(
     "--app",
-    callback=verify_id,
+    callback=_verify_ssh_app,
     default=None,
     help="Name of the experiment app. Defaults to the experiment directory's name.",
 )
@@ -3158,7 +3185,7 @@ def debug__docker_heroku(ctx, app, archive):
 @debug.command("ssh")
 @click.option(
     "--app",
-    callback=verify_id,
+    callback=_verify_ssh_app,
     default=None,
     help="Name of the experiment app. Defaults to the experiment directory's name.",
 )

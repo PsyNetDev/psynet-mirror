@@ -305,6 +305,7 @@ class TestCommandLine(object):
         (tmp_path / "experiment.py").touch()
 
         def deploy(show_summary=True, **kwargs):
+            assert kwargs["app_name"] == "my-app"
             message = "Single recruitment link: https://my-app.example.org/ad?mode=live"
             if show_summary:
                 print(f"Dashboard password: secret\n{message}")
@@ -329,7 +330,7 @@ class TestCommandLine(object):
             "deploy", callback=deploy, params=[summary_option] if new_dallinger else []
         )
         with (
-            patch("psynet.command_line._pre_launch"),
+            patch("psynet.command_line._pre_launch", return_value="my-app"),
             patch("psynet.command_line._cleanup_exp_directory"),
             patch("psynet.command_line.reset_console"),
             patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
@@ -339,9 +340,7 @@ class TestCommandLine(object):
                 return_value={"host": {}},
             ),
         ):
-            result = CliRunner().invoke(
-                psynet, ["deploy", "ssh", "--server", "host", "--app", "my-app"]
-            )
+            result = CliRunner().invoke(psynet, ["deploy", "ssh", "--server", "host"])
 
         assert result.exit_code == 0, result.output
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
@@ -1800,7 +1799,7 @@ def test_performance_test_deploys_mark_the_app(capsys):
     }
     with (
         patch("psynet.command_line._configure_dallinger_image_source"),
-        patch("psynet.command_line._pre_launch") as pre_launch,
+        patch("psynet.command_line._pre_launch", return_value="my-app") as pre_launch,
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
     ):
@@ -1818,6 +1817,7 @@ def test_performance_test_deploys_mark_the_app(capsys):
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
+    assert ctx.invoke.call_args.kwargs["app_name"] == "my-app"
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
     assert "Ready:" not in capsys.readouterr().out
 
@@ -2191,7 +2191,10 @@ def test_ssh_launch_without_app_announces_its_name(
 
 @pytest.mark.parametrize(
     "answer, expected",
-    [("\n", "my-study-2"), ("Bad_Name\nmy-study\nchosen\n", "chosen")],
+    [
+        ("\n", "my-study-2"),
+        ("Bad_Name\nmy-study\n" + "x" * 64 + "\nchosen\n", "chosen"),
+    ],
 )
 def test_ssh_launch_without_app_asks_for_a_name(
     monkeypatch, tmp_path, answer, expected
@@ -2203,7 +2206,63 @@ def test_ssh_launch_without_app_asks_for_a_name(
     assert output.startswith("App name (used in its web address) [my-study-2]: ")
     if expected == "chosen":
         assert "invalid characters" in output
-        assert "lab already has an app named my-study." in output
+        assert (
+            "An app named my-study already exists on lab. Type another name, "
+            "or rerun with --app my-study --update to ship changes to it."
+        ) in output
+        assert "at most 63 characters" in output
+
+
+def test_ssh_pre_launch_names_and_records_an_app_without_app(monkeypatch, tmp_path):
+    from unittest.mock import DEFAULT
+
+    from psynet import deployment_info
+    from psynet.command_line import _pre_launch
+
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch.dict(os.environ),
+        patch.multiple(
+            "psynet.command_line",
+            CONFIGURED_HOSTS={"lab": {"host": "lab"}},
+            _check_experiment_directory=DEFAULT,
+            _check_ssh_deploy_credentials=DEFAULT,
+            _default_ssh_app_name=Mock(return_value="my-study"),
+            run_pre_checks=DEFAULT,
+            get_config=Mock(return_value={}),
+            _prepare_in_scratch_database=DEFAULT,
+            _forget_tables_defined_in_experiment_directory=DEFAULT,
+        ),
+        patch("psynet.services.ensure_local_services"),
+        patch("psynet.experiment.get_experiment"),
+        patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
+        patch("dallinger.command_line.utils.get_server_pem_path", lambda: "/k.pem"),
+    ):
+        app = _pre_launch(
+            Mock(), mode="sandbox", archive=None, local_=False, ssh=True, server="lab"
+        )
+
+    assert app == "my-study"
+    assert deployment_info.read("app") == "my-study"
+    assert "~/dallinger/my-study/docker-compose.yml" in deployment_info.read(
+        "logs_command"
+    )
+
+
+def test_debug_ssh_launches_the_app_that_pre_launch_names():
+    from psynet.command_line import _debug_ssh
+
+    ctx = Mock()
+    with (
+        patch("psynet.command_line._configure_dallinger_image_source"),
+        patch("psynet.command_line._pre_launch", return_value="my-study"),
+        patch("psynet.command_line._post_deploy"),
+        patch("psynet.command_line._print_ssh_ready"),
+        patch("psynet.command_line._cleanup_exp_directory"),
+    ):
+        _debug_ssh(ctx, app=None, server="lab", dns_host=None)
+
+    assert ctx.invoke.call_args.kwargs["app_name"] == "my-study"
 
 
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):

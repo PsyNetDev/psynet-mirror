@@ -38,7 +38,8 @@ virtual environment active. ``psynet <command> --help`` lists every option.
        after the experiment directory.
    * - ``psynet deploy ssh --app NAME``
      - Deploy the experiment for data collection; see
-       :doc:`/deploy/running_a_study`. ``--archive`` redeploys from a
+       :doc:`/deploy/running_a_study`. Without ``--app``, the app is named
+       after the experiment directory. ``--archive`` redeploys from a
        previous export; see :doc:`/deploy/reference/deploy_from_archive`.
    * - ``psynet export local`` / ``ssh``
      - Export the data to ``exports/latest/``; see
