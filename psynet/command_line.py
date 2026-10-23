@@ -161,6 +161,16 @@ def _use_local_psynet_option(func):
     )(func)
 
 
+_option_no_consent = click.option(
+    "--no-consent",
+    is_flag=True,
+    help=(
+        "Skip the check that the timeline has a consent page, for example when "
+        "debugging a demo. Deploys still require one."
+    ),
+)
+
+
 def _use_local_dallinger_option(func):
     return click.option(
         "--use-local-dallinger",
@@ -1926,15 +1936,6 @@ def _abort_if_app_exists(server, app, *, update=False):
         )
 
 
-_option_no_consent = click.option(
-    "--no-consent",
-    is_flag=True,
-    help=(
-        "Skip the check that the timeline has a consent page, for example when "
-        "debugging a demo. Deploys still require one."
-    ),
-)
-
 _option_ssh_update = click.option(
     "--update",
     is_flag=True,
@@ -2060,10 +2061,11 @@ def _pre_launch(
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``check_consents=False`` skips
-    the consent page check too (``--no-consent``). ``ingress`` and ``dns_host`` are
+    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
+
+    ``check_consents=False`` skips the consent page check (``--no-consent``).
     """
     from .experiment import get_experiment
 
