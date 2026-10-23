@@ -1,4 +1,10 @@
 from psynet.demography.general import CountryOfBirth, CountryOfResidence, Gender
+from psynet.demography.gmsi import GMSI
+
+
+def test_gmsi_start_age_is_unscored_when_no_instrument_is_played():
+    assert GMSI.calculate_score("q_40", 19) is None
+    assert GMSI.calculate_score("q_40", 5) == 5
 
 
 def test_country_pages_save_to_separate_participant_vars():

@@ -465,6 +465,36 @@ def test_option_control_bots_answer_like_the_browser(control, expected):
     assert response.raw_answer == expected
 
 
+@pytest.mark.parametrize(
+    "control, raw_answer, answer",
+    [
+        (DropdownControl([1, 2, 3]), "3", 3),
+        (PushButtonControl([1.5, 2]), "1.5", 1.5),
+        (RadioButtonControl([1, 2]), "2", 2),
+        (CheckboxControl([1, 2, 3]), ["1", "3"], [1, 3]),
+        (DropdownControl([1, 2]), "", ""),
+        (RadioButtonControl([1, 2]), None, None),
+        (RadioButtonControl([1, 2], show_free_text_option=True), "abc", "abc"),
+    ],
+)
+def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, answer):
+    """The browser's string becomes the matching choice; other answers pass through."""
+    assert control.format_answer(raw_answer) == answer
+
+
+def test_option_controls_reject_choices_with_the_same_text():
+    with pytest.raises(ValueError, match="same text"):
+        RadioButtonControl([1, "1"])
+
+
+def test_push_button_visualization_highlights_a_numeric_answer():
+    html = PushButtonControl([1, 2]).visualize_response(
+        answer=2, response=None, trial=None
+    )
+    assert html.count("btn-success") == 1
+    assert html.index("btn-success") > html.index('id="1"')
+
+
 def test_modular_page_accepts_page_css_list():
     page = ModularPage(
         "test",
