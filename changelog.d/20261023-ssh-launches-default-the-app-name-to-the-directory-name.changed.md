@@ -1,0 +1,1 @@
+`psynet debug ssh` and `psynet deploy ssh` without `--app` now name the app after the experiment directory (with `-2`, `-3`, ... if the server already has that app) and serve it at its own subdomain, instead of a random `dlgr-…` name on the server's bare domain. In an interactive terminal, PsyNet asks for the name and offers this suggestion; otherwise it prints the name it uses.

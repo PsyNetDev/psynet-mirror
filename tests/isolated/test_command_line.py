@@ -2122,6 +2122,77 @@ def test_deploying_onto_an_existing_ssh_app_suggests_update(
     assert "`psynet destroy ssh --app one --server musix`" in error.value.message
 
 
+@pytest.mark.parametrize(
+    "directory, taken, expected",
+    [
+        ("My_Study 2", (), "my-study-2"),
+        ("--a__b--", (), "a-b"),
+        ("___", (), "experiment"),
+        ("dlgr-old", (), "experiment"),
+        ("study", ("study", "study-2"), "study-3"),
+        ("x" * 70, ("x" * 63,), "x" * 61 + "-2"),
+    ],
+)
+def test_suggested_app_names_are_valid(directory, taken, expected):
+    from psynet.command_line import _suggest_app_name
+
+    assert _suggest_app_name(directory, taken) == expected
+
+
+def _launch_ssh_without_app(monkeypatch, tmp_path, *, interactive, input=None):
+    from types import SimpleNamespace
+
+    from psynet.command_line import psynet
+
+    experiment_dir = tmp_path / "My_Study"
+    experiment_dir.mkdir()
+    (experiment_dir / "experiment.py").touch()
+    monkeypatch.chdir(experiment_dir)
+    hosts = {"lab": {"host": "lab"}}
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr("psynet.command_line.CONFIGURED_HOSTS", hosts)
+    monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", hosts)
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
+    monkeypatch.setattr(docker_ssh, "ensure_remote_host_in_known_hosts", Mock())
+    monkeypatch.setattr(
+        docker_ssh, "get_apps", lambda server: [SimpleNamespace(name="my-study")]
+    )
+    monkeypatch.setattr(
+        "psynet.command_line._stdin_is_interactive", lambda: interactive
+    )
+    launch = Mock()
+    monkeypatch.setattr("psynet.command_line._debug_ssh", launch)
+    result = CliRunner().invoke(psynet, ["debug", "ssh"], input=input)
+    assert result.exit_code == 0, result.output
+    return result, launch.call_args.kwargs["app"]
+
+
+def test_ssh_launch_without_app_uses_the_directory_name(monkeypatch, tmp_path):
+    result, app = _launch_ssh_without_app(monkeypatch, tmp_path, interactive=False)
+    assert app == "my-study-2"
+    assert result.output == (
+        "Using app name my-study-2 (from the directory name; "
+        "pass --app to choose another).\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [("\n", "my-study-2"), ("Bad_Name\nmy-study\nchosen\n", "chosen")],
+)
+def test_ssh_launch_without_app_asks_for_a_name(
+    monkeypatch, tmp_path, answer, expected
+):
+    result, app = _launch_ssh_without_app(
+        monkeypatch, tmp_path, interactive=True, input=answer
+    )
+    assert app == expected
+    assert result.output.startswith("App name [my-study-2]: ")
+    if expected == "chosen":
+        assert "invalid characters" in result.output
+        assert "lab already has an app named my-study." in result.output
+
+
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
     from psynet import deployment_info
     from psynet.command_line import _check_ssh_update

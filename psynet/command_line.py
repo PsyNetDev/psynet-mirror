@@ -6,6 +6,7 @@ import glob
 import hashlib
 import importlib
 import io
+import itertools
 import json
 import os
 import re
@@ -175,14 +176,98 @@ def _use_local_dallinger_option(func):
 
 
 def verify_id(ctx, param, app):
-    # Dallinger's docker-ssh deploy allows --app to be omitted, in which case
-    # it auto-generates a random app name (e.g., dlgr-a1b2c3d4) and uses the
-    # single-app-per-server deployment route.
-    # dallinger_verify_id will raise an error if app is None, however.
-    # We therefore bypass the validation in this case.
+    # An omitted --app is allowed: SSH launches then default it with
+    # _default_ssh_app_name, and debug heroku lets Dallinger pick a random one.
+    # dallinger_verify_id would reject None, so we bypass it in this case.
     if app is None:
         return
     return dallinger_verify_id(ctx, param, app)
+
+
+_FALLBACK_APP_NAME = "experiment"
+_MAX_APP_NAME_LENGTH = 63
+
+
+def _is_valid_app_name(name):
+    """Return whether ``name`` passes the same checks as ``--app``."""
+    try:
+        dallinger_verify_id(None, None, name)
+    except click.BadParameter:
+        return False
+    return True
+
+
+def _suggest_app_name(directory_name, taken=()):
+    """Turn a directory name into a valid app name that isn't in ``taken``.
+
+    Parameters
+    ----------
+    directory_name : str
+        Name of the experiment directory.
+    taken : collection of str
+        App names already in use; the suggestion gets a ``-2``, ``-3``, ...
+        suffix to avoid them.
+
+    Returns
+    -------
+    str
+        A lowercase name of letters, digits and single hyphens, at most one
+        DNS label long. ``experiment`` replaces names with nothing usable.
+    """
+    base = re.sub(r"[^a-z0-9]+", "-", directory_name.lower()).strip("-")
+    if not _is_valid_app_name(base):
+        base = _FALLBACK_APP_NAME
+    for number in itertools.count(1):
+        suffix = f"-{number}" if number > 1 else ""
+        name = base[: _MAX_APP_NAME_LENGTH - len(suffix)].rstrip("-") + suffix
+        if name not in taken:
+            return name
+
+
+def _default_ssh_app_name(server, ingress):
+    """Choose the app name for an SSH launch that was given no ``--app``.
+
+    The name comes from the experiment directory, avoiding apps already on
+    ``server``. An interactive user can accept it or type another;
+    otherwise it is announced. Without a name, Dallinger would invent a
+    random one and serve the app on the server's bare domain.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name.
+    ingress : str or None
+        The ``--ingress`` option, checked before the server is contacted.
+
+    Returns
+    -------
+    str
+        The app name to launch.
+    """
+    from dallinger.command_line.docker_ssh import (
+        ensure_remote_host_in_known_hosts,
+        get_apps,
+    )
+
+    _check_ssh_deploy_credentials(server, ingress)
+    server_info = CONFIGURED_HOSTS[server]
+    ensure_remote_host_in_known_hosts(server_info["host"], server_info.get("user"))
+    taken = {entry.name for entry in get_apps(server)}
+    suggestion = _suggest_app_name(Path.cwd().name, taken)
+    if not _stdin_is_interactive():
+        click.echo(
+            f"Using app name {suggestion} (from the directory name; "
+            "pass --app to choose another)."
+        )
+        return suggestion
+
+    def check(name):
+        name = dallinger_verify_id(None, None, name.strip())
+        if name in taken:
+            raise click.BadParameter(f"{server} already has an app named {name}.")
+        return name
+
+    return click.prompt("App name", default=suggestion, value_proc=check)
 
 
 def _verify_existing_ssh_app(ctx, param, app):
@@ -2303,7 +2388,12 @@ def _deploy__docker_heroku(ctx, app, archive):
 
 
 @deploy.command("ssh")
-@click.option("--app", callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    callback=verify_id,
+    default=None,
+    help="Name of the experiment app. Defaults to the experiment directory's name.",
+)
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @_add_ssh_deployment_options
 @_option_ssh_update
@@ -2324,8 +2414,11 @@ def deploy__docker_ssh(
     The image always installs the PsyNet and Dallinger versions pinned in
     constraints.txt (requirements.txt if there is none). To try local
     checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
-    ``--use-local-dallinger``.
+    ``--use-local-dallinger``. Without ``--app``, the app is named after the
+    experiment directory.
     """
+    if app is None and not update:
+        app = _default_ssh_app_name(server, ingress)
     try:
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=False)
@@ -3056,7 +3149,10 @@ def debug__docker_heroku(ctx, app, archive):
 
 @debug.command("ssh")
 @click.option(
-    "--app", callback=verify_id, default=None, help="Name of the experiment app."
+    "--app",
+    callback=verify_id,
+    default=None,
+    help="Name of the experiment app. Defaults to the experiment directory's name.",
 )
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
 @_add_ssh_deployment_options
@@ -3068,7 +3164,11 @@ def debug__docker_heroku(ctx, app, archive):
 def debug__docker_ssh(ctx, **options):
     """
     Debug the experiment on a remote server via SSH.
+
+    Without ``--app``, the app is named after the experiment directory.
     """
+    if options["app"] is None and not options["update"]:
+        options["app"] = _default_ssh_app_name(options["server"], options["ingress"])
     _debug_ssh(ctx, **options)
 
 

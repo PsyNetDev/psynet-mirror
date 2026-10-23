@@ -235,7 +235,11 @@ from the experiment directory:
 (``https://my-study.your-server.example.org``), so use lowercase letters,
 digits and hyphens. If your DNS record only publishes a fixed list of
 subdomains, the app name must be one of them. Several experiments can run
-on one server with different app names.
+on one server with different app names. Without ``--app``, PsyNet offers
+the experiment directory's name, made lowercase with hyphens, and adds
+``-2``, ``-3`` and so on if the server already has an app of that name.
+Press Enter to accept it or type another name. When the command isn't run
+in an interactive terminal, it uses the suggestion and says so.
 
 ``--server`` is the name you registered the server under (see
 :doc:`/deploy/setting_up_a_server`). If you omit it and several servers are
