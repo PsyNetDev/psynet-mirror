@@ -228,7 +228,7 @@ class PerformanceSuite:
             next_test,
             bot_log_file,
             confirmation_planned=not self.confirmation_skipped,
-            notes=[plan, *self._notes(search=True)],
+            notes=[(logging.INFO, plan), *self._notes(search=True)],
         )
         if self.reset_error and not any(r.confirmation for r in results):
             self.confirmation_skipped = (
@@ -270,8 +270,8 @@ class PerformanceSuite:
         the summary of the tests before it and re-raises. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
         ``confirmation_planned`` says a capacity search meant to end with a
-        confirmation test. ``notes`` are paragraphs that follow the
-        suite's settings, which end with the tester's bot processes.
+        confirmation test. ``notes`` are ``(level, paragraph)`` pairs that
+        follow the suite's settings, which end with the bot processes.
 
         Returns
         -------
@@ -280,9 +280,13 @@ class PerformanceSuite:
         """
         all_results = []
         started = time.monotonic()
+        logger.info(
+            f"Bot processes:        {self.tester.describe_bot_processes(max_bots)}"
+        )
+        for level, note in notes:
+            for line in format_text(None, note):
+                logger.log(level, line)
         with self.tester.bot_runner(max_bots, bot_log_file):
-            for line in format_text(*(p for note in notes for p in (None, note))):
-                logger.info(line)
             while (test := next_test(all_results)) is not None:
                 n_bots, duration_minutes, arrival_minutes, confirmation = test
                 if self.before_test is not None:
@@ -381,15 +385,18 @@ class PerformanceSuite:
         logger.info(f"Bot time factor:      {tester.time_factor:g}")
 
     def _notes(self, search):
-        """Return the paragraphs that follow the suite's settings."""
+        """Return the ``(level, paragraph)`` pairs that follow the suite's settings."""
         tester = self.tester
         if search:
             # Search tests are short on purpose; the confirmation test sees
             # the steady state.
             return [
-                f"Each search test must keep {self.limits.describe()}. A test in "
-                "which bots can't start fast enough, or run late because their "
-                "process is too busy, is reported as one that could not be tested."
+                (
+                    logging.INFO,
+                    f"Each search test must keep {self.limits.describe()}. A test in "
+                    "which bots can't start fast enough, or run late because their "
+                    "process is too busy, is reported as one that could not be tested.",
+                )
             ]
         short = short_test_warning(tester.duration_minutes, tester.session_minutes)
-        return [Text(short, style="bright_yellow")] if short else []
+        return [(logging.WARNING, Text(short, style="bright_yellow"))] if short else []

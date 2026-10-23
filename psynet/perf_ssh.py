@@ -906,11 +906,13 @@ class RemotePerformanceTester:
     def bot_runner(self, max_bots, bot_log_file):
         """Note when the suite starts: each remote test starts and stops its own bot processes."""
         self._suite_started = time.monotonic()
-        processes = self.bot_processes
-        if processes == "auto":
-            processes = "auto, chosen for each test"
-        logger.info(f"Bot processes:        {processes}")
         yield
+
+    def describe_bot_processes(self, max_bots):
+        """Describe the bot processes for the suite's settings; the server chooses them for each test."""
+        if self.bot_processes == "auto":
+            return "auto, chosen for each test"
+        return str(self.bot_processes)
 
     def pause_between_tests(self):
         """Make the next remote test pause first, as a local suite pauses between tests."""

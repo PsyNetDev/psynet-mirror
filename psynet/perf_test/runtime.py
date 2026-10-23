@@ -197,7 +197,7 @@ def prefill_database(n_participants, bot_log_file=None):
     n_bots = min(_PREFILL_BOTS, n_participants)
     logger.info("")
     logger.info(
-        bold(f"PRE-FILL: {n_participants:,} participants, {n_bots:,} bots at once")
+        bold(f"Pre-fill: {n_participants:,} participants, {n_bots:,} bots at once")
     )
     experiment = get_experiment()
     _fit_redis_pool_to_bots(n_bots)
@@ -414,21 +414,26 @@ class PerformanceTester:
             return None
         return self.estimated_duration_minutes * self.time_factor
 
+    def describe_bot_processes(self, max_bots):
+        """Return the number of bot processes for up to ``max_bots`` bots, for the suite's settings."""
+        n_processes = _choose_bot_processes(self.bot_processes, max_bots)
+        return (
+            f"{n_processes} (auto)"
+            if self.bot_processes == "auto"
+            else str(n_processes)
+        )
+
     @contextmanager
-    def bot_runner(self, max_bots, bot_log_file, announce=True):
+    def bot_runner(self, max_bots, bot_log_file):
         """Start the bot processes a suite of up to ``max_bots`` bots needs, if any.
 
         They last for the whole suite, because each one imports the
-        experiment, which can take seconds and much memory. With
-        ``announce``, it first lists their number among the suite's settings.
+        experiment, which can take seconds and much memory.
         """
         raise_open_file_limit()
         self._suite_started_at = datetime.datetime.now()
         n_processes = _choose_bot_processes(self.bot_processes, max_bots)
         self._n_bot_processes = n_processes
-        if announce:
-            chosen = " (auto)" if self.bot_processes == "auto" else ""
-            logger.info(f"Bot processes:        {n_processes}{chosen}")
         if n_processes == 1:
             yield
             return
@@ -475,8 +480,9 @@ class PerformanceTester:
         logger.info("")
         logger.info(bold(title))
         arriving = f", arriving over {arrival_minutes:g} min" if arrival_minutes else ""
+        together = "" if arrival_minutes else " at once"
         logger.info(
-            f"Starting the load test with {n:,} bots at once for "
+            f"Starting the load test with {n:,} bots{together} for "
             f"{duration_minutes:g} min{arriving}..."
         )
 

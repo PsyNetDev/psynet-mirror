@@ -2029,24 +2029,17 @@ _ASYNC_JOB_STATS = [
             ["Bot error before joining"],
         ),
         (
-            dict(median_wait_page_time=1.5, n_wait_page_samples=10),
-            ["Median time on wait pages per bot (n=10)"],
-        ),
-        (
             dict(async_job_stats=_ASYNC_JOB_STATS),
             ["ASYNC JOB TIMES", "tm1", "create_trial", "Q Med"],
         ),
         (dict(async_job_stats=None), ["No completed async jobs"]),
-        (dict(bots_succeeded=0), ["No bot completed the experiment successfully"]),
     ],
     ids=[
         "basic",
         "no-responses",
         "bots-not-in-db",
-        "wait-pages",
         "jobs",
         "no-jobs",
-        "no-completions",
     ],
 )
 def test_format_test_results(overrides, expected):
@@ -2057,6 +2050,19 @@ def test_format_test_results(overrides, expected):
         *expected,
     ]:
         assert line in text
+
+
+def test_wait_page_time_is_a_runtime_and_trials_need_a_successful_bot():
+    text = _join(
+        format_test_results(
+            _base_result(
+                bots_succeeded=0, median_wait_page_time=1.5, n_wait_page_samples=10
+            )
+        )
+    )
+    runtimes = text.split("BOT RUNTIMES")[1].split("REQUEST METRICS")[0]
+    assert "Median time on wait pages per bot (n=10)" in runtimes
+    assert "TRIALS PER BOT" not in text
 
 
 # --- format_performance_summary ---

@@ -6511,8 +6511,7 @@ def _run_performance_test_with_existing_server(
                 quiet=remote,
                 **suite_options,
             )
-        # The suite on the other computer lists the settings.
-        with tester.bot_runner(bot_counts[0], bot_log_file, announce=False):
+        with tester.bot_runner(bot_counts[0], bot_log_file):
             if suite_started_s_ago is not None:
                 tester.pause_between_tests(
                     datetime.datetime.now()
