@@ -3432,6 +3432,21 @@
       }
     };
 
+    // The server answers 404 with this status when the participant is no
+    // longer in its database, e.g. a tab left open across a restart.
+    psynet.isUnknownParticipantResponse = function (request) {
+      if (!request || request.status !== 404) return false;
+      try {
+        // An XMLHttpRequest has `response`; a jQuery jqXHR `responseText`.
+        let body =
+          request.responseJSON ||
+          JSON.parse(request.responseText || request.response || "");
+        return body.status === "unknown_participant";
+      } catch (error) {
+        return false;
+      }
+    };
+
     psynet.timelineHoldBusyRetryMs = 250;
 
     // How long a submission keeps retrying while a docker-ssh app wakes;
@@ -3704,6 +3719,11 @@
                   request,
                   options,
                 );
+              } else if (psynet.isUnknownParticipantResponse(request)) {
+                // Retrying (as a timeline hold would) can't bring the session
+                // back; the error page explains.
+                psynet.stopTimelineHold();
+                onErrorResponse(request);
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
@@ -3878,6 +3898,16 @@
         url: "/timeline/progress_and_reward",
         cache: false,
         data: { participantId: psynet.participantId },
+        error: function (request) {
+          if (psynet.isUnknownParticipantResponse(request)) {
+            clearInterval(psynet.progressAndRewardTimer);
+            psynet.stopTimelineHold();
+            psynetErrorPage.go({
+              uniqueId: psynet.uniqueId,
+              participantId: psynetTemplateData.participantId,
+            });
+          }
+        },
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
@@ -3900,7 +3930,7 @@
   psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
-    setInterval(updateProgressAndReward, 1000);
+    psynet.progressAndRewardTimer = setInterval(updateProgressAndReward, 1000);
   }
 
   function alertParticipantOpenedDevtools() {
