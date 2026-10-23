@@ -5491,7 +5491,10 @@ def test_debug_heroku_no_consent_skips_the_consent_check(monkeypatch, tmp_path, 
     with patch(
         "psynet.command_line._pre_launch", side_effect=_LaunchContinued
     ) as pre_launch:
-        CliRunner().invoke(psynet_cli, ["debug", "heroku", *docker, "--no-consent"])
+        result = CliRunner().invoke(
+            psynet_cli, ["debug", "heroku", *docker, "--no-consent"]
+        )
+    assert isinstance(result.exception, _LaunchContinued), result.output
     assert pre_launch.call_args.kwargs["check_consents"] is False
 
 

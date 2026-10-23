@@ -5,8 +5,8 @@ Consent
 Every timeline needs at least one consent page, or
 :class:`~psynet.consent.NoConsent` if the study needs none; deployment fails
 without one. Put the consent page at the start of the timeline.
-``psynet debug local`` doesn't check this, and ``psynet debug ssh`` and
-``psynet debug heroku`` skip the check with ``--no-consent``.
+``psynet debug local`` doesn't check this. ``psynet debug ssh`` and
+``psynet debug heroku`` do, unless you pass ``--no-consent``.
 
 Built-in consent forms
 ----------------------

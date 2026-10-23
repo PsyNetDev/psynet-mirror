@@ -34,6 +34,7 @@ class TestCheckConsents:
 
         deployment_info.write(mode="sandbox", is_local_deployment=False)
         with pytest.raises(
-            (RuntimeError, click.ClickException), match="checks with --no-consent"
+            (RuntimeError, click.ClickException),
+            match="missing a consent page.*--no-consent",
         ):
             run_pre_checks(mode="sandbox", **pre_check_args)
