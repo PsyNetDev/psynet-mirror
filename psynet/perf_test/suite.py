@@ -284,7 +284,8 @@ class PerformanceSuite:
             f"Bot processes:        {self.tester.describe_bot_processes(max_bots)}"
         )
         for level, note in notes:
-            for line in format_text(None, note):
+            logger.info("")
+            for line in format_text(note):
                 logger.log(level, line)
         with self.tester.bot_runner(max_bots, bot_log_file):
             while (test := next_test(all_results)) is not None:

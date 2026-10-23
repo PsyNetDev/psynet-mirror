@@ -1851,6 +1851,7 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
 
     assert result.exit_code == 1
     assert "Could not load the experiment in my-app" in result.output
+    assert "passwords are saved in launch-info.json" in result.output
     run.assert_not_called()
 
 

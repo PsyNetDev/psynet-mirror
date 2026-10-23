@@ -65,6 +65,7 @@ from rich.text import Text
 
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
 from psynet.perf_test.report import format_text, warning
+from psynet.perf_test.runtime import _choose_bot_processes
 from psynet.server_logs import where_to_read_logs
 
 logger = logging.getLogger(__name__)
@@ -909,10 +910,10 @@ class RemotePerformanceTester:
         yield
 
     def describe_bot_processes(self, max_bots):
-        """Describe the bot processes for the suite's settings; the server chooses them for each test."""
+        """Describe the bot processes for up to ``max_bots`` bots; the server chooses them for each test."""
         if self.bot_processes == "auto":
             return "auto, chosen for each test"
-        return str(self.bot_processes)
+        return str(_choose_bot_processes(self.bot_processes, max_bots))
 
     def pause_between_tests(self):
         """Make the next remote test pause first, as a local suite pauses between tests."""

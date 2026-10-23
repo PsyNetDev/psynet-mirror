@@ -2436,8 +2436,9 @@ def _print_ssh_ready(result, launch_info):
     """End an SSH deployment with the links and commands the user needs next.
 
     Also names the deployed Docker image, if Dallinger reports it, and the
-    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not printed, so that pasted logs don't leak them; they
-    are saved in ``launch_info``. Without a single participant link, the
+    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not
+    printed, so that pasted logs don't leak them; they are saved in
+    ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead.
     """
@@ -7400,12 +7401,16 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         performance_test_app=True,
         **deploy_options,
     )
-    info = _require_performance_test_app(server, app)
-    if "experiment" not in info:
-        raise click.ClickException(
-            f"Could not load the experiment in {app}'s web container; see the "
-            "output above."
-        )
+    try:
+        info = _require_performance_test_app(server, app)
+        if "experiment" not in info:
+            raise click.ClickException(
+                f"Could not load the experiment in {app}'s web container; see the "
+                "output above."
+            )
+    except click.ClickException as e:
+        e.message += f" The app's passwords are saved in {launch_info}."
+        raise
     return info["experiment"], (result, launch_info)
 
 

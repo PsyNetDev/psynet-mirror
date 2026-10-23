@@ -699,6 +699,9 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     if warns:
         # A note after the settings, which end with the bot processes.
         assert text.index("Bot processes:") < text.index("sees mostly")
+        assert all(
+            r.message.strip() for r in caplog.records if r.levelname == "WARNING"
+        )
 
 
 def test_capacity_search_header_lists_the_limits_after_the_settings(caplog):
@@ -2625,7 +2628,12 @@ def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
         reset._check_disk_space("my-app")
 
 
-def test_a_suite_drives_remote_tests_through_their_json_results():
+@pytest.mark.parametrize(
+    "bot_processes, described", [("auto", "auto, chosen for each test"), (8, "4")]
+)
+def test_a_suite_drives_remote_tests_through_their_json_results(
+    caplog, bot_processes, described
+):
     import re
     from dataclasses import asdict
 
@@ -2643,12 +2651,14 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
         duration_minutes=1,
         stagger_interval_s=0.1,
         time_factor=1.0,
-        bot_processes="auto",
+        bot_processes=bot_processes,
     )
     before_test = Mock()
 
-    results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
+    with caplog.at_level("INFO"):
+        results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
 
+    assert f"Bot processes:        {described}\n" in caplog.text
     assert [r.n_bots for r in results] == [2, 4]
     assert before_test.call_count == 2
     assert "--test-label 'Test 2/2'" in remote.run_psynet.call_args.args[0]
