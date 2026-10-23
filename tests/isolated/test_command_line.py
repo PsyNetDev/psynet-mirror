@@ -5482,20 +5482,29 @@ def test_no_consent_is_a_debug_only_option():
     assert not has_option(deploy, "ssh") and not has_option(deploy, "heroku")
 
 
-@pytest.mark.parametrize("docker", [[], ["--docker"]])
-def test_debug_heroku_no_consent_skips_the_consent_check(monkeypatch, tmp_path, docker):
+@pytest.mark.parametrize(
+    "command, launcher",
+    [
+        (["heroku"], "_pre_launch"),
+        (["heroku", "--docker"], "_pre_launch"),
+        (["ssh", "--server", "lab", "--app", "test-app"], "_debug_ssh"),
+    ],
+)
+def test_debug_no_consent_skips_the_consent_check(
+    monkeypatch, tmp_path, command, launcher
+):
     from psynet.command_line import psynet as psynet_cli
 
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: {"lab": {}})
     monkeypatch.chdir(tmp_path)
     (tmp_path / "experiment.py").write_text("")
     with patch(
-        "psynet.command_line._pre_launch", side_effect=_LaunchContinued
-    ) as pre_launch:
-        result = CliRunner().invoke(
-            psynet_cli, ["debug", "heroku", *docker, "--no-consent"]
-        )
+        f"psynet.command_line.{launcher}", side_effect=_LaunchContinued
+    ) as launch:
+        result = CliRunner().invoke(psynet_cli, ["debug", *command, "--no-consent"])
     assert isinstance(result.exception, _LaunchContinued), result.output
-    assert pre_launch.call_args.kwargs["check_consents"] is False
+    assert launch.call_args.kwargs["check_consents"] is False
 
 
 @pytest.mark.parametrize(

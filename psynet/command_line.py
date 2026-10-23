@@ -166,7 +166,7 @@ _option_no_consent = click.option(
     is_flag=True,
     help=(
         "Skip the check that the timeline has a consent page, for example when "
-        "debugging a demo. Deploys still require one."
+        "debugging a demo. psynet deploy still requires one."
     ),
 )
 
