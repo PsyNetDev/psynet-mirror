@@ -320,10 +320,11 @@ class IsolatedEnvironment:
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         redis = urlsplit(self.env["REDIS_URL"])
-        redis_database = redis.path.lstrip("/") or "0"
+        redis_database = redis.path.lstrip("/")
+        redis_database = f"/{redis_database}" if redis_database not in ("", "0") else ""
         return (
-            f"Using database {database}, Redis at {redis.hostname}:"
-            f"{redis.port or 6379}/{redis_database}, and port {self.env['base_port']}."
+            f"Using database {database}, Redis {redis.hostname}:"
+            f"{redis.port or 6379}{redis_database} and port {self.env['base_port']}."
         )
 
     def close(self):
@@ -434,6 +435,10 @@ def _flush_redis_database(redis_url):
 def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
+    The server runs in its own session, so a Ctrl+C in the terminal doesn't
+    stop it before the experiment's server processes, which still need it
+    while they shut down. The caller must stop it.
+
     Raises
     ------
     RuntimeError
@@ -447,6 +452,7 @@ def start_redis_server(port):
         + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         deadline = time.monotonic() + 10

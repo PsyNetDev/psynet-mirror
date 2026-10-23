@@ -34,10 +34,12 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet debug ssh --app NAME``
      - Run a debug deployment on a server. It uses the configured
        recruiter, so pilot with ``recruiter = generic``; see
-       :doc:`/deploy/running_a_study`.
+       :doc:`/deploy/running_a_study`. Without ``--app``, the app is named
+       after the experiment directory.
    * - ``psynet deploy ssh --app NAME``
      - Deploy the experiment for data collection; see
-       :doc:`/deploy/running_a_study`. ``--archive`` redeploys from a
+       :doc:`/deploy/running_a_study`. Without ``--app``, the app is named
+       after the experiment directory. ``--archive`` redeploys from a
        previous export; see :doc:`/deploy/reference/deploy_from_archive`.
    * - ``psynet apps ssh``
      - List the apps on a server; see :doc:`/deploy/setting_up_a_server`.

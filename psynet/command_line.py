@@ -5,7 +5,9 @@ import functools
 import glob
 import hashlib
 import importlib
+import inspect
 import io
+import itertools
 import json
 import os
 import re
@@ -19,7 +21,13 @@ import tempfile
 import threading
 import time
 import zipfile
-from contextlib import ExitStack, contextmanager, nullcontext, redirect_stdout
+from contextlib import (
+    ExitStack,
+    contextmanager,
+    nullcontext,
+    redirect_stdout,
+    suppress,
+)
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -161,6 +169,16 @@ def _use_local_psynet_option(func):
     )(func)
 
 
+_option_no_consent = click.option(
+    "--no-consent",
+    is_flag=True,
+    help=(
+        "Skip the check that the timeline has a consent page, for example when "
+        "debugging a demo. psynet deploy still requires one."
+    ),
+)
+
+
 def _use_local_dallinger_option(func):
     return click.option(
         "--use-local-dallinger",
@@ -175,14 +193,134 @@ def _use_local_dallinger_option(func):
 
 
 def verify_id(ctx, param, app):
-    # Dallinger's docker-ssh deploy allows --app to be omitted, in which case
-    # it auto-generates a random app name (e.g., dlgr-a1b2c3d4) and uses the
-    # single-app-per-server deployment route.
-    # dallinger_verify_id will raise an error if app is None, however.
-    # We therefore bypass the validation in this case.
+    # Some commands allow --app to be omitted; debug heroku, for example, then
+    # lets Dallinger pick a random app name. dallinger_verify_id would reject
+    # None, so we bypass it in this case.
     if app is None:
         return
     return dallinger_verify_id(ctx, param, app)
+
+
+_FALLBACK_APP_NAME = "experiment"
+_MAX_APP_NAME_LENGTH = 63
+
+
+def _check_app_name(name):
+    """Check a new SSH app name like ``--app``, and that it is one DNS label.
+
+    Raises
+    ------
+    click.BadParameter
+        If ``name`` can't be used.
+    """
+    dallinger_verify_id(None, None, name)
+    if len(name) > _MAX_APP_NAME_LENGTH or name.startswith("-") or name.endswith("-"):
+        raise click.BadParameter(
+            f"The app name must be at most {_MAX_APP_NAME_LENGTH} characters "
+            "and can't start or end with a hyphen."
+        )
+    return name
+
+
+def _verify_ssh_app(ctx, param, app):
+    """Check an SSH launch's ``--app``; ``None`` is named later."""
+    return None if app is None else _check_app_name(app)
+
+
+def _is_valid_app_name(name):
+    """Return whether ``name`` passes :func:`_check_app_name`."""
+    try:
+        _check_app_name(name)
+    except click.BadParameter:
+        return False
+    return True
+
+
+def _directory_app_name(directory_name):
+    """Return ``directory_name`` made into a valid app name, or ``None``.
+
+    The name is lowercased, runs of other characters become one hyphen,
+    leading and trailing hyphens are dropped, and it is shortened to one
+    DNS label.
+    """
+    name = re.sub(r"[^a-z0-9]+", "-", directory_name.lower()).strip("-")
+    name = name[:_MAX_APP_NAME_LENGTH].rstrip("-")
+    return name if _is_valid_app_name(name) else None
+
+
+def _suggest_app_name(directory_name, taken=()):
+    """Turn a directory name into a valid app name that isn't in ``taken``.
+
+    Parameters
+    ----------
+    directory_name : str
+        Name of the experiment directory.
+    taken : collection of str
+        App names already in use; the suggestion gets a ``-2``, ``-3``, ...
+        suffix to avoid them.
+
+    Returns
+    -------
+    str
+        A lowercase name of letters, digits and single hyphens, at most one
+        DNS label long. ``experiment`` replaces names with nothing usable.
+    """
+    base = _directory_app_name(directory_name) or _FALLBACK_APP_NAME
+    for number in itertools.count(1):
+        suffix = f"-{number}" if number > 1 else ""
+        name = base[: _MAX_APP_NAME_LENGTH - len(suffix)].rstrip("-") + suffix
+        if name not in taken:
+            return name
+
+
+def _default_ssh_app_name(server):
+    """Choose the app name for an SSH launch that was given no ``--app``.
+
+    The name comes from the experiment directory, avoiding apps already on
+    ``server``. An interactive user can accept it or type another;
+    otherwise it is announced. Without a name, Dallinger would invent a
+    random one and serve the app on the server's bare domain.
+
+    Parameters
+    ----------
+    server : str
+        SSH server name, already connected to.
+
+    Returns
+    -------
+    str
+        The app name to launch.
+    """
+    from dallinger.command_line.docker_ssh import get_apps
+
+    taken = {entry.name for entry in get_apps(server)}
+    directory = Path.cwd().name
+    suggestion = _suggest_app_name(directory, taken)
+    if not _stdin_is_interactive():
+        reason = (
+            "from the directory name"
+            if _directory_app_name(directory)
+            else "the directory name isn't a valid app name"
+        )
+        click.echo(
+            f"Using app name {suggestion} ({reason}; pass --app to choose another)."
+        )
+        return suggestion
+
+    def check(name):
+        name = _check_app_name(name.strip())
+        if name in taken:
+            raise click.BadParameter(
+                f"An app named {name} already exists on {server}. Type another "
+                f"name, rerun with --app {name} --update to update that app and "
+                f"keep its data, or delete it first with "
+                f"psynet destroy ssh --app {name}."
+            )
+        return name
+
+    return click.prompt(
+        "App name (used in its web address)", default=suggestion, value_proc=check
+    )
 
 
 def _verify_existing_ssh_app(ctx, param, app):
@@ -212,12 +350,13 @@ _suppress_dallinger_header()
 
 
 def log(msg, chevrons=True, verbose=True, **kw):
-    """Log a message to stdout."""
+    """Print a message to stdout, as one plain line.
+
+    ``chevrons`` is ignored; messages used to start with a blank line and
+    ``❯❯``. Nothing is printed unless ``verbose``.
+    """
     if verbose:
-        if chevrons:
-            click.echo("\n❯❯ " + msg, **kw)
-        else:
-            click.echo(msg, **kw)
+        click.echo(msg, **kw)
 
 
 def clean_sys_modules():
@@ -1055,6 +1194,7 @@ def _debug_in_isolated_environment_if_requested(func):
     def wrapper(*args, **kwargs):
         from .isolated_environment import READY_ENV_VAR
 
+        _handle_sigint_even_if_ignored()
         if kwargs["isolated"] and not os.environ.get(READY_ENV_VAR):
             if kwargs["docker"]:
                 raise click.UsageError(
@@ -1179,11 +1319,7 @@ def _prepare_in_scratch_database(archive):
             ) from e
         with environment:
             database = urlsplit(environment.env["DATABASE_URL"]).path.lstrip("/")
-            log(
-                f"Preparing the experiment in the scratch database {database}, "
-                "which is removed afterwards. Your local database and Redis are "
-                "left alone."
-            )
+            log(f"Preparing the experiment in the scratch database {database}.")
             env = {
                 **os.environ,
                 **{key: environment.env[key] for key in ("DATABASE_URL", "REDIS_URL")},
@@ -1268,22 +1404,37 @@ def _cleanup_exp_directory():
             pass
 
 
+def _develop_path(config):
+    """Return Dallinger's development folder for ``config``.
+
+    Raises
+    ------
+    click.ClickException
+        If the ``dallinger_develop_directory`` setting can't be used, so the
+        problem is reported in one ``Error:`` line instead of a traceback.
+    """
+    from dallinger.utils import develop_target_path
+
+    try:
+        return Path(develop_target_path(config))
+    except ValueError as err:
+        raise click.ClickException(" ".join(str(err).split())) from err
+
+
 def run_pre_auto_reload_checks():
     config = get_config()
     if not config.ready:
         config.load()
 
-    from dallinger.utils import develop_target_path
-
     from .experiment_scaffold import get_editable_psynet_source
 
-    _develop_path = str(develop_target_path(config))
-    if "." in _develop_path:
-        raise ValueError(
-            f"The target path for your app's temporary development directory ({_develop_path}) "
-            "contains a period ('.'). Unfortunately Dallinger doesn't support this."
-            "You should set a revised path in your .dallingerconfig file. "
-            "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
+    develop_path = _develop_path(config)
+    if "." in str(develop_path):
+        raise click.ClickException(
+            f'The dallinger_develop_directory setting "{develop_path}" contains '
+            "a period, which Dallinger doesn't support. Set another folder in "
+            "~/.dallingerconfig, for example "
+            "dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
     if get_editable_psynet_source() is not None:
@@ -1384,42 +1535,38 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-_BROWSER_WINDOWS_SENTENCE = (
-    "Recruitment requests will open browser windows automatically."
-)
+# In the launch message of Dallinger's hotair and cli recruiters.
+_SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
 
 
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response, so this job prints the recruitment message and the dashboard
-    credentials instead; the server log leaves the password out.
-    It must stay importable by module path because RQ workers resolve it that way.
+    auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
+    :func:`_launch_app_and_report`). The server log leaves the dashboard
+    password out. It must stay importable by module path because RQ workers
+    resolve it that way.
     """
-    _launch_app_and_report(port, no_browsers=True)
+    _launch_app_and_report(port)
 
 
 def launch_app_and_open_browsers(port, **kwargs):
-    """Launch the development app, print its details, then open the browsers.
+    """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
-    with the password embedded; this one prints the login once and logs the
-    dashboard without it. It must stay importable by module path because RQ
+    with the password embedded; this one prints the login once, in the
+    ``Ready.`` block. It must stay importable by module path because RQ
     workers resolve it that way.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
     _launch_app_and_report(port)
     config = get_config()
-    log("Opening dashboard")
     _open_browser_async(develop.dashboard_url(config, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    ad_url = develop.ad_url(config, port)
-    log(f"Opening ad: {ad_url}")
-    _open_browser_async(ad_url)
+    _open_browser_async(develop.ad_url(config, port))
 
 
 def _open_browser_async(url):
@@ -1429,29 +1576,95 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port, no_browsers=False):
-    """Launch the development app and print the recruitment message and dashboard login."""
-    from dallinger.command_line.develop import BASE_URL
+def _launch_app_and_report(port):
+    """Launch the development app, then print the ``Ready.`` block.
+
+    The block has the participant link (see Dallinger's
+    ``launch_message_rows``), the dashboard login, the location of the full
+    log and, in an isolated session, the ``export`` line that lets other
+    terminals use the session's database and Redis. With Dallinger versions
+    without ``echo_ready(after=...)``, :func:`_echo_ready` prints it.
+    """
     from dallinger.deployment import handle_launch_data
 
+    from .isolated_environment import READY_ENV_VAR
+
+    develop = importlib.import_module("dallinger.command_line.develop")
     launch_data = handle_launch_data(
-        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+        develop.BASE_URL.format(port) + "launch",
+        error=log,
+        delay=1.0,
+        context="local",
     )
-    message = launch_data.get("recruitment_msg") or ""
-    if no_browsers:
-        # Dallinger's HotAir recruiter says this regardless of --no-browsers.
-        message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
-    if message:
-        log(message, chevrons=False)
+    message = launch_data.get("recruitment_msg")
+    launch_message_rows = getattr(develop, "launch_message_rows", None)
+    if launch_message_rows is not None:
+        details = launch_message_rows(message)
+    else:
+        message = (message or "").strip()
+        link = _SINGLE_RECRUITMENT_LINK.search(message)
+        if link:
+            details = [("Participant link", link.group(1))]
+        else:
+            details = [("Recruitment", message)] if message else []
 
     config = get_config()
     if not config.ready:
         config.load()
-    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
-    log(
-        f"Dashboard user: {config.get('dashboard_user')} "
-        f"password: {config.get('dashboard_password')}",
-        chevrons=False,
+    details.append(
+        (
+            "Dashboard",
+            f"{develop.BASE_URL.format(port)}dashboard (user "
+            f"{config.get('dashboard_user')}, password "
+            f"{config.get('dashboard_password')})",
+        )
+    )
+    after = []
+    if os.environ.get(READY_ENV_VAR):
+        after.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    echo_ready = getattr(develop, "echo_ready", None)
+    if echo_ready and "after" in inspect.signature(echo_ready).parameters:
+        echo_ready(details, after=after)
+        return
+    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
+    if log_file:
+        details.append(("Full log", str(_develop_path(config) / log_file)))
+    _echo_ready(details + after)
+
+
+def _echo_ready(details):
+    """Print the block that ends a local debug session's start-up, as Dallinger's ``echo_ready`` does.
+
+    After a blank line come ``Ready.``, ``details`` as aligned
+    ``label: value`` lines, and how to stop the server, in one write so
+    that server log lines don't split the block::
+
+        Ready.
+          Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&…
+          Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password …)
+        Press Ctrl+C to stop.
+
+    Parameters
+    ----------
+    details : list of (str, str)
+        Labels and values. Lines after the first of a value are indented to
+        line up with it.
+    """
+    width = max(len(label) for label, _ in details) + 1
+    lines = ["", click.style("Ready.", fg="green", bold=True)]
+    for label, value in details:
+        first, *rest = str(value).splitlines() or [""]
+        lines.append(f"  {label + ':':<{width}} {first}")
+        lines.extend((" " * (width + 3) + line).rstrip() for line in rest)
+    lines.append("Press Ctrl+C to stop.")
+    click.echo("\n".join(lines))
+
+
+def _isolated_session_export_line(env):
+    """Return the ``export`` command that points another terminal at an isolated session."""
+    return "export " + " ".join(
+        f"{key}={shlex.quote(env[key])}"
+        for key in ("DATABASE_URL", "REDIS_URL", "base_port")
     )
 
 
@@ -1466,12 +1679,22 @@ def _stop_child_processes_on_signal():
     """
 
     def handler(signum, frame):
-        children = psutil.Process().children(recursive=True)
+        # Multiprocessing's helpers ignore these signals and exit with this
+        # process, so waiting for them would only delay the shutdown.
+        children = [
+            child
+            for child in psutil.Process().children(recursive=True)
+            if not _is_multiprocessing_helper(child)
+        ]
         if signum == signal.SIGINT:
-            # A terminal Ctrl-C has usually reached the children already, and a
-            # second signal makes Dallinger's worker do a cold shutdown, which
-            # prints a traceback.
-            _, children = psutil.wait_procs(children, timeout=3)
+            # A terminal Ctrl-C has usually reached the children in this
+            # process group already, and a second signal makes Dallinger's
+            # worker do a cold shutdown, which prints a traceback. Children in
+            # their own session, like the server of newer Dallinger versions,
+            # don't get it, so they are stopped straight away.
+            reached = [child for child in children if _in_own_process_group(child)]
+            _, still_running = psutil.wait_procs(reached, timeout=3)
+            children = still_running + [c for c in children if c not in reached]
         for child in children:
             try:
                 child.terminate()
@@ -1491,6 +1714,26 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
+def _in_own_process_group(process):
+    """Return whether ``process`` is in this process's group (and still exists)."""
+    try:
+        return os.getpgid(process.pid) == os.getpgrp()
+    except OSError:
+        return False
+
+
+def _is_multiprocessing_helper(process):
+    """Return whether ``process`` is a ``multiprocessing`` resource tracker or fork server."""
+    try:
+        command = " ".join(process.cmdline())
+    except psutil.Error:
+        return False
+    return any(
+        f"from multiprocessing.{module} import main" in command
+        for module in ("resource_tracker", "forkserver")
+    )
+
+
 def _reloader_exclude_patterns():
     """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
 
@@ -1502,14 +1745,13 @@ def _reloader_exclude_patterns():
     other debug servers' development folders are excluded.
     """
     import dallinger
-    from dallinger.utils import develop_target_path
 
     import psynet
 
     config = get_config()
     if not config.ready:
         config.load()
-    develop_path = Path(develop_target_path(config))
+    develop_path = _develop_path(config)
     # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
     own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
     patterns = []
@@ -1547,6 +1789,19 @@ def _other_develop_folder_patterns(develop_path):
     ]
     patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
     return patterns
+
+
+def _handle_sigint_even_if_ignored():
+    """Make SIGINT raise ``KeyboardInterrupt`` even if this process started with it ignored.
+
+    A non-interactive shell starts background jobs (``psynet debug local &``
+    in a script) with SIGINT ignored. Python then never raises
+    ``KeyboardInterrupt``, and the processes it starts inherit the ignored
+    signal, so ``kill -INT`` wouldn't stop the session. Must be called from
+    the main thread.
+    """
+    if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 @contextmanager
@@ -1926,11 +2181,20 @@ def _abort_if_app_exists(server, app, *, update=False):
         )
 
 
-_option_ssh_update = click.option(
-    "--update",
-    is_flag=True,
-    help="Rebuild a running app in place, keeping its database and skipping launch.",
-)
+def _option_ssh_update(command):
+    """Attach ``--update`` and ``--yes``, which skips the update's confirmation."""
+    command = click.option(
+        "--yes",
+        "-y",
+        is_flag=True,
+        help="With --update, skip the confirmation prompt.",
+    )(command)
+    return click.option(
+        "--update",
+        is_flag=True,
+        help="Rebuild a running app in place, keeping its database and skipping launch.",
+    )(command)
+
 
 _ssh_deployment_options = [
     option_server,
@@ -1993,7 +2257,9 @@ def _check_ssh_update(server, app, mode, confirm=True):
     mode : str
         ``"sandbox"`` for ``debug ssh`` or ``"live"`` for ``deploy ssh``.
     confirm : bool
-        Ask the user to confirm the update first.
+        Ask the user to confirm the update first. Without a terminal, the
+        answer is read from stdin; if there is none, the error says to pass
+        ``--yes``.
     """
     try:
         running = _read_running_deployment_info(server, app)
@@ -2009,14 +2275,25 @@ def _check_ssh_update(server, app, mode, confirm=True):
             f"{app} was created with `{original}`. Update it with "
             f"`{original} --app {app} --update`."
         )
-    if confirm and not user_confirms(
-        f"This rebuilds and restarts {app} on {server}, keeping its database. "
-        "Participants may see a short interruption. New assets are not deposited, "
-        "and networks and pre-deploy routines are not run again. Don't change the "
-        "timeline while participants are still taking part. Continue?",
-        default=mode != "live",
-    ):
-        raise click.Abort
+    if confirm:
+        try:
+            confirmed = user_confirms(
+                f"This rebuilds and restarts {app} on {server}, keeping its database. "
+                "Participants may see a short interruption. New assets are not "
+                "deposited, and networks and pre-deploy routines are not run again. "
+                "Don't change the timeline while participants are still taking "
+                "part. Continue?",
+                default=mode != "live",
+            )
+        except click.Abort:
+            if _stdin_is_interactive():
+                raise
+            raise click.ClickException(
+                f"Confirmation needed to rebuild and restart {app} on {server}, "
+                "keeping its database; re-run with --yes."
+            ) from None
+        if not confirmed:
+            raise click.Abort
     deployment_info.write(
         deployment_id=identity["deployment_id"],
         secret=identity["secret"],
@@ -2041,18 +2318,21 @@ def _pre_launch(
     server=None,
     app=None,
     update=False,
+    confirm_update=True,
     local_packages=(),
     performance_test_app=False,
+    check_consents=True,
     ingress=None,
     dns_host=None,
 ):
-    """Check and prepare the experiment directory before a launch.
+    """Check and prepare the experiment directory, and return the app name.
 
+    ``confirm_update`` asks the user to confirm an SSH ``update``.
     ``performance_test_app`` marks an app that ``psynet performance-test
-    ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
-    the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
-    ingress and the server's DNS name are recorded in ``deployment_info``.
+    ssh`` deploys for bots: the experiment needn't have a consent page.
+    ``ingress`` and ``dns_host`` are the SSH deploy's ``--ingress`` and
+    ``--dns-host`` options; the resolved ingress and the server's DNS name
+    are recorded in ``deployment_info``.
     """
     from .experiment import get_experiment
 
@@ -2093,8 +2373,15 @@ def _pre_launch(
 
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
-        ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        try:
+            ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
+        except FileNotFoundError as e:
+            # Dallinger's message says how to set server_pem.
+            raise click.ClickException(str(e)) from e
         _abort_if_app_exists(server, app, update=update)
+        if app is None:
+            app = _default_ssh_app_name(server)
+            deployment_info.write(app=app)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
@@ -2108,7 +2395,7 @@ def _pre_launch(
             logs_command=logs_command(server_info, app) if app else None,
         )
         if update:
-            _check_ssh_update(server, app, mode, confirm=not performance_test_app)
+            _check_ssh_update(server, app, mode, confirm=confirm_update)
 
     run_pre_checks(
         mode,
@@ -2117,7 +2404,7 @@ def _pre_launch(
         docker,
         app,
         local_packages,
-        check_consents=not performance_test_app,
+        check_consents=check_consents and not performance_test_app,
     )
 
     if local_ and not update:
@@ -2165,6 +2452,7 @@ def _pre_launch(
         # Unimports the PsyNet experiment, because Dallinger will want to start from scratch when using Heroku.
         # We don't unimport it in other cases because reloading the experiment produces an unnecessary time overhead.
         clean_sys_modules()
+    return app
 
 
 def _check_ssh_deploy_credentials(server, ingress):
@@ -2303,7 +2591,12 @@ def _deploy__docker_heroku(ctx, app, archive):
 
 
 @deploy.command("ssh")
-@click.option("--app", callback=verify_id, help="Experiment id")
+@click.option(
+    "--app",
+    callback=_verify_ssh_app,
+    default=None,
+    help="Name of the experiment app. Defaults to the experiment directory's name.",
+)
 @click.option("--archive", default=None, help="Optional path to an experiment archive")
 @_add_ssh_deployment_options
 @_option_ssh_update
@@ -2317,6 +2610,7 @@ def deploy__docker_ssh(
     server,
     ingress=None,
     update=False,
+    yes=False,
 ):
     """
     Deploy the experiment to a remote server via Docker and SSH.
@@ -2330,7 +2624,7 @@ def deploy__docker_ssh(
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=False)
 
-        _pre_launch(
+        app = _pre_launch(
             ctx,
             mode="live",
             archive=archive,
@@ -2340,6 +2634,7 @@ def deploy__docker_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not yes,
             ingress=ingress,
             dns_host=dns_host,
         )
@@ -2361,7 +2656,7 @@ def deploy__docker_ssh(
             dallinger_summary=False,
         )
 
-        _print_ssh_ready(result, _post_deploy(result))
+        _print_ssh_ready(result, _post_deploy(result), update=update)
     finally:
         _cleanup_exp_directory()
         reset_console()
@@ -2415,9 +2710,37 @@ def _invoke_docker_ssh_deploy(
         result = ctx.invoke(command, **kwargs)
     if isinstance(result, dict):
         link = _participant_link(result, output.getvalue())
+        if update:
+            # Dallinger doesn't open recruitment again, so keep what the
+            # first deploy recorded, before _post_deploy overwrites it.
+            recorded = _recorded_launch_info()
+            link = link or recorded.get("participant_link")
+            if not result.get("recruitment_msg") and recorded.get("recruitment_msg"):
+                result["recruitment_msg"] = recorded["recruitment_msg"]
         if link:
             result["participant_link"] = link
     return result
+
+
+def _recorded_launch_info():
+    """Return the launch data saved for this deployment, or an empty dict.
+
+    An update keeps the deployment ID, so this is the file that the first
+    deploy from this computer wrote.
+    """
+    try:
+        path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_info.read("deployment_id")
+            / "launch-info.json"
+        )
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError, KeyError) as err:
+        logger.warning("Could not read the recorded launch data: %r", err)
+        return {}
+    return recorded if isinstance(recorded, dict) else {}
 
 
 def _participant_link(result, output):
@@ -2432,14 +2755,16 @@ def _participant_link(result, output):
     return match and match.group(1)
 
 
-def _print_ssh_ready(result, launch_info):
+def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
     Also names the deployed Docker image, if Dallinger reports it.
     Passwords are not printed, so that pasted logs don't leak them; they
     are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
-    study) is shown instead.
+    study) is shown instead. An ``update`` doesn't open recruitment again,
+    so it shows what the first deploy recorded on this computer, or, without
+    a record, points the user to the first deploy's output.
     """
     logs_url = result.get("logs_url")
     log_viewer = logs_url and (
@@ -2447,8 +2772,11 @@ def _print_ssh_ready(result, launch_info):
         f"{Path(launch_info).name})"
     )
     link = result.get("participant_link")
+    message = None if link else result.get("recruitment_msg")
+    unrecorded = update and not (link or message)
     rows = [
         ("Participant link", link),
+        ("Recruitment", unrecorded and "unchanged; see the first deploy's output"),
         ("Dashboard", f"{result['dashboard_link']} (user: {result['dashboard_user']})"),
         ("Password", f"saved in {launch_info}"),
         ("Logs", result.get("log_command")),
@@ -2459,9 +2787,12 @@ def _print_ssh_ready(result, launch_info):
     for label, value in rows:
         if value:
             click.echo(f"  {label + ':':<18}{value}")
-    message = None if link else result.get("recruitment_msg")
     if message:
-        click.echo("  Recruitment:")
+        click.echo(
+            "  Recruitment (unchanged since the app was deployed):"
+            if update
+            else "  Recruitment:"
+        )
         for line in message.strip().splitlines():
             click.echo(f"    {line}".rstrip())
 
@@ -2479,7 +2810,6 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         return
     os.environ.pop("DALLINGER_NO_EGG_BUILD", None)
     source = os.environ.get("DALLINGER_SOURCE", "").strip()
-    user_set = bool(source)
     if not source:
         from .experiment_scaffold import get_editable_dallinger_source
 
@@ -2494,12 +2824,8 @@ def _configure_dallinger_image_source(use_local_dallinger=False):
         raise click.UsageError(
             "--use-local-dallinger needs an editable Dallinger checkout or DALLINGER_SOURCE."
         )
+    # Dallinger says which tree it bakes when it builds the image.
     os.environ["DALLINGER_SOURCE"] = source
-    message = f"Baking local Dallinger from {source} into the experiment image."
-    if not user_set:
-        # Dallinger goes on to say that DALLINGER_SOURCE is set.
-        message += " PsyNet passes this checkout to Dallinger as DALLINGER_SOURCE."
-    click.echo(message)
 
 
 def _reject_leftover_local_image_files():
@@ -2601,7 +2927,10 @@ def _build_local_psynet_wheel():
     from .experiment_scaffold import get_editable_psynet_source
 
     source = get_editable_psynet_source()
-    click.echo(f"Baking local PsyNet from {source} into the experiment image.")
+    click.echo(
+        f"Using the PsyNet checkout at {source} instead of the version in "
+        "requirements.txt."
+    )
     return Path.cwd() / Path(build_and_place(str(source), os.getcwd())).name
 
 
@@ -2864,7 +3193,7 @@ def run_pre_checks(
     """Check the experiment before a launch.
 
     ``check_consents=False`` skips the consent page check, for apps that only
-    bots take part in.
+    bots take part in and for ``--no-consent`` debug deploys.
     """
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
@@ -2883,7 +3212,11 @@ def run_pre_checks(
     exp.check_config()
     exp.check_size(heroku=heroku)
     if check_consents:
-        exp.check_consents()
+        try:
+            exp.check_consents()
+        except RuntimeError as e:
+            # The message explains how to add a consent page.
+            raise click.ClickException(str(e)) from e
     exp.check_python_dependencies()
 
     try:
@@ -3001,14 +3334,15 @@ def run_pre_checks_sandbox(local_packages=()):
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@_option_no_consent
 @click.pass_context
 @_holding_experiment_directory
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, no_consent):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
+        debug__docker_heroku(ctx, app, archive, check_consents=not no_consent)
     else:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
@@ -3020,6 +3354,7 @@ def debug__heroku(ctx, app, docker, archive):
                 local_=False,
                 heroku=True,
                 app=app,
+                check_consents=not no_consent,
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
@@ -3029,7 +3364,7 @@ def debug__heroku(ctx, app, docker, archive):
             reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
+def debug__docker_heroku(ctx, app, archive, check_consents=True):
     from dallinger.command_line.docker import sandbox as dallinger_sandbox
 
     try:
@@ -3046,6 +3381,7 @@ def debug__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            check_consents=check_consents,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -3056,20 +3392,24 @@ def debug__docker_heroku(ctx, app, archive):
 
 @debug.command("ssh")
 @click.option(
-    "--app", callback=verify_id, default=None, help="Name of the experiment app."
+    "--app",
+    callback=_verify_ssh_app,
+    default=None,
+    help="Name of the experiment app. Defaults to the experiment directory's name.",
 )
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
 @_add_ssh_deployment_options
 @_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
+@_option_no_consent
 @click.pass_context
 @_holding_experiment_directory
-def debug__docker_ssh(ctx, **options):
+def debug__docker_ssh(ctx, no_consent, **options):
     """
     Debug the experiment on a remote server via SSH.
     """
-    _debug_ssh(ctx, **options)
+    _debug_ssh(ctx, check_consents=not no_consent, **options)
 
 
 def _debug_ssh(
@@ -3083,7 +3423,9 @@ def _debug_ssh(
     use_local_psynet=False,
     use_local_dallinger=False,
     update=False,
+    yes=False,
     performance_test_app=False,
+    check_consents=True,
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
@@ -3091,7 +3433,8 @@ def _debug_ssh(
     destroy ssh`` destroy it when its pending async jobs can't be checked.
     With ``performance_test_app``, the app is one that ``psynet
     performance-test ssh`` deploys for its tests: its environment also sets
-    ``performance_test_app``, and :func:`_pre_launch` relaxes its checks.
+    ``performance_test_app``, :func:`_pre_launch` relaxes its checks, and an
+    update isn't confirmed first, as with ``yes``.
     """
     try:
         from dallinger.command_line.docker_ssh import sandbox
@@ -3100,7 +3443,7 @@ def _debug_ssh(
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
 
-        _pre_launch(
+        app = _pre_launch(
             ctx,
             mode="sandbox",
             archive=archive,
@@ -3110,8 +3453,10 @@ def _debug_ssh(
             server=server,
             app=app,
             update=update,
+            confirm_update=not (yes or performance_test_app),
             local_packages=local_packages,
             performance_test_app=performance_test_app,
+            check_consents=check_consents,
             ingress=ingress,
             dns_host=dns_host,
         )
@@ -3135,7 +3480,7 @@ def _debug_ssh(
 
         launch_info = _post_deploy(result)
         if not performance_test_app:
-            _print_ssh_ready(result, launch_info)
+            _print_ssh_ready(result, launch_info, update=update)
     finally:
         _cleanup_exp_directory()
 
@@ -4467,6 +4812,22 @@ def _warn_export_misses_pending_jobs(summary):
         )
 
 
+@contextmanager
+def _export_step(text):
+    """Print ``text`` as a step line, such as ``Downloading export...``.
+
+    A terminal shows a spinner while the step runs and keeps the same line
+    as redirected output once it succeeds.
+    """
+    if not sys.stdout.isatty():
+        click.echo(f"{text}...")
+        yield
+        return
+    with yaspin(text=f"{text}...", color="green"):
+        yield
+    click.echo(f"{text}...")
+
+
 def _fetch_remote_export(
     experiment_class,
     export_path,
@@ -4551,11 +4912,10 @@ def _fetch_remote_export(
             download_dir = tempfile.mkdtemp(prefix="psynet-export-download-")
             try:
                 archive_path = os.path.join(download_dir, "export.zip")
-                with yaspin(text="Downloading export", color="green") as spinner:
+                with _export_step("Downloading export"):
                     download_archive(
                         endpoint, archive_path, assets=assets, asset_bytes=asset_bytes
                     )
-                    spinner.ok("✔")
                 return extract_archive(archive_path, export_path)
             finally:
                 shutil.rmtree(download_dir, ignore_errors=True)
@@ -4565,16 +4925,13 @@ def _fetch_remote_export(
             try:
                 plan = plan_asset_transfer(export_path)
                 rsync_source, ssh_command = ssh_rsync_source(server, ssh_session)
-                with yaspin(
-                    text="Fetching missing asset bytes", color="green"
-                ) as spinner:
+                with _export_step("Downloading media files"):
                     materialized = hydrate_assets(
                         export_path,
                         plan,
                         rsync_source=rsync_source,
                         ssh_command=ssh_command,
                     )
-                    spinner.ok("✔")
             except TransferError as exc:
                 # The server can always read its own asset files, so an archive
                 # is still worth trying before giving up on the export.
@@ -4592,7 +4949,8 @@ def _fetch_remote_export(
                 shutil.rmtree(export_path, ignore_errors=True)
                 manifest = download_into_staging("include")
             else:
-                log(f"Materialized {materialized} asset(s) from the local cache.")
+                if materialized:
+                    log(f"Materialized {materialized} asset(s) from the local cache.")
                 from .export.asset_cache import warn_if_cache_oversized
 
                 oversized = warn_if_cache_oversized()
@@ -4866,9 +5224,15 @@ def destroy__heroku(ctx, app):
 def user_confirms(question, default=False):
     """
     Like click.confirm but safe for using within our wrapped Docker commands.
+
+    A piped answer isn't echoed, so the prompt line is ended here instead.
     """
     print(question)
-    return click.confirm("", default=default)
+    try:
+        return click.confirm("", default=default)
+    finally:
+        if not _stdin_is_interactive():
+            click.echo()
 
 
 def _stdin_is_interactive():
@@ -5585,6 +5949,7 @@ def _in_isolated_test_environment(func):
             should_isolate,
         )
 
+        _handle_sigint_even_if_ignored()
         if not kwargs.get("existing"):
             try:
                 isolate = should_isolate()
@@ -5692,15 +6057,22 @@ def _rerun_in_isolated_environment(mode="test"):
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
     0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
-    reach the child as SIGTERM; it gets Ctrl+C from the terminal anyway. A second signal kills
-    the child. The database and Redis are removed when the child exits.
+    reach the child as SIGTERM. If this process is the foreground job of a
+    terminal, Ctrl+C reaches the child directly. Otherwise (for example if it
+    has no terminal, as when an agent runs it), the child runs in its own
+    process group and SIGINT is passed on to that group; a SIGINT that arrives
+    after this process stopped being the foreground job is passed on as a
+    Ctrl+C would have been, to the child and its processes in this group. A
+    SIGINT sent only to this process while it is still the foreground job
+    looks like a Ctrl+C and isn't passed on. A second signal kills the child. The database and Redis are removed
+    when the child exits.
 
     Parameters
     ----------
     mode : str
         ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
-        ``"debug"`` also prints how to reach the server's data and when it has
-        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        ``"debug"`` also prints when the session has
+        ended (its ``Ready.`` block shows how to reach its data). (The ``--isolated`` decorator holds the experiment directory's
         lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
@@ -5720,19 +6092,17 @@ def _rerun_in_isolated_environment(mode="test"):
     interrupted = None
     with _exit_on_termination_signal(), environment:
         log(environment.describe())
-        if mode == "debug":
-            log(
-                "To use this server's data from another terminal (for example with "
-                "psynet export local), first run: export "
-                + " ".join(
-                    f"{key}={shlex.quote(env[key])}"
-                    for key in ("DATABASE_URL", "REDIS_URL", "base_port")
-                ),
-                chevrons=False,
-            )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
-        process = subprocess.Popen([sys.executable, *sys.orig_argv[1:]], env=env)
+        # The child must get exactly one SIGINT: a second one cuts its cleanup
+        # short. A terminal's Ctrl+C reaches it in this process group. Otherwise
+        # it gets a group of its own, which only the SIGINT passed on below reaches.
+        own_group = not _ctrl_c_reaches_this_process_group()
+        process = subprocess.Popen(
+            [sys.executable, *sys.orig_argv[1:]],
+            env=env,
+            process_group=0 if own_group else None,
+        )
         while True:
             try:
                 exit_code = process.wait()
@@ -5743,13 +6113,22 @@ def _rerun_in_isolated_environment(mode="test"):
                     process.kill()
                 elif isinstance(e, SystemExit):
                     process.terminate()
+                elif own_group:
+                    # macOS reports EPERM for a group that only has zombies left.
+                    with suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGINT)
+                elif not _ctrl_c_reaches_this_process_group():
+                    # Started as a terminal's foreground job but no longer one
+                    # (say the script that started it in the background has
+                    # exited), so this SIGINT wasn't a Ctrl+C the child also got.
+                    _send_sigint_as_ctrl_c_would(process.pid)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal.SIG_IGN)
     if mode == "debug":
         log(
-            "The isolated debug server has stopped and its database and Redis "
+            "The isolated debug session has ended and its database and Redis "
             "were removed. If you ran its export line in another terminal, run "
             "'unset DATABASE_URL REDIS_URL base_port' there."
         )
@@ -5757,6 +6136,33 @@ def _rerun_in_isolated_environment(mode="test"):
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
+
+
+def _send_sigint_as_ctrl_c_would(pid):
+    """Send SIGINT to ``pid`` and its descendants in this process group, but not to this process."""
+    try:
+        process = psutil.Process(pid)
+        processes = [process, *process.children(recursive=True)]
+    except psutil.NoSuchProcess:
+        return
+    for target in processes:
+        if _in_own_process_group(target):
+            with suppress(psutil.NoSuchProcess):
+                target.send_signal(signal.SIGINT)
+
+
+def _ctrl_c_reaches_this_process_group():
+    """Return whether this process is in the foreground process group of its terminal."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
 
 
 def _check_no_server_here():
@@ -7263,7 +7669,7 @@ def performance_test__prepare_reset(
 @click.option(
     "--app",
     required=True,
-    callback=verify_id,
+    callback=_verify_ssh_app,
     help="""
     Name of the app to test. If the server has no app of that name, it is
     deployed in debug mode from this directory for performance tests.""",

@@ -651,7 +651,7 @@ class AsyncCodeBlock(EltCollection):
                 if self.on_timeout is None
                 else self._call_on_timeout_unless_finished,
             ),
-            CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
+            CodeBlock(lambda: logger.debug("Finished waiting for async code block.")),
         )
 
     def _call_on_timeout_unless_finished(self, participant):
@@ -3266,7 +3266,7 @@ def while_loop(
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
-        logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
+        logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
     conditional_logic = join(logic, GoTo(start_while))

@@ -10,6 +10,8 @@ from click.testing import CliRunner
 from psynet.command_line import psynet
 from psynet.services import (
     ServiceCheck,
+    check_postgres,
+    check_redis,
     ensure_local_services,
     verify_local_services,
 )
@@ -99,6 +101,13 @@ def test_ensure_local_services_explains_remote_launch_use(monkeypatch, capsys):
     assert "needed to prepare the remote launch" in capsys.readouterr().out
 
 
+def test_ensure_local_services_prints_one_line_when_healthy(monkeypatch, capsys):
+    monkeypatch.setattr("psynet.services.check_local_services", _ok_checks)
+    monkeypatch.delenv("_PSYNET_LOCAL_SERVICES_CHECKED", raising=False)
+    assert ensure_local_services() is True
+    assert capsys.readouterr().out == "Local PostgreSQL and Redis: OK.\n"
+
+
 def test_verify_local_services_soft_warns(monkeypatch):
     monkeypatch.setattr("psynet.services.check_local_services", _down_checks)
     assert verify_local_services(strict=False) is False
@@ -125,6 +134,22 @@ def test_ensure_local_services_trusts_a_parent_that_checked_them(monkeypatch):
         ensure_local_services(assume_yes=False, strict=True)
     monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
     assert ensure_local_services(assume_yes=False, strict=True) is True
+
+
+def test_unreachable_services_name_the_address_they_tried(monkeypatch):
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    monkeypatch.setenv("REDIS_URL", f"redis://127.0.0.1:{port}")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://u:secret@127.0.0.1:{port}/db")
+
+    redis, postgres = check_redis(), check_postgres()
+
+    assert redis.detail.endswith(f"Is Redis running on 127.0.0.1:{port}?")
+    assert postgres.detail.endswith(f"Is PostgreSQL running on 127.0.0.1:{port}?")
+    assert "\n" not in postgres.detail and "secret" not in postgres.detail
 
 
 def test_check_redis_ping_over_socket(monkeypatch):
