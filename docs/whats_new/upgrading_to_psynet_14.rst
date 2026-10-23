@@ -111,6 +111,13 @@ Move load-once classic libraries to ``js_dependencies`` /
 ``get_js_dependencies()``. Do not put per-page initialization there. See
 :doc:`/code/pages/custom_front_ends` (Managing JavaScript lifecycles).
 
+Timeline pages load SurveyJS only when they contain a ``SurveyJSControl``.
+Pages that use ``SurveyJSControl``, ``MultiRatingControl`` or
+``RatingControl`` need no change. If a custom page builds a survey with
+``new Survey.Model(...)`` instead, add
+``/static/scripts/survey-jquery/survey.jquery.min.js`` to its
+``js_dependencies``.
+
 5. Migrate per-page behavior
 ----------------------------
 
@@ -300,9 +307,8 @@ subclasses. Deploy with ``prolific``, ``generic``, ``hotair``,
 ``lucid-recruiter``, or a lab recruiter instead. PsyNet's own bot-based
 test commands still work; they are not a ``recruiter = bots`` deployment.
 
-If the study currently runs on MTurk, move it to another platform before
-upgrading. Amazon is closing MTurk on September 30, 2026. See
-:doc:`/whats_new/psynet_14`.
+Amazon closed MTurk on September 30, 2026, so a study configured for MTurk
+needs another platform. See :doc:`/whats_new/psynet_14`.
 
 For Prolific, search for ``prolific_enable_screen_out`` and
 ``prolific_screen_out_slots``:
@@ -372,20 +378,32 @@ migration instructions in the error.
 * The Next and Reset buttons sit in ``.psynet-actions``. Rules that selected
   them as direct children of ``#trial-stage`` should target
   ``.psynet-actions`` instead.
+* ``psynet translate`` uses ChatGPT only. Remove
+  ``default_translator = google_translate``, which raises an error;
+  ``google_translate_json_path`` and ``google_translate_project_id`` are
+  ignored. See :doc:`/code/participants/internationalization`.
+* The default translation model is ``gpt-6-luna`` instead of ``gpt-4o``, and
+  ``openai_default_temperature`` is no longer set. ``gpt-6-luna`` ignores
+  ``openai_default_temperature``; set it only together with a model that
+  accepts it, for example ``openai_default_model = gpt-4o``.
 
 13. Set up the experiment environment
 -------------------------------------
 
-``pip install psynet`` now installs only a small command-line tool. In the
-experiment directory, run:
+``uv pip install psynet`` now installs only a small command-line tool. In the
+experiment directory, create and activate a virtual environment, install
+PsyNet into it, and run ``psynet setup``:
 
 .. code-block:: console
 
+    uv venv --python 3.14
+    source .venv/bin/activate
+    uv pip install psynet
     psynet setup
 
-It creates the experiment's ``.venv``, installs the full PsyNet runtime from
-``constraints.txt``, adds the boilerplate files, and starts a Git repository
-if the experiment lacks its own. PsyNet needs Python 3.11 or later.
+``psynet setup`` installs the full PsyNet runtime from ``constraints.txt``,
+adds the boilerplate files, and starts a Git repository if the experiment
+lacks its own. PsyNet needs Python 3.11 or later and recommends 3.14.
 
 * ``psynet setup --docker`` is removed; run ``psynet setup``, then
   ``psynet debug local --docker``.

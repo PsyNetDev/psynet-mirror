@@ -799,6 +799,14 @@ General
         [Parameters]
         server_pem = /path/to/your/key.pem
 
+``docker_ssh_monitoring_kind`` *str* |dlgr-icon|
+    The monitoring kind recorded in an SSH deployment's manifest
+    (``~/dallinger/<app>/deployment.json`` on the server). Default: ``psynet``.
+
+``docker_ssh_monitoring_path`` *str* |dlgr-icon|
+    The availability path recorded in an SSH deployment's manifest; see
+    :doc:`/deploy/reference/deployment_monitor`. Default: ``/health``.
+
 EC2
 ~~~
 
@@ -940,7 +948,8 @@ Notifications
     Default: ``logger``.
 
 ``experimenter_name`` *str* |psynet-icon|
-    The name of the experimenter for notifications and contact information. Default: ``None``.
+    The name of the experimenter for notifications and contact information.
+    Default: the name of the user account that runs the command.
 
 ``slack_bot_token`` *str* |psynet-icon| |sensitive-icon|
     The Slack bot token for notifications. Default: ``None``.
