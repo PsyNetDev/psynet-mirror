@@ -2098,6 +2098,43 @@ def _browser_capability_permission_intro(perm_caps):
     )
 
 
+def _capability_failure_prompt(missing):
+    """Return a translated Markup paragraph explaining which capability failed."""
+    if missing == "microphone":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your microphone. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "camera":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your camera. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "screen_capture":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support screen capture.",
+        )
+    elif missing == "video_recording":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support video recording.",
+        )
+    elif missing == "audio_playback":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support audio playback.",
+        )
+    else:
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not meet the technical requirements for this experiment.",
+        )
+    return Markup("<p>{}</p>").format(msg)
+
+
 class BrowserCapabilityCheck(Module):
     """
     Prescreener that tests the participant's browser against declared capability
@@ -2142,6 +2179,14 @@ class BrowserCapabilityCheck(Module):
             if perm_caps:
                 pages.append(_browser_capability_permission_intro(perm_caps))
             pages.append(BrowserCapabilityCheckPage(caps, label=label))
+            def _make_fail_page(experiment, participant):
+                missing = (
+                    participant.answer.get("missing")
+                    if isinstance(participant.answer, dict)
+                    else None
+                )
+                return [InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)]
+
             pages.extend(
                 conditional(
                     f"{label}_fail",
@@ -2149,7 +2194,10 @@ class BrowserCapabilityCheck(Module):
                         isinstance(participant.answer, dict)
                         and not participant.answer.get("passed", True)
                     ),
-                    UnsuccessfulEndPage(failure_tags=[label]),
+                    [
+                        PageMaker(_make_fail_page, time_estimate=5.0),
+                        UnsuccessfulEndPage(failure_tags=[label]),
+                    ],
                 )
             )
             return pages
