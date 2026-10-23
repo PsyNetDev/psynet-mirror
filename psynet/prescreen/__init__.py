@@ -2202,5 +2202,8 @@ class BrowserCapabilityCheck(Module):
             )
             return pages
 
-        elts = PageMaker(_make_pages, time_estimate=0.0)
+        perm_caps = capabilities & PERMISSION_CAPABILITY_TOKENS if capabilities is not None else frozenset()
+        pm_time_estimate = 5.0 if perm_caps else 0.0
+
+        elts = PageMaker(_make_pages, time_estimate=pm_time_estimate)
         super().__init__(label, elts)

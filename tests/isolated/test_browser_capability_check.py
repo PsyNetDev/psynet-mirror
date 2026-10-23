@@ -148,6 +148,33 @@ def test_capability_failure_page_appears_in_conditional():
     assert any(isinstance(e, UnsuccessfulEndPage) for e in resolved)
 
 
+def test_page_maker_time_estimate_no_permission_caps():
+    from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker
+
+    check = BrowserCapabilityCheck(capabilities={"audio_playback", "screen_capture"})
+    pm = next(e for e in check.elts if isinstance(e, PageMaker))
+    assert pm.time_estimate == 0.0
+
+
+def test_page_maker_time_estimate_with_permission_caps():
+    from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker
+
+    check = BrowserCapabilityCheck(capabilities={"microphone"})
+    pm = next(e for e in check.elts if isinstance(e, PageMaker))
+    assert pm.time_estimate == 5.0
+
+
+def test_page_maker_time_estimate_default_capabilities():
+    from psynet.prescreen import BrowserCapabilityCheck
+    from psynet.timeline import PageMaker
+
+    check = BrowserCapabilityCheck()  # capabilities=None — unknown until runtime
+    pm = next(e for e in check.elts if isinstance(e, PageMaker))
+    assert pm.time_estimate == 0.0
+
+
 def test_browser_capability_check_page_no_next_button():
     from psynet.prescreen import BrowserCapabilityCheckPage
 
