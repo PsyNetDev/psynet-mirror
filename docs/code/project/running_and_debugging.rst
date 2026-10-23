@@ -15,6 +15,17 @@ Start the local database and cache, then the experiment:
 they aren't running. ``psynet debug local`` starts the same web, worker and
 clock processes that a deployed experiment runs, which takes 10 to 15
 seconds, then opens the dashboard and a participant session in your browser.
+Start-up ends with a block like this (with ``--no-browsers``, nothing is
+opened, and this block is how you reach the experiment):
+
+.. code-block:: console
+
+    Ready.
+      Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop/logs.jsonl
+    Press Ctrl+C to stop.
+
 Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 When a script or a coding agent starts ``psynet debug local`` in a
@@ -48,8 +59,21 @@ different experiments on one machine, add ``--isolated``:
 .. code-block:: console
 
     $ psynet debug local --isolated
-    ❯❯ Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
-    To use this server's data from another terminal (for example with psynet export local), first run: export DATABASE_URL=... REDIS_URL=... base_port=5100
+    Local PostgreSQL and Redis: OK.
+    Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
+    Experiment files OK (config.txt, experiment.py; 0 MB).
+    07:56:05 web    Development server on http://127.0.0.1:5100 (auto-reload on, debugger PIN 477-455-893)
+    07:56:08 web    Experiment launch complete!
+
+    Ready.
+      Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop_5100/logs.jsonl
+      Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
+    Press Ctrl+C to stop.
+
+Run the ``Other terminals`` line in another terminal to use the server's data
+there, for example with ``psynet export local`` or ``psynet run-bot``.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on
@@ -134,6 +158,22 @@ works), for example
 If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the
 smallest version that still fails when you ask for help.
+
+See PsyNet's detailed log messages
+----------------------------------
+
+By default the server log shows warnings, errors and important events, such
+as the experiment launching and recruitment decisions. PsyNet logs routine
+steps at DEBUG level, for example which node a trial maker selected for a
+participant, each evaluation of a while loop's condition, each received
+response and the timings of requests that took less than a second. To show
+them too, add this to ``experiment.py``:
+
+.. code-block:: python
+
+    import logging
+
+    logging.getLogger("psynet").setLevel(logging.DEBUG)
 
 Inspect the experiment in the dashboard
 ---------------------------------------

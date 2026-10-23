@@ -35,10 +35,13 @@ def test_logger_notifier_leaves_local_dashboard_details_to_the_banner(
     class _DemoNotifier(LoggerNotifier):
         exp = Mock(label="Demo")
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         _DemoNotifier().on_launch()
 
-    assert 'Launched experiment "Demo" (`abc`) locally' in caplog.text
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("DEBUG", 'Launched experiment "Demo" locally')
+    ]
+    assert "abc" not in caplog.text
     assert "Password:" not in caplog.text
 
 

@@ -165,6 +165,19 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
             start_redis_server(redis_port)
 
 
+@pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
+def test_isolated_redis_is_out_of_reach_of_a_terminal_ctrl_c():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    process = start_redis_server(port)
+    try:
+        assert os.getpgid(process.pid) != os.getpgrp()
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
 def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
     target = tmp_path / "precious"
     target.write_text("keep me")
@@ -232,7 +245,7 @@ def test_description_hides_the_redis_password():
 
     description = environment.describe()
 
-    assert "Redis at redis.example:6380/3," in description
+    assert "Redis redis.example:6380/3 and" in description
     assert "secret" not in description
 
 
