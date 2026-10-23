@@ -2414,8 +2414,7 @@ def deploy__docker_ssh(
     The image always installs the PsyNet and Dallinger versions pinned in
     constraints.txt (requirements.txt if there is none). To try local
     checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
-    ``--use-local-dallinger``. Without ``--app``, the app is named after the
-    experiment directory.
+    ``--use-local-dallinger``.
     """
     if app is None and not update:
         app = _default_ssh_app_name(server, ingress)
@@ -3164,8 +3163,6 @@ def debug__docker_heroku(ctx, app, archive):
 def debug__docker_ssh(ctx, **options):
     """
     Debug the experiment on a remote server via SSH.
-
-    Without ``--app``, the app is named after the experiment directory.
     """
     if options["app"] is None and not options["update"]:
         options["app"] = _default_ssh_app_name(options["server"], options["ingress"])
