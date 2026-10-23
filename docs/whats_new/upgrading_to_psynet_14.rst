@@ -457,6 +457,11 @@ templates that changes the database.
   accept ``**kwargs``.
 * ``Experiment.response_approved`` is removed; customize approved responses
   through ``process_response`` or the page-rendering hooks.
+* Push buttons, dropdowns, radio buttons and checkboxes now save the picked
+  element of ``choices`` with its original type, not the browser's text.
+  Search for these controls with numeric ``choices``, for example
+  ``PushButtonControl([1, 2, 3])``, and compare their answers to numbers:
+  ``answer == 3``, not ``answer == "3"``. ``int(answer)`` keeps working.
 
 17. Groups and barriers
 -----------------------
