@@ -1023,7 +1023,11 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
 
 
 def _render_browser_detect(
-    *, force_google_chrome=False, allow_mobile_devices=True, lucid=False
+    *,
+    force_google_chrome=False,
+    allow_mobile_devices=True,
+    lucid=False,
+    force_incognito_mode=False,
 ):
     from flask import Flask, render_template_string
 
@@ -1045,7 +1049,7 @@ def _render_browser_detect(
             config=SimpleNamespace(
                 allow_mobile_devices=allow_mobile_devices,
                 force_google_chrome=force_google_chrome,
-                force_incognito_mode=False,
+                force_incognito_mode=force_incognito_mode,
             ),
         )
 
@@ -1131,3 +1135,25 @@ def test_browser_capabilities_rejects_unknown_token():
 
     with pytest.raises(ValueError, match="not_a_real_capability"):
         Exp.check_browser_capabilities()
+
+
+def test_browser_detect_incognito_failure_routes_through_run_browser_check():
+    """When detectIncognito rejects and force_incognito_mode=True, the .catch()
+    handler must call runBrowserCheck() — not renderBrowserWarning() directly —
+    so that the Lucid /terminate_participant redirect fires."""
+    html = _render_browser_detect(force_incognito_mode=True, lucid=True)
+    catch_start = html.index(".catch((err) =>")
+    catch_block = html[catch_start : catch_start + 400]
+    assert "runBrowserCheck()" in catch_block, (
+        ".catch() handler does not call runBrowserCheck(); "
+        "Lucid termination redirect will not fire when detectIncognito rejects."
+    )
+    # renderBrowserWarning must not be called directly inside the catch block
+    # (it is called indirectly by runBrowserCheck() when the check fails)
+    run_pos = catch_block.index("runBrowserCheck()")
+    assert "renderBrowserWarning()" not in catch_block[:run_pos], (
+        ".catch() calls renderBrowserWarning() before runBrowserCheck(); "
+        "this bypasses Lucid routing."
+    )
+    # Lucid termination URL must be present (rendered because lucid=True)
+    assert "terminate_participant" in html

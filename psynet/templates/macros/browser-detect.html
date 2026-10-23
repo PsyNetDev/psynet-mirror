@@ -182,8 +182,12 @@
                 if (!browser.isIncognito) {
                     // only show this warning if people are using the right browser
                     if (warningMsg === "") {
-                        warningMsg = `{{ pgettext("browser_compatibility", "You need to use the incognito mode to take part in the experiment.") | safe }}`;
-                        warningMsg += ` {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.") | replace('"',"'") | safe }}`;
+                        if (browser.incognitoDetectionFailed) {
+                            warningMsg = "{{ pgettext("browser_compatibility", "We were unable to verify whether you are using a private browsing window. Please open an incognito window and try again.") | safe }}";
+                        } else {
+                            warningMsg = `{{ pgettext("browser_compatibility", "You need to use the incognito mode to take part in the experiment.") | safe }}`;
+                            warningMsg += ` {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.") | replace('"',"'") | safe }}`;
+                        }
                     }
                 }
             }
@@ -437,11 +441,8 @@
                 runBrowserCheck();
             }).catch((err) => {
                 console.warn("detectIncognito failed:", err);
-                browser.isIncognito = null;
-                if (browser.forceIncognitoMode) {
-                    renderBrowserWarning();
-                    return;
-                }
+                browser.isIncognito = false;
+                browser.incognitoDetectionFailed = true;
                 runBrowserCheck();
             });
             return true;
