@@ -2139,41 +2139,54 @@ def test_suggested_app_names_are_valid(directory, taken, expected):
     assert _suggest_app_name(directory, taken) == expected
 
 
-def _launch_ssh_without_app(monkeypatch, tmp_path, *, interactive, input=None):
+def _default_ssh_app_name(monkeypatch, tmp_path, directory, *, interactive, input=None):
+    """Run ``_default_ssh_app_name`` in ``directory`` on a server with ``my-study``."""
     from types import SimpleNamespace
 
-    from psynet.command_line import psynet
+    from psynet.command_line import _default_ssh_app_name
 
-    experiment_dir = tmp_path / "My_Study"
-    experiment_dir.mkdir()
-    (experiment_dir / "experiment.py").touch()
-    monkeypatch.chdir(experiment_dir)
-    hosts = {"lab": {"host": "lab"}}
-    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
-    monkeypatch.setattr("psynet.command_line.CONFIGURED_HOSTS", hosts)
-    monkeypatch.setattr(docker_ssh, "CONFIGURED_HOSTS", hosts)
-    monkeypatch.setattr(docker_ssh, "get_configured_hosts", lambda: hosts)
-    monkeypatch.setattr(docker_ssh, "ensure_remote_host_in_known_hosts", Mock())
+    (tmp_path / directory).mkdir()
+    monkeypatch.chdir(tmp_path / directory)
     monkeypatch.setattr(
-        docker_ssh, "get_apps", lambda server: [SimpleNamespace(name="my-study")]
+        importlib.import_module("dallinger.command_line.docker_ssh"),
+        "get_apps",
+        lambda server: [SimpleNamespace(name="my-study")],
     )
     monkeypatch.setattr(
         "psynet.command_line._stdin_is_interactive", lambda: interactive
     )
-    launch = Mock()
-    monkeypatch.setattr("psynet.command_line._debug_ssh", launch)
-    result = CliRunner().invoke(psynet, ["debug", "ssh"], input=input)
-    assert result.exit_code == 0, result.output
-    return result, launch.call_args.kwargs["app"]
-
-
-def test_ssh_launch_without_app_uses_the_directory_name(monkeypatch, tmp_path):
-    result, app = _launch_ssh_without_app(monkeypatch, tmp_path, interactive=False)
-    assert app == "my-study-2"
-    assert result.output == (
-        "Using app name my-study-2 (from the directory name; "
-        "pass --app to choose another).\n"
+    chosen = []
+    command = click.Command(
+        "launch", callback=lambda: chosen.append(_default_ssh_app_name("lab"))
     )
+    result = CliRunner().invoke(command, input=input)
+    assert result.exit_code == 0, result.output
+    return result.output, chosen[0]
+
+
+@pytest.mark.parametrize(
+    "directory, expected",
+    [
+        (
+            "My_Study",
+            "Using app name my-study-2 (from the directory name; "
+            "pass --app to choose another).\n",
+        ),
+        (
+            "___",
+            "Using app name experiment (the directory name isn't a valid app "
+            "name; pass --app to choose another).\n",
+        ),
+    ],
+)
+def test_ssh_launch_without_app_announces_its_name(
+    monkeypatch, tmp_path, directory, expected
+):
+    output, app = _default_ssh_app_name(
+        monkeypatch, tmp_path, directory, interactive=False
+    )
+    assert output == expected
+    assert app in output
 
 
 @pytest.mark.parametrize(
@@ -2183,14 +2196,14 @@ def test_ssh_launch_without_app_uses_the_directory_name(monkeypatch, tmp_path):
 def test_ssh_launch_without_app_asks_for_a_name(
     monkeypatch, tmp_path, answer, expected
 ):
-    result, app = _launch_ssh_without_app(
-        monkeypatch, tmp_path, interactive=True, input=answer
+    output, app = _default_ssh_app_name(
+        monkeypatch, tmp_path, "My_Study", interactive=True, input=answer
     )
     assert app == expected
-    assert result.output.startswith("App name [my-study-2]: ")
+    assert output.startswith("App name (used in its web address) [my-study-2]: ")
     if expected == "chosen":
-        assert "invalid characters" in result.output
-        assert "lab already has an app named my-study." in result.output
+        assert "invalid characters" in output
+        assert "lab already has an app named my-study." in output
 
 
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):

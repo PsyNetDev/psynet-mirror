@@ -197,6 +197,16 @@ def _is_valid_app_name(name):
     return True
 
 
+def _directory_app_name(directory_name):
+    """Return ``directory_name`` made into a valid app name, or ``None``.
+
+    The name is lowercased, runs of other characters become one hyphen, and
+    leading and trailing hyphens are dropped.
+    """
+    name = re.sub(r"[^a-z0-9]+", "-", directory_name.lower()).strip("-")
+    return name if _is_valid_app_name(name) else None
+
+
 def _suggest_app_name(directory_name, taken=()):
     """Turn a directory name into a valid app name that isn't in ``taken``.
 
@@ -214,9 +224,7 @@ def _suggest_app_name(directory_name, taken=()):
         A lowercase name of letters, digits and single hyphens, at most one
         DNS label long. ``experiment`` replaces names with nothing usable.
     """
-    base = re.sub(r"[^a-z0-9]+", "-", directory_name.lower()).strip("-")
-    if not _is_valid_app_name(base):
-        base = _FALLBACK_APP_NAME
+    base = _directory_app_name(directory_name) or _FALLBACK_APP_NAME
     for number in itertools.count(1):
         suffix = f"-{number}" if number > 1 else ""
         name = base[: _MAX_APP_NAME_LENGTH - len(suffix)].rstrip("-") + suffix
@@ -224,7 +232,7 @@ def _suggest_app_name(directory_name, taken=()):
             return name
 
 
-def _default_ssh_app_name(server, ingress):
+def _default_ssh_app_name(server):
     """Choose the app name for an SSH launch that was given no ``--app``.
 
     The name comes from the experiment directory, avoiding apps already on
@@ -235,29 +243,26 @@ def _default_ssh_app_name(server, ingress):
     Parameters
     ----------
     server : str
-        SSH server name.
-    ingress : str or None
-        The ``--ingress`` option, checked before the server is contacted.
+        SSH server name, already connected to.
 
     Returns
     -------
     str
         The app name to launch.
     """
-    from dallinger.command_line.docker_ssh import (
-        ensure_remote_host_in_known_hosts,
-        get_apps,
-    )
+    from dallinger.command_line.docker_ssh import get_apps
 
-    _check_ssh_deploy_credentials(server, ingress)
-    server_info = CONFIGURED_HOSTS[server]
-    ensure_remote_host_in_known_hosts(server_info["host"], server_info.get("user"))
     taken = {entry.name for entry in get_apps(server)}
-    suggestion = _suggest_app_name(Path.cwd().name, taken)
+    directory = Path.cwd().name
+    suggestion = _suggest_app_name(directory, taken)
     if not _stdin_is_interactive():
+        reason = (
+            "from the directory name"
+            if _directory_app_name(directory)
+            else "the directory name isn't a valid app name"
+        )
         click.echo(
-            f"Using app name {suggestion} (from the directory name; "
-            "pass --app to choose another)."
+            f"Using app name {suggestion} ({reason}; pass --app to choose another)."
         )
         return suggestion
 
@@ -267,7 +272,9 @@ def _default_ssh_app_name(server, ingress):
             raise click.BadParameter(f"{server} already has an app named {name}.")
         return name
 
-    return click.prompt("App name", default=suggestion, value_proc=check)
+    return click.prompt(
+        "App name (used in its web address)", default=suggestion, value_proc=check
+    )
 
 
 def _verify_existing_ssh_app(ctx, param, app):
@@ -2138,6 +2145,8 @@ def _pre_launch(
     experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
+    An SSH launch without ``app`` is named by :func:`_default_ssh_app_name`
+    once the server is connected. Returns the app name.
     """
     from .experiment import get_experiment
 
@@ -2179,7 +2188,11 @@ def _pre_launch(
         from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
 
         ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
-        _abort_if_app_exists(server, app, update=update)
+        if app is None:
+            app = _default_ssh_app_name(server)
+            deployment_info.write(app=app)
+        else:
+            _abort_if_app_exists(server, app, update=update)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
@@ -2250,6 +2263,7 @@ def _pre_launch(
         # Unimports the PsyNet experiment, because Dallinger will want to start from scratch when using Heroku.
         # We don't unimport it in other cases because reloading the experiment produces an unnecessary time overhead.
         clean_sys_modules()
+    return app
 
 
 def _check_ssh_deploy_credentials(server, ingress):
@@ -2416,13 +2430,11 @@ def deploy__docker_ssh(
     checkouts, use ``psynet debug ssh`` with ``--use-local-psynet`` or
     ``--use-local-dallinger``.
     """
-    if app is None and not update:
-        app = _default_ssh_app_name(server, ingress)
     try:
         _validate_ssh_deploy_update(app, archive, update)
         _configure_dallinger_image_source(use_local_dallinger=False)
 
-        _pre_launch(
+        app = _pre_launch(
             ctx,
             mode="live",
             archive=archive,
@@ -3164,8 +3176,6 @@ def debug__docker_ssh(ctx, **options):
     """
     Debug the experiment on a remote server via SSH.
     """
-    if options["app"] is None and not options["update"]:
-        options["app"] = _default_ssh_app_name(options["server"], options["ingress"])
     _debug_ssh(ctx, **options)
 
 
@@ -3197,7 +3207,7 @@ def _debug_ssh(
         _configure_dallinger_image_source(use_local_dallinger=use_local_dallinger)
         local_packages = _local_packages(use_local_psynet, use_local_dallinger)
 
-        _pre_launch(
+        app = _pre_launch(
             ctx,
             mode="sandbox",
             archive=archive,
