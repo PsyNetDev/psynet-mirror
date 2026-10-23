@@ -21,6 +21,10 @@ list``. With one registered server it can be left out; with several, PsyNet
 asks you to choose, or fails if the command is not run in an interactive
 terminal.
 
+``--app`` names the app on the server and starts its address. It defaults
+to the experiment directory's name, made into a valid app name; see
+:doc:`/deploy/running_a_study`.
+
 ``--dns-host`` sets the domain the experiment is served under. It defaults to
 the ``--server`` name, so the experiment is served at
 ``https://<app>.<server>``. Pass it:
