@@ -7341,7 +7341,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             and deployment_info.read("mode") == "debug"
         ):
             return
-        self.timeline.check_consents(self)
+        try:
+            self.timeline.check_consents(self)
+        except RuntimeError as e:
+            if deployment_info.read("mode") != "sandbox":
+                raise
+            raise RuntimeError(
+                f"{e} For a debug deploy, you can also skip the consent checks with "
+                "--no-consent."
+            ) from None
 
     def check_python_dependencies(self):
         if os.environ.get("SKIP_DEPENDENCY_CHECK"):
