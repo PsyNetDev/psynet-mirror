@@ -8,6 +8,7 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 const EXPERIMENT_DIR = "tests/playwright/experiments/browser_capability_check";
+const NO_PRESCREENER_DIR = "tests/playwright/experiments/audio_no_prescreener";
 
 test(
   "audio_playback: capability check passes in Chrome and reaches next page",
@@ -42,6 +43,32 @@ test(
         "Unfortunately we have to stop early.",
         { timeout: STEP_TIMEOUT_MS }
       );
+      await assertNoBackendError(experimentPage);
+    });
+  }
+);
+
+test(
+  "audio_playback: missing AudioContext does not crash page init without prescreener",
+  { tag: "@both" },
+  async ({ page, context }) => {
+    // Without BrowserCapabilityCheck in the timeline, a missing AudioContext
+    // must not crash page initialisation. NullAudioContext replaces the null
+    // that initAudioContext previously left behind, so trial.init() completes
+    // and the page loads normally. Audio calls (decodeAudioData etc.) would
+    // throw a descriptive error if reached, but that path requires an audio
+    // control and is not exercised here.
+    await context.addInitScript(() => {
+      delete window.AudioContext;
+      delete window.webkitAudioContext;
+    });
+
+    const absDir = path.resolve(NO_PRESCREENER_DIR);
+    await withExperiment(page, context, absDir, async (experimentPage) => {
+      await completeInitialGateway(experimentPage);
+      await expect(
+        experimentPage.locator("#page-loaded")
+      ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
       await assertNoBackendError(experimentPage);
     });
   }

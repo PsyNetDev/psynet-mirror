@@ -1820,7 +1820,7 @@
       };
 
       trial.getGlobalTime = function () {
-        return psynet.media.audioContext?.currentTime ?? 0;
+        return psynet.media.audioContext.currentTime;
       };
 
       trial.listEvents = function () {
@@ -2222,6 +2222,23 @@
       };
     };
 
+    class NullAudioContext {
+      get currentTime() { return Date.now() / 1000; }
+      get state() { return "unavailable"; }
+      static _unavailable() {
+        throw new Error(
+          "AudioContext is not available in this browser. " +
+          "If your experiment uses audio, add 'audio_playback' to " +
+          "Experiment.browser_capabilities and place BrowserCapabilityCheck " +
+          "early in your timeline."
+        );
+      }
+      decodeAudioData() { NullAudioContext._unavailable(); }
+      createBufferSource() { NullAudioContext._unavailable(); }
+      createGain() { NullAudioContext._unavailable(); }
+      get destination() { NullAudioContext._unavailable(); }
+    }
+
     psynet.media.initAudioContext = function () {
       if (
         psynet.media.audioContext &&
@@ -2241,6 +2258,7 @@
           "No AudioContext available; audio playback is disabled. " +
             "The browser_capabilities check should detect and route this participant out.",
         );
+        psynet.media.audioContext = new NullAudioContext();
         return;
       }
       if (context.state == "suspended") {
@@ -2266,7 +2284,7 @@
     psynet.media.init = async function () {
       psynet.media.initAudioContext();
 
-      if (psynet.media.audioContext?.state == "suspended") {
+      if (psynet.media.audioContext.state == "suspended") {
         psynet.log.info(
           "Audio context is suspended, and can only be resumed " +
             "after a user interaction. Waiting for the participant to click 'Resume'.",
