@@ -2660,7 +2660,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         cls._warn_about_overridden_experiment_config(config)
 
-        if "force_google_chrome" in config_txt or "force_google_chrome" in cls.config:
+        if config.get("force_google_chrome"):
             import warnings
 
             warnings.warn(
