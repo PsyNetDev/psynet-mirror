@@ -4380,8 +4380,8 @@ class TestRunPerformanceTestWithNewServer:
 # --- _run_performance_test_local --existing path ---
 
 
-def test_run_performance_test_local_existing_stamps_export_on_all_results():
-    """Export timing from a single end-of-session export is stamped on every result row."""
+def test_run_performance_test_local_existing_stamps_export_on_last_result_only():
+    """Export timing is stamped only on the last result row, not all rows."""
     from psynet.command_line import _run_performance_test_local
 
     fake_results = [{"n_bots": 5}, {"n_bots": 10}]
@@ -4414,8 +4414,9 @@ def test_run_performance_test_local_existing_stamps_export_on_all_results():
             no_export=False,
         )
 
-    assert all(r["export_duration_s"] == 2.5 for r in results)
-    assert all(r["export_error"] is None for r in results)
+    assert "export_duration_s" not in results[0]
+    assert results[-1]["export_duration_s"] == 2.5
+    assert results[-1]["export_error"] is None
 
 
 # --- _time_export tests ---
