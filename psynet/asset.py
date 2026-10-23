@@ -1195,7 +1195,7 @@ class ManagedAsset(Asset):
     def after_deposit(self):
         # logger.info("Calling after_deposit.")
         if self.trial:
-            logger.info(
+            logger.debug(
                 "Calling check_if_can_run_async_post_trial as part of after_deposit."
             )
             self.trial.check_if_can_run_async_post_trial()
@@ -2945,6 +2945,7 @@ class AssetRegistry:
             self._staged_asset_specifications,
             desc="Generating/uploading assets...",
             disable=None if self._staged_asset_specifications else True,
+            leave=False,
         ):
             a.prepare_for_deployment(registry=self)
         db.session.commit()

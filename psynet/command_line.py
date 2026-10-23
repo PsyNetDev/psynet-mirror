@@ -5,6 +5,7 @@ import functools
 import glob
 import hashlib
 import importlib
+import inspect
 import io
 import json
 import os
@@ -19,7 +20,13 @@ import tempfile
 import threading
 import time
 import zipfile
-from contextlib import ExitStack, contextmanager, nullcontext, redirect_stdout
+from contextlib import (
+    ExitStack,
+    contextmanager,
+    nullcontext,
+    redirect_stdout,
+    suppress,
+)
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -212,12 +219,13 @@ _suppress_dallinger_header()
 
 
 def log(msg, chevrons=True, verbose=True, **kw):
-    """Log a message to stdout."""
+    """Print a message to stdout, as one plain line.
+
+    ``chevrons`` is ignored; messages used to start with a blank line and
+    ``❯❯``. Nothing is printed unless ``verbose``.
+    """
     if verbose:
-        if chevrons:
-            click.echo("\n❯❯ " + msg, **kw)
-        else:
-            click.echo(msg, **kw)
+        click.echo(msg, **kw)
 
 
 def clean_sys_modules():
@@ -1055,6 +1063,7 @@ def _debug_in_isolated_environment_if_requested(func):
     def wrapper(*args, **kwargs):
         from .isolated_environment import READY_ENV_VAR
 
+        _handle_sigint_even_if_ignored()
         if kwargs["isolated"] and not os.environ.get(READY_ENV_VAR):
             if kwargs["docker"]:
                 raise click.UsageError(
@@ -1268,22 +1277,37 @@ def _cleanup_exp_directory():
             pass
 
 
+def _develop_path(config):
+    """Return Dallinger's development folder for ``config``.
+
+    Raises
+    ------
+    click.ClickException
+        If the ``dallinger_develop_directory`` setting can't be used, so the
+        problem is reported in one ``Error:`` line instead of a traceback.
+    """
+    from dallinger.utils import develop_target_path
+
+    try:
+        return Path(develop_target_path(config))
+    except ValueError as err:
+        raise click.ClickException(" ".join(str(err).split())) from err
+
+
 def run_pre_auto_reload_checks():
     config = get_config()
     if not config.ready:
         config.load()
 
-    from dallinger.utils import develop_target_path
-
     from .experiment_scaffold import get_editable_psynet_source
 
-    _develop_path = str(develop_target_path(config))
-    if "." in _develop_path:
-        raise ValueError(
-            f"The target path for your app's temporary development directory ({_develop_path}) "
-            "contains a period ('.'). Unfortunately Dallinger doesn't support this."
-            "You should set a revised path in your .dallingerconfig file. "
-            "We recommend: dallinger_develop_directory = /tmp/dallinger_develop"
+    develop_path = _develop_path(config)
+    if "." in str(develop_path):
+        raise click.ClickException(
+            f'The dallinger_develop_directory setting "{develop_path}" contains '
+            "a period, which Dallinger doesn't support. Set another folder in "
+            "~/.dallingerconfig, for example "
+            "dallinger_develop_directory = /tmp/dallinger_develop"
         )
 
     if get_editable_psynet_source() is not None:
@@ -1384,42 +1408,38 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-_BROWSER_WINDOWS_SENTENCE = (
-    "Recruitment requests will open browser windows automatically."
-)
+# In the launch message of Dallinger's hotair and cli recruiters.
+_SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
 
 
 def launch_app_without_browsers(port, **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs. Dallinger's job discards the launch
-    response, so this job prints the recruitment message and the dashboard
-    credentials instead; the server log leaves the password out.
-    It must stay importable by module path because RQ workers resolve it that way.
+    auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
+    :func:`_launch_app_and_report`). The server log leaves the dashboard
+    password out. It must stay importable by module path because RQ workers
+    resolve it that way.
     """
-    _launch_app_and_report(port, no_browsers=True)
+    _launch_app_and_report(port)
 
 
 def launch_app_and_open_browsers(port, **kwargs):
-    """Launch the development app, print its details, then open the browsers.
+    """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
-    with the password embedded; this one prints the login once and logs the
-    dashboard without it. It must stay importable by module path because RQ
+    with the password embedded; this one prints the login once, in the
+    ``Ready.`` block. It must stay importable by module path because RQ
     workers resolve it that way.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
     _launch_app_and_report(port)
     config = get_config()
-    log("Opening dashboard")
     _open_browser_async(develop.dashboard_url(config, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    ad_url = develop.ad_url(config, port)
-    log(f"Opening ad: {ad_url}")
-    _open_browser_async(ad_url)
+    _open_browser_async(develop.ad_url(config, port))
 
 
 def _open_browser_async(url):
@@ -1429,29 +1449,95 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port, no_browsers=False):
-    """Launch the development app and print the recruitment message and dashboard login."""
-    from dallinger.command_line.develop import BASE_URL
+def _launch_app_and_report(port):
+    """Launch the development app, then print the ``Ready.`` block.
+
+    The block has the participant link (see Dallinger's
+    ``launch_message_rows``), the dashboard login, the location of the full
+    log and, in an isolated session, the ``export`` line that lets other
+    terminals use the session's database and Redis. With Dallinger versions
+    without ``echo_ready(after=...)``, :func:`_echo_ready` prints it.
+    """
     from dallinger.deployment import handle_launch_data
 
+    from .isolated_environment import READY_ENV_VAR
+
+    develop = importlib.import_module("dallinger.command_line.develop")
     launch_data = handle_launch_data(
-        BASE_URL.format(port) + "launch", error=log, delay=1.0, context="local"
+        develop.BASE_URL.format(port) + "launch",
+        error=log,
+        delay=1.0,
+        context="local",
     )
-    message = launch_data.get("recruitment_msg") or ""
-    if no_browsers:
-        # Dallinger's HotAir recruiter says this regardless of --no-browsers.
-        message = message.replace(_BROWSER_WINDOWS_SENTENCE, "").strip()
-    if message:
-        log(message, chevrons=False)
+    message = launch_data.get("recruitment_msg")
+    launch_message_rows = getattr(develop, "launch_message_rows", None)
+    if launch_message_rows is not None:
+        details = launch_message_rows(message)
+    else:
+        message = (message or "").strip()
+        link = _SINGLE_RECRUITMENT_LINK.search(message)
+        if link:
+            details = [("Participant link", link.group(1))]
+        else:
+            details = [("Recruitment", message)] if message else []
 
     config = get_config()
     if not config.ready:
         config.load()
-    log(f"Experiment dashboard: {BASE_URL.format(port)}dashboard")
-    log(
-        f"Dashboard user: {config.get('dashboard_user')} "
-        f"password: {config.get('dashboard_password')}",
-        chevrons=False,
+    details.append(
+        (
+            "Dashboard",
+            f"{develop.BASE_URL.format(port)}dashboard (user "
+            f"{config.get('dashboard_user')}, password "
+            f"{config.get('dashboard_password')})",
+        )
+    )
+    after = []
+    if os.environ.get(READY_ENV_VAR):
+        after.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    echo_ready = getattr(develop, "echo_ready", None)
+    if echo_ready and "after" in inspect.signature(echo_ready).parameters:
+        echo_ready(details, after=after)
+        return
+    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
+    if log_file:
+        details.append(("Full log", str(_develop_path(config) / log_file)))
+    _echo_ready(details + after)
+
+
+def _echo_ready(details):
+    """Print the block that ends a local debug session's start-up, as Dallinger's ``echo_ready`` does.
+
+    After a blank line come ``Ready.``, ``details`` as aligned
+    ``label: value`` lines, and how to stop the server, in one write so
+    that server log lines don't split the block::
+
+        Ready.
+          Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&…
+          Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password …)
+        Press Ctrl+C to stop.
+
+    Parameters
+    ----------
+    details : list of (str, str)
+        Labels and values. Lines after the first of a value are indented to
+        line up with it.
+    """
+    width = max(len(label) for label, _ in details) + 1
+    lines = ["", click.style("Ready.", fg="green", bold=True)]
+    for label, value in details:
+        first, *rest = str(value).splitlines() or [""]
+        lines.append(f"  {label + ':':<{width}} {first}")
+        lines.extend((" " * (width + 3) + line).rstrip() for line in rest)
+    lines.append("Press Ctrl+C to stop.")
+    click.echo("\n".join(lines))
+
+
+def _isolated_session_export_line(env):
+    """Return the ``export`` command that points another terminal at an isolated session."""
+    return "export " + " ".join(
+        f"{key}={shlex.quote(env[key])}"
+        for key in ("DATABASE_URL", "REDIS_URL", "base_port")
     )
 
 
@@ -1466,12 +1552,22 @@ def _stop_child_processes_on_signal():
     """
 
     def handler(signum, frame):
-        children = psutil.Process().children(recursive=True)
+        # Multiprocessing's helpers ignore these signals and exit with this
+        # process, so waiting for them would only delay the shutdown.
+        children = [
+            child
+            for child in psutil.Process().children(recursive=True)
+            if not _is_multiprocessing_helper(child)
+        ]
         if signum == signal.SIGINT:
-            # A terminal Ctrl-C has usually reached the children already, and a
-            # second signal makes Dallinger's worker do a cold shutdown, which
-            # prints a traceback.
-            _, children = psutil.wait_procs(children, timeout=3)
+            # A terminal Ctrl-C has usually reached the children in this
+            # process group already, and a second signal makes Dallinger's
+            # worker do a cold shutdown, which prints a traceback. Children in
+            # their own session, like the server of newer Dallinger versions,
+            # don't get it, so they are stopped straight away.
+            reached = [child for child in children if _in_own_process_group(child)]
+            _, still_running = psutil.wait_procs(reached, timeout=3)
+            children = still_running + [c for c in children if c not in reached]
         for child in children:
             try:
                 child.terminate()
@@ -1491,6 +1587,26 @@ def _stop_child_processes_on_signal():
             signal.signal(sig, previous_handler)
 
 
+def _in_own_process_group(process):
+    """Return whether ``process`` is in this process's group (and still exists)."""
+    try:
+        return os.getpgid(process.pid) == os.getpgrp()
+    except OSError:
+        return False
+
+
+def _is_multiprocessing_helper(process):
+    """Return whether ``process`` is a ``multiprocessing`` resource tracker or fork server."""
+    try:
+        command = " ".join(process.cmdline())
+    except psutil.Error:
+        return False
+    return any(
+        f"from multiprocessing.{module} import main" in command
+        for module in ("resource_tracker", "forkserver")
+    )
+
+
 def _reloader_exclude_patterns():
     """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
 
@@ -1502,14 +1618,13 @@ def _reloader_exclude_patterns():
     other debug servers' development folders are excluded.
     """
     import dallinger
-    from dallinger.utils import develop_target_path
 
     import psynet
 
     config = get_config()
     if not config.ready:
         config.load()
-    develop_path = Path(develop_target_path(config))
+    develop_path = _develop_path(config)
     # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
     own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
     patterns = []
@@ -1547,6 +1662,19 @@ def _other_develop_folder_patterns(develop_path):
     ]
     patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
     return patterns
+
+
+def _handle_sigint_even_if_ignored():
+    """Make SIGINT raise ``KeyboardInterrupt`` even if this process started with it ignored.
+
+    A non-interactive shell starts background jobs (``psynet debug local &``
+    in a script) with SIGINT ignored. Python then never raises
+    ``KeyboardInterrupt``, and the processes it starts inherit the ignored
+    signal, so ``kill -INT`` wouldn't stop the session. Must be called from
+    the main thread.
+    """
+    if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 @contextmanager
@@ -5585,6 +5713,7 @@ def _in_isolated_test_environment(func):
             should_isolate,
         )
 
+        _handle_sigint_even_if_ignored()
         if not kwargs.get("existing"):
             try:
                 isolate = should_isolate()
@@ -5692,15 +5821,22 @@ def _rerun_in_isolated_environment(mode="test"):
     ``psynet test local --n-bots 4``) with this interpreter, and this process
     then exits with its code; if it was interrupted and the child exited with
     0, it exits with 130 after Ctrl+C and 143 after SIGTERM. SIGTERM and SIGHUP
-    reach the child as SIGTERM; it gets Ctrl+C from the terminal anyway. A second signal kills
-    the child. The database and Redis are removed when the child exits.
+    reach the child as SIGTERM. If this process is the foreground job of a
+    terminal, Ctrl+C reaches the child directly. Otherwise (for example if it
+    has no terminal, as when an agent runs it), the child runs in its own
+    process group and SIGINT is passed on to that group; a SIGINT that arrives
+    after this process stopped being the foreground job is passed on as a
+    Ctrl+C would have been, to the child and its processes in this group. A
+    SIGINT sent only to this process while it is still the foreground job
+    looks like a Ctrl+C and isn't passed on. A second signal kills the child. The database and Redis are removed
+    when the child exits.
 
     Parameters
     ----------
     mode : str
         ``"test"`` or ``"debug"``. Passed to :func:`_check_experiment_directory`;
-        ``"debug"`` also prints how to reach the server's data and when it has
-        stopped. (The ``--isolated`` decorator holds the experiment directory's
+        ``"debug"`` also prints when the session has
+        ended (its ``Ready.`` block shows how to reach its data). (The ``--isolated`` decorator holds the experiment directory's
         lock around this call.)
     """
     from .isolated_environment import IsolatedEnvironment
@@ -5720,19 +5856,17 @@ def _rerun_in_isolated_environment(mode="test"):
     interrupted = None
     with _exit_on_termination_signal(), environment:
         log(environment.describe())
-        if mode == "debug":
-            log(
-                "To use this server's data from another terminal (for example with "
-                "psynet export local), first run: export "
-                + " ".join(
-                    f"{key}={shlex.quote(env[key])}"
-                    for key in ("DATABASE_URL", "REDIS_URL", "base_port")
-                ),
-                chevrons=False,
-            )
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
-        process = subprocess.Popen([sys.executable, *sys.orig_argv[1:]], env=env)
+        # The child must get exactly one SIGINT: a second one cuts its cleanup
+        # short. A terminal's Ctrl+C reaches it in this process group. Otherwise
+        # it gets a group of its own, which only the SIGINT passed on below reaches.
+        own_group = not _ctrl_c_reaches_this_process_group()
+        process = subprocess.Popen(
+            [sys.executable, *sys.orig_argv[1:]],
+            env=env,
+            process_group=0 if own_group else None,
+        )
         while True:
             try:
                 exit_code = process.wait()
@@ -5743,13 +5877,22 @@ def _rerun_in_isolated_environment(mode="test"):
                     process.kill()
                 elif isinstance(e, SystemExit):
                     process.terminate()
+                elif own_group:
+                    # macOS reports EPERM for a group that only has zombies left.
+                    with suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGINT)
+                elif not _ctrl_c_reaches_this_process_group():
+                    # Started as a terminal's foreground job but no longer one
+                    # (say the script that started it in the background has
+                    # exited), so this SIGINT wasn't a Ctrl+C the child also got.
+                    _send_sigint_as_ctrl_c_would(process.pid)
                 interrupted = 130 if isinstance(e, KeyboardInterrupt) else e.code
         # A closing terminal can send SIGHUP again, which mustn't cut the cleanup short.
         for sig in (signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal.SIG_IGN)
     if mode == "debug":
         log(
-            "The isolated debug server has stopped and its database and Redis "
+            "The isolated debug session has ended and its database and Redis "
             "were removed. If you ran its export line in another terminal, run "
             "'unset DATABASE_URL REDIS_URL base_port' there."
         )
@@ -5757,6 +5900,33 @@ def _rerun_in_isolated_environment(mode="test"):
     if exit_code < 0:
         exit_code = 128 - exit_code
     sys.exit(exit_code or interrupted or 0)
+
+
+def _send_sigint_as_ctrl_c_would(pid):
+    """Send SIGINT to ``pid`` and its descendants in this process group, but not to this process."""
+    try:
+        process = psutil.Process(pid)
+        processes = [process, *process.children(recursive=True)]
+    except psutil.NoSuchProcess:
+        return
+    for target in processes:
+        if _in_own_process_group(target):
+            with suppress(psutil.NoSuchProcess):
+                target.send_signal(signal.SIGINT)
+
+
+def _ctrl_c_reaches_this_process_group():
+    """Return whether this process is in the foreground process group of its terminal."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
 
 
 def _check_no_server_here():

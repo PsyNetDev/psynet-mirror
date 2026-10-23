@@ -373,6 +373,22 @@ def test_scaffold_missing_files_restores_preexisting_tree(tmp_path):
     assert not (tmp_path / "static" / "assets").exists()
 
 
+def test_scaffold_missing_files_cleans_up_its_own_directory(tmp_path):
+    experiment_dir, elsewhere = tmp_path / "experiment", tmp_path / "elsewhere"
+    experiment_dir.mkdir()
+    elsewhere.mkdir()
+    (experiment_dir / "experiment.py").write_text("class Exp:\n    pass\n")
+    (elsewhere / "README.md").write_text("# Not a scaffold file\n")
+
+    with working_directory(experiment_dir):
+        with scaffold_missing_files():
+            os.chdir(elsewhere)
+        assert Path.cwd() == elsewhere
+
+    assert not (experiment_dir / "test.py").exists()
+    assert (elsewhere / "README.md").exists()
+
+
 def test_prune_include_modified_keeps_git_files_and_removes_generated(tmp_path):
     demo = Path(path_to_demo_experiment("hello_world"))
     # scaffold_missing_files() restores the authored-only tree even if an

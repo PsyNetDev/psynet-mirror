@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import importlib
 import io
@@ -919,26 +920,52 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     config.get.side_effect = {
         "dashboard_user": "admin",
         "dashboard_password": "s3cret",
+        "dallinger_develop_directory": "/tmp/dallinger_develop",
     }.get
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: {
-            "recruitment_msg": "Single recruitment link: ...\n\n"
+            "recruitment_msg": "Initial recruitment list:\nhttp://x/ad?a=1\n"
+            "Additional details:\nSingle recruitment link: http://x/ad?t=1\n\n"
             "Recruitment requests will open browser windows automatically."
         },
     )
+    if no_browsers:
+        monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db_5100")
+        monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6479")
+        monkeypatch.setenv("base_port", "5100")
+    else:
+        # This test session is itself isolated.
+        monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
     opened = []
     monkeypatch.setattr(develop, "open_browser", opened.append)
     job(5001)
     deadline = time.monotonic() + 5
     while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
         time.sleep(0.01)
-    output = capsys.readouterr().out
-    assert "Single recruitment link" in output
-    assert ("browser windows" in output) is not no_browsers
-    assert "http://127.0.0.1:5001/dashboard" in output
-    assert "Dashboard user: admin password: s3cret" in output
+    lines = capsys.readouterr().out.splitlines()
+    ready = lines.index("Ready.")
+    assert lines[ready - 1] == "" and lines[-1] == "Press Ctrl+C to stop."
+    rows = [line.split(":", 1) for line in lines[ready + 1 : -1]]
+    block = {label.strip(): value.strip() for label, value in rows}
+    assert block["Participant link"] == "http://x/ad?t=1"
+    assert block["Dashboard"] == (
+        "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
+    )
+    if hasattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE"):
+        assert block["Full log"].endswith("logs.jsonl")
+    assert ("Other terminals" in block) is no_browsers
+    if no_browsers:
+        assert block["Other terminals"] == (
+            "export DATABASE_URL=postgresql://localhost/db_5100 "
+            "REDIS_URL=redis://127.0.0.1:6479 base_port=5100"
+        )
+    # The values line up.
+    assert len({len(label + value) - len(value.lstrip()) for label, value in rows}) == 1
+    output = "\n".join(lines)
+    assert "Initial recruitment list" not in output and "❯❯" not in output
     assert output.count("s3cret") == 1
     if no_browsers:
         assert opened == []
@@ -2232,7 +2259,7 @@ def test_scripts_scaffold_bootstraps_empty_directory():
 
             assert result.exit_code == 0, result.output
             assert "Scaffolded experiment in" in result.output
-            assert "created: experiment.py, requirements.txt, and" in result.output
+            assert "created experiment.py, requirements.txt, and" in result.output
             assert "boilerplate files" in result.output
             assert "tip:" not in result.output
             assert "...creating" not in result.output
@@ -4347,7 +4374,7 @@ def test_scripts_update_reports_only_actual_changes(tmp_path):
         Path("Dockerfile").write_text("FROM outdated\n")
         changed = runner.invoke(psynet, ["scripts", "update"])
         assert changed.exit_code == 0, changed.output
-        assert "updated: 1 boilerplate file" in changed.output
+        assert ": 1 boilerplate file." in changed.output
         assert "FROM outdated" not in Path("Dockerfile").read_text()
 
 
@@ -5004,6 +5031,94 @@ def test_isolated_tests_rerun_with_the_current_interpreter(tmp_path, monkeypatch
         _rerun_in_isolated_environment()
 
     assert popen.call_args.args[0] == [sys.executable, "-m", "psynet", "test"]
+
+
+@pytest.mark.parametrize(
+    "target, started_with_sigint_ignored, lost_foreground",
+    [
+        ("pid", False, False),
+        ("group", False, False),
+        ("pid", True, False),
+        ("pid", True, True),
+    ],
+)
+def test_isolated_wrapper_without_a_terminal_passes_sigint_on_once(
+    tmp_path, target, started_with_sigint_ignored, lost_foreground
+):
+    """An agent's SIGINT to the wrapper reaches the child exactly once.
+
+    That includes a wrapper started in the background by a script, which
+    starts with SIGINT ignored, and one that was the terminal's foreground
+    job when it started but no longer is.
+    """
+    pid_file, count_file = tmp_path / "child.pid", tmp_path / "count"
+    child = (
+        "import os, signal, time\n"
+        "assert signal.getsignal(signal.SIGINT) is signal.default_int_handler\n"
+        "got = []\n"
+        "signal.signal(signal.SIGINT, lambda *args: got.append(1))\n"
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        "while not got:\n"
+        "    time.sleep(0.05)\n"
+        "time.sleep(0.5)\n"
+        f"open({str(count_file)!r}, 'w').write(str(len(got)))\n"
+    )
+    wrapper = (
+        "import signal, sys\n"
+        # As a non-interactive shell starts a background job.
+        f"if {started_with_sigint_ignored}:\n"
+        "    signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        "from unittest.mock import MagicMock, Mock, patch\n"
+        "from psynet.command_line import _in_isolated_test_environment\n"
+        "environment = MagicMock(env={})\n"
+        "environment.__enter__.return_value = environment\n"
+        f"sys.orig_argv = ['python', '-c', {child!r}]\n"
+        "with patch('psynet.command_line._check_experiment_directory'), "
+        "patch('psynet.services.ensure_local_services'), "
+        "patch('psynet.isolated_environment.should_isolate', return_value=True), "
+        "patch('psynet.command_line._ctrl_c_reaches_this_process_group', "
+        f"side_effect=[True, False] if {lost_foreground} else None, "
+        f"return_value=False), "
+        "patch('psynet.isolated_environment.IsolatedEnvironment.start', "
+        "return_value=environment):\n"
+        "    _in_isolated_test_environment(lambda: None)()\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", wrapper], cwd=tmp_path, start_new_session=True
+    )
+    pids = [process.pid]
+    try:
+        deadline = time.monotonic() + 60
+        while not pid_file.exists() or not pid_file.read_text():
+            assert process.poll() is None and time.monotonic() < deadline
+            time.sleep(0.1)
+        pids.append(int(pid_file.read_text()))
+
+        if target == "pid":
+            os.kill(process.pid, signal.SIGINT)
+        else:
+            os.killpg(process.pid, signal.SIGINT)
+        assert process.wait(timeout=30) == 130
+        assert count_file.read_text() == "1"
+    finally:
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+
+
+def test_a_foreground_terminal_job_gets_ctrl_c_directly():
+    # pexpect runs in a fresh process, because forking this multi-threaded one can deadlock.
+    script = (
+        "import sys, pexpect\n"
+        "check = pexpect.spawn(sys.executable, ['-c', 'from psynet.command_line "
+        "import _ctrl_c_reaches_this_process_group as f; print(f())'], timeout=30)\n"
+        "check.expect(pexpect.EOF)\n"
+        "print(check.before.decode().strip())\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+    )
+    assert result.stdout.strip().endswith("True"), result.stderr
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
@@ -7043,6 +7158,42 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, sta
         time.sleep(0.1)
 
 
+def test_ctrl_c_stops_a_server_in_its_own_session_without_waiting(tmp_path):
+    """Ctrl-C can't reach such a child, and a resource tracker never exits on it."""
+    import signal
+    import sys
+    import time
+
+    import psutil
+
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import subprocess\n"
+        "from multiprocessing import resource_tracker\n"
+        "from psynet.command_line import _stop_child_processes_on_signal\n"
+        "resource_tracker.ensure_running()\n"
+        "with _stop_child_processes_on_signal():\n"
+        "    child = subprocess.Popen(['sleep', '60'], start_new_session=True)\n"
+        f"    open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+        "    child.wait()\n"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", script])
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text():
+        assert time.monotonic() < deadline, "child process did not start"
+        time.sleep(0.1)
+    child_pid = int(pid_file.read_text())
+
+    started = time.monotonic()
+    parent.send_signal(signal.SIGINT)
+    assert parent.wait(timeout=30) == -signal.SIGINT
+    # The handler waits 3 s for children that the Ctrl-C reached.
+    assert time.monotonic() - started < 3
+    assert not psutil.pid_exists(child_pid) or (
+        psutil.Process(child_pid).status() == psutil.STATUS_ZOMBIE
+    )
+
+
 @pytest.mark.skipif(os.name == "nt", reason="needs POSIX signals")
 @pytest.mark.parametrize("signum, status", [("SIGINT", 1), ("SIGTERM", 143)])
 def test_a_signalled_command_that_imports_the_experiment_fails(signum, status):
@@ -7129,6 +7280,31 @@ def test_debug_reloader_skips_checkout_tests_demos_and_docs():
     for folder in ["demos", "tests", "docs"]:
         assert f"{root / folder}{os.sep}*" in patterns
     assert not any(p.startswith(f"{root / 'psynet'}") for p in patterns)
+
+
+def test_debug_reports_an_unusable_develop_directory_in_one_line(monkeypatch):
+    from psynet.command_line import _reloader_exclude_patterns
+
+    config = Mock(ready=True)
+    config.get.return_value = "/tmp/not-an-identifier"
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+
+    with pytest.raises(click.ClickException) as error:
+        _reloader_exclude_patterns()
+
+    assert "dallinger_develop_directory" in error.value.message
+    assert "\n" not in error.value.message
+
+
+def test_debug_reports_a_develop_directory_with_a_period_in_one_line(monkeypatch):
+    from psynet.command_line import run_pre_auto_reload_checks
+
+    config = Mock(ready=True)
+    config.get.return_value = "/tmp/with.period/dallinger_develop"
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+
+    with pytest.raises(click.ClickException, match="contains a period"):
+        run_pre_auto_reload_checks()
 
 
 def _invoke_db_ssh(monkeypatch, hosts):
