@@ -533,6 +533,17 @@ msgstr ""
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "Koe on tilapäisesti varattu. Yritä uudelleen."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"Tämä istunto ei ole enää käytettävissä. Se on saattanut päättyä, tai "
+"tutkimus on saatettu käynnistää uudelleen sen jälkeen, kun avasit tämän "
+"sivun."
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"

@@ -538,6 +538,16 @@ msgstr ""
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "Teko ena e ntse e le mathateng hajoale. Ka kopo leka hape."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"Seboka sena ha se sa fumaneha. E ka ’na eaba se felile, kapa thuto e qaliloe"
+" bocha ho tloha ha u bula leqephe lena."
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"

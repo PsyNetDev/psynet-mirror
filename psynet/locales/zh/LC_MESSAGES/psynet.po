@@ -517,6 +517,14 @@ msgstr "检测到同步问题。您是否在多个浏览器标签中运行相同
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "实验暂时繁忙。请稍后再试。"
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr "本次会话已不可用。它可能已结束，也可能是在您打开此页面后研究已重新启动。"
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"

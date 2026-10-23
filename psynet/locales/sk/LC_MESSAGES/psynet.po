@@ -534,6 +534,16 @@ msgstr ""
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "Experiment je dočasne zaneprázdnený. Skúste to prosím znova."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"Táto relácia už nie je dostupná. Mohla sa skončiť alebo sa štúdia mohla "
+"reštartovať od chvíle, keď ste otvorili túto stránku."
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"

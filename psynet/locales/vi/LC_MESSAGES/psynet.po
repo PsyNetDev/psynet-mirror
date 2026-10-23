@@ -536,6 +536,16 @@ msgstr ""
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "Thí nghiệm đang tạm thời bận. Vui lòng thử lại."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"Phiên này không còn khả dụng. Phiên có thể đã kết thúc hoặc nghiên cứu có "
+"thể đã được khởi động lại kể từ khi bạn mở trang này."
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"

@@ -435,20 +435,27 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:3696
+#: psynet/experiment.py:3772
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:3740 psynet/experiment.py:7126
+#: psynet/experiment.py:3816 psynet/experiment.py:7261
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:3987
+#: psynet/experiment.py:4063
 msgid "The experiment is temporarily busy. Please try again."
+msgstr ""
+
+#: psynet/experiment.py:4098
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
 msgstr ""
 
 #: psynet/modular_page.py:217
@@ -478,7 +485,7 @@ msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/page.py:643
+#: psynet/page.py:652
 msgctxt "status"
 msgid "Working..."
 msgstr ""

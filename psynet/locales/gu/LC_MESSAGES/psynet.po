@@ -531,6 +531,16 @@ msgstr ""
 msgid "The experiment is temporarily busy. Please try again."
 msgstr "પ્રયોગ તાત્કાલિક વ્યસ્ત છે. કૃપા કરીને ફરી પ્રયાસ કરો."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"આ સત્ર હવે ઉપલબ્ધ નથી. કદાચ તે સમાપ્ત થઈ ગયું હોય, અથવા તમે આ પાનું ખોલ્યું "
+"ત્યારથી અભ્યાસ ફરીથી શરૂ કરવામાં આવ્યો હોય."
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
