@@ -5453,16 +5453,33 @@ def remote_launch(monkeypatch, tmp_path):
     return launch, resets
 
 
-@pytest.mark.parametrize("performance_test_app", [False, True])
-def test_only_performance_test_apps_skip_the_consent_check(
-    remote_launch, performance_test_app
+@pytest.mark.parametrize(
+    "launch_options, checked",
+    [
+        ({}, True),
+        ({"performance_test_app": True}, False),
+        ({"check_consents": False}, False),
+    ],
+)
+def test_consent_check_is_skipped_for_bots_and_no_consent(
+    remote_launch, launch_options, checked
 ):
     from psynet import command_line
 
     launch, _ = remote_launch
-    launch(performance_test_app=performance_test_app)
+    launch(**launch_options)
     check_consents = command_line.run_pre_checks.call_args.kwargs["check_consents"]
-    assert check_consents is not performance_test_app
+    assert check_consents is checked
+
+
+def test_no_consent_is_a_debug_only_option():
+    from psynet.command_line import debug, deploy
+
+    def has_option(group, name):
+        return any("--no-consent" in p.opts for p in group.commands[name].params)
+
+    assert has_option(debug, "ssh") and has_option(debug, "heroku")
+    assert not has_option(deploy, "ssh") and not has_option(deploy, "heroku")
 
 
 @pytest.mark.parametrize(

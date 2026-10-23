@@ -1926,6 +1926,15 @@ def _abort_if_app_exists(server, app, *, update=False):
         )
 
 
+_option_no_consent = click.option(
+    "--no-consent",
+    is_flag=True,
+    help=(
+        "Skip the check that the timeline has a consent page, for example when "
+        "debugging a demo. Deploys still require one."
+    ),
+)
+
 _option_ssh_update = click.option(
     "--update",
     is_flag=True,
@@ -2043,6 +2052,7 @@ def _pre_launch(
     update=False,
     local_packages=(),
     performance_test_app=False,
+    check_consents=True,
     ingress=None,
     dns_host=None,
 ):
@@ -2050,7 +2060,8 @@ def _pre_launch(
 
     ``performance_test_app`` marks an app that ``psynet performance-test
     ssh`` deploys for bots: an update isn't confirmed first, and the
-    experiment needn't have a consent page. ``ingress`` and ``dns_host`` are
+    experiment needn't have a consent page. ``check_consents=False`` skips
+    the consent page check too (``--no-consent``). ``ingress`` and ``dns_host`` are
     the SSH deploy's ``--ingress`` and ``--dns-host`` options; the resolved
     ingress and the server's DNS name are recorded in ``deployment_info``.
     """
@@ -2117,7 +2128,7 @@ def _pre_launch(
         docker,
         app,
         local_packages,
-        check_consents=not performance_test_app,
+        check_consents=check_consents and not performance_test_app,
     )
 
     if local_ and not update:
@@ -3001,14 +3012,15 @@ def run_pre_checks_sandbox(local_packages=()):
 )
 @click.option("--docker", is_flag=True, help="Docker mode.")
 @click.option("--archive", default=None, help="Optional path to an experiment archive.")
+@_option_no_consent
 @click.pass_context
 @_holding_experiment_directory
-def debug__heroku(ctx, app, docker, archive):
+def debug__heroku(ctx, app, docker, archive, no_consent):
     """
     Debug the experiment on Heroku.
     """
     if docker:
-        debug__docker_heroku(ctx, app, archive)
+        debug__docker_heroku(ctx, app, archive, check_consents=not no_consent)
     else:
         from dallinger.command_line import sandbox as dallinger_sandbox
 
@@ -3020,6 +3032,7 @@ def debug__heroku(ctx, app, docker, archive):
                 local_=False,
                 heroku=True,
                 app=app,
+                check_consents=not no_consent,
             )
             # Note: PsyNet bypasses Dallinger's deploy-from-archive system and uses its own, so we set archive=None.
             result = ctx.invoke(dallinger_sandbox, verbose=True, app=app, archive=None)
@@ -3029,7 +3042,7 @@ def debug__heroku(ctx, app, docker, archive):
             reset_console()
 
 
-def debug__docker_heroku(ctx, app, archive):
+def debug__docker_heroku(ctx, app, archive, check_consents=True):
     from dallinger.command_line.docker import sandbox as dallinger_sandbox
 
     try:
@@ -3046,6 +3059,7 @@ def debug__docker_heroku(ctx, app, archive):
             docker=True,
             heroku=True,
             app=app,
+            check_consents=check_consents,
         )
         result = ctx.invoke(dallinger_sandbox, verbose=True, app=app)
         _post_deploy(result)
@@ -3063,13 +3077,14 @@ def debug__docker_heroku(ctx, app, archive):
 @_use_local_psynet_option
 @_use_local_dallinger_option
 @_option_ssh_update
+@_option_no_consent
 @click.pass_context
 @_holding_experiment_directory
-def debug__docker_ssh(ctx, **options):
+def debug__docker_ssh(ctx, no_consent, **options):
     """
     Debug the experiment on a remote server via SSH.
     """
-    _debug_ssh(ctx, **options)
+    _debug_ssh(ctx, check_consents=not no_consent, **options)
 
 
 def _debug_ssh(
@@ -3084,6 +3099,7 @@ def _debug_ssh(
     use_local_dallinger=False,
     update=False,
     performance_test_app=False,
+    check_consents=True,
 ):
     """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
 
@@ -3112,6 +3128,7 @@ def _debug_ssh(
             update=update,
             local_packages=local_packages,
             performance_test_app=performance_test_app,
+            check_consents=check_consents,
             ingress=ingress,
             dns_host=dns_host,
         )
