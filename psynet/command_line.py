@@ -3085,7 +3085,7 @@ def _debug_ssh(
     update=False,
     performance_test_app=False,
 ):
-    """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
+    """Deploy or update ``app`` in debug mode, as ``psynet debug ssh`` does; return Dallinger's result and the launch-info path.
 
     The app's environment sets ``debug_ssh_app``, which lets ``psynet
     destroy ssh`` destroy it when its pending async jobs can't be checked.
@@ -3130,7 +3130,7 @@ def _debug_ssh(
                 ingress=ingress,
                 update=update,
                 config_options=config_options,
-                dallinger_summary=bool(performance_test_app),
+                dallinger_summary=False,
             )
 
         launch_info = _post_deploy(result)
@@ -3138,6 +3138,7 @@ def _debug_ssh(
             _print_ssh_ready(result, launch_info)
     finally:
         _cleanup_exp_directory()
+    return result, launch_info
 
 
 ##########
@@ -6509,7 +6510,8 @@ def _run_performance_test_with_existing_server(
                 quiet=remote,
                 **suite_options,
             )
-        with tester.bot_runner(bot_counts[0], bot_log_file):
+        # The suite on the other computer lists the settings.
+        with tester.bot_runner(bot_counts[0], bot_log_file, announce=False):
             if suite_started_s_ago is not None:
                 tester.pause_between_tests(
                     datetime.datetime.now()
@@ -6937,7 +6939,7 @@ def _start_local_server_and_wait_for_ready(
     extra_env : dict[str, str], optional
         Environment variables to set for the server process.
     """
-    print("▶ Starting experiment server...")
+    print("Starting the experiment server...")
 
     tmp_log = tempfile.NamedTemporaryFile(
         delete=False,
@@ -6969,11 +6971,11 @@ def _start_local_server_and_wait_for_ready(
         raise click.ClickException("Failed to start experiment server process.")
 
     process.logfile = logfile
-    print("⏳ Waiting for server to be ready...", end="", flush=True)
+    print("Waiting for the server...", end="", flush=True)
 
     try:
         process.expect_exact(ready_phrase, timeout=max_wait)
-        print(" Ready!")
+        print(" ready.")
         print()
         drain_thread = threading.Thread(
             target=_drain_pexpect_output,
@@ -6995,7 +6997,7 @@ def _start_local_server_and_wait_for_ready(
         else:
             failure_message = f"Server failed to start within {max_wait} seconds"
         print(
-            f"\n❌ {failure_message}",
+            f"\n{failure_message}.",
             file=sys.stderr,
         )
         if recent_output:
@@ -7093,7 +7095,7 @@ def _stop_server(server_info):
         except Exception:
             pass
 
-    print(f"✓ Server stopped (log: {tmp_log_path})")
+    print(f"Server stopped (log: {tmp_log_path})")
 
 
 def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
@@ -7114,7 +7116,7 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
             all_results = _run_performance_test_with_existing_server(
                 debug=debug, json_output=json_output, **options
             )
-            print("✓ Performance test completed")
+            print("Performance test completed.")
             return all_results
         finally:
             _stop_server(server_info)
@@ -7361,7 +7363,7 @@ def performance_test__docker_ssh(
 def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     """Deploy ``app`` for performance tests, or update it in place if it exists.
 
-    ``deploy_options`` are the options of ``psynet debug ssh`` (see
+    Ends with the Ready block of ``psynet debug ssh``. ``deploy_options`` are the options of ``psynet debug ssh`` (see
     :func:`_debug_ssh`).
 
     Returns
@@ -7385,10 +7387,10 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
-        print(f"▶ Updating {app} on {server}, keeping its database...")
+        print(f"Updating {app} on {server}, keeping its database...")
     else:
-        print(f"▶ Deploying {app} on {server} for performance tests...")
-    _debug_ssh(
+        print(f"Deploying {app} on {server} for performance tests...")
+    result, launch_info = _debug_ssh(
         ctx,
         app=app,
         server=server,
@@ -7402,6 +7404,8 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
             f"Could not load the experiment in {app}'s web container; see the "
             "output above."
         )
+    # _run_ssh_performance_test adds the bot log to this block.
+    _print_ssh_ready(result, launch_info)
     return info["experiment"]
 
 
@@ -7443,7 +7447,7 @@ def _run_ssh_performance_test(
         suffix=".log",
         dir=_performance_log_directory(),
     )
-    print(f"Bot output log: {bot_log_file.name}")
+    print(f"  {'Bot log:':<18}{bot_log_file.name}")
     remote = RemoteApp(
         _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )

@@ -415,18 +415,20 @@ class PerformanceTester:
         return self.estimated_duration_minutes * self.time_factor
 
     @contextmanager
-    def bot_runner(self, max_bots, bot_log_file):
+    def bot_runner(self, max_bots, bot_log_file, announce=True):
         """Start the bot processes a suite of up to ``max_bots`` bots needs, if any.
 
         They last for the whole suite, because each one imports the
-        experiment, which can take seconds and much memory.
+        experiment, which can take seconds and much memory. With
+        ``announce``, it first lists their number among the suite's settings.
         """
         raise_open_file_limit()
         self._suite_started_at = datetime.datetime.now()
         n_processes = _choose_bot_processes(self.bot_processes, max_bots)
         self._n_bot_processes = n_processes
-        chosen = " (auto)" if self.bot_processes == "auto" else ""
-        logger.info(f"Bot processes:        {n_processes}{chosen}")
+        if announce:
+            chosen = " (auto)" if self.bot_processes == "auto" else ""
+            logger.info(f"Bot processes:        {n_processes}{chosen}")
         if n_processes == 1:
             yield
             return
@@ -468,15 +470,13 @@ class PerformanceTester:
         """Run one test of ``n`` bots for ``duration_minutes``, print its results and return them.
 
         With ``arrival_minutes`` the bots arrive evenly over that window.
-        ``title`` heads the test's output, e.g. ``TEST 2/3``.
+        ``title`` heads the test's output, e.g. ``Test 2/3``.
         """
         logger.info("")
-        logger.info(bold("=" * 80))
-        logger.info(bold(f"{title}: Running with {n:,} concurrent bots"))
-        logger.info("")
+        logger.info(bold(title))
         arriving = f", arriving over {arrival_minutes:g} min" if arrival_minutes else ""
         logger.info(
-            f"\u25b6 Starting load test with {n:,} concurrent bots for "
+            f"Starting the load test with {n:,} bots at once for "
             f"{duration_minutes:g} min{arriving}..."
         )
 
@@ -737,7 +737,11 @@ class PerformanceTester:
 
         # Build status line
         failed = bot_state.bots_failed_during_test
-        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Failed by experiment: {failed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration} | \u23f3 {mins_left}:{secs_left:02d} left"
+        status = (
+            f"Running: {running} | Completed: {completed:,} | "
+            f"Failed by the experiment: {failed:,} | Errors: {errors} | "
+            f"Avg: {avg_duration} | {mins_left}:{secs_left:02d} left"
+        )
 
         if not interactive:
             print(status, flush=True)

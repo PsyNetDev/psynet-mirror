@@ -330,7 +330,7 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
 
     output = capsys.readouterr().out
     assert "Running: 0" in output
-    assert "Failed by experiment: 3" in output
+    assert "Failed by the experiment: 3" in output
     assert "Avg: -" in output
     assert "\r" not in output
 
@@ -393,12 +393,12 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
 
     assert [r.n_bots for r in results] == [10, 20]
     assert suite.reset_error == "disk full."
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
         "(disk full). The summary above covers the 2 tests that completed."
     ) in caplog.text
-    plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
+    plain = [m for m in caplog.messages if "Performance test" in m or "stopped" in m]
     assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
 
 
@@ -416,7 +416,7 @@ def test_a_test_that_raises_still_prints_the_summary_of_the_earlier_tests(caplog
     ):
         PerformanceSuite(tester).run([10, 20, 40])
 
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: test 3 failed (exit code 1: OperationalError: "
         "server closed). The summary above covers the 2 tests that completed."
@@ -695,6 +695,12 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
 
     assert "Estimated session:    13.0 min" in caplog.text
     assert ("sees mostly the start of the study" in caplog.text) == warns
+    messages = caplog.messages
+    if warns:
+        # A note after the aligned settings, which end with the bot processes.
+        note = next(i for i, m in enumerate(messages) if "sees mostly" in m)
+        assert messages[note - 2].startswith("Bot processes:")
+        assert messages[note - 1] == ""
 
 
 def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
@@ -1571,7 +1577,7 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         _clear_realtime_status=Mock(),
         _calculate_and_report_results=Mock(),
     ):
-        tester.run_test("TEST 1/1", 5, None, duration_minutes=0)
+        tester.run_test("Test 1/1", 5, None, duration_minutes=0)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:
@@ -2026,7 +2032,7 @@ _ASYNC_JOB_STATS = [
 def test_format_test_results(overrides, expected):
     text = _join(format_test_results(_base_result(**overrides)))
     for line in [
-        "TEST RESULTS",
+        "Test results",
         "2 worker processes, up to 40 jobs at once",
         *expected,
     ]:
@@ -2619,7 +2625,7 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
 
     assert [r.n_bots for r in results] == [2, 4]
     assert before_test.call_count == 2
-    assert "--test-label 'TEST 2/2'" in remote.run_psynet.call_args.args[0]
+    assert "--test-label 'Test 2/2'" in remote.run_psynet.call_args.args[0]
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
@@ -2640,7 +2646,7 @@ def _remote_search(
     from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
-        if re.search(rf"--test-label 'TEST {interrupt_at_test}'", args):
+        if re.search(rf"--test-label 'Test {interrupt_at_test}'", args):
             raise KeyboardInterrupt
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1
