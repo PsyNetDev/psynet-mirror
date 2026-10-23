@@ -295,7 +295,8 @@ def _default_ssh_app_name(server):
         if name in taken:
             raise click.BadParameter(
                 f"An app named {name} already exists on {server}. Type another "
-                f"name, or rerun with --app {name} --update to ship changes to it."
+                f"name, use --app {name} --update to ship changes to it, or run "
+                f"`psynet destroy ssh --app {name}` first."
             )
         return name
 

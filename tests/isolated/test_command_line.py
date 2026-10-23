@@ -305,7 +305,6 @@ class TestCommandLine(object):
         (tmp_path / "experiment.py").touch()
 
         def deploy(show_summary=True, **kwargs):
-            assert kwargs["app_name"] == "my-app"
             message = "Single recruitment link: https://my-app.example.org/ad?mode=live"
             if show_summary:
                 print(f"Dashboard password: secret\n{message}")
@@ -330,7 +329,7 @@ class TestCommandLine(object):
             "deploy", callback=deploy, params=[summary_option] if new_dallinger else []
         )
         with (
-            patch("psynet.command_line._pre_launch", return_value="my-app"),
+            patch("psynet.command_line._pre_launch"),
             patch("psynet.command_line._cleanup_exp_directory"),
             patch("psynet.command_line.reset_console"),
             patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
@@ -340,7 +339,9 @@ class TestCommandLine(object):
                 return_value={"host": {}},
             ),
         ):
-            result = CliRunner().invoke(psynet, ["deploy", "ssh", "--server", "host"])
+            result = CliRunner().invoke(
+                psynet, ["deploy", "ssh", "--server", "host", "--app", "my-app"]
+            )
 
         assert result.exit_code == 0, result.output
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
@@ -1812,12 +1813,12 @@ def test_performance_test_deploys_mark_the_app(capsys):
             performance_test_app=True,
         )
 
+    assert ctx.invoke.call_args.kwargs["app_name"] == "my-app"
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "debug_ssh_app": "true",
         "performance_test_app": "true",
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
-    assert ctx.invoke.call_args.kwargs["app_name"] == "my-app"
     assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
     assert "Ready:" not in capsys.readouterr().out
 
@@ -2208,7 +2209,8 @@ def test_ssh_launch_without_app_asks_for_a_name(
         assert "invalid characters" in output
         assert (
             "An app named my-study already exists on lab. Type another name, "
-            "or rerun with --app my-study --update to ship changes to it."
+            "use --app my-study --update to ship changes to it, or run "
+            "`psynet destroy ssh --app my-study` first."
         ) in output
         assert "at most 63 characters" in output
 
@@ -2249,20 +2251,37 @@ def test_ssh_pre_launch_names_and_records_an_app_without_app(monkeypatch, tmp_pa
     )
 
 
-def test_debug_ssh_launches_the_app_that_pre_launch_names():
-    from psynet.command_line import _debug_ssh
+@pytest.mark.parametrize(
+    "command, dallinger_name", [("debug", "sandbox"), ("deploy", "deploy")]
+)
+def test_ssh_launches_deploy_the_app_that_pre_launch_names(
+    monkeypatch, tmp_path, command, dallinger_name
+):
+    from psynet.command_line import psynet
 
-    ctx = Mock()
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "experiment.py").touch()
+    launch = Mock(return_value={})
     with (
-        patch("psynet.command_line._configure_dallinger_image_source"),
         patch("psynet.command_line._pre_launch", return_value="my-study"),
+        patch("psynet.command_line._configure_dallinger_image_source"),
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._print_ssh_ready"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        patch("psynet.command_line.reset_console"),
+        patch(
+            f"dallinger.command_line.docker_ssh.{dallinger_name}",
+            click.Command(dallinger_name, callback=launch),
+        ),
+        patch(
+            "dallinger.command_line.docker_ssh.get_configured_hosts",
+            return_value={"host": {}},
+        ),
     ):
-        _debug_ssh(ctx, app=None, server="lab", dns_host=None)
+        result = CliRunner().invoke(psynet, [command, "ssh", "--server", "host"])
 
-    assert ctx.invoke.call_args.kwargs["app_name"] == "my-study"
+    assert result.exit_code == 0, result.output
+    assert launch.call_args.kwargs["app_name"] == "my-study"
 
 
 def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
