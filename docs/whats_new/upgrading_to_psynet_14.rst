@@ -111,6 +111,11 @@ Move load-once classic libraries to ``js_dependencies`` /
 ``get_js_dependencies()``. Do not put per-page initialization there. See
 :doc:`/code/pages/custom_front_ends` (Managing JavaScript lifecycles).
 
+Timeline pages load SurveyJS only when they contain a ``SurveyJSControl``.
+A custom template that uses ``Survey`` without that control must list
+``/static/scripts/survey-jquery/survey.jquery.min.js`` in
+``js_dependencies``.
+
 5. Migrate per-page behavior
 ----------------------------
 
@@ -375,6 +380,10 @@ migration instructions in the error.
   ``default_translator = google_translate``, which raises an error;
   ``google_translate_json_path`` and ``google_translate_project_id`` are
   ignored. See :doc:`/code/participants/internationalization`.
+* The default translation model is ``gpt-6-luna`` instead of ``gpt-4o``, and
+  ``openai_default_temperature`` is no longer set. ``gpt-6-luna`` ignores
+  ``openai_default_temperature``; set it only together with a model that
+  accepts it, for example ``openai_default_model = gpt-4o``.
 
 13. Set up the experiment environment
 -------------------------------------
