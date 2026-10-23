@@ -173,6 +173,21 @@ def scaffold_managed_paths() -> frozenset[str]:
     return frozenset(paths)
 
 
+def is_stock_scaffold_path(relative_path: str) -> bool:
+    """Return whether a path is scaffold boilerplate rather than the author's own file.
+
+    That is, a scaffold-managed path, or a file under a managed directory,
+    except that files authors customize (such as ``config.txt``) only count
+    while they still match their template.
+    """
+    managed = scaffold_managed_paths()
+    if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
+        return _template_file_matches(relative_path)
+    return relative_path in managed or any(
+        relative_path.startswith(f"{path}/") for path in managed
+    )
+
+
 def scaffold_paths_required_for_local_run() -> frozenset[str]:
     """Return scaffold paths required before running an experiment locally.
 

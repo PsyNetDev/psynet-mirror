@@ -1,3 +1,4 @@
+import click
 import pytest
 
 from psynet import deployment_info
@@ -24,7 +25,7 @@ class TestCheckConsents:
 
         deployment_info.write(mode="live")
         with pytest.raises(
-            RuntimeError,
+            click.ClickException,
             match="It looks like your experiment is missing a consent page.",
         ):
             run_pre_checks(mode="live", **pre_check_args)

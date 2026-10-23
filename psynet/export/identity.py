@@ -123,14 +123,30 @@ def server_project_identity() -> dict:
     return {
         "experiment_label": experiment.label,
         "deployment_id": experiment.deployment_id,
-        "git_commit_sha": experiment.var.get("git_commit_sha", None),
-        "git_dirty": experiment.var.get("git_dirty", None),
-        "git_dirty_paths": experiment.var.get("git_dirty_paths", None),
+        **running_git_provenance(experiment),
         "psynet_version": psynet_version,
         "dallinger_version": dallinger_version,
         "export_format_version": EXPORT_FORMAT_VERSION,
         "incremental_asset_modes": list(_incremental_asset_modes(experiment)),
     }
+
+
+def running_git_provenance(experiment) -> dict:
+    """Return the Git commit and dirty state of the code this server runs.
+
+    A remote server's deployment info belongs to its image, which
+    ``--update`` rebuilds, so it is used there. The experiment variables,
+    recorded at launch, are used otherwise: a local export can find a
+    ``.deploy`` folder that is missing or left over from another run.
+    """
+    from psynet import deployment_info
+
+    keys = ("git_commit_sha", "git_dirty", "git_dirty_paths")
+    if deployment_info.is_available():
+        info = deployment_info.read_all()
+        if not info.get("is_local_deployment", True):
+            return {key: info.get(key) for key in keys}
+    return {key: experiment.var.get(key, None) for key in keys}
 
 
 def _incremental_asset_modes(experiment) -> tuple[str, ...]:
@@ -197,16 +213,17 @@ def describe_identity_problems(
         remote.git_commit_sha
         and local.git_commit_sha
         and remote.git_commit_sha != local.git_commit_sha
+        and not _directory_unchanged_since(remote.git_commit_sha)
     ):
         warnings.append(
-            f"The deployment was launched from Git commit "
+            f"The deployment runs code from Git commit "
             f"{remote.git_commit_sha[:12]}, but this directory is on "
             f"{local.git_commit_sha[:12]}. 'git diff --stat "
             f"{remote.git_commit_sha[:12]} HEAD -- .' lists the changed files."
         )
     if remote.git_dirty:
         warnings.append(
-            "The deployment was launched from a Git working tree with "
+            "The deployment runs code from a Git working tree with "
             "uncommitted changes" + _path_list_suffix(remote.git_dirty_paths)
         )
     if local.git_dirty:
@@ -227,6 +244,25 @@ def describe_identity_problems(
             )
 
     return blocking, warnings, notes
+
+
+def _directory_unchanged_since(commit_sha) -> bool:
+    """Return True if Git knows ``commit_sha`` and the current directory's files match it at ``HEAD``.
+
+    Commits elsewhere in the repository then don't make the deployment's
+    code differ from this directory's.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--quiet", commit_sha, "HEAD", "--", "."],
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
 
 
 def _path_list_suffix(paths) -> str:
@@ -304,7 +340,7 @@ def confirm_project_identity(
                 "(see the warnings above). Re-run with "
                 "--allow-project-mismatch to export anyway."
             )
-        from psynet.utils import user_confirms
+        from psynet.command_line import user_confirms
 
         def confirm(message):
             return user_confirms(message)
