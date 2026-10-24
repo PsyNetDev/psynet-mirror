@@ -29,8 +29,8 @@ Overview
 
    * **Major** (``*.breaking.md`` fragments) — from ``master`` as
      ``X.0.0`` on ``release-X.0``. ``master`` is already at ``X.0.0a0``:
-     the changelog merge-request check fails while breaking fragments are
-     pending and ``psynet_version`` names an older major.
+     the ``changelog-version`` pre-commit hook fails while breaking
+     fragments are pending and ``psynet_version`` names an older major.
    * **Minor** (backwards-compatible work from ``master``) — new
      ``release-MAJOR.MINOR`` branch.
    * **Patch** (bugfixes only) — existing ``release-MAJOR.MINOR``
