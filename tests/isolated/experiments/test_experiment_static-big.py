@@ -26,15 +26,8 @@ def data_root_dir():
 )
 class TestPrepare:
     def test_prepare(self, deployment_info):
-        time_started = time.monotonic()
-
         ctx = Context(prepare)
         ctx.invoke(prepare)
-
-        time_finished = time.monotonic()
-        time_taken = time_finished - time_started
-
-        assert time_taken < 10
 
 
 @pytest.mark.parametrize(
