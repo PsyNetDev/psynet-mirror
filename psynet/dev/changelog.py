@@ -17,8 +17,9 @@ Workflow summary:
   the docs' alpha label and git installs of `master` take their version from
   it. The `changelog-version` pre-commit hook checks this by running this file
   as a script, so it must import only the standard library; `next-alpha`
-  computes the version to set. The version is read from `psynet/version.py` in the current directory,
-  like the changelog, rather than from the installed package.
+  computes the version to set. The version is read from `psynet/version.py`
+  in the current directory, like the changelog, rather than from the
+  installed package.
 """
 
 import re
@@ -231,6 +232,7 @@ def _current_version() -> str:
 
 def _write_version(version: str) -> None:
     """Set the version in `psynet/version.py` and the `[project]` table of `pyproject.toml`."""
+    updates = {}
     for path, name in [(VERSION_PATH, "psynet_version"), (PYPROJECT_PATH, "version")]:
         text = path.read_text(encoding="utf-8")
         updated, count = re.subn(
@@ -238,6 +240,8 @@ def _write_version(version: str) -> None:
         )
         if count != 1:
             raise ValueError(f"Could not find the version in {path}.")
+        updates[path] = updated
+    for path, updated in updates.items():
         path.write_text(updated, encoding="utf-8")
 
 

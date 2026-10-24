@@ -334,7 +334,7 @@ def test_check_mr_command_allows_changelog_with_only_releases(changelog, monkeyp
     ],
 )
 def test_version_follows_pending_fragments(
-    changelog, monkeypatch, version, fragment, next_alpha, fails
+    changelog, version, fragment, next_alpha, fails
 ):
     """Counted from the last stable release (13.1.1), never below the current version."""
     (changelog.FRAGMENTS_DIR / f"20260516-x.{fragment}.md").write_text("Entry.\n")
