@@ -152,13 +152,9 @@ Set the next development version in both version files:
 psynet dev changelog next-alpha --write
 ```
 
-It counts from the release that the merge-back added to `CHANGELOG.md`.
-Usually that gives the next minor alpha (`13.2.0` → `13.3.0a0`). If
-`changelog.d/` still holds breaking fragments that missed the release, it
-gives the next major alpha instead (`14.0.0a0`). Use the printed version
-in the commit message, MR title and description below. The
-`changelog-version` pre-commit hook, which also runs in the `pre_commit`
-CI job, rejects a version that names too low a major.
+It prints the next minor alpha (`13.2.0` → `13.3.0a0`), or the next major
+alpha if breaking fragments missed the release. Use that version in the
+commit message, MR title and description below.
 
 New changes on `master` should be recorded as fragments in `changelog.d/`.
 

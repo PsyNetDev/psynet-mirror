@@ -317,72 +317,51 @@ def test_check_mr_command_allows_changelog_with_only_releases(changelog, monkeyp
 
 
 @pytest.mark.parametrize(
-    ("version", "passes"),
-    [("13.2.0a0", False), ("13.1.2", False), ("14.0.0a0", True), ("14.0.0rc1", True)],
-)
-def test_check_version_requires_major_bump_for_breaking_fragments(
-    changelog, monkeypatch, version, passes
-):
-    fragment = changelog.FRAGMENTS_DIR / "20260516-drop-api.breaking.md"
-    fragment.write_text("Removed the old API.\n", encoding="utf-8")
-    monkeypatch.setattr(changelog, "psynet_version", version)
-
-    if passes:
-        assert changelog.check_version_command() == 0
-    else:
-        with pytest.raises(ValueError, match=r"Set the version to 14\.0\.0a0"):
-            changelog.check_version_command()
-
-
-@pytest.mark.parametrize(
-    ("current", "fragment", "expected"),
+    ("version", "fragment", "next_alpha", "fails"),
     [
-        ("13.1.1", "x.fixed.md", "13.2.0a0"),
-        ("13.1.1", "x.breaking.md", "14.0.0a0"),
-        ("14.0.0a0", "x.fixed.md", "14.0.0a0"),
+        ("13.1.1", "fixed", "13.2.0a0", False),
+        ("13.2.0a0", "breaking", "14.0.0a0", True),
+        ("14.0.0a0", "breaking", "14.0.0a0", False),
+        ("14.0.0a0", "fixed", "14.0.0a0", False),
+        ("14.0.0rc1", "breaking", "14.0.0rc1", False),
     ],
 )
-def test_next_alpha_version_follows_pending_fragments(
-    changelog, monkeypatch, current, fragment, expected
+def test_version_follows_pending_fragments(
+    changelog, monkeypatch, version, fragment, next_alpha, fails
 ):
     """Counted from the last stable release (13.1.1), never below the current version."""
-    (changelog.FRAGMENTS_DIR / f"20260516-{fragment}").write_text(
-        "Entry.\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(changelog, "psynet_version", current)
+    (changelog.FRAGMENTS_DIR / f"20260516-x.{fragment}.md").write_text("Entry.\n")
+    monkeypatch.setattr(changelog, "psynet_version", version)
 
-    assert changelog.next_alpha_version() == expected
+    assert changelog.next_alpha_version() == next_alpha
+    assert bool(changelog.breaking_version_problem()) == fails
 
 
 def test_next_alpha_write_sets_both_version_files(changelog, monkeypatch, tmp_path):
     version_path = tmp_path / "version.py"
     pyproject_path = tmp_path / "pyproject.toml"
-    version_path.write_text('psynet_version = "13.1.1"\n', encoding="utf-8")
+    version_path.write_text('psynet_version = "13.1.1"\n')
     pyproject_path.write_text(
-        '[project]\nname = "psynet"\nversion = "13.1.1"\n\n[tool.x]\nversion = "1"\n',
-        encoding="utf-8",
+        '[project]\nversion = "13.1.1"\n[tool.x]\nversion = "1"\n'
     )
     monkeypatch.setattr(changelog, "VERSION_PATH", version_path)
     monkeypatch.setattr(changelog, "PYPROJECT_PATH", pyproject_path)
     monkeypatch.setattr(changelog, "psynet_version", "13.1.1")
 
-    assert changelog.next_alpha_command(write=True) == 0
+    changelog.next_alpha_command(write=True)
 
     assert version_path.read_text() == 'psynet_version = "13.2.0a0"\n'
-    assert (
-        'version = "13.2.0a0"\n\n[tool.x]\nversion = "1"' in pyproject_path.read_text()
-    )
+    assert pyproject_path.read_text().count('version = "13.2.0a0"') == 1
 
 
-def test_new_breaking_fragment_warns_when_version_is_not_a_major_bump(
+def test_new_breaking_fragment_warns_when_version_is_too_low(
     changelog, monkeypatch, capsys
 ):
     monkeypatch.setattr(changelog, "psynet_version", "13.2.0a0")
 
-    assert changelog.new_command("breaking", "Drop the old API") == 0
+    changelog.new_command("breaking", "Drop the old API")
 
-    assert "Warning:" in capsys.readouterr().out
-    assert list(changelog.FRAGMENTS_DIR.glob("*.breaking.md"))
+    assert "next release is 14.0.0" in capsys.readouterr().out
 
 
 def test_check_mr_command_rejects_changelog_edit_even_with_fragment(

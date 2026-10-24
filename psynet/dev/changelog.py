@@ -12,16 +12,11 @@ Workflow summary:
   changelog section.
 - Stable releases also fold matching beta/RC sections into the final release
   section.
-- While breaking fragments are pending, `psynet_version` must already name a
-  higher major version than the last stable release in `CHANGELOG.md` (for
-  example `14.0.0a0` after `13.3.0`). The alpha docs label and git installs of
-  `master` take their version from there. A pre-commit hook runs
-  `python -m psynet.dev.changelog` to enforce this on every commit and in the
-  `pre_commit` CI job, which has no branch exemptions. `next-alpha` computes
-  the version `master` should carry and can write it.
-
-Running this module directly needs only `click` (via `psynet.version`), so the
-pre-commit hook works without PsyNet's other dependencies.
+- While breaking fragments are pending, `psynet_version` must name a higher
+  major than the last stable release (e.g. `14.0.0a0` after `13.3.0`), because
+  the docs' alpha label and git installs of `master` take their version from
+  it. The `changelog-version` pre-commit hook checks this by running this module,
+  which needs only `click`; `next-alpha` computes the version to set.
 """
 
 import re
@@ -107,10 +102,8 @@ def new_command(category: str, description: str) -> int:
 
     path.write_text(f"{description.strip()}\n", encoding="utf-8")
     print(path)
-    if category == "breaking":
-        problem = breaking_version_problem()
-        if problem:
-            print(f"Warning: {problem}")
+    if category == "breaking" and (problem := breaking_version_problem()):
+        print(f"Warning: {problem}")
     return 0
 
 
@@ -180,16 +173,8 @@ def check_mr_command(base: str, head: str) -> int:
     return 0
 
 
-def check_version_command() -> int:
-    """Fail if pending breaking fragments need a higher major version than `psynet_version`."""
-    problem = breaking_version_problem()
-    if problem:
-        raise ValueError(problem)
-    return 0
-
-
 def next_alpha_command(write: bool) -> int:
-    """Print the development version `master` should carry, and optionally set it."""
+    """Print the development version `master` should carry, and set it if `write`."""
     version = next_alpha_version()
     if not write:
         print(version)
@@ -204,43 +189,35 @@ def next_alpha_command(write: bool) -> int:
 def next_alpha_version() -> str:
     """Return the next major alpha if breaking fragments are pending, else the next minor alpha.
 
-    Both are counted from the last stable release in `CHANGELOG.md`, and the
-    result is never lower than the current `psynet_version`.
+    Both count from the last stable release in `CHANGELOG.md`, and the result
+    is never lower than `psynet_version`.
     """
-    last_stable = _last_stable_version()
-    if last_stable is None:
-        raise ValueError(f"{CHANGELOG_PATH} has no stable release.")
-    major, minor = _release_key(last_stable)[:2]
+    major, minor = _release_key(_last_stable_version())[:2]
     if _breaking_fragments():
         candidate = f"{major + 1}.0.0a0"
     else:
         candidate = f"{major}.{minor + 1}.0a0"
-    if _release_key(psynet_version) > _release_key(candidate):
-        return psynet_version
-    return candidate
+    return max(psynet_version, candidate, key=_release_key)
 
 
 def breaking_version_problem() -> str | None:
     """Explain why `psynet_version` is too low for pending breaking fragments, if it is."""
     breaking = _breaking_fragments()
-    last_stable = _last_stable_version()
-    if not breaking or last_stable is None:
+    if not breaking:
         return None
-    last_major = _major_version(last_stable)
-    if _major_version(psynet_version) > last_major:
+    expected = next_alpha_version()
+    if _release_key(psynet_version) >= _release_key(expected):
         return None
     return (
         f"{FRAGMENTS_DIR} has {len(breaking)} breaking fragment(s), so the next "
-        f"release is {last_major + 1}.0.0, but psynet_version is {psynet_version} "
-        f"(last stable release: {last_stable}). Set the version to "
-        f"{last_major + 1}.0.0a0 with: psynet dev changelog next-alpha --write"
+        f"release is {expected.removesuffix('a0')}, but psynet_version is "
+        f"{psynet_version} (last stable release: {_last_stable_version()}). "
+        f"Set it to {expected} with: psynet dev changelog next-alpha --write"
     )
 
 
 def _breaking_fragments() -> list[Path]:
-    return [
-        path for path in list_fragment_paths() if path.name.endswith(".breaking.md")
-    ]
+    return [p for p in list_fragment_paths() if p.name.endswith(".breaking.md")]
 
 
 def _write_version(version: str) -> None:
@@ -255,30 +232,18 @@ def _write_version(version: str) -> None:
         path.write_text(updated, encoding="utf-8")
 
 
-def _last_stable_version() -> str | None:
-    """Return the highest stable release version in `CHANGELOG.md`, if any."""
-    if not CHANGELOG_PATH.exists():
-        return None
-    changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
-    stable = [
-        match.group("version")
-        for match in RELEASE_HEADING_RE.finditer(changelog)
-        if classify_release(match.group("version")) == "Release"
-    ]
+def _last_stable_version() -> str:
+    """Return the highest stable release version in `CHANGELOG.md`."""
+    versions = RELEASE_HEADING_RE.findall(CHANGELOG_PATH.read_text(encoding="utf-8"))
+    stable = [v for v in versions if classify_release(v) == "Release"]
     if not stable:
-        return None
+        raise ValueError(f"{CHANGELOG_PATH} has no stable release heading.")
     return max(stable, key=_release_key)
 
 
-def _major_version(version: str) -> int:
-    return _release_key(version)[0]
-
-
 def _release_key(version: str) -> tuple[int, ...]:
-    match = re.match(r"^(\d+(?:\.\d+)*)", version)
-    if match is None:
-        raise ValueError(f"Cannot parse version {version!r}.")
-    return tuple(int(part) for part in match.group(1).split("."))
+    """Return the numeric part of a version, e.g. `(14, 0, 0)` for `14.0.0rc1`."""
+    return tuple(int(part) for part in re.match(r"[\d.]+", version)[0].split("."))
 
 
 # Fragment loading and rendering helpers
@@ -564,6 +529,6 @@ def insert_release_section(changelog: str, release_section: str) -> str:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(check_version_command())
-    except ValueError as exc:
+        raise SystemExit(breaking_version_problem())
+    except (OSError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
