@@ -16,10 +16,17 @@ def changelog(tmp_path, monkeypatch):
     fragments_dir.mkdir()
     changelog_path = tmp_path / "CHANGELOG.md"
     changelog_path.write_text(BASE_CHANGELOG, encoding="utf-8")
+    version_path = tmp_path / "version.py"
+    version_path.write_text('psynet_version = "13.1.1"\n', encoding="utf-8")
 
     monkeypatch.setattr(changelog_module, "FRAGMENTS_DIR", fragments_dir)
     monkeypatch.setattr(changelog_module, "CHANGELOG_PATH", changelog_path)
+    monkeypatch.setattr(changelog_module, "VERSION_PATH", version_path)
     return changelog_module
+
+
+def set_version(changelog, version):
+    changelog.VERSION_PATH.write_text(f'psynet_version = "{version}"\n')
 
 
 def read_changelog(changelog):
@@ -331,33 +338,27 @@ def test_version_follows_pending_fragments(
 ):
     """Counted from the last stable release (13.1.1), never below the current version."""
     (changelog.FRAGMENTS_DIR / f"20260516-x.{fragment}.md").write_text("Entry.\n")
-    monkeypatch.setattr(changelog, "psynet_version", version)
+    set_version(changelog, version)
 
     assert changelog.next_alpha_version() == next_alpha
     assert bool(changelog.breaking_version_problem()) == fails
 
 
 def test_next_alpha_write_sets_both_version_files(changelog, monkeypatch, tmp_path):
-    version_path = tmp_path / "version.py"
     pyproject_path = tmp_path / "pyproject.toml"
-    version_path.write_text('psynet_version = "13.1.1"\n')
     pyproject_path.write_text(
         '[project]\nversion = "13.1.1"\n[tool.x]\nversion = "1"\n'
     )
-    monkeypatch.setattr(changelog, "VERSION_PATH", version_path)
     monkeypatch.setattr(changelog, "PYPROJECT_PATH", pyproject_path)
-    monkeypatch.setattr(changelog, "psynet_version", "13.1.1")
 
     changelog.next_alpha_command(write=True)
 
-    assert version_path.read_text() == 'psynet_version = "13.2.0a0"\n'
+    assert changelog.VERSION_PATH.read_text() == 'psynet_version = "13.2.0a0"\n'
     assert pyproject_path.read_text().count('version = "13.2.0a0"') == 1
 
 
-def test_new_breaking_fragment_warns_when_version_is_too_low(
-    changelog, monkeypatch, capsys
-):
-    monkeypatch.setattr(changelog, "psynet_version", "13.2.0a0")
+def test_new_breaking_fragment_warns_when_version_is_too_low(changelog, capsys):
+    set_version(changelog, "13.2.0a0")
 
     changelog.new_command("breaking", "Drop the old API")
 

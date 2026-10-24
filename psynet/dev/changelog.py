@@ -15,8 +15,10 @@ Workflow summary:
 - While breaking fragments are pending, `psynet_version` must name a higher
   major than the last stable release (e.g. `14.0.0a0` after `13.3.0`), because
   the docs' alpha label and git installs of `master` take their version from
-  it. The `changelog-version` pre-commit hook checks this by running this module,
-  which needs only `click`; `next-alpha` computes the version to set.
+  it. The `changelog-version` pre-commit hook checks this by running this file
+  as a script, so it must import only the standard library; `next-alpha`
+  computes the version to set. The version is read from `psynet/version.py` in the current directory,
+  like the changelog, rather than from the installed package.
 """
 
 import re
@@ -26,8 +28,6 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-
-from psynet.version import psynet_version
 
 FRAGMENTS_DIR = Path("changelog.d")
 CHANGELOG_PATH = Path("CHANGELOG.md")
@@ -178,7 +178,7 @@ def next_alpha_command(write: bool) -> int:
     version = next_alpha_version()
     if not write:
         print(version)
-    elif version == psynet_version:
+    elif version == _current_version():
         print(f"psynet_version is already {version}.")
     else:
         _write_version(version)
@@ -197,7 +197,7 @@ def next_alpha_version() -> str:
         candidate = f"{major + 1}.0.0a0"
     else:
         candidate = f"{major}.{minor + 1}.0a0"
-    return max(psynet_version, candidate, key=_release_key)
+    return max(_current_version(), candidate, key=_release_key)
 
 
 def breaking_version_problem() -> str | None:
@@ -205,19 +205,28 @@ def breaking_version_problem() -> str | None:
     breaking = _breaking_fragments()
     if not breaking:
         return None
+    current = _current_version()
     expected = next_alpha_version()
-    if _release_key(psynet_version) >= _release_key(expected):
+    if _release_key(current) >= _release_key(expected):
         return None
     return (
         f"{FRAGMENTS_DIR} has {len(breaking)} breaking fragment(s), so the next "
         f"release is {expected.removesuffix('a0')}, but psynet_version is "
-        f"{psynet_version} (last stable release: {_last_stable_version()}). "
+        f"{current} (last stable release: {_last_stable_version()}). "
         f"Set it to {expected} with: psynet dev changelog next-alpha --write"
     )
 
 
 def _breaking_fragments() -> list[Path]:
     return [p for p in list_fragment_paths() if p.name.endswith(".breaking.md")]
+
+
+def _current_version() -> str:
+    """Return `psynet_version` from `psynet/version.py` in the current directory."""
+    text = VERSION_PATH.read_text(encoding="utf-8")
+    if not (match := re.search(r'^psynet_version = "([^"]+)"', text, flags=re.M)):
+        raise ValueError(f"Could not find the version in {VERSION_PATH}.")
+    return match[1]
 
 
 def _write_version(version: str) -> None:
