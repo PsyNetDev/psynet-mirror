@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from flask import Flask
 from jinja2 import DictLoader
@@ -14,6 +16,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     PushButtonControl,
     RadioButtonControl,
     RatingScale,
+    TimedPushButtonControl,
 )
 
 # from importlib import resources
@@ -485,6 +488,32 @@ def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, 
 def test_option_controls_reject_choices_with_the_same_text():
     with pytest.raises(ValueError, match="same text"):
         RadioButtonControl([1, "1"])
+
+
+@pytest.mark.parametrize(
+    "control, answer, response",
+    [
+        (PushButtonControl([1, 2]), 2, None),
+        (
+            TimedPushButtonControl([1, 2]),
+            [0.5],  # Subclasses may save press times instead of the event log.
+            SimpleNamespace(
+                metadata={
+                    "event_log": [
+                        {"eventType": "trialStart", "info": None},
+                        {"eventType": "pushButtonClicked", "info": {"buttonId": "2"}},
+                    ]
+                }
+            ),
+        ),
+    ],
+)
+def test_push_button_visualization_highlights_a_numeric_answer(
+    control, answer, response
+):
+    html = control.visualize_response(answer=answer, response=response, trial=None)
+    assert html.count("btn-success") == 1
+    assert html.index("btn-success") > html.index('id="1"')
 
 
 def test_modular_page_accepts_page_css_list():
