@@ -84,7 +84,19 @@ def test_sigterm_stops_running_tests_and_closes_the_slots(tmp_path):
     import psutil
 
     pid_file, closed_file = tmp_path / "test.pid", tmp_path / "closed"
-    test = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    stopped_file = tmp_path / "stopped"
+    # The test takes a second to stop, so the marker is only written if the
+    # runner waits for it instead of killing it.
+    test = (
+        "import os, signal, sys, time\n"
+        "def stop(*args):\n"
+        "    time.sleep(1)\n"
+        f"    open({str(stopped_file)!r}, 'w').close()\n"
+        "    sys.exit(1)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        "time.sleep(60)\n"
+    )
     script = (
         "import os, pathlib, sys\n"
         "from psynet.dev import ci_tests\n"
@@ -110,6 +122,7 @@ def test_sigterm_stops_running_tests_and_closes_the_slots(tmp_path):
 
         runner.send_signal(signal.SIGTERM)
         assert runner.wait(timeout=30) == 128 + signal.SIGTERM
+        assert stopped_file.exists()
         assert not psutil.pid_exists(pids[1])
         assert closed_file.exists()
     finally:
