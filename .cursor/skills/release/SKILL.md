@@ -53,10 +53,11 @@ Rules, in order:
 2. **Major** if that tree has any committed `*.breaking.md` fragments.
    Version is the next major of the last final tag (`v13.3.0` →
    `14.0.0`), branch `release-14.0`, first RC `14.0.0rc1`. Master's
-   alpha should already be `14.0.0a0`: the changelog MR check fails
-   while breaking fragments are pending and the alpha names an older
-   major. If it still says `13.4.0a0`, bump `master` to `14.0.0a0`
-   before creating the release branch.
+   alpha should already be `14.0.0a0`: the `changelog-version`
+   pre-commit hook fails while breaking fragments are pending and the
+   alpha names an older major. If it still says `13.4.0a0`, run
+   `psynet dev changelog next-alpha --write` on `master` before
+   creating the release branch.
 3. **Minor** otherwise, when releasing from `master`. Version matches
    the current alpha's `MAJOR.MINOR` (`13.4.0a0` → `13.4.0`), branch
    `release-13.4`, first RC `13.4.0rc1`.
