@@ -383,6 +383,42 @@ def changelog_check_mr(base, head):
         raise click.ClickException(str(exc)) from exc
 
 
+@changelog.command("check-version")
+def changelog_check_version():
+    """Check that psynet_version names a new major while breaking fragments are pending."""
+    assert_changelog_available()
+    try:
+        changelog_module.check_version_command()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("psynet_version matches the pending changelog fragments.")
+
+
+@changelog.command("next-alpha")
+@click.option(
+    "--write",
+    is_flag=True,
+    help="Set the version in psynet/version.py and pyproject.toml.",
+)
+def changelog_next_alpha(write):
+    """Print the development version master should carry.
+
+    That is the next major alpha (for example 15.0.0a0) if changelog.d holds
+    breaking fragments, otherwise the next minor alpha (for example 14.1.0a0),
+    counted from the last stable release in CHANGELOG.md. It is never lower
+    than the current version.
+
+    Example:
+
+        psynet dev changelog next-alpha --write
+    """
+    assert_changelog_available()
+    try:
+        changelog_module.next_alpha_command(write)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @changelog.command("new")
 @click.argument("category", type=click.Choice(CHANGELOG_CATEGORIES), metavar="CATEGORY")
 @click.argument("description")

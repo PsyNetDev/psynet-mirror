@@ -15,7 +15,13 @@ Workflow summary:
 - While breaking fragments are pending, `psynet_version` must already name a
   higher major version than the last stable release in `CHANGELOG.md` (for
   example `14.0.0a0` after `13.3.0`). The alpha docs label and git installs of
-  `master` take their version from there.
+  `master` take their version from there. A pre-commit hook runs
+  `python -m psynet.dev.changelog` to enforce this on every commit and in the
+  `pre_commit` CI job, which has no branch exemptions. `next-alpha` computes
+  the version `master` should carry and can write it.
+
+Running this module directly needs only `click` (via `psynet.version`), so the
+pre-commit hook works without PsyNet's other dependencies.
 """
 
 import re
@@ -30,6 +36,8 @@ from psynet.version import psynet_version
 
 FRAGMENTS_DIR = Path("changelog.d")
 CHANGELOG_PATH = Path("CHANGELOG.md")
+VERSION_PATH = Path("psynet/version.py")
+PYPROJECT_PATH = Path("pyproject.toml")
 MAX_SLUG_LENGTH = 60
 
 SECTION_ORDER = [
@@ -168,18 +176,53 @@ def check_mr_command(base: str, head: str) -> int:
         )
 
     load_fragments()
-    problem = breaking_version_problem()
-    if problem:
-        raise ValueError(problem)
     print("Changelog MR check passed.")
     return 0
 
 
+def check_version_command() -> int:
+    """Fail if pending breaking fragments need a higher major version than `psynet_version`."""
+    problem = breaking_version_problem()
+    if problem:
+        raise ValueError(problem)
+    return 0
+
+
+def next_alpha_command(write: bool) -> int:
+    """Print the development version `master` should carry, and optionally set it."""
+    version = next_alpha_version()
+    if not write:
+        print(version)
+    elif version == psynet_version:
+        print(f"psynet_version is already {version}.")
+    else:
+        _write_version(version)
+        print(f"Set {VERSION_PATH} and {PYPROJECT_PATH} to {version}.")
+    return 0
+
+
+def next_alpha_version() -> str:
+    """Return the next major alpha if breaking fragments are pending, else the next minor alpha.
+
+    Both are counted from the last stable release in `CHANGELOG.md`, and the
+    result is never lower than the current `psynet_version`.
+    """
+    last_stable = _last_stable_version()
+    if last_stable is None:
+        raise ValueError(f"{CHANGELOG_PATH} has no stable release.")
+    major, minor = _release_key(last_stable)[:2]
+    if _breaking_fragments():
+        candidate = f"{major + 1}.0.0a0"
+    else:
+        candidate = f"{major}.{minor + 1}.0a0"
+    if _release_key(psynet_version) > _release_key(candidate):
+        return psynet_version
+    return candidate
+
+
 def breaking_version_problem() -> str | None:
     """Explain why `psynet_version` is too low for pending breaking fragments, if it is."""
-    breaking = [
-        path for path in list_fragment_paths() if path.name.endswith(".breaking.md")
-    ]
+    breaking = _breaking_fragments()
     last_stable = _last_stable_version()
     if not breaking or last_stable is None:
         return None
@@ -189,9 +232,27 @@ def breaking_version_problem() -> str | None:
     return (
         f"{FRAGMENTS_DIR} has {len(breaking)} breaking fragment(s), so the next "
         f"release is {last_major + 1}.0.0, but psynet_version is {psynet_version} "
-        f"(last stable release: {last_stable}). Set the version in "
-        f"psynet/version.py and pyproject.toml to {last_major + 1}.0.0a0."
+        f"(last stable release: {last_stable}). Set the version to "
+        f"{last_major + 1}.0.0a0 with: psynet dev changelog next-alpha --write"
     )
+
+
+def _breaking_fragments() -> list[Path]:
+    return [
+        path for path in list_fragment_paths() if path.name.endswith(".breaking.md")
+    ]
+
+
+def _write_version(version: str) -> None:
+    """Set the version in `psynet/version.py` and the `[project]` table of `pyproject.toml`."""
+    for path, name in [(VERSION_PATH, "psynet_version"), (PYPROJECT_PATH, "version")]:
+        text = path.read_text(encoding="utf-8")
+        updated, count = re.subn(
+            rf'^{name} = "[^"]+"', f'{name} = "{version}"', text, count=1, flags=re.M
+        )
+        if count != 1:
+            raise ValueError(f"Could not find the version in {path}.")
+        path.write_text(updated, encoding="utf-8")
 
 
 def _last_stable_version() -> str | None:
@@ -499,3 +560,10 @@ def insert_release_section(changelog: str, release_section: str) -> str:
     suffix = changelog[insertion_point:].lstrip("\n")
     section = release_section.strip()
     return f"{prefix}\n\n{section}\n\n{suffix}"
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(check_version_command())
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc

@@ -9,3 +9,12 @@ repos:
       - id: ruff-format
         types: [python]
         files: ^(tests|psynet|demos|docs)/
+  - repo: local
+    hooks:
+      - id: changelog-version
+        name: version matches pending breaking changes
+        language: python
+        additional_dependencies: [click]
+        entry: python -m psynet.dev.changelog
+        pass_filenames: false
+        files: ^(changelog\.d/|CHANGELOG\.md$|psynet/version\.py$|pyproject\.toml$)

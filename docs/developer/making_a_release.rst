@@ -60,7 +60,9 @@ Overview
    ``psynet dev release announce X.Y.Z --summary-file highlights.md --channel psynet-release-test --dry-run``.
 
 4. For minor releases, merge the release branch back into ``master`` (merge
-   commit, no squash) and bump ``master`` to the next alpha version.
+   commit, no squash) and bump ``master`` to the next alpha version with
+   ``psynet dev changelog next-alpha --write``. This gives the next major
+   alpha if breaking fragments are still pending.
 
 Externally visible or irreversible steps (pushing tags, PyPI uploads, GitLab
 releases, Slack posts) require explicit approval from the human release
