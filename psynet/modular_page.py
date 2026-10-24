@@ -955,8 +955,11 @@ class OptionControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
+        """Answer with a random choice, as a string like the browser submits."""
+        # Browsers submit the choice from its HTML id or value attribute,
+        # so the raw answer is a string even when ``choices`` are numbers.
         return BotResponse(
-            raw_answer=random.choice(self.choices),
+            raw_answer=str(random.choice(self.choices)),
             metadata=self.metadata,
         )
 
@@ -1067,6 +1070,13 @@ class CheckboxControl(OptionControl):
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def get_bot_response(self, experiment, bot, page, prompt):
+        """Tick one random checkbox, submitting the list of ids the browser sends."""
+        return BotResponse(
+            raw_answer=[str(random.choice(self.choices))],
+            metadata=self.metadata,
+        )
 
 
 class Checkbox:

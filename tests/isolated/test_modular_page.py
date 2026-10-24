@@ -5,11 +5,14 @@ from markupsafe import Markup
 
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     AudioMeterControl,
+    CheckboxControl,
     Control,
+    DropdownControl,
     ModularPage,
     MusicNotationPrompt,
     Prompt,
     PushButtonControl,
+    RadioButtonControl,
     RatingScale,
 )
 
@@ -444,6 +447,22 @@ def test_unset_and_explicit_none_bot_responses():
     )
     response = explicit_none.call__get_bot_response(experiment=None, bot=None)
     assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
+
+
+@pytest.mark.parametrize(
+    "control, expected",
+    [
+        (PushButtonControl([3]), "3"),
+        (DropdownControl([3]), "3"),
+        (RadioButtonControl([3]), "3"),
+        (CheckboxControl([3]), ["3"]),
+    ],
+)
+def test_option_control_bots_answer_like_the_browser(control, expected):
+    """Bots submit numeric choices as strings, as a browser does."""
+    page = ModularPage("test", "Hi!", control)
+    response = page.call__get_bot_response(experiment=None, bot=None)
+    assert response.raw_answer == expected
 
 
 def test_modular_page_accepts_page_css_list():
