@@ -1,0 +1,1 @@
+Added `--yes` to `psynet debug ssh` and `psynet deploy ssh`, which skips the confirmation of `--update`. When `--update` has no terminal or piped answer to read, it now stops with an error asking for `--yes` instead of a bare `Aborted!`.

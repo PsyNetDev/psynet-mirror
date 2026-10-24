@@ -5,7 +5,12 @@ import pytest
 from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
 
 from psynet import deployment_info
-from psynet.server_logs import server_dns_host, server_ingress, where_to_read_logs
+from psynet.server_logs import (
+    logs_command,
+    server_dns_host,
+    server_ingress,
+    where_to_read_logs,
+)
 
 CLOUDFLARE_HOST = {"host": "lab.example:2222", "default_ingress": "cloudflare"}
 COMPOSE_LOGS = '"docker compose -f ~/dallinger/study/docker-compose.yml logs -f"'
@@ -138,3 +143,22 @@ def test_where_to_read_logs_follows_the_app_ingress(
         deployment_info.write_all({"server": "lab", **record})
 
     assert where_to_read_logs("lab", "study") == expected
+
+
+@pytest.mark.parametrize(
+    "user, destination",
+    [
+        ("alice", "alice@lab.org"),
+        ("a@uni.org", "-l a@uni.org lab.org"),
+        (None, "lab.org"),
+    ],
+)
+def test_logs_command_names_the_login(monkeypatch, user, destination):
+    def no_pem():
+        raise FileNotFoundError
+
+    monkeypatch.setattr("dallinger.command_line.utils.get_server_pem_path", no_pem)
+
+    assert logs_command({"host": "lab.org", "user": user}, "app") == (
+        f'ssh {destination} "docker compose -f ~/dallinger/app/docker-compose.yml logs -f"'
+    )

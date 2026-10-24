@@ -25,7 +25,7 @@ fi
 
 # Each item runs in its own pytest process; see psynet/dev/ci_tests.py for how
 # shards are balanced and how parallel slots are isolated from each other.
-psynet dev ci run-tests \
+exec psynet dev ci run-tests \
   --scope "$TEST_SCOPE" \
   --node-total "$CI_NODE_TOTAL" \
   --node-index "$CI_NODE_INDEX" \

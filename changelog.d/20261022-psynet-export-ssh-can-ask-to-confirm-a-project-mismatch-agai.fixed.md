@@ -1,0 +1,1 @@
+`psynet export ssh` (and other remote exports) run in a terminal can ask again whether to export a deployment whose code doesn't match the experiment directory exactly. Previously it stopped with `ImportError: cannot import name 'user_confirms'`.
