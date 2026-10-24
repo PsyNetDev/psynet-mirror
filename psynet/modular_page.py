@@ -917,6 +917,9 @@ class OptionControl(Control):
     """
     The OptionControl class provides four kinds of controls for the participant in its subclasses
     ``CheckboxControl``, ``DropdownControl``, ``PushButtonControl``, and ``RadioButtonControl``.
+
+    The saved answer is the element of ``choices`` that the participant picked,
+    with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
     """
 
     def __init__(
@@ -934,6 +937,34 @@ class OptionControl(Control):
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
+        self._check_choices_have_distinct_text()
+
+    def _check_choices_have_distinct_text(self):
+        # The browser submits a choice as the text of its HTML id or value,
+        # so choices with the same text could not be told apart.
+        seen = {}
+        for choice in self.choices:
+            other = seen.setdefault(str(choice), choice)
+            if other != choice:
+                raise ValueError(
+                    f"Choices {other!r} and {choice!r} have the same text, "
+                    "so their answers cannot be told apart."
+                )
+
+    def _choice_for_text(self, text):
+        if isinstance(text, str):
+            for choice in self.choices:
+                if str(choice) == text:
+                    return choice
+        return text
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the choice named by the browser's string answer.
+
+        Answers that name no choice, such as an empty selection or free text,
+        are returned unchanged.
+        """
+        return self._choice_for_text(raw_answer)
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -1070,6 +1101,12 @@ class CheckboxControl(OptionControl):
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the ticked choices named by the browser's list of ids."""
+        if not isinstance(raw_answer, list):
+            return raw_answer
+        return [self._choice_for_text(text) for text in raw_answer]
 
     def get_bot_response(self, experiment, bot, page, prompt):
         """Tick one random checkbox, submitting the list of ids the browser sends."""
