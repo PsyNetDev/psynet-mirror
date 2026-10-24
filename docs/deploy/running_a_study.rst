@@ -74,8 +74,10 @@ Check the code and dependencies
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
-- ``docker_image_base_name`` must be set in ``config.txt`` or
-  ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`).
+- Heroku deploys with ``--docker`` push the image to a registry, so
+  ``docker_image_base_name`` must be set in ``config.txt`` or
+  ``~/.dallingerconfig``. SSH deploys don't need it (see
+  :doc:`/deploy/setting_up_a_server`).
 
 Consent
 ^^^^^^^

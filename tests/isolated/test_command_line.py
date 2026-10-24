@@ -63,6 +63,14 @@ def stub_scaffold_constraints_generation(monkeypatch):
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
 
 
+@pytest.fixture
+def fresh_dallinger_config(tmp_path, monkeypatch):
+    """Give the test its own Dallinger config, loaded from ``tmp_path``."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dallinger.config.config", None)
+
+
 def _invoke_stubbed_ssh_command(dallinger_command, psynet_command, *args):
     """Run ``psynet <psynet_command> ssh`` for ``my-app`` on ``host`` without a server.
 
@@ -71,7 +79,9 @@ def _invoke_stubbed_ssh_command(dallinger_command, psynet_command, *args):
     dallinger_name = "deploy" if psynet_command == "deploy" else "sandbox"
     with (
         patch("psynet.command_line._pre_launch") as pre_launch,
+        patch("psynet.command_line._default_image_base_name"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        patch("psynet.command_line.reset_console"),
         patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
         patch(f"dallinger.command_line.docker_ssh.{dallinger_name}", dallinger_command),
         patch(
@@ -283,7 +293,7 @@ class TestCommandLine(object):
         assert "DALLINGER_SOURCE" not in os.environ
         assert os.environ["DALLINGER_NO_EGG_BUILD"] == "1"
 
-    def test_invoke_docker_ssh_deploy_forwards_ingress(self):
+    def test_invoke_docker_ssh_deploy_forwards_ingress(self, fresh_dallinger_config):
         from psynet.command_line import _invoke_docker_ssh_deploy
 
         command = Mock()
@@ -305,7 +315,7 @@ class TestCommandLine(object):
         assert kwargs["app_name"] == "consonance"
         assert kwargs["update"] is False
 
-    def test_invoke_docker_ssh_deploy_forwards_update(self):
+    def test_invoke_docker_ssh_deploy_forwards_update(self, fresh_dallinger_config):
         from psynet.command_line import _invoke_docker_ssh_deploy
 
         command = Mock()
@@ -320,6 +330,35 @@ class TestCommandLine(object):
             update=True,
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
+
+    @pytest.mark.parametrize(
+        "config_txt, app, expected",
+        [
+            ("[Docker]\n", "consonance", "consonance"),
+            ("[Docker]\n", None, "psynet-experiment"),
+            (
+                "[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n",
+                "consonance",
+                "ghcr.io/me/exp",
+            ),
+        ],
+    )
+    def test_invoke_docker_ssh_deploy_names_an_unnamed_image_after_the_app(
+        self, fresh_dallinger_config, config_txt, app, expected
+    ):
+        from dallinger.config import get_config
+
+        from psynet.command_line import _invoke_docker_ssh_deploy
+
+        Path("config.txt").write_text(config_txt)
+        ctx = Mock()
+        ctx.invoke.side_effect = lambda command, **kwargs: get_config().get(
+            "docker_image_base_name"
+        )
+        result = _invoke_docker_ssh_deploy(
+            ctx, Mock(params=[]), server="musix", dns_host=None, app=app
+        )
+        assert result == expected
 
     @pytest.mark.parametrize("new_dallinger", [False, True])
     def test_deploy_ssh_ends_with_a_ready_block(
@@ -1880,7 +1919,7 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app(capsys):
+def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
@@ -2178,6 +2217,28 @@ def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
         run_pre_checks(mode="sandbox", local_=False, app="test-app")
 
     init_db.assert_not_called()
+
+
+@pytest.mark.parametrize("heroku", [False, True])
+def test_only_heroku_docker_needs_an_image_base_name(tmp_path, monkeypatch, heroku):
+    (tmp_path / "requirements.txt").write_text("psynet\n")
+    monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
+    monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
+    monkeypatch.setattr("psynet.experiment.get_experiment", Mock)
+    config = Mock()
+    config.get.side_effect = lambda key, default=None: default
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr("psynet.command_line.check_dockerfile", Mock())
+    monkeypatch.setattr("psynet.command_line.user_confirms", lambda *args: True)
+    monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
+    monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
+
+    with working_directory(tmp_path):
+        if heroku:
+            with pytest.raises(click.UsageError, match="docker_image_base_name"):
+                run_pre_checks("sandbox", False, heroku=True, docker=True)
+        else:
+            run_pre_checks("sandbox", False, docker=True, app="test-app")
 
 
 @pytest.mark.parametrize(
