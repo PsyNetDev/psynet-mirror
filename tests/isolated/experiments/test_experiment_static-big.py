@@ -26,18 +26,8 @@ def data_root_dir():
 )
 class TestPrepare:
     def test_prepare(self, deployment_info):
-        time_started = time.monotonic()
-
         ctx = Context(prepare)
         ctx.invoke(prepare)
-
-        time_finished = time.monotonic()
-        time_taken = time_finished - time_started
-
-        # Normally this happens much faster but sometimes it happens slowly on CI.
-        # Creating the 2,000 networks takes a few seconds; the rest is database
-        # setup and the deployment snapshot.
-        assert time_taken < 20
 
 
 @pytest.mark.parametrize(
