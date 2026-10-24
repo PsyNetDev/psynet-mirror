@@ -2705,6 +2705,7 @@ def _invoke_docker_ssh_deploy(
         kwargs["ingress"] = ingress
     if "show_summary" in params:
         kwargs["show_summary"] = dallinger_summary
+    _default_image_base_name(app)
     output = io.StringIO()
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
@@ -2720,6 +2721,28 @@ def _invoke_docker_ssh_deploy(
         if link:
             result["participant_link"] = link
     return result
+
+
+def _default_image_base_name(app):
+    """Name an SSH deploy's image after the app if ``docker_image_base_name`` is unset.
+
+    PsyNet's SSH deploys build the image on the server and never push it, so
+    any valid Docker repository name works. The name goes on the loaded
+    config, not into ``config_options``: the pinned Dallinger reads it before
+    applying those. Dallinger versions with Dallinger#10166 fall back to the
+    app name themselves; remove this once PsyNet pins one.
+
+    Parameters
+    ----------
+    app : str or None
+        The ``--app`` name, which ``verify_id`` limits to ``a-z``, ``0-9``
+        and ``-``. Without one, the image is named ``psynet-experiment``.
+    """
+    config = get_config(load=True)
+    if not config.get("docker_image_base_name", None):
+        config.set(
+            "docker_image_base_name", (app or "").strip("-") or "psynet-experiment"
+        )
 
 
 def _recorded_launch_info():
@@ -3254,12 +3277,12 @@ def run_pre_checks(
         check_todos_before_deployment()
 
         if docker:
-            if config.get("docker_image_base_name", None) is None:
+            if heroku and not config.get("docker_image_base_name", None):
                 raise click.UsageError(
-                    "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig before you can "
-                    "launch an experiment using Docker. Any image name works unless you push to a "
-                    "registry, for example: \n"
-                    "docker_image_base_name = my-psynet-experiments"
+                    "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig "
+                    "before you can deploy to Heroku with Docker, which pushes the image to a "
+                    "registry. For example:\n"
+                    "docker_image_base_name = ghcr.io/<github-user>/<experiment>"
                 )
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
             if _expected_docker_volumes not in config.get(
