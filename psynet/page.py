@@ -1,3 +1,4 @@
+import sys
 import warnings
 from importlib import resources
 from math import ceil
@@ -28,7 +29,15 @@ from .timeline import (
 from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-warnings.simplefilter("always", DeprecationWarning)
+# Other packages' deprecation warnings are for their maintainers; PsyNet's,
+# Dallinger's and the experiment's are shown. -W and PYTHONWARNINGS win.
+if not sys.warnoptions:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings(
+        "always",
+        category=DeprecationWarning,
+        module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
+    )
 
 
 class InfoPage(ModularPage):
@@ -329,7 +338,7 @@ def wait_while(
                 participant=participant,
                 experiment=experiment,
             )
-            logger.info(
+            logger.debug(
                 "Evaluating timeline hold (%s) condition: result = %s",
                 label,
                 result,

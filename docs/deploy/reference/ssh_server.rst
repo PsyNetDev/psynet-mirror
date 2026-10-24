@@ -21,6 +21,10 @@ list``. With one registered server it can be left out; with several, PsyNet
 asks you to choose, or fails if the command is not run in an interactive
 terminal.
 
+``--app`` names the app on the server and starts its address. It defaults
+to the experiment directory's name, made into a valid app name; see
+:doc:`/deploy/running_a_study`.
+
 ``--dns-host`` sets the domain the experiment is served under. It defaults to
 the ``--server`` name, so the experiment is served at
 ``https://<app>.<server>``. Pass it:
@@ -115,6 +119,9 @@ The image row names the deployed Docker image, with Dallinger versions that
 report it. The participant link appears for recruiters that print a single recruitment
 link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
+An update (see `Updating a running app`_) doesn't recruit again, so it shows
+the participant link or recruiter's message saved when the app was deployed
+from this computer; without that record, it says that recruitment is unchanged.
 The log viewer row appears for apps with classic ingress.
 ``performance-test ssh`` adds a ``Bot log`` row: the file on your computer
 that collects the bots' output.
@@ -285,11 +292,19 @@ command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
 was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
 the existing app and prints the update command for it. PsyNet asks you to
-confirm, then rebuilds the image and restarts the app. The update keeps:
+confirm, then rebuilds the image and restarts the app. To skip the question,
+for example in a script or another session without a terminal, add ``--yes``::
+
+    psynet debug ssh --app your-app-name --server your-server --update --yes
+
+Without a terminal, PsyNet reads the answer from standard input, and stops
+with an error asking for ``--yes`` if there is none. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
-- participants' sessions.
+- participants' sessions;
+- its recruitment, which is not opened again; a participant link stays the
+  same.
 
 An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh

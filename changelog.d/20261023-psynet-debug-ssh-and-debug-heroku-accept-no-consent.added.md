@@ -1,0 +1,1 @@
+`psynet debug ssh` and `psynet debug heroku` accept `--no-consent`, which skips the check that the timeline has a consent page, so you can try a demo or an unfinished experiment on a server without adding `NoConsent()` to its timeline. When the check fails on these commands, its message mentions the option. `psynet deploy` commands still require a consent page.

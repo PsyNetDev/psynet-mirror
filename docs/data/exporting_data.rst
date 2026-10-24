@@ -30,7 +30,8 @@ Useful options:
 
 - ``--server`` picks the server when more than one is registered.
 - ``--app`` names the app as ``psynet apps ssh`` lists it. An app deployed
-  without ``--app`` has a name like ``dlgr-d8f9f2c4``. You can leave out
+  without ``--app`` by an older PsyNet version has a name like
+  ``dlgr-d8f9f2c4``. You can leave out
   ``--app`` when only one app is running on the server.
 - ``--path`` writes the export somewhere else, for example
   ``--path ~/Documents/my-experiment-data``.
