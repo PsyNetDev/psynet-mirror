@@ -158,7 +158,16 @@ git pull origin master
 git checkout -b bump-master-post-release
 ```
 
-Update the version in both version files from `13.2.0` to `13.3.0a0`.
+Set the next development version in both version files:
+
+```bash
+psynet dev changelog next-alpha --write
+```
+
+It prints the next minor alpha (`13.2.0` → `13.3.0a0`), or the next major
+alpha if breaking fragments missed the release. Use that version in the
+commit message, MR title and description below.
+
 New changes on `master` should be recorded as fragments in `changelog.d/`.
 
 Then commit the version bump:

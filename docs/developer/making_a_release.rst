@@ -65,8 +65,10 @@ Overview
 
 4. For major and minor releases, merge the release branch back into
    ``master`` (merge commit, no squash) and bump ``master`` to the next
-   alpha version (``X.(Y+1).0a0`` after a minor, ``X.1.0a0`` after
-   ``X.0.0``).
+   alpha version with ``psynet dev changelog next-alpha --write``. This
+   gives the next minor alpha (``X.(Y+1).0a0`` after a minor, ``X.1.0a0``
+   after ``X.0.0``), or the next major alpha if breaking fragments are
+   still pending.
 
 Externally visible or irreversible steps (pushing tags, PyPI uploads, GitLab
 releases, Slack posts) require explicit approval from the human release

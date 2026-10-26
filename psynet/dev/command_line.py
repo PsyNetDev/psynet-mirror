@@ -383,6 +383,23 @@ def changelog_check_mr(base, head):
         raise click.ClickException(str(exc)) from exc
 
 
+@changelog.command("next-alpha")
+@click.option(
+    "--write", is_flag=True, help="Set it in psynet/version.py and pyproject.toml."
+)
+def changelog_next_alpha(write):
+    """Print the development version master should carry.
+
+    That is the next major alpha if changelog.d holds breaking fragments,
+    otherwise the next minor alpha, counted from the last stable release.
+    """
+    assert_changelog_available()
+    try:
+        changelog_module.next_alpha_command(write)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @changelog.command("new")
 @click.argument("category", type=click.Choice(CHANGELOG_CATEGORIES), metavar="CATEGORY")
 @click.argument("description")
