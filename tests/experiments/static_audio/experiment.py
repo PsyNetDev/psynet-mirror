@@ -167,8 +167,8 @@ class Exp(psynet.experiment.Experiment):
         # Timeline duration is an estimate; asynchronous asset waits credit the
         # participant's actual visible waiting time. Feedback holds use
         # expected_wait=0, so any visible wait is additional to the timeline
-        # estimate. Bots often find the imitation asset already deposited and
-        # skip the hold, so wait time may be zero.
+        # estimate. The wait may be zero if the recording's upload finished
+        # before the feedback page.
         assert bot.time_credit == pytest.approx(
             self.estimated_completion_time(wage_per_hour=0.0) + bot.total_wait_page_time
         )
