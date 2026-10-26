@@ -31,6 +31,8 @@ Overview
      ``X.0.0`` on ``release-X.0``. ``master`` is already at ``X.0.0a0``:
      the ``changelog-version`` pre-commit hook fails while breaking
      fragments are pending and ``psynet_version`` names an older major.
+     If it is not, run ``psynet dev changelog next-alpha --write`` on
+     ``master`` before creating the release branch.
    * **Minor** (backwards-compatible work from ``master``) — new
      ``release-MAJOR.MINOR`` branch.
    * **Patch** (bugfixes only) — existing ``release-MAJOR.MINOR``

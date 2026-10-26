@@ -72,7 +72,7 @@ breaking fragment names when proposing major:
 ```text
 Proposed: major 14.0.0 (branch release-14.0, first RC 14.0.0rc1)
 Reason: 7 committed breaking fragments since v13.3.0; master is 14.0.0a0.
-Override: /release minor would keep 13.4.0 despite Breaking Changes.
+Override: /release minor would release 13.4.0 only after the breaking fragments are recategorized; the changelog-version hook fails while they are pending.
 ```
 
 > **Human checkpoint:** stop here. The release manager must affirm the
