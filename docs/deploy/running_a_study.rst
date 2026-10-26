@@ -74,8 +74,10 @@ Check the code and dependencies
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
-- ``docker_image_base_name`` must be set in ``config.txt`` or
-  ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`).
+- Heroku deploys with ``--docker`` push the image to a registry, so
+  ``docker_image_base_name`` must be set in ``config.txt`` or
+  ``~/.dallingerconfig``. SSH deploys don't need it (see
+  :doc:`/deploy/setting_up_a_server`).
 
 Consent
 ^^^^^^^
@@ -232,10 +234,14 @@ from the experiment directory:
    psynet deploy ssh --app my-study --server your-server.example.org
 
 ``--app`` becomes the first part of the participant URL
-(``https://my-study.your-server.example.org``), so use lowercase letters,
-digits and hyphens. If your DNS record only publishes a fixed list of
+(``https://my-study.your-server.example.org``), so use up to 63 lowercase
+letters, digits and hyphens, not starting or ending with a hyphen. If your DNS record only publishes a fixed list of
 subdomains, the app name must be one of them. Several experiments can run
-on one server with different app names.
+on one server with different app names. Without ``--app``, PsyNet offers
+the experiment directory's name, made lowercase with hyphens, and adds
+``-2``, ``-3`` and so on if the server already has an app of that name.
+Press Enter to accept it or type another name. When the command isn't run
+in an interactive terminal, it uses the suggestion and says so.
 
 ``--server`` is the name you registered the server under (see
 :doc:`/deploy/setting_up_a_server`). If you omit it and several servers are
@@ -244,15 +250,16 @@ registered, PsyNet asks you to choose.
 The command builds the experiment image on the server, starts the
 experiment's services, and opens recruitment; see
 :doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
-database on your computer first, which clears the local PostgreSQL database
-and Redis and stops local PsyNet workers, so stop any local experiment before
-you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
-commands ask before resetting if a local server or another program is connected
-to the local database or Redis; pass ``--yes`` to skip the question.
-``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints a *Ready* summary of the participant link, the dashboard link and
-user, where the password is saved, the logs command and, for apps with
-classic ingress, the log viewer in the browser. Without a single
+database on your computer first, in a scratch PostgreSQL database and Redis
+that are removed afterwards, so a local experiment can keep running while you
+deploy. Because the deploy replaces the experiment directory's generated
+files, it doesn't run at the same time as a ``psynet debug local`` or test
+session in the same directory: whichever starts second refuses to.
+``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
+participant link, the dashboard link and user, where the password is saved,
+the logs command and, for apps with classic ingress, the log viewer in the
+browser. Without a single
 participant link, the summary shows the recruiter's message instead (for
 Prolific, a link to the new draft study). Save these. Open the
 dashboard and check that the experiment is running.

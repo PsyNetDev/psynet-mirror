@@ -25,6 +25,7 @@ from psynet.isolated_environment import (
 )
 from psynet.testing.locks import (
     HELD_LOCK_ENV_VAR,
+    REMOTE_LAUNCH,
     SERVER,
     TEST_SESSION,
     DirectoryInUseError,
@@ -68,7 +69,14 @@ def test_shared_environment_warns_once():
 
 
 @pytest.mark.parametrize(
-    "holder, kind", [(SERVER, TEST_SESSION), (SERVER, SERVER), (TEST_SESSION, SERVER)]
+    "holder, kind",
+    [
+        (SERVER, TEST_SESSION),
+        (SERVER, SERVER),
+        (TEST_SESSION, SERVER),
+        (REMOTE_LAUNCH, TEST_SESSION),
+        (TEST_SESSION, REMOTE_LAUNCH),
+    ],
 )
 def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
     tmp_path, monkeypatch, holder, kind
@@ -80,7 +88,7 @@ def test_servers_and_tests_refuse_a_directory_that_the_other_holds(
         with pytest.raises(DirectoryInUseError, match=message):
             with experiment_directory_lock(tmp_path, kind=kind):
                 pass
-        if holder == SERVER:
+        if holder != TEST_SESSION:
             with pytest.raises(DirectoryInUseError, match=message):
                 check_no_server(tmp_path)
         else:
@@ -157,6 +165,19 @@ def test_isolated_environment_skips_ports_whose_redis_port_is_taken():
             start_redis_server(redis_port)
 
 
+@pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")
+def test_isolated_redis_is_out_of_reach_of_a_terminal_ctrl_c():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    process = start_redis_server(port)
+    try:
+        assert os.getpgid(process.pid) != os.getpgrp()
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
 def test_port_claims_skip_symlinked_lock_files(tmp_path, monkeypatch):
     target = tmp_path / "precious"
     target.write_text("keep me")
@@ -224,7 +245,7 @@ def test_description_hides_the_redis_password():
 
     description = environment.describe()
 
-    assert "Redis at redis.example:6380/3," in description
+    assert "Redis redis.example:6380/3 and" in description
     assert "secret" not in description
 
 

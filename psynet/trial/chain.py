@@ -2195,12 +2195,13 @@ class ChainTrialMaker(NetworkTrialMaker):
         if len(nodes) == 0:
             raise ValueError(f"No nodes provided for trial maker {self.id}")
 
-        for node in tqdm(nodes, desc="Creating networks"):
+        # leave=False: a finished bar is cleared rather than left as a blank line.
+        for node in tqdm(nodes, desc="Creating networks", disable=None, leave=False):
             self.create_network(experiment, start_node=node)
 
         db.session.flush()
 
-        for node in tqdm(nodes, desc="Staging assets"):
+        for node in tqdm(nodes, desc="Staging assets", disable=None, leave=False):
             if node is not None:
                 node.stage_assets(experiment)
 
@@ -2366,7 +2367,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         has nothing more to give the participant. ``for_selection`` marks the
         query whose first result is given to the participant.
         """
-        logger.info(
+        logger.debug(
             "Looking for eligible %ss for participant %i in block %r.",
             self._candidate_label,
             participant.id,
@@ -2393,7 +2394,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                 return self._when_candidates_are_busy(participant, experiment)
             return []
         if spread:
-            logger.info(
+            logger.debug(
                 "No unlocked %s is available, probably because the others are "
                 "being given to other participants; sharing one.",
                 self._candidate_label,
@@ -2415,10 +2416,10 @@ class ChainTrialMaker(NetworkTrialMaker):
         """
         state = participant.module_state
         if self._focus_network_id(state) is not None:
-            logger.info("Will wait for the current %s.", self._candidate_label)
+            logger.debug("Will wait for the current %s.", self._candidate_label)
             return "wait"
         if self.wait_for_networks:
-            logger.info("Will wait for an eligible %s.", self._candidate_label)
+            logger.debug("Will wait for an eligible %s.", self._candidate_label)
             return "wait"
         logger.info(
             "Every eligible %s in block %r is busy and wait_for_networks=False; "
@@ -2671,7 +2672,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             and pool_size is not None
             and len(rows) == pool_size
         ):
-            logger.info(
+            logger.debug(
                 "The custom filter accepted no available %s among the first %i; "
                 "loading every candidate.",
                 self._candidate_label,
@@ -2699,7 +2700,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             for candidate in candidates
             if is_available[candidate.network.id]
         ]
-        logger.info(
+        logger.debug(
             "%i of %i %ss accepted by the custom filter can take a trial now.",
             len(selectable),
             len(candidates),
@@ -2768,7 +2769,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             self.max_trials_per_participant is not None
             and state.n_completed_trials >= self.max_trials_per_participant
         ):
-            logger.info(
+            logger.debug(
                 "N completed trials (%i) >= N trials per participant (%i), skipping forward",
                 state.n_completed_trials,
                 self.max_trials_per_participant,
@@ -2782,12 +2783,12 @@ class ChainTrialMaker(NetworkTrialMaker):
                     "before_selection must return None, 'wait', or 'exit'; "
                     f"got {outcome!r}"
                 )
-            logger.info("before_selection returned %r.", outcome)
+            logger.debug("before_selection returned %r.", outcome)
             return outcome
 
         while True:
             if self.should_finish_block(participant, state.block):
-                logger.info("Block %r is finished.", state.block)
+                logger.debug("Block %r is finished.", state.block)
             else:
                 self._plan_block(participant, experiment)
                 found = self._select_in_block(participant, experiment)
@@ -2859,7 +2860,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         if focus is None:
             return False
         if state.planned_network_ids is None:
-            logger.info("Chain %i is finished for this participant.", focus)
+            logger.debug("Chain %i is finished for this participant.", focus)
             self._update_group_states(participant, current_chain_id=None)
             return True
         if self._plan_entries_are_single_trials:
@@ -2870,7 +2871,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                 participant.id,
             )
         else:
-            logger.info("Planned chain %i is finished for this participant.", focus)
+            logger.debug("Planned chain %i is finished for this participant.", focus)
         self._update_group_states(participant, plan_position=state.plan_position + 1)
         return True
 
@@ -2932,7 +2933,7 @@ class ChainTrialMaker(NetworkTrialMaker):
             self._validate_plan(planned, candidates)
         network_ids = [self._candidate_network_id(value) for value in planned]
         self._warn_if_plan_length_is_unexpected(len(network_ids), state)
-        logger.info(
+        logger.debug(
             "Planned %i %ss for participant %i in block %r.",
             len(network_ids),
             self._candidate_label,
@@ -3011,7 +3012,7 @@ class ChainTrialMaker(NetworkTrialMaker):
     def _go_to_next_block(self, participant):
         for state in self._group_states(participant):
             state.set_block_position(state.block_position + 1)
-        logger.info(
+        logger.debug(
             "Participant %i moved to block %r.",
             participant.id,
             participant.module_state.block,

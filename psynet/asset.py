@@ -1195,7 +1195,7 @@ class ManagedAsset(Asset):
     def after_deposit(self):
         # logger.info("Calling after_deposit.")
         if self.trial:
-            logger.info(
+            logger.debug(
                 "Calling check_if_can_run_async_post_trial as part of after_deposit."
             )
             self.trial.check_if_can_run_async_post_trial()
@@ -2121,12 +2121,23 @@ class LocalStorage(AssetStorage):
         file_system_path = self.get_file_system_path(host_path)
         asset.var.file_system_path = file_system_path
 
-    @staticmethod
-    @cache
-    def sftp_connection(ssh_host, ssh_user):
+    _sftp_clients = {}
+
+    @classmethod
+    def sftp_connection(cls, ssh_host, ssh_user):
+        """Return an SFTP client for the host, reopening it if its SSH connection closed.
+
+        The SSH connection that the SFTP client runs on can drop, or be closed
+        elsewhere in the process, for example by Dallinger or by PsyNet's
+        export code.
+        """
         from dallinger.command_line.docker_ssh import get_sftp
 
-        return get_sftp(ssh_host, user=ssh_user)
+        key = (ssh_host, ssh_user)
+        sftp = cls._sftp_clients.get(key)
+        if sftp is None or sftp.get_channel().closed:
+            sftp = cls._sftp_clients[key] = get_sftp(ssh_host, user=ssh_user)
+        return sftp
 
     @staticmethod
     @cache
@@ -2934,6 +2945,7 @@ class AssetRegistry:
             self._staged_asset_specifications,
             desc="Generating/uploading assets...",
             disable=None if self._staged_asset_specifications else True,
+            leave=False,
         ):
             a.prepare_for_deployment(registry=self)
         db.session.commit()

@@ -650,6 +650,9 @@ def require_exp_directory(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # On a group, this runs before Click reaches a subcommand's --help.
+        if "--help" in sys.argv[1:]:
+            return f(*args, **kwargs)
         try:
             ensure_experiment_directory_name_does_not_conflict()
             if not experiment_available():
@@ -1415,7 +1418,10 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 @contextlib.contextmanager
 def time_logger(label, threshold=0.1):
-    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds.
+
+    The line is at INFO if the block took at least a second, otherwise at DEBUG.
+    """
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1425,7 +1431,8 @@ def time_logger(label, threshold=0.1):
     log["time_finished"] = time.monotonic()
     log["time_taken"] = log["time_finished"] - log["time_started"]
     if log["time_taken"] > threshold:
-        logger.info(
+        logger.log(
+            logging.INFO if log["time_taken"] >= 1 else logging.DEBUG,
             "Task '%s' took %.3f s",
             label,
             log["time_taken"],

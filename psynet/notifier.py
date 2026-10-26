@@ -9,7 +9,7 @@ from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
@@ -96,7 +96,7 @@ class Notifier:
             msg = f"@{username} launched experiment "
         else:
             msg = "Launched experiment "
-        msg += f'"{self.exp.label}" (`{self.deployment_information["secret"]}`)'
+        msg += f'"{self.exp.label}"'
         if self.deployment_information["is_local_deployment"]:
             msg = f"{msg} locally"
         elif self.deployment_information["is_ssh_deployment"]:
@@ -122,7 +122,7 @@ class Notifier:
     @property
     def logs_message(self):
         info = self.deployment_information
-        logs_url = dozzle_url(info["server"], info.get("ingress"))
+        logs_url = recorded_dozzle_url(info)
         if logs_url is None:
             command = info.get("logs_command")
             if command is None:
@@ -284,9 +284,13 @@ class LoggerNotifier(Notifier):
         return msg
 
     def on_launch(self):
-        """Log the launch, leaving local dashboard details to the launch banner."""
+        """Log the launch, leaving local dashboard details to the launch banner.
+
+        A local launch is logged at DEBUG: the server prints "Experiment
+        launch complete!" straight afterwards.
+        """
         if self.deployment_information["is_local_deployment"]:
-            self.notify(self.launch_message)
+            self.notify(self.launch_message, level="debug")
         else:
             super().on_launch()
 

@@ -1,1 +1,1 @@
-Remote launches and `psynet load` no longer count database connections that PsyNet itself still holds as other clients of the local database, unless they lock a table that the reset would drop, and remote launches count only Redis clients of the database index in `REDIS_URL`, so a scripted launch no longer refuses to reset local data that nothing else is using.
+`psynet load` no longer counts database connections that PsyNet itself still holds as other clients of the local database, unless they lock a table that loading would drop.

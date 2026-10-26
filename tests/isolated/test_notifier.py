@@ -35,26 +35,42 @@ def test_logger_notifier_leaves_local_dashboard_details_to_the_banner(
     class _DemoNotifier(LoggerNotifier):
         exp = Mock(label="Demo")
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         _DemoNotifier().on_launch()
 
-    assert 'Launched experiment "Demo" (`abc`) locally' in caplog.text
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("DEBUG", 'Launched experiment "Demo" locally')
+    ]
+    assert "abc" not in caplog.text
     assert "Password:" not in caplog.text
 
 
 @pytest.mark.parametrize(
-    "ingress, logs_command, expected",
+    "ingress, logs_command, dns_record, expected",
     [
-        (None, None, "https://logs.lab"),
-        ("classic", None, "https://logs.lab"),
-        ("cloudflare", "ssh lab logs", "`ssh lab logs`"),
-        ("cloudflare", None, "printed at the end of the deployment"),
+        (None, None, {}, "https://logs.lab"),
+        ("classic", None, {}, "https://logs.lab"),
+        (
+            "classic",
+            None,
+            {"server_dns_host": "lab.example.org"},
+            "https://logs.lab.example.org",
+        ),
+        # A deploy that found no DNS name for the server has no Dozzle link.
+        ("classic", "ssh lab logs", {"server_dns_host": None}, "`ssh lab logs`"),
+        ("cloudflare", "ssh lab logs", {}, "`ssh lab logs`"),
+        ("cloudflare", None, {}, "printed at the end of the deployment"),
     ],
 )
 def test_logs_message_follows_the_app_ingress(
-    monkeypatch, ingress, logs_command, expected
+    monkeypatch, ingress, logs_command, dns_record, expected
 ):
-    info = {"server": "lab", "ingress": ingress, "logs_command": logs_command}
+    info = {
+        "server": "lab",
+        "ingress": ingress,
+        "logs_command": logs_command,
+        **dns_record,
+    }
     monkeypatch.setattr("psynet.deployment_info.read_all", lambda: info)
     monkeypatch.setattr(
         "psynet.notifier.get_config", lambda: {"dashboard_password": "pw"}
@@ -63,4 +79,4 @@ def test_logs_message_follows_the_app_ingress(
     message = Notifier().logs_message
 
     assert expected in message
-    assert ("Dozzle" in message) is (ingress != "cloudflare")
+    assert ("Dozzle" in message) is expected.startswith("https://")

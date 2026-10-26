@@ -1,6 +1,7 @@
 import configparser
 import inspect
 import json
+import logging
 import os
 import re
 import shutil
@@ -26,6 +27,7 @@ from statistics import median
 from typing import Any, List, Optional, Type, Union
 from urllib.parse import urlencode
 
+import dallinger.config
 import dallinger.experiment
 import dallinger.models
 import flask
@@ -145,7 +147,7 @@ from .recruiters import (  # noqa: F401
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .static_resources import (
     apply_versioned_static_cache_headers,
     get_static_package_extra_files,
@@ -194,6 +196,35 @@ from .utils import (
 )
 
 logger = get_logger()
+
+try:
+    from dallinger.dev_logging import hide_requests
+except ImportError:  # Dallinger releases before the development console.
+    pass
+else:
+    # Assets, the browser's log messages and polling would bury the pages
+    # participants take in the development server's console.
+    hide_requests(
+        "/asset/",
+        "/on-demand-asset",
+        "/log/",
+        "/timeline/arrival_notice",
+        "/timeline/progress_and_reward",
+        "/module/progress_info",
+        "/module/tooltip",
+        "/participant_status/",
+        "/get_participant_info_for_debug_mode",
+        "/request_statistics",
+        "/async_job_cpu_time",
+    )
+
+# Requests at least this slow log their phase timings at INFO; faster ones at DEBUG.
+_SLOW_REQUEST_MS = 1000
+
+
+def _request_timing_log_level(total_ms):
+    """Return the log level for a request timing line that took ``total_ms``."""
+    return logging.INFO if total_ms >= _SLOW_REQUEST_MS else logging.DEBUG
 
 
 database_template_path = ".deploy/database_template.zip"
@@ -1041,6 +1072,28 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # This log message is used by the testing logic to identify when the experiment has been launched
         logger.info("Experiment launch complete!")
 
+    def log(self, text, key="?????", force=False):
+        """Log ``text`` at INFO on the ``psynet`` logger, after ``key``.
+
+        Replaces Dallinger's version, which prints to stdout, so that messages
+        such as recruiter notifications get the server's log format and level.
+
+        Parameters
+        ----------
+        text : str
+            The message.
+        key : str
+            A short tag shown before the message. Tags without letters or
+            digits, such as Dallinger's ``-----`` and ``?????``, are left out.
+        force : bool
+            Log even if ``self.verbose`` is false.
+        """
+        if force or self.verbose:
+            if any(c.isalnum() for c in key):
+                logger.info("%s %s", key, text)
+            else:
+                logger.info("%s", text)
+
     @classproperty
     def creation_time(cls):  # noqa
         return redis_vars.get("creation_time")
@@ -1115,8 +1168,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return response
 
         params = dict(request.args)
+        unique_id = params.get("unique_id", None)
+        if getattr(flask_app_globals, "unknown_participant", False):
+            unique_id = None
         request_obj = Request(
-            unique_id=params.get("unique_id", None),
+            unique_id=unique_id,
             duration=diff,
             method=request.method,
             endpoint=endpoint,
@@ -1340,10 +1396,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         logs_url = None
         if is_ssh_deployment:
-            logs_url = dozzle_url(
-                deployment_information.get("server"),
-                deployment_information.get("ingress"),
-            )
+            logs_url = recorded_dozzle_url(deployment_information)
 
         def unpack_export(deployment_id):
             exp = get_experiment()
@@ -2333,7 +2386,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 # We should probably update this behavior in the future.
                 value = serialize(value)
 
-            expected_type = config_types[key]
+            expected_type = config_types.get(key)
+            if expected_type is None:
+                message = f"{key} is not a valid configuration key."
+                if key in cls.config:
+                    message += (
+                        f" Remove it from {cls.__name__}.config, or use its new "
+                        "name if it was renamed."
+                    )
+                raise KeyError(message)
             value = expected_type(value)
 
             config[key] = value
@@ -2891,11 +2952,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return Participant.query.filter_by(status="working", failed=False).count()
 
     def recruit(self):
+        # The local debug console shows a conclusion once, not again for every
+        # participant who finishes, until it changes. Recruiting also ends the
+        # repeats of Dallinger's "Recruitment closed." (its "recruitment" topic).
+        topic = "psynet recruitment conclusion"
         if self.need_more_participants:
-            logger.info("Conclusion: recruiting another participant.")
+            logger.info(
+                "Conclusion: recruiting another participant.",
+                extra={"dallinger_console_topic": (topic, "recruitment")},
+            )
             self.recruiter.recruit(n=1)
         else:
-            logger.info("Conclusion: no recruitment required.")
+            logger.info(
+                "Conclusion: no recruitment required.",
+                extra={"dallinger_console_topic": topic},
+            )
             self.recruiter.close_recruitment()
 
     @property
@@ -2906,15 +2977,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         need_more = False
         for i, criterion in enumerate(self.recruitment_criteria):
-            logger.info(
+            logger.debug(
                 "Evaluating recruitment criterion %i/%i...",
                 i + 1,
                 len(self.recruitment_criteria),
             )
             res = call_function(criterion.function, experiment=self)
             assert isinstance(res, bool)
-            logger.info(
-                "Recruitment criterion %i/%i ('%s') %s.",
+            logger.debug(
+                "Recruitment criterion %i/%i ('%s') %s",
                 i + 1,
                 len(self.recruitment_criteria),
                 criterion.label,
@@ -3312,7 +3383,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant.planned_bonus = planned
         record_bonus_attempt_detail(participant, NO_BONUS_ATTEMPT_RESULT)
         self.commit_payment_state()
-        logger.info("Reporting outcome with bonus %s for %s", bonus, participant.id)
+        logger.info(
+            "Reporting participant %s's outcome to the recruiter (bonus %s).",
+            participant.id,
+            bonus,
+        )
         transferred = participant.recruiter.report_submission_outcome(
             participant,
             bonus,
@@ -3415,9 +3490,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 f"No remaining bonus to post for participant {participant.id}.",
             )
         logger.info(
-            "Dashboard retry: reporting outcome with bonus %s for participant %s",
-            to_post,
+            "Dashboard retry: reporting participant %s's outcome to the recruiter "
+            "(bonus %s).",
             participant.id,
+            to_post,
         )
         record_bonus_attempt_detail(participant, BONUS_PAY_IN_PROGRESS)
         transferred = recruiter.report_submission_outcome(
@@ -3653,7 +3729,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ``**kwargs`` or this argument.
         """
         _p = get_translator(context=True)
-        logger.info(
+        logger.debug(
             f"Received a response from participant {participant_id} on page {page_uuid}."
         )
         # Ordinary Next submits wait up to ``timeline_lock_timeout_seconds``.
@@ -3669,6 +3745,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 query.with_for_update(of=Participant)
                 .populate_existing()
                 .get(participant_id)
+            )
+        if participant is None:
+            return ResponseResult(
+                payload={"submission": "rejected"},
+                flask_response=Experiment._unknown_participant_response(),
             )
 
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
@@ -3992,6 +4073,54 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 }
             ),
             503,
+        )
+
+    @classmethod
+    def _unknown_participant_response(cls):
+        """Answer a participant request whose participant doesn't exist.
+
+        This usually comes from a browser tab opened before the database was
+        reset, for example by restarting ``psynet debug local``. The
+        participant sees a short "session no longer available" page (JSON for
+        POSTs and ``mode=json``), the server logs one warning line, and the
+        HTTP status is 404. The log line leaves out the request's IDs, which
+        can be recruiter worker IDs.
+        """
+        flask_app_globals.unknown_participant = True
+        logger.warning(
+            "%s %s: unknown participant, answered 'session no longer available' "
+            "(a browser tab from an earlier session?).",
+            request.method,
+            request.path,
+        )
+        _p = get_translator(context=True)
+        message = _p(
+            "error",
+            "This session is no longer available. It may have ended, or the "
+            "study may have been restarted since you opened this page.",
+        )
+        if cls._busy_response_should_be_html():
+            # Not error_page(): its recruiter text (such as a promised return
+            # to the panel) is about a session that still exists.
+            response = make_response(
+                render_template_with_translations(
+                    "psynet_error.html",
+                    error_text=message,
+                    error_page_presentation=None,
+                ),
+                404,
+            )
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return (
+            jsonify(
+                {
+                    "status": "unknown_participant",
+                    "submission": "rejected",
+                    "message": message,
+                }
+            ),
+            404,
         )
 
     @classmethod
@@ -5769,9 +5898,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             _set_transaction_lock_timeout(
                 get_config().get("timeline_lock_timeout_seconds")
             )
-            participant = cls._get_request_participant_from_unique_id(
-                unique_id, for_update=True
-            )
+            try:
+                participant = cls._get_request_participant_from_unique_id(
+                    unique_id, for_update=True
+                )
+            except sqlalchemy.orm.exc.NoResultFound:
+                return cls._unknown_participant_response()
             participant_id = participant.id
             clock.close("lock")
             experiment = get_experiment()
@@ -6824,6 +6956,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def get_progress_and_reward(cls):
         participant_id = request.args.get("participantId")
         participant = Participant.query.get(participant_id)
+        if participant is None:
+            return cls._unknown_participant_response()
         progress_percentage = round(participant.progress * 100)
         data = {
             "progressPercentage": progress_percentage,
@@ -6882,6 +7016,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Attach ``Server-Timing`` phases and log GET /timeline duration.
 
+        The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
+
         ``lock`` is the participant ``FOR UPDATE`` load. ``page`` is
         ``get_current_page`` through the first commit. ``barriers`` is hold
         skip plus last-arrival checks. ``render`` is the HTML or JSON body.
@@ -6891,7 +7027,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ("lock", "page", "barriers", "render"), phases, total_ms
         )
         flask_response = cls._attach_server_timing(response, metrics)
-        logger.info(
+        logger.log(
+            _request_timing_log_level(total_ms),
             "GET /timeline timing participant=%s pid=%s "
             "lock_ms=%s page_ms=%s barriers_ms=%s render_ms=%s "
             "total_ms=%.0f mode=%s",
@@ -6921,6 +7058,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     ):
         """Attach ``Server-Timing`` and log POST /response phase durations.
 
+        The log line is at INFO only for slow requests (see ``_SLOW_REQUEST_MS``).
+
         ``process`` is ``process_response``. ``barriers`` is queued last-arrival
         work. ``render`` includes inplace prepare plus fragment rendering.
         Unclosed phases are omitted rather than reported as zero.
@@ -6929,7 +7068,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             ("process", "barriers", "render"), phases, total_ms
         )
         flask_response = cls._attach_server_timing(response, metrics)
-        logger.info(
+        logger.log(
+            _request_timing_log_level(total_ms),
             "POST /response timing participant=%s hold_resume=%s inplace=%s pid=%s "
             "process_ms=%s barriers_ms=%s render_ms=%s total_ms=%.0f "
             "barrier_checks=%s page=%s submission=%s",
@@ -7243,7 +7383,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def http_log(cls, level, unique_id):
-        participant = cls.get_participant_from_unique_id(unique_id, for_update=False)
+        try:
+            participant = cls.get_participant_from_unique_id(unique_id)
+        except sqlalchemy.orm.exc.NoResultFound:
+            return cls._unknown_participant_response()
         try:
             cls.check_unique_id(participant, unique_id)
         except cls.UniqueIdError as e:
@@ -7256,7 +7399,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         string = f"[CLIENT {participant.id}]: {message}"
 
         if level == "info":
-            logger.info(string)
+            # Browsers send several of these per page.
+            logger.debug(string)
         elif level == "warning":
             logger.warning(string)
         elif level == "error":
@@ -7282,7 +7426,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def participant_opened_devtools(cls, unique_id):
-        participant = cls.get_participant_from_unique_id(unique_id, for_update=False)
+        try:
+            participant = cls.get_participant_from_unique_id(unique_id)
+        except sqlalchemy.orm.exc.NoResultFound:
+            return cls._unknown_participant_response()
 
         cls.check_unique_id(participant, unique_id)
 
@@ -7336,7 +7483,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             and deployment_info.read("mode") == "debug"
         ):
             return
-        self.timeline.check_consents(self)
+        try:
+            self.timeline.check_consents(self)
+        except RuntimeError as e:
+            if deployment_info.read("mode") != "sandbox":
+                raise
+            raise RuntimeError(
+                f"{e} For a debug deploy, you can also skip the consent checks with "
+                "--no-consent."
+            ) from None
 
     def check_python_dependencies(self):
         if os.environ.get("SKIP_DEPENDENCY_CHECK"):
@@ -7392,9 +7547,14 @@ def handle_shutdown_signal(signum, frame):
     This is installed when the module is imported, so it replaces handlers
     installed before then, such as those of gunicorn's workers, and is
     replaced by those installed later, such as those of RQ's ``work()``.
+    A clock stopped before its configuration has loaded, for example by
+    Ctrl+C while it reimports the experiment after a code change, exits
+    without recording anything: loading the configuration would import the
+    half-imported experiment again and fail.
     """
     process_name = os.path.basename(sys.argv[0])
-    if process_name.endswith("clock"):
+    config = dallinger.config.config
+    if process_name.endswith("clock") and config is not None and config.ready:
         Experiment.record_experiment_status(online=False)
         Experiment.notifier.notify("Experiment was taken down ⛔️")
     if process_name.startswith("dallinger_heroku_") or process_name.endswith("clock"):

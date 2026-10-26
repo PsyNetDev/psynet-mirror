@@ -27,7 +27,10 @@ the URLs differ the tests leave a running ``psynet debug local`` alone.
 
 ``psynet debug local --isolated`` gives a debug server the same kind of
 environment, so that it runs next to other servers and test sessions; like a
-test session's, its database and Redis are removed when it stops.
+test session's, its database and Redis are removed when it stops. Remote
+launches (``psynet debug ssh``, ``psynet deploy heroku`` and so on) run
+``psynet prepare`` in one too, so building the starting database they ship to
+the server leaves the local database and Redis alone.
 
 Design constraints
 ------------------
@@ -42,7 +45,8 @@ module therefore imports nothing from Dallinger. It is used in two places:
 - ``psynet test local``, ``psynet performance-test local`` and
   ``psynet debug local --isolated``, which have already imported Dallinger
   by the time they run, and so re-run themselves in a child process inside
-  the environment.
+  the environment. Remote launches likewise run only ``psynet prepare`` in a
+  child process.
 
 ``PSYNET_TEST_ENVIRONMENT`` may be unset, ``isolated`` (the default) or
 ``shared`` (opt out); other values are an error, so a typo can't silently turn
@@ -82,14 +86,28 @@ _DEFAULT_BASE_PORT = 5000
 _PORT_OFFSET = 100
 
 
-def local_base_port(environ=None):
+def local_base_port(environ=None, directory="."):
     """Return Dallinger's ``base_port`` without importing the experiment.
 
     Follows Dallinger's precedence: the ``base_port`` environment variable,
-    then ``config.txt`` in the current directory, then ``~/.dallingerconfig``,
-    then 5000. Like Dallinger, a later section of a file overrides an earlier
-    one. A ``base_port`` set in the experiment class's ``config`` dictionary is
-    not seen.
+    then ``config.txt`` in ``directory``, then ``~/.dallingerconfig``, then
+    5000. Like Dallinger, a later section of a file overrides an earlier one.
+    A ``base_port`` set in the experiment class's ``config`` dictionary is not
+    seen. Files that don't exist or can't be opened are skipped.
+
+    Parameters
+    ----------
+    environ : mapping, optional
+        The environment to read, by default ``os.environ``. Its ``HOME``
+        locates ``~/.dallingerconfig``.
+    directory : str, optional
+        The directory whose ``config.txt`` is read, by default the current
+        directory.
+
+    Returns
+    -------
+    int
+        The port.
 
     Raises
     ------
@@ -101,11 +119,15 @@ def local_base_port(environ=None):
     environ = os.environ if environ is None else environ
     if "base_port" in environ:
         return int(environ["base_port"])
-    for path in ("config.txt", os.path.expanduser("~/.dallingerconfig")):
+    home = environ.get("HOME") or os.path.expanduser("~")
+    for path in (
+        os.path.join(directory, "config.txt"),
+        os.path.join(home, ".dallingerconfig"),
+    ):
         parser = configparser.ConfigParser(interpolation=None)
         try:
             parser.read(path)
-        except configparser.Error as e:
+        except (configparser.Error, UnicodeDecodeError) as e:
             raise ValueError(f"Could not read {path}: {e}") from e
         values = [
             parser[s]["base_port"]
@@ -278,7 +300,7 @@ class IsolatedEnvironment:
                 number = _spare_redis_database(redis_url, slot)
                 env["REDIS_URL"] = _with_redis_database(redis_url, number)
                 print(
-                    f"redis-server is not on PATH, so these tests use Redis database "
+                    f"redis-server is not on PATH, so this session uses Redis database "
                     f"{number} on the shared server. Live notifications can still "
                     "reach a local debug server's participants.",
                     file=sys.stderr,
@@ -298,10 +320,11 @@ class IsolatedEnvironment:
         """Return a one-line summary of where the session's services are."""
         database = urlsplit(self.env["DATABASE_URL"]).path.lstrip("/")
         redis = urlsplit(self.env["REDIS_URL"])
-        redis_database = redis.path.lstrip("/") or "0"
+        redis_database = redis.path.lstrip("/")
+        redis_database = f"/{redis_database}" if redis_database not in ("", "0") else ""
         return (
-            f"Using database {database}, Redis at {redis.hostname}:"
-            f"{redis.port or 6379}/{redis_database}, and port {self.env['base_port']}."
+            f"Using database {database}, Redis {redis.hostname}:"
+            f"{redis.port or 6379}{redis_database} and port {self.env['base_port']}."
         )
 
     def close(self):
@@ -412,6 +435,10 @@ def _flush_redis_database(redis_url):
 def start_redis_server(port):
     """Start a non-persistent ``redis-server`` on ``port`` and wait until it answers.
 
+    The server runs in its own session, so a Ctrl+C in the terminal doesn't
+    stop it before the experiment's server processes, which still need it
+    while they shut down. The caller must stop it.
+
     Raises
     ------
     RuntimeError
@@ -425,6 +452,7 @@ def start_redis_server(port):
         + ["--dir", tempfile.gettempdir(), "--save", "", "--appendonly", "no"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         deadline = time.monotonic() + 10
