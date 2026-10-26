@@ -1,4 +1,4 @@
-# From-master path (major and minor)
+# Major and minor release path
 
 
 Use this path after the release manager has affirmed a **major** or

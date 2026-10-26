@@ -19,12 +19,12 @@ that proposal, not a skip of the checkpoint.
 
 | Path | When |
 | --- | --- |
-| Major | Breaking changes from `master` → `references/minor-release.md` with an `X.0.0` version |
-| Minor | Backwards-compatible work from `master` → `references/minor-release.md` |
+| Major | Breaking changes from `master` → `references/major-minor-release.md` with an `X.0.0` version |
+| Minor | Backwards-compatible work from `master` → `references/major-minor-release.md` |
 | Patch | Bug fixes on `release-MAJOR.MINOR` → `references/patch-release.md` |
 | RC (default for major and minor) | Pre-final validation → `references/release-candidates.md` |
 
-Both from-master paths share `references/shared-steps.md` (changelog,
+The major and minor path shares `references/shared-steps.md` (changelog,
 version bump, translations, tag, PyPI, GitLab release, Slack) with the
 patch path. See `references/version-reference.md` for version files,
 naming, and Dallinger upgrade notes.
