@@ -2236,6 +2236,7 @@
       decodeAudioData() { NullAudioContext._unavailable(); }
       createBufferSource() { NullAudioContext._unavailable(); }
       createGain() { NullAudioContext._unavailable(); }
+      createMediaStreamSource() { NullAudioContext._unavailable(); }
       get destination() { NullAudioContext._unavailable(); }
     }
 
