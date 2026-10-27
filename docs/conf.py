@@ -108,6 +108,8 @@ linkcheck_ignore = [
     # Gold-MSI Shiny apps; the server omits the Sectigo intermediate cert.
     r"https://shiny\.gold-msi\.org/gmsiconfigurator/?$",
     r"https://shiny\.gold-msi\.org/gmsi_toplevel/?$",
+    # GitLab project-members pages require authentication; redirects to sign-in (403).
+    r"https://gitlab\.com/.+/-/project_members$",
 ]
 
 # CI runners occasionally see a healthy host stall past linkcheck_timeout.
