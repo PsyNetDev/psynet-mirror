@@ -35,7 +35,7 @@ RCs are especially valuable when:
 
 ### RC1: Cut the first release candidate
 
-Start from the release branch created in step 1 of the from-master path.
+Start from the release branch created in step 1 of the [major and minor path](major-minor-release.md#1-create-the-release-branch).
 Instead of bumping straight to `13.2.0`, bump to `13.2.0rc1` and tag it,
 using the shared steps with the RC version:
 
@@ -167,7 +167,7 @@ Once the latest RC has been validated and no further changes are needed:
 2. [Bump the version](shared-steps.md#bump-the-version) from `13.2.0rcN` to `13.2.0`.
 
 3. Resume the minor release path from
-   [step 4 (Create a merge request)](minor-release.md#4-create-a-merge-request) onwards
+   [step 4 (Create a merge request)](major-minor-release.md#4-create-a-merge-request) onwards
    to review the release MR, tag `v13.2.0` from the release branch,
    publish to PyPI, create the GitLab release, announce on Slack, and
    then merge the release branch back into `master`.
