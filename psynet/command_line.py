@@ -58,7 +58,6 @@ from yaspin import yaspin
 
 from psynet import __version__
 from psynet.dev.command_line import dev as _dev_command_group
-from psynet.perf_test import PerformanceTester
 from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
@@ -6944,6 +6943,8 @@ def _run_performance_test_with_existing_server(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    from psynet.perf_test import PerformanceTester
 
     _check_no_real_participants(force)
     os.environ["PASSTHROUGH_ERRORS"] = "True"
