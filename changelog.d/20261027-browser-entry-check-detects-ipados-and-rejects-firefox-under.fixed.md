@@ -1,0 +1,1 @@
+Fixed the browser entry check so that iPadOS 13+ is detected as a mobile device, and Firefox participants are rejected when `force_google_chrome = true` (previously the check never completed when incognito detection failed, so Firefox slipped through).
