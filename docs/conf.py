@@ -224,6 +224,8 @@ linkcheck_ignore = [
 # strictness: linkcheck already exits non-zero for timeouts either way.
 linkcheck_report_timeouts_as_broken = True
 linkcheck_retries = 3
+# team.rst links to personal sites that are unreachable from CI runners.
+linkcheck_exclude_documents = [r"introduction/team"]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
