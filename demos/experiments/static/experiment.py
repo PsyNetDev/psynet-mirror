@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import random
 
 import pandas as pd
@@ -118,7 +116,6 @@ trial_maker = AnimalTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=True,
     check_performance_every_trial=True,
     target_n_participants=1,
@@ -160,6 +157,8 @@ class Exp(psynet.experiment.Experiment):
             }
             for participant in Participant.query.all()
         ]
+        if context != "export":
+            return {"trial": trials, "participant": participants}
         return {
             "trial": pd.DataFrame.from_records(trials),
             "participant": pd.DataFrame.from_records(participants),

@@ -23,7 +23,7 @@ and platform docs when a study is near deployment.
   It checks `min_group_size`, can wait for top-ups, can fail under-quota groups,
   and accepts `on_release(group, participants)` for atomic shared updates.
   The `barrier` argument is reconstructed; see
-  `docs/tutorials/synchronization.rst` ("Release callbacks").
+  `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
 - `psynet.sync.SimpleGrouper` creates `SyncGroup`s by waiting for `batch_size`
   participants and partitioning them into groups of `initial_group_size`.
   The last arrival runs the same framework-owned evaluation in that request so

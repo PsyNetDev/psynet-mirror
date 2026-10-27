@@ -1,0 +1,1 @@
+Fixed `psynet audit simulate` and other local exports printing a `FileNotFoundError` traceback about `.deploy/deployment_info.json` after the experiment server had stopped. The export manifest now takes the deployment ID from the database in that case, and reading a missing deployment info file fails immediately instead of retrying.

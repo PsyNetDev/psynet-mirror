@@ -24,8 +24,10 @@ from psynet.export.identity import (
     ProjectIdentity,
     ProjectMismatch,
     confirm_project_identity,
+    describe_identity_problems,
     identity_changed,
 )
+from psynet.utils import working_directory
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -127,25 +129,17 @@ def test_asset_plan_excludes_assets_rsync_cannot_supply(tmp_path):
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": "a" * 64,
                 "storage": "LocalStorage",
             },
-            {"id": 2, "type": "external_asset", "export_path": "b.wav"},
             {
-                "id": 3,
-                "type": "experiment_asset",
-                "export_path": "c.wav",
-                "sha256_contents": "c" * 64,
+                "id": 2,
+                "type": "psynet.asset.FileAsset",
+                "export_path": "b.wav",
+                "sha256_contents": "b" * 64,
                 "storage": "S3Storage",
-            },
-            {
-                "id": 4,
-                "type": "on_demand_asset",
-                "export_path": "d.wav",
-                "sha256_contents": "d" * 64,
-                "storage": "LocalStorage",
             },
         ],
     )
@@ -153,7 +147,7 @@ def test_asset_plan_excludes_assets_rsync_cannot_supply(tmp_path):
     plan = plan_asset_transfer(str(tmp_path))
 
     assert plan.digests == ["a" * 64]
-    assert [row["id"] for row in plan.ineligible] == ["3", "4"]
+    assert [row["id"] for row in plan.ineligible] == ["2"]
     assert not plan.eligible
 
 
@@ -182,7 +176,7 @@ def test_hydration_reports_a_failed_rsync_as_a_transfer_error(
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": digest,
                 "storage": "LocalStorage",
@@ -218,14 +212,14 @@ def test_hydration_fetches_missing_objects_once_and_reuses_the_cache(
             [
                 {
                     "id": 1,
-                    "type": "experiment_asset",
+                    "type": "psynet.asset.FileAsset",
                     "export_path": "module/a.wav",
                     "sha256_contents": file_digest,
                     "storage": "LocalStorage",
                 },
                 {
                     "id": 2,
-                    "type": "experiment_asset",
+                    "type": "psynet.asset.FileAsset",
                     "export_path": "module/folder",
                     "sha256_contents": folder_digest,
                     "is_folder": "True",
@@ -283,7 +277,7 @@ def test_hydration_fails_when_transferred_bytes_do_not_match_their_digest(
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "a.wav",
                 "sha256_contents": claimed_digest,
                 "storage": "LocalStorage",
@@ -416,7 +410,7 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
     confirm_project_identity(
         local, remote, confirm=lambda message: True, emit=warnings.append
     )
-    assert any("was launched from Git commit" in message for message in warnings)
+    assert any("runs code from Git commit" in message for message in warnings)
 
     with pytest.raises(ProjectMismatch, match="cancelled"):
         confirm_project_identity(
@@ -424,6 +418,62 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
         )
 
     confirm_project_identity(local, remote, allow_mismatch=True, emit=warnings.append)
+
+
+def test_commits_that_leave_the_directory_unchanged_are_not_a_mismatch(tmp_path):
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@x", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    (tmp_path / "experiment").mkdir()
+    with working_directory(tmp_path):
+        git("init", "--quiet")
+        Path("experiment/experiment.py").write_text("v1")
+        git("add", ".")
+        git("commit", "--quiet", "-m", "deployed")
+        deployed = git("rev-parse", "HEAD")
+        Path("elsewhere.txt").write_text("unrelated")
+        git("add", ".")
+        git("commit", "--quiet", "-m", "elsewhere")
+    with working_directory(tmp_path / "experiment"):
+        local = ProjectIdentity(
+            experiment_label="d", git_commit_sha=git("rev-parse", "HEAD")
+        )
+        remote = ProjectIdentity(experiment_label="d", git_commit_sha=deployed)
+        assert describe_identity_problems(local, remote) == ([], [], [])
+
+        Path("experiment.py").write_text("v2")
+        git("commit", "--quiet", "-am", "changed")
+        local = ProjectIdentity(
+            experiment_label="d", git_commit_sha=git("rev-parse", "HEAD")
+        )
+        _, warnings, _ = describe_identity_problems(local, remote)
+        assert "runs code from Git commit" in warnings[0]
+
+
+def test_dirty_state_warnings_name_the_files():
+    local = ProjectIdentity(
+        experiment_label="d", git_dirty=True, git_dirty_paths=("experiment.py",)
+    )
+    remote = ProjectIdentity.from_dict(
+        {
+            "experiment_label": "d",
+            "git_dirty": True,
+            "git_dirty_paths": ["config.txt"],
+            "export_format_version": 1,
+        }
+    )
+
+    warnings = []
+    confirm_project_identity(
+        local, remote, confirm=lambda message: True, emit=warnings.append
+    )
+    assert any("uncommitted changes in:\n  config.txt" in m for m in warnings)
+    assert any("uncommitted changes in:\n  experiment.py" in m for m in warnings)
 
 
 def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
@@ -435,6 +485,19 @@ def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
 
     with pytest.raises(ProjectMismatch, match="allow-project-mismatch"):
         confirm_project_identity(local, remote, emit=lambda message: None)
+
+
+def test_out_of_sync_code_asks_in_a_terminal(monkeypatch):
+    local = ProjectIdentity(experiment_label="d", git_dirty=True)
+    remote = ProjectIdentity(experiment_label="d", export_format_version=1)
+    monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
+    questions = []
+    monkeypatch.setattr(
+        "psynet.command_line.user_confirms", lambda q: questions.append(q) or True
+    )
+
+    confirm_project_identity(local, remote, emit=lambda message: None)
+    assert questions and "Export anyway?" in questions[0]
 
 
 def test_matching_identity_requires_no_confirmation():
@@ -558,7 +621,7 @@ def test_hydration_rejects_an_escaping_export_path(tmp_path, cache_root):
         [
             {
                 "id": 1,
-                "type": "experiment_asset",
+                "type": "psynet.asset.FileAsset",
                 "export_path": "../secret.wav",
                 "sha256_contents": digest,
                 "storage": "LocalStorage",

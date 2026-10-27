@@ -1,0 +1,164 @@
+import importlib
+from pathlib import Path
+
+import pytest
+from dallinger.command_line.docker_ssh import CONFIGURED_HOSTS
+
+from psynet import deployment_info
+from psynet.server_logs import (
+    logs_command,
+    server_dns_host,
+    server_ingress,
+    where_to_read_logs,
+)
+
+CLOUDFLARE_HOST = {"host": "lab.example:2222", "default_ingress": "cloudflare"}
+COMPOSE_LOGS = '"docker compose -f ~/dallinger/study/docker-compose.yml logs -f"'
+CLOUDFLARE_LOGS = (
+    f"with 'ssh -p 2222 -i /keys/lab.pem ubuntu@lab.example {COMPOSE_LOGS}'"
+)
+GUESSED = ", assuming it uses the server's default ingress"
+SERVERS = importlib.import_module("dallinger.command_line.docker_ssh").servers
+
+
+@pytest.mark.parametrize(
+    "server_info, option, expected",
+    [
+        ({}, None, "classic"),
+        ({"default_ingress": "cloudflare"}, None, "cloudflare"),
+        ({"default_ingress": "cloudflare"}, "classic", "classic"),
+    ],
+)
+def test_server_ingress_prefers_the_option_to_the_server_default(
+    server_info, option, expected
+):
+    assert server_ingress(server_info, option) == expected
+
+
+@pytest.mark.parametrize(
+    "server_info, dns_host, with_upgrade, without_upgrade",
+    [
+        ({"host": "lab.example.org"}, None, "lab.example.org", "lab.example.org"),
+        ({"host": "lab.example.org"}, "x.org", "lab.example.org", "x.org"),
+        (
+            {"host": "1.2.3.4", "dns_host": "lab.example.org"},
+            "x.org",
+            "lab.example.org",
+            "x.org",
+        ),
+        (
+            {"host": "1.2.3.4:2222"},
+            "lab.example.org",
+            "lab.example.org",
+            "lab.example.org",
+        ),
+        ({"host": "1.2.3.4"}, "nip.io", "1.2.3.4.nip.io", "1.2.3.4.nip.io"),
+        ({"host": "1.2.3.4"}, None, None, None),
+    ],
+)
+@pytest.mark.parametrize("has_upgrade", [True, False])
+def test_server_dns_host_follows_the_installed_dallinger(
+    monkeypatch, server_info, dns_host, with_upgrade, without_upgrade, has_upgrade
+):
+    """Dallinger versions with ``servers upgrade`` keep Dozzle on the saved DNS host."""
+    if has_upgrade:
+        monkeypatch.setitem(SERVERS.commands, "upgrade", SERVERS)
+    else:
+        monkeypatch.delitem(SERVERS.commands, "upgrade", raising=False)
+    expected = with_upgrade if has_upgrade else without_upgrade
+    assert server_dns_host(server_info, dns_host) == expected
+
+
+@pytest.mark.parametrize(
+    "host, pem, record, expected",
+    [
+        (
+            {"host": "lab"},
+            "/keys/lab.pem",
+            None,
+            f"in Dozzle at https://logs.lab{GUESSED}",
+        ),
+        (
+            {"host": "1.2.3.4", "dns_host": "lab.example.org"},
+            "/keys/lab.pem",
+            None,
+            f"in Dozzle at https://logs.lab.example.org{GUESSED}",
+        ),
+        # An IP server without a DNS name gets the logs command instead.
+        (
+            {"host": "1.2.3.4"},
+            "/keys/lab.pem",
+            None,
+            f"with 'ssh -i /keys/lab.pem ubuntu@1.2.3.4 {COMPOSE_LOGS}'{GUESSED}",
+        ),
+        (CLOUDFLARE_HOST, "/keys/lab.pem", None, CLOUDFLARE_LOGS + GUESSED),
+        (
+            CLOUDFLARE_HOST,
+            Path.home() / ".ssh" / "lab key.pem",
+            None,
+            f"with 'ssh -p 2222 -i ~/'.ssh/lab key.pem' ubuntu@lab.example {COMPOSE_LOGS}'"
+            + GUESSED,
+        ),
+        # Recorded deployments of this app win over the server's default.
+        (
+            CLOUDFLARE_HOST,
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "classic"},
+            "in Dozzle at https://logs.lab.example",
+        ),
+        (
+            {**CLOUDFLARE_HOST, "default_ingress": "classic"},
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "cloudflare"},
+            CLOUDFLARE_LOGS,
+        ),
+        (
+            CLOUDFLARE_HOST,
+            "/keys/lab.pem",
+            {"app": "other", "ingress": "classic"},
+            CLOUDFLARE_LOGS + GUESSED,
+        ),
+        (
+            {"host": "1.2.3.4"},
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "classic", "server_dns_host": "lab.org"},
+            "in Dozzle at https://logs.lab.org",
+        ),
+        # A deploy that found no DNS name for the server gives no Dozzle link.
+        (
+            {"host": "lab"},
+            "/keys/lab.pem",
+            {"app": "study", "ingress": "classic", "server_dns_host": None},
+            f"with 'ssh -i /keys/lab.pem ubuntu@lab {COMPOSE_LOGS}'",
+        ),
+    ],
+)
+def test_where_to_read_logs_follows_the_app_ingress(
+    monkeypatch, tmp_path, host, pem, record, expected
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(CONFIGURED_HOSTS, "lab", {**host, "user": "ubuntu"})
+    monkeypatch.setattr("dallinger.command_line.utils.get_server_pem_path", lambda: pem)
+    if record:
+        deployment_info.write_all({"server": "lab", **record})
+
+    assert where_to_read_logs("lab", "study") == expected
+
+
+@pytest.mark.parametrize(
+    "user, destination",
+    [
+        ("alice", "alice@lab.org"),
+        ("a@uni.org", "-l a@uni.org lab.org"),
+        (None, "lab.org"),
+    ],
+)
+def test_logs_command_names_the_login(monkeypatch, user, destination):
+    def no_pem():
+        raise FileNotFoundError
+
+    monkeypatch.setattr("dallinger.command_line.utils.get_server_pem_path", no_pem)
+
+    assert logs_command({"host": "lab.org", "user": user}, "app") == (
+        f'ssh {destination} "docker compose -f ~/dallinger/app/docker-compose.yml logs -f"'
+    )

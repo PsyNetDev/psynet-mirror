@@ -5,6 +5,14 @@ description: Design, implement, and validate simulated participants for PsyNet e
 
 # PsyNet simulated participants
 
+## Read first
+
+Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
+
+- `test/backend` — bots and how they answer
+- `test/audits` — simulation evidence in an audit
+- `test/scalability` — performance tests with many bots
+
 ## Prerequisites
 
 - Read `implement-experiment/SKILL.md` for the general experiment
@@ -13,7 +21,7 @@ description: Design, implement, and validate simulated participants for PsyNet e
   details, `run_bot` pitfalls, and performance-test expectations.
 - Read `participant-quality-telemetry/SKILL.md` when profiles exercise
   attention, paste, disclosure, or AI-assistance review signals.
-- Read `prepare-experiment-tunnel/SKILL.md` when a temporary public preview is
+- Read `public-tunnel/SKILL.md` ("Preview a running experiment") when a temporary public preview is
   needed for live manual or human review. Do not replace live review with
   simulated data.
 - Read `verify-ai-model-usability/SKILL.md` before any real LLM-in-the-loop

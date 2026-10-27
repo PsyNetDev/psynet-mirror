@@ -1,6 +1,6 @@
 """Shared Click commands for the bootstrap and full PsyNet CLIs.
 
-``setup``, ``scripts``, ``services``, and ``generate-constraints`` are
+``setup``, ``scripts``, ``services``, ``generate-constraints``, and ``docs`` are
 registered on both the thin bootstrap group and the full
 ``psynet.command_line`` group. Keeping a single definition prevents
 option/help drift (for example ``--force-foreign-env``).
@@ -32,7 +32,7 @@ from psynet.experiment_scaffold import (
 @click.option(
     "--no-install",
     is_flag=True,
-    help="Scaffold and generate constraints without installing packages.",
+    help="Scaffold, generate constraints and set up Git without installing packages.",
 )
 @click.option(
     "--force-shared-env",
@@ -47,8 +47,17 @@ from psynet.experiment_scaffold import (
         "experiment's ./.venv."
     ),
 )
+@click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help="Set up here even if the folder contains files unrelated to PsyNet.",
+)
 @click.pass_context
-def setup(ctx, psynet_source, no_install, force_shared_env, force_foreign_env):
+def setup(
+    ctx, psynet_source, no_install, force_shared_env, force_foreign_env, assume_yes
+):
     """Scaffold and synchronize an experiment's dedicated virtual environment."""
     from psynet.experiment_setup import setup_experiment
 
@@ -58,6 +67,7 @@ def setup(ctx, psynet_source, no_install, force_shared_env, force_foreign_env):
         no_install=no_install,
         force_shared_env=force_shared_env,
         force_foreign_env=force_foreign_env,
+        assume_yes=assume_yes,
     )
 
 
@@ -152,7 +162,7 @@ def scripts_prune(ctx, include_modified, include_tracked):
 
 @click.group("services")
 def services():
-    """Check and ensure local PostgreSQL and Redis services."""
+    """Check, ensure and list local PostgreSQL and Redis services."""
     pass
 
 
@@ -186,6 +196,17 @@ def services_ensure(assume_yes):
     ensure_local_services(assume_yes=assume_yes, strict=True)
 
 
+@services.command("list")
+def services_list():
+    """Show which local sessions use which ports, databases and Redis servers.
+
+    Reads the settings of your running PsyNet, Dallinger and pytest processes.
+    """
+    from psynet.service_usage import list_services
+
+    list_services()
+
+
 @click.command("generate-constraints")
 def generate_constraints():
     """Generate constraints.txt from requirements.txt."""
@@ -194,9 +215,50 @@ def generate_constraints():
     generate_constraints_file()
 
 
+@click.group("docs")
+def docs():
+    """Read the documentation for the installed PsyNet version.
+
+    Search all pages with: rg -n -i --no-ignore "<term>" "$(psynet docs path)"
+    """
+
+
+@docs.command("path")
+def docs_path():
+    """Print the local documentation directory."""
+    from psynet.local_docs import docs_dir
+
+    click.echo(docs_dir())
+
+
+@docs.command("demos")
+def docs_demos():
+    """Print the local demo code directory."""
+    from psynet.local_docs import demos_dir
+
+    click.echo(demos_dir())
+
+
+@docs.command("show")
+@click.argument("page")
+def docs_show(page):
+    """Print PAGE, for example code/participants/payment."""
+    from psynet.local_docs import page_path
+
+    click.echo(page_path(page).read_text(encoding="utf-8"))
+
+
+@docs.command("make", hidden=True, context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def docs_make(args):
+    """Point to the command that builds the documentation."""
+    raise click.UsageError("To build the documentation, run `psynet dev docs make`.")
+
+
 def register_bootstrap_commands(group: click.Group) -> None:
     """Attach shared thin-bootstrap commands to ``group``."""
     group.add_command(setup)
     group.add_command(scripts)
     group.add_command(services)
     group.add_command(generate_constraints)
+    group.add_command(docs)

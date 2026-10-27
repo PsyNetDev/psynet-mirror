@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import psynet.experiment
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.timeline import Timeline
@@ -38,7 +36,6 @@ trial_maker = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,

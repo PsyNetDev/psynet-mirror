@@ -1,10 +1,9 @@
-# pylint: disable=unused-argument
-
 import datetime
 import random
 import sys
 import warnings
 from dataclasses import dataclass
+from functools import partial
 from math import isnan
 from typing import Any, List, Literal, Optional, Union
 
@@ -24,6 +23,8 @@ from sqlalchemy import (
     Integer,
     String,
     and_,
+    distinct,
+    exists,
     func,
     inspect,
     not_,
@@ -41,14 +42,15 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
+from ..async_job import WorkerAsyncJob, _deprecated_async_processes, check_priority
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
+from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
     ErrorRecord,
 )
 from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
-from ..process import WorkerAsyncProcess
 from ..sync import GroupBarrier, SyncGroup
 from ..timeline import (
     CodeBlock,
@@ -77,6 +79,8 @@ from ..utils import (
 )
 
 logger = get_logger()
+
+N_PARTICIPANTS_COMPLETION_MODES = ("experiment", "trial_maker")
 
 
 def _warn_ignored_fail_trials_on_premature_exit(trial_maker_id):
@@ -210,7 +214,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     finalized : bool
         Whether the trial has been finalized. This is a stronger condition than ``complete``;
-        in particular, a trial is only marked as finalized once its async processes
+        in particular, a trial is only marked as finalized once its async jobs
         have completed (if it has any).
         One day we might extend this to include arbitrary conditions,
         for example waiting for another user to evaluate that trial, or similar.
@@ -223,9 +227,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     parent_trial_id : int
         If the trial is a repeat trial, this attribute corresponds to the ID
         of the trial from which that repeat trial was cloned.
-
-    earliest_async_process_start_time : Optional[datetime]
-        Time at which the earliest pending async process was called.
 
     propagate_failure : bool
         Whether failure of a trial should be propagated to other
@@ -248,13 +249,29 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         This is only included for back-compatibility.
 
     wait_for_feedback : bool
-        Set this class attribute to ``False`` if you don't want to wait for asynchronous processes
-        to complete before giving feedback. The default is to wait.
+        By default, feedback waits until the trial is finalized or failed, so that
+        :meth:`~psynet.trial.main.Trial.show_feedback` sees the results of async
+        jobs and :meth:`~psynet.trial.main.Trial.on_finalized`. Set this class attribute
+        to ``False`` to give feedback straight away; ``show_feedback`` may then see a trial
+        whose async jobs are still running and whose ``score`` is not yet set.
+
+    async_post_trial_priority : str or None
+        Priority of the :meth:`~psynet.trial.main.Trial.async_post_trial` job,
+        ``"high"`` or ``"low"``; see :class:`~psynet.async_job.WorkerAsyncJob`.
+        If ``None`` (default), it is ``"high"`` when a participant may wait for
+        the result, i.e. when the trial maker checks performance, when it is a
+        within-participant chain trial maker (``chain_type="within"``), whose
+        next trial waits for this one to be finalized, or when the trial
+        overrides :meth:`~psynet.trial.main.Trial.show_feedback` or
+        :meth:`~psynet.trial.main.Trial.gives_feedback` with
+        ``wait_for_feedback`` set; it is ``"low"`` otherwise.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
-        the answers to all of these pages to be stored as a dict in ``participant.answer``.
-        Otherwise, the default behaviour is to only store the answer from the final page.
+        the answers to all of these pages to be stored as a dict in ``participant.answer``,
+        keyed by page label. The dict fills up as each page is submitted, so later pages
+        can read earlier answers. Otherwise, the default behaviour is to only store the
+        answer from the final page.
 
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
@@ -290,7 +307,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Equals ``None`` if no such object has been created yet.
     """
 
-    # pylint: disable=unused-argument
     __tablename__ = "trial"
 
     # Unused SharedMixin columns inherited via SQLMixin.
@@ -418,7 +434,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     )
     response = relationship("psynet.timeline.Response")
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetTrial",
@@ -435,7 +452,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_estimate = None
     check_time_credit_received = True
 
-    wait_for_feedback = True  # determines whether feedback waits for async_post_trial
+    wait_for_feedback = True  # determines whether feedback waits for the trial to be finalized or failed
     accumulate_answers = False
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
@@ -476,7 +493,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def ready_for_feedback(self):
         """
-        Determines whether a trial is ready to give feedback to the participant.
+        Whether the trial is ready to give feedback to the participant.
+
+        With :attr:`wait_for_feedback`, feedback waits until the trial is
+        finalized (so :meth:`on_finalized` has run and ``score`` is set) or
+        failed, so :meth:`show_feedback` sees one of those two states.
         """
         msg = f"Participant {self.participant.id}: Checking if the trial is ready for feedback... "
 
@@ -488,19 +509,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             msg += "yes, because we don't need to wait for feedback."
             outcome = True
 
-        elif self.asset_deposit_pending:
-            msg += "no, because the trial is awaiting an asset deposit."
-            outcome = False
-
-        elif self.async_post_trial_pending:
-            msg += "no, because the trial is awaiting async_post_trial."
-            outcome = False
-
-        else:
-            msg += "yes, all conditions are satisfied."
+        elif self.finalized:
+            msg += "yes, the trial is finalized."
             outcome = True
 
-        logger.info(msg)
+        elif self.failed:
+            msg += "yes, the trial failed."
+            outcome = True
+
+        else:
+            msg += "no, because the trial is not finalized yet."
+            outcome = False
+
+        logger.debug(msg)
         return outcome
 
     def __init__(
@@ -630,7 +651,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.participant.inc_performance_reward(reward)
 
     def _log_performance_reward(self, reward):
-        logger.info(
+        logger.debug(
             "Allocating a performance reward of $%.2f to participant %i for trial %i.",
             reward,
             self.participant.id,
@@ -640,7 +661,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def score_answer(self, answer, definition):
         """
         Scores the participant's answer. At the point that this method is called,
-        any pending asynchronous processes should already have been completed.
+        any pending async jobs should already have been completed.
 
         Parameters
         ----------
@@ -758,6 +779,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a Page object displaying feedback
         (or None, which means no feedback).
 
+        Unless :attr:`wait_for_feedback` is ``False``, the trial is either
+        finalized, so :meth:`on_finalized` has run and ``score`` is set, or
+        failed, in which case ``score`` may be unset. Check ``self.failed``
+        and ``self.failed_reason`` to give feedback on a failed trial, for
+        example a recording that the analysis rejected.
+
         Parameters
         ----------
 
@@ -782,6 +809,30 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         # )
 
     run_async_post_trial = None
+    async_post_trial_priority = None
+
+    @classmethod
+    def _get_async_post_trial_priority(cls, trial_maker):
+        """Return the priority of this trial class's ``async_post_trial`` job.
+
+        See :attr:`async_post_trial_priority` for the rules.
+        """
+        if cls.async_post_trial_priority is not None:
+            check_priority(cls.async_post_trial_priority)
+            return cls.async_post_trial_priority
+        if trial_maker is not None and (
+            trial_maker.check_performance_at_end
+            or trial_maker.check_performance_every_trial
+            # The participant's next trial waits for this trial to finalize.
+            or getattr(trial_maker, "chain_type", None) == "within"
+        ):
+            return "high"
+        if cls.wait_for_feedback and (
+            cls.show_feedback is not Trial.show_feedback
+            or cls.gives_feedback is not Trial.gives_feedback
+        ):
+            return "high"
+        return "low"
 
     def async_post_trial(self):
         """
@@ -806,20 +857,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             # before the method was called. However, we do need to record that the method failed,
             # so we set the async_post_trial_failed flag to True.
             # Also fail the trial here so it cannot sit complete-but-unfinalizable if the
-            # surrounding process failure cascade is skipped (finalize requires async success).
+            # surrounding async job failure cascade is skipped (finalize requires async success).
             db.session.rollback()
             self.async_post_trial_failed = True
             self.fail(reason="async_post_trial_failed")
             db.session.commit()
             raise
+        # The worker re-checks finalization after committing (see
+        # psynet.async_job._in_async_job).
         self.async_post_trial_complete = True
-        self.check_if_can_mark_as_finalized()
-
-    def fail_async_processes(self, reason):
-        for process in list(self.async_processes):
-            if not process.failed:
-                process.fail(reason)
-        self.fail(reason="fail_async_processes")
 
     def new_repeat_trial(self, experiment, repeat_trial_index, n_repeat_trials):
         repeat_trial = self.__class__(
@@ -873,7 +919,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 )
             return
         self.finalized = True
-        self.on_finalized()
+        with forbid_commits(f"{type(self).__name__}.on_finalized"):
+            self.on_finalized()
 
     @classmethod
     def _ready_to_finalize_condition(cls):
@@ -903,18 +950,55 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Known blockers (undeposited assets, pending async post-trial) are
         excluded in SQL so the steady-state result is empty.
 
-        We use a two-step query on purpose: lock candidate IDs first with
-        ``FOR UPDATE SKIP LOCKED``, then load full polymorphic ``Trial``
-        objects by those IDs. Loading polymorphic rows in the locked query
-        can introduce ``DISTINCT``, which PostgreSQL rejects with
-        ``FOR UPDATE``. ``skip_locked`` keeps the poller non-blocking when
-        participant requests or async workers already hold a row lock.
+        Locks participants ``FOR NO KEY UPDATE`` and then trials
+        ``FOR UPDATE``, both ``SKIP LOCKED``, so the poller does not block
+        when participant requests or async workers already hold a lock on the
+        trial or its participant.
         """
-        # Lock IDs first; polymorphic Trial loads may add DISTINCT, which
-        # PostgreSQL does not allow with FOR UPDATE.
-        id_rows = db.session.execute(
-            cls.ready_to_finalize_id_select().with_for_update(of=cls, skip_locked=True)
+        return cls._lock_and_load(cls.ready_to_finalize_id_select(), skip_locked=True)
+
+    @classmethod
+    def _lock_and_load(cls, id_select, *, skip_locked=False):
+        """Lock the trial rows selected by ``id_select`` and load fresh trials.
+
+        Finalizing writes rows that the participant's requests also write
+        (the participant's reward and, for chains, network growth), and
+        requests lock the participant before its trials. Holding a trial lock
+        while waiting for those rows can therefore deadlock with
+        ``participant.fail()``, so the participants are locked first, in a
+        separate statement, and only trials of locked participants are then
+        locked. With ``skip_locked``, busy participants and trials are
+        skipped and no lock is taken on a skipped trial (its participant
+        stays locked if it was free), and trials without a participant are
+        never returned. The participant lock is ``FOR NO KEY UPDATE``: it
+        still excludes requests, but lets other transactions insert rows
+        that reference the participant (async jobs, assets), which
+        would otherwise wait on it while holding the trial.
+
+        Locks IDs first, then loads full polymorphic ``Trial`` objects by
+        those IDs: loading polymorphic rows in the locked query can introduce
+        ``DISTINCT``, which PostgreSQL rejects with ``FOR UPDATE``.
+        """
+        from psynet.participant import Participant
+
+        participant_rows = db.session.execute(
+            select(Participant.id)
+            .where(
+                Participant.id.in_(
+                    select(cls.participant_id).where(cls.id.in_(id_select))
+                )
+            )
+            .order_by(Participant.id)
+            .with_for_update(of=Participant, key_share=True, skip_locked=skip_locked)
         ).all()
+        if skip_locked:
+            if not participant_rows:
+                return []
+            id_select = id_select.where(
+                cls.participant_id.in_([row[0] for row in participant_rows])
+            )
+        locked_select = id_select.with_for_update(of=cls, skip_locked=skip_locked)
+        id_rows = db.session.execute(locked_select).all()
         trial_ids = [row[0] for row in id_rows]
         if not trial_ids:
             return []
@@ -936,11 +1020,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         Failures are isolated per trial (same idea as network growth): one
         bad ``on_finalized`` must not leave the whole candidate set retrying
-        forever. ``handle_error`` rolls back the current session, so
-        uncommitted successes since the last commit are undone and retried
-        on the next poll. The failing trial is marked failed and committed
-        immediately so a later ``handle_error`` in the same batch cannot
-        undo that fail.
+        forever. Each trial runs in a savepoint, so a failure undoes only
+        that trial's work, and the trial is marked failed.
         """
         from psynet.experiment import get_experiment
 
@@ -950,31 +1031,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         exp = get_experiment()
         finalized_count = 0
-        # Iterate by ID so a mid-batch handle_error rollback cannot leave us
-        # holding detached ORM instances for later trials.
-        for trial_id in [trial.id for trial in trials]:
-            trial = db.session.get(cls, trial_id)
-            if trial is None:
-                continue
-            try:
-                was_finalized = trial.finalized
-                trial.check_if_can_mark_as_finalized()
-                if trial.finalized and not was_finalized:
-                    finalized_count += 1
-            except Exception as err:
-                # Rollback undid uncommitted successes since the last commit;
-                # they will be picked up again on the next poll.
-                finalized_count = 0
-                exp.isolate_batch_item_failure(
-                    err,
-                    refetch=lambda: db.session.get(cls, trial_id),
-                    fail=lambda t: (
-                        t.fail(reason="finalize_backstop_error")
-                        if not t.failed
-                        else None
-                    ),
-                    trial=trial,
-                )
+        for trial in trials:
+            was_finalized = trial.finalized
+            exp._run_batch_item(
+                trial.check_if_can_mark_as_finalized,
+                fail=partial(cls._fail_after_finalize_error, trial),
+                trial=trial,
+            )
+            if trial.finalized and not was_finalized:
+                finalized_count += 1
+                trial._wake_participant(reason="trial_finalized")
 
         if finalized_count:
             logger.info(
@@ -982,6 +1048,43 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 finalized_count,
             )
         return finalized_count
+
+    @staticmethod
+    def _fail_after_finalize_error(trial):
+        """Fail a trial whose finalization raised in the backstop."""
+        if not trial.failed:
+            trial.fail(reason="finalize_backstop_error")
+            trial._wake_participant(reason="trial_failed")
+
+    @classmethod
+    def recheck_finalization(cls, trial_id):
+        """Lock a trial, reload it, and finalize it if it is now ready.
+
+        Finalize checks inside a transaction read attributes cached when the
+        trial was loaded, so two transactions that each clear one blocker
+        (e.g. the participant response and ``async_post_trial``) can both
+        miss the other's change. Async workers call this in a fresh
+        transaction after committing, so the last committer finalizes the
+        trial without waiting for :meth:`finalize_pending_trials`. Leaves
+        committing to the caller.
+        """
+        for trial in cls._lock_and_load(select(cls.id).where(cls.id == trial_id)):
+            was_finalized = trial.finalized
+            trial.check_if_can_mark_as_finalized()
+            if trial.finalized and not was_finalized:
+                trial._wake_participant(reason="trial_finalized")
+
+    def _wake_participant(self, *, reason):
+        """Wake the participant's held page after the background finalizes or fails this trial.
+
+        The asset-deposit and async-job wakes are sent before that
+        happens, so without this wake a page held for the trial (for example
+        waiting for feedback) waits for its next poll.
+        """
+        if self.participant_id is not None:
+            from psynet.timeline_hold import _queue_timeline_hold_wake
+
+            _queue_timeline_hold_wake(self.participant_id, reason=reason)
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
@@ -1006,13 +1109,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     def queue_async_post_trial(self):
         self.async_post_trial_requested = True
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             self.call_async_post_trial,
             label="post_trial",
             timeout=self.trial_maker.async_timeout_sec,
             trial=self,
             unique=True,
-        )
+            priority=self._get_async_post_trial_priority(self.trial_maker),
+        ).enqueue()
 
     def on_finalized(self):
         self.score = self.score_answer(answer=self.answer, definition=self.definition)
@@ -1213,7 +1317,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def _finalize_trial(cls, trial_maker=None):
         def f(participant, experiment):
-            logger.info("Calling _finalize_trial.")
+            logger.debug("Calling _finalize_trial.")
 
             trial = participant.current_trial
             if participant.failed:
@@ -1234,12 +1338,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             trial.complete = True
 
             if trial_maker:
-                trial_maker.finalize_trial(
-                    answer=trial.answer,
-                    trial=trial,
-                    experiment=experiment,
-                    participant=participant,
-                )
+                with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
+                    trial_maker.finalize_trial(
+                        answer=trial.answer,
+                        trial=trial,
+                        experiment=experiment,
+                        participant=participant,
+                    )
 
             trial.check_if_can_run_async_post_trial()
             trial.check_if_can_mark_as_finalized()
@@ -1305,6 +1410,15 @@ Index(
     postgresql_where=text(
         "complete IS true AND finalized IS false AND failed IS false"
     ),
+)
+
+# Lets balanced selection count each candidate node's viable trials with an
+# index-only scan instead of one heap page per trial. Count queries must use
+# count(*) and the same IS false predicates for Postgres to use it.
+Index(
+    "ix_trial_viable_node_id",
+    Trial.node_id,
+    postgresql_where=text("is_repeat_trial IS false AND failed IS false"),
 )
 
 
@@ -1434,12 +1548,24 @@ class TrialMaker(Module):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -1463,7 +1589,9 @@ class TrialMaker(Module):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -1478,13 +1606,13 @@ class TrialMaker(Module):
         :meth:`~psynet.trial.main.TrialMaker.get_end_feedback_passed_page`.
 
     performance_threshold : float
-        Score threshold used by the default performance check method, defaults to 0.0.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the default performance check, defaults to 0.0.
+        The participant passes when the sum of trial scores exceeds this value.
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending async jobs, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
@@ -1540,15 +1668,25 @@ class TrialMaker(Module):
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
+        if recruit_mode not in self.recruit_criteria:
+            raise ValueError(
+                f"Unknown recruit_mode {recruit_mode!r}. Valid options: "
+                f"{sorted(map(repr, self.recruit_criteria))}."
+            )
         if recruit_mode == "n_participants" and target_n_participants is None:
             raise ValueError(
-                "If <recruit_mode> == 'n_participants', then <target_n_participants> must be provided."
+                "recruit_mode='n_participants' needs target_n_participants, "
+                "the number of participants to recruit."
             )
 
-        if recruit_mode == "n_trials" and target_n_participants is not None:
+        if recruit_mode in (None, "n_trials") and target_n_participants is not None:
             raise ValueError(
-                "If <recruit_mode> == 'n_trials', then <target_n_participants> must be None."
+                f"target_n_participants only takes effect with "
+                f"recruit_mode='n_participants', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_participants' to recruit until this many "
+                "participants finish, or remove target_n_participants."
             )
 
         if hasattr(self, "performance_check_threshold"):
@@ -1574,6 +1712,21 @@ class TrialMaker(Module):
         self.propagate_failure = propagate_failure
         self.recruit_mode = recruit_mode
         self.target_n_participants = target_n_participants
+        if n_participants_completion not in N_PARTICIPANTS_COMPLETION_MODES:
+            raise ValueError(
+                "n_participants_completion must be 'experiment' or 'trial_maker', "
+                f"got {n_participants_completion!r}."
+            )
+        if n_participants_completion != "experiment" and recruit_mode in (
+            None,
+            "n_trials",
+        ):
+            raise ValueError(
+                f"n_participants_completion only takes effect with "
+                f"recruit_mode='n_participants', but recruit_mode is {recruit_mode!r}. "
+                "Pass recruit_mode='n_participants' or remove n_participants_completion."
+            )
+        self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = sync_group_max_wait_time
@@ -1712,11 +1865,50 @@ class TrialMaker(Module):
 
     @property
     def n_complete_participants(self):
+        """Number of participants who count as complete for this TrialMaker's quota."""
+        if self.n_participants_completion == "trial_maker":
+            return self._n_trial_maker_complete_participants
         return Participant.query.filter_by(complete=True).count()
 
     @property
     def n_working_participants(self):
+        """Number of in-progress participants occupying a slot in this TrialMaker's quota."""
+        if self.n_participants_completion == "trial_maker":
+            return self._n_trial_maker_working_participants
         return Participant.query.filter_by(status="working", failed=False).count()
+
+    @property
+    def _n_trial_maker_complete_participants(self):
+        """Count distinct participants who have finished this TrialMaker."""
+        n = (
+            db.session.query(func.count(distinct(ModuleState.participant_id)))
+            .filter(
+                ModuleState.module_id == self.id,
+                ModuleState.finished.is_(True),
+            )
+            .scalar()
+        )
+        return n or 0
+
+    @property
+    def _n_trial_maker_working_participants(self):
+        """Count working non-failed participants who have not finished this TrialMaker."""
+        finished_this_module = exists().where(
+            ModuleState.participant_id == Participant.id,
+            ModuleState.module_id == self.id,
+            ModuleState.finished.is_(True),
+        )
+        n = (
+            db.session.query(func.count(distinct(Participant.id)))
+            .filter(
+                Participant.status == "working",
+                Participant.failed.is_(False),
+                Participant.early_exited.is_(False),
+                ~finished_this_module,
+            )
+            .scalar()
+        )
+        return n or 0
 
     @property
     def n_viable_participants(self):
@@ -1793,26 +1985,25 @@ class TrialMaker(Module):
         return DatabaseCheck(self.with_namespace("check_timeout"), self.check_timeout)
 
     def check_timeout(self):
-        # pylint: disable=no-member
         self.check_old_trials()
-        WorkerAsyncProcess.check_timeouts()
 
     def selected_recruit_criterion(self, experiment):
         if self.recruit_mode not in self.recruit_criteria:
             raise ValueError(
-                f"Invalid recruitment mode: {self.recruit_mode}. Valid options: f{self.recruit_criteria}"
+                f"Invalid recruitment mode: {self.recruit_mode}. Valid options: {list(self.recruit_criteria)}"
             )
         function = self.recruit_criteria[self.recruit_mode]
         return call_function(function, self=self, experiment=experiment)
 
     def null_criterion(self, experiment):
-        logger.info("Recruitment is disabled for this module.")
+        logger.debug("Recruitment is disabled for this module.")
         return False
 
     def n_participants_criterion(self, experiment):
-        logger.info(
-            "Target number of participants = %i, number of completed participants = %i, number of working participants = %i.",
+        logger.debug(
+            "Target number of participants = %i, completion counted at %s, number of completed participants = %i, number of working participants = %i.",
             self.target_n_participants,
+            self.n_participants_completion,
             self.n_complete_participants,
             self.n_working_participants,
         )
@@ -1898,6 +2089,13 @@ class TrialMaker(Module):
                     )
                 if hasattr(self, "recruit_mode") and self.recruit_mode is not None:
                     tags.li(f"Recruitment mode: {self.recruit_mode}")
+                if (
+                    getattr(self, "recruit_mode", None) == "n_participants"
+                    and getattr(self, "n_participants_completion", None) is not None
+                ):
+                    tags.li(
+                        f"Participants counted when: {self.n_participants_completion} complete"
+                    )
 
         return rendered_div + div.render()
 
@@ -1958,7 +2156,9 @@ class TrialMaker(Module):
             self.trial_class.query.filter_by(complete=False, failed=False)
             .filter(self.trial_class.creation_time < time_threshold)
             .order_by(self.trial_class.id)
-            .with_for_update(of=self.trial_class)
+            # A locked trial belongs to an in-flight request that may complete
+            # it; the next check retries it if not.
+            .with_for_update(of=self.trial_class, skip_locked=True)
             .populate_existing()
             .all()
         )
@@ -1967,7 +2167,6 @@ class TrialMaker(Module):
             trial.fail(reason="response_timeout")
 
     def init_participant(self, experiment, participant):
-        # pylint: disable=unused-argument
         """
         Initializes the participant at the beginning of the sequence of trials.
         If you override this, make sure you call ``super().init_particiant(...)``
@@ -2032,7 +2231,6 @@ class TrialMaker(Module):
         """
 
     def finalize_trial(self, answer, trial, experiment, participant):
-        # pylint: disable=unused-argument,no-self-use
         """
         This function is run after the participant completes the trial.
         It can be optionally customised, for example to add some more postprocessing.
@@ -2060,7 +2258,6 @@ class TrialMaker(Module):
         participant.module_state.n_completed_trials += 1
 
     def performance_check(self, experiment, participant, participant_trials):
-        # pylint: disable=unused-argument
         """
         Defines an automated check for evaluating the participant's
         current performance. The default behaviour is to take the sum of
@@ -2174,7 +2371,11 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
-                        Trial.async_post_trial_pending | Trial.asset_deposit_pending,
+                        Trial.async_post_trial_pending
+                        | Trial.asset_deposit_pending
+                        # Scores are set on finalization, which can lag behind
+                        # the last blocker clearing.
+                        | Trial._ready_to_finalize_condition(),
                     )
                     .scalar()
                 ) > 0
@@ -2229,6 +2430,10 @@ class TrialMaker(Module):
 
     @log_time_taken
     def _prepare_trial(self, experiment, participant, leader=None):
+        with forbid_commits(f"{type(self).__name__} trial preparation"):
+            return self._prepare_trial_uncommitted(experiment, participant, leader)
+
+    def _prepare_trial_uncommitted(self, experiment, participant, leader):
         # In synchronous trial makers, we only make sure that the participant is still in the sync group (and not e.g. kicked out) before delivering the next trial.
         if (
             self.sync_group_type is not None
@@ -2302,7 +2507,7 @@ class TrialMaker(Module):
                 condition=lambda participant: participant.trial_status != "exit",
                 logic_if_true=self.trial_class.trial_logic(trial_maker=self),
                 logic_if_false=CodeBlock(
-                    lambda: logger.info("No trial found, skipping")
+                    lambda: logger.debug("No trial found, skipping")
                 ),
                 fix_time_credit=False,
                 log_chosen_branch=False,
@@ -2450,9 +2655,9 @@ class NetworkTrialMaker(TrialMaker):
     or to postprocess trials submitted to a given node.
     There is some sophisticated logic to make sure that a
     participant is not assigned to a :class:`~dallinger.models.Node` object
-    if that object is still waiting for an asynchronous process,
+    if that object is still waiting for an async job,
     and likewise a trial won't contribute to a growing network if
-    it is still pending the outcome of an asynchronous process.
+    it is still pending the outcome of an async job.
 
     Experiment authors should use the public hooks on concrete classes such as
     :class:`~psynet.trial.static.StaticTrialMaker` and
@@ -2498,12 +2703,24 @@ class NetworkTrialMaker(TrialMaker):
         another participant. The built-in criteria are ``"n_participants"``
         and ``"n_trials"``, though the latter requires overriding of
         :attr:`~psynet.trial.main.TrialMaker.n_trials_still_required`.
+        Custom criteria can be added to ``recruit_criteria``.
+        ``None`` leaves recruitment to the rest of the experiment.
 
     target_n_participants
-        Target number of participants to recruit for the experiment. All
-        participants must successfully finish the experiment to count
-        towards this quota. This target is only relevant if
-        ``recruit_mode="n_participants"``.
+        Target number of participants to recruit for the experiment. Requires
+        ``recruit_mode="n_participants"``; passing it with ``None`` or
+        ``"n_trials"`` raises an error. Which completions fill the quota is
+        controlled by ``n_participants_completion``.
+
+    n_participants_completion
+        Which kind of completion counts toward ``target_n_participants``.
+        ``"experiment"`` (default) counts participants who successfully
+        finish the whole experiment. ``"trial_maker"`` counts participants
+        who finish this TrialMaker, even if they later leave before the
+        experiment end page. In-progress participants still occupy a slot
+        in both cases, including people who have not yet reached this
+        TrialMaker, so PsyNet does not immediately recruit a replacement.
+        ``"trial_maker"`` raises an error with ``recruit_mode=None`` or ``"n_trials"``.
 
     n_repeat_trials
         Number of repeat trials to present to the participant. These trials
@@ -2513,7 +2730,7 @@ class NetworkTrialMaker(TrialMaker):
 
     wait_for_networks
         If ``True``, then the participant will be made to wait if there are
-        still more networks to participate in, but these networks are pending asynchronous processes.
+        still more networks to participate in, but these networks are pending async jobs.
 
     sync_group_type
         Optional SyncGroup type to use for synchronizing participant allocation to nodes.
@@ -2561,7 +2778,9 @@ class NetworkTrialMaker(TrialMaker):
         Users are invited to override this.
 
     async_timeout_sec : float
-        How long until an async process times out, in seconds (default = 300).
+        How long an async job may run before it times out, in seconds
+        (default = 300), counted from when the job starts running, not
+        from when it is queued.
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
         which in turn depends on :attr:`~psynet.trial.main.TrialMaker.check_timeout_interval_sec`.
@@ -2579,12 +2798,13 @@ class NetworkTrialMaker(TrialMaker):
 
     end_performance_check_waits : bool
         If ``True`` (default), then the final performance check waits until all trials no
-        longer have any pending asynchronous processes.
+        longer have any pending async jobs, and until trials that are ready
+        to finalize have been finalized (so their scores are set).
 
     performance_threshold : float (default = -1.0)
-        Score threshold used by the default performance check method.
-        By default, corresponds to the minimum proportion of non-failed trials that
-        the participant must achieve to pass the performance check.
+        Threshold for the built-in performance check chosen by ``performance_check_type``.
+        The participant passes when the score (the summed trial scores, the proportion
+        of non-failed trials, or the consistency) is at least this value.
         This is used in :meth:`~psynet.trial.main.NetworkTrialMaker.performance_check`.
     """
 
@@ -2614,6 +2834,7 @@ class NetworkTrialMaker(TrialMaker):
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
         sync_group_wait_content=None,
+        n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         performance_check_is_enabled = (
             check_performance_at_end or check_performance_every_trial
@@ -2656,6 +2877,7 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
             sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
             sync_group_wait_content=sync_group_wait_content,
+            n_participants_completion=n_participants_completion,
         )
         self.network_class = network_class
         self.wait_for_networks = wait_for_networks
@@ -2739,23 +2961,38 @@ class NetworkTrialMaker(TrialMaker):
 
     @log_time_taken
     def prepare_trial(self, experiment, participant: Participant):
-        logger.info("Preparing trial for participant %i.", participant.id)
+        logger.debug("Preparing trial for participant %i.", participant.id)
 
-        selection = self._select_trial_node(participant, experiment)
-        if isinstance(selection, str):
-            if selection not in ["wait", "exit"]:
-                raise ValueError(
+        full_node_ids = set()
+        while True:
+            selection = self._select_trial_node(participant, experiment)
+            if isinstance(selection, str):
+                if selection not in ["wait", "exit"]:
+                    raise ValueError(
+                        "_select_trial_node must return Selection, 'wait', or 'exit'"
+                    )
+                logger.debug("Outcome of trial selection: %s", selection)
+                return None, selection
+            if not isinstance(selection, Selection):
+                raise TypeError(
                     "_select_trial_node must return Selection, 'wait', or 'exit'"
                 )
-            logger.info("Outcome of trial selection: %s", selection)
-            return None, selection
-        if not isinstance(selection, Selection):
-            raise TypeError(
-                "_select_trial_node must return Selection, 'wait', or 'exit'"
+            if self._claim_node_capacity(selection.value):
+                break
+            if selection.value.id in full_node_ids:
+                raise RuntimeError(
+                    f"Node {selection.value.id} was selected again after it was "
+                    "found to be full. Custom discovery hooks must not return "
+                    "nodes without remaining trial capacity."
+                )
+            full_node_ids.add(selection.value.id)
+            logger.debug(
+                "Node %i filled up during selection; selecting again.",
+                selection.value.id,
             )
 
         node = selection.value
-        logger.info(
+        logger.debug(
             "Selected node %i from network %i to give to participant %i.",
             node.id,
             node.network_id,
@@ -2766,6 +3003,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             experiment=experiment,
         )
+        self._on_node_claimed(node, participant)
         self.on_trial_created(
             trial=trial,
             experiment=experiment,
@@ -2835,24 +3073,13 @@ class NetworkTrialMaker(TrialMaker):
         """Return ``Selection(node)``, ``"wait"``, or ``"exit"``."""
         raise NotImplementedError
 
-    def _select_from_discovered(
-        self, discovered, participant, experiment, select_hook, method_name
-    ):
-        """Select from a discovered list, or pass through ``wait`` / ``exit``."""
-        if isinstance(discovered, str):
-            return discovered
-        if not isinstance(discovered, list):
-            raise TypeError(
-                "find_chains / find_nodes must return a list of eligible values, "
-                "'wait', or 'exit'; it must not return None"
-            )
-        if not discovered:
-            return "exit"
-        return self._coerce_selection(
-            select_hook(discovered, participant, experiment),
-            allowed_values=discovered,
-            method_name=method_name,
-        )
+    def _claim_node_capacity(self, node):
+        """Reserve capacity on the selected node, returning ``False`` if it is full."""
+        return True
+
+    def _on_node_claimed(self, node, participant):
+        """Apply participant state changes once a trial has been created on the node."""
+        pass
 
     @staticmethod
     def _coerce_selection(selection, allowed_values, method_name):
@@ -2963,11 +3190,11 @@ class NetworkTrialMaker(TrialMaker):
         trial._initial_assets = dict(trial.assets)
 
     def call_grow_network(self, network):
-        # pylint: disable=no-member
         from psynet.experiment import get_experiment
 
         experiment = get_experiment()
-        grown = self.grow_network(network, experiment)
+        with forbid_commits(f"{type(self).__name__}.grow_network"):
+            grown = self.grow_network(network, experiment)
         assert isinstance(grown, bool)
         if grown:
             self._check_run_async_post_grow_network(network)
@@ -2984,12 +3211,14 @@ class NetworkTrialMaker(TrialMaker):
             self.queue_async_post_grow_network(network)
 
     def queue_async_post_grow_network(self, network):
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             network.call_async_post_grow_network,
             label="post_grow_network",
             timeout=self.async_timeout_sec,
             network=network,
-        )
+            # Participants may wait for the network's next node.
+            priority="high",
+        ).enqueue()
 
     @property
     def network_query(self):
@@ -3180,7 +3409,7 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
             self.id, self.type, len(self.alive_nodes)
         )
 
-    trial_maker_id = Column(String)
+    trial_maker_id = Column(String, index=True)
     module_id = Column(String)
     target_n_trials = Column(Integer)
     participant_group = Column(String)
@@ -3254,7 +3483,8 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
             "The .trials attribute has been removed, please use .all_trials, .alive_trials, or .failed_trials instead."
         )
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetNetwork",
@@ -3310,7 +3540,6 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
         sync_group_type: Optional[str] = None,
         sync_group: Optional[SyncGroup] = None,
     ):
-        # pylint: disable=unused-argument
         self.trial_maker_id = trial_maker_id
         self.assets = {}
 
@@ -3379,7 +3608,8 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         )
 
     module_state = relationship("ModuleState")
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
 
     asset_links = relationship(
         "AssetNode",
@@ -3495,12 +3725,14 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         self.on_deploy_complete = True
 
     def queue_async_on_deploy(self):
-        WorkerAsyncProcess(
+        WorkerAsyncJob(
             function=self.call_async_on_deploy,
             node=self,
             timeout=self.trial_maker.async_timeout_sec,
             unique=True,
-        )
+            # Participants may wait for this node to be deployed.
+            priority="high",
+        ).enqueue()
         self.async_on_deploy_requested = True
 
     def call_async_on_deploy(self):

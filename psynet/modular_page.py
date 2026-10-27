@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
+import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
@@ -673,8 +674,16 @@ class Control(JavaScriptContributor):
 
     bot_response :
         Defines how bots respond to this page.
-        Can be a single value, in which case this is interpreted as the participant's (formatted) answer.
-        Alternatively, it can be an instance of class ``BotResponse``, which can accept more detailed
+        If left unset (the default, :class:`~psynet.utils.NoArgumentProvided`),
+        bots answer through the control's :meth:`get_bot_response` method.
+
+        Can be a single value, in which case this is interpreted as the participant's (formatted) answer
+        and saved without passing through :meth:`format_answer`.
+        ``None`` is such a value: ``bot_response=None`` makes bots submit an answer of ``None``
+        instead of calling :meth:`get_bot_response`.
+        Can also be a function that returns the response, called each time a bot reaches the page;
+        see :doc:`/test/backend` for the arguments it can take.
+        Alternatively, it can be an instance of class :class:`~psynet.bot.BotResponse`, which can accept more detailed
         information, for example:
 
         raw_answer :
@@ -798,11 +807,9 @@ class Control(JavaScriptContributor):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check
@@ -911,6 +918,10 @@ class OptionControl(Control):
     """
     The OptionControl class provides four kinds of controls for the participant in its subclasses
     ``CheckboxControl``, ``DropdownControl``, ``PushButtonControl``, and ``RadioButtonControl``.
+
+    The saved answer is the element of ``choices`` that the participant picked,
+    with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
+    NumPy scalars in ``choices`` become the equivalent Python values.
     """
 
     def __init__(
@@ -922,12 +933,40 @@ class OptionControl(Control):
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
-        self.choices = choices
-        self.labels = choices if labels is None else labels
+        self.choices = [_as_python_value(choice) for choice in choices]
+        self.labels = self.choices if labels is None else labels
         self.style = style
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
+        self._check_choices_have_distinct_text()
+
+    def _check_choices_have_distinct_text(self):
+        # The browser submits a choice as the text of its HTML id or value,
+        # so choices with the same text could not be told apart.
+        seen = {}
+        for choice in self.choices:
+            other = seen.setdefault(str(choice), choice)
+            if other != choice:
+                raise ValueError(
+                    f"Choices {other!r} and {choice!r} have the same text, "
+                    "so their answers cannot be told apart."
+                )
+
+    def _choice_for_text(self, text):
+        if isinstance(text, str):
+            for choice in self.choices:
+                if str(choice) == text:
+                    return choice
+        return text
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the choice named by the browser's string answer.
+
+        Answers that name no choice, such as an empty selection or free text,
+        are returned unchanged.
+        """
+        return self._choice_for_text(raw_answer)
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -949,8 +988,11 @@ class OptionControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
+        """Answer with a random choice, as a string like the browser submits."""
+        # Browsers submit the choice from its HTML id or value attribute,
+        # so the raw answer is a string even when ``choices`` are numbers.
         return BotResponse(
-            raw_answer=random.choice(self.choices),
+            raw_answer=str(random.choice(self.choices)),
             metadata=self.metadata,
         )
 
@@ -970,6 +1012,14 @@ class OptionControl(Control):
 
 def _is_html_markup(x):
     return isinstance(x, Markup) or isinstance(x, tags.html_tag)
+
+
+def _as_python_value(x):
+    """Convert a NumPy scalar to the equivalent Python value, so it is stored as plain JSON."""
+    if isinstance(x, np.floating):
+        # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
+        return float(str(x))
+    return x.item() if isinstance(x, np.generic) else x
 
 
 class CheckboxControl(OptionControl):
@@ -1061,6 +1111,19 @@ class CheckboxControl(OptionControl):
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the ticked choices named by the browser's list of ids."""
+        if not isinstance(raw_answer, list):
+            return raw_answer
+        return [self._choice_for_text(text) for text in raw_answer]
+
+    def get_bot_response(self, experiment, bot, page, prompt):
+        """Tick one random checkbox, submitting the list of ids the browser sends."""
+        return BotResponse(
+            raw_answer=[str(random.choice(self.choices))],
+            metadata=self.metadata,
+        )
 
 
 class Checkbox:
@@ -1202,20 +1265,19 @@ class PushButtonControl(OptionControl):
         return {"choices": self.choices, "labels": self.labels}
 
     def visualize_response(self, answer, response, trial):
+        return self._visualize_buttons(lambda choice: choice == answer)
+
+    def _visualize_buttons(self, is_highlighted):
+        """Render the buttons, highlighting those whose choice passes ``is_highlighted``."""
+        mode = "timed" if self.timed else "submit"
         html = tags.div()
         with html:
             for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response submit"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
+                color = "btn-success" if is_highlighted(choice) else "btn-primary"
                 tags.button(
                     type="button",
                     id=choice,
-                    _class=_class,
+                    _class=f"btn push-button {color} response {mode}",
                     style=self.style,
                 ).add(label)
                 tags.br()
@@ -1328,24 +1390,18 @@ class TimedPushButtonControl(PushButtonControl):
         return {**kwargs}["metadata"]["event_log"]
 
     def visualize_response(self, answer, response, trial):
-        html = tags.div()
-        with html:
-            for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response timed"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
-                tags.button(
-                    type="button",
-                    id=choice,
-                    _class=_class,
-                    style=self.style,
-                ).add(label)
-                tags.br()
-        return html.render()
+        """Highlight every button that the response's event log records as pressed."""
+        # Subclasses may reformat the answer, so read the presses from the
+        # browser's event log instead.
+        event_log = []
+        if response is not None and response.metadata:
+            event_log = response.metadata.get("event_log") or []
+        pressed = {
+            event["info"]["buttonId"]
+            for event in event_log
+            if event["eventType"] == "pushButtonClicked"
+        }
+        return self._visualize_buttons(lambda choice: str(choice) in pressed)
 
     def get_bot_response(self, experiment, bot, page, prompt):
         event_log = [
@@ -2274,6 +2330,25 @@ class ModularPage(Page):
 
 
 class AudioMeterControl(Control):
+    """
+    Shows a live microphone level meter, warning when the input is too loud or too quiet.
+
+    Useful for checking recording levels before recording trials. The bot response is ``None``.
+
+    Parameters
+    ----------
+    calibrate : bool
+        Show sliders for tuning the meter's decay, thresholds, and warning timings.
+    show_next_button : bool
+        Whether to show the Next button.
+    min_time : float
+        Seconds before the Next button is enabled.
+    bot_response
+        Optional bot response override.
+    **kwargs
+        Passed to :class:`Control`.
+    """
+
     macro = "audio_meter"
 
     def __init__(
@@ -2367,7 +2442,7 @@ class AudioMeterControl(Control):
                 ]
             )
         else:
-            self.slider = None
+            self.sliders = None
 
     display_range = {"min": -60, "max": 0}
 
@@ -2401,11 +2476,19 @@ class AudioMeterControl(Control):
         )
         events["submitEnable"].add_trigger("audioMeterMinimalTime")
 
+    def get_js_dependencies(self):
+        """Load Bootstrap's JavaScript for the calibration tabs."""
+        if self.calibrate:
+            return ["/static/scripts/bootstrap.bundle.min.js"]
+        return []
+
     def get_bot_response(self, experiment, bot, page, prompt):
         return None
 
 
 class TappingAudioMeterControl(AudioMeterControl):
+    """:class:`AudioMeterControl` tuned for tapping recordings: faster decay, no clipping warning."""
+
     decay = {"display": 0.01, "high": 0, "low": 0.01}
 
     threshold = {"high": -2, "low": -20}
@@ -3797,8 +3880,11 @@ class VideoRecordControl(RecordControl):
                     parent=parent,
                 )
 
+                # LocalStorage deposits are a quick file copy; keep them
+                # synchronous so the next page can serve the recording.
+                async_ = not isinstance(asset.default_storage, LocalStorage)
                 try:
-                    asset.deposit(async_=True, delete_input=True)
+                    asset.deposit(async_=async_, delete_input=True)
                 except Asset.InconsistentContentError:
                     raise ValueError(
                         f"This participant already has an asset with the label '{label}'. "
@@ -3884,6 +3970,34 @@ class VideoRecordControl(RecordControl):
 
 
 class FrameSliderControl(Control):
+    """
+    Slider that scrubs through the frames of a single video.
+
+    The answer is the slider position between 0 and 1, which maps to the
+    video's relative playback time.
+
+    Parameters
+    ----------
+    url : str
+        URL of the video.
+    file_type : str
+        Video file type, for example ``"mp4"``.
+    width, height : str
+        CSS size of the video, for example ``"400px"``.
+    starting_value : float
+        Initial slider position between 0 and 1.
+    minimal_time : float
+        Seconds before the Next button is enabled.
+    reverse_scale : bool
+        Flip the scale.
+    directional : bool
+        Show the slider in grey/blue (directional) or all grey (non-directional).
+    hide_slider : bool
+        Hide the slider bar.
+    bot_response
+        Optional bot response override; bots otherwise answer uniformly at random.
+    """
+
     macro = "frame_slider"
 
     def __init__(
@@ -4064,6 +4178,11 @@ class SurveyJSControl(Control):
             }
             .sd-root-modern {
                 --sjs-general-backcolor: transparent;
+            }
+            /* SurveyJS gives the page a fixed minimum width, which overflows
+            the PsyNet surface on phones. */
+            .sd-page {
+                min-width: 0 !important;
             }
             /* This removes the shadow from the survey elements. */
             .sd-element--with-frame:not(.sd-element--collapsed) {
@@ -4331,6 +4450,11 @@ class RatingScale:
         design["type"] = "rating"
         design["name"] = self.name
         design["isRequired"] = self.required
+        # SurveyJS's default "auto" mode swaps narrow scales for a dropdown
+        # that hides the min/max descriptions.
+        design["displayMode"] = "buttons"
+        # SurveyJS's default 300px minimum overflows the page card on phones.
+        design["minWidth"] = "0px"
 
         if self.min_description:
             design["minRateDescription"] = self.min_description

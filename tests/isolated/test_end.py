@@ -24,10 +24,10 @@ def _reward_html(monkeypatch, time_reward, performance_reward):
     return str(EndLogic().summarize_reward(None, participant))
 
 
-def test_recorded_submission_page_renders_recruiter_exit_response():
-    """Live confirmation HTML comes from exit_response, not stored page copy."""
+def test_recorded_submission_page_renders_recruiter_submission_page():
+    """Live confirmation HTML comes from the recruiter, not stored page copy."""
     experiment = MagicMock()
-    experiment.recruiter.exit_response.return_value = "confirmation html"
+    experiment.recruiter.render_submission_page.return_value = "confirmation html"
     participant = MagicMock()
     page = RecordedSubmissionPage()
 
@@ -36,7 +36,7 @@ def test_recorded_submission_page_renders_recruiter_exit_response():
 
     assert response.get_data(as_text=True) == "confirmation html"
     assert response.headers["Cache-Control"] == "no-store"
-    experiment.recruiter.exit_response.assert_called_once_with(experiment, participant)
+    experiment.recruiter.render_submission_page.assert_called_once_with(participant)
 
 
 def test_summarize_reward_omits_zero_performance_reward(monkeypatch):

@@ -4,13 +4,17 @@ import glob
 import hashlib
 import importlib
 import inspect
+import json
 import logging
 import os
+import random
 import re
 import sys
 import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -32,6 +36,7 @@ from dallinger.recruiters import _descendent_classes
 from flask.globals import current_app
 from flask.templating import Environment, _render
 from sqlalchemy import or_
+from urllib3.util import Retry
 
 from psynet.light_utils import (  # noqa: F401 – re-exported for backwards compat
     _IN_REPO_EXPERIMENT_ROOTS,
@@ -46,6 +51,7 @@ from psynet.light_utils import (  # noqa: F401 – re-exported for backwards com
     git_repository_available,
     is_in_repo_experiment,
     md5_directory,
+    strip_url_credentials,
 )
 from psynet.translation.utils import load_po
 
@@ -69,6 +75,18 @@ def psynet_source_prefixes():
 
 
 def get_logger(name="psynet"):
+    """
+    Return a standard-library logger, by default the shared ``psynet`` logger.
+
+    Parameters
+    ----------
+    name : str
+        Logger name passed to :func:`logging.getLogger`.
+
+    Returns
+    -------
+    logging.Logger
+    """
     return logging.getLogger(name)
 
 
@@ -120,6 +138,9 @@ def call_function(function, *args, **kwargs):
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.
+
+    Any credentials embedded in the remote URL are removed, because the
+    result is stored in deployment records and exports.
     """
     import subprocess
 
@@ -129,7 +150,7 @@ def find_git_repo():
             .strip()
             .decode("utf-8")
         )
-        return origin
+        return strip_url_credentials(origin)
     except subprocess.CalledProcessError:
         return None
 
@@ -213,11 +234,79 @@ config_defaults = {}
 
 
 def get_config():
+    """
+    Return the Dallinger configuration object, loading it first if needed.
+
+    Read values with ``get_config().get(key)``.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
     from dallinger.config import get_config as dallinger_get_config
 
     config = dallinger_get_config()
     if not config.ready:
         config.load()
+    return config
+
+
+def _same_directory(a, b):
+    """Return whether paths ``a`` and ``b`` name the same existing directory."""
+    try:
+        return b is not None and os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def load_runtime_server_config(config=None, deployment_id=None):
+    """
+    Return the configuration of the running server, including runtime values.
+
+    Runtime values such as dashboard credentials come from the config of the
+    running debug server, or else from the launch info of ``deployment_id``.
+
+    Parameters
+    ----------
+    config : dallinger.config.Configuration, optional
+        The configuration to extend; by default Dallinger's configuration.
+    deployment_id : str, optional
+        The deployment whose saved launch info to read when no debug server is
+        running.
+
+    Returns
+    -------
+    dallinger.config.Configuration
+    """
+    from .redis import redis_vars
+
+    config = config or get_config()
+    if not config.ready:
+        config.load()
+
+    # The debug server runs from Dallinger's generated development directory,
+    # whose config.txt includes runtime values such as dashboard credentials.
+    # A deployed server runs from the experiment directory itself, whose
+    # config.txt is already loaded below the environment; loading it again
+    # on top would hide the deployment's environment, such as its mode.
+    server_working_directory = redis_vars.get("server_working_directory", None)
+    if server_working_directory:
+        from dallinger.config import experiment_directory
+
+        if not _same_directory(server_working_directory, experiment_directory()):
+            config.load_from_file(os.path.join(server_working_directory, "config.txt"))
+        return config
+
+    if deployment_id:
+        launch_info_path = (
+            Path("~/psynet-data/launch-data").expanduser()
+            / deployment_id
+            / "launch-info.json"
+        )
+        if launch_info_path.exists():
+            with open(launch_info_path, encoding="utf-8") as f:
+                config.extend(json.load(f))
+
     return config
 
 
@@ -495,6 +584,30 @@ def json_to_data_frame(json_data):
 def wait_until(
     condition, max_wait, poll_interval=0.5, error_message=None, *args, **kwargs
 ):
+    """
+    Poll ``condition`` until it returns a truthy value.
+
+    Parameters
+    ----------
+    condition : callable
+        Called as ``condition(*args, **kwargs)``.
+    max_wait : float
+        Maximum time to wait, in seconds.
+    poll_interval : float
+        Time between checks, in seconds.
+    error_message : str, optional
+        Message for the error raised on timeout.
+
+    Returns
+    -------
+    bool
+        ``True`` once the condition is satisfied.
+
+    Raises
+    ------
+    RuntimeError
+        If the condition is not satisfied within ``max_wait`` seconds.
+    """
     if condition(*args, **kwargs):
         return True
     else:
@@ -537,6 +650,9 @@ def require_exp_directory(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # On a group, this runs before Click reaches a subcommand's --help.
+        if "--help" in sys.argv[1:]:
+            return f(*args, **kwargs)
         try:
             ensure_experiment_directory_name_does_not_conflict()
             if not experiment_available():
@@ -620,6 +736,28 @@ def _cached_template_from_string(environment, template_string):
     return template
 
 
+class _TemplateConfig(Mapping):
+    """Read-only template view of ``config.as_dict()`` that reads keys on access.
+
+    ``as_dict()`` looks up every registered key, which is slow to repeat on each
+    render; templates read only a few. Sensitive and unset keys stay hidden.
+    """
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getitem__(self, key):
+        if key not in self._config.types or key in self._config.sensitive:
+            raise KeyError(key)
+        return self._config.get(key)
+
+    def __iter__(self):
+        return iter(self._config.as_dict())
+
+    def __len__(self):
+        return len(self._config.as_dict())
+
+
 def _render_with_translations(
     locale, template_name=None, template_string=None, all_template_args=None
 ):
@@ -629,7 +767,7 @@ def _render_with_translations(
     if all_template_args is None:
         all_template_args = {}
 
-    all_template_args["config"] = dict(get_config().as_dict().items())
+    all_template_args["config"] = _TemplateConfig(get_config())
 
     assert [template_name, template_string].count(None) == 1, (
         "Only one of template_name or template_string should be provided."
@@ -705,22 +843,40 @@ def is_release_branch():
     return os.environ.get("CI_COMMIT_REF_NAME", "").startswith("release-")
 
 
+def _deployment_mode():
+    """Return the deployment mode (``"debug"``, ``"sandbox"`` or ``"live"``).
+
+    Returns ``None`` outside a deployment package, for example when PsyNet
+    code runs from an experiment's source folder.
+    """
+    from . import deployment_info
+    from .experiment import in_deployment_package
+
+    if not in_deployment_package():
+        return None
+    return deployment_info.read("mode")
+
+
 def _tolerate_missing_translation(namespace):
     """
     Return whether a missing catalog entry should be downgraded to a warning.
 
     Package catalogs (e.g. PsyNet's own) are refreshed on the release branch,
-    so feature-branch test runs must not depend on them. Experiment catalogs
-    are owned by the experiment author, so those keep failing loudly.
+    so feature-branch test runs and local debug sessions must not depend on them.
+    Experiment catalogs are owned by the experiment author, so those keep
+    failing loudly.
     """
     if namespace == "experiment":
         return False
-    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not is_release_branch()
+    if is_release_branch():
+        return False
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return _deployment_mode() in (None, "debug")
 
 
 def check_translation_is_available(message, context, locale, namespace):
-    from . import deployment_info
-    from .experiment import get_experiment, in_deployment_package
+    from .experiment import get_experiment
 
     is_available = (context, message) in REGISTERED_TRANSLATIONS[namespace][locale]
 
@@ -733,10 +889,7 @@ def check_translation_is_available(message, context, locale, namespace):
             "You cannot rename the functions _ or _p, and you must pass them strings directly, "
             "not variables or strings wrapped in parentheses."
         )
-        is_live_experiment = (
-            in_deployment_package() and deployment_info.read("mode") == "live"
-        )
-        if is_live_experiment:
+        if _deployment_mode() == "live":
             error_message += " Since this is a live experiment, we instead presented the untranslated text."
             logger.warning(error_message)
             try:
@@ -747,8 +900,8 @@ def check_translation_is_available(message, context, locale, namespace):
             error_message += (
                 " The untranslated English text will be shown instead. "
                 f"Catalogs for the {namespace} package are refreshed on the release branch "
-                "with `psynet translate`, so feature-branch tests do not require them "
-                "to be up to date."
+                "with `psynet translate`, so tests and local debug sessions do not "
+                "require them to be up to date."
             )
             logger.warning(error_message)
         else:
@@ -975,6 +1128,51 @@ def sample_from_surface_of_unit_sphere(n_dimensions):
     res = np.random.randn(n_dimensions, 1)
     res /= np.linalg.norm(res, axis=0)
     return res[:, 0].tolist()
+
+
+def shuffle_with_max_run(items, key, max_run, max_attempts=100):
+    """Return a shuffled copy of ``items`` with at most ``max_run`` consecutive items sharing a key.
+
+    Useful for planned trial orders, for example
+    ``node_order=lambda nodes: shuffle_with_max_run(nodes, key=lambda n: n.definition["condition"], max_run=2)``.
+    ``key`` must return a hashable value. The order is built item by item,
+    choosing at random among the keys allowed next, weighted by how many
+    items each has left. Raises ``ValueError`` if no order is found within
+    ``max_attempts`` attempts, which in practice means none exists.
+    """
+    if max_run < 1:
+        raise ValueError(f"max_run must be at least 1; got {max_run}.")
+    groups = {}
+    for item in items:
+        groups.setdefault(key(item), []).append(item)
+    n_items = sum(len(group) for group in groups.values())
+    for _ in range(max_attempts):
+        remaining = {k: random.sample(group, len(group)) for k, group in groups.items()}
+        result, last, run = [], None, 0
+        while len(result) < n_items:
+            allowed = [k for k in remaining if not (k == last and run >= max_run)]
+            if not allowed:
+                break
+            # A key with more items than the others can separate must go now.
+            biggest = max(remaining, key=lambda k: len(remaining[k]))
+            others = n_items - len(result) - len(remaining[biggest])
+            if biggest in allowed and len(remaining[biggest]) > others * max_run:
+                choice = biggest
+            else:
+                weights = [len(remaining[k]) for k in allowed]
+                choice = random.choices(allowed, weights)[0]
+            result.append(remaining[choice].pop())
+            if not remaining[choice]:
+                del remaining[choice]
+            run = run + 1 if choice == last else 1
+            last = choice
+        else:
+            return result
+    raise ValueError(
+        f"Could not find an order of {n_items} items with at most {max_run} "
+        f"consecutive items sharing a key after {max_attempts} attempts. "
+        "Allow longer runs or balance the keys more evenly."
+    )
 
 
 def run_subprocess_with_live_output(command, timeout=None, cwd=None):
@@ -1219,7 +1417,11 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 
 @contextlib.contextmanager
-def time_logger(label, threshold=0.01):
+def time_logger(label, threshold=0.1):
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds.
+
+    The line is at INFO if the block took at least a second, otherwise at DEBUG.
+    """
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1229,7 +1431,8 @@ def time_logger(label, threshold=0.01):
     log["time_finished"] = time.monotonic()
     log["time_taken"] = log["time_finished"] - log["time_started"]
     if log["time_taken"] > threshold:
-        logger.info(
+        logger.log(
+            logging.INFO if log["time_taken"] >= 1 else logging.DEBUG,
             "Task '%s' took %.3f s",
             label,
             log["time_taken"],
@@ -1264,7 +1467,7 @@ def _excluded_from_ci_experiment_dirs(dir_path: str) -> bool:
     )
 
 
-def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=None):
+def list_experiment_dirs(for_ci_tests=False):
     """List in-repo experiment directories under :data:`_IN_REPO_EXPERIMENT_ROOTS`.
 
     Skips hidden directories while walking so leftover virtualenvs under a demo
@@ -1284,21 +1487,10 @@ def list_experiment_dirs(for_ci_tests=False, ci_node_total=None, ci_node_index=N
             if for_ci_tests and _excluded_from_ci_experiment_dirs(dir_):
                 continue
             dirs.append(dir_)
-    dirs = sorted(dirs)
-
-    if ci_node_total is not None and ci_node_index is not None:
-        dirs = with_parallel_ci(dirs, ci_node_total, ci_node_index)
-
-    return dirs
+    return sorted(dirs)
 
 
-def with_parallel_ci(paths, ci_node_total, ci_node_index):
-    index = ci_node_index - 1  # 1-indexed to 0-indexed
-    assert 0 <= index < ci_node_total
-    return [paths[i] for i in range(len(paths)) if i % ci_node_total == index]
-
-
-def list_isolated_tests(ci_node_total=None, ci_node_index=None):
+def list_isolated_tests():
     isolated_tests_root = get_psynet_root() / "tests" / "isolated"
     isolated_tests_demos = isolated_tests_root / "demos"
     isolated_tests_experiments = isolated_tests_root / "experiments"
@@ -1317,20 +1509,14 @@ def list_isolated_tests(ci_node_total=None, ci_node_index=None):
         # alongside the tests and must not be run as empty test files.
         tests.extend(glob.glob(str(directory / "test_*.py")))
 
-    if ci_node_total is not None and ci_node_index is not None:
-        tests = with_parallel_ci(tests, ci_node_total, ci_node_index)
-
     return tests
 
 
 # Check TODOs
+@dataclass(frozen=True)
 class PatternDir:
-    def __init__(self, pattern, glob_dir):
-        self.pattern = pattern
-        self.glob_dir = glob_dir
-
-    def __dict__(self):
-        return {"pattern": self.pattern, "glob_dir": self.glob_dir}
+    pattern: str
+    glob_dir: str
 
 
 def _should_skip_todo_path(path: Path) -> bool:
@@ -1359,7 +1545,9 @@ def _check_todos(pattern, glob_dir):
 def _aggregate_todos(pattern_dirs: List[PatternDir]):
     todo_count = {}
     for pattern_dir in pattern_dirs:
-        todo_count.update(_check_todos(**pattern_dir.__dict__()))
+        todo_count.update(
+            _check_todos(pattern=pattern_dir.pattern, glob_dir=pattern_dir.glob_dir)
+        )
     return todo_count
 
 
@@ -1392,6 +1580,18 @@ def check_todos_before_deployment():
 
 
 def as_plain_text(html):
+    """
+    Convert HTML to readable text using ``html2text``, collapsing whitespace to single spaces.
+
+    Parameters
+    ----------
+    html : str or markupsafe.Markup
+        HTML to convert.
+
+    Returns
+    -------
+    str
+    """
     text = html2text.HTML2Text().handle(str(html))
     pattern = re.compile(r"\s+")
     text = re.sub(pattern, " ", text).strip()
@@ -1414,18 +1614,31 @@ def in_python_package():
     Returns
     -------
     bool
-        True if the current directory contains either pyproject.toml or setup.py,
-        indicating it is likely a Python package root directory.
+        See :func:`is_a_package`.
     """
     return is_a_package(".")
 
 
 def is_a_package(path):
+    """
+    Test whether a directory is the root of a Python package rather than an experiment.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to inspect.
+
+    Returns
+    -------
+    bool
+        True if the directory contains ``pyproject.toml`` or ``setup.py`` and no
+        ``experiment.py``. Experiment directories may carry their own
+        ``pyproject.toml`` (for example from ``uv init``).
+    """
     path = Path(path)
-    files_to_check = ["pyproject.toml", "setup.py"]
-    for file in files_to_check:
-        if path.joinpath(file).exists():
-            return True
+    if (path / "experiment.py").exists():
+        return False
+    return any((path / file).exists() for file in ["pyproject.toml", "setup.py"])
 
 
 def get_package_name(path="."):
@@ -1725,6 +1938,12 @@ def format_timedelta(timedelta_obj):
 
 
 def get_experiment_url(app=None, server=None):
+    """Return the experiment's URL.
+
+    Without ``app`` or ``server``, this is the URL the running experiment
+    registered in Redis, unless the ``PSYNET_EXPERIMENT_URL`` environment
+    variable gives another address for this process to reach it by.
+    """
     if server:
         if app:
             return f"https://{app}.{server}"
@@ -1736,7 +1955,7 @@ def get_experiment_url(app=None, server=None):
         else:
             from .redis import redis_vars
 
-            return redis_vars.get("base_url")
+            return os.environ.get("PSYNET_EXPERIMENT_URL") or redis_vars.get("base_url")
 
 
 def generate_text_file(path, text="Lorem ipsum"):
@@ -1844,6 +2063,33 @@ def safe(func):
     return wrapper
 
 
+def keep_alive_session(retry_posts=False):
+    """
+    Return a ``requests.Session`` that reuses connections and retries dropped ones.
+
+    A server or proxy may close an idle keep-alive connection just as the
+    client reuses it (gunicorn's default keep-alive is 2 seconds), which shows
+    up as "Connection reset by peer". The session retries such a request once.
+    Responses with error statuses are never retried.
+
+    Parameters
+    ----------
+    retry_posts : bool
+        Also retry POST and other non-idempotent requests. The server may
+        already have handled a request whose connection then dropped, so only
+        enable this when a repeat is harmless, as for bots' ``/response``
+        POSTs, which the server rejects for a page the participant has left.
+    """
+    session = requests.Session()
+    retry = Retry(total=1, status=0)
+    if retry_posts:
+        retry = Retry(total=1, status=0, allowed_methods=None)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 def get_authenticated_session(base_url, username=None, password=None):
     """
     Returns a requests.Session authenticated with the dashboard login.
@@ -1882,19 +2128,7 @@ def get_authenticated_session(base_url, username=None, password=None):
     if password is None:
         password = config.get("dashboard_password")
 
-    session = requests.Session()
-
-    # Tell the server to close the TCP connection after each request (disable HTTP keep-alive).
-    # This should prevent "Connection reset by peer" errors caused by reusing stale keep-alive sockets,
-    # which can happen if the server or a proxy drops idle connections
-    # (see e.g. https://gitlab.com/PsyNetDev/PsyNet/-/jobs/11132444772)
-    #
-    # Trade-off: every request opens a new connection, which is less efficient.
-    # The other approach would be to to keep connections alive but configure a Retry/Timeout policy
-    # (e.g. with requests.adapters.HTTPAdapter + urllib3.util.Retry).
-    # However, retry logic might complicate the logs when we get error messages due to server logic.
-    # We therefore use `Connection: close` here for simplicity.
-    session.headers["Connection"] = "close"
+    session = keep_alive_session()
 
     login_url = f"{base_url}/dashboard/login"
 
@@ -1935,6 +2169,10 @@ def get_authenticated_session(base_url, username=None, password=None):
 
 
 def check_for_login_errors(response):
+    """Raise ``RuntimeError`` with the form's messages if a dashboard login failed."""
+    # Parsing a whole dashboard page is slow, and only failed logins show alerts.
+    if "alert-danger" not in response.text:
+        return
     soup = BeautifulSoup(response.text, "html.parser")
 
     top_level_alert = soup.find("div", class_="alert alert-danger")

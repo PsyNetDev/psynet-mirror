@@ -1,5 +1,3 @@
-# pylint: disable=abstract-method
-
 from typing import TYPE_CHECKING, Type
 
 if TYPE_CHECKING:
@@ -34,7 +32,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm.collections import attribute_mapped_collection
 
 from . import templates
+from .async_job import _deprecated_async_processes
 from .data import SQLBase, SQLMixin, register_table
+from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
 from .static_resources import version_static_urls
@@ -44,7 +44,6 @@ from .utils import (
     call_function_with_context,
     format_datetime,
     get_args,
-    get_language_dict,
     get_locale,
     get_logger,
     log_time_taken,
@@ -294,12 +293,38 @@ class Trigger(dict):
         super().__init__(triggering_event=triggering_event, delay=float(delay))
 
 
+def _earliest_event_time(events, event_id, visiting=frozenset()):
+    """Return the earliest time, in seconds after the page loads, at which ``event_id`` can fire.
+
+    Unknown events, events without triggers (fired by JavaScript) and cycles
+    count as immediate.
+    """
+    event = events.get(event_id)
+    if event is None or event_id in visiting:
+        return 0.0
+    visiting = visiting | {event_id}
+    times = [
+        _earliest_event_time(events, trigger["triggering_event"], visiting)
+        + (trigger.get("delay") or 0.0)
+        for trigger in event.get("is_triggered_by") or []
+    ]
+    combine = min if event.get("trigger_condition") == "any" else max
+    return combine(times, default=0.0) + (event.get("delay") or 0.0)
+
+
 def get_template(name):
     assert isinstance(name, str)
     path_all_templates = resources.files(templates)
     path_template = path_all_templates.joinpath(name)
     with open(path_template, "r") as file:
         return file.read()
+
+
+def _timeline_step_name(elt):
+    """Name a timeline element for error messages, e.g. ``CodeBlock 'save'``."""
+    function = getattr(elt, "function", None)
+    detail = getattr(elt, "label", None) or getattr(function, "__qualname__", None)
+    return f"{type(elt).__name__} {detail!r}" if detail else type(elt).__name__
 
 
 class Elt:
@@ -319,7 +344,6 @@ class Elt:
         raise NotImplementedError
 
     def multiply_expected_repetitions(self, factor):
-        # pylint: disable=unused-argument
         if self.expected_repetitions is not None:
             self.expected_repetitions *= factor
 
@@ -479,9 +503,25 @@ class AsyncCodeBlock(EltCollection):
         Only relevant if ``wait=True``; corresponds to the fallback interval
         between checks when no completion wake arrives. Default: 2.0 seconds.
 
+    max_wait_time:
+        Only relevant if ``wait=True``; the participant is failed if the
+        function has not finished after this many seconds. Default: 20.0 seconds.
+
+    on_timeout:
+        Only relevant if ``wait=True``; a function called with
+        ``participant=...`` when the participant's page next checks in after
+        ``max_wait_time``, unless the function has finished or failed by
+        then. The function keeps running in the background. ``on_timeout``
+        must not commit the database session.
+
     content:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
+
+    priority:
+        Priority of the function's :class:`~psynet.async_job.WorkerAsyncJob`,
+        ``"high"`` or ``"low"``. Defaults to ``"high"`` if ``wait=True``,
+        because the participant is waiting for it, and ``"low"`` otherwise.
     """
 
     def __init__(
@@ -491,7 +531,16 @@ class AsyncCodeBlock(EltCollection):
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
         content: Optional[str] = None,
+        max_wait_time: float = 20.0,
+        on_timeout: Optional[Callable] = None,
+        priority: Optional[str] = None,
     ):
+        from psynet.async_job import check_priority
+
+        if priority is None:
+            priority = "high" if wait else "low"
+        check_priority(priority)
+
         if is_lambda_function(function):
             raise ValueError(
                 "Asynchronous code blocks require named functions rather than lambda functions."
@@ -513,6 +562,9 @@ class AsyncCodeBlock(EltCollection):
         self.expected_wait = expected_wait
         self.check_interval = check_interval
         self.content = content
+        self.max_wait_time = max_wait_time
+        self.on_timeout = on_timeout
+        self.priority = priority
 
     def resolve(self):
         return join(
@@ -522,55 +574,56 @@ class AsyncCodeBlock(EltCollection):
         )
 
     def initiate(self, participant, code_block):
-        from psynet.process import WorkerAsyncProcess
+        from psynet.async_job import WorkerAsyncJob
 
         code_block_id = code_block.id
-        stale = participant.awaited_async_code_block_process
+        stale = participant.awaited_async_code_block_job
         if stale is not None:
             if stale.pending and not stale.failed:
-                if self.wait and self.matches_pending_process(stale, code_block_id):
+                if self.wait and self.matches_pending_job(stale, code_block_id):
                     logger.warning(
-                        "Participant %s already has an async code block process "
-                        "(id=%s) pending; waiting for the existing process instead "
+                        "Participant %s already has an async code block job "
+                        "(id=%s) pending; waiting for the existing job instead "
                         "of starting a duplicate.",
                         participant.id,
                         stale.id,
                     )
                     return
                 raise RuntimeError(
-                    "Participant already has an async code block process pending, this shouldn't happen."
+                    "Participant already has an async code block job pending, this shouldn't happen."
                 )
-            # The previous process finished (successfully or with failure) but its
+            # The previous job finished (successfully or with failure) but its
             # ``wrap_up`` was never executed -- e.g. the participant was rerouted
             # off the wait page (back button, dashboard force_advance, recruiter
             # rejection flow re-entering an AsyncCodeBlock, ...). Rather than
             # leaving the participant permanently stuck, clear the stale
-            # reference and start a fresh process.
+            # reference and start a fresh job.
             logger.warning(
-                "Participant %s already had a %s async code block process "
+                "Participant %s already had a %s async code block job "
                 "(id=%s) attached when initiating a new one; clearing the "
                 "stale reference and continuing.",
                 participant.id,
                 "failed" if stale.failed else "finished",
                 stale.id,
             )
-            participant.awaited_async_code_block_process = None
+            participant.awaited_async_code_block_job = None
 
-        participant.awaited_async_code_block_process = WorkerAsyncProcess(
+        participant.awaited_async_code_block_job = WorkerAsyncJob(
             call_function_with_context,
             label="AsyncCodeBlock",
             participant=participant,
+            priority=self.priority,
             arguments=dict(
                 function=self.function,
                 participant=participant,
                 code_block_id=code_block_id,
             ),
-        )
+        ).enqueue()
 
-    def matches_pending_process(self, process, code_block_id):
+    def matches_pending_job(self, job, code_block_id):
         try:
-            pending_function = process.arguments["function"]
-            pending_code_block_id = process.arguments["code_block_id"]
+            pending_function = job.arguments["function"]
+            pending_code_block_id = job.arguments["code_block_id"]
         except (KeyError, TypeError):
             return False
 
@@ -588,24 +641,38 @@ class AsyncCodeBlock(EltCollection):
 
         return join(
             wait_while(
-                condition=lambda participant: not self.process_is_finished(participant),
+                condition=lambda participant: not self.job_is_finished(participant),
                 expected_wait=self.expected_wait,
                 check_interval=self.check_interval,
+                max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
                 content=self.content,
+                on_timeout=None
+                if self.on_timeout is None
+                else self._call_on_timeout_unless_finished,
             ),
-            CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
+            CodeBlock(lambda: logger.debug("Finished waiting for async code block.")),
         )
 
-    def process_is_finished(self, participant):
-        process = participant.awaited_async_code_block_process
-        if process.failed:
-            raise RuntimeError("The awaited async code block process failed.")
-        assert process.finished or process.pending
-        return process.finished
+    def _call_on_timeout_unless_finished(self, participant):
+        """Call ``on_timeout`` unless the function finished or failed before the timeout was noticed.
+
+        A failed function has already been reported through ``handle_error``.
+        """
+        job = participant.awaited_async_code_block_job
+        if job is not None and (job.finished or job.failed):
+            return
+        call_function_with_context(self.on_timeout, participant=participant)
+
+    def job_is_finished(self, participant):
+        job = participant.awaited_async_code_block_job
+        if job.failed:
+            raise RuntimeError("The awaited async code block job failed.")
+        assert job.finished or job.pending
+        return job.finished
 
     def wrap_up(self, participant):
-        participant.awaited_async_code_block_process = None
+        participant.awaited_async_code_block_job = None
 
 
 class StartFixElt(Elt):
@@ -689,7 +756,6 @@ class GoTo(Elt):
         self.target = target
 
     def get_target(self, experiment, participant):
-        # pylint: disable=unused-argument
         return self.target
 
     def consume(self, experiment, participant):
@@ -712,7 +778,6 @@ class ReactiveGoTo(GoTo):
         function,  # function taking experiment, participant and returning a key
         targets,  # dict of possible target elements
     ):
-        # pylint: disable=super-init-not-called
         super().__init__(target=None)
         self.function = function
         self.targets = targets
@@ -1307,9 +1372,12 @@ class Page(Elt):
         or by calling `psynet.trial.registerEvent("trialPrepare")` in JS).
 
     bot_response
-        Optional function to call when this page is consumed by a bot.
-        This will override any ``bot_response`` function specified in the class's
-        ``bot_response`` method.
+        Optional fixed answer, function, or :class:`~psynet.bot.BotResponse` defining how bots
+        respond to this page, in the same forms as for :class:`~psynet.modular_page.Control`.
+        If set, it overrides the page's :meth:`~psynet.timeline.Page.get_bot_response` method
+        (and, on a :class:`~psynet.modular_page.ModularPage`, the control's bot response).
+        ``bot_response=None`` makes bots submit an answer of ``None``;
+        leave it unset to use the default bot response.
 
     validate
         Optional validation function to use for the participant's response.
@@ -1676,6 +1744,19 @@ class Page(Elt):
             "trialStopped": Event(is_triggered_by="trialStop"),
         }
 
+    @property
+    def min_duration(self):
+        """Return the shortest time, in seconds, before a participant can submit this page.
+
+        This is the earliest time at which the page's ``submitEnable`` event can
+        fire, following the delays of its triggers (see :class:`Event`), for
+        example a recording's duration or an audio meter's ``min_time``.
+        Events that only the page's JavaScript fires, such as the end of a
+        media prompt, count as immediate, so this is a lower bound. Bots that
+        simulate page times (``time_factor`` above 0) never submit sooner.
+        """
+        return _earliest_event_time(self.events, "submitEnable")
+
     def __json__(self, participant):
         return {
             "attributes": self.attributes(participant),
@@ -1790,13 +1871,19 @@ class Page(Elt):
             else:
                 trial.time_taken += resp.metadata["time_taken"]
 
+        participant.browser_platform = metadata.get(
+            "platform", "Browser platform info could not be retrieved."
+        )
+
+        return resp
+
+    def _accept_response(self, resp, experiment, participant):
+        """Save an answer that passed validation and run ``on_complete``."""
         if self.save_answer:
-            if len(participant.answer_accumulators) > 0:
-                page_label = self.label
-                accumulator = participant.answer_accumulators[-1]
-                answer_label = self._find_answer_label(page_label, accumulator)
-                accumulator[answer_label] = resp.answer
-                flag_modified(participant, "answer_accumulators")
+            if participant.answer_accumulation_depth:
+                answers = participant.answer
+                answers[self._find_answer_label(self.label, answers)] = resp.answer
+                flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
             participant.answer_is_fresh = True
@@ -1805,13 +1892,7 @@ class Page(Elt):
         else:
             participant.answer_is_fresh = False
 
-        participant.browser_platform = metadata.get(
-            "platform", "Browser platform info could not be retrieved."
-        )
-
         self.on_complete(experiment=experiment, participant=participant)
-
-        return resp
 
     def _find_answer_label(self, page_label, accumulator):
         if page_label not in accumulator:
@@ -1897,11 +1978,9 @@ class Page(Elt):
             The formatted answer, suitable for serialisation to JSON
             and storage in the database.
         """
-        # pylint: disable=unused-argument
         return raw_answer
 
     def validate(self, response, **kwargs):
-        # pylint: disable=unused-argument
         """
         Takes the :class:`psynet.timeline.Response` object
         created by the page and runs a validation check
@@ -1974,7 +2053,7 @@ class Page(Elt):
         if self.show_early_exit_button is not None:
             return bool(self.show_early_exit_button)
         return bool(
-            experiment.recruiter.show_early_exit_button
+            experiment.recruiter_class.show_early_exit_button
             or get_config().get("show_early_exit_button", False)
         )
 
@@ -1996,7 +2075,6 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
         locale = get_locale()
-        language_dict = get_language_dict(locale)
         config = get_config()
         # The SPA template contract applies to author-provided template source,
         # not to PsyNet's generated timeline shell or supported page assets.
@@ -2043,9 +2121,6 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
-            "supported_language_dict": {
-                iso: language_dict[iso] for iso in experiment.supported_locales
-            },
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -2476,6 +2551,13 @@ class PageMaker(Elt):
         ``time_estimate`` values, then these ``time_estimate`` values will be imputed by dividing
         the parent :class:`psynet.timeline.PageMaker`'s ``time_estimate``
         by the number of produced elements.
+
+    accumulate_answers:
+        If ``True``, ``participant.answer`` becomes a dict when the page maker
+        starts, and each page saves its answer under its label as soon as it
+        is submitted, so later pages can read earlier answers. A repeated
+        label is saved as ``label_1``, ``label_2`` and so on. Answers from
+        nested accumulating page makers or trials go into the same dict.
     """
 
     returns_time_credit = True
@@ -2806,7 +2888,8 @@ class Timeline:
                     if index_max is not None and index > index_max:
                         raise IndexError
                     position = participant.elt_id[0:depth]
-                    selected = selected.resolve(experiment, participant, position)
+                    with forbid_commits(_timeline_step_name(selected)):
+                        selected = selected.resolve(experiment, participant, position)
                     if index_max is None:
                         participant.elt_id_max.append(len(selected) - 1)
                 except IndexError:
@@ -2843,7 +2926,8 @@ class Timeline:
                     participant.elt_id.append(-1)
                     continue
 
-                new_elt.consume(experiment, participant)
+                with forbid_commits(_timeline_step_name(new_elt)):
+                    new_elt.consume(experiment, participant)
 
                 if isinstance(new_elt, Page):
                     finished = True
@@ -3007,7 +3091,8 @@ class Response(_Response):
     def metadata(self, metadata):
         self.metadata_ = metadata
 
-    async_processes = relationship("AsyncProcess")
+    async_jobs = relationship("AsyncJob")
+    async_processes = _deprecated_async_processes
     # assets = relationship(
     #     "Asset", collection_class=attribute_mapped_collection("label_or_key")
     # )
@@ -3181,7 +3266,7 @@ def while_loop(
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
-        logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
+        logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
     conditional_logic = join(logic, GoTo(start_while))
@@ -3957,14 +4042,24 @@ class EndModule(NullElt):
 
 
 class StartAccumulateAnswers(NullElt):
+    """Start collecting page answers into the dict ``participant.answer``.
+
+    Nested blocks share the outermost block's dict, so their answers are
+    flattened into it.
+    """
+
     def consume(self, experiment, participant):
-        participant.answer_accumulators = participant.answer_accumulators + [{}]
+        if not participant.answer_accumulation_depth:
+            participant.answer = {}
+            participant.answer_is_fresh = False
+        participant.answer_accumulation_depth = (
+            participant.answer_accumulation_depth or 0
+        ) + 1
 
 
 class EndAccumulateAnswers(NullElt):
     def consume(self, experiment, participant):
-        participant.answer = participant.answer_accumulators[-1]
-        participant.answer_accumulators = participant.answer_accumulators[:-1]
+        participant.answer_accumulation_depth -= 1
 
 
 class DatabaseCheck(NullElt):
@@ -4022,6 +4117,19 @@ class PreDeployRoutine(NullElt):
 
 
 class ParticipantFailRoutine(NullElt):
+    """
+    Runs a function whenever a participant is failed.
+
+    Place it in the timeline; it does not show anything to the participant.
+
+    Parameters
+    ----------
+    label
+        Label identifying the routine in the logs.
+    function
+        Function to run. It can take ``participant`` and ``experiment`` as arguments.
+    """
+
     def __init__(self, label, function):
         super().__init__()
         self.label = label

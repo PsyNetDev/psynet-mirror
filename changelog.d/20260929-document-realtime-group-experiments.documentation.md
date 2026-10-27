@@ -1,0 +1,1 @@
+Added a "Real-time interaction" page on live WebSocket interaction between participants: how channel messages travel, `WebSocketElt` handlers, `PsyNetWebSocketChannel` in page modules, keeping the server as the authority on shared state, disconnects, and testing. The groups design page now describes real-time interaction.

@@ -5,7 +5,7 @@ import time
 from markupsafe import Markup
 
 import psynet.experiment
-from psynet.asset import asset
+from psynet.asset import FileAsset, asset
 from psynet.modular_page import AudioPrompt, TextControl
 from psynet.page import InfoPage, ModularPage
 from psynet.timeline import CodeBlock, Module, PageMaker, Timeline
@@ -32,7 +32,7 @@ headphone_assets = {
 
 misc_assets = {
     "slow_computation": asset(
-        slow_computation, arguments=dict(n=200, k=5), extension=".txt", cache=True
+        slow_computation, arguments=dict(n=200, k=5), extension=".txt"
     ),
     "psynet_logo": asset(
         "https://gitlab.com/computational-audition-lab/psynet/-/raw/master/psynet/resources/logo.svg",
@@ -104,3 +104,13 @@ class Exp(psynet.experiment.Experiment):
             assets=misc_assets,
         ),
     )
+
+    def test_experiment(self):
+        super().test_experiment()
+
+        # Files prepared before launch are not exported; files created during the run are.
+        config = FileAsset.query.filter_by(local_key="config").one()
+        assert not config.created_during_experiment
+        text_inputs = FileAsset.query.filter_by(local_key="text_input").all()
+        assert text_inputs
+        assert all(a.created_during_experiment for a in text_inputs)

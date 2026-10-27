@@ -215,8 +215,8 @@ class StaticBig(_BaseExperiment):
         return super().setup_cache()
 
 
-class AsyncProcesses(_BaseExperiment):
-    demo_name = "async_processes"
+class AsyncJobs(_BaseExperiment):
+    demo_name = "async_jobs"
     demo_root = "tests/experiments"
     params = [[5], [2.0]]
 
@@ -226,8 +226,8 @@ class AsyncProcesses(_BaseExperiment):
     def track_median_queue_delay_ms(self, data, *param_values):
         value = self._result_for(data, *param_values)["q_delay_median"]
         if value is None:
-            raise RuntimeError("performance test recorded no async process queue delay")
+            raise RuntimeError("performance test recorded no async job queue delay")
         return value * 1000.0
 
     track_median_queue_delay_ms.unit = "ms"
-    track_median_queue_delay_ms.pretty_name = "async_processes Median queue delay"
+    track_median_queue_delay_ms.pretty_name = "async_jobs Median queue delay"

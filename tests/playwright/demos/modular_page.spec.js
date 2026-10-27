@@ -23,6 +23,18 @@ async function expectMainBodyContains(page, text, timeout = PROMPT_TIMEOUT_MS) {
   await expect(page.locator("#main-body")).toContainText(text, { timeout });
 }
 
+async function expectNoHorizontalOverflow(page) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    )
+    .toBe(true);
+}
+
 async function answerSingleRating(page, value) {
   const question = page.locator(".sd-question").first();
   await expect(question).toBeVisible({ timeout: PROMPT_TIMEOUT_MS });
@@ -147,6 +159,8 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
         "RatingControl",
         PROMPT_TIMEOUT_MS
       );
+      await experimentPage.setViewportSize({ width: 375, height: 780 });
+      await expectNoHorizontalOverflow(experimentPage);
       await answerSingleRating(experimentPage, 3);
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
@@ -158,7 +172,9 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
         "MultiRatingControl",
         PROMPT_TIMEOUT_MS
       );
+      await expectNoHorizontalOverflow(experimentPage);
       await answerMultiRating(experimentPage, [4, 5]);
+      await experimentPage.setViewportSize({ width: 1280, height: 720 });
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
       await expectMainBodyContains(experimentPage, "Metadata", PROMPT_TIMEOUT_MS);

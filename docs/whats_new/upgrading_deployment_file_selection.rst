@@ -14,13 +14,14 @@ Create and review the policy
 ----------------------------
 
 Run ``psynet setup`` or ``psynet scripts scaffold`` to create the stock
-``deploy.toml`` without overwriting an existing policy. The first debug, test,
-or deployment command after that auto-created file stops before copying files,
-whether the file was created by setup or by the launch command itself.
-The message lists files covered by ``.gitignore`` but not by the new policy.
-Git-ignored files may still be deployed after that one-time review.
-In-repo demo prepare and pytest's temporary scaffold skip that pause so the
-first local test or debug can run.
+``deploy.toml`` without overwriting an existing policy. If the experiment's
+``.gitignore`` ignores files that the new ``deploy.toml`` does not exclude,
+the next debug, test, or deployment command stops once before copying files
+and lists them, because they would now be deployed. Add any that should not
+be deployed to ``[exclude]`` and rerun. This check only runs if the
+experiment directory has its own ``.gitignore``; if your experiment lives
+inside a larger repository and relied on that repository's ``.gitignore``,
+review the preview below yourself.
 
 Preview the complete deployment plan:
 
@@ -73,10 +74,24 @@ After updating ``deploy.toml``:
 #. Commit the reviewed ``deploy.toml`` before a remote deployment.
 
 PsyNet never overwrites an existing ``deploy.toml``. If your experiment already
-has one, add ``audit`` to ``[exclude].paths`` so the local review packet is not
-copied into debug staging or the deployment package. Stock templates created
-from this PsyNet version already include that path.
+has one, add ``audit``, ``data`` and ``.cursor/skills/psynet`` to
+``[exclude].paths`` so the local review packet, local data and PsyNet's Agent
+Skills are not copied into debug staging or the deployment package. Stock
+templates created from this PsyNet version already include these paths.
 
 Git provenance records the commit and whether deployment-selected files contain
 uncommitted changes. Remote deployments require at least one Git commit; local
 debug and test runs may use a newly initialized repository.
+
+Pregenerated stimuli
+--------------------
+
+Git-ignored files under ``static/`` are deployed unless ``deploy.toml``
+excludes them; the generated ``static/assets`` folder stays excluded. The
+deployment plan has a size limit, described in
+:doc:`/deploy/how_deployment_works`. PsyNet commands apply PsyNet's default
+limit, but ``dallinger verify`` run on its own uses Dallinger's smaller
+default unless you set ``EXP_MAX_SIZE_MB``.
+
+To move stimuli into ``static/``, follow step 18 of
+:doc:`upgrading_to_psynet_14` and :doc:`/code/using_stimuli`.

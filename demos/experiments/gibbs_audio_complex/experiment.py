@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method,unused-argument,no-member
-
 import random
 
 from markupsafe import Markup
@@ -103,6 +101,9 @@ class CustomNode(AudioGibbsNode):
 
 class CustomTrialMaker(AudioGibbsTrialMaker):
     response_timeout_sec = 1e9
+    # Synthesising the start nodes' stimuli can take over a minute on a busy
+    # server, and the first participants wait for it.
+    max_time_waiting_for_trial = 300
 
 
 trial_maker = CustomTrialMaker(
@@ -119,7 +120,7 @@ trial_maker = CustomTrialMaker(
     max_trials_per_participant=NUM_TRIALS_PER_PARTICIPANT,
     max_nodes_per_chain=NUM_ITERATIONS_PER_CHAIN,
     trials_per_node=1,
-    balance_across_chains=True,
+    chain_order="balanced",
     check_performance_at_end=False,
     check_performance_every_trial=False,
     propagate_failure=False,

@@ -1,4 +1,3 @@
-.. _developer:
 .. highlight:: shell
 
 ================
@@ -40,7 +39,10 @@ Overview
      highlights or breaking changes. Add or revise the matching version page
      (for example ``docs/whats_new/psynet_14.rst``) so authors get a short,
      readable summary and a clear upgrade pointer. Skip this only for
-     patch-only releases with nothing meaningful to say there.
+     patch-only releases with nothing meaningful to say there. Keep the
+     current major version's pages under the index's first caption, and
+     move the previous major version's pages under "Earlier versions" when
+     a new major version is released; the changelog holds the full history.
 
 3. Publish: tag ``vX.Y.Z`` on the release branch, wait for CI, build and
    upload to PyPI, create the GitLab release, and announce on Slack with
@@ -58,7 +60,9 @@ Overview
    ``psynet dev release announce X.Y.Z --summary-file highlights.md --channel psynet-release-test --dry-run``.
 
 4. For minor releases, merge the release branch back into ``master`` (merge
-   commit, no squash) and bump ``master`` to the next alpha version.
+   commit, no squash) and bump ``master`` to the next alpha version with
+   ``psynet dev changelog next-alpha --write``. This gives the next major
+   alpha if breaking fragments are still pending.
 
 Externally visible or irreversible steps (pushing tags, PyPI uploads, GitLab
 releases, Slack posts) require explicit approval from the human release

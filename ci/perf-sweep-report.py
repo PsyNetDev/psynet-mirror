@@ -84,7 +84,7 @@ def print_report(path):
     print(f"\n### {name}  (`{path}`)\n")
     rows = [_row(result) for result in payload["results"]]
     # `github` tablefmt keeps the artifact (sweep-report.md) valid Markdown;
-    # perf_test.py uses `simple` because its output is terminal-only.
+    # psynet/perf_test/report.py uses `simple` because its output is terminal-only.
     print(tabulate(rows, headers=_HEADERS, tablefmt="github"))
     print()
 

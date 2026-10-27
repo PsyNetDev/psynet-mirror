@@ -1,5 +1,3 @@
-# pylint: disable=unused-argument,abstract-method
-
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
 
 
@@ -47,9 +45,6 @@ class ImitationChainNode(ChainNode):
     A Node class for imitation chains.
     """
 
-    def create_initial_seed(self, experiment, participant):
-        raise NotImplementedError
-
     def create_definition_from_seed(self, seed, experiment, participant):
         """
         (Built-in)
@@ -95,7 +90,7 @@ class ImitationChainNode(ChainNode):
         trials
             Trials to be summarized. By default only trials that are completed
             (i.e. have received a response) and processed
-            (i.e. aren't waiting for an asynchronous process)
+            (i.e. aren't waiting for an async job)
             are provided here.
 
         experiment

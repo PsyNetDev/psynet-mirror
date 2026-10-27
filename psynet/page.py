@@ -1,16 +1,17 @@
+import sys
 import warnings
 from importlib import resources
 from math import ceil
 from pathlib import Path
 from pprint import pformat
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from urllib.parse import urlparse
 
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 
-from .asset import CachedAsset, ExternalAsset
+from .asset import ExternalAsset, FileAsset
 from .modular_page import AudioPrompt, ModularPage
 from .timeline import (
     CodeBlock,
@@ -28,7 +29,15 @@ from .timeline import (
 from .utils import call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-warnings.simplefilter("always", DeprecationWarning)
+# Other packages' deprecation warnings are for their maintainers; PsyNet's,
+# Dallinger's and the experiment's are shown. -W and PYTHONWARNINGS win.
+if not sys.warnoptions:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings(
+        "always",
+        category=DeprecationWarning,
+        module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
+    )
 
 
 class InfoPage(ModularPage):
@@ -245,6 +254,7 @@ def wait_while(
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
     content: Optional[str] = None,
+    on_timeout: Optional[Callable] = None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -296,6 +306,11 @@ def wait_while(
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted.
 
+    on_timeout
+        Optional function called with ``participant=...`` when
+        ``max_wait_time`` is reached, before the participant is failed or
+        moves on. It must not commit the database session.
+
     Returns
     -------
 
@@ -323,7 +338,7 @@ def wait_while(
                 participant=participant,
                 experiment=experiment,
             )
-            logger.info(
+            logger.debug(
                 "Evaluating timeline hold (%s) condition: result = %s",
                 label,
                 result,
@@ -340,6 +355,7 @@ def wait_while(
             content=content,
             message_kind="generic" if content is None else None,
             fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
         )
         hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
         return join(
@@ -368,6 +384,7 @@ def wait_while(
             expected_repetitions=expected_repetitions,
             max_loop_time=max_wait_time,
             fail_on_timeout=fail_on_timeout,
+            on_timeout=on_timeout,
             fix_time_credit=fix_time_credit,
         ),
     )
@@ -454,6 +471,8 @@ class DebugResponsePage(PageMaker):
 
 
 class VolumeCalibration(Module):
+    """Module that loops a sound so the participant can set a comfortable volume."""
+
     def __init__(
         self,
         url=str(resources.files("psynet") / "resources/audio/brown_noise.wav"),
@@ -473,7 +492,7 @@ class VolumeCalibration(Module):
         if str(url).startswith("http"):
             return ExternalAsset(url=url)
         else:
-            return CachedAsset(input_path=url)
+            return FileAsset(input_path=url)
 
     def page(self, min_time, time_estimate, id_):
         return PageMaker(

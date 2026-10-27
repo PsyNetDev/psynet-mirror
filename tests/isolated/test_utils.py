@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from importlib.machinery import ModuleSpec
 from math import isnan
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.timeline import Module
@@ -20,6 +21,7 @@ from psynet.utils import (
     check_todos_before_deployment,
     corr,
     ensure_experiment_directory_name_does_not_conflict,
+    find_git_repo,
     format_timedelta,
     generate_text_file,
     get_authenticated_session,
@@ -30,6 +32,7 @@ from psynet.utils import (
     get_package_source_directory,
     get_psynet_root,
     git_repository_available,
+    is_a_package,
     is_in_repo_experiment,
     linspace,
     list_experiment_dirs,
@@ -42,6 +45,7 @@ from psynet.utils import (
     pretty_format_seconds,
     psynet_source_prefixes,
     safe,
+    strip_url_credentials,
     working_directory,
 )
 
@@ -546,6 +550,17 @@ where = ["src"]
     assert locales_dir == expected
 
 
+def test_experiment_with_uv_init_pyproject_is_not_a_package(tmp_path):
+    (tmp_path / "experiment.py").write_text("")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "my-experiment"\nversion = "0.1.0"\ndependencies = []\n'
+    )
+
+    assert not is_a_package(tmp_path)
+    assert get_locales_dir_from_path(tmp_path) == tmp_path / "locales"
+    assert is_a_package(get_psynet_root())
+
+
 def test_get_installed_package_source_directory_supports_namespace_packages(
     tmp_path, monkeypatch
 ):
@@ -628,6 +643,35 @@ def test_git_repository_available_true(tmp_path):
     with working_directory(tmp_path):
         subprocess.run(["git", "init"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert git_repository_available() is True
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (
+            "https://user:token@gitlab.com/org/repo.git",
+            "https://gitlab.com/org/repo.git",
+        ),
+        ("https://oauth2@github.com:443/org/repo", "https://github.com:443/org/repo"),
+        ("ssh://git@example.org/org/repo.git", "ssh://example.org/org/repo.git"),
+        ("https://gitlab.com/org/repo.git", "https://gitlab.com/org/repo.git"),
+        ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
+        ("/srv/git/repo.git", "/srv/git/repo.git"),
+        ("https://u:t@[bad/repo", "https://[bad/repo"),
+    ],
+)
+def test_strip_url_credentials(url, expected):
+    assert strip_url_credentials(url) == expected
+
+
+def test_find_git_repo_strips_credentials(tmp_path):
+    with working_directory(tmp_path):
+        subprocess.run(["git", "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://u:secret@host/r.git"],
+            check=True,
+        )
+        assert find_git_repo() == "https://host/r.git"
 
 
 def test_git_repository_available_false(tmp_path):
@@ -788,3 +832,84 @@ def test_md5_directory_consistency():
 
             assert hash1 == hash2
             assert len(hash1) == 32  # MD5 hex digest is 32 characters
+
+
+def test_templates_read_config_lazily_and_hide_sensitive_keys():
+    from dallinger.config import Configuration
+    from flask import Flask
+
+    from psynet.utils import render_string_with_translations
+
+    config = Configuration()
+    config.register("color_mode", str)
+    config.register("dashboard_password", str, sensitive=True)
+    config.extend({"color_mode": "dark", "dashboard_password": "s3cr3t"})
+    config.ready = True
+    template = (
+        "{{ config.color_mode }}|{{ config.get('dashboard_password', 'hidden') }}|"
+        "{{ config.get('title', 'unset') }}"
+    )
+    with (
+        Flask(__name__).app_context(),
+        patch("psynet.utils.get_config", return_value=config),
+        patch("psynet.utils.get_translator", return_value=lambda *args: args[-1]),
+        patch.object(Configuration, "as_dict", side_effect=AssertionError),
+    ):
+        html = render_string_with_translations(template, locale="en")
+
+    assert html == "dark|hidden|unset"
+
+
+@pytest.mark.parametrize("retry_posts", [True, False])
+def test_keep_alive_session_retries_a_dropped_post_only_when_asked(retry_posts):
+    """A POST on a connection the server drops is resent once only if allowed."""
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from psynet.utils import keep_alive_session
+
+    attempts = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            attempts.append(self.path)
+            if len(attempts) == 1:
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_port}/response"
+    try:
+        with keep_alive_session(retry_posts=retry_posts) as session:
+            if retry_posts:
+                assert session.post(url, data={"a": 1}).status_code == 200
+            else:
+                with pytest.raises(requests.ConnectionError):
+                    session.post(url, data={"a": 1})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert len(attempts) == (2 if retry_posts else 1)
+
+
+def test_check_for_login_errors_reports_the_form_messages():
+    from psynet.utils import check_for_login_errors
+
+    page = Mock(text="<html><body><p>Dashboard</p></body></html>")
+    check_for_login_errors(page)
+
+    page.text = (
+        '<div class="alert alert-danger">Invalid login</div>'
+        '<span style="color: red">Unknown user</span>'
+    )
+    with pytest.raises(RuntimeError, match="'Invalid login - Unknown user'"):
+        check_for_login_errors(page)
