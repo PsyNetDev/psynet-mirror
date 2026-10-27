@@ -711,7 +711,11 @@ def _summary_columns(results, limits):
         extra.append(
             (
                 "Export\n(s)",
-                lambda r: f"{r.export_duration_s:.1f}" if r.export_duration_s is not None else _EMPTY,
+                lambda r: (
+                    f"{r.export_duration_s:.1f}"
+                    if r.export_duration_s is not None
+                    else _EMPTY
+                ),
             )
         )
     if extra:

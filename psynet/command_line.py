@@ -58,7 +58,7 @@ from yaspin import yaspin
 
 from psynet import __version__
 from psynet.dev.command_line import dev as _dev_command_group
-from psynet.perf_test import PerformanceTester, format_performance_summary
+from psynet.perf_test import PerformanceTester
 from psynet.runtime_init import ensure_runtime
 from psynet.version import (
     check_core_dependency_versions_match_requirements,
@@ -2115,8 +2115,6 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
     from .experiment import get_experiment
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
-
-    import logging
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -6769,7 +6767,9 @@ def performance_test__local(
         )
 
 
-def _run_performance_test_local(*, existing, json_output, debug, no_export=False, **options):
+def _run_performance_test_local(
+    *, existing, json_output, debug, no_export=False, **options
+):
     """Run a local performance test and return its result records.
 
     ``options`` are the performance-test options, such as ``n_bots``.
@@ -6925,7 +6925,6 @@ def _run_performance_test_with_existing_server(
     first pauses as between the tests of a suite that started that long ago.
     ``suite_options`` are those of :func:`_run_performance_suite`.
     """
-    import logging
     import sys
 
     from psynet.experiment import get_experiment
@@ -6945,8 +6944,6 @@ def _run_performance_test_with_existing_server(
             file=sys.stderr,
         )
         sys.exit(1)
-
-    from psynet.perf_test import PerformanceTester
 
     _check_no_real_participants(force)
     os.environ["PASSTHROUGH_ERRORS"] = "True"
@@ -7678,7 +7675,9 @@ def _load_server_url(server_info):
     return server_info.get("base_url") or redis_vars.get("base_url")
 
 
-def _run_performance_test_with_new_server(*, debug=False, json_output=None, no_export=False, **options):
+def _run_performance_test_with_new_server(
+    *, debug=False, json_output=None, no_export=False, **options
+):
     """Run performance test after starting a new experiment server."""
     from .testing.locks import TEST_SESSION
 
@@ -7804,7 +7803,6 @@ def performance_test__prepare_reset(
     ones. Then it pre-fills the database, waits for async jobs, and
     writes the number of async jobs still waiting to --json-output.
     """
-    import logging
 
     from psynet.experiment import get_experiment
     from psynet.perf_test import (
@@ -7812,6 +7810,7 @@ def performance_test__prepare_reset(
         prefill_database,
         wait_for_async_jobs,
     )
+
     log_to_console(logging.INFO)
     if not _performance_test_app_info()["performance_test_app"]:
         raise click.ClickException(
@@ -8015,7 +8014,6 @@ def _run_ssh_performance_test(
     ``performance-test local``, and ``suite_options`` those of
     :func:`_run_performance_suite`.
     """
-    import logging
 
     from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
     from psynet.perf_test import log_to_console

@@ -6370,7 +6370,6 @@ def test_extract_base_url_from_server_output(output, expected):
     assert _extract_base_url_from_server_output(output) == expected
 
 
-
 def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     from psynet.command_line import _run_performance_test_with_new_server
 
@@ -6396,6 +6395,7 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
         debug=False,
         extra_env={"PSYNET_PERFORMANCE_TEST": "1"},
     )
+
 
 class TestLoadServerUrl:
     @pytest.fixture
@@ -6491,9 +6491,6 @@ class TestResolvePerfTestOptions:
         assert self.resolve(exp, duration_minutes=0.5).get("duration_minutes") == 0.5
 
 
-
-
-
 # --- _run_performance_test_local --existing path ---
 
 
@@ -6568,8 +6565,6 @@ def test_time_export_timeout():
     duration, error = _time_export(_run=fake_run)
     assert isinstance(duration, float)
     assert "timed out" in error.lower()
-
-
 
 
 @pytest.mark.parametrize(
