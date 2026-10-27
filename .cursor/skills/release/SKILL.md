@@ -19,12 +19,12 @@ that proposal, not a skip of the checkpoint.
 
 | Path | When |
 | --- | --- |
-| Major | Breaking changes from `master` → `references/minor-release.md` with an `X.0.0` version |
-| Minor | Backwards-compatible work from `master` → `references/minor-release.md` |
+| Major | Breaking changes from `master` → `references/major-minor-release.md` with an `X.0.0` version |
+| Minor | Backwards-compatible work from `master` → `references/major-minor-release.md` |
 | Patch | Bug fixes on `release-MAJOR.MINOR` → `references/patch-release.md` |
 | RC (default for major and minor) | Pre-final validation → `references/release-candidates.md` |
 
-Both from-master paths share `references/shared-steps.md` (changelog,
+The major and minor path shares `references/shared-steps.md` (changelog,
 version bump, translations, tag, PyPI, GitLab release, Slack) with the
 patch path. See `references/version-reference.md` for version files,
 naming, and Dallinger upgrade notes.
@@ -53,8 +53,11 @@ Rules, in order:
 2. **Major** if that tree has any committed `*.breaking.md` fragments.
    Version is the next major of the last final tag (`v13.3.0` →
    `14.0.0`), branch `release-14.0`, first RC `14.0.0rc1`. Master's
-   current alpha (for example `13.4.0a0`) may still name the old
-   minor series; the bump commits change it.
+   alpha should already be `14.0.0a0`: the `changelog-version`
+   pre-commit hook fails while breaking fragments are pending and the
+   alpha names an older major. If it still says `13.4.0a0`, run
+   `psynet dev changelog next-alpha --write` on `master` before
+   creating the release branch.
 3. **Minor** otherwise, when releasing from `master`. Version matches
    the current alpha's `MAJOR.MINOR` (`13.4.0a0` → `13.4.0`), branch
    `release-13.4`, first RC `13.4.0rc1`.
@@ -68,8 +71,8 @@ breaking fragment names when proposing major:
 
 ```text
 Proposed: major 14.0.0 (branch release-14.0, first RC 14.0.0rc1)
-Reason: 7 committed breaking fragments since v13.3.0; master is 13.4.0a0.
-Override: /release minor would keep 13.4.0 despite Breaking Changes.
+Reason: 7 committed breaking fragments since v13.3.0; master is 14.0.0a0.
+Override: /release minor would release 13.4.0 only after the breaking fragments are recategorized; the changelog-version hook fails while they are pending.
 ```
 
 > **Human checkpoint:** stop here. The release manager must affirm the
