@@ -183,7 +183,7 @@
                     // only show this warning if people are using the right browser
                     if (warningMsg === "") {
                         if (browser.incognitoDetectionFailed) {
-                            warningMsg = "{{ pgettext("browser_compatibility", "We were unable to verify whether you are using a private browsing window. Please open an incognito window and try again.") | safe }}";
+                            warningMsg = "{{ pgettext("browser_compatibility", "We were unable to verify whether you are using a private browsing window. Please open an incognito window and try again.") | replace('"',"'") | safe }}";
                         } else {
                             warningMsg = `{{ pgettext("browser_compatibility", "You need to use the incognito mode to take part in the experiment.") | safe }}`;
                             warningMsg += ` {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.") | replace('"',"'") | safe }}`;
