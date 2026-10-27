@@ -111,8 +111,10 @@ in a few ways:
 
 - Recordings are WebM only; there is no fallback to other browser formats.
 - If capture fails, the participant is told that the recording could not be
-  captured and asked to allow access and reload the page. The server rejects an
-  empty recording instead of storing it as a valid one.
+  captured and asked to allow access and reload the page. Until they reload, the
+  page cannot be submitted; reloading shows the recording page again, so they
+  can record again. The server also rejects an empty recording instead of
+  storing it as a valid one.
 - If the browser does not confirm that recording stopped within 3 seconds, the
   part captured so far is kept.
 

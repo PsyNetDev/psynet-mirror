@@ -2,7 +2,7 @@ const path = require("path");
 const { test, expect } = require("./fixtures");
 const {
   withExperiment, prepareRecordingFixture, submitRecordingFixture,
-  waitForNextEnabled,
+  waitForNextEnabled, completeInitialGateway,
 } = require("./psynetHarness");
 
 for (const lostAcceptance of [false, true]) {
@@ -133,6 +133,50 @@ test("camera is released while waiting for the recording @inplace-only", async (
     if (previous === undefined) delete process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT;
     else process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT = previous;
   }
+});
+
+test("legacy capture failure blocks submission until the page is reloaded @legacy-only", async ({ page, context }) => {
+  // The legacy path uploads the recording with the answer. An empty recording
+  // must not be submittable: the participant is told to reload, which runs the
+  // recording page again.
+  test.setTimeout(120000);
+  // The recorder fails until the test lets it work, as after fixing access.
+  await context.addInitScript(() => {
+    try {
+      if (sessionStorage.getItem("recorderWorks")) return;
+    } catch (_) {
+      return;  // Frames without storage, such as sandboxed ones, do not record.
+    }
+    window.MediaRecorder = class {
+      constructor() { throw new Error("Simulated recorder failure"); }
+      static isTypeSupported() { return true; }
+    };
+  });
+  let submissions = 0;
+  let onRecordingPage = false;
+  await context.route("**/response", route => {
+    if (onRecordingPage && route.request().method() === "POST") submissions += 1;
+    return route.continue();
+  });
+  await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+    await completeInitialGateway(p);
+    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+    onRecordingPage = true;
+    await expect(p.locator("#alert-message")).toContainText("could not be captured", { timeout: 30000 });
+    await p.locator("#alert-button").click();
+    await expect.poll(() => p.evaluate(() => ({
+      ready: psynet.pageReady,
+      nextDisabled: document.getElementById("next-button")?.disabled,
+    }))).toEqual({ ready: false, nextDisabled: true });
+    expect(submissions).toBe(0);
+
+    // Reloading runs the recording page again, and this time it records.
+    await p.evaluate(() => sessionStorage.setItem("recorderWorks", "1"));
+    await p.reload();
+    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+    await waitForNextEnabled(p, 30000);
+    await expect(p.locator("#alert-message")).not.toBeVisible();
+  });
 });
 
 test("upload module failure preserves submission and independent navigation @inplace-only", async ({ page, context }) => {
