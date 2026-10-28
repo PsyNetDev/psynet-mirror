@@ -221,6 +221,21 @@ class TestCommandLine(object):
         Path("local-image-pins.txt").write_text("local\n")
         assert installed() == "local\n"
 
+    def test_dockerfile_installs_local_wheels_with_dependencies(self):
+        import psynet as psynet_pkg
+
+        dockerfile = (
+            Path(psynet_pkg.__file__).parent / "resources/experiment_scripts/Dockerfile"
+        ).read_text()
+        for wheel in ("psynet-*.whl", "dallinger-*.whl"):
+            (step,) = [
+                instruction
+                for instruction in dockerfile.replace("\\\n", "").split("\n")
+                if instruction.startswith("RUN ") and wheel in instruction
+            ]
+            assert "--no-deps" not in step
+            assert "@ file://" in step and "uv pip check --system" in step
+
     def test_awaken_ssh_app_does_not_require_a_front_door(self):
         from psynet.command_line import _awaken_ssh_app
 

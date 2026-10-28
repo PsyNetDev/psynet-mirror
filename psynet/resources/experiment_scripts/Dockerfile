@@ -39,7 +39,8 @@ COPY . /experiment
 
 # ``psynet debug ssh --use-local-psynet`` stages a wheel of the local PsyNet
 # checkout, which replaces the requirements.txt version.
-# ``uv pip check`` fails the build if a local wheel conflicts with the pins.
+# ``uv pip check`` fails the build if a local wheel conflicts with the other
+# installed packages.
 RUN set -- /experiment/psynet-*.whl; \
     if [ -f "$1" ]; then \
         uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1" \
