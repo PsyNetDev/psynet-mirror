@@ -155,11 +155,6 @@ except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ing
 
 _LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
 _LOCAL_IMAGE_PINS = "local-image-pins.txt"
-# The Dallinger wheel install in experiment Dockerfiles generated before PsyNet
-# installed the wheel's dependencies.
-_LEGACY_DALLINGER_WHEEL_INSTALL = (
-    'uv pip install --system --force-reinstall --no-deps "$1"'
-)
 
 
 def _use_local_psynet_option(func):
@@ -2900,29 +2895,10 @@ def _check_local_image_packages(local_packages):
     if not local_packages:
         return
     dockerfile = Path("Dockerfile")
-    content = dockerfile.read_text() if dockerfile.is_file() else ""
-    if _LOCAL_IMAGE_PINS not in content:
+    if not dockerfile.is_file() or _LOCAL_IMAGE_PINS not in dockerfile.read_text():
         raise click.UsageError(
             "This experiment's Dockerfile does not install local PsyNet or "
             "Dallinger builds. Run 'psynet scripts update' to refresh it."
-        )
-    active = "\n".join(
-        line for line in content.splitlines() if not line.lstrip().startswith("#")
-    )
-    instructions = re.sub(r"\\\s*\n", " ", active).splitlines()
-    if "dallinger" in local_packages and any(
-        "dallinger-*.whl" in step and _LEGACY_DALLINGER_WHEEL_INSTALL in step
-        for step in instructions
-    ):
-        import psynet
-
-        template = Path(psynet.__file__).parent / "resources/experiment_scripts"
-        raise click.UsageError(
-            "This experiment's Dockerfile installs the local Dallinger build "
-            f"without its dependencies ({_LEGACY_DALLINGER_WHEEL_INSTALL}). "
-            "If you haven't customised the Dockerfile, run 'psynet scripts "
-            "update' to refresh it; otherwise change that line to match the "
-            f"Dallinger wheel install in {template / 'Dockerfile'}."
         )
     if "psynet" in local_packages:
         from .experiment_scaffold import get_editable_psynet_source

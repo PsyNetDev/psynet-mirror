@@ -157,28 +157,7 @@ class TestCommandLine(object):
         with pytest.raises(click.UsageError, match="psynet scripts update"):
             command_line._check_local_image_packages(local_packages)
 
-        pins = "COPY *local-image-pins.txt ./\n"
-        old_generated = (
-            pins + "RUN set -- /experiment/dallinger-*.whl; \\\n"
-            '    if [ -f "$1" ]; then \\\n'
-            '        uv pip install --system --force-reinstall --no-deps "$1"; \\\n'
-            "    fi\n"
-        )
-        Path("Dockerfile").write_text(old_generated)
-        with pytest.raises(click.UsageError, match="without its dependencies"):
-            command_line._check_local_image_packages(local_packages)
-        command_line._check_local_image_packages(("psynet",))
-
-        Path("Dockerfile").write_text(
-            pins + "RUN pip install /experiment/dallinger-*.whl\n"
-        )
-        command_line._check_local_image_packages(local_packages)
-        # The old command is only a problem in the Dallinger wheel step.
-        Path("Dockerfile").write_text(
-            pins + "RUN pip install /experiment/dallinger-*.whl\n"
-            "RUN set -- /experiment/other-*.whl; \\\n"
-            '    uv pip install --system --force-reinstall --no-deps "$1"\n'
-        )
+        Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
         command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
