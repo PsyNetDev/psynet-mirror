@@ -153,17 +153,25 @@ class TestCommandLine(object):
         )
         local_packages = command_line._local_packages(True, True)
 
-        import psynet as psynet_pkg
+        Path("Dockerfile").write_text("FROM python\n")
+        with pytest.raises(click.UsageError, match="psynet scripts update"):
+            command_line._check_local_image_packages(local_packages)
 
-        template = Path(psynet_pkg.__file__).parent / "resources/experiment_scripts"
-        # An older template staged the pins but installed Dallinger without deps.
-        for outdated in ["FROM python\n", "COPY *local-image-pins.txt ./\n"]:
-            Path("Dockerfile").write_text(outdated)
-            with pytest.raises(click.UsageError, match="psynet scripts update"):
-                command_line._check_local_image_packages(local_packages)
+        pins = "COPY *local-image-pins.txt ./\n"
+        old_generated = (
+            pins + "RUN set -- /experiment/dallinger-*.whl; \\\n"
+            '    if [ -f "$1" ]; then \\\n'
+            '        uv pip install --system --force-reinstall --no-deps "$1"; \\\n'
+            "    fi\n"
+        )
+        Path("Dockerfile").write_text(old_generated)
+        with pytest.raises(click.UsageError, match="without its dependencies"):
+            command_line._check_local_image_packages(local_packages)
         command_line._check_local_image_packages(("psynet",))
 
-        shutil.copy(template / "Dockerfile", "Dockerfile")
+        Path("Dockerfile").write_text(
+            pins + "RUN pip install /experiment/dallinger-*.whl\n"
+        )
         command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
@@ -190,8 +198,12 @@ class TestCommandLine(object):
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("SKIP_VERSION_CHECK", raising=False)
         Path("requirements.txt").write_text("psynet\ndallinger==0.0.1\n")
-        with pytest.raises(click.ClickException, match="Dallinger versions"):
-            run_pre_checks_sandbox(("psynet",))
+        result = CliRunner().invoke(
+            click.command()(lambda: run_pre_checks_sandbox(("psynet",)))
+        )
+        assert result.exit_code == 1
+        assert "Error: The Dallinger versions" in result.output
+        assert "Traceback" not in result.output
         run_pre_checks_sandbox(("psynet", "dallinger"))
 
     def test_dockerfile_prefers_local_image_pins(self, monkeypatch, tmp_path):

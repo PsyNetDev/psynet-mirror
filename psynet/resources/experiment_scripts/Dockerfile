@@ -39,9 +39,11 @@ COPY . /experiment
 
 # ``psynet debug ssh --use-local-psynet`` stages a wheel of the local PsyNet
 # checkout, which replaces the requirements.txt version.
+# ``uv pip check`` fails the build if a local wheel conflicts with the pins.
 RUN set -- /experiment/psynet-*.whl; \
     if [ -f "$1" ]; then \
-        uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1"; \
+        uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1" \
+        && uv pip check --system; \
     fi
 
 # A local Dallinger wheel staged by ``DALLINGER_SOURCE`` / editable install
@@ -49,7 +51,8 @@ RUN set -- /experiment/psynet-*.whl; \
 # Its dependencies are resolved too, keeping the pinned versions that satisfy them.
 RUN set -- /experiment/dallinger-*.whl; \
     if [ -f "$1" ]; then \
-        uv pip install --system --reinstall-package dallinger "dallinger[docker] @ file://$1"; \
+        uv pip install --system --reinstall-package dallinger "dallinger[docker] @ file://$1" \
+        && uv pip check --system; \
     fi
 
 # The SSH account is chosen when the container starts. These directories must

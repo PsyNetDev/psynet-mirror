@@ -166,7 +166,8 @@ Each option builds a wheel from the editable checkout (for Dallinger, or
 ``DALLINGER_SOURCE``), and the image build installs it after ``COPY .``, over
 the pinned version, together with any dependencies the checkout needs that
 the pins don't provide (pinned versions are kept where they satisfy the
-checkout). Before the build, PsyNet copies ``constraints.txt`` to
+checkout); the build fails if the result conflicts with the other installed
+packages. Before the build, PsyNet copies ``constraints.txt`` to
 ``local-image-pins.txt`` without that package's lines, and the image installs
 the copy instead. Bundled demos and experiments without ``constraints.txt``
 use ``requirements.txt``. This way, an editable pin that points at a path on
