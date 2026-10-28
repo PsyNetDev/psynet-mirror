@@ -2895,7 +2895,11 @@ def _check_local_image_packages(local_packages):
     if not local_packages:
         return
     dockerfile = Path("Dockerfile")
-    if not dockerfile.is_file() or _LOCAL_IMAGE_PINS not in dockerfile.read_text():
+    content = dockerfile.read_text() if dockerfile.is_file() else ""
+    # Older Dockerfiles installed the Dallinger wheel without its dependencies.
+    if _LOCAL_IMAGE_PINS not in content or (
+        "dallinger" in local_packages and "dallinger[docker] @ file://" not in content
+    ):
         raise click.UsageError(
             "This experiment's Dockerfile does not install local PsyNet or "
             "Dallinger builds. Run 'psynet scripts update' to refresh it."

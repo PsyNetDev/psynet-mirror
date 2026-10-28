@@ -153,11 +153,17 @@ class TestCommandLine(object):
         )
         local_packages = command_line._local_packages(True, True)
 
-        Path("Dockerfile").write_text("FROM python\n")
-        with pytest.raises(click.UsageError, match="psynet scripts update"):
-            command_line._check_local_image_packages(local_packages)
+        import psynet as psynet_pkg
 
-        Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
+        template = Path(psynet_pkg.__file__).parent / "resources/experiment_scripts"
+        # An older template staged the pins but installed Dallinger without deps.
+        for outdated in ["FROM python\n", "COPY *local-image-pins.txt ./\n"]:
+            Path("Dockerfile").write_text(outdated)
+            with pytest.raises(click.UsageError, match="psynet scripts update"):
+                command_line._check_local_image_packages(local_packages)
+        command_line._check_local_image_packages(("psynet",))
+
+        shutil.copy(template / "Dockerfile", "Dockerfile")
         command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
@@ -184,7 +190,7 @@ class TestCommandLine(object):
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("SKIP_VERSION_CHECK", raising=False)
         Path("requirements.txt").write_text("psynet\ndallinger==0.0.1\n")
-        with pytest.raises(ValueError, match="Dallinger versions"):
+        with pytest.raises(click.ClickException, match="Dallinger versions"):
             run_pre_checks_sandbox(("psynet",))
         run_pre_checks_sandbox(("psynet", "dallinger"))
 

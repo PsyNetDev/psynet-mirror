@@ -46,9 +46,10 @@ RUN set -- /experiment/psynet-*.whl; \
 
 # A local Dallinger wheel staged by ``DALLINGER_SOURCE`` / editable install
 # must win over the Git pin installed from requirements/constraints above.
+# Its dependencies are resolved too, keeping the pinned versions that satisfy them.
 RUN set -- /experiment/dallinger-*.whl; \
     if [ -f "$1" ]; then \
-        uv pip install --system --force-reinstall --no-deps "$1"; \
+        uv pip install --system --reinstall-package dallinger "dallinger[docker] @ file://$1"; \
     fi
 
 # The SSH account is chosen when the container starts. These directories must
