@@ -173,6 +173,13 @@ class TestCommandLine(object):
             pins + "RUN pip install /experiment/dallinger-*.whl\n"
         )
         command_line._check_local_image_packages(local_packages)
+        # The old command is only a problem in the Dallinger wheel step.
+        Path("Dockerfile").write_text(
+            pins + "RUN pip install /experiment/dallinger-*.whl\n"
+            "RUN set -- /experiment/other-*.whl; \\\n"
+            '    uv pip install --system --force-reinstall --no-deps "$1"\n'
+        )
+        command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
             assert Path("local-image-pins.txt").read_text() == (

@@ -2906,10 +2906,13 @@ def _check_local_image_packages(local_packages):
             "This experiment's Dockerfile does not install local PsyNet or "
             "Dallinger builds. Run 'psynet scripts update' to refresh it."
         )
+    active = "\n".join(
+        line for line in content.splitlines() if not line.lstrip().startswith("#")
+    )
+    instructions = re.sub(r"\\\s*\n", " ", active).splitlines()
     if "dallinger" in local_packages and any(
-        _LEGACY_DALLINGER_WHEEL_INSTALL in line
-        for line in content.splitlines()
-        if not line.lstrip().startswith("#")
+        "dallinger-*.whl" in step and _LEGACY_DALLINGER_WHEEL_INSTALL in step
+        for step in instructions
     ):
         import psynet
 
