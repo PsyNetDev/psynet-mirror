@@ -207,12 +207,8 @@ General
     collisions. New code should read ``psynet.var`` directly. Default:
     ``warn``.
 
-``lock_table_when_creating_participant`` *bool* |dlgr-icon|
-    Prevents possible deadlocks on the `Participant` table.
-    Historically we have locked the participant table when creating participants
-    to avoid database inconsistency problems. However some experimenters have experienced
-    some deadlocking problems associated with this locking, so we have made
-    it an opt-out behavior. Default: ``True``.
+Dallinger still accepts ``lock_table_when_creating_participant`` but it has
+no effect: participant signup always takes a PostgreSQL advisory lock.
 
 ``logfile`` *str* |dlgr-icon|
     Where to write logs.

@@ -1,0 +1,1 @@
+Participant signups queue on a PostgreSQL advisory lock, which Dallinger now always takes, instead of retrying `SERIALIZABLE` transactions when they conflict. A signup that waits more than 5 seconds for the lock fails. The `lock_table_when_creating_participant` config variable has no effect, and setting it raises a `FutureWarning`.
