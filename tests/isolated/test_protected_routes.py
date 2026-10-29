@@ -15,6 +15,7 @@ class TestExp:
         test_routes = [
             "/network/1",
             "/node/1/neighbors",
+            "/participant/1",
         ]
         for route in test_routes:
             with pytest.raises(requests.exceptions.ConnectionError) as excinfo:

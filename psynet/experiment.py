@@ -7736,6 +7736,7 @@ _protected_routes = [
     "/question/<participant_id>",
     "/node/<int:node_id>/neighbors",
     "/node/<participant_id>",
+    "/participant/<participant_id>",
     "/node/<int:node_id>/vectors",
     "/node/<int:node_id>/connect/<int:other_node_id>",
     "/info/<int:node_id>/<int:info_id>",
