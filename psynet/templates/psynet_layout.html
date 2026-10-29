@@ -30,10 +30,10 @@
                 // from the back-end.
                 dallinger.identity = {
                     participantId: {{ participant.id }},
-                    assignmentId: "{{ participant.assignment_id }}",
-                    hitId: "{{ participant.hit_id }}",
-                    uniqueId: "{{ participant.unique_id }}",
-                    workerId: "{{ participant.worker_id }}"
+                    assignmentId: {{ participant.assignment_id | tojson }},
+                    hitId: {{ participant.hit_id | tojson }},
+                    uniqueId: {{ participant.unique_id | tojson }},
+                    workerId: {{ participant.worker_id | tojson }}
                 }
             }
         </script>

@@ -1140,10 +1140,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
-        refusal = refuse_new_participant_if_full()
-        if refusal is None:
-            refusal = refuse_recruiter_exit_without_unique_id()
-        return refusal
+        return refuse_new_participant_if_full()
 
     @staticmethod
     def after_request(request, response):
@@ -3590,6 +3587,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         participant.issued_completion_code_type = issued
         self.commit_payment_state()
         return code_type
+
+    def check_recruiter_exit(self, participant):
+        """Refuse ``/recruiter-exit`` unless its ``unique_id`` is the participant's.
+
+        An experiment that overrides this method must return the result of
+        ``super().check_recruiter_exit(participant)`` whenever it would
+        otherwise return ``None``.
+        """
+        if request.args.get("unique_id") == participant.unique_id:
+            return None
+        logger.warning(
+            "Refused /recruiter-exit for participant_id=%s: its unique_id is "
+            "missing or belongs to another participant.",
+            participant.id,
+        )
+        response = make_response(self.error_page())
+        response.status_code = 403
+        return response
 
     def on_recruiter_submission_complete(self, participant, event):
         """Record payment fields, complete or approve on the platform, pay the bonus, and recruit.
@@ -7765,38 +7780,6 @@ _protected_routes = [
     "/node/<int:node_id>/transformations",
     "/transformation/<int:node_id>/<int:info_in_id>/<int:info_out_id>",
 ]
-
-
-def refuse_recruiter_exit_without_unique_id():
-    """Refuse ``/recruiter-exit`` unless ``unique_id`` matches ``participant_id``.
-
-    Dallinger's route looks the participant up by the sequential id alone, and
-    the exit pages show the participant's ``assignment_id``, which
-    ``/load-participant`` exchanges for their ``unique_id``. Returns ``None``
-    to let the request through.
-    """
-    if request.endpoint != "recruiter_exit":
-        return None
-    participant_id = request.args.get("participant_id")
-    try:
-        participant = Experiment.get_participant_from_unique_id(
-            request.args.get("unique_id")
-        )
-    except (
-        sqlalchemy.orm.exc.NoResultFound,
-        sqlalchemy.orm.exc.MultipleResultsFound,
-    ):
-        participant = None
-    if participant is not None and str(participant.id) == participant_id:
-        return None
-    logger.warning(
-        "Refused /recruiter-exit for participant_id=%r: its unique_id is missing "
-        "or belongs to another participant.",
-        participant_id,
-    )
-    response = make_response(get_experiment().error_page())
-    response.status_code = 403
-    return response
 
 
 def pre_deploy_constant(key, func: callable):

@@ -10,6 +10,7 @@ from psynet.pytest_psynet import (
     click_finish_button,
     next_page,
     path_to_test_experiment,
+    wait_for_exit_page,
 )
 from psynet.trial.static import StaticNetwork, StaticNode, StaticTrial
 
@@ -133,3 +134,16 @@ class TestExp:
             )
 
             click_finish_button(driver)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
+class TestDallingerSubmitAssignment:
+    def test_reaches_the_exit_page(self, bot_recruits):
+        # Each early exit recruits a replacement, so take only the first bot.
+        driver = next(bot_recruits).driver
+        assert_text(driver, "trial-position", "Trial 1")
+        driver.execute_script("dallinger.submitAssignment();")
+        wait_for_exit_page(driver, max_wait=10)

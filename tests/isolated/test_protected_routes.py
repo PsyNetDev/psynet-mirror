@@ -74,3 +74,9 @@ def test_configured_protected_routes_add_to_psynets():
         protected = experiment.protected_routes
     assert "/participant/<participant_id>" in protected
     assert "/my_experiment_data" in protected
+
+
+def test_dallinger_has_the_recruiter_exit_hook():
+    import dallinger.experiment
+
+    assert "check_recruiter_exit" in vars(dallinger.experiment.Experiment)

@@ -5230,7 +5230,7 @@ def test_lucid_get_participant_ignores_a_bare_participant_id():
         pytest.raises(AssertionError),
     ):
         recruiter.get_participant(request)
-    participant_cls.query.get.assert_not_called()
+    assert participant_cls.query.method_calls == []
 
 
 def test_lucid_get_participant_finds_the_participant_by_unique_id():
