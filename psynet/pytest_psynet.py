@@ -376,6 +376,11 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
             max_wait=max_wait,
             error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
         )
+        wait_until(
+            lambda: driver.find_elements(By.ID, "header"),
+            max_wait=max_wait,
+            error_message="The recruiter-exit route didn't render an exit page.",
+        )
     else:
         if parse.urlparse(driver.current_url).path == "/error-page":
             raise RuntimeError(

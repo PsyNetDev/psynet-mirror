@@ -144,6 +144,7 @@ from .recruiters import (  # noqa: F401
     StagingLabRecruiter,
     configured_recruiter_class,
     named_recruiter_class,
+    refuse_recruiter_exit_without_unique_id,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -1135,7 +1136,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
-        return refuse_new_participant_if_full()
+        refusal = refuse_new_participant_if_full()
+        if refusal is None:
+            refusal = refuse_recruiter_exit_without_unique_id()
+        return refusal
 
     @staticmethod
     def after_request(request, response):
@@ -6143,9 +6147,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     plan,
                 )
             if participant.complete:
-                participant_id = participant.id
+                exit_query = urlencode(
+                    {
+                        "participant_id": participant.id,
+                        "unique_id": participant.unique_id,
+                    }
+                )
                 cls._ensure_worker_complete(experiment, participant)
-                return redirect(f"/recruiter-exit?participant_id={participant_id}")
+                return redirect(f"/recruiter-exit?{exit_query}")
             if mode not in (None, "json"):
                 raise ValueError(
                     f"Unsupported /timeline mode '{mode}'. "

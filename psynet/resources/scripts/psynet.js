@@ -3298,7 +3298,12 @@
     // /timeline visits as a backstop.
     psynet.finishAndGoToExit = function () {
       const participantId = dallinger.identity.participantId;
-      const exitRoute = "/recruiter-exit?participant_id=" + participantId;
+      const exitRoute =
+        "/recruiter-exit?" +
+        new URLSearchParams({
+          participant_id: participantId,
+          unique_id: psynet.uniqueId,
+        });
       return dallinger
         .post("/worker_complete", { participant_id: participantId })
         .done(function () {
