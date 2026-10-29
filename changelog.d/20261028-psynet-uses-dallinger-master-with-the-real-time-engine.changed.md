@@ -1,0 +1,1 @@
+PsyNet now depends on a Dallinger master commit that includes the real-time engine. PsyNet maps Dallinger's new `realtime_session` and `realtime_event` tables, so launches, `psynet load` and imported data zips can read them back in.
