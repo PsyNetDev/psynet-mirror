@@ -239,15 +239,12 @@
                 {% block resume_modal %}
                     <div id="resume-modal" class="modal">
                         <div class="modal-content">
-                            <h3>{{ pgettext("timeline_resume", "Are you ready?") }}</h3>
+                            <h3>{{ pgettext("timeline_enable_audio", "Turn on sound") }}</h3>
                             <p>
-                                {{ pgettext("timeline_resume", "Click the button when you're ready to continue the experiment.") }}
+                                {{ pgettext("timeline_enable_audio", "This page uses audio. Your browser only allows audio after you click on the page.") }}
                             </p>
-                            <p>
-                                {{ pgettext("timeline_resume", "Note: if you see this message a lot, it might be because your browser has an incompatible extension installed (e.g. adblocker). Please try opening this page in an incognito window instead (you can just copy and paste the URL from the current page), and/or try manually disabling your extensions.") }}
-                            </p>
-                            <button type="button" style="max-width: 100px" class="btn btn-primary" id="resume-button">
-                                {{ pgettext("timeline_resume", "Resume") }}
+                            <button type="button" class="btn btn-primary" id="resume-button">
+                                {{ pgettext("timeline_enable_audio", "Turn on sound") }}
                             </button>
                         </div>
                     </div>
