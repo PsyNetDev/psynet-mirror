@@ -11,9 +11,10 @@ FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-bookworm
 ARG PYTHON_VERSION
 ARG CHROME_VERSION=149.0.7827.54
 
-RUN pip install uv
 # Every CI job builds this image, so a brief PyPI outage fails them all at
-# once; uv's default 3 retries give up within seconds.
+# once; uv's default 3 retries give up within seconds, and pip's defaults
+# (15 s, 5 retries) still fail on longer blips.
+RUN pip install --timeout 60 --retries 15 uv
 ENV UV_HTTP_RETRIES=8
 
 # TODO: delete some of these if we can
