@@ -24,6 +24,10 @@ def _get_dallinger_version() -> str:
     return dallinger_version
 
 
+class VersionMismatchError(click.ClickException, ValueError):
+    """The installed PsyNet or Dallinger does not match its pin; click shows it without a traceback."""
+
+
 def check_core_dependency_versions_match_requirements(skip=()):
     """
     Check that the installed PsyNet and Dallinger match the versions the deployment installs.
@@ -39,12 +43,13 @@ def check_core_dependency_versions_match_requirements(skip=()):
 
     Raises
     ------
-    ValueError
+    VersionMismatchError
         If any specified package version does not match the installed version.
     """
     if os.environ.get("SKIP_VERSION_CHECK"):
         print(
-            "SKIP_VERSION_CHECK is set so we will skip checking PsyNet versions specified vs. installed."
+            "SKIP_VERSION_CHECK is set, so the installed PsyNet and Dallinger "
+            "versions are not compared with their pins."
         )
         return
 
@@ -66,7 +71,7 @@ def check_core_dependency_versions_match_requirements(skip=()):
                 f"✗ {package_name}: installed {_short(info['installed'])} does not "
                 f"match {source} ({_short(info['specified'])})"
             )
-            raise ValueError(
+            raise VersionMismatchError(
                 f"The {package_name} versions installed on your local computer and specified in {source} do not match.\n"
                 f"\nVersion installed locally: {info['installed']}"
                 f"\nVersion specified in {source}: {info['specified']}"
