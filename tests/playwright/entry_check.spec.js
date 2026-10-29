@@ -40,7 +40,7 @@ test(
 );
 
 test(
-  "Chromium: no compatibility warning with default config",
+  "no compatibility warning with default config",
   { tag: "@both" },
   async ({ page }) => {
     await withAdPage(page, {}, async (adPage) => {
@@ -56,18 +56,23 @@ test(
 );
 
 test(
-  "Chromium: admitted without warning when force_google_chrome=True",
+  "force_google_chrome=True admits Chromium and warns other browsers",
   { tag: "@both" },
-  async ({ page }) => {
+  async ({ page, browserName }) => {
     await withAdPage(
       page,
       { env: { force_google_chrome: "true" } },
       async (adPage) => {
-        await adPage.waitForFunction(
-          () => window.browser?.isValidated === true,
-          { timeout: CHECK_TIMEOUT_MS }
-        );
-        await expect(adPage.locator("#browser-compatibility-modal")).toBeHidden();
+        const modal = adPage.locator("#browser-compatibility-modal");
+        if (browserName === "chromium") {
+          await adPage.waitForFunction(
+            () => window.browser?.isValidated === true,
+            { timeout: CHECK_TIMEOUT_MS }
+          );
+          await expect(modal).toBeHidden();
+        } else {
+          await expect(modal).toBeVisible({ timeout: CHECK_TIMEOUT_MS });
+        }
       }
     );
   }
