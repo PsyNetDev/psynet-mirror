@@ -900,6 +900,70 @@ def test_partner_leaving_sends_participant_to_unsuccessful_end(
         exp.timeline = original_timeline
 
 
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_queued_redirect_still_checks_the_page_uuid(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        PageMaker(
+            lambda participant: InfoPage(f"Group {participant.sync_group.id}"),
+            time_estimate=1,
+        ),
+    )
+    try:
+        (stayer, leaver), _ = _pair_sync_group(exp, db_session)
+        assert _json_timeline(exp, stayer).status_code == 200
+        leaver.fail("returned the study")
+        db_session.commit()
+
+        result = _process_response(exp, stayer, "not-the-open-page")
+        assert result.payload["submission"] == "rejected"
+        assert stayer.unique_id not in json.dumps(result.payload)
+        assert stayer.pending_redirect == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_queued_redirect_accepts_a_catch_up_from_the_participants_hold(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = _stacked_partner_timeline(f"redirect_{uuid.uuid4().hex[:8]}")
+    try:
+        stayer, leaver = _working_participants(exp, 2)
+        _json_timeline(exp, stayer)
+        _json_timeline(exp, leaver)
+        db.session.expire_all()
+        stayer = Participant.query.get(stayer.id)
+        _json_timeline(exp, stayer)
+        db.session.expire_all()
+        stayer = Participant.query.get(stayer.id)
+        assert type(exp.timeline.get_current_elt(exp, stayer)).__name__ == (
+            "_BarrierHoldPage"
+        )
+        hold_uuid = stayer.page_uuid
+        _catch_up_until_action(exp, [stayer.id, leaver.id])
+        db.session.expire_all()
+        Participant.query.get(leaver.id).fail("returned the study")
+        db_session.commit()
+        stayer = Participant.query.get(stayer.id)
+        assert Experiment._pending_redirect_replaces_open_page(stayer)
+
+        result = _process_response(exp, stayer, hold_uuid)
+        assert result.payload["submission"] == "approved"
+        assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
+
+
 def test_sync_group_dashboard_waiting_barrier_indexes():
     waiting_by_participant, waiting_by_barrier = _index_waiting_barriers(
         [

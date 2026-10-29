@@ -3708,6 +3708,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "page": page.__json__(participant),
         }
 
+    @staticmethod
+    def _stale_page_payload():
+        _p = get_translator(context=True)
+        return {
+            "submission": "rejected",
+            "message": _p(
+                "timeline_problem",
+                "Synchronization problem detected. "
+                "Are you running the same experiment in multiple browser tabs? "
+                "Please close all other tabs and refresh the page.",
+            ),
+        }
+
     def process_response(
         self,
         participant_id,
@@ -3794,8 +3807,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(participant, Bot):
                 participant.client_ip_address = client_ip_address
             if Experiment._pending_redirect_replaces_open_page(participant):
-                if page_uuid != participant.page_uuid:
+                if page_uuid != participant.page_uuid and not (
                     Experiment._settle_stale_hold(participant, page_uuid)
+                ):
+                    return ResponseResult(payload=self._stale_page_payload())
                 self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
@@ -3816,17 +3831,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         payload=self._approved_payload(participant, page),
                         page=page,
                     )
-                return ResponseResult(
-                    payload={
-                        "submission": "rejected",
-                        "message": _p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
-                        ),
-                    }
-                )
+                return ResponseResult(payload=self._stale_page_payload())
             if _is_timeline_hold(event):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
