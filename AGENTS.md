@@ -309,6 +309,14 @@ Avoid silently suppressing broad exceptions (for example `except Exception: pass
 If a broad exception must be caught for resilience, emit at least a warning-level log
 with useful context unless the path is intentionally noisy best-effort cleanup.
 
+## Backward compatibility
+
+Keep compatibility with released PsyNet versions, such as experiment files,
+generated scripts and APIs that a release produced or documented. Behavior
+that only existed on `master` between releases needs no compatibility code:
+change or remove it, and if `master` users must act (for example, rerun
+`psynet scripts update`), say so in the changelog fragment.
+
 ## Database migrations
 
 We assume PsyNet experiments are short-lived and their databases do not need
