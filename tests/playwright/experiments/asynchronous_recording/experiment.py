@@ -75,6 +75,8 @@ class Exp(psynet.experiment.Experiment):
                 controls=True,
                 show_preview=True,
                 recording_source="both" if dual else "camera",
+                auto_advance=os.environ.get("PSYNET_TEST_RECORDING_AUTO_ADVANCE")
+                == "1",
             ),
             time_estimate=3,
             save_answer="recorded_video",

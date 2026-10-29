@@ -370,6 +370,7 @@
 
     psynet.setPageReady = function (isReady) {
       psynet.pageReady = isReady;
+      if (isReady) psynet.pageFailureShown = false;
       psynet.updatePageReadyMarker();
       if (isReady) {
         window.dispatchEvent(new CustomEvent("timelinePageReady"));
@@ -1418,6 +1419,9 @@
     psynet.handleTimelineTransitionFailure = async function (error, message) {
       psynet.stopTimelineHold();
       psynet.setPageReady(false);
+      // The participant is told to reload; nextPage must not then tell them
+      // to wait for the page to load (for example after an automatic submit).
+      psynet.pageFailureShown = true;
       psynet.nextPagePending = false;
       psynet.setTimelineTransitionBusy(false);
       psynet.response.disable();
@@ -3184,7 +3188,9 @@
     ) {
       if (!psynet.pageReady) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
-        psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (!psynet.pageFailureShown) {
+          psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        }
         return false;
       }
       if (psynet.timelineHold && !options.timelineHoldResume) {

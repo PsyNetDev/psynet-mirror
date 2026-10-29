@@ -135,10 +135,12 @@ test("camera is released while waiting for the recording @inplace-only", async (
   }
 });
 
-test("legacy capture failure blocks submission until the page is reloaded @legacy-only", async ({ page, context }) => {
+for (const autoAdvance of [false, true]) {
+test(`legacy capture failure blocks submission until the page is reloaded (auto advance: ${autoAdvance}) @legacy-only`, async ({ page, context }) => {
   // The legacy path uploads the recording with the answer. An empty recording
   // must not be submittable: the participant is told to reload, which runs the
-  // recording page again.
+  // recording page again. With auto_advance, the automatic submit after the
+  // message is dismissed is blocked without a "Please wait" alert.
   test.setTimeout(120000);
   // The recorder fails until the test lets it work, as after fixing access.
   await context.addInitScript(() => {
@@ -158,26 +160,46 @@ test("legacy capture failure blocks submission until the page is reloaded @legac
     if (onRecordingPage && route.request().method() === "POST") submissions += 1;
     return route.continue();
   });
-  await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
-    await completeInitialGateway(p);
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-    onRecordingPage = true;
-    await expect(p.locator("#alert-message")).toContainText("could not be captured", { timeout: 30000 });
-    await p.locator("#alert-button").click();
-    await expect.poll(() => p.evaluate(() => ({
-      ready: psynet.pageReady,
-      nextDisabled: document.getElementById("next-button")?.disabled,
-    }))).toEqual({ ready: false, nextDisabled: true });
-    expect(submissions).toBe(0);
+  const logs = [];
+  page.on("console", message => logs.push(message.text()));
+  const previous = process.env.PSYNET_TEST_RECORDING_AUTO_ADVANCE;
+  process.env.PSYNET_TEST_RECORDING_AUTO_ADVANCE = autoAdvance ? "1" : "0";
+  try {
+    await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
+      await completeInitialGateway(p);
+      await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+      onRecordingPage = true;
+      await expect(p.locator("#alert-message")).toContainText("could not be captured", { timeout: 30000 });
+      await p.locator("#alert-button").click();
+      if (autoAdvance) {
+        // Dismissing the message lets the page try to submit automatically.
+        // That is blocked without telling the participant to wait instead.
+        await expect.poll(() => logs.some(text => text.includes("Blocked nextPage because pageReady is false"))).toBe(true);
+        await expect(p.locator("#alert-modal")).toBeHidden();
+      }
+      await expect.poll(() => p.evaluate(() => ({
+        ready: psynet.pageReady,
+        nextDisabled: document.getElementById("next-button")?.disabled,
+      }))).toEqual({ ready: false, nextDisabled: true });
+      expect(submissions).toBe(0);
 
-    // Reloading runs the recording page again, and this time it records.
-    await p.evaluate(() => sessionStorage.setItem("recorderWorks", "1"));
-    await p.reload();
-    await expect(p.locator("#main-body")).toContainText("Record a short clip.");
-    await waitForNextEnabled(p, 30000);
-    await expect(p.locator("#alert-message")).not.toBeVisible();
-  });
+      // Reloading runs the recording page again, and this time it records.
+      await p.evaluate(() => sessionStorage.setItem("recorderWorks", "1"));
+      await p.reload();
+      if (autoAdvance) {
+        await expect(p.locator("#main-body")).toContainText("Independent page reached.", { timeout: 60000 });
+      } else {
+        await expect(p.locator("#main-body")).toContainText("Record a short clip.");
+        await waitForNextEnabled(p, 30000);
+        await expect(p.locator("#alert-message")).not.toBeVisible();
+      }
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PSYNET_TEST_RECORDING_AUTO_ADVANCE;
+    else process.env.PSYNET_TEST_RECORDING_AUTO_ADVANCE = previous;
+  }
 });
+}
 
 test("upload module failure preserves submission and independent navigation @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);
