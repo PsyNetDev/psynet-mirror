@@ -5216,3 +5216,36 @@ def test_status_check_without_study_id_warns_once_and_skips_api(caplog, monkeypa
     recruiter.prolificservice.get_assignments_for_study.assert_not_called()
     warnings = [r for r in caplog.records if "no Prolific study ID" in r.getMessage()]
     assert len(warnings) == 1
+
+
+def test_lucid_get_participant_ignores_a_bare_participant_id():
+    from flask import Flask, request
+
+    from psynet.recruiters import BaseLucidRecruiter
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    with (
+        Flask(__name__).test_request_context("/terminate_participant?participant_id=1"),
+        patch("psynet.recruiters.Participant") as participant_cls,
+        pytest.raises(AssertionError),
+    ):
+        recruiter.get_participant(request)
+    participant_cls.query.get.assert_not_called()
+
+
+def test_lucid_get_participant_finds_the_participant_by_unique_id():
+    from flask import Flask, request
+
+    from psynet.recruiters import BaseLucidRecruiter
+
+    recruiter = object.__new__(BaseLucidRecruiter)
+    recruiter.link_lucid_rid_to_participant = MagicMock()
+    with (
+        Flask(__name__).test_request_context(
+            "/terminate_participant?unique_id=RID1:RID1"
+        ),
+        patch("psynet.recruiters.Participant") as participant_cls,
+    ):
+        participant = recruiter.get_participant(request)
+    participant_cls.query.filter_by.assert_called_once_with(assignment_id="RID1")
+    assert participant is participant_cls.query.filter_by.return_value.one.return_value

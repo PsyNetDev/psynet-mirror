@@ -3574,42 +3574,33 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         return lucid_recruitment_config.get(key)
 
     def get_participant(self, request):
+        # Not by participant_id: it is sequential, and the page this request
+        # renders shows the participant's RID.
         assignment_id = request.values.get("assignmentId")
         unique_id = request.values.get("unique_id")
-        participant_id = request.values.get("participant_id")
         rid = request.values.get("RID")
-        participant = None
 
         if assignment_id is None:
             if unique_id is not None:
                 assignment_id = unique_id.split(":")[1]
             elif rid is not None:
                 assignment_id = rid
-            elif participant_id is not None:
-                participant = (
-                    Participant.query.with_for_update(of=Participant)
-                    .populate_existing()
-                    .get(int(participant_id))
-                )
-                assignment_id = participant.assignment_id
 
         assert assignment_id is not None, "Could not determine assignment_id."
 
-        if participant is None:
-            try:
-                participant = Participant.query.filter_by(
-                    assignment_id=assignment_id
-                ).one()
-            except NoResultFound:
-                logger.warning(
-                    f"No Participant for Lucid RID '{assignment_id}' found. "
-                    "This can happen when users are terminated before completing recruitment "
-                    "(e.g., mobile detection, wrong browser, or other early termination)."
-                )
-            except MultipleResultsFound:
-                logger.error(
-                    f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
-                )
+        participant = None
+        try:
+            participant = Participant.query.filter_by(assignment_id=assignment_id).one()
+        except NoResultFound:
+            logger.warning(
+                f"No Participant for Lucid RID '{assignment_id}' found. "
+                "This can happen when users are terminated before completing recruitment "
+                "(e.g., mobile detection, wrong browser, or other early termination)."
+            )
+        except MultipleResultsFound:
+            logger.error(
+                f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
+            )
 
         if participant is not None:
             self.link_lucid_rid_to_participant(participant)

@@ -4037,7 +4037,8 @@
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
       return window.location.replace(
-        `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
+        "/terminate_participant?" +
+          new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
 
