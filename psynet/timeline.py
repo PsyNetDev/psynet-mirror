@@ -5,8 +5,11 @@ if TYPE_CHECKING:
     from psynet.trial.main import TrialNode
 
 import copy
+import hashlib
+import hmac
 import inspect
 import json
+import os
 import random
 import re
 import time
@@ -1170,6 +1173,20 @@ def new_page_uuid():
     return str(uuid.uuid4())
 
 
+def page_token(page_uuid):
+    """Return the token a page's websocket gives as its scope, or ``None``
+    without a ``page_uuid`` or a ``FLASK_SECRET_KEY``.
+
+    ``GET /participant/<id>`` shows anyone the page uuid, so the token is an
+    HMAC of it, keyed with the deployment's Flask secret.
+    """
+    key = os.environ.get("FLASK_SECRET_KEY")
+    if not key or not page_uuid:
+        return None
+    message = ("psynet-page-token:" + page_uuid).encode()
+    return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()
+
+
 def _arrival_updates_for(page, participant):
     """Return partner-ready websocket config, or None when it cannot be used.
 
@@ -2072,6 +2089,7 @@ class Page(Elt):
         internal_js_vars = {
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
+            "pageToken": page_token(participant.page_uuid),
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
         locale = get_locale()

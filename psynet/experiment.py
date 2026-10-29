@@ -4296,6 +4296,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     "/static/scripts/websocket-channel.js",
                 ),
                 (
+                    resources.files("psynet") / "resources/scripts/page-socket.js",
+                    "/static/scripts/page-socket.js",
+                ),
+                (
                     resources.files("psynet")
                     / "resources/scripts/psynet.early-exit.js",
                     "/static/scripts/psynet.early-exit.js",
