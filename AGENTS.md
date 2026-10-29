@@ -311,11 +311,12 @@ with useful context unless the path is intentionally noisy best-effort cleanup.
 
 ## Backward compatibility
 
-Keep compatibility with released PsyNet versions, such as experiment files,
-generated scripts and APIs that a release produced or documented. Behavior
-that only existed on `master` between releases needs no compatibility code:
-change or remove it, and if `master` users must act (for example, rerun
-`psynet scripts update`), say so in the changelog fragment.
+Keep compatibility with what final PsyNet releases produced or documented,
+such as experiment files, generated scripts and APIs, unless a documented
+breaking change removes it. Behavior that never reached a final release
+(only on `master`, an alpha or a release candidate) needs no compatibility
+code: change or remove it, and if users of those versions must act (for
+example, rerun `psynet scripts update`), say so in the changelog fragment.
 
 ## Database migrations
 
