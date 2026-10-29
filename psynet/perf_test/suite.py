@@ -115,7 +115,11 @@ class PerformanceSuite:
             return None
 
         return self._run_suite(
-            max(bot_counts), next_test, bot_log_file, n_tests=len(bot_counts)
+            max(bot_counts),
+            next_test,
+            bot_log_file,
+            n_tests=len(bot_counts),
+            notes=self._notes(search=False),
         )
 
     def find_capacity(self, bot_log_file=None, confirm=True):
@@ -145,11 +149,7 @@ class PerformanceSuite:
         """
         tester = self.tester
         self._print_suite_header(
-            f"automatic (from {CAPACITY_SEARCH_START}, while keeping "
-            f"{self.limits.describe()}; a test in which bots can't start fast "
-            "enough, or run late because their process is too busy, "
-            "could not be tested)",
-            search=True,
+            f"automatic, from {CAPACITY_SEARCH_START}", search=True
         )
         if not confirm:
             self.confirmation_skipped = "--no-confirm"
@@ -173,24 +173,23 @@ class PerformanceSuite:
             if self.before_test is not None
             else "pauses between tests"
         )
-        search_minutes = max_tests * tester.duration_minutes
+        total_minutes = max_tests * tester.duration_minutes
+        plan = f"Up to {max_tests} search tests of {tester.duration_minutes:g} min"
         if self.confirmation_skipped:
-            confirming = f"no validation test ({self.confirmation_skipped})"
+            plan += f", and no validation test ({self.confirmation_skipped})."
         else:
+            total_minutes += confirm_minutes
             arriving = (
                 f", bots arriving over {confirm_arrival:g} min"
                 if confirm_arrival
                 else ""
             )
-            confirming = (
-                f"then a {confirm_minutes:g}-min validation test at the recommended "
-                f"number of participants{arriving}; up to "
-                f"{search_minutes + confirm_minutes:g} min in all"
+            plan += (
+                f", then a {confirm_minutes:g}-min validation test at the "
+                f"recommended number of participants{arriving}."
             )
         logger.info(
-            f"Expected run time:    up to {max_tests} tests of "
-            f"{tester.duration_minutes:g} min ({search_minutes:g} min), "
-            f"{confirming}, plus {between}"
+            f"Expected run time:    up to {total_minutes:g} min, plus {between}"
         )
         highest_pass = lowest_fail = None
         confirming_cap = None
@@ -229,6 +228,7 @@ class PerformanceSuite:
             next_test,
             bot_log_file,
             confirmation_planned=not self.confirmation_skipped,
+            notes=[(logging.INFO, plan), *self._notes(search=True)],
         )
         if self.reset_error and not any(r.confirmation for r in results):
             self.confirmation_skipped = (
@@ -259,6 +259,7 @@ class PerformanceSuite:
         bot_log_file,
         n_tests=None,
         confirmation_planned=False,
+        notes=(),
     ):
         """Run tests until ``next_test(results_so_far)`` returns ``None``.
 
@@ -269,7 +270,8 @@ class PerformanceSuite:
         the summary of the tests before it and re-raises. ``max_bots`` is the most
         bots any test may run, which sets the bot processes.
         ``confirmation_planned`` says a capacity search meant to end with a
-        confirmation test.
+        confirmation test. ``notes`` are ``(level, paragraph)`` pairs that
+        follow the suite's settings, which end with the bot processes.
 
         Returns
         -------
@@ -278,6 +280,13 @@ class PerformanceSuite:
         """
         all_results = []
         started = time.monotonic()
+        logger.info(
+            f"Bot processes:        {self.tester.describe_bot_processes(max_bots)}"
+        )
+        for level, note in notes:
+            logger.info("")
+            for line in format_text(note):
+                logger.log(level, line)
         with self.tester.bot_runner(max_bots, bot_log_file):
             while (test := next_test(all_results)) is not None:
                 n_bots, duration_minutes, arrival_minutes, confirmation = test
@@ -291,9 +300,9 @@ class PerformanceSuite:
                 elif all_results:
                     self.tester.pause_between_tests()
                 if confirmation:
-                    title = "VALIDATION TEST"
+                    title = "Validation test"
                 else:
-                    title = f"TEST {len(all_results) + 1}" + (
+                    title = f"Test {len(all_results) + 1}" + (
                         f"/{n_tests}" if n_tests else ""
                     )
                 try:
@@ -344,11 +353,9 @@ class PerformanceSuite:
             logger.info(line)
 
     def _print_suite_header(self, bots_description, search=False):
+        """Log the suite's settings; the bot processes and :meth:`_notes` follow once known."""
         tester = self.tester
-        for line in format_text(
-            Text("=" * 80, style="bold"),
-            Text("\u26a1 PERFORMANCE TEST SUITE", style="bold"),
-        ):
+        for line in format_text(None, Text("Performance test suite", style="bold")):
             logger.info(line)
         logger.info(f"Bots per test:        {bots_description}")
         logger.info(
@@ -377,10 +384,20 @@ class PerformanceSuite:
         else:
             logger.info(f"Bot start stagger:    ~{tester.stagger_interval_s:g}s")
         logger.info(f"Bot time factor:      {tester.time_factor:g}")
+
+    def _notes(self, search):
+        """Return the ``(level, paragraph)`` pairs that follow the suite's settings."""
+        tester = self.tester
         if search:
             # Search tests are short on purpose; the confirmation test sees
             # the steady state.
-            return
+            return [
+                (
+                    logging.INFO,
+                    f"Each search test must keep {self.limits.describe()}. A test in "
+                    "which bots can't start fast enough, or run late because their "
+                    "process is too busy, is reported as one that could not be tested.",
+                )
+            ]
         short = short_test_warning(tester.duration_minutes, tester.session_minutes)
-        if short:
-            logger.warning(warning(short))
+        return [(logging.WARNING, Text(short, style="bright_yellow"))] if short else []
