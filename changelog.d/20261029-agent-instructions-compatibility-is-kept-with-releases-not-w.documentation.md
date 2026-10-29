@@ -1,1 +1,1 @@
-`AGENTS.md` now says that backward compatibility is kept with what final PsyNet releases produced or documented, not with behavior that only reached `master`, an alpha or a release candidate.
+`AGENTS.md` now says that behavior that never reached a final PsyNet release, such as behavior only on `master`, needs no backward-compatibility code.
