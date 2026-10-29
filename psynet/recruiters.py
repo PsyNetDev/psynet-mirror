@@ -59,7 +59,6 @@ from math import ceil
 
 import dallinger.recruiters
 import dominate
-import flask
 import pandas as pd
 import requests
 from dallinger import db
@@ -879,31 +878,6 @@ class PsyNetRecruiterMixin:
         if not view.supported:
             return None
         return view.bonus
-
-
-def refuse_recruiter_exit_without_unique_id():
-    """Refuse ``/recruiter-exit`` unless ``unique_id`` matches ``participant_id``.
-
-    Dallinger's route looks the participant up by the sequential id alone, and
-    the exit pages show the participant's ``assignment_id``, which
-    ``/load-participant`` exchanges for their ``unique_id``. Returns ``None``
-    to let the request through.
-    """
-    if flask.request.endpoint != "recruiter_exit":
-        return None
-    unique_id = flask.request.args.get("unique_id")
-    participant_id = flask.request.args.get("participant_id")
-    if unique_id and participant_id:
-        rows = db.session.query(Participant.id).filter_by(unique_id=unique_id)
-        if participant_id in {str(row.id) for row in rows}:
-            return None
-    from dallinger.experiment_server.utils import error_response
-
-    return error_response(
-        error_type="/recruiter-exit GET: unique_id does not match participant_id",
-        status=403,
-        simple=True,
-    )
 
 
 class PsyNetExitPageMixin:

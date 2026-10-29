@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 import requests
 from dallinger.utils import get_base_url
@@ -42,10 +44,11 @@ class TestExp:
         ):
             response = requests.get(exit_url, params=params)
             assert response.status_code == 403
+            assert response.headers["Content-Type"].startswith("text/html")
             assert "exit-assignment" not in response.text
 
-        error_page = requests.get(
-            host + "/error-page", params={"participant_id": participant_id}
+        error_page = requests.post(
+            host + "/error-page", data={"participant_id": participant_id}
         )
         assert "exit-assignment" not in error_page.text
 
@@ -58,3 +61,16 @@ class TestExp:
         )
         assert response.status_code == 200
         assert "exit-assignment" in response.text
+
+
+def test_configured_protected_routes_add_to_psynets():
+    from psynet.experiment import Experiment
+
+    experiment = object.__new__(Experiment)
+    with patch(
+        "dallinger.experiment.get_config",
+        return_value={"protected_routes": '["/my_experiment_data"]'},
+    ):
+        protected = experiment.protected_routes
+    assert "/participant/<participant_id>" in protected
+    assert "/my_experiment_data" in protected

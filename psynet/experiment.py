@@ -144,7 +144,6 @@ from .recruiters import (  # noqa: F401
     StagingLabRecruiter,
     configured_recruiter_class,
     named_recruiter_class,
-    refuse_recruiter_exit_without_unique_id,
 )
 from .redis import redis_vars
 from .serialize import serialize, unserialize
@@ -1132,6 +1131,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.load_deployment_config()
         self.asset_storage.on_every_launch()
         self.record_experiment_status()
+
+    @property
+    def protected_routes(self):
+        """Dallinger routes PsyNet always protects, plus any the config adds."""
+        return [*_protected_routes, *super().protected_routes]
 
     @staticmethod
     def before_request():
@@ -2335,7 +2339,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "prolific_enable_return_for_bonus": True,
             "prolific_pay_unsuccessful": True,
             "prolific_unsuccessful_topup": True,
-            "protected_routes": json.dumps(_protected_routes),
             "show_early_exit_button": False,
             "show_footer": True,
             "show_progress_bar": True,
@@ -7758,6 +7761,38 @@ _protected_routes = [
     "/node/<int:node_id>/transformations",
     "/transformation/<int:node_id>/<int:info_in_id>/<int:info_out_id>",
 ]
+
+
+def refuse_recruiter_exit_without_unique_id():
+    """Refuse ``/recruiter-exit`` unless ``unique_id`` matches ``participant_id``.
+
+    Dallinger's route looks the participant up by the sequential id alone, and
+    the exit pages show the participant's ``assignment_id``, which
+    ``/load-participant`` exchanges for their ``unique_id``. Returns ``None``
+    to let the request through.
+    """
+    if request.endpoint != "recruiter_exit":
+        return None
+    participant_id = request.args.get("participant_id")
+    try:
+        participant = Experiment.get_participant_from_unique_id(
+            request.args.get("unique_id")
+        )
+    except (
+        sqlalchemy.orm.exc.NoResultFound,
+        sqlalchemy.orm.exc.MultipleResultsFound,
+    ):
+        participant = None
+    if participant is not None and str(participant.id) == participant_id:
+        return None
+    logger.warning(
+        "Refused /recruiter-exit for participant_id=%r: its unique_id is missing "
+        "or belongs to another participant.",
+        participant_id,
+    )
+    response = make_response(get_experiment().error_page())
+    response.status_code = 403
+    return response
 
 
 def pre_deploy_constant(key, func: callable):

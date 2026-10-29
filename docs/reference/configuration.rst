@@ -233,12 +233,17 @@ General
     Default: ``True``.
 
 ``protected_routes`` *str* |dlgr-icon|
-    An optional JSON array of Flask route rule names which should be made inaccessible.
+    An optional JSON array of Flask route rule names which should be made inaccessible
+    to anyone not logged in to the dashboard. PsyNet always protects Dallinger's
+    routes that return database content, such as ``/participant/<participant_id>``
+    and ``/network/<network_id>``; this setting adds routes to that list.
     Example::
 
-        protected_routes = ["/participant/<participant_id>", "/network/<network_id>", "/node/<int:node_id>/neighbors"]
+        protected_routes = ["/my_experiment_data"]
 
     Accessing routes included in this list will raise a ``PermissionError`` and no data will be returned.
+    This setting can't remove a route from PsyNet's list; to do that, override
+    ``Experiment.protected_routes`` in your experiment class.
 
 ``show_early_exit_button`` *bool* |psynet-icon|
     If ``True``, participants may request to leave early. The timeline footer
