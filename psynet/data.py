@@ -23,6 +23,8 @@ from dallinger.models import (  # noqa
     Node,  # noqa
     Notification,  # noqa
     Question,  # noqa
+    RealtimeEvent,  # noqa
+    RealtimeSession,  # noqa
     Recruitment,  # noqa
     SharedMixin,
     Transformation,  # noqa
@@ -868,6 +870,8 @@ def _sql_dallinger_base_classes():
         "notification": Notification,
         "participant": Participant,
         "question": Question,
+        "realtime_event": RealtimeEvent,
+        "realtime_session": RealtimeSession,
         "recruitment": Recruitment,
         "transformation": Transformation,
         "transmission": Transmission,
