@@ -102,7 +102,8 @@ Launch information
 ------------------
 
 ``psynet deploy ssh`` and ``psynet debug ssh`` end with a summary of what
-you need next:
+you need next, and ``psynet performance-test ssh`` starts its tests with
+it:
 
 .. code:: text
 
@@ -122,9 +123,13 @@ An update (see `Updating a running app`_) doesn't recruit again, so it shows
 the participant link or recruiter's message saved when the app was deployed
 from this computer; without that record, it says that recruitment is unchanged.
 The log viewer row appears for apps with classic ingress.
+``performance-test ssh`` adds a ``Bot log`` row: the file on your computer
+that collects the bots' output.
 Passwords are not printed; they are saved in ``launch-info.json`` together
-with the other details. With older Dallinger versions, Dallinger's own
-summary, including the dashboard password, still appears above this one.
+with the other details. Dallinger versions without the ``show_summary``
+option of ``dallinger docker-ssh deploy`` and ``sandbox`` still print their
+own summary, including the dashboard password, above this one, for all three
+commands.
 The deployment ID has the form
 ``<label>__mode=<mode>__launch=<timestamp>``.
 
