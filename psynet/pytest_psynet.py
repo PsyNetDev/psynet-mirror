@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import subprocess
 import sys
 import time
 import warnings
@@ -13,6 +12,7 @@ import dallinger.pytest_dallinger
 import pexpect
 import pexpect.exceptions
 import pytest
+import requests
 import sqlalchemy.exc
 from dallinger import db, pytest_dallinger
 from dallinger.bots import BotBase
@@ -38,6 +38,7 @@ from .command_line import (
     clean_sys_modules,
     kill_chromedriver_processes,
     kill_psynet_chrome_processes,
+    kill_psynet_worker_processes,
     stop_local_debug_process,
 )
 from .experiment import get_experiment, import_local_experiment
@@ -51,6 +52,7 @@ from .test_helpers.mock_s3 import (
     get_mock_s3_resource,
 )
 from .testing.chrome_driver import create_psynet_chrome_driver
+from .testing.locks import experiment_directory_lock
 from .trial.main import TrialNetwork
 from .trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from .utils import (
@@ -67,6 +69,10 @@ warnings.filterwarnings("ignore", category=sqlalchemy.exc.SAWarning)
 ci_only = pytest.mark.skipif(
     os.environ.get("CI") is None, reason="This test only runs in CI environment"
 )
+
+# Bound the bot's final worker-status request so a wedged server surfaces as a
+# clear teardown error well before pytest-timeout kills the whole test.
+WORKER_STATUS_TIMEOUT_SEC = 30
 
 local_only = pytest.mark.skipif(
     os.environ.get("CI") is not None, reason="This test only runs in local environment"
@@ -240,6 +246,42 @@ def bot_class(headless=None):
                 logger.error("Error during experiment sign off.")
                 return False
 
+        def complete_experiment(self, status):
+            """Finalize the session over HTTP rather than in the browser.
+
+            Dallinger navigates the browser to ``/worker_complete``. PsyNet's
+            exit flow already calls that route from the participant page, so by
+            the time the bot fixture runs this step the browser is displaying
+            the recruiter exit page and the navigation only repeats an
+            idempotent request. A browser that is still settling that exit
+            redirect can leave the navigation unfinished, which also blocks the
+            ``driver.quit()`` that follows until the whole test times out.
+            """
+            if not self.participant_id:
+                raise ValueError(
+                    "bot.participant_id is not set. Cannot complete experiment."
+                )
+            parts = parse.urlparse(self.URL)
+            url = f"{parts.scheme}://{parts.netloc}/{status}"
+            # /worker_complete accepts POST, matching psynet.js; /worker_failed
+            # is registered for GET only.
+            method = "POST" if status == "worker_complete" else "GET"
+            response = requests.request(
+                method,
+                url,
+                params={"participant_id": self.participant_id},
+                timeout=WORKER_STATUS_TIMEOUT_SEC,
+            )
+            if not response.ok:
+                logger.error(
+                    "Bot %s %s for participant %s returned HTTP %s.",
+                    method,
+                    url,
+                    self.participant_id,
+                    response.status_code,
+                )
+            return response
+
         @cached_property
         def driver(self):
             return create_psynet_chrome_driver(headless=headless)
@@ -395,7 +437,10 @@ def in_experiment_directory(experiment_directory):
     loaded_experiment_directory = experiment_directory
     redis_vars.clear()
     cleanup_error = None
-    with working_directory(experiment_directory):
+    with (
+        experiment_directory_lock(experiment_directory),
+        working_directory(experiment_directory),
+    ):
         try:
             with scaffold_missing_files():
                 # In-repo demos/tests use PsyNet's shared development .venv, so
@@ -438,14 +483,12 @@ def skip_constraints_check():
 
 @pytest.fixture(scope="class")
 def clear_workers():
+    """Stop leftover local servers that use this test run's database."""
+
     def _zap():
-        kills = [["pkill", "-f", "heroku"]]
-        for kill in kills:
-            try:
-                subprocess.check_call(kill)
-            except Exception as e:
-                if e.returncode != 1:
-                    raise
+        # Once a worker stops, heroku local's foreman exits, and then the
+        # Heroku CLI that started it.
+        kill_psynet_worker_processes()
 
     _zap()
     yield
@@ -492,8 +535,6 @@ def debug_experiment(
     # db_session already reset the database for this test class. Brief pause so
     # any lingering teardown from the previous class can finish before launch.
     time.sleep(0.5)
-    kill_psynet_chrome_processes()
-    kill_chromedriver_processes()
 
     timeout = 60
 
@@ -502,6 +543,10 @@ def debug_experiment(
     config = get_config()
     if not config.ready:
         config.load()
+
+    # Browser cleanup matches this run's base_port, so config must be loaded.
+    kill_psynet_chrome_processes()
+    kill_chromedriver_processes()
 
     p = pexpect.spawn(
         "psynet",
@@ -531,7 +576,7 @@ def debug_experiment(
         # next test class resets the database; a short Ctrl-C + log flush is
         # not enough and can leave backends holding locks during drop_all.
         try:
-            _stop_debug_experiment_process(p)
+            stop_debug_experiment_process(p)
         finally:
             kill_psynet_chrome_processes()
             kill_chromedriver_processes()
@@ -541,18 +586,21 @@ def debug_experiment(
 dallinger.pytest_dallinger.debug_experiment = debug_experiment
 
 
-def _stop_debug_experiment_process(process):
+def stop_debug_experiment_process(process):
     """Flush logs best-effort, then always stop the debug process and workers."""
+    if getattr(process, "closed", False):
+        return
+
     try:
         flush_output(process, timeout=0.1)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while flushing debug experiment output: %s", err)
     except Exception:
         logger.exception("Unexpected error while flushing debug experiment output")
 
     try:
         stop_local_debug_process(process)
-    except (OSError, pexpect.exceptions.EOF) as err:
+    except (OSError, ValueError, pexpect.exceptions.EOF) as err:
         logger.warning("Error while stopping the debug experiment process: %s", err)
     except Exception:
         logger.exception("Unexpected error while stopping the debug experiment process")
@@ -588,20 +636,14 @@ def terminate_other_postgres_connections():
     still be terminated, so this must only run when no other component holds
     a database connection (as is the case at the test-setup call sites).
     """
-    from sqlalchemy import text
-    from sqlalchemy.orm.session import close_all_sessions
+    from .db import (
+        TERMINATE_OTHER_DATABASE_CLIENTS_SQL,
+        release_local_database_connections,
+    )
 
-    close_all_sessions()
-    db.engine.dispose()
-
+    release_local_database_connections()
     with db.engine.connect() as con:
-        con.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid() "
-                "AND usename = current_user"
-            )
-        )
+        con.execute(TERMINATE_OTHER_DATABASE_CLIENTS_SQL)
 
 
 # Postgres SQLSTATE code for "deadlock detected"; matching on the code rather
@@ -849,7 +891,6 @@ trial_maker_1 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,
@@ -866,7 +907,6 @@ trial_maker_2 = StaticTrialMaker(
     expected_trials_per_participant=6,
     max_trials_per_block=2,
     allow_repeated_nodes=True,
-    balance_across_nodes=True,
     check_performance_at_end=False,
     check_performance_every_trial=False,
     target_n_participants=1,

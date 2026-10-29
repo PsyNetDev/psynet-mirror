@@ -18,3 +18,10 @@ Dallinger Docker network used by local Docker-in-Docker test runners. Source
 it; do not confuse it with ``psynet services ensure``, which publishes those
 services on localhost. The script enables ``set -euo pipefail`` so a failed
 container or network setup aborts the sourcing runner.
+
+`already_tested.py` runs in the `check_already_tested` job at the start of
+each merge-train pipeline. It finds the merge request's newest finished
+merged-results pipeline that tested identical files and lists the jobs that
+passed there. Jobs that source `skip-if-already-passed.sh` at the start of
+their `before_script` then end early. Source that script rather than running
+it, so its `exit 0` ends the job. See "Running tests" in the developer docs.

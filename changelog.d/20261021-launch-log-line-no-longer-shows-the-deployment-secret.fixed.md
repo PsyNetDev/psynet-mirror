@@ -1,0 +1,1 @@
+The `Launched experiment "…"` message in the server log and in Slack no longer includes the deployment secret. For local launches it is now logged at DEBUG, because "Experiment launch complete!" follows straight away.

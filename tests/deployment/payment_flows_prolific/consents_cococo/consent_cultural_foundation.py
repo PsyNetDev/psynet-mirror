@@ -504,17 +504,20 @@ def _build_consent_html(
 # consent_irb_cultural_foundation — Module + Consent
 # =============================================================================
 
+# Mirrors psynet/templates/consents/main_consent.html. The stylesheets block
+# must call super(), otherwise the PsyNet participant theme is dropped and the
+# page renders without the surface panel that spaces the agree/decline buttons.
 _CONSENT_TEMPLATE = (
     '{% extends "timeline-page.html" %}'
     '\n{% block stylesheets %}'
+    '\n    {{ super() }}'
     '\n    <link rel="stylesheet" href="/static/css/consent.css"/>'
     '\n{% endblock %}'
-    '\n{% block reward %}{% endblock %}'
     '\n{% block main_body %}'
-    '\n<div class="main-div" style="padding-bottom:200px">'
+    '\n<div class="main-div">'
     '\n{{ consent_html | safe }}'
+    '\n{{ consent.buttons(config) }}'
     '\n</div>'
-    '\n{{ consent.fixed_buttons(config) }}'
     '\n{% endblock %}'
 )
 

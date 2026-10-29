@@ -21,19 +21,29 @@ A full deployment test covers two experiments in `tests/deployment`:
   Experiment class genuinely differ; the paid variants are deployed from
   temporary worktrees.
 
-Both experiments default to `recruiter = devprolific`, which simulates the
-Prolific API locally (requests are logged, not sent), so running a directory
+A third experiment, `tests/deployment/auto_recruit_prolific`, is **not part of
+a full deployment test**. Deploy it on demand when you specifically need to
+check sequential automatic recruitment: it opens a Prolific study with one
+place and tops up one place per completion until ten participants finish.
+It follows the same config-file recruiter pattern as the other two
+(`config.txt` defaults to `recruiter = devprolific`; `config.txt.prolific`
+sets `recruiter = prolific`) and needs no worktree, so the preparation steps
+below apply to it unchanged — just add it to the `for exp in ...` loops and
+give it its own app name.
+
+Every experiment above defaults to `recruiter = devprolific`, which simulates
+the Prolific API locally (requests are logged, not sent), so running a directory
 directly cannot accidentally start paid recruitment; every paid deployment
-swaps in an explicit recruiter variant first. All paid variants show the approved
-cultural-foundation consent (vendored `consents_cococo` package in each
-experiment directory): the Prolific variants use the `MAIN` consent and the
-Lucid variant uses the `CINT` consent.
+swaps in an explicit recruiter variant first. Each `experiment.py` also aborts
+in `on_launch` unless the configured recruiter matches that file. All paid
+variants show the approved cultural-foundation consent (vendored
+`consents_cococo` package in each experiment directory): the Prolific variants
+use the `MAIN` consent and the Lucid variant uses the `CINT` consent.
 
 By default a full deployment test produces **three apps**: the two Prolific
-experiments plus the Lucid variant of `audio_gibbs`. Overlap the long
-remote image builds to save wall-clock time, but **do not start all three
-`psynet deploy ssh` commands at once** (see "Stagger Local Prepare, Then
-Overlap Remote Builds"). The paid `audio_gibbs` variants deploy from
+experiments plus the Lucid variant of `audio_gibbs`. Start the three
+`psynet deploy ssh` commands together so that the long remote image builds
+overlap. The paid `audio_gibbs` variants deploy from
 temporary git worktrees; see "Prepare The Recruiter Variants".
 Deploy a subset only when the user explicitly asks for it.
 Prepare both experiment directories on a **single fresh deployment branch
@@ -149,6 +159,9 @@ git switch -c deployment-tests/$BASE_NAME "$BASE_COMMIT"
 git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prolific tests/deployment/audio_gibbs
 ```
 
+   GitLab runs no pipeline for `deployment-tests/*` branches, so do not wait
+   for CI after pushing one; the base tag or branch carries the test results.
+
    For an explicitly requested master-based deployment, update local `master`
    (`git switch master && git pull --ff-only origin master`) and branch from
    `master` instead.
@@ -245,8 +258,11 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
 
      ```text
      dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
      ```
+
+     Keep the `[experiment]` extra on the PsyNet line. Without it the image
+     has no Dallinger, and PsyNet's deploy pre-check refuses the pin.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.
@@ -285,9 +301,9 @@ Deploy all three apps from their own directories with their own app names:
 swap is committed on the deployment branch), and the two paid `audio_gibbs`
 variants from temporary worktrees (both swaps prepared as described in
 "Prepare The Recruiter Variants" below). Start each deploy as a background
-process (or in a separate terminal) and monitor all launch outputs, but
-**stagger the starts** so only one deploy is in local prepare at a time
-(see the next section). Do not background all three in one shot.
+process (or in a separate terminal) and monitor all launch outputs. Each
+deploy prepares its starting database in a scratch database and Redis of its
+own, so they can start at the same time.
 
 ```bash
 source <psynet-root>/<venv>/bin/activate
@@ -296,28 +312,17 @@ source <psynet-root>/<venv>/bin/activate
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <payment-flows-prolific-app-name>) &
-```
 
-Wait until that deploy prints `Attempting to build image on remote host`
-(fallback if that line is skipped: `Experiment UID:`). Then start the next:
-
-```bash
 (cd <prolific-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-prolific-app-name>) &
-```
 
-Wait for the same marker, then start the third:
-
-```bash
 (cd <lucid-worktree>/tests/deployment/audio_gibbs && psynet deploy ssh \
   --server <ssh-host> \
   --dns-host <dns-host> \
   --app <audio-gibbs-lucid-app-name>) &
 ```
-
-After all three have passed the marker, the remote builds overlap.
 
 Do not let one deployment's failure silently abort the others: check each
 launch output separately, and report per-app success/failure.
@@ -346,40 +351,4 @@ For `audio_gibbs` variants, also run the post-launch container source check
 in `recruiter-variants.md` before calling the deploy a success. A matching
    git branch is not enough: Dallinger can reuse a Docker image that still
    contains the other variant's `experiment.py`.
-
-## Stagger Local Prepare, Then Overlap Remote Builds
-
-Every `psynet deploy ssh` uses the **developer's local Postgres** before it
-touches the remote host. `_pre_launch` calls `prepare`, which runs
-`db.init_db(drop_all=True)` and `experiment.pre_deploy()` against the shared
-`dallinger` database (schema create includes
-`CREATE TYPE participant_status AS ENUM ...`). After that local work
-finishes, the deploy no longer needs local Postgres: it builds the image
-and launches on the server.
-
-Starting two or more deploys at the same instant races that local
-`init_db`. The typical failure is **not** a remote crash-loop. It dies
-during local prepare with:
-
-```text
-IntegrityError / UniqueViolation
-Key (typname, typnamespace)=(participant_status, 2200) already exists
-CREATE TYPE participant_status AS ENUM (...)
-```
-
-`audio_gibbs` `pre_deploy` (assets / snapshot) can take longer than
-`payment_flows_prolific`, so a "start all three and hope" launch often
-fails the two `audio_gibbs` apps while the first one proceeds.
-
-**Rule:** only one deploy may be in local prepare at a time. Start the
-next only after the previous log shows
-`Attempting to build image on remote host` (fallback: `Experiment UID:`).
-From that point the expensive remote Docker builds and launches may
-overlap.
-
-If a deploy hits the `participant_status` UniqueViolation, treat it as
-this local race. Leave any deploy that already passed the marker running.
-Retry **only** the failed command, and only after every in-flight deploy
-has printed the marker (or finished). Do not restart the whole trio at
-once.
 

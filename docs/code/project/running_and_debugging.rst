@@ -1,0 +1,204 @@
+Running and debugging locally
+=============================
+
+Run the experiment in debug mode
+--------------------------------
+
+Start the local database and cache, then the experiment:
+
+.. code-block:: bash
+
+    psynet services ensure
+    psynet debug local
+
+``psynet services ensure`` offers to start PostgreSQL and Redis in Docker if
+they aren't running. ``psynet debug local`` starts the same web, worker and
+clock processes that a deployed experiment runs, which takes 10 to 15
+seconds, then opens the dashboard and a participant session in your browser.
+Start-up ends with a block like this (with ``--no-browsers``, nothing is
+opened, and this block is how you reach the experiment):
+
+.. code-block:: console
+
+    Ready.
+      Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop/logs.jsonl
+    Press Ctrl+C to stop.
+
+Press :kbd:`Ctrl+C` in the terminal to stop it.
+
+When a script or a coding agent starts ``psynet debug local`` in a
+background shell without a terminal, keep its standard input open, for
+example ``tail -f /dev/null | psynet debug local``. Otherwise the server can
+stop without a log message when standard input closes.
+
+Most code changes, such as editing a page, adding timeline elements or
+changing code block logic, take effect when you save the file and refresh the
+page. Changes to assets in the timeline need a restart.
+
+To run the experiment inside its Docker image instead, as it runs when
+deployed, use ``psynet debug local --docker``.
+
+.. _running_several_local_experiments:
+
+Run several experiments at once
+-------------------------------
+
+``psynet test local`` runs in its own database, Redis server and port
+automatically, so you can run tests while ``psynet debug local`` is serving
+another experiment, and run several test sessions at once.
+
+By default every ``psynet debug local`` uses port 5000, the ``dallinger``
+PostgreSQL database, the Redis server on port 6379 and the
+``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. To run
+another alongside it, for example when several coding agents test
+different experiments on one machine, add ``--isolated``:
+
+.. code-block:: console
+
+    $ psynet debug local --isolated
+    Local PostgreSQL and Redis: OK.
+    Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
+    Experiment files OK (config.txt, experiment.py; 0 MB).
+    07:56:05 web    Development server on http://127.0.0.1:5100 (auto-reload on, debugger PIN 477-455-893)
+    07:56:08 web    Experiment launch complete!
+
+    Ready.
+      Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
+      Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
+      Full log:         /tmp/dallinger_develop_5100/logs.jsonl
+      Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
+    Press Ctrl+C to stop.
+
+Run the ``Other terminals`` line in another terminal to use the server's data
+there, for example with ``psynet export local`` or ``psynet run-bot``.
+
+Like a test session, the server then gets a free port from 5100 upwards, a
+fresh database and its own Redis server (or, without ``redis-server`` on
+your ``PATH``, a spare database number on the shared one). These are
+temporary: stopping the server with :kbd:`Ctrl+C` drops the database and
+stops or empties Redis, so export any data you want to keep while it runs.
+``--isolated`` doesn't work with ``--docker``, which always uses port 5000.
+
+To keep a second server's data between runs, give its terminal its own
+database, Redis server, port and development folder instead:
+
+.. code-block:: bash
+
+    PGPASSWORD=dallinger createdb -h localhost -U dallinger dallinger_2
+    redis-server --port 6381 --bind 127.0.0.1 --dir "$(mktemp -d)" --save "" --daemonize yes
+
+    export DATABASE_URL=postgresql://dallinger:dallinger@localhost/dallinger_2
+    export REDIS_URL=redis://localhost:6381
+    export base_port=5010
+    export dallinger_develop_directory=/tmp/dallinger_develop_2
+
+``psynet debug local`` in that terminal then serves on port 5010 and leaves
+the other experiment's processes and browsers alone. Change all four
+settings: the startup check only catches a shared port or database, and two
+runs that share a development folder overwrite each other's files.
+Use a separate Redis server rather than another database number on the same
+server: Redis delivers PsyNet's live notifications (for example waking a
+participant who waits on a page) to every database on a server, so two
+experiments sharing one would wake each other's participants.
+
+Two runs in the same experiment directory still conflict, because each
+creates and removes generated files there. Tests wait for each other
+automatically, but tests and servers refuse to start while a server
+uses the same directory, and servers refuse while tests use it; to debug and
+test at once, or to debug twice, use a separate copy (such as a git worktree)
+of the experiment.
+
+``psynet services list`` shows which ports, databases and Redis servers the
+sessions you are running already use.
+
+Set a breakpoint
+----------------
+
+PsyNet runs experiment code in subprocesses, which ordinary IDE breakpoints
+don't reach. Use :func:`psynet.debugger` instead:
+
+.. autofunction:: psynet.debugger
+
+``psynet setup`` creates the ``.vscode/launch.json`` file that this function
+needs.
+
+If ``psynet.debugger`` doesn't work in your setup, use
+`rpdb <https://pypi.org/project/rpdb/>`_, a remote version of Python's
+`pdb debugger <https://docs.python.org/3/library/pdb.html#debugger-commands>`_.
+It is installed with PsyNet. To set a breakpoint, add:
+
+.. code-block:: python
+
+    import rpdb; rpdb.set_trace()
+
+When the code reaches the breakpoint, connect to it from another terminal:
+
+.. code-block:: bash
+
+    nc 127.0.0.1 4444
+
+Track down an error
+-------------------
+
+Errors appear in the terminal running ``psynet debug local``, with a
+traceback showing where they happened. If the traceback ends in PsyNet code,
+read that part of the PsyNet source to see what it expected. A breakpoint
+just before the failing line shows the values of the local variables.
+
+If ``experiment.py`` or a module it imports fails to load, PsyNet prints a
+shorter traceback: the lines from your experiment folder, plus the line where
+the error was raised. To see the full traceback, run the command again with
+``PSYNET_SHOW_TRACEBACK=1`` (any value other than ``0``, ``false`` or ``no``
+works), for example
+``PSYNET_SHOW_TRACEBACK=1 psynet debug local``.
+
+If the cause is still unclear, simplify the experiment until the error
+disappears, for example by commenting out parts of the timeline. Share the
+smallest version that still fails when you ask for help.
+
+See PsyNet's detailed log messages
+----------------------------------
+
+By default the server log shows warnings, errors and important events, such
+as the experiment launching and recruitment decisions. PsyNet logs routine
+steps at DEBUG level, for example which node a trial maker selected for a
+participant, each evaluation of a while loop's condition, each received
+response and the timings of requests that took less than a second. To show
+them too, add this to ``experiment.py``:
+
+.. code-block:: python
+
+    import logging
+
+    logging.getLogger("psynet").setLevel(logging.DEBUG)
+
+Inspect the experiment in the dashboard
+---------------------------------------
+
+The dashboard (see :ref:`experiment_dashboard`) shows the current state of
+the experiment. Its **Database** tab lists the objects in the database, and
+**Monitor > Monitoring** shows the experiment's networks.
+
+Query the database directly
+---------------------------
+
+The local experiment stores its data in PostgreSQL. Connect with:
+
+.. code-block:: bash
+
+    psql -h localhost -U dallinger -d dallinger
+
+The password is ``dallinger``. The main tables are ``participant``,
+``trial``, ``response`` (page answers), ``node`` and ``network`` (trial maker
+nodes and chains) and ``asset``; ``\dt`` lists them all. For example:
+
+.. code-block:: sql
+
+    -- Recent participants
+    SELECT id, worker_id, status, creation_time FROM participant
+    ORDER BY creation_time DESC LIMIT 5;
+    -- Latest answers
+    SELECT id, answer FROM response ORDER BY id DESC LIMIT 10;

@@ -40,6 +40,7 @@
         });
 
         nextButtonState.handleClick = function() {
+            psynet.captureSubmissionControlState();
             let width = $("#next-button").width();
             let height = $("#next-button").height();
             $("#next-button").width(width); // Locks the button width to the current width
@@ -125,7 +126,7 @@
             type="button"
             class="btn push-button btn-primary response {% if params.timed == true %} timed {% else %} submit {% endif %}"
             id="{{ params.id }}"
-            style="{{ params.style }}" ,
+            style="{{ params.style }}"
             disabled="true"
     >
         {% autoescape off %}
@@ -165,6 +166,7 @@
                     buttonHighlightDuration * 1000,
                 );
             {% else %}
+                psynet.captureSubmissionControlState();
                 psynet.response.disable();
                 psynet.submit.disable();
                 psynet.nextPage(id);
@@ -1075,21 +1077,21 @@
         }
     </style>
 
-    <ul class="nav nav-tabs">
-        <li class="nav-item">
-            <a href="#audio-meter-sliders" class="nav-link" data-toggle="tab">{{ pgettext("audio_meter_calibrate", "Sliders") }}</a>
+    <ul class="nav nav-tabs" id="audio-meter-calibrate-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a href="#audio-meter-sliders" class="nav-link active" data-bs-toggle="tab" role="tab" aria-controls="audio-meter-sliders" aria-selected="true">{{ pgettext("audio_meter_calibrate", "Sliders") }}</a>
         </li>
-        <li class="nav-item">
-            <a href="#audio-meter-documentation" class="nav-link" data-toggle="tab">{{ pgettext("audio_meter_calibrate", "Documentation") }}</a>
+        <li class="nav-item" role="presentation">
+            <a href="#audio-meter-documentation" class="nav-link" data-bs-toggle="tab" role="tab" aria-controls="audio-meter-documentation" aria-selected="false">{{ pgettext("audio_meter_calibrate", "Documentation") }}</a>
         </li>
     </ul>
 
     <div class="tab-content">
-        <div id="audio-meter-sliders" class="tab-pane active">
+        <div id="audio-meter-sliders" class="tab-pane active" role="tabpanel">
             {{ multi_slider(params.sliders) }}
         </div>
 
-        <div id="audio-meter-documentation" class="tab-pane">
+        <div id="audio-meter-documentation" class="tab-pane" role="tabpanel">
             <p>
                 {{ pgettext("audio_meter_calibrate", "The <strong>decay</strong> parameters determine the amount of smoothing that happens to the signal, and have units of seconds.") }}
                 {{ pgettext("audio_meter_calibrate", "A high decay parameter means that the signal takes a long time to decay (i.e. high smoothing).") }}
@@ -1878,6 +1880,30 @@
                 survey.onCompleting.add(handleSurveyCompletion);
             }
         }
+
+        // SurveyJS labels every rating radio with the question title, and Knockout
+        // keeps resetting aria-label, so name each option via aria-labelledby.
+        survey.onAfterRenderQuestion.add((sender, options) => {
+            const question = options.question;
+            const fieldset = options.htmlElement.querySelector("fieldset[role=radiogroup]");
+            if (question.getType() !== "rating" || !fieldset) {
+                return;
+            }
+            const anchors = fieldset.querySelectorAll(":scope > span");
+            const minText = question.hasMinLabel ? anchors[0] : null;
+            const maxText = question.hasMaxLabel ? anchors[anchors.length - 1] : null;
+            const inputs = fieldset.querySelectorAll("input[type=radio]");
+            inputs.forEach((input, index) => {
+                const parts = [input.nextElementSibling];
+                if (index === 0) parts.push(minText);
+                if (index === inputs.length - 1) parts.push(maxText);
+                const ids = parts.filter(Boolean).map((part, partIndex) => {
+                    part.id = part.id || `${input.id}-label-${partIndex}`;
+                    return part.id;
+                });
+                input.setAttribute("aria-labelledby", ids.join(" "));
+            });
+        });
 
         survey.onAfterRenderPage.add(() => {
             $(".sd-navigation__complete-btn").addClass("submit");

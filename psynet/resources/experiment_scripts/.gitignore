@@ -17,6 +17,10 @@ env/
 # Automatically generated server log file
 server.log
 
+# Files staged by `psynet debug ssh --use-local-psynet` / `--use-local-dallinger`
+psynet-*.whl
+local-image-pins.txt
+
 # Automatically generated resources for running experiments with assets
 static/assets
 

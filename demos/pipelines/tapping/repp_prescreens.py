@@ -66,7 +66,7 @@ class REPPVolumeCalibration(Module):
                     f"""
                       <h3>Requirements</h3>
                       <hr>
-                      <b>Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
+                      Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
                       <br><br>
                       <i>Please do not use headphones, earphones, external speakers, or wireless devices (unplug or deactivate them now)</i>
                       <hr>
@@ -359,6 +359,10 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
         return self.position == 0
 
     def show_feedback(self, experiment, participant):
+        if self.failed and self.failed_reason != "analysis":
+            # The trial failed for another reason, so ``analysis`` may be missing.
+            return None
+
         num_resp_onsets_detected = self.analysis["num_resp_onsets_detected"]
 
         if self.failed:

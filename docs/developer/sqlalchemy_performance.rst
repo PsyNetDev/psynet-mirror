@@ -5,9 +5,10 @@ SQLAlchemy performance investigation notes
 ==========================================
 
 This page records lessons from profiling PsyNet's participant-navigation and
-trial-assignment paths. It is a decision record rather than a list of permanent
-prohibitions: rejected approaches can be reconsidered when new measurements or
-APIs change their trade-offs.
+trial-assignment paths, and from preparing large experiments for deployment
+(:ref:`deployment-preparation-at-scale`). It is a decision record rather than a
+list of permanent prohibitions: rejected approaches can be reconsidered when
+new measurements or APIs change their trade-offs.
 
 The investigation deliberately excluded data export, whose implementation was
 under active development.
@@ -52,15 +53,18 @@ Load relationships for the request that needs them
 --------------------------------------------------
 
 ``Participant`` relationships such as module states and active barriers use
-select-in loading because that is efficient when loading many participants.
-Participant-facing routes normally load exactly one participant, and many
-pages do not use all these relationships.
+select-in loading because that is efficient for dashboards and other queries
+that load many participants. Participant-facing routes normally load exactly
+one participant, and many pages do not use all these relationships.
 
 A request-specific query can override those relationships to ordinary lazy
 loading. This avoids unconditional statements while preserving normal
 relationship access later in the request. Keep this override private to the
 request path: public participant getters may be used after their session is
 detached and should retain their established eager-loading behavior.
+
+Barrier last-arrival checks are the opposite problem: one request locks many
+waiters. See :ref:`barrier-arrival-sql-budgets`.
 
 Filter before ORM hydration
 ---------------------------
@@ -238,3 +242,243 @@ Checklist for future investigations
    manipulation.
 #. Record why an attractive approach was rejected and what evidence would
    justify revisiting it.
+
+.. _deployment-preparation-at-scale:
+
+Deployment preparation at scale
+===============================
+
+``psynet prepare`` builds the database that every launch restores, so large
+static experiments pay for it on every deployment. These local measurements
+used a static trial maker with one network per node and local asset storage:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Step
+     - Before
+     - After
+   * - ``prepare`` with 100,000 nodes and no assets
+     - 77 s
+     - unchanged
+   * - ``prepare`` with 10,000 nodes, each with a new file asset
+     - 39 s
+     - 19 s
+   * - Launch-time node pass (``_nodes_on_deploy``), 100,000 nodes
+     - 25 s
+     - 3 s
+
+The retained changes are small:
+
+* Launch marks nodes without ``async_on_deploy`` as deployed in one ``UPDATE``
+  and loads only the nodes that still need work.
+* A synchronous asset deposit skips ``session.merge`` when the asset is already
+  in the session. ``merge`` autoflushes, which issued two single-row
+  ``UPDATE`` statements per asset; the changes now reach the database in one
+  batch at commit.
+* ``deployment_info.read`` decodes ``.deploy/deployment_info.json`` only when
+  the file changes, instead of several times per asset.
+
+Network creation
+----------------
+
+Network creation is the remaining cost. At 100,000 nodes, SQL takes 18 s of
+the 77 s, even though SQLAlchemy already sends each table as one multi-row
+``INSERT``. Most of the rest is ORM work: constructing instrumented objects,
+cascading them into the session, and tracking their changes during the flush.
+The ``network.head_id`` column also costs 8 s, because the network and its head
+node reference each other, so SQLAlchemy inserts both and then issues one
+``UPDATE`` per network.
+
+A scratch prototype wrote the same rows without the unit of work. It reserved
+identifiers with ``nextval``, inserted networks and then nodes, and filled
+``head_id`` with a single set-based ``UPDATE``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Approach at 100,000 nodes
+     - Network creation
+   * - ORM (current)
+     - 77 s
+   * - Construct ``StaticNetwork`` objects, write rows with Core
+     - 27 s
+   * - Build row dictionaries directly, write rows with Core
+     - 17 s
+   * - ``COPY`` of the node rows alone
+     - 0.07 s
+
+SQLAlchemy 1.4, which Dallinger pins, processes Core ``executemany``
+parameters in Python, so ``COPY`` is the fast route. PsyNet already uses
+``COPY`` for export and for restoring the launch snapshot
+(:func:`psynet.data.ingest_to_model`). A ``COPY`` path for static networks
+would need to:
+
+* reserve identifiers from the table sequences, not compute them from the
+  current maximum;
+* write every column value that the network and node constructors compute,
+  including the polymorphic ``type`` and the defaults that SQLAlchemy would
+  otherwise supply;
+* serialize ``PythonObject`` columns with the column type, and distinguish
+  NULL from the empty string as the export code does;
+* fall back to the ORM path whenever an experiment overrides network
+  construction hooks such as ``make_definition``, ``validate``, or ``add_node``.
+  Static trial makers always use ``StaticNetwork``, so they are the natural
+  first scope;
+* create asset rows and node-to-asset link rows in bulk. Nodes written with
+  ``COPY`` are not in the session, so ``ChainNode.stage_assets`` cannot run on
+  them as it does today.
+
+A small helper that turns model rows into ``COPY`` CSV from the table metadata
+would serve that path. It could also serve a more radical alternative in which
+``prepare`` writes the static network and node tables straight into the launch
+snapshot instead of inserting and then exporting them.
+
+Other costs
+-----------
+
+* Each asset deposit calls ``import_local_experiment`` twice through
+  ``Asset.registry``, about 4 s per 10,000 assets under the profiler. Caching
+  it needs care because tests reload experiments and change directory.
+* Constructing 100,000 ``StaticNode`` objects at import takes about 5 s and
+  0.5 GB in every process. Passing a callable as ``nodes`` already avoids this
+  at runtime; avoiding it during ``prepare`` would need an API that accepts
+  plain node descriptions.
+* Remote asset storage such as S3 is limited by upload time, which none of the
+  database changes affect.
+
+.. _barrier-arrival-sql-budgets:
+
+Barrier last-arrival SQL budgets
+================================
+
+Isolated tests in ``tests/isolated/test_barrier_arrival_queries.py`` pin
+statement counts for the post-commit coordination path
+(``_run_pending_barrier_checks``, ``Experiment._run_queued_barrier_checks``,
+and ``Experiment._finalize_barrier_arrivals``). The
+numbers are a snapshot of the current ORM path, not a ceiling to preserve.
+Fewer statements, fewer commits, or fewer per-waiter lazy loads are
+improvements: update the expected numbers in that test and in this section.
+
+Use the profiler as a statement-count gate, not a duration gate. Do not put
+these budgets on Playwright or the full ``/timeline`` / ``/response`` stack.
+See :ref:`sqlalchemy_profiling`.
+
+Profile with a cold session, as a real request has: expunge the session so it
+holds none of the waiters before the profiled window. A test that keeps every
+participant loaded hides per-waiter lazy loads, because SQLAlchemy resolves
+them from the identity map. That identity map is also weak: a helper that
+drops its query results can lose eager-loaded state before the caller uses
+it, so keep loaded rows referenced until they are attached to something.
+
+The counts below were predicted from the code and then checked against a
+profiler dump. Locks, advisory claims, spec reconstruction, and waiter-join
+``NOWAIT`` *kinds* must stay constant as group size *N* grows. Last-arrival
+does not skip partner cursors after the check, so there is no per-waiter
+skip-after-commit term. Per-row writes still scale with *N*,
+but SQLAlchemy flushes them as one ``executemany`` statement per table. A new
+*kind* of statement that grows with *N* should fail the tests.
+
+Do not add extra ``joinedload`` options to the waiter ``FOR UPDATE`` query.
+PostgreSQL cannot lock the nullable side of an outer join, and joining
+collections causes a cartesian product. Use ``selectinload`` follow-up
+``IN`` queries so extra rows are not locked. Do not load
+``Participant.active_barriers`` through a nested loader either: the waiter
+links are members of that collection, and under ``populate_existing`` the
+nested load resets their eager-loaded ``timeline_hold``.
+``_populate_active_barriers`` fills the collection with one explicit ``IN``
+query instead.
+
+Group walks (``SyncGroup.participants``) batch-load the members they have
+not loaded yet, and arrival notices batch-load waiters' hold records, so no
+statement kind repeats per member.
+
+Check window (one GroupBarrier, group already formed)
+-----------------------------------------------------
+
+18 statements for the filled visit, plus extra-connection and ORM
+``lock_timeout`` SETs, so ``20`` total (no per-waiter skip-after-commit):
+
+* extra-connection ``lock_timeout`` and ``pg_try_advisory_xact_lock`` (the ORM
+  session does not take that same key; last-arrival only issues a blocking
+  ``pg_advisory_xact_lock`` when the try misses);
+* ORM ``lock_timeout`` for the check/commit on ``db.session``;
+* instance PK, SAVEPOINT, deferred ``spec``
+  load, one waiter ``FOR UPDATE NOWAIT`` join (this already inner-joins
+  ``participant``). The visit-claim peek drops its reconstructed barrier
+  after rolling back, so this check still loads ``spec`` once instead of
+  reusing in-memory peek state;
+* ``timeline_hold`` select-in and ``module_state`` select-in;
+* one explicit ``active_barriers`` ``IN`` query and one explicit
+  ``sync_group_links`` ``IN`` query (both populated with
+  ``set_committed_value``; loader options on those relationships either reset
+  the waiter links or make later arrival-notice walks lazy-load per member);
+* ``sync_group`` PK, group-membership load, deferred group-size columns;
+* three ``executemany`` UPDATEs (link release, hold ``released_at``,
+  participant wait credit), group UPDATE, instance UPDATE, RELEASE SAVEPOINT.
+
+The wake path is given the already-loaded hold, so it does not look the row
+up again. Nested ``begin_nested()`` records one profiler commit (the
+savepoint release that flushes the updates). The extra-connection transaction
+records a second commit on the check callsite. Last-arrival drains released
+waiter ids without a per-waiter skip commit.
+
+Finalize window (same check, then relock the last arriver)
+----------------------------------------------------------
+
+The check, plus two ``lock_timeout`` SETs and the relock: a participant
+``FOR UPDATE`` without ``NOWAIT`` (its lazy collections load only if the next
+page reads them). Grand total: ``23``. Profiler commits: ``4`` (check + extra
+connection + queued + relock).
+The check commit is on ``_evaluate_held_instance``; the
+relock commit is on ``Experiment._relock_arriver_after_barrier_check``.
+The budget's ``finalize_commits`` count includes
+``_attempt_queued_barrier_checks`` (the queued-check commit) and
+``_relock_arriver_after_barrier_check``.
+Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
+
+Arrival notice (recipient already loaded, *N* - 1 waiters)
+----------------------------------------------------------
+
+``8`` statements, independent of *N*: the group's members load in one batch
+with their select-in collections. Spec SELECT stays 1 because reconstructs
+are cached for that call.
+
+Stacked last-arrival finalize (grouper + two GroupBarriers)
+-----------------------------------------------------------
+
+Last-arrival releases the filled visit and self-skips holds that are
+already released or ready. It may land on a later silent catch-up hold
+while partners remain on their overlay. It does not skip partner cursors
+after the check; partners leave on overlay wake. The visit claim stays
+on a second connection until the check finishes. Check/relock *kinds*
+for the filled visit stay independent of group size *N*. Each check
+tries ``pg_try_advisory_xact_lock`` on that extra connection and only
+waits with ``pg_advisory_xact_lock`` when the try misses (the poller
+never waits). Creating the next instance adds a blocking
+``pg_advisory_xact_lock`` (O(stack), not O(*N*)). The total query count
+is the same for groups of two and four.
+
+``test_barrier_arrival_get_sql_does_not_grow_with_group_size`` pins the whole
+``GET /timeline`` for an arrival and for the last arrival: both issue the
+same number of statements for groups of three and seven.
+
+``GET /timeline`` Server-Timing splits that work from HTML render. In one
+local Playwright last-arrival run, a trio skip was about 180 ms
+``barriers`` plus 300 ms ``render`` (total ~500 ms). A quartet skip was
+about 370 ms ``barriers`` plus 200 ms ``render`` (total ~580 ms).
+``lock`` and ``page`` stayed under 40 ms. CI ~1 s last-arrival GETs are
+these two phases under load, not participant-row lock wait. Waiter
+hold-resume ``queue~`` behind that GET is worker-pool saturation on gunicorn
+(both Playwright job modes). Hold tests set workers to the session count plus
+two spares so concurrent last-arrival requests can overlap every waiter POST
+without starving a waiter Redis subscribe. Remaining ``queue~``
+on those POSTs is occupancy to diagnose (HTML ``render`` used to rebuild the
+full document shell on every inplace fragment); do not subtract it from
+overlay linger.
+
+Leftover inactive visits are outside this budget. Last-arrival keeps
+``instance.active``, so ``Barrier._other_active_pool`` does not look up a
+second pool on that path. Migrating waiters onto the live visit is extra SQL
+only when the instance is already inactive. See
+:ref:`timeline-hold-resume-protocol`.

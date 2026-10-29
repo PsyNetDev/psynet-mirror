@@ -4,6 +4,8 @@ import io
 import os
 import shutil
 import tempfile
+import time
+from contextvars import ContextVar
 from typing import List, Optional
 from zipfile import ZipFile
 
@@ -44,6 +46,7 @@ from sqlalchemy.schema import (
 )
 
 from . import field
+from .db import blocking_psycopg
 from .field import PythonDict, is_basic_type
 from .utils import get_logger, organize_by_key
 
@@ -172,7 +175,8 @@ def _get_preferred_superclass_version(cls):
 
 def copy_db_table_to_csv(tablename, path):
     with tempfile.TemporaryDirectory() as tempdir:
-        dallinger.data.copy_db_to_csv(db.db_url, tempdir)
+        with blocking_psycopg():
+            dallinger.data.copy_db_to_csv(db.db_url, tempdir)
         temp_filename = f"{tablename}.csv"
         shutil.copyfile(os.path.join(tempdir, temp_filename), path)
 
@@ -201,8 +205,9 @@ def _class_identity(cls) -> tuple[str, str]:
 def _reuse_inherited_columns(cls):
     """Reuse an inherited table's column when a subclass redeclares its name.
 
-    Dallinger models such as ``Info`` use single-table inheritance, so every
-    ``Trial`` subclass contributes its columns to the shared ``info`` table.
+    PsyNet and Dallinger models use single-table inheritance, so, for
+    example, every ``Trial`` subclass contributes its columns to the shared
+    ``trial`` table.
     A plain ``Column`` in a subclass body therefore fails as soon as that name
     is already on the table. This happens for sibling classes, and also when
     PsyNet executes the same ``experiment.py`` more than once in one process,
@@ -616,51 +621,170 @@ def init_db(drop_all=False, bind=db.engine):
 dallinger.db.init_db = init_db
 
 
-def drop_all_db_tables(bind=db.engine):
-    """
-    Drops all tables from the Postgres database.
-    Includes a workaround for the fact that SQLAlchemy doesn't provide a CASCADE option to ``drop_all``,
-    which was causing errors with Dallinger's version of database resetting in ``init_db``.
+class DatabaseInUseError(RuntimeError):
+    """Raised when replacing the local database while another client is connected."""
 
-    (https://github.com/pallets-eco/flask-sqlalchemy/issues/722)
-    """
-    from sqlalchemy.exc import ProgrammingError
 
-    engine = bind
+_refuse_other_clients_on_drop = ContextVar(
+    "psynet_refuse_other_clients_on_drop", default=False
+)
+
+
+@contextlib.contextmanager
+def _refuse_other_clients_while_dropping():
+    """Recheck for live clients before every drop_all attempt, including retries."""
+    token = _refuse_other_clients_on_drop.set(True)
+    try:
+        yield
+    finally:
+        _refuse_other_clients_on_drop.reset(token)
+
+
+_IDLE_CLIENT_DRAIN_SEC = 2.0
+_IDLE_CLIENT_POLL_SEC = 0.05
+
+
+def _format_other_database_clients(clients):
+    """Describe ``list_other_database_clients`` rows for an error message."""
+    labels = []
+    for pid, _user, app, state, addr, port, since in clients:
+        details = [(app or "").strip(), (state or "").strip() or "unknown"]
+        if addr:
+            host = f"[{addr}]" if ":" in str(addr) else addr
+            details.append(f"{host}:{port}")
+        else:
+            details.append("local socket")
+        if since:
+            details.append(f"since {since.astimezone():%H:%M}")
+        labels.append(
+            f"Postgres backend pid {pid} ({', '.join(d for d in details if d)})"
+        )
+    return ", ".join(labels)
+
+
+def assert_database_idle_for_replace(*, wait_sec=None):
+    """Refuse to drop tables while another same-role client is connected.
+
+    Closes this process's ORM sessions and connection pool first so idle
+    pooled connections here are not counted. When ``wait_sec`` is positive,
+    leftover backends that disappear after a just-killed debug server are
+    allowed to drain before refusing. The pool is released once; later polls
+    only list other backends.
+    """
+    from .db import list_other_database_clients, release_local_database_connections
+
+    if wait_sec is None:
+        wait_sec = _IDLE_CLIENT_DRAIN_SEC
+    release_local_database_connections()
+    deadline = time.monotonic() + wait_sec
+    while True:
+        clients = list_other_database_clients(release_local=False)
+        if not clients:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DatabaseInUseError(
+                "Cannot replace the local database while other clients with this "
+                "database role are still connected "
+                f"({_format_other_database_clients(clients)}). "
+                "Stop `psynet debug` and any other client using this database "
+                "role first. Those pids are Postgres backends, not OS processes "
+                "to kill."
+            )
+        time.sleep(min(_IDLE_CLIENT_POLL_SEC, remaining))
+
+
+def drop_all_db_tables(bind=db.engine, *, max_attempts=5, wait_sec=0.05):
+    """Drop every table, retrying leftover lock errors.
+
+    SQLAlchemy's ``drop_all`` has no CASCADE option, which used to break
+    Dallinger's ``init_db`` reset
+    (https://github.com/pallets-eco/flask-sqlalchemy/issues/722).
+    ``DROP TABLE`` needs ``ACCESS EXCLUSIVE`` and can still deadlock with a
+    leftover backend after the experiment server should have stopped. Retry
+    the whole drop; a partial drop rolls back with the aborted transaction.
+    ``psynet load`` refuses that path while another client with this database
+    role is still connected, including before each leftover-lock retry.
+    """
+
+    def _run():
+        _drop_all_db_tables_once(bind)
+
+    def _before_attempt():
+        if _refuse_other_clients_on_drop.get():
+            assert_database_idle_for_replace(wait_sec=0)
+
+    _retry_on_transient_lock(
+        _run,
+        max_attempts=max_attempts,
+        wait_sec=wait_sec,
+        before_attempt=_before_attempt,
+        warning="Retrying drop_all after a transient lock error (attempt %s/%s).",
+    )
+
+
+def _retry_on_transient_lock(
+    run,
+    *,
+    max_attempts=5,
+    wait_sec=0.05,
+    warning,
+    before_attempt=None,
+):
+    """Run ``run`` again after deadlock, lock timeout, or serialization failure."""
+    from sqlalchemy.exc import OperationalError
+
+    from .db import is_transient_transaction_error
+
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1.")
 
     db.session.commit()
-
-    con = engine.connect()
-    trans = con.begin()
-
-    all_fkeys, tables = list_fkeys()
-
-    for fkey in all_fkeys:
+    for attempt in range(max_attempts):
+        if before_attempt is not None:
+            before_attempt()
         try:
-            con.execute(DropConstraint(fkey))
-        except ProgrammingError as err:
-            if "UndefinedTable" in str(err):
-                pass
-            else:
+            run()
+            return
+        except OperationalError as err:
+            db.session.rollback()
+            if not is_transient_transaction_error(err) or attempt == max_attempts - 1:
                 raise
+            logger.warning(warning, attempt + 1, max_attempts)
+            if wait_sec:
+                time.sleep(wait_sec * (2**attempt))
 
-    for table in tables:
-        try:
-            con.execute(DropTable(table))
-        except ProgrammingError as err:
-            if "UndefinedTable" in str(err):
-                pass
-            else:
-                raise
 
-    trans.commit()
+def _drop_all_db_tables_once(bind):
+    from sqlalchemy.exc import ProgrammingError
+
+    with bind.connect() as con:
+        with con.begin():
+            all_fkeys, tables = list_fkeys(bind)
+            for fkey in all_fkeys:
+                try:
+                    con.execute(DropConstraint(fkey))
+                except ProgrammingError as err:
+                    if "UndefinedTable" in str(err):
+                        pass
+                    else:
+                        raise
+
+            for table in tables:
+                try:
+                    con.execute(DropTable(table))
+                except ProgrammingError as err:
+                    if "UndefinedTable" in str(err):
+                        pass
+                    else:
+                        raise
 
     # Calling _old_drop_all helps clear up edge cases, such as the dropping of enum types
     _old_drop_all(bind=bind)
 
 
-def list_fkeys():
-    inspector = sqlalchemy.inspect(db.engine)
+def list_fkeys(bind=None):
+    inspector = sqlalchemy.inspect(bind if bind is not None else db.engine)
 
     # We need to re-create a minimal metadata with only the required things to
     # successfully emit drop constraints and tables commands for postgres (based
@@ -700,34 +824,28 @@ dallinger.db.Base.metadata.drop_all = drop_all_db_tables
 # This would have been useful for importing data, however in practice
 # it caused the import process to hang.
 #
-@contextlib.contextmanager
-def disable_foreign_key_constraints():
-    db.session.commit()
-    # con = db.engine.connect()
-    # trans = con.begin()
+def _drop_foreign_key_constraints(*, max_attempts=5, wait_sec=0.05):
+    """Drop every foreign key, retrying leftover lock errors.
 
-    all_fkeys, tables = list_fkeys()
+    Ingest dropping constraints needs ``ACCESS EXCLUSIVE`` and can deadlock
+    with a leftover backend. Retry the whole drop batch; a partial drop
+    rolls back with the aborted transaction.
+    """
 
-    for fkey in all_fkeys:
-        # con.execute(DropConstraint(fkey))
-        db.session.execute(DropConstraint(fkey))
+    def _run():
+        all_fkeys, _tables = list_fkeys()
+        for fkey in all_fkeys:
+            db.session.execute(DropConstraint(fkey))
+        db.session.commit()
 
-    db.session.commit()
-
-    yield
-
-    # This code was meant to re-add the constraints afterwards, but it causes an error that we have not been
-    # able to debug, so we have disabled it. It should not be too much of a problem, though; SQLAlchemy
-    # should protect us from foreign key misuse anyway.
-    #
-    # for fkey in all_fkeys:
-    #     # con.execute(AddConstraint(fkey))
-    #     print(fkey)
-    #     db.session.execute(AddConstraint(fkey))
-    #
-    # db.session.commit()
-
-    # trans.commit()
+    _retry_on_transient_lock(
+        _run,
+        max_attempts=max_attempts,
+        wait_sec=wait_sec,
+        warning=(
+            "Retrying foreign-key drops after a transient lock error (attempt %s/%s)."
+        ),
+    )
 
 
 def _sql_dallinger_base_classes():
@@ -837,6 +955,7 @@ def ingest_to_model(
     engine=None,
     clear_columns: Optional[List] = None,
     replace_columns: Optional[dict] = None,
+    drop_foreign_keys: bool = True,
 ):
     """
     Imports a CSV file to the database.
@@ -858,6 +977,11 @@ def ingest_to_model(
 
     replace_columns :
         Optional dictionary of values to set for particular columns.
+
+    drop_foreign_keys :
+        Whether to drop every foreign-key constraint before importing.
+        Callers importing many tables should drop them once and pass ``False``,
+        because finding the constraints reflects every table in the database.
     """
     if engine is None:
         engine = db.engine
@@ -868,14 +992,21 @@ def ingest_to_model(
             patch_csv(file, patched_csv, clear_columns, replace_columns)
             with open(patched_csv, "r") as patched_csv_file:
                 ingest_to_model(
-                    patched_csv_file, model, clear_columns=None, replace_columns=None
+                    patched_csv_file,
+                    model,
+                    engine,
+                    clear_columns=None,
+                    replace_columns=None,
+                    drop_foreign_keys=drop_foreign_keys,
                 )
     else:
         inspector = sqlalchemy.inspect(db.engine)
         reader = csv.reader(file)
         columns = tuple('"{}"'.format(n) for n in next(reader))
 
-        with disable_foreign_key_constraints():
+        if drop_foreign_keys:
+            _drop_foreign_key_constraints()
+        with blocking_psycopg():
             postgres_copy_from(
                 file, model, engine, columns=columns, format="csv", HEADER=False
             )
@@ -955,6 +1086,7 @@ def ingest_zip(path, engine=None):
     if is_zip_path(path):
         with ZipFile(path, "r") as archive:
             members = table_csv_members_by_table(archive)
+            _drop_foreign_key_constraints()
             for tablename in import_order:
                 member = members.get(tablename)
                 if member is None:
@@ -962,17 +1094,18 @@ def ingest_zip(path, engine=None):
                 model = sql_base_classes()[tablename]
                 file = archive.open(member)
                 file = io.TextIOWrapper(file, encoding="utf8", newline="")
-                ingest_to_model(file, model, engine)
+                ingest_to_model(file, model, engine, drop_foreign_keys=False)
         return
 
     database_dir = resolve_database_dir(path)
+    _drop_foreign_key_constraints()
     for tablename in import_order:
         csv_path = table_csv_path(database_dir, tablename)
         if not os.path.exists(csv_path):
             continue
         model = sql_base_classes()[tablename]
         with open(csv_path, encoding="utf8", newline="") as file:
-            ingest_to_model(file, model, engine)
+            ingest_to_model(file, model, engine, drop_foreign_keys=False)
 
 
 dallinger.data.ingest_zip = ingest_zip
@@ -984,13 +1117,16 @@ def populate_db_from_zip_file(zip_path):
 
     This drops every table first, so it must only be used where losing the
     current local database is the point (``psynet load``). Stop any local
-    experiment server first; ``drop_all`` deadlocks if the clock still holds
-    locks.
+    experiment server first; a connected ``psynet debug`` process is refused
+    rather than dropped out from under, because ``drop_all`` deadlocks if
+    the clock still holds locks.
     """
     from dallinger import data as dallinger_data
 
     db.session.commit()  # The process can freeze without this
-    init_db(drop_all=True)
+    assert_database_idle_for_replace()
+    with _refuse_other_clients_while_dropping():
+        init_db(drop_all=True)
     dallinger_data.ingest_zip(zip_path)
 
 
@@ -1022,18 +1158,20 @@ def export_assets(
     incremental SSH transport uses this so the server can describe the asset
     selection cheaply while the client fetches the bytes over rsync.
     """
-    from .asset import ExperimentAsset, OnDemandAsset
+    from .asset import ManagedAsset, OnDemandAsset
     from .export.path_safety import UnsafePathError, assert_semantic_asset_path
 
-    # ExperimentAsset covers deposits for this deployment. CachedAsset and
-    # ExternalAsset are omitted. OnDemandAsset subclasses ExperimentAsset
-    # but is generated live and is not written into the archive.
+    # Assets stored while the experiment was running are exported. Assets prepared
+    # before launch come from the experiment directory and code, and on-demand
+    # assets are never stored.
     assets_root = path
     os.makedirs(assets_root, exist_ok=True)
 
     assets = [
         asset
-        for asset in db.session.query(ExperimentAsset).order_by(ExperimentAsset.id)
+        for asset in db.session.query(ManagedAsset)
+        .filter(ManagedAsset.created_during_experiment.is_(True))
+        .order_by(ManagedAsset.id)
         if not isinstance(asset, OnDemandAsset)
     ]
 

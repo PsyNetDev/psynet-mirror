@@ -75,6 +75,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
     participant_id = participant.id
 
     event = MagicMock()
+    event.is_timeline_hold = False
     event.process_response.side_effect = ValueError("boom")
     experiment = get_experiment()
 
@@ -91,7 +92,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
             ),
         ),
         patch.object(experiment.timeline, "get_current_elt", return_value=event),
-        patch.object(Experiment, "report_error"),
+        patch.object(Experiment, "log_to_notifier"),
         patch(
             "psynet.experiment.error_response", return_value="json error"
         ) as error_response,
@@ -105,7 +106,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
             client_ip_address="127.0.0.1",
         )
 
-    assert result == "json error"
+    assert result.flask_response == "json error"
     error_response.assert_called_once()
 
     db.session.commit()
@@ -214,6 +215,7 @@ def test_skipped_recovery_rejects_a_later_timeline_response(db_session):
     )
     db.session.commit()
     event = MagicMock()
+    event.is_timeline_hold = False
 
     with (
         Flask(__name__).test_request_context("/response"),
@@ -250,9 +252,8 @@ def test_skipped_recovery_rejects_a_later_timeline_response(db_session):
 
     event.process_response.assert_not_called()
     for result in (stale, matching):
-        payload = result.get_json()
-        assert payload["submission"] == "rejected"
-        assert "already ended" in payload["message"]
+        assert result.payload["submission"] == "rejected"
+        assert "already ended" in result.payload["message"]
 
 
 def test_prepare_commits_a_leftover_prepared_generic_recovery_plan(db_session):
@@ -500,6 +501,40 @@ def test_prolific_screen_out_timeline_confirms_after_listener_records_submission
     assert response == "sent"
     render.assert_called_once()
     error_page.assert_not_called()
+
+
+def test_prolific_confirmation_reload_renders_in_the_read_only_phase(db_session):
+    """Reloading the screen-out confirmation must not commit payment state."""
+    from psynet.recruiters import PROLIFIC_UNSUCCESSFUL_CODE_TYPE, ProlificRecruiter
+
+    participant = _make_participant(
+        page_uuid="page-1",
+        status="screened_out",
+        failed=True,
+        issued_completion_code_type=PROLIFIC_UNSUCCESSFUL_CODE_TYPE,
+    )
+    participant_id = participant.id
+    db.session.commit()
+    experiment = get_experiment()
+    recruiter = object.__new__(ProlificRecruiter)
+
+    with (
+        Flask(__name__).test_request_context("/timeline"),
+        patch.object(Participant, "recruiter", recruiter),
+        patch.object(type(experiment), "recruiter", recruiter),
+        patch(
+            "psynet.recruiters.render_template_with_translations", return_value="sent"
+        ),
+    ):
+        response = Experiment._render_page_read_only(
+            page=RecordedSubmissionPage(),
+            experiment=experiment,
+            participant_id=participant_id,
+            page_uuid="page-1",
+            kind="full",
+        )
+
+    assert response.get_data(as_text=True) == "sent"
 
 
 def test_complete_timeline_visit_backstops_worker_complete(db_session):

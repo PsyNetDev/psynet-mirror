@@ -1,0 +1,1 @@
+Fixed an empty definition (`{}`) passed to `ChainNode` or returned from `make_next_definition` being treated as no definition and falling back to `create_seed`; a node created without a definition now raises an error that explains how to fix it.

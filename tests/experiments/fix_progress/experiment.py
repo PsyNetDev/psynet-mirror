@@ -1,5 +1,3 @@
-# pylint: disable=unused-import,abstract-method
-
 import pytest
 
 import psynet.experiment

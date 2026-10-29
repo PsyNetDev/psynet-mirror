@@ -1,18 +1,30 @@
+from types import SimpleNamespace
+
+import numpy as np
 import pytest
 from flask import Flask
 from jinja2 import DictLoader
 from markupsafe import Markup
 
 from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
+    AudioMeterControl,
+    CheckboxControl,
     Control,
+    DropdownControl,
     ModularPage,
     MusicNotationPrompt,
     Prompt,
     PushButtonControl,
+    RadioButtonControl,
     RatingScale,
+    TimedPushButtonControl,
 )
 
 # from importlib import resources
+
+
+def test_audio_meter_without_calibration_has_no_sliders():
+    assert AudioMeterControl(calibrate=False).sliders is None
 
 
 def test_import_templates():
@@ -430,6 +442,94 @@ def test_modular_page_metadata():
     assert metadata["control"] == page.control.metadata
 
 
+def test_unset_and_explicit_none_bot_responses():
+    unset = ModularPage("test", "Hi!", PushButtonControl(["Yes"]))
+    assert unset.call__get_bot_response(experiment=None, bot=None).raw_answer == "Yes"
+
+    explicit_none = ModularPage(
+        "test", "Hi!", PushButtonControl(["Yes"], bot_response=None)
+    )
+    response = explicit_none.call__get_bot_response(experiment=None, bot=None)
+    assert response.__json__() == {"answer": None, "metadata": {}, "blobs": {}}
+
+
+@pytest.mark.parametrize(
+    "control, expected",
+    [
+        (PushButtonControl([3]), "3"),
+        (DropdownControl([3]), "3"),
+        (RadioButtonControl([3]), "3"),
+        (CheckboxControl([3]), ["3"]),
+    ],
+)
+def test_option_control_bots_answer_like_the_browser(control, expected):
+    """Bots submit numeric choices as strings, as a browser does."""
+    page = ModularPage("test", "Hi!", control)
+    response = page.call__get_bot_response(experiment=None, bot=None)
+    assert response.raw_answer == expected
+
+
+@pytest.mark.parametrize(
+    "control, raw_answer, answer",
+    [
+        (DropdownControl([1, 2, 3]), "3", 3),
+        (PushButtonControl([1.5, 2]), "1.5", 1.5),
+        (RadioButtonControl([1, 2]), "2", 2),
+        (CheckboxControl([1, 2, 3]), ["1", "3"], [1, 3]),
+        (DropdownControl([1, 2]), "", ""),
+        (RadioButtonControl([1, 2]), None, None),
+        (RadioButtonControl([1, 2], show_free_text_option=True), "abc", "abc"),
+    ],
+)
+def test_option_controls_save_the_choice_the_browser_names(control, raw_answer, answer):
+    """The browser's string becomes the matching choice; other answers pass through."""
+    assert control.format_answer(raw_answer) == answer
+
+
+@pytest.mark.parametrize(
+    "choices, raw_answer, answer",
+    [(list(np.arange(1, 4)), "3", 3), ([np.float32(0.1)], "0.1", 0.1)],
+)
+def test_option_controls_save_numpy_choices_as_python_values(
+    choices, raw_answer, answer
+):
+    control = DropdownControl(choices)
+    saved = control.format_answer(raw_answer)
+    assert saved == answer and type(saved) is type(answer)
+    assert str(control.labels[-1]) == raw_answer
+
+
+def test_option_controls_reject_choices_with_the_same_text():
+    with pytest.raises(ValueError, match="same text"):
+        RadioButtonControl([1, "1"])
+
+
+@pytest.mark.parametrize(
+    "control, answer, response",
+    [
+        (PushButtonControl([1, 2]), 2, None),
+        (
+            TimedPushButtonControl([1, 2]),
+            [0.5],  # Subclasses may save press times instead of the event log.
+            SimpleNamespace(
+                metadata={
+                    "event_log": [
+                        {"eventType": "trialStart", "info": None},
+                        {"eventType": "pushButtonClicked", "info": {"buttonId": "2"}},
+                    ]
+                }
+            ),
+        ),
+    ],
+)
+def test_push_button_visualization_highlights_a_numeric_answer(
+    control, answer, response
+):
+    html = control.visualize_response(answer=answer, response=response, trial=None)
+    assert html.count("btn-success") == 1
+    assert html.index("btn-success") > html.index('id="1"')
+
+
 def test_modular_page_accepts_page_css_list():
     page = ModularPage(
         "test",
@@ -489,6 +589,42 @@ def test_get_values_and_labels():
     values, labels = RatingScale.get_values_and_labels({"bad": 1, "good": 2})
     assert list(values) == [1, 2]
     assert list(labels) == ["bad", "good"]
+
+
+def test_push_button_renders_only_valid_attributes():
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    import jinja2
+
+    import psynet
+    from psynet.modular_page import PushButton
+
+    templates = Path(psynet.__file__).parent / "templates"
+    macros = (
+        jinja2.Environment(loader=jinja2.FileSystemLoader(templates))
+        .get_template("macros/control.html")
+        .module
+    )
+    button = PushButton(
+        "yes", label="Yes", style="min-width: 100px", arrange_vertically=False
+    )
+
+    attributes = []
+
+    class _Parser(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            attributes.extend(name for name, _ in attrs)
+
+    _Parser().feed(str(macros.push_button(button)))
+    assert attributes == ["type", "class", "id", "style", "disabled"]
+
+
+def test_rating_scale_keeps_buttons_on_narrow_screens():
+    """SurveyJS's automatic dropdown would hide the scale descriptions."""
+    scale = RatingScale("rating", 7, min_description="Low", max_description="High")
+    assert scale.design["displayMode"] == "buttons"
+    assert scale.design["minWidth"] == "0px"
 
 
 def test_prompt_metadata_excludes_text():

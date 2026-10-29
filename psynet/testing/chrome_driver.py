@@ -8,6 +8,7 @@ import time
 from psynet.command_line import (
     list_chromedriver_processes,
     list_psynet_chrome_processes,
+    psynet_browser_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def create_psynet_chrome_driver(headless):
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--remote-debugging-pipe")
 
-        user_data_dir = tempfile.mkdtemp(prefix="psynet-chrome-")
+        user_data_dir = tempfile.mkdtemp(prefix=psynet_browser_prefix("chrome"))
         chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
         chrome_binary = _find_chrome_binary()
@@ -102,7 +103,7 @@ def create_psynet_chrome_driver(headless):
             chrome_options.add_argument("--headless=new")
 
         fd, chromedriver_log_path = tempfile.mkstemp(
-            prefix="psynet-chromedriver-", suffix=".log"
+            prefix=psynet_browser_prefix("chromedriver"), suffix=".log"
         )
         os.close(fd)
         chromedriver_verbose = os.getenv(

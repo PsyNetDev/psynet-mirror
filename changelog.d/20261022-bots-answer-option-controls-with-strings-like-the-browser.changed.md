@@ -1,0 +1,1 @@
+Default bot answers on `PushButtonControl`, `DropdownControl`, `RadioButtonControl` and `CheckboxControl` pages now go through the same answer formatting as browser answers, so bots and real participants save the same values. `CheckboxControl` bots now tick a list of choices instead of answering with a single choice.

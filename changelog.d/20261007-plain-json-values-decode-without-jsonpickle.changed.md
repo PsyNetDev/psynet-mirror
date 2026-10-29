@@ -1,0 +1,1 @@
+Sped up loading stored Python values, such as node and trial definitions and answers: values that are plain JSON are now decoded with `json.loads` instead of `jsonpickle`, which is several times faster. Values that need `jsonpickle` (tuples, sets, objects, NumPy arrays and similar) decode as before.

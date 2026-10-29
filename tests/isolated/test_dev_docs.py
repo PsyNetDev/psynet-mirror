@@ -18,6 +18,20 @@ def source_checkout(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _fake_linkcheck_run(monkeypatch, source_checkout, entries, returncode=1):
+    """Make ``subprocess.run`` act like Sphinx linkcheck writing ``entries``."""
+    output_json = source_checkout / "docs" / "_build" / "linkcheck" / "output.json"
+
+    def fake_run(command, **kwargs):
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(
+            "".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, returncode, "", "")
+
+    monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
+
+
 def test_make_command_runs_docs_make_target_with_options(source_checkout, monkeypatch):
     build_dir = source_checkout / "docs" / "_build"
     build_dir.mkdir()
@@ -247,47 +261,37 @@ def test_make_command_reports_failed_make_command(source_checkout, monkeypatch):
 def test_linkcheck_command_prints_structured_summary(
     source_checkout, monkeypatch, capsys
 ):
-    linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
-    linkcheck_dir.mkdir(parents=True)
-    (linkcheck_dir / "output.json").write_text(
-        "\n".join(
-            json.dumps(entry)
-            for entry in [
-                {
-                    "filename": "api/graphics.rst",
-                    "lineno": 3,
-                    "status": "working",
-                    "uri": "https://www.w3.org/TR/SVG/",
-                    "info": "",
-                },
-                {
-                    "filename": "api/utils.rst",
-                    "lineno": 3,
-                    "status": "broken",
-                    "uri": "http://localhost:5000",
-                    "info": "connection refused",
-                },
-                {
-                    "filename": "deploy/ssh_server.rst",
-                    "lineno": 205,
-                    "status": "broken",
-                    "uri": "https://your-app-name.example.com",
-                    "info": "certificate mismatch",
-                },
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
+    _fake_linkcheck_run(
+        monkeypatch,
+        source_checkout,
+        [
+            {
+                "filename": "api/graphics.rst",
+                "lineno": 3,
+                "status": "working",
+                "uri": "https://www.w3.org/TR/SVG/",
+                "info": "",
+            },
+            {
+                "filename": "api/utils.rst",
+                "lineno": 3,
+                "status": "broken",
+                "uri": "http://localhost:5000",
+                "info": "connection refused",
+            },
+            {
+                "filename": "deploy/ssh_server.rst",
+                "lineno": 205,
+                "status": "broken",
+                "uri": "https://your-app-name.example.com",
+                "info": "certificate mismatch",
+            },
+        ],
     )
-
-    def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
-
-    monkeypatch.setattr(docs_module.subprocess, "run", fake_run)
 
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="Linkcheck found 2 broken link"):
-            docs_module.linkcheck_command(clean=False, show_progress=False)
+            docs_module.linkcheck_command(clean=False, show_progress=False, strict=True)
 
     summary = capsys.readouterr().out
     assert "Linkcheck found 2 broken link(s):" in summary
@@ -301,26 +305,105 @@ def test_linkcheck_command_prints_structured_summary(
     assert "www.w3.org" not in summary
 
 
+@pytest.mark.parametrize(
+    ("uri", "info", "fails"),
+    [
+        ("http://example.com", "403 Client Error: Forbidden", False),
+        ("https://www.gnu.org", "Network is unreachable", False),
+        ("http://example.com", "404 Client Error: Not Found", True),
+        ("http://example.com#top", "Anchor 'top' not found", True),
+        ("api/missing", "", True),
+    ],
+)
+def test_linkcheck_command_fails_only_on_docs_errors_unless_strict(
+    source_checkout, monkeypatch, capsys, uri, info, fails
+):
+    _fake_linkcheck_run(
+        monkeypatch,
+        source_checkout,
+        [
+            {
+                "filename": "index.rst",
+                "lineno": 1,
+                "status": "broken",
+                "uri": uri,
+                "info": info,
+            }
+        ],
+    )
+
+    with working_directory(source_checkout):
+        if fails:
+            with pytest.raises(ValueError, match="1 broken link.*to fix"):
+                docs_module.linkcheck_command(clean=False, show_progress=False)
+        else:
+            assert docs_module.linkcheck_command(clean=False, show_progress=False) == 0
+            assert "Pass --strict" in capsys.readouterr().out
+        with pytest.raises(ValueError, match="Linkcheck found 1 broken link"):
+            docs_module.linkcheck_command(clean=False, show_progress=False, strict=True)
+
+
+def test_linkcheck_command_fails_when_sphinx_crashes_or_output_is_stale(
+    source_checkout, monkeypatch
+):
+    output_json = source_checkout / "docs" / "_build" / "linkcheck" / "output.json"
+    output_json.parent.mkdir(parents=True)
+    stale_issue = json.dumps(
+        {
+            "filename": "index.rst",
+            "lineno": 1,
+            "status": "broken",
+            "uri": "http://example.com",
+            "info": "403 Client Error: Forbidden",
+        }
+    )
+    output_json.write_text(stale_issue + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        docs_module.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 2, "", ""),
+    )
+
+    with working_directory(source_checkout):
+        with pytest.raises(ValueError, match="exit code 2"):
+            docs_module.linkcheck_command(clean=False, show_progress=False)
+    assert not output_json.exists()
+
+
+@pytest.mark.parametrize(
+    ("reason", "category"),
+    [
+        (
+            "410 Client Error: Gone for url: https://a.org/x",
+            "Pages not found (404/410)",
+        ),
+        (
+            "403 Client Error: Forbidden for url: https://a.org/issues/1404",
+            "Access denied (403), possibly bot-blocked",
+        ),
+        ("Max retries exceeded with url: /a404", "Connection errors"),
+    ],
+)
+def test_categorize_linkcheck_issue_reads_status_not_url(reason, category):
+    issue = docs_module.LinkcheckIssue(
+        source="index.rst", line=1, status="broken", url="https://a.org", reason=reason
+    )
+    assert docs_module._categorize_linkcheck_issue(issue) == category
+
+
 def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys):
     updates = []
     postfixes = []
     spinner_texts = []
 
     linkcheck_dir = source_checkout / "docs" / "_build" / "linkcheck"
-    linkcheck_dir.mkdir(parents=True)
-    (linkcheck_dir / "output.json").write_text(
-        json.dumps(
-            {
-                "filename": "api/utils.rst",
-                "lineno": 3,
-                "status": "broken",
-                "uri": "http://localhost:5000",
-                "info": "refused",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    issue = {
+        "filename": "api/utils.rst",
+        "lineno": 3,
+        "status": "broken",
+        "uri": "http://localhost:5000",
+        "info": "refused",
+    }
 
     class FakeProcess:
         # Sphinx colours these lines; the progress counter must still see them.
@@ -333,6 +416,10 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
         ]
 
         def wait(self):
+            linkcheck_dir.mkdir(parents=True, exist_ok=True)
+            (linkcheck_dir / "output.json").write_text(
+                json.dumps(issue) + "\n", encoding="utf-8"
+            )
             return 1
 
         def terminate(self):
@@ -391,7 +478,7 @@ def test_linkcheck_command_updates_progress(source_checkout, monkeypatch, capsys
 
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="Linkcheck found 1 broken link"):
-            docs_module.linkcheck_command(clean=False)
+            docs_module.linkcheck_command(clean=False, strict=True)
 
     assert updates == [42, 58]
     assert spinner_texts == [
@@ -498,7 +585,7 @@ def test_format_linkcheck_summary_groups_issues_by_category():
     assert headers == [
         "Internal documentation links (2):",
         "Missing anchors (1):",
-        "Pages not found (404) (1):",
+        "Pages not found (404/410) (1):",
         "Access denied (403), possibly bot-blocked (1):",
         "SSL/TLS errors (1):",
         "Connection errors (1):",
@@ -575,3 +662,118 @@ def test_live_preview_requires_html_target(source_checkout, monkeypatch):
     with working_directory(source_checkout):
         with pytest.raises(ValueError, match="only supported for the html docs target"):
             docs_module.make_command(target="dirhtml", live_preview=True)
+
+
+def test_timeline_hold_trace_witnesses_exist():
+    """Every ``test_...`` named on the traces page must exist in the cited file."""
+    from psynet.light_utils import get_psynet_root
+
+    root = get_psynet_root()
+    traces = (root / "docs" / "developer" / "timeline_hold_traces.rst").read_text(
+        encoding="utf-8"
+    )
+    cited = set(re.findall(r"``(test_[a-z0-9_]+)``", traces))
+    assert cited, "timeline_hold_traces.rst must cite at least one test"
+
+    defined = {}
+    for path in (root / "tests").rglob("test_*.py"):
+        names = re.findall(
+            r"^def (test_[a-z0-9_]+)\(",
+            path.read_text(encoding="utf-8"),
+            re.M,
+        )
+        rel = path.relative_to(root).as_posix()
+        for name in names:
+            defined.setdefault(name, set()).add(rel)
+
+    missing = sorted(name for name in cited if name not in defined)
+    assert not missing, (
+        "docs/developer/timeline_hold_traces.rst cites tests that do not exist: "
+        + ", ".join(missing)
+    )
+
+    kind_re = re.compile(r"^\* (Protocol|Pin-lookup|Retry-unit|Unit|Lua) \(``([^`]+)``")
+    lines = traces.splitlines()
+    mismatches = []
+    i = 0
+    while i < len(lines):
+        match = kind_re.match(lines[i])
+        if match is None:
+            i += 1
+            continue
+        _kind, cited_file = match.groups()
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and (
+            lines[i].startswith("  ")
+            or (lines[i] == "" and i + 1 < len(lines) and lines[i + 1].startswith("  "))
+        ):
+            block.append(lines[i])
+            i += 1
+        for name in re.findall(r"``(test_[a-z0-9_]+)``", "\n".join(block)):
+            files = defined.get(name, set())
+            if cited_file not in files:
+                mismatches.append(
+                    f"{name} cited in {cited_file}, defined in {sorted(files)}"
+                )
+    assert not mismatches, (
+        "docs/developer/timeline_hold_traces.rst cites tests in the wrong file: "
+        + "; ".join(mismatches)
+    )
+
+
+def _docs_page_exists(root, page):
+    """Return whether ``page`` is a docs page, including generated skill pages."""
+    if (root / "docs" / f"{page}.rst").is_file():
+        return True
+    parts = page.split("/")
+    return (
+        len(parts) >= 2
+        and parts[0] == "skills"
+        and (root / ".cursor/skills/experiment" / parts[1] / "SKILL.md").is_file()
+    )
+
+
+def test_agents_md_documentation_map_points_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    agents = (root / "psynet/resources/experiment_scripts/AGENTS.md").read_text()
+    section = agents.split("## Documentation", 1)[1]
+    page_cells = [
+        line.rstrip(" |").rsplit("|", 1)[-1]
+        for line in section.splitlines()
+        if line.startswith("| ") and not line.startswith("| Topic")
+    ]
+    pages = set(re.findall(r"`([a-z_0-9/]+)`", "\n".join(page_cells)))
+    assert pages, "the documentation map lists no pages"
+    missing = sorted(page for page in pages if not _docs_page_exists(root, page))
+    assert not missing, f"AGENTS.md links to missing docs pages: {missing}"
+
+
+def test_agent_skills_page_lists_every_shipped_skill():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    page = (root / "docs/skills/index.rst").read_text()
+    skills = sorted(
+        p.parent.name for p in (root / ".cursor/skills/experiment").glob("*/SKILL.md")
+    )
+    missing = [skill for skill in skills if f":doc:`{skill}`" not in page]
+    assert not missing, f"docs/skills/index.rst does not list: {missing}"
+
+
+def test_skill_read_first_sections_point_at_existing_pages():
+    from psynet.utils import get_psynet_root
+
+    root = get_psynet_root()
+    missing = []
+    for skill in sorted((root / ".cursor/skills/experiment").glob("*/SKILL.md")):
+        text = skill.read_text()
+        if "## Read first" not in text:
+            continue
+        section = text.split("## Read first", 1)[1].split("\n## ", 1)[0]
+        for page in re.findall(r"^- `([a-z_0-9/]+)`", section, flags=re.M):
+            if not _docs_page_exists(root, page):
+                missing.append(f"{skill.parent.name}: {page}")
+    assert not missing, f"Read first sections link to missing docs pages: {missing}"

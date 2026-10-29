@@ -97,9 +97,9 @@ TEST_EXPERIMENT_TREE_PREFIXES = (
 )
 
 # Custom config.txt files that remain tracked under test experiment trees.
-# Stock configs are gitignored; add new customs with ``git add -f``.
+# Stock configs and READMEs are gitignored; add new customs with ``git add -f``.
 TEST_EXPERIMENT_CUSTOM_CONFIGS = {
-    "tests/experiments/async_processes/config.txt",
+    "tests/experiments/async_jobs/config.txt",
     "tests/playwright/experiments/adversarial_lifecycle/config.txt",
     "tests/playwright/experiments/broken_page_dependency/config.txt",
     "tests/playwright/experiments/broken_page_module/config.txt",
@@ -108,8 +108,16 @@ TEST_EXPERIMENT_CUSTOM_CONFIGS = {
     "tests/playwright/experiments/legacy_page_javascript/config.txt",
     "tests/playwright/experiments/media_download_progress/config.txt",
     "tests/playwright/experiments/same_session_page_update/config.txt",
+    "tests/playwright/experiments/timeline_hold/config.txt",
+    "tests/playwright/experiments/timeline_hold_feedback/config.txt",
+    "tests/playwright/experiments/timeline_hold_reload/config.txt",
+    "tests/playwright/experiments/timeline_hold_same_session/config.txt",
+    "tests/playwright/experiments/timeline_hold_timeout/config.txt",
+    "tests/playwright/experiments/timeline_hold_client/config.txt",
+    "tests/playwright/experiments/stacked_group_holds/config.txt",
     "tests/deployment/payment_flows_prolific/config.txt",
     "tests/deployment/audio_gibbs/config.txt",
+    "tests/deployment/auto_recruit_prolific/config.txt",
 }
 
 AUTHORED_TEST_EXPERIMENT_FILENAMES = {
@@ -122,9 +130,7 @@ AUTHORED_TEST_EXPERIMENT_FILENAMES = {
     "shell.sh",
     "lucid_recruitment_config.json",
     "qualification_prolific_en.json",
-    "DEPLOYMENT_ID",
     "custom_synth.py",
-    "pre_deployed_assets.csv",
 }
 
 
@@ -198,14 +204,17 @@ def test_test_experiment_sources_contain_only_authored_files():
 
 
 def test_test_experiment_stock_config_is_gitignored():
-    """Stock config.txt under test trees is ignored; tracked customs stay tracked."""
+    """Stock config.txt and README.md under test trees are ignored; tracked customs stay tracked."""
     psynet_root = get_psynet_root()
-    stock_configs = [
+    stock_scaffold_files = [
         "tests/experiments/static/config.txt",
+        "tests/experiments/static/README.md",
         "tests/playwright/experiments/static/config.txt",
+        "tests/playwright/experiments/timeline_hold/README.md",
         "tests/deployment/example/config.txt",
+        "tests/deployment/example/README.md",
     ]
-    for relative_path in stock_configs:
+    for relative_path in stock_scaffold_files:
         result = subprocess.run(
             ["git", "check-ignore", "--no-index", "-q", relative_path],
             cwd=psynet_root,
@@ -223,16 +232,19 @@ def test_test_experiment_stock_config_is_gitignored():
 
 
 def test_vendored_consent_package_init_is_not_gitignored():
-    """Deployment consent packages stay addable despite scaffold ``__init__.py`` ignores."""
+    """Deployment consent packages stay addable despite scaffold ignore rules."""
     psynet_root = get_psynet_root()
-    relative_path = "tests/deployment/audio_gibbs/consents_cococo/__init__.py"
-    result = subprocess.run(
-        ["git", "check-ignore", "--no-index", "-q", relative_path],
-        cwd=psynet_root,
-    )
-    assert result.returncode == 1, (
-        f"{relative_path} should not match scaffold ignore rules"
-    )
+    for relative_path in (
+        "tests/deployment/audio_gibbs/consents_cococo/__init__.py",
+        "tests/deployment/audio_gibbs/consents_cococo/README.md",
+    ):
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "-q", relative_path],
+            cwd=psynet_root,
+        )
+        assert result.returncode == 1, (
+            f"{relative_path} should not match scaffold ignore rules"
+        )
 
 
 def test_skipped_dependency_check_does_not_require_constraints(monkeypatch):
@@ -359,6 +371,22 @@ def test_scaffold_missing_files_restores_preexisting_tree(tmp_path):
     assert not (tmp_path / "test.py").exists()
     assert not (tmp_path / "docker" / "run").exists()
     assert not (tmp_path / "static" / "assets").exists()
+
+
+def test_scaffold_missing_files_cleans_up_its_own_directory(tmp_path):
+    experiment_dir, elsewhere = tmp_path / "experiment", tmp_path / "elsewhere"
+    experiment_dir.mkdir()
+    elsewhere.mkdir()
+    (experiment_dir / "experiment.py").write_text("class Exp:\n    pass\n")
+    (elsewhere / "README.md").write_text("# Not a scaffold file\n")
+
+    with working_directory(experiment_dir):
+        with scaffold_missing_files():
+            os.chdir(elsewhere)
+        assert Path.cwd() == elsewhere
+
+    assert not (experiment_dir / "test.py").exists()
+    assert (elsewhere / "README.md").exists()
 
 
 def test_prune_include_modified_keeps_git_files_and_removes_generated(tmp_path):
@@ -560,22 +588,6 @@ def _run_command(args, cwd: Path, *, env_updates=None):
     )
 
 
-def _test_local_after_policy_review(experiment_dir, env_updates=None):
-    """Run ``psynet test local`` through the one-shot deploy.toml review pause.
-
-    Scaffolding an experiment leaves a policy-review marker, so the first launch
-    stops and asks the author to inspect the deployment plan. Automation reruns
-    the command, which is what an author does after reviewing.
-    """
-    command = ["psynet", "test", "local"]
-    first = _run_command(command, experiment_dir, env_updates=env_updates)
-    if first.returncode == 0:
-        return first
-    combined = first.stdout + first.stderr
-    assert "created a new deploy.toml" in combined, combined
-    return _run_command(command, experiment_dir, env_updates=env_updates)
-
-
 def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     """Standalone Workflow A: empty dir → scaffold → git init → test local."""
     experiment_dir = tmp_path / "my_experiment"
@@ -598,23 +610,13 @@ def test_empty_directory_scaffold_git_init_and_test_local(tmp_path):
     git_init = _run_command(["git", "init", "-q"], experiment_dir)
     assert git_init.returncode == 0, git_init.stderr
 
-    first = _run_command(
-        ["psynet", "test", "local"],
-        experiment_dir,
-        env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
-    )
-    assert first.returncode != 0, first.stdout + first.stderr
-    assert "created a new deploy.toml" in first.stdout + first.stderr
-
     result = _run_command(
         ["psynet", "test", "local"],
         experiment_dir,
         env_updates={"SKIP_DEPENDENCY_CHECK": "1"},
     )
     assert result.returncode == 0, (
-        "Empty-directory Workflow A failed on rerun after policy review\n"
-        f"FIRST STDOUT:\n{first.stdout}\n"
-        f"FIRST STDERR:\n{first.stderr}\n"
+        "Empty-directory Workflow A failed\n"
         f"STDOUT:\n{result.stdout}\n"
         f"STDERR:\n{result.stderr}"
     )
@@ -659,7 +661,7 @@ def test_minimal_demo_prompts_for_scaffold_before_debug(tmp_path):
     assert result.returncode != 0
     combined_output = result.stdout + result.stderr
     assert "Run 'psynet setup'" in combined_output
-    assert "required PsyNet boilerplate files" in combined_output
+    assert "PsyNet files this experiment is missing" in combined_output
     assert "touch config.txt" in combined_output
     for required_path in (
         ".gitignore",
@@ -747,7 +749,7 @@ def test_demo_roundtrip_runs_local_test_command(label, demo_path, tmp_path):
     scaffold_result = _run_command(["psynet", "scripts", "scaffold"], temp_demo)
     assert scaffold_result.returncode == 0, scaffold_result.stderr
 
-    result = _test_local_after_policy_review(temp_demo)
+    result = _run_command(["psynet", "test", "local"], temp_demo)
 
     assert result.returncode == 0, (
         f"{label} failed after scaffold round-trip\n"
