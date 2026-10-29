@@ -530,6 +530,7 @@
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
       psynet.nextPagePending = false;
+      psynet.media.audioRequired = false;
       psynet.clearStageResponseHandler();
       psynet.response.staged = {
         rawAnswer: null,
@@ -1819,8 +1820,10 @@
         });
       };
 
+      // Wall-clock seconds, independent of audio: a suspended AudioContext's
+      // clock stands still, which would freeze the trial progress display.
       trial.getGlobalTime = function () {
-        return psynet.media.audioContext.currentTime;
+        return performance.now() / 1000;
       };
 
       trial.listEvents = function () {
@@ -2268,37 +2271,78 @@
       psynet.media.audioContext = context;
     };
 
-    let askUserToResume = function () {
+    // Page code that plays or records audio through psynet.media.audioContext
+    // calls this before trialConstruct, so psynet.media.init() makes sure audio
+    // can start. Pages that preload audio need no call. resetPageState clears
+    // the flag between pages.
+    psynet.media.audioRequired = false;
+    psynet.media.requireAudio = function () {
+      psynet.media.audioRequired = true;
+    };
+
+    let pageNeedsAudio = function () {
+      let audioRequests = (psynet.media.requests || {}).audio || {};
+      return (
+        psynet.media.audioRequired || Object.keys(audioRequests).length > 0
+      );
+    };
+
+    // Browsers keep an AudioContext suspended until the participant interacts
+    // with the document. Firefox and Chrome then allow resume() at any time;
+    // Safari only inside the click handler itself, so a resume() that does not
+    // settle quickly is treated as refused.
+    const AUDIO_RESUME_WAIT_MS = 500;
+
+    let askUserToEnableAudio = function () {
       return new Promise((resolve) => {
-        let resumeModal = $("#resume-modal");
-        let resumeButton = $("#resume-button");
-        resumeModal.css("display", "block");
-        resumeButton.click(async function () {
-          resumeModal.css("display", "none");
+        let modal = $("#resume-modal");
+        modal.css("display", "block");
+        $("#resume-button").one("click", async function () {
+          // resume() must run synchronously inside the click for Safari.
+          let resumed = psynet.media.audioContext.resume();
+          modal.css("display", "none");
           $("#js-psych").trigger("focus");
-          await psynet.media.init();
+          await resumed;
           resolve();
         });
       });
     };
 
-    psynet.media.init = async function () {
+    let ensureAudioRunning = async function () {
       psynet.media.initAudioContext();
-
-      if (psynet.media.audioContext.state == "suspended") {
-        psynet.log.info(
-          "Audio context is suspended, and can only be resumed " +
-            "after a user interaction. Waiting for the participant to click 'Resume'.",
-        );
-        await askUserToResume();
-        psynet.media.initAudioContext();
+      let context = psynet.media.audioContext;
+      if (context.state !== "suspended") {
+        return;
       }
+      if (navigator.userActivation?.hasBeenActive !== false) {
+        await Promise.race([
+          context.resume(),
+          new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
+        ]);
+      }
+      if (context.state === "suspended") {
+        psynet.log.info(
+          "The browser blocked audio until the participant clicks; " +
+            "asking them to enable sound.",
+        );
+        await askUserToEnableAudio();
+      }
+    };
+
+    psynet.media.init = async function () {
+      // Media downloads while the participant reads the enable-sound prompt.
+      // ensureAudioRunning creates the AudioContext before its first await,
+      // so audio decoding below always has a context.
+      let audioReady = pageNeedsAudio() ? ensureAudioRunning() : null;
       let requests = psynet.media.requests;
       let mediaTypes = Object.keys(requests);
       // Nothing here touches the progress bar: it may not exist (show_footer =
       // false omits it), and its appearance belongs to participant.css, which
       // keeps it a solid accent rather than animating a gradient.
-      await Promise.all(mediaTypes.map((x) => processRequests(x, requests[x])));
+      await Promise.all([
+        audioReady,
+        ...mediaTypes.map((x) => processRequests(x, requests[x])),
+      ]);
     };
 
     let initMediaType = function (mediaType) {

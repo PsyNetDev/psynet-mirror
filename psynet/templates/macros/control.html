@@ -1368,6 +1368,7 @@
 
         psynet.trial.onEvent("trialStop", () => recorder.stop());
 
+        psynet.media.requireAudio();
         psynet.trial.onEvent("trialConstruct", () => new Promise((resolve) => {
             let channelCount = {{ params.num_channels }};
             navigator.mediaDevices.getUserMedia({
