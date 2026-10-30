@@ -2330,9 +2330,10 @@
     };
 
     psynet.media.init = async function () {
-      // Media downloads while the participant reads the enable-sound prompt.
-      // ensureAudioRunning creates the AudioContext before its first await,
-      // so audio decoding below always has a context.
+      // Every page gets an AudioContext, since page code may decode sounds
+      // without a media request; only pages that need audio ask the
+      // participant to enable it. Media downloads while they read the prompt.
+      psynet.media.initAudioContext();
       let audioReady = pageNeedsAudio() ? ensureAudioRunning() : null;
       let requests = psynet.media.requests;
       let mediaTypes = Object.keys(requests);
