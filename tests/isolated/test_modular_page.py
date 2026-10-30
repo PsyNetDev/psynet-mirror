@@ -11,6 +11,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     Prompt,
     PushButtonControl,
     RatingScale,
+    VideoRecordControl,
 )
 
 # from importlib import resources
@@ -18,6 +19,28 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
 
 def test_audio_meter_without_calibration_has_no_sliders():
     assert AudioMeterControl(calibrate=False).sliders is None
+
+
+@pytest.mark.parametrize(
+    "recording_source, waits_for_screen",
+    [("camera", False), ("screen", True), ("both", True)],
+)
+def test_screen_recording_trial_waits_for_screen_share(
+    recording_source, waits_for_screen
+):
+    page = ModularPage(
+        "test",
+        Prompt("Hi!"),
+        VideoRecordControl(duration=1.0, recording_source=recording_source),
+    )
+
+    triggers = [
+        trigger["triggering_event"]
+        for trigger in page.events["trialPrepare"]["is_triggered_by"]
+    ]
+
+    assert ("screenShared" in triggers) is waits_for_screen
+    assert ("screenShared" in page.events) is waits_for_screen
 
 
 def test_import_templates():

@@ -3883,6 +3883,11 @@ class VideoRecordControl(RecordControl):
     def update_events(self, events):
         super().update_events(events)
         events["trialFinish"].add_trigger("recordEnd")
+        if "screen" in self.recording_sources:
+            # Fired once the participant clicks "Share your screen" and picks
+            # a screen; browsers refuse screen capture without such a click.
+            events["screenShared"] = Event(is_triggered_by=None, once=True)
+            events["trialPrepare"].add_trigger("screenShared")
 
     def get_bot_response(self, experiment, bot, page, prompt):
         from .bot import BotResponse

@@ -1,0 +1,1 @@
+Fixed screen recording with `VideoRecordControl(recording_source="screen")` or `"both"` on Firefox and Safari, where the page waited forever because the browser refused to capture the screen without a click. Participants now click "Share your screen" before recording starts, and see a message to try again if they cancel.

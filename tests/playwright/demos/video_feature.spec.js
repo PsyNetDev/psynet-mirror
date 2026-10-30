@@ -29,7 +29,7 @@ Step summary:
 4. Delayed video response page:
    participant records video after countdown behavior, verifies playback, and submits.
 5. Dual camera+screen recording page:
-   participant records with simultaneous camera and screen capture, replays, and submits.
+   participant shares the screen, records camera and screen together, replays, and submits.
 6. Final playback and finish:
    participant reaches playback/closing pages and finishes the experiment.
 
@@ -233,8 +233,15 @@ test("video feature demo", { tag: "@both" }, async ({ page, context }) => {
         "simultaneous screen recording",
         PROMPT_TIMEOUT_MS
       );
+      // Browsers capture the screen only after a click, so nothing records
+      // until the participant shares it.
       const dualRecordButton = experimentPage.locator("#btn-record-record");
       await expect(dualRecordButton).toBeVisible();
+      await expect(dualRecordButton).toBeDisabled();
+      const shareScreenButton = experimentPage.locator("#btn-share-screen");
+      await expect(shareScreenButton).toBeEnabled();
+      await shareScreenButton.click();
+      await expect(shareScreenButton).toBeHidden();
       await expect(dualRecordButton).toBeEnabled();
       const dualPlayRecordingButton = experimentPage.locator(
         "#btn-record-play-recording"

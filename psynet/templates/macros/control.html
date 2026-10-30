@@ -1299,7 +1299,9 @@
             if (psynet.audio.prompt || psynet.video.prompt) {
                 $("#btn-record-play-prompt").prop("disabled", false);
             }
-            $("#btn-record-record").prop("disabled", false);
+            if (!recorderState.waitingForScreen) {
+                $("#btn-record-record").prop("disabled", false);
+            }
         }, {priority: - 1000});
 
         psynet.trial.onEvent("autoSubmit", () => {
@@ -1425,6 +1427,17 @@
         }
         {% endif %}
     </style>
+
+    {% if params.recording_source in ["screen", "both"] %}
+        <div id="screen-share-container" class="text-center">
+            <button id="btn-share-screen" type="button" class="btn btn-primary btn-sm" disabled>
+                {{ gettext("Share your screen") }}
+            </button>
+            <p id="screen-share-error" class="text-danger" style="display: none">
+                {{ gettext("Your screen was not shared. Click the button and choose a screen to share.") }}
+            </p>
+        </div>
+    {% endif %}
 
     <div id="video-control-container">
         <video id="video-control"></video>
@@ -1575,16 +1588,33 @@
         let screenStream = null;
 
         if (recordingScreen) {
-            psynet.trial.onEvent("trialConstruct", () => new Promise((resolve) => {
-                navigator.mediaDevices.getDisplayMedia({
-                    video: true
-                }).then((stream => {
-                    screenStream = stream;
-                    resolve(true);
-                })).catch((error) => {
-                    throw new Error("Unable to capture your screen. " + error.name + ":" + error.message);
+            // Firefox and Safari allow screen capture only in response to a
+            // click, so the trial waits (via screenShared) for this button.
+            recorderState.waitingForScreen = true;
+
+            psynet.trial.onEvent("trialConstruct", function() {
+                let shareButton = document.getElementById("btn-share-screen");
+                let shareError = document.getElementById("screen-share-error");
+                psynet.addPageEventListener(shareButton, "click", async function() {
+                    shareButton.disabled = true;
+                    shareError.style.display = "none";
+                    try {
+                        screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: true
+                        });
+                    } catch (error) {
+                        psynet.log.warn("Screen sharing failed: " + error.name + ": " + error.message);
+                        shareError.style.display = "";
+                        shareButton.disabled = false;
+                        return;
+                    }
+                    document.getElementById("screen-share-container").style.display = "none";
+                    recorderState.waitingForScreen = false;
+                    $("#btn-record-record").prop("disabled", false);
+                    await psynet.trial.registerEvent("screenShared", {once: true});
                 });
-            }));
+                shareButton.disabled = false;
+            });
 
             psynet.trial.onEvent("trialPrepare", () => {
                 if (!recorderState.replayMode) {
@@ -1610,6 +1640,9 @@
             });
 
             psynet.trial.onEvent("trialStop", async function() {
+                if (screenRecorder === null) {
+                    return;
+                }
                 let state = await screenRecorder.getState();
                 if (state != "inactive") {
                     await screenRecorder.stopRecording();
