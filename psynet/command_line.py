@@ -6775,14 +6775,9 @@ def _run_performance_test_local(
     """
     _check_arrival_options(**options)
     if existing:
-        results = _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+        return _run_performance_test_with_existing_server(
+            debug=debug, json_output=json_output, no_export=no_export, **options
         )
-        if not no_export and results:
-            export_duration, export_error = _time_export()
-            results[-1].export_duration_s = export_duration
-            results[-1].export_error = export_error
-        return results
     return _run_performance_test_with_new_server(
         debug=debug, json_output=json_output, no_export=no_export, **options
     )
@@ -6915,6 +6910,7 @@ def _run_performance_test_with_existing_server(
     test_label=None,
     suite_started_s_ago=None,
     force=False,
+    no_export=True,
     **suite_options,
 ):
     """Run performance test connecting to an already-running server.
@@ -6999,6 +6995,7 @@ def _run_performance_test_with_existing_server(
                 metadata=_collect_run_metadata(exp.label),
                 json_output=json_output,
                 quiet=remote,
+                no_export=no_export,
                 **suite_options,
             )
         with tester.bot_runner(bot_counts[0], bot_log_file):
@@ -7014,6 +7011,8 @@ def _run_performance_test_with_existing_server(
                 tester.duration_minutes,
                 arrival_minutes,
             )
+        if not no_export:
+            _record_performance_export([result])
         if json_output:
             _write_json_results(
                 json_output,
@@ -7046,6 +7045,7 @@ def _run_performance_suite(
     ssh_options=None,
     quiet=False,
     cleanup=None,
+    no_export=True,
 ):
     """Run the tests of ``n_bots`` with ``tester`` and return their results.
 
@@ -7074,6 +7074,9 @@ def _run_performance_suite(
     cleanup : callable, optional
         Called after ``database_reset`` closes, even after an error, for
         example to start the services it stopped.
+    no_export : bool
+        Skip the final local export. Local CLI runs forward their --no-export
+        setting; remote suites leave this enabled.
 
     Raises
     ------
@@ -7123,6 +7126,8 @@ def _run_performance_suite(
             )
         else:
             all_results = suite.run(n_bots, bot_log_file=bot_log_file)
+        if not no_export and all_results:
+            _record_performance_export(all_results)
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
@@ -7611,6 +7616,13 @@ def _stop_server(server_info):
             print(f"✓ Server stopped (log: {tmp_log_path})")
 
 
+def _record_performance_export(results):
+    """Measure the final export before saving results or stopping the server."""
+    duration, error = _time_export()
+    results[-1].export_duration_s = duration
+    results[-1].export_error = error
+
+
 def _time_export(_run=subprocess.run):
     """Run ``psynet export local`` in a subprocess.
 
@@ -7694,12 +7706,8 @@ def _run_performance_test_with_new_server(
         )
         try:
             all_results = _run_performance_test_with_existing_server(
-                debug=debug, json_output=json_output, **options
+                debug=debug, json_output=json_output, no_export=no_export, **options
             )
-            if not no_export and all_results:
-                export_duration, export_error = _time_export()
-                all_results[-1].export_duration_s = export_duration
-                all_results[-1].export_error = export_error
             print("✓ Performance test completed")
             return all_results
         finally:
