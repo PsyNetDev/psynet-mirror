@@ -3,7 +3,7 @@
 # Ubuntu builds: WebKit does not start on the Debian base of the main
 # Dockerfile, and cdn.playwright.dev, where `npx playwright install` would
 # fetch a Debian build, is unreachable from CI runners. The image also
-# provides xvfb-run, which Firefox needs for screen capture.
+# provides Xvfb, which Firefox needs for screen capture.
 #
 # The Playwright image tag must match @playwright/test in package.json.
 # PsyNet itself is installed as in the main Dockerfile; keep the two in sync.
@@ -23,12 +23,12 @@ RUN sed -i 's|http://azure.archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/
 # participant theme's fallback face is measured against. The participant
 # recording helper (record-participant-video skill) muxes audio and video
 # with ffmpeg and ffprobe. PulseAudio gives the browsers an audio output (see
-# ci/start-pulseaudio.sh).
+# ci/playwright-entrypoint.sh).
 RUN apt-get-update && timeout --kill-after=10 900 apt-get install -y --no-install-recommends \
         build-essential curl ffmpeg fonts-liberation gettext git jq libpq-dev pulseaudio redis-server rsync unzip wget && \
     rm -rf /var/lib/apt/lists/*
-COPY ci/start-pulseaudio.sh /usr/local/bin/start-pulseaudio
-ENTRYPOINT ["/usr/local/bin/start-pulseaudio"]
+COPY ci/playwright-entrypoint.sh /usr/local/bin/playwright-entrypoint
+ENTRYPOINT ["/usr/local/bin/playwright-entrypoint"]
 
 # Heroku CLI runs the legacy `psynet debug local` that playwright_e2e_legacy uses.
 RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \

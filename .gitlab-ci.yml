@@ -317,8 +317,10 @@ compatibility_tests:
 # `.test_suite`, and jobs that set PLAYWRIGHT_FILES run those specs instead.
 #
 # Firefox captures the screen only in a headed browser on an X display, so
-# its jobs run headed under xvfb-run.
+# its jobs run headed; the image's entrypoint then starts Xvfb.
 .playwright_e2e:
+  # A browser that waits forever should not hold a runner for three hours.
+  timeout: 90m
   stage: test
   parallel: 3
   <<: [*docker_test_rules, *test_services]
@@ -328,8 +330,8 @@ compatibility_tests:
     - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
-    - export PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-chromium}" PLAYWRIGHT_DISPLAY=""
-    - if [ "$PLAYWRIGHT_PROJECT" = firefox ]; then export HEADLESS=false PLAYWRIGHT_DISPLAY="xvfb-run --auto-servernum"; fi
+    - export PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-chromium}"
+    - if [ "$PLAYWRIGHT_PROJECT" = firefox ]; then export HEADLESS=false; fi
     - export SHARD_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}" SHARD_TOTAL="${SHARD_TOTAL:-$CI_NODE_TOTAL}"
     - mkdir -p public test-results
     - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
@@ -345,7 +347,7 @@ compatibility_tests:
       -e inplace_timeline_transitions
       -v "$PWD:$PSYNET_WORKSPACE"
       -w $PSYNET_WORKSPACE
-      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && files=\${PLAYWRIGHT_FILES:-\$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $SHARD_TOTAL --node-index $SHARD_INDEX)} && test -n \"\$files\" && $PLAYWRIGHT_DISPLAY npx playwright test \$files --project $PLAYWRIGHT_PROJECT --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
+      $DOCKER_LOCAL_TAG-playwright bash -c "uv pip install --no-cache --system --no-deps -e \"$PSYNET_WORKSPACE\" && npm ci && node tests/playwright/check-mode-tags.js && files=\${PLAYWRIGHT_FILES:-\$(psynet dev ci playwright-files --mode $PLAYWRIGHT_MODE --node-total $SHARD_TOTAL --node-index $SHARD_INDEX)} && test -n \"\$files\" && npx playwright test \$files --project $PLAYWRIGHT_PROJECT --grep '$PLAYWRIGHT_GREP' --pass-with-no-tests --reporter=line,junit,html"
   artifacts:
     when: always
     paths:
