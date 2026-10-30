@@ -1847,7 +1847,7 @@ def _executor_for(channel):
 def test_remote_psynet_commands_return_their_json_and_append_the_bot_log(tmp_path):
     from psynet.perf_ssh import RemoteApp
 
-    channel = _FakeChannel(0, b"TEST 1: Running with 2 concurrent bots\n")
+    channel = _FakeChannel(0, b"Test 1/1\n")
     executor = _executor_for(channel)
     reads = iter(["bot 1 failed\n", '{"results": []}'])
     executor.run.side_effect = lambda cmd, raise_: (
@@ -1878,6 +1878,15 @@ def test_performance_test_ssh_refuses_app_names_with_shell_syntax():
     executor.assert_not_called()
 
 
+_PERF_DEPLOY_RESULT = {
+    "app": "my-app",
+    "server": "server",
+    "dashboard_link": "https://my-app.example.org/dashboard",
+    "dashboard_user": "admin",
+    "dashboard_password": "secret",
+}
+
+
 def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
@@ -1903,7 +1912,10 @@ def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
         patch("psynet.command_line._ssh_executor"),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
-        patch("psynet.command_line._debug_ssh") as deploy,
+        patch(
+            "psynet.command_line._debug_ssh",
+            return_value=(_PERF_DEPLOY_RESULT, "launch-info.json"),
+        ) as deploy,
         patch("psynet.command_line._run_ssh_performance_test") as run,
     ):
         result = CliRunner().invoke(
@@ -1936,6 +1948,60 @@ def test_performance_test_ssh_manages_its_own_app(apps, deployed):
     }
     assert run.call_args.args[2] == {"label": "Test"}
     assert "psynet destroy ssh --server server --app my-app" in result.output
+
+
+def test_performance_test_ssh_output_starts_with_the_ready_block(tmp_path):
+    from dataclasses import asdict
+
+    from psynet.command_line import performance_test
+    from psynet.perf_test import PerformanceTestResult
+
+    experiment = {
+        "label": "Test",
+        "test_n_bots": 2,
+        "test_duration_minutes": 1,
+        "test_parallel_stagger_interval_s": 0.1,
+        "estimated_duration_minutes": 1,
+    }
+
+    def run_psynet(args, **_):
+        if "app-info" in args:
+            return {**_MARKED, "experiment": experiment}
+        return {"results": [asdict(PerformanceTestResult(n_bots=2))]}
+
+    with (
+        patch(
+            "dallinger.command_line.docker_ssh.get_configured_hosts",
+            return_value={"server": {}},
+        ),
+        patch("dallinger.command_line.docker_ssh.CONFIGURED_HOSTS", {"server": {}}),
+        patch("dallinger.command_line.docker_ssh.get_apps", return_value=[]),
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._awaken_ssh_app"),
+        patch("psynet.command_line._open_link_recruiter", return_value=False),
+        patch("psynet.command_line._performance_log_directory", return_value=tmp_path),
+        patch("psynet.perf_test.log_to_console"),
+        patch("psynet.perf_ssh.RemoteApp.run_psynet", side_effect=run_psynet),
+        patch("psynet.perf_ssh.RemoteApp.start_stopped_services"),
+        patch("psynet.perf_ssh.DatabaseReset", return_value=Mock(database="db")),
+        patch(
+            "psynet.command_line._debug_ssh",
+            return_value=(_PERF_DEPLOY_RESULT, "launch-info.json"),
+        ),
+    ):
+        result = CliRunner().invoke(
+            performance_test.commands["ssh"],
+            ["--app", "my-app", "--n-bots", "2", "--reset-database"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Ready:") == 1
+    ready = result.output.split("Ready: my-app on server\n")[1]
+    rows, rest = ready.split("\n\n", 1)
+    assert rows.splitlines()[-1].startswith("  Bot log:          ")
+    assert rest.startswith("Database to reset: db in ")
+    assert "secret" not in result.output
 
 
 def test_performance_test_ssh_scaffolds_before_contacting_the_server():
@@ -1988,6 +2054,7 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
 
     assert result.exit_code == 1
     assert "Could not load the experiment in my-app" in result.output
+    assert "passwords are saved in launch-info.json" in result.output
     run.assert_not_called()
 
 
@@ -2006,8 +2073,15 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
         patch("psynet.command_line._pre_launch", return_value="my-app") as pre_launch,
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        patch(
+            "dallinger.command_line.docker_ssh.sandbox",
+            click.Command(
+                "sandbox",
+                params=[click.Option(["--summary/--no-summary", "show_summary"])],
+            ),
+        ),
     ):
-        _debug_ssh(
+        deployed = _debug_ssh(
             ctx,
             app="my-app",
             server="server",
@@ -2023,7 +2097,9 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert pre_launch.call_args.kwargs["confirm_update"] is False
-    assert ctx.invoke.call_args.kwargs.get("show_summary", True) is True
+    assert ctx.invoke.call_args.kwargs["show_summary"] is False
+    # performance-test ssh prints the Ready block once the app checks out.
+    assert deployed[0] is ctx.invoke.return_value
     assert "Ready:" not in capsys.readouterr().out
 
 
