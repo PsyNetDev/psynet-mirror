@@ -16,6 +16,9 @@ ENV HEADLESS=TRUE
 
 COPY ci/apt-get-update.sh /usr/local/bin/apt-get-update
 RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-ci-network
+# The Playwright image fetches Ubuntu packages from Azure's mirror, which CI
+# runners cannot reach; use Ubuntu's own archive instead.
+RUN sed -i 's|http://azure.archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/ubuntu/|' /etc/apt/sources.list.d/ubuntu.sources
 # fonts-liberation gives browser tests an Arial-metric font, which is what the
 # participant theme's fallback face is measured against. The participant
 # recording helper (record-participant-video skill) muxes audio and video
