@@ -1,20 +1,54 @@
-# Extends the main PsyNet build image with pre-installed Playwright browsers.
-# cdn.playwright.dev is unreachable from CI runners, so we copy the browser
-# cache from the official Playwright Docker image instead of running
-# `npx playwright install` at test time.
+# Image for the Playwright e2e jobs, built on the official Playwright image.
+# Its Chromium, Firefox and WebKit builds and their system libraries are
+# Ubuntu builds: WebKit does not start on the Debian base of the main
+# Dockerfile, and cdn.playwright.dev, where `npx playwright install` would
+# fetch a Debian build, is unreachable from CI runners. The image also
+# provides xvfb-run, which Firefox needs for screen capture.
 #
-# The Playwright image tag must match @playwright/test in package.json. Use the
-# jammy variant: the base image is Debian bookworm, whose glibc is older than
-# noble's, so noble browser builds may not run on it.
+# The Playwright image tag must match @playwright/test in package.json.
+# PsyNet itself is installed as in the main Dockerfile; keep the two in sync.
 ARG DOCKER_PLATFORM=linux/amd64
-ARG BASE_IMAGE=psynet-build
+FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.63.0-noble
+ARG PYTHON_VERSION=3.14
 
-FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.63.0-jammy AS playwright-browsers
+ENV UV_HTTP_RETRIES=8
+ENV HEADLESS=TRUE
 
-FROM ${BASE_IMAGE}
-# The participant recording helper (record-participant-video skill) muxes
-# audio and video with the system ffmpeg and ffprobe.
-RUN apt-get-update && timeout --kill-after=10 900 apt-get install -y --no-install-recommends ffmpeg && \
+COPY ci/apt-get-update.sh /usr/local/bin/apt-get-update
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80-ci-network
+# fonts-liberation gives browser tests an Arial-metric font, which is what the
+# participant theme's fallback face is measured against. The participant
+# recording helper (record-participant-video skill) muxes audio and video
+# with ffmpeg and ffprobe. PulseAudio gives the browsers an audio output (see
+# ci/start-pulseaudio.sh).
+RUN apt-get-update && timeout --kill-after=10 900 apt-get install -y --no-install-recommends \
+        build-essential curl ffmpeg fonts-liberation gettext git jq libpq-dev pulseaudio redis-server rsync unzip wget && \
     rm -rf /var/lib/apt/lists/*
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-COPY --from=playwright-browsers /ms-playwright /ms-playwright
+COPY ci/start-pulseaudio.sh /usr/local/bin/start-pulseaudio
+ENTRYPOINT ["/usr/local/bin/start-pulseaudio"]
+
+# Heroku CLI runs the legacy `psynet debug local` that playwright_e2e_legacy uses.
+RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \
+        --output /tmp/heroku-install.sh https://cli-assets.heroku.com/install.sh && \
+    sh /tmp/heroku-install.sh && \
+    rm /tmp/heroku-install.sh && \
+    heroku --version
+
+# Ubuntu's Python is older than PsyNet's default, so uv installs that into a
+# virtual environment that comes first on PATH. UV_PYTHON makes
+# `uv pip install --system` install into it, as into the main image's Python.
+RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \
+        https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+RUN uv venv --python ${PYTHON_VERSION} --seed /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV UV_PYTHON=/opt/venv/bin/python
+ENV PATH=/opt/venv/bin:$PATH
+
+COPY pyproject.toml pyproject.toml
+COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
+RUN uv pip compile --python-version ${PYTHON_VERSION} pyproject.toml \
+        --extra experiment --extra demos \
+        --constraint dallinger-dev-requirements.txt \
+        --output-file constraints.txt
+RUN uv pip install --no-cache --system -r constraints.txt

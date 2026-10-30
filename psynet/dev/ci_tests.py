@@ -25,7 +25,8 @@ The Playwright jobs reuse the same balancing: ``playwright-files`` prints the
 spec files for one shard, because Playwright's own ``--shard`` splits by test
 count, and a single spec of 40 sub-second layout tests then fills a shard.
 Playwright durations are keyed ``<spec>::<mode>`` since the default and
-legacy jobs select different tests from the same files.
+legacy jobs select different tests from the same files. They come from the
+chromium jobs only; shards of the other browser projects reuse them.
 
 Refresh the durations after the suite changes noticeably with
 ``psynet dev ci update-test-durations``, passing the ``ci_durations_*.json``
@@ -370,13 +371,20 @@ def playwright_files_command(mode, node_total, node_index):
 
 
 def _playwright_junit_durations(path):
-    """Sum test times per spec file in a ``playwright-<mode>-<shard>-junit.xml`` report."""
+    """Sum test times per spec file in a ``playwright-<mode>-<project>-<shard>-junit.xml`` report.
+
+    Reports of browser projects other than chromium give no durations.
+    """
     import xml.etree.ElementTree as ET
 
-    match = re.search(r"(default|legacy)", Path(path).name)
+    match = re.search(r"playwright-(default|legacy)-([a-z]+)-", Path(path).name)
     if match is None:
-        raise click.ClickException(f"Cannot tell the Playwright mode of {path}.")
-    mode = match.group(1)
+        raise click.ClickException(
+            f"Cannot tell the Playwright mode and project of {path}."
+        )
+    mode, project = match.groups()
+    if project != "chromium":
+        return {}
     durations = {}
     for case in ET.parse(path).getroot().iter("testcase"):
         key = _playwright_key(f"{PLAYWRIGHT_DIR}/{case.get('classname')}", mode)
@@ -388,7 +396,7 @@ def update_test_durations_command(paths):
     """Merge duration artifacts into :data:`DURATIONS_PATH`.
 
     Accepts the JSON files written by ``run-tests`` and the
-    ``playwright-<mode>-<shard>-junit.xml`` reports of the Playwright jobs. Entries
+    ``playwright-<mode>-<project>-<shard>-junit.xml`` reports of the Playwright jobs. Entries
     for paths that no longer exist are dropped.
     """
     samples = {}

@@ -5,8 +5,8 @@
     "@playwright/test": "1.63.0"
   },
   "scripts": {
-    "playwright:test": "playwright test",
+    "playwright:test": "playwright test --project chromium",
     "playwright:ui": "playwright test --ui",
-    "playwright:install": "playwright install chromium"
+    "playwright:install": "playwright install chromium firefox webkit"
   }
 }

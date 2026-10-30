@@ -1,3 +1,5 @@
+const { devices } = require("@playwright/test");
+
 const headless = String(process.env.HEADLESS || "true").toLowerCase() !== "false";
 const timeout = Number(process.env.PLAYWRIGHT_TIMEOUT_MS || 10 * 60 * 1000);
 
@@ -31,6 +33,21 @@ const firefoxUserPrefs = {
   "media.webrtc.capture.allow-pipewire": false
 };
 
+// Specs tagged @media record video. Linux WebKit has no MediaRecorder, and
+// the mobile projects emulate only viewport, touch and user agent, not mobile
+// media behaviour, so those projects skip them.
+const mediaSpecs = /@media/;
+
+const chromiumUse = {
+  browserName: "chromium",
+  permissions: ["microphone", "camera"],
+  launchOptions: chromiumLaunchOptions
+};
+const webkitUse = {
+  browserName: "webkit",
+  permissions: ["microphone", "camera"]
+};
+
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 const config = {
   // Specs must declare a mode tag so CI can select without hardcoding paths:
@@ -41,6 +58,9 @@ const config = {
   //     playwright_e2e_legacy uses --grep '@both|@legacy-only'
   // Each CI job runs in three shards whose spec files come from
   // `psynet dev ci playwright-files` (balanced by recorded duration).
+  // Every merge request runs all specs on chromium and a few on firefox and
+  // webkit; a nightly schedule runs all specs on the other projects.
+  // Pass --project to choose: without it, every spec runs on every project.
   testDir: "tests/playwright",
   workers: 1,
   timeout,
@@ -53,14 +73,7 @@ const config = {
     video: "retain-on-failure"
   },
   projects: [
-    {
-      name: "chromium",
-      use: {
-        browserName: "chromium",
-        permissions: ["microphone", "camera"],
-        launchOptions: chromiumLaunchOptions
-      }
-    },
+    { name: "chromium", use: chromiumUse },
     {
       name: "firefox",
       use: {
@@ -68,12 +81,27 @@ const config = {
         launchOptions: { firefoxUserPrefs }
       }
     },
+    { name: "webkit", use: webkitUse, grepInvert: mediaSpecs },
+    // Mobile emulation: device viewport, touch and user agent on the engine
+    // behind each device's browser. iPadOS Safari reports itself as a Mac.
     {
-      name: "webkit",
+      name: "iphone",
+      use: { ...devices["iPhone 15"], ...webkitUse },
+      grepInvert: mediaSpecs
+    },
+    {
+      name: "android",
+      use: { ...devices["Pixel 7"], ...chromiumUse },
+      grepInvert: mediaSpecs
+    },
+    {
+      name: "ipad",
       use: {
-        browserName: "webkit",
-        permissions: ["microphone", "camera"]
-      }
+        ...devices["iPad Pro 11"],
+        ...webkitUse,
+        userAgent: devices["Desktop Safari"].userAgent
+      },
+      grepInvert: mediaSpecs
     }
   ]
 };

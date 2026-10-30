@@ -32,7 +32,7 @@ def test_assign_shard_balances_and_covers_every_item():
 def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
     durations_path = tmp_path / "test_durations.json"
     monkeypatch.setattr(ci_tests, "DURATIONS_PATH", durations_path)
-    report = tmp_path / "playwright-legacy-1-junit.xml"
+    report = tmp_path / "playwright-legacy-chromium-1-junit.xml"
     report.write_text(
         "<testsuites><testsuite>"
         '<testcase classname="timeline_hold.spec.js" time="900"/>'
@@ -41,9 +41,19 @@ def test_playwright_durations_feed_balanced_spec_shards(tmp_path, monkeypatch):
         '<testcase classname="theme_layout.spec.js" time="1"/>'
         "</testsuite></testsuites>"
     )
+    # Other browser projects run the same specs at their own speed.
+    firefox_report = tmp_path / "playwright-legacy-firefox-1-junit.xml"
+    firefox_report.write_text(
+        "<testsuites><testsuite>"
+        '<testcase classname="timeline_hold.spec.js" time="5000"/>'
+        "</testsuite></testsuites>"
+    )
     runner = CliRunner()
 
-    result = runner.invoke(psynet, ["dev", "ci", "update-test-durations", str(report)])
+    result = runner.invoke(
+        psynet,
+        ["dev", "ci", "update-test-durations", str(report), str(firefox_report)],
+    )
     assert result.exit_code == 0, result.output
     durations = json.loads(durations_path.read_text())
     assert durations["tests/playwright/timeline_hold.spec.js::legacy"] == 1000.0
