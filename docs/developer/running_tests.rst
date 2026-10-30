@@ -225,13 +225,45 @@ using Playwright's UI mode during development:
 .. code-block:: shell
 
     npm install
-    npx playwright install chromium
+    npm run playwright:install
     HEADLESS=false npx playwright test --ui
 
 These tests launch demo experiments locally, so you still need PostgreSQL and
 Redis running (same as for the pytest-driven e2e tests). They need Node 20 or
 later, and ``participant_recording.spec.js`` also needs ``ffmpeg`` and
 ``ffprobe`` on ``PATH``.
+
+Browser projects
+^^^^^^^^^^^^^^^^
+
+``playwright.config.js`` defines one project per browser: ``chromium``,
+``firefox`` and ``webkit`` (the engine behind Safari), plus three mobile
+emulations: ``iphone`` (iPhone 15 on WebKit), ``android`` (Pixel 7 on
+Chromium) and ``ipad`` (an iPad that reports itself as a Mac, as iPadOS Safari
+does). Without ``--project``, every spec runs on every project, so pick one:
+
+.. code-block:: shell
+
+    npx playwright test tests/playwright/demos/sliders.spec.js --project firefox
+
+``npm run playwright:test`` runs the chromium project only.
+
+On a Linux distribution that Playwright does not support yet,
+``npx playwright install`` cannot find WebKit and Firefox builds for it. Set
+``PLAYWRIGHT_HOST_PLATFORM_OVERRIDE`` to the closest supported release, for
+example ``PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npm run
+playwright:install``, and install any system libraries the browsers then
+report as missing.
+
+Firefox cannot fake a screen to capture, so specs that record the screen only
+pass on Firefox in a headed browser on an X display. CI runs Firefox under
+``xvfb-run``. On a Wayland desktop, run it on X11 instead, or Firefox asks the
+desktop for permission to share the screen:
+
+.. code-block:: shell
+
+    env -u WAYLAND_DISPLAY MOZ_ENABLE_WAYLAND=0 HEADLESS=false \
+        npx playwright test tests/playwright/demos/video_feature.spec.js --project firefox
 
 Mode tags
 ^^^^^^^^^
@@ -243,14 +275,32 @@ option:
 * ``@inplace-only`` — requires default ``inplace_timeline_transitions``
 * ``@legacy-only`` — requires ``inplace_timeline_transitions=false``
 
+Also tag tests that record video with ``@media``
+(``{ tag: ["@both", "@media"] }``). Linux WebKit has no ``MediaRecorder``, and
+the mobile projects emulate only screen size, touch and user agent, so
+``webkit``, ``iphone``, ``android`` and ``ipad`` skip them.
+
 GitLab CI selects suites with ``--grep`` instead of hardcoding file paths:
 
-* ``playwright_e2e_default`` runs ``@both|@inplace-only``
-* ``playwright_e2e_legacy`` runs ``@both|@legacy-only``
+* ``playwright_e2e_default`` runs ``@both|@inplace-only`` on chromium
+* ``playwright_e2e_legacy`` runs ``@both|@legacy-only`` on chromium
 
 Each job runs in three shards. ``psynet dev ci playwright-files`` chooses each
 shard's spec files using the durations in ``ci/test_durations.json``, so a new
 spec file needs no CI changes.
+
+Two more jobs cover the other browser projects, in the default mode:
+
+* ``playwright_e2e_browsers`` runs on every merge request, on Firefox and
+  WebKit, but only for the spec files listed in its ``PLAYWRIGHT_FILES``.
+  Add a spec there when it covers behaviour that differs between browsers.
+* ``playwright_e2e_nightly`` runs every spec on ``firefox``, ``webkit``,
+  ``iphone``, ``android`` and ``ipad``, in three shards each. It runs only in
+  pipelines started by a schedule that sets ``NIGHTLY_E2E=1``.
+
+When a spec fails on one browser because of a known bug, mark it with
+``test.fail(browserName === "...", "...")`` and link the issue, so the job
+stays green until the bug is fixed and then reports the fix.
 
 Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
 any test is missing one of those tags. When adding a new lifecycle fixture,
@@ -420,9 +470,10 @@ Example using uv-backed startup for a single Playwright test:
 Finding Playwright CI artifacts in GitLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Playwright artifacts are uploaded by the ``playwright_e2e_default`` and
-``playwright_e2e_legacy`` jobs. Each has three shards (``1/3`` to ``3/3``),
-and each shard uploads the artifacts of its own spec files.
+Playwright artifacts are uploaded by every Playwright job. The chromium jobs
+``playwright_e2e_default`` and ``playwright_e2e_legacy`` have three shards
+(``1/3`` to ``3/3``), and each shard uploads the artifacts of its own spec
+files.
 
 To view them in GitLab:
 
@@ -434,8 +485,9 @@ Uploaded artifacts include:
 
 - ``playwright-report/``: Playwright HTML report (open ``playwright-report/index.html``).
 - ``test-results/``: per-test failure assets (screenshots, traces, videos).
-- ``public/playwright-<mode>-<shard>-junit.xml``: JUnit XML used for test report
-  integration and for refreshing ``ci/test_durations.json``.
+- ``public/playwright-<mode>-<project>-<shard>-junit.xml``: JUnit XML used for
+  test report integration and, for the chromium project, for refreshing
+  ``ci/test_durations.json``.
 
 
 Debugging tests via Docker

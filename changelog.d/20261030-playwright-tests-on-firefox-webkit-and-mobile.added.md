@@ -1,0 +1,1 @@
+Added Firefox and WebKit (Safari's engine) runs of PsyNet's Playwright tests to CI: every merge request runs a few specs on both, and a nightly schedule runs every spec on them and on iPhone, Android and iPad emulation.

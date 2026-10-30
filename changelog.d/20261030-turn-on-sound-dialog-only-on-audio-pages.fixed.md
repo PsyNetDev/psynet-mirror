@@ -1,0 +1,1 @@
+Fixed the "Are you ready?" dialog appearing on pages without audio when the browser had not yet allowed sound, for example on Firefox and Safari. The dialog, now titled "Turn on sound", appears only on pages that play or record audio.
