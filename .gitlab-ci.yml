@@ -317,7 +317,7 @@ compatibility_tests:
 # `.test_suite`, and jobs that set PLAYWRIGHT_FILES run those specs instead.
 #
 # Firefox captures the screen only in a headed browser on an X display, so
-# its jobs run headed under xvfb-run (PLAYWRIGHT_DISPLAY).
+# its jobs run headed under xvfb-run.
 .playwright_e2e:
   stage: test
   parallel: 3
@@ -328,7 +328,8 @@ compatibility_tests:
     - export REDIS_IP=$(getent ahostsv4 redis | awk '{ print $1 }' | tail -n 1)
   script:
     - export PSYNET_WORKSPACE=/root/workspaces/PsyNet
-    - export PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-chromium}"
+    - export PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-chromium}" PLAYWRIGHT_DISPLAY=""
+    - if [ "$PLAYWRIGHT_PROJECT" = firefox ]; then export HEADLESS=false PLAYWRIGHT_DISPLAY="xvfb-run --auto-servernum"; fi
     - export SHARD_INDEX="${SHARD_INDEX:-$CI_NODE_INDEX}" SHARD_TOTAL="${SHARD_TOTAL:-$CI_NODE_TOTAL}"
     - mkdir -p public test-results
     - docker build --build-arg PYTHON_VERSION=$PYTHON_VERSION --tag $DOCKER_LOCAL_TAG-playwright -f Dockerfile.playwright .
@@ -367,19 +368,13 @@ playwright_e2e_default:
     PLAYWRIGHT_MODE: default
     PLAYWRIGHT_GREP: "@both|@inplace-only"
 
-.firefox_display: &firefox_display
-  PLAYWRIGHT_PROJECT: firefox
-  HEADLESS: "false"
-  PLAYWRIGHT_DISPLAY: xvfb-run --auto-servernum
-
 # Every merge request also runs a few specs on Firefox and WebKit: media,
 # page layout, and browser checks, where engines differ most.
 playwright_e2e_browsers:
   extends: .playwright_e2e
   parallel:
     matrix:
-      - *firefox_display
-      - PLAYWRIGHT_PROJECT: webkit
+      - PLAYWRIGHT_PROJECT: [firefox, webkit]
   variables:
     PLAYWRIGHT_MODE: default
     PLAYWRIGHT_GREP: "@both|@inplace-only"
@@ -402,9 +397,7 @@ playwright_e2e_nightly:
   interruptible: false
   parallel:
     matrix:
-      - <<: *firefox_display
-        SHARD_INDEX: ["1", "2", "3"]
-      - PLAYWRIGHT_PROJECT: [webkit, iphone, android, ipad]
+      - PLAYWRIGHT_PROJECT: [firefox, webkit, iphone, android, ipad]
         SHARD_INDEX: ["1", "2", "3"]
   variables:
     PLAYWRIGHT_MODE: default
