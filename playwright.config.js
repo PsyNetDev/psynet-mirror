@@ -25,7 +25,7 @@ const chromiumLaunchOptions = {
 
 // Firefox rejects camera/microphone in `permissions`; fake devices and skip
 // the permission prompt through preferences instead. Screen capture has no
-// fake source: it needs a headed browser on an X display (xvfb-run in CI),
+// fake source: it needs a headed browser on an X display (Xvfb in CI),
 // and without PipeWire, Firefox shares that display without asking.
 const firefoxUserPrefs = {
   "media.navigator.streams.fake": true,

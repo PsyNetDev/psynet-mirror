@@ -256,8 +256,8 @@ playwright:install``, and install any system libraries the browsers then
 report as missing.
 
 Firefox cannot fake a screen to capture, so specs that record the screen only
-pass on Firefox in a headed browser on an X display. CI runs Firefox under
-``xvfb-run``. On a Wayland desktop, run it on X11 instead, or Firefox asks the
+pass on Firefox in a headed browser on an X display. CI runs Firefox headed on
+Xvfb. On a Wayland desktop, run it on X11 instead, or Firefox asks the
 desktop for permission to share the screen:
 
 .. code-block:: shell
