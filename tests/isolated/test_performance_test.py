@@ -330,7 +330,7 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
 
     output = capsys.readouterr().out
     assert "Running: 0" in output
-    assert "Failed by experiment: 3" in output
+    assert "Failed by the experiment: 3" in output
     assert "Avg: -" in output
     assert "\r" not in output
 
@@ -393,12 +393,12 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
 
     assert [r.n_bots for r in results] == [10, 20]
     assert suite.reset_error == "disk full."
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
         "(disk full). The summary above covers the 2 tests that completed."
     ) in caplog.text
-    plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
+    plain = [m for m in caplog.messages if "Performance test" in m or "stopped" in m]
     assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
 
 
@@ -416,7 +416,7 @@ def test_a_test_that_raises_still_prints_the_summary_of_the_earlier_tests(caplog
     ):
         PerformanceSuite(tester).run([10, 20, 40])
 
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: test 3 failed (exit code 1: OperationalError: "
         "server closed). The summary above covers the 2 tests that completed."
@@ -693,8 +693,28 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     ):
         PerformanceSuite(tester).run([2])
 
-    assert "Estimated session:    13.0 min" in caplog.text
-    assert ("sees mostly the start of the study" in caplog.text) == warns
+    text = caplog.text
+    assert "Estimated session:    13.0 min" in text
+    assert ("sees mostly the start of the study" in text) == warns
+    if warns:
+        # A note after the settings, which end with the bot processes.
+        assert text.index("Bot processes:") < text.index("sees mostly")
+        assert all(
+            r.message.strip() for r in caplog.records if r.levelname == "WARNING"
+        )
+
+
+def test_capacity_search_header_lists_the_limits_after_the_settings(caplog):
+    with caplog.at_level("INFO"):
+        _search(
+            _session_tester(),
+            lambda n, *_: _base_result(n_bots=n, p95_response_time=0.9 * (n > 15)),
+            confirm=False,
+        )
+
+    text = caplog.text
+    assert "Bots per test:        automatic, from 10\n" in text
+    assert text.index("Bot processes:") < text.index("Each search test must keep")
 
 
 def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
@@ -1571,7 +1591,7 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         _clear_realtime_status=Mock(),
         _calculate_and_report_results=Mock(),
     ):
-        tester.run_test("TEST 1/1", 5, None, duration_minutes=0)
+        tester.run_test("Test 1/1", 5, None, duration_minutes=0)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:
@@ -2012,25 +2032,40 @@ _ASYNC_JOB_STATS = [
             ["Bot error before joining"],
         ),
         (
-            dict(median_wait_page_time=1.5, n_wait_page_samples=10),
-            ["Median time on wait pages per bot (n=10)"],
-        ),
-        (
             dict(async_job_stats=_ASYNC_JOB_STATS),
             ["ASYNC JOB TIMES", "tm1", "create_trial", "Q Med"],
         ),
         (dict(async_job_stats=None), ["No completed async jobs"]),
     ],
-    ids=["basic", "no-responses", "bots-not-in-db", "wait-pages", "jobs", "no-jobs"],
+    ids=[
+        "basic",
+        "no-responses",
+        "bots-not-in-db",
+        "jobs",
+        "no-jobs",
+    ],
 )
 def test_format_test_results(overrides, expected):
     text = _join(format_test_results(_base_result(**overrides)))
     for line in [
-        "TEST RESULTS",
+        "Test results",
         "2 worker processes, up to 40 jobs at once",
         *expected,
     ]:
         assert line in text
+
+
+def test_wait_page_time_is_a_runtime_and_trials_need_a_successful_bot():
+    text = _join(
+        format_test_results(
+            _base_result(
+                bots_succeeded=0, median_wait_page_time=1.5, n_wait_page_samples=10
+            )
+        )
+    )
+    runtimes = text.split("BOT RUNTIMES")[1].split("REQUEST METRICS")[0]
+    assert "Median time on wait pages per bot (n=10)" in runtimes
+    assert "TRIALS PER BOT" not in text
 
 
 # --- format_performance_summary ---
@@ -2593,7 +2628,12 @@ def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
         reset._check_disk_space("my-app")
 
 
-def test_a_suite_drives_remote_tests_through_their_json_results():
+@pytest.mark.parametrize(
+    "bot_processes, described", [("auto", "auto, chosen for each test"), (8, "4")]
+)
+def test_a_suite_drives_remote_tests_through_their_json_results(
+    caplog, bot_processes, described
+):
     import re
     from dataclasses import asdict
 
@@ -2611,15 +2651,17 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
         duration_minutes=1,
         stagger_interval_s=0.1,
         time_factor=1.0,
-        bot_processes="auto",
+        bot_processes=bot_processes,
     )
     before_test = Mock()
 
-    results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
+    with caplog.at_level("INFO"):
+        results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
 
+    assert f"Bot processes:        {described}\n" in caplog.text
     assert [r.n_bots for r in results] == [2, 4]
     assert before_test.call_count == 2
-    assert "--test-label 'TEST 2/2'" in remote.run_psynet.call_args.args[0]
+    assert "--test-label 'Test 2/2'" in remote.run_psynet.call_args.args[0]
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
@@ -2720,7 +2762,7 @@ def _remote_search(
     from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
-        if re.search(rf"--test-label 'TEST {interrupt_at_test}'", args):
+        if re.search(rf"--test-label 'Test {interrupt_at_test}'", args):
             raise KeyboardInterrupt
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1

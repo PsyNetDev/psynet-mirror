@@ -2811,9 +2811,10 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
-    Also names the deployed Docker image, if Dallinger reports it.
-    Passwords are not printed, so that pasted logs don't leak them; they
-    are saved in ``launch_info``. Without a single participant link, the
+    Also names the deployed Docker image, if Dallinger reports it, and the
+    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not
+    printed, so that pasted logs don't leak them; they are saved in
+    ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead. An ``update`` doesn't open recruitment again,
     so it shows what the first deploy recorded on this computer, or, without
@@ -2835,6 +2836,7 @@ def _print_ssh_ready(result, launch_info, update=False):
         ("Logs", result.get("log_command")),
         ("Log viewer", log_viewer),
         ("Image", result.get("image_name")),
+        ("Bot log", result.get("bot_log")),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
@@ -3480,7 +3482,7 @@ def _debug_ssh(
     performance_test_app=False,
     check_consents=True,
 ):
-    """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
+    """Deploy or update ``app`` in debug mode, as ``psynet debug ssh`` does; return Dallinger's result and the launch-info path.
 
     The app's environment sets ``debug_ssh_app``, which lets ``psynet
     destroy ssh`` destroy it when its pending async jobs can't be checked.
@@ -3528,7 +3530,7 @@ def _debug_ssh(
                 ingress=ingress,
                 update=update,
                 config_options=config_options,
-                dallinger_summary=bool(performance_test_app),
+                dallinger_summary=False,
             )
 
         launch_info = _post_deploy(result)
@@ -3536,6 +3538,7 @@ def _debug_ssh(
             _print_ssh_ready(result, launch_info, update=update)
     finally:
         _cleanup_exp_directory()
+    return result, launch_info
 
 
 ##########
@@ -6984,7 +6987,7 @@ def _run_performance_test_with_existing_server(
         bot_log_file = open(bot_log, "a")
     remote = test_label is not None or bot_log is not None
     if not remote:
-        print(f"Bot output log: {bot_log_file.name}")
+        print(f"Bot log: {bot_log_file.name}")
     with bot_log_file:
         if test_label is None:
             return _run_performance_suite(
@@ -7434,7 +7437,7 @@ def _start_local_server_and_wait_for_ready(
     extra_env : dict[str, str], optional
         Environment variables to set for the server process.
     """
-    print("▶ Starting experiment server...")
+    print("Starting the experiment server...")
 
     tmp_log = tempfile.NamedTemporaryFile(
         delete=False,
@@ -7470,11 +7473,11 @@ def _start_local_server_and_wait_for_ready(
         raise click.ClickException("Failed to start experiment server process.")
 
     process.logfile = logfile
-    print("⏳ Waiting for server to be ready...", end="", flush=True)
+    print("Waiting for the server...", end="", flush=True)
 
     try:
         process.expect_exact(ready_phrase, timeout=max_wait)
-        print(" Ready!")
+        print(" ready.")
         print()
         drain_thread = threading.Thread(
             target=_drain_pexpect_output,
@@ -7500,7 +7503,7 @@ def _start_local_server_and_wait_for_ready(
         else:
             failure_message = f"Server failed to start within {max_wait} seconds"
         print(
-            f"\n❌ {failure_message}",
+            f"\n{failure_message}.",
             file=sys.stderr,
         )
         if recent_output:
@@ -7607,13 +7610,14 @@ def _stop_server(server_info):
             time.sleep(0.2)
         if port_is_open(base_port):
             print(
-                f"⚠ Port {base_port} still in use after server stop — next stage may fail to start"
+                f"Port {base_port} still in use after server stop; "
+                "next stage may fail to start."
             )
 
         if externally_managed:
-            print("✓ Server stopped")
+            print("Server stopped")
         else:
-            print(f"✓ Server stopped (log: {tmp_log_path})")
+            print(f"Server stopped (log: {tmp_log_path})")
 
 
 def _record_performance_export(results):
@@ -7649,19 +7653,19 @@ def _time_export(_run=subprocess.run):
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             err = f"Exit code {result.returncode}" + (f": {stderr}" if stderr else "")
-            print(f"⚠ Export finished with error in {duration:.1f}s: {err}")
+            print(f"Export finished with error in {duration:.1f}s: {err}")
             return duration, err
-        print(f"✓ Export completed in {duration:.1f}s")
+        print(f"Export completed in {duration:.1f}s")
         return duration, None
     except subprocess.TimeoutExpired:
         duration = time.time() - start
         err = "Export timed out (600s)"
-        print(f"⚠ {err}")
+        print(err)
         return duration, err
     except Exception as e:
         duration = time.time() - start
         err = str(e)
-        print(f"⚠ Export failed in {duration:.1f}s: {err}")
+        print(f"Export failed in {duration:.1f}s: {err}")
         return duration, err
 
 
@@ -7708,7 +7712,7 @@ def _run_performance_test_with_new_server(
             all_results = _run_performance_test_with_existing_server(
                 debug=debug, json_output=json_output, no_export=no_export, **options
             )
-            print("✓ Performance test completed")
+            print("Performance test completed.")
             return all_results
         finally:
             _stop_server(server_info)
@@ -7925,7 +7929,7 @@ def performance_test__docker_ssh(
     app is in use during the performance test, results may not be reliable.
     """
     _check_arrival_options(**options)
-    experiment = _prepare_performance_test_app(
+    experiment, deployed = _prepare_performance_test_app(
         ctx,
         app,
         server=server,
@@ -7939,6 +7943,7 @@ def performance_test__docker_ssh(
             app,
             server,
             experiment,
+            deployed=deployed,
             reset=reset_database or bool(prefill_participants),
             prefill_participants=prefill_participants,
             json_output=json_output,
@@ -7959,9 +7964,11 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
 
     Returns
     -------
-    dict
+    tuple of (dict, tuple)
         The experiment's test defaults that ``performance-test app-info``
-        reports.
+        reports, and what :func:`_debug_ssh` returned plus whether the app
+        was updated, for the Ready block
+        that :func:`_run_ssh_performance_test` prints.
 
     Raises
     ------
@@ -7978,10 +7985,10 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
-        print(f"▶ Updating {app} on {server}, keeping its database...")
+        print(f"Updating {app} on {server}, keeping its database...")
     else:
-        print(f"▶ Deploying {app} on {server} for performance tests...")
-    _debug_ssh(
+        print(f"Deploying {app} on {server} for performance tests...")
+    result, launch_info = _debug_ssh(
         ctx,
         app=app,
         server=server,
@@ -7989,13 +7996,17 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         performance_test_app=True,
         **deploy_options,
     )
-    info = _require_performance_test_app(server, app)
-    if "experiment" not in info:
-        raise click.ClickException(
-            f"Could not load the experiment in {app}'s web container; see the "
-            "output above."
-        )
-    return info["experiment"]
+    try:
+        info = _require_performance_test_app(server, app)
+        if "experiment" not in info:
+            raise click.ClickException(
+                f"Could not load the experiment in {app}'s web container; see the "
+                "output above."
+            )
+    except click.ClickException as e:
+        e.message += f" The app's passwords are saved in {launch_info}."
+        raise
+    return info["experiment"], (result, launch_info, update)
 
 
 def _run_ssh_performance_test(
@@ -8003,6 +8014,7 @@ def _run_ssh_performance_test(
     server,
     experiment,
     *,
+    deployed=None,
     reset=False,
     prefill_participants=None,
     n_bots=None,
@@ -8017,7 +8029,9 @@ def _run_ssh_performance_test(
     """Run a suite from this computer, each test in ``app``'s web container.
 
     ``experiment`` holds the experiment's test defaults (see
-    :func:`_prepare_performance_test_app`). With ``reset``, the database is
+    :func:`_prepare_performance_test_app`), and ``deployed`` the deploy's
+    result, launch-info path and whether it updated the app, for the Ready block that starts the run's
+    output. With ``reset``, the database is
     reset before each test, after ``prefill_participants`` bots have run
     through the experiment. Default test lengths are those of
     ``performance-test local``, and ``suite_options`` those of
@@ -8035,7 +8049,13 @@ def _run_ssh_performance_test(
         suffix=".log",
         dir=_performance_log_directory(),
     )
-    print(f"Bot output log: {bot_log_file.name}")
+    if deployed:
+        result, launch_info, update = deployed
+        _print_ssh_ready(
+            {**result, "bot_log": bot_log_file.name}, launch_info, update=update
+        )
+    else:
+        print(f"Bot log: {bot_log_file.name}")
     remote = RemoteApp(
         _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )
@@ -8094,7 +8114,7 @@ def _ssh_database_reset(remote, prefill_participants):
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     print(
-        f"Database to reset: {database_reset.database} in "
+        f"\nDatabase to reset: {database_reset.database} in "
         f"{database_reset.container} on {remote.server}"
     )
     return database_reset
