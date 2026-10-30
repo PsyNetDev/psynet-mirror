@@ -222,7 +222,13 @@ async function completeRecordedPlaybackCheckpoint(
   await clickNextAndWait(page, STEP_TIMEOUT_MS);
 }
 
-test("audio demo", { tag: "@both" }, async ({ page, context }) => {
+test("audio demo", { tag: "@both" }, async ({ page, context, browserName }) => {
+  test.fail(
+    browserName === "webkit",
+    "Found with Dallinger#10095: in the CI image, WebKit cannot decode its own " +
+      "microphone recording (EncodingError: Decoding failed), so it is never " +
+      "ready to play back. The spec passes with WebKit on a developer machine."
+  );
   const absDir = path.resolve("demos/experiments/audio");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);
