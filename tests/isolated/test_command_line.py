@@ -6491,33 +6491,68 @@ class TestResolvePerfTestOptions:
         assert self.resolve(exp, duration_minutes=0.5).get("duration_minutes") == 0.5
 
 
-# --- _run_performance_test_local --existing path ---
+# --- _run_performance_test_local export persistence ---
 
 
-def test_run_performance_test_local_existing_stamps_export_on_last_result_only():
-    """Export timing is stamped only on the last result row, not all rows."""
-    from psynet.command_line import _run_performance_test_local
-    from psynet.perf_test.results import PerformanceTestResult
+@pytest.mark.parametrize("existing", [True, False])
+def test_export_is_saved_before_server_cleanup(monkeypatch, tmp_path, existing):
+    """Exercise the real suite and JSON writer with simulated bots and export."""
+    from psynet import command_line as cli
+    from psynet.perf_test import PerformanceTester, PerformanceTestResult
 
-    fake_results = [PerformanceTestResult(n_bots=5), PerformanceTestResult(n_bots=10)]
-
-    with (
-        patch(
-            "psynet.command_line._run_performance_test_with_existing_server",
-            return_value=fake_results,
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://test")
+    monkeypatch.setattr("psynet.perf_test.PerformanceTester", lambda **kwargs: tester)
+    monkeypatch.setattr(
+        tester, "run_test", lambda title, n, *args: PerformanceTestResult(n_bots=n)
+    )
+    monkeypatch.setattr(tester, "pause_between_tests", lambda *args: None)
+    monkeypatch.setattr("psynet.perf_test.runtime.raise_open_file_limit", lambda: None)
+    monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
+    monkeypatch.setattr(
+        "psynet.experiment.get_experiment",
+        lambda: Mock(
+            label="export-test",
+            estimated_duration_in_minutes=1,
+            test_duration_minutes=1,
+            test_parallel_stagger_interval_s=0.1,
         ),
-        patch("psynet.command_line._time_export", return_value=(2.5, None)),
+    )
+    for name in (
+        "load_runtime_server_config",
+        "_check_existing_server_answers",
+        "_check_no_real_participants",
+        "_hold_experiment_directory",
     ):
-        results = _run_performance_test_local(
-            existing=True,
-            json_output=None,
-            debug=False,
-            no_export=False,
-        )
+        monkeypatch.setattr(cli, name, lambda *args: None)
+    monkeypatch.setattr(cli, "_collect_run_metadata", lambda label: {})
+    monkeypatch.setattr(cli, "_open_link_recruiter", lambda: False)
+    monkeypatch.setattr(cli, "_performance_log_directory", lambda: tmp_path)
+    monkeypatch.setattr(
+        cli, "_start_local_server_and_wait_for_ready", lambda *args, **kwargs: {}
+    )
+    stop = Mock()
+    monkeypatch.setattr(cli, "_stop_server", stop)
 
-    assert results[0].export_duration_s is None
-    assert results[-1].export_duration_s == 2.5
-    assert results[-1].export_error is None
+    def export():
+        stop.assert_not_called()
+        return 2.5, None
+
+    measure = Mock(side_effect=export)
+    monkeypatch.setattr(cli, "_time_export", measure)
+    output = tmp_path / "results.json"
+    cli._run_performance_test_local(
+        existing=existing,
+        json_output=str(output),
+        debug=False,
+        n_bots=[5, 10],
+    )
+
+    rows = json.loads(output.read_text())["results"]
+    assert rows[0]["export_duration_s"] is None
+    assert rows[-1]["export_duration_s"] == 2.5
+    assert rows[-1]["export_error"] is None
+    assert measure.call_count == 1
+    assert stop.call_count == (0 if existing else 1)
 
 
 # --- _time_export tests ---
