@@ -111,7 +111,12 @@ async function completeRemainingChain(page, timeout = STEP_TIMEOUT_MS) {
   throw new Error("Imitation chain did not reach Finish within expected steps.");
 }
 
-test("imitation_chain_video demo", { tag: ["@both", "@media"] }, async ({ page, context }) => {
+test("imitation_chain_video demo", { tag: ["@both", "@media"] }, async ({ page, context, browserName }) => {
+  test.fail(
+    browserName === "firefox",
+    "Found with Dallinger#10095: on Firefox, the microphone check page " +
+      "never enables Next."
+  );
   const absDir = path.resolve("demos/experiments/imitation_chain_video");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

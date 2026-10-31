@@ -363,8 +363,14 @@ test("in-place timeline transitions manage stylesheets that target shell element
 
 test("in-place media cleanup ignores late audio loads from previous pages", { tag: "@inplace-only" }, async ({
   page,
-  context
+  context,
+  browserName
 }) => {
+  test.fail(
+    browserName === "firefox",
+    "Found with Dallinger#10095: on Firefox, the late audio load the " +
+      "test starts after cleanup never settles."
+  );
   const absDir = path.resolve(
     "tests/playwright/experiments/deferred_page_scripts"
   );

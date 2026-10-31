@@ -1566,7 +1566,13 @@ async function renderThemedText(page) {
 test(
   "text does not resize when Inter replaces the fallback font",
   { tag: "@both" },
-  async ({ page }) => {
+  async ({ page, browserName }) => {
+    test.fail(
+      browserName !== "chromium",
+      "Found with Dallinger#10095: Firefox does not report the theme's " +
+        "declared fallback face; on WebKit, the title wraps onto two lines " +
+        "with the fallback and one with Inter."
+    );
     await page.setViewportSize({ width: 1280, height: 720 });
     await renderThemedText(page);
 

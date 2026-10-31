@@ -132,7 +132,12 @@ async function nudgeSlider(page, selector) {
   }
 }
 
-test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) => {
+test("modular_page feature demo", { tag: "@both" }, async ({ page, context, browserName }) => {
+  test.fail(
+    browserName === "webkit",
+    "Found with Dallinger#10095: on WebKit, the frame-slider video page " +
+      "stays in trialConstruct and never enables Next."
+  );
   const absDir = path.resolve("demos/features/modular_page");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

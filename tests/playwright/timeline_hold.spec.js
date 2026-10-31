@@ -968,6 +968,11 @@ test("timeline hold restores its accessible fallback after refresh", { tag: "@bo
   page,
   context
 }) => {
+  test.fail(
+    ["iphone", "ipad"].includes(test.info().project.name),
+    "Found with Dallinger#10095: on mobile WebKit, the refreshed page's " +
+      "/log requests fail \"due to access control checks\"."
+  );
   const experimentDir = path.resolve(
     "tests/playwright/experiments/timeline_hold"
   );
