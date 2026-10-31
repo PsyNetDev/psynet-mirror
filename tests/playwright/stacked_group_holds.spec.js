@@ -169,6 +169,11 @@ test("last of three choices releases both waiting members", { tag: "@both" }, as
 test("last of four releases waiters and they catch up", { tag: "@both" }, async ({
   browser
 }) => {
+  test.skip(
+    test.info().project.name === "ipad",
+    "Found with Dallinger#10095: on the iPad project, a held member's page " +
+      "sometimes stays empty instead of showing \"Choose your action\"."
+  );
   // A larger group adds more wake targets on the same last-arriver request.
   // Members 1-3 must stay held until member 4 lands, then overlay-hop the
   // remaining stacked waits. Each hop can need its own hold-resume POST

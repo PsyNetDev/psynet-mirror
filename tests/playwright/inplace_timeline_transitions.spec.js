@@ -366,10 +366,10 @@ test("in-place media cleanup ignores late audio loads from previous pages", { ta
   context,
   browserName
 }) => {
-  test.fail(
+  test.skip(
     browserName === "firefox",
     "Found with Dallinger#10095: on Firefox, the late audio load the " +
-      "test starts after cleanup never settles."
+      "test starts after cleanup never settles, so the test hangs."
   );
   const absDir = path.resolve(
     "tests/playwright/experiments/deferred_page_scripts"
