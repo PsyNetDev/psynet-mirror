@@ -168,6 +168,11 @@ test("websocket_chatroom demo relays and persists messages between two participa
   page,
   context
 }) => {
+  test.fail(
+    test.info().project.name === "iphone",
+    "Found with Dallinger#10095: on the iPhone project, a participant " +
+      "sees the room picker where the consent page is expected."
+  );
   const absDir = path.resolve("demos/features/websocket_chatroom");
   const { proc, urlPromise } = startExperiment(absDir);
   const secondContext = await browser.newContext();

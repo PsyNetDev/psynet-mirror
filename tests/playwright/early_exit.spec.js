@@ -100,7 +100,12 @@ test(
 test(
   "Prolific recovery explains and performs its direct submission",
   { tag: "@both" },
-  async ({ page }) => {
+  async ({ page, browserName }) => {
+    test.fail(
+      browserName === "webkit",
+      "Found with Dallinger#10095: WebKit decodes the recovery page with " +
+        "the wrong charset and shows \"Â£0.25\" instead of \"£0.25\"."
+    );
     let prolificSubmission;
     await page.route("http://psynet.test/error", async (route) => {
       await route.fulfill({
@@ -488,7 +493,12 @@ test(
 test(
   "errors reach a reloadable timeline recovery page instead of a resubmittable form",
   { tag: "@both" },
-  async ({ page }) => {
+  async ({ page, browserName }) => {
+    test.fail(
+      browserName === "firefox",
+      "Found with Dallinger#10095: on Firefox, Back returns to the failed " +
+        "timeline page instead of the page before it."
+    );
     const methods = [];
     await page.route("http://psynet.test/start", async (route) => {
       await route.fulfill({

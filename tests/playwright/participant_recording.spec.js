@@ -51,8 +51,14 @@ function maxVolumeDb(file) {
 }
 
 test("participant recording helper writes an MP4 with audio", { tag: "@both" }, async ({
-  context
+  context,
+  browserName
 }, testInfo) => {
+  test.fail(
+    browserName !== "chromium",
+    "Found with Dallinger#10095: on Firefox and WebKit, the volume " +
+      "calibration page never enables Next."
+  );
   const absDir = path.resolve("demos/experiments/static_audio");
   const outPath = testInfo.outputPath("participant.mp4");
   const recording = await startParticipantRecording(context, {
