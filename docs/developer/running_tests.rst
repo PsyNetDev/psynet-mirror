@@ -300,7 +300,10 @@ Two more jobs cover the other browser projects, in the default mode:
 
 When a spec fails on one browser because of a known bug, mark it with
 ``test.fail(browserName === "...", "...")`` and link the issue, so the job
-stays green until the bug is fixed and then reports the fix.
+stays green until the bug is fixed and then reports the fix. ``test.fail``
+expects the test to fail every time, and a timeout does not count as a
+failure: when the bug makes the spec hang or fail only sometimes, use
+``test.skip`` with the same condition and note instead.
 
 Both jobs also run ``node tests/playwright/check-mode-tags.js``, which fails if
 any test is missing one of those tags. When adding a new lifecycle fixture,

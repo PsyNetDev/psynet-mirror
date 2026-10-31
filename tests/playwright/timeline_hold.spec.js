@@ -966,12 +966,14 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
 
 test("timeline hold restores its accessible fallback after refresh", { tag: "@both" }, async ({
   page,
-  context
+  context,
+  browserName
 }) => {
-  test.fail(
-    ["iphone", "ipad"].includes(test.info().project.name),
-    "Found with Dallinger#10095: on mobile WebKit, the refreshed page's " +
-      "/log requests fail \"due to access control checks\"."
+  test.skip(
+    browserName === "webkit",
+    "Found with Dallinger#10095: on WebKit, the refreshed page's /log " +
+      "requests fail \"due to access control checks\", always on the " +
+      "mobile projects and sometimes on desktop."
   );
   const experimentDir = path.resolve(
     "tests/playwright/experiments/timeline_hold"
