@@ -79,7 +79,6 @@ def _invoke_stubbed_ssh_command(dallinger_command, psynet_command, *args):
     dallinger_name = "deploy" if psynet_command == "deploy" else "sandbox"
     with (
         patch("psynet.command_line._pre_launch") as pre_launch,
-        patch("psynet.command_line._default_image_base_name"),
         patch("psynet.command_line._cleanup_exp_directory"),
         patch("psynet.command_line.reset_console"),
         patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
@@ -349,35 +348,6 @@ class TestCommandLine(object):
             update=True,
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
-
-    @pytest.mark.parametrize(
-        "config_txt, app, expected",
-        [
-            ("[Docker]\n", "consonance", "consonance"),
-            ("[Docker]\n", None, "psynet-experiment"),
-            (
-                "[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n",
-                "consonance",
-                "ghcr.io/me/exp",
-            ),
-        ],
-    )
-    def test_invoke_docker_ssh_deploy_names_an_unnamed_image_after_the_app(
-        self, fresh_dallinger_config, config_txt, app, expected
-    ):
-        from dallinger.config import get_config
-
-        from psynet.command_line import _invoke_docker_ssh_deploy
-
-        Path("config.txt").write_text(config_txt)
-        ctx = Mock()
-        ctx.invoke.side_effect = lambda command, **kwargs: get_config().get(
-            "docker_image_base_name"
-        )
-        result = _invoke_docker_ssh_deploy(
-            ctx, Mock(params=[]), server="musix", dns_host=None, app=app
-        )
-        assert result == expected
 
     @pytest.mark.parametrize("new_dallinger", [False, True])
     def test_deploy_ssh_ends_with_a_ready_block(
@@ -2314,14 +2284,25 @@ def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
     init_db.assert_not_called()
 
 
-@pytest.mark.parametrize("heroku", [False, True])
-def test_only_heroku_docker_needs_an_image_base_name(tmp_path, monkeypatch, heroku):
+@pytest.mark.parametrize(
+    "heroku, base_name, error",
+    [
+        (False, None, None),
+        (True, None, "docker_image_base_name is not set"),
+        (True, "exp", "has no registry or namespace"),
+        (True, "ghcr.io/me/exp", None),
+    ],
+)
+def test_only_heroku_docker_needs_a_pushable_image_base_name(
+    tmp_path, monkeypatch, heroku, base_name, error
+):
     (tmp_path / "requirements.txt").write_text("psynet\n")
     monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
     monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
     monkeypatch.setattr("psynet.experiment.get_experiment", Mock)
+    settings = {"docker_image_base_name": base_name}
     config = Mock()
-    config.get.side_effect = lambda key, default=None: default
+    config.get.side_effect = lambda key, default=None: settings.get(key) or default
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr("psynet.command_line.check_dockerfile", Mock())
     monkeypatch.setattr("psynet.command_line.user_confirms", lambda *args: True)
@@ -2329,11 +2310,11 @@ def test_only_heroku_docker_needs_an_image_base_name(tmp_path, monkeypatch, hero
     monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
 
     with working_directory(tmp_path):
-        if heroku:
-            with pytest.raises(click.UsageError, match="docker_image_base_name"):
-                run_pre_checks("sandbox", False, heroku=True, docker=True)
+        if error:
+            with pytest.raises(click.ClickException, match=error):
+                run_pre_checks("sandbox", False, heroku=heroku, docker=True)
         else:
-            run_pre_checks("sandbox", False, docker=True, app="test-app")
+            run_pre_checks("sandbox", False, heroku=heroku, docker=True, app="app")
 
 
 @pytest.mark.parametrize(
