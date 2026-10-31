@@ -984,12 +984,16 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     )
 
     develop = importlib.import_module("dallinger.command_line.develop")
-    original_job = develop.launch_app_and_open_browser
+    original_jobs = (
+        develop.launch_app_and_open_browser,
+        develop.launch_app_without_browsers,
+    )
     calls = []
 
     class _Ctx:
         def invoke(self, _command, **kwargs):
             calls.append((kwargs, develop.launch_app_and_open_browser))
+            calls.append((kwargs, develop.launch_app_without_browsers))
 
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
@@ -1002,12 +1006,15 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setenv("base_port", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    assert calls == [({"skip_flask": False, "port": 5010}, job)]
+    assert calls == [({"skip_flask": False, "port": 5010}, job)] * 2
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
     assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
         _reloader_exclude_patterns()
     )
-    assert develop.launch_app_and_open_browser is original_job
+    assert (
+        develop.launch_app_and_open_browser,
+        develop.launch_app_without_browsers,
+    ) == original_jobs
 
     config = Mock(ready=True)
     config.get.side_effect = {
@@ -5269,6 +5276,36 @@ def test_pre_launch_aborts_when_app_exists():
             )
 
     mock_check_directory.assert_called_once_with("live", require_git_commit=True)
+    mock_run_pre_checks.assert_not_called()
+
+
+def test_pre_launch_rejects_a_reserved_ssh_app_name_before_prepare():
+    from psynet.command_line import _pre_launch
+
+    hosts = {"test-server": {"host": "example.com", "user": "test-user"}}
+    with (
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line.redis_vars.clear"),
+        patch("psynet.command_line.deployment_info.init"),
+        patch("psynet.command_line.deployment_info.write"),
+        patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
+        patch("psynet.command_line._abort_if_app_exists"),
+        patch("psynet.command_line.run_pre_checks") as mock_run_pre_checks,
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+        patch("dallinger.command_line.docker_ssh.CONFIGURED_HOSTS", hosts),
+    ):
+        with pytest.raises(click.UsageError, match='"logs" is reserved'):
+            _pre_launch(
+                Mock(),
+                mode="live",
+                archive=None,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server="test-server",
+                app="logs",
+            )
+
     mock_run_pre_checks.assert_not_called()
 
 

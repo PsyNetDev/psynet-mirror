@@ -1833,7 +1833,9 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     from dallinger.deployment import DevelopmentDeployment
 
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    launch_job = develop_module.launch_app_and_open_browser
+    # Dallinger enqueues one of these, depending on its --no-browsers flag.
+    launch_job_names = ("launch_app_and_open_browser", "launch_app_without_browsers")
+    launch_jobs = {name: getattr(develop_module, name) for name in launch_job_names}
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
@@ -1845,9 +1847,11 @@ def _debug_auto_reload(ctx, archive, no_browsers):
         _reloader_exclude_patterns()
     )
     debug_kwargs = {"skip_flask": False, "port": port}
-    develop_module.launch_app_and_open_browser = (
+    launch_job = (
         launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
     )
+    for name in launch_job_names:
+        setattr(develop_module, name, launch_job)
 
     try:
         run_pre_auto_reload_checks()
@@ -1864,7 +1868,8 @@ def _debug_auto_reload(ctx, archive, no_browsers):
             db.session.commit()
             reset_console()
     finally:
-        develop_module.launch_app_and_open_browser = launch_job
+        for name, job in launch_jobs.items():
+            setattr(develop_module, name, job)
 
 
 def patch_dallinger_develop():
@@ -2371,7 +2376,10 @@ def _pre_launch(
         ssh_host = server_info["host"]
         ssh_user = server_info.get("user")
 
-        from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
+        from dallinger.command_line.docker_ssh import (
+            _check_app_name_not_reserved,
+            ensure_remote_host_in_known_hosts,
+        )
 
         try:
             ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
@@ -2382,6 +2390,8 @@ def _pre_launch(
         if app is None:
             app = _default_ssh_app_name(server)
             deployment_info.write(app=app)
+        # Dallinger checks this too, but only after ``prepare`` has run.
+        _check_app_name_not_reserved(app)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,

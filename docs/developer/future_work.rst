@@ -76,16 +76,18 @@ Date
 Problem
 +++++++
 
-``psynet test local`` uses the Heroku CLI only for its ``heroku local``
-process manager. Users have to install a non-Python tool for a platform
-they will not deploy to, and the docs have to explain why.
+``psynet test local`` no longer needs the Heroku CLI: Dallinger starts the
+Procfile processes with honcho, a normal Python dependency. The installation
+docs, README, experiment ``Dockerfile`` and agent skills still ask users to
+install the Heroku CLI, a non-Python tool for a platform they will not
+deploy to.
 
 Idea
 ++++
 
-Replace ``heroku local`` in Dallinger with a Python process manager
-installed as a normal dependency, so the Python environment is the only
-requirement for local testing.
+Drop the Heroku CLI from those instructions, keeping it only where Heroku
+deployment is documented, so the Python environment is the only requirement
+for local testing.
 
 Installation checker
 --------------------
