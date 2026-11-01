@@ -25,9 +25,10 @@ for the user's approval. They may prefer fewer reviews or other models.
 
 - Merge the MR target yourself first, as in the `branch-review`
   Prerequisites, then run each review as a separate agent that doesn't edit
-  code. Give it the target branch and tell it to skip the Prerequisites,
-  review `origin/<target>...HEAD` following `branch-review` steps 1-6, skip
-  step 7, and check the MR title and description against the diff.
+  code. Give it the target branch, and tell it not to merge, push or edit
+  the MR (despite the opening of `branch-review`): it reviews
+  `origin/<target>...HEAD` following steps 1-6, and checks the MR title and
+  description against the diff without updating them.
 - Prefer a different model family (provider, such as Claude, GPT, Grok or
   Gemini) from the previous review, and one that didn't write the changes;
   if the MR description doesn't say which did, ask. One reviewer settles
