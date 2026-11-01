@@ -247,7 +247,7 @@ Before finalizing a merge request, prompt the user to run an automatic code
 review. Suggest the repo-local Cursor command `/branch-review`, which invokes
 the `branch-review` skill at `.cursor/skills/branch-review/SKILL.md`. This
 specific command name avoids ambiguity with generic Cursor-provided review
-commands. For repeated reviews, use the `branch-review-loop` skill
+commands. For repeated reviews of a feature MR, use the `branch-review-loop` skill
 (`.cursor/skills/branch-review-loop/SKILL.md`).
 
 If the user runs `/branch-review`, address any actionable findings before

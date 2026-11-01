@@ -25,8 +25,9 @@ for the user's approval. They may prefer fewer reviews or other models.
 
 - Merge the MR target yourself first, as in the `branch-review`
   Prerequisites, then run each review as a separate agent that doesn't edit
-  code, following `branch-review` steps 1-6 and skipping step 7, but
-  checking the MR title and description against the diff.
+  code. Give it the target branch and tell it to skip the Prerequisites,
+  review `origin/<target>...HEAD` following `branch-review` steps 1-6, skip
+  step 7, and check the MR title and description against the diff.
 - Prefer a different model family (provider, such as Claude, GPT, Grok or
   Gemini) from the previous review, and one that didn't write the changes;
   if the MR description doesn't say which did, ask. One reviewer settles
@@ -41,8 +42,8 @@ for the user's approval. They may prefer fewer reviews or other models.
   commits, but only reviews of the whole diff count towards convergence.
 - Between reviews, fix high and medium issues, and lows that are clearly
   worth it (cheap test gaps, small local fixes).
-  Note lows that need a design decision for the final MR description, as
-  known limitations.
+  Note lows that need a design decision as known limitations in the final
+  MR description.
 - The loop has converged when two reviews in a row, each by a fresh agent
   and from different families if two were approved, review the whole diff
   at the current head and find no high or medium issues. Their lows don't
