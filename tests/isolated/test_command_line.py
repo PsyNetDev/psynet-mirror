@@ -2256,6 +2256,7 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
         return True
 
     monkeypatch.setattr("psynet.command_line.user_confirms", fake_confirm)
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     with working_directory(tmp_path):
         run_pre_checks(
@@ -2308,6 +2309,7 @@ def test_only_heroku_docker_needs_a_pushable_image_base_name(
     monkeypatch.setattr("psynet.command_line.user_confirms", lambda *args: True)
     monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
     monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     with working_directory(tmp_path):
         if error:
@@ -2315,6 +2317,12 @@ def test_only_heroku_docker_needs_a_pushable_image_base_name(
                 run_pre_checks("sandbox", False, heroku=heroku, docker=True)
         else:
             run_pre_checks("sandbox", False, heroku=heroku, docker=True, app="app")
+
+
+def test_heroku_pre_checks_need_the_heroku_cli(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    with pytest.raises(click.UsageError, match="needs the Heroku CLI"):
+        run_pre_checks("sandbox", False, heroku=True, app="app")
 
 
 @pytest.mark.parametrize(

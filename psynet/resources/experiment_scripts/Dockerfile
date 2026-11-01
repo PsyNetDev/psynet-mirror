@@ -7,6 +7,9 @@ FROM python:{python_major_minor}-bookworm
 
 RUN pip install uv
 
+# Node and npm are for development tooling such as Playwright tests.
+RUN apt-get update && apt-get install -y nodejs npm
+
 RUN mkdir /experiment
 WORKDIR /experiment
 

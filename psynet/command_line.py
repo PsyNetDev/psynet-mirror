@@ -3205,6 +3205,12 @@ def run_pre_checks(
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
+    if heroku and shutil.which("heroku") is None:
+        raise click.UsageError(
+            "Deploying to Heroku needs the Heroku CLI; install it from "
+            "https://devcenter.heroku.com/articles/heroku-cli"
+        )
+
     # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
