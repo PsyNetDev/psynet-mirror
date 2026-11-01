@@ -267,8 +267,11 @@ description so they match the committed branch diff.
 
 When a review or dogfood finds a small follow-up that is deliberately left
 out of the merge request (such as a Known limitations item worth doing later),
-add an entry for it to `docs/developer/future_work.rst` in the same merge
-request, in that file's Date / Problem / Idea format, one entry per item.
+record it so it isn't lost. For a confirmed bug or agreed task, draft a GitLab
+issue, ask the user before creating it (unless they have already approved),
+and link it from the merge request description. For an unconfirmed idea, add
+an entry to `docs/developer/future_work.rst` in the same merge request, in
+that file's Date / Problem / Idea format, one entry per item.
 
 ## CLI development
 
