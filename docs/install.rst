@@ -19,8 +19,8 @@ You will install:
   built against.
 
 You only need the `Heroku CLI <https://devcenter.heroku.com/articles/heroku-cli>`_
-to deploy or manage experiments on Heroku (``psynet deploy heroku``,
-``psynet debug heroku``, ``psynet export heroku`` or ``psynet destroy heroku``).
+for ``psynet`` commands that work with Heroku apps, such as
+``psynet deploy heroku`` and ``psynet export heroku``.
 
 Choose your operating system:
 
