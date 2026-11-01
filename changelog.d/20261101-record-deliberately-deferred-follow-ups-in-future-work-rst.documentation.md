@@ -1,0 +1,1 @@
+`AGENTS.md` and `/branch-review` now ask agents to record follow-ups deliberately left out of a merge request, such as Known limitations items worth doing later, as entries in `docs/developer/future_work.rst` in the same merge request.

@@ -112,4 +112,7 @@ branch diff. Do this even if the current title or description looks close.
   diff. Look for stale claims: changes that were later reverted or reworked,
   CI/test statements that no longer hold, and new commits not yet reflected.
 - Record that `/branch-review` was run in **Automatic code review**.
+- For findings left for later, such as Known limitations items, add
+  `docs/developer/future_work.rst` entries (see "Recording follow-ups" in
+  `AGENTS.md`).
 - If no merge request exists, say so and skip this step.
