@@ -1,1 +1,1 @@
-`AGENTS.md` and `/branch-review` now ask agents to record small follow-ups worth doing later, such as Known limitations items: confirmed work (bugs, limitations and tasks) as GitLab issues drafted for the user's approval, and unconfirmed ideas as entries in `docs/developer/future_work.rst`.
+`AGENTS.md` and `/branch-review` now ask agents to record small follow-ups worth doing later, such as Known limitations items, as entries in `docs/developer/future_work.rst`, which now accepts them as well as ideas.
