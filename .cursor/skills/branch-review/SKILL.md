@@ -105,6 +105,9 @@ branch diff. Do this even if the current title or description looks close.
 - Find the MR: `glab mr view` or
   `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
   (find the IID with `glab mr list --source-branch <branch>` if needed).
+- For findings left for later, first apply "Recording follow-ups" in
+  `AGENTS.md`, so any new `future_work.rst` entry is committed before the
+  description is refreshed.
 - Title: a concise, accurate summary of the committed change.
 - Description: follow `.gitlab/merge_request_templates/Default.md` and keep
   every section current (Motivation, Summary of changes, Behavior changes,
@@ -112,5 +115,4 @@ branch diff. Do this even if the current title or description looks close.
   diff. Look for stale claims: changes that were later reverted or reworked,
   CI/test statements that no longer hold, and new commits not yet reflected.
 - Record that `/branch-review` was run in **Automatic code review**.
-- For findings left for later, apply "Recording follow-ups" in `AGENTS.md`.
 - If no merge request exists, say so and skip this step.
