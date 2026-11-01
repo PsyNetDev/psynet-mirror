@@ -86,7 +86,11 @@ Flag:
 
 ## 6) Report format
 
-Present findings first, ordered by severity.
+Present findings first, ordered by severity. Tag each finding, missing test
+and refactoring item high, medium or low: high for serious correctness,
+data-loss or security problems; medium for other likely bugs, misleading
+behavior or docs, and missing tests for changed behavior; low for wording,
+style and optional refactors.
 
 Use this structure:
 

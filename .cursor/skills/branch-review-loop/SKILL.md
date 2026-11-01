@@ -48,7 +48,7 @@ for the user's approval. They may prefer fewer reviews or other models.
   at the current head and find no high or medium issues. Their lows don't
   need a third review.
 - Any commit after the first of those two restarts the count, except one
-  that only rewords comments, docs or `changelog.d/` fragments; record such
+  that only rewords comments or `changelog.d/` fragments; record such
   commits in the MR description.
 - Reviews read the diff; they don't replace running the change end to end
   (`psynet test local` in a relevant demo; see "Testing" in `AGENTS.md`).
