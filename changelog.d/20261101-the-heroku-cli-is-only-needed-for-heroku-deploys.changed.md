@@ -1,0 +1,1 @@
+The Heroku CLI is no longer a PsyNet installation requirement, because local servers now run with honcho; you only need it to deploy to Heroku. The experiment `Dockerfile` and GitHub test workflow templates no longer install it, so run `psynet scripts update` to drop it from existing experiments.

@@ -7,12 +7,6 @@ FROM python:{python_major_minor}-bookworm
 
 RUN pip install uv
 
-
-# This is necessary for installing Heroku CLI. Remove it once we remove Heroku.
-# Heroku CLI is currently needed to run `psynet test local`, this should change soon
-RUN apt-get update && apt-get install -y nodejs npm
-RUN curl https://cli-assets.heroku.com/install.sh | sh
-
 RUN mkdir /experiment
 WORKDIR /experiment
 

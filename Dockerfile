@@ -30,12 +30,6 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
     node --version && npm --version
 
-# Heroku CLI is currently needed to run `psynet test local`, this should change soon
-RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \
-        --output /tmp/heroku-install.sh https://cli-assets.heroku.com/install.sh && \
-    sh /tmp/heroku-install.sh && \
-    rm /tmp/heroku-install.sh && \
-    heroku --version
 RUN service redis-server start
 ENV HEADLESS=TRUE
 
