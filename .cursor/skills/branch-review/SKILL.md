@@ -106,8 +106,8 @@ branch diff. Do this even if the current title or description looks close.
   `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
   (find the IID with `glab mr list --source-branch <branch>` if needed).
 - For findings left for later, first apply "Recording follow-ups" in
-  `AGENTS.md`, so any new `future_work.rst` entry is committed before the
-  description is refreshed.
+  `AGENTS.md`, so any `future_work.rst` entry is committed, or the issue
+  exists to be linked, before the description is refreshed.
 - Title: a concise, accurate summary of the committed change.
 - Description: follow `.gitlab/merge_request_templates/Default.md` and keep
   every section current (Motivation, Summary of changes, Behavior changes,
