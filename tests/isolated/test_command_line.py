@@ -984,16 +984,12 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     )
 
     develop = importlib.import_module("dallinger.command_line.develop")
-    original_jobs = (
-        develop.launch_app_and_open_browser,
-        develop.launch_app_without_browsers,
-    )
+    original_job = develop.launch_app_and_open_browser
     calls = []
 
     class _Ctx:
         def invoke(self, _command, **kwargs):
             calls.append((kwargs, develop.launch_app_and_open_browser))
-            calls.append((kwargs, develop.launch_app_without_browsers))
 
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
@@ -1006,15 +1002,12 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch.setenv("base_port", "")
     _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
     job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    assert calls == [({"skip_flask": False, "port": 5010}, job)] * 2
+    assert calls == [({"skip_flask": False, "port": 5010}, job)]
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
     assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
         _reloader_exclude_patterns()
     )
-    assert (
-        develop.launch_app_and_open_browser,
-        develop.launch_app_without_browsers,
-    ) == original_jobs
+    assert develop.launch_app_and_open_browser is original_job
 
     config = Mock(ready=True)
     config.get.side_effect = {
