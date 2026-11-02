@@ -47,7 +47,11 @@ function extractRecruitmentUrlFromLine(line) {
       if (parsed.pathname !== "/ad") {
         continue;
       }
-      const requiredParams = ["recruiter", "assignmentId", "hitId", "workerId"];
+      // The console shows a single link that creates a participant on each
+      // visit; later recruitments and --legacy debug log one link per participant.
+      const requiredParams = parsed.searchParams.has("generate_tokens")
+        ? ["recruiter"]
+        : ["recruiter", "assignmentId", "hitId", "workerId"];
       if (!requiredParams.every((param) => parsed.searchParams.has(param))) {
         continue;
       }
