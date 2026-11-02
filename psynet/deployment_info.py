@@ -291,8 +291,9 @@ def warn_about_uncommitted_deployment_changes(confirm):
     click.secho(
         "Warning: these files have changes that aren't committed to Git:\n"
         f"{format_path_list(paths)}\n"
-        "Commit them first if you want Git to have an exact record of what "
-        "you deployed.",
+        "The deployment records the Git commit, so it will not match your "
+        "files exactly, and 'psynet export' will ask you to confirm the "
+        "mismatch. Commit the changes first to keep the record exact.",
         fg="yellow",
         err=True,
     )
