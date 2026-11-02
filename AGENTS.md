@@ -263,6 +263,13 @@ a public API or migration.
 When running `/branch-review`, always update the merge request title and
 description so they match the committed branch diff.
 
+## Recording follow-ups
+
+When a review or dogfood leaves a small follow-up worth doing later (such as
+a Known limitations item), add an entry to `docs/developer/future_work.rst`
+in the same merge request (or a small docs merge request if there is none),
+in that file's Date / Problem / Idea format, one entry per item.
+
 ## CLI development
 
 Use Click for new and refactored command-line interfaces, following the
