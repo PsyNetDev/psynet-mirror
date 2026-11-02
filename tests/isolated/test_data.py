@@ -1,4 +1,14 @@
-from psynet.data import SQLBase, SQLMixin
+from psynet.data import SQLBase, SQLMixin, sql_base_classes
+
+
+def test_every_dallinger_table_has_a_base_class():
+    """Database templates and exports can contain any Dallinger table."""
+    dallinger_tables = {
+        mapper.local_table.name
+        for mapper in SQLBase.registry.mappers
+        if mapper.class_.__module__ == "dallinger.models"
+    }
+    assert dallinger_tables <= sql_base_classes().keys()
 
 
 class CustomTableWithImportableNameLongerThanFiftyCharacters(SQLBase, SQLMixin):

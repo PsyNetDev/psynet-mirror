@@ -127,7 +127,11 @@ def _check_docker_constraints_compile(
     dockerfile_path: Path,
     python_versions=supported_python_major_minor_versions,
 ) -> None:
-    """Validate the vendored constraints for every supported Python version."""
+    """Validate the vendored constraints for every supported Python version.
+
+    Each version is checked at its latest patch release, as the Docker image
+    for that version ships it.
+    """
     default_python_version = _get_docker_python_version(dockerfile_path)
     if default_python_version not in python_versions:
         raise ValueError(

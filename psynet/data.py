@@ -23,8 +23,8 @@ from dallinger.models import (  # noqa
     Node,  # noqa
     Notification,  # noqa
     Question,  # noqa
-    RealtimeEvent,  # noqa
-    RealtimeSession,  # noqa
+    RealtimeEvent,
+    RealtimeSession,
     Recruitment,  # noqa
     SharedMixin,
     Transformation,  # noqa

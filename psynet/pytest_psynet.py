@@ -499,8 +499,7 @@ def clear_workers():
     """Stop leftover local servers that use this test run's database."""
 
     def _zap():
-        # Once a worker stops, heroku local's foreman exits, and then the
-        # Heroku CLI that started it.
+        # Once a worker stops, the honcho process that started it exits.
         kill_psynet_worker_processes()
 
     _zap()
