@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlencode
 
 import pytest
 from dallinger import db
@@ -552,7 +553,10 @@ def test_complete_timeline_visit_backstops_worker_complete(db_session):
         response = Experiment._route_timeline(experiment, participant, mode=None)
 
     assert response.status_code in (301, 302)
-    assert f"/recruiter-exit?participant_id={participant_id}" in response.location
+    assert response.location.endswith(
+        "/recruiter-exit?"
+        + urlencode({"participant_id": participant_id, "unique_id": unique_id})
+    )
 
     db.session.commit()
     db.session.remove()
@@ -584,7 +588,10 @@ def test_complete_timeline_visit_survives_worker_complete_closing_the_session(
         response = Experiment._route_timeline(experiment, participant, mode=None)
 
     assert response.status_code in (301, 302)
-    assert f"/recruiter-exit?participant_id={participant_id}" in response.location
+    assert response.location.endswith(
+        "/recruiter-exit?"
+        + urlencode({"participant_id": participant_id, "unique_id": unique_id})
+    )
 
 
 def test_ensure_worker_complete_is_idempotent(db_session):

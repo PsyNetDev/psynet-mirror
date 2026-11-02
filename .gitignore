@@ -38,6 +38,9 @@ node_modules
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Dallinger's JSON server log, written to the working directory
+logs.jsonl*
+
 # Unit test / coverage reports
 htmlcov/
 test-results/

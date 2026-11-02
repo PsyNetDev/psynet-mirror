@@ -17,10 +17,11 @@ You will install:
 - Google Chrome, recommended for local development and testing (participants
   can also use Edge, Firefox, and Safari);
 - the PostgreSQL client library (libpq), which PsyNet's database driver is
-  built against;
-- the Heroku command-line tool, which ``psynet test local`` currently uses to
-  run its processes. You don't need a Heroku account, and this step will go
-  away in a future release.
+  built against.
+
+You only need the `Heroku CLI <https://devcenter.heroku.com/articles/heroku-cli>`_
+for ``psynet`` commands that work with Heroku apps, such as
+``psynet deploy heroku`` and ``psynet export heroku``.
 
 Choose your operating system:
 
@@ -40,7 +41,7 @@ Choose your operating system:
 
       .. code-block:: bash
 
-         brew install uv git libpq heroku/brew/heroku
+         brew install uv git libpq
          brew install --cask docker google-chrome
          echo 'export PATH="$(brew --prefix libpq)/bin:$PATH"' >> ~/.zshrc
 
@@ -63,7 +64,6 @@ Choose your operating system:
          sudo apt update
          sudo apt install git curl build-essential libpq-dev
          curl -LsSf https://astral.sh/uv/install.sh | sh
-         curl https://cli-assets.heroku.com/install-ubuntu.sh | sh
 
       Open a new terminal so that ``uv`` is on your ``PATH``.
 

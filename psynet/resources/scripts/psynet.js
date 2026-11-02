@@ -3319,7 +3319,7 @@
     // /timeline visits as a backstop.
     psynet.finishAndGoToExit = function () {
       const participantId = dallinger.identity.participantId;
-      const exitRoute = "/recruiter-exit?participant_id=" + participantId;
+      const exitRoute = dallinger.recruiterExitRoute();
       return dallinger
         .post("/worker_complete", { participant_id: participantId })
         .done(function () {
@@ -4053,7 +4053,8 @@
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
       return window.location.replace(
-        `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
+        "/terminate_participant?" +
+          new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
 

@@ -323,6 +323,23 @@ def psynet_loaded(driver):
     return psynet_page_ready(driver)
 
 
+def wait_for_exit_page(driver, max_wait=5.0):
+    """Wait until the browser has loaded the recruiter exit page, not an error page."""
+    wait_until(
+        lambda: "recruiter-exit" in driver.current_url,
+        max_wait=max_wait,
+        error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
+    )
+    wait_until(
+        lambda: driver.execute_script("return document.readyState") == "complete",
+        max_wait=max_wait,
+        error_message="The recruiter-exit page never finished loading.",
+    )
+    assert not driver.find_elements(By.ID, "psynet-error-page"), (
+        "The recruiter-exit route rendered an error page."
+    )
+
+
 def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0):
     def get_uuid():
         return driver.execute_script("return window.pageUuid")
@@ -371,11 +388,7 @@ def next_page(driver, button_identifier, by=By.ID, finished=False, max_wait=10.0
     except ElementClickInterceptedException:
         driver.execute_script("arguments[0].click();", button)
     if finished:
-        wait_until(
-            lambda: "recruiter-exit" in driver.current_url,
-            max_wait=max_wait,
-            error_message="Never reached the recruiter-exit route, seems like the experiment never finished.",
-        )
+        wait_for_exit_page(driver, max_wait=max_wait)
     else:
         if parse.urlparse(driver.current_url).path == "/error-page":
             raise RuntimeError(
@@ -486,8 +499,7 @@ def clear_workers():
     """Stop leftover local servers that use this test run's database."""
 
     def _zap():
-        # Once a worker stops, heroku local's foreman exits, and then the
-        # Heroku CLI that started it.
+        # Once a worker stops, the honcho process that started it exits.
         kill_psynet_worker_processes()
 
     _zap()

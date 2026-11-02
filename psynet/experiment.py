@@ -1,4 +1,5 @@
 import configparser
+import hmac
 import inspect
 import json
 import logging
@@ -1161,6 +1162,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.load_deployment_config()
         self.asset_storage.on_every_launch()
         self.record_experiment_status()
+
+    @property
+    def protected_routes(self):
+        """Dallinger routes PsyNet always protects, plus any the config adds."""
+        return [*_protected_routes, *super().protected_routes]
 
     @staticmethod
     def before_request():
@@ -2350,7 +2356,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "host": "0.0.0.0",
             "initial_recruitment_size": INITIAL_RECRUITMENT_SIZE,
             "label": cls.get_experiment_folder_name(),
-            "lock_table_when_creating_participant": False,
             "loglevel": 1,
             "loglevel_worker": 1,
             "min_reward_for_paid_early_exit": 0.20,
@@ -2358,7 +2363,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "prolific_enable_return_for_bonus": True,
             "prolific_pay_unsuccessful": True,
             "prolific_unsuccessful_topup": True,
-            "protected_routes": json.dumps(_protected_routes),
             "show_early_exit_button": False,
             "show_footer": True,
             "show_progress_bar": True,
@@ -3630,6 +3634,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         self.commit_payment_state()
         return code_type
 
+    def check_recruiter_exit(self, participant):
+        """Refuse ``/recruiter-exit`` unless its ``unique_id`` is the participant's.
+
+        An experiment that overrides this method must return the result of
+        ``super().check_recruiter_exit(participant)`` whenever it would
+        otherwise return ``None``.
+        """
+        supplied = request.args.get("unique_id", "")
+        if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
+            return None
+        logger.warning(
+            "Refused /recruiter-exit for participant_id=%s: its unique_id is "
+            "missing or belongs to another participant.",
+            participant.id,
+        )
+        response = make_response(self.error_page())
+        response.status_code = 403
+        return response
+
     def on_recruiter_submission_complete(self, participant, event):
         """Record payment fields, complete or approve on the platform, pay the bonus, and recruit.
 
@@ -3746,6 +3769,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "page": page.__json__(participant),
         }
 
+    @staticmethod
+    def _stale_page_payload():
+        _p = get_translator(context=True)
+        return {
+            "submission": "rejected",
+            "message": _p(
+                "timeline_problem",
+                "Synchronization problem detected. "
+                "Are you running the same experiment in multiple browser tabs? "
+                "Please close all other tabs and refresh the page.",
+            ),
+        }
+
     def process_response(
         self,
         participant_id,
@@ -3829,11 +3865,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     .populate_existing()
                     .get(participant_id)
                 )
-            if not isinstance(participant, Bot):
+            if not isinstance(participant, Bot) and page_uuid == participant.page_uuid:
                 participant.client_ip_address = client_ip_address
             if Experiment._pending_redirect_replaces_open_page(participant):
-                if page_uuid != participant.page_uuid:
+                if page_uuid != participant.page_uuid and not (
                     Experiment._settle_stale_hold(participant, page_uuid)
+                ):
+                    return ResponseResult(payload=self._stale_page_payload())
                 self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
                     participant, self.timeline.get_current_elt(self, participant)
@@ -3854,17 +3892,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         payload=self._approved_payload(participant, page),
                         page=page,
                     )
-                return ResponseResult(
-                    payload={
-                        "submission": "rejected",
-                        "message": _p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
-                        ),
-                    }
-                )
+                return ResponseResult(payload=self._stale_page_payload())
             if _is_timeline_hold(event):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
@@ -5598,8 +5626,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         return success_response()
 
-    @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/node/<int:node_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_node(node_id):
         from dallinger.models import Node
@@ -5608,8 +5637,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         node.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/info/<int:info_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/info/<int:info_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_info(info_id):
         from dallinger.models import Info
@@ -5618,8 +5648,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         info.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/trial/<int:trial_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/trial/<int:trial_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_trial(trial_id):
         from .trial.main import Trial
@@ -5630,8 +5661,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         trial.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/network/<int:network_id>/grow", methods=["GET", "POST"])
+    @experiment_route("/network/<int:network_id>/grow", methods=["POST"])
     @classmethod
+    @login_required
     @with_transaction
     def grow_network(cls, network_id):
         exp = get_experiment()
@@ -5647,9 +5679,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route(
         "/network/<int:network_id>/call_async_post_grow_network",
-        methods=["GET", "POST"],
+        methods=["POST"],
     )
     @staticmethod
+    @login_required
     @with_transaction
     def call_async_post_grow_network(network_id):
         from .trial.main import NetworkTrialMaker
@@ -6192,9 +6225,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     plan,
                 )
             if participant.complete:
-                participant_id = participant.id
+                exit_query = urlencode(
+                    {
+                        "participant_id": participant.id,
+                        "unique_id": participant.unique_id,
+                    }
+                )
                 cls._ensure_worker_complete(experiment, participant)
-                return redirect(f"/recruiter-exit?participant_id={participant_id}")
+                return redirect(f"/recruiter-exit?{exit_query}")
             if mode not in (None, "json"):
                 raise ValueError(
                     f"Unsupported /timeline mode '{mode}'. "
@@ -7785,6 +7823,7 @@ _protected_routes = [
     "/question/<participant_id>",
     "/node/<int:node_id>/neighbors",
     "/node/<participant_id>",
+    "/participant/<participant_id>",
     "/node/<int:node_id>/vectors",
     "/node/<int:node_id>/connect/<int:other_node_id>",
     "/info/<int:node_id>/<int:info_id>",

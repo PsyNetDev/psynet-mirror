@@ -2665,6 +2665,25 @@ def test_a_suite_drives_remote_tests_through_their_json_results(
     assert tester.remote_metadata == {"psynet_version": "remote"}
 
 
+def test_performance_summary_handles_no_completed_or_failed_bots():
+    result = _base_result(
+        total_bots_started=1,
+        bots_succeeded=1,
+        bots_failed=0,
+        bots_incomplete=0,
+        total_requests=0,
+        key_requests=0,
+        request_errors=0,
+        median_response_time=None,
+        p95_response_time=0.0,
+        max_response_time=None,
+        avg_bot_duration=None,
+        requests_per_sec=None,
+    )
+    lines = format_performance_summary([result])
+    assert isinstance(lines, list)
+
+
 def _remote_search(
     monkeypatch,
     reset=False,
