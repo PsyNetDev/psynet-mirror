@@ -6437,7 +6437,11 @@ def test_export_is_saved_before_server_cleanup(
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://test")
     monkeypatch.setattr("psynet.perf_test.PerformanceTester", lambda **kwargs: tester)
     monkeypatch.setattr(
-        tester, "run_test", lambda title, n, *args: PerformanceTestResult(n_bots=n)
+        tester,
+        "run_test",
+        lambda title, n, *args: PerformanceTestResult(
+            n_bots=n, db_rows_after={"participant": n, "response": 2 * n}
+        ),
     )
     monkeypatch.setattr(tester, "pause_between_tests", lambda *args: None)
     monkeypatch.setattr("psynet.perf_test.runtime.raise_open_file_limit", lambda: None)
@@ -6483,10 +6487,14 @@ def test_export_is_saved_before_server_cleanup(
         test_label=test_label,
     )
 
-    rows = json.loads(output.read_text())["results"]
-    assert rows[0]["export_duration_s"] is None or len(rows) == 1
-    assert rows[-1]["export_duration_s"] == (2.5 if expect_export else None)
-    assert rows[-1]["export_error"] is None
+    expected = {
+        "duration_s": 2.5,
+        "error": None,
+        "db_rows": {"participant": 10, "response": 20},
+    }
+    assert json.loads(output.read_text()).get("export") == (
+        expected if expect_export else None
+    )
     assert measure.call_count == int(expect_export)
     assert stop.call_count == (0 if existing else 1)
 

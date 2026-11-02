@@ -6993,6 +6993,7 @@ def _run_performance_suite(
     if find_capacity:
         options["confirm"] = not no_confirm
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
+    export_record = None
 
     def save_json(all_results, finished=False):
         if json_output:
@@ -7000,7 +7001,11 @@ def _run_performance_suite(
                 json_output,
                 suite,
                 all_results,
-                metadata={**metadata, "started_at": started_at},
+                metadata={
+                    **metadata,
+                    "started_at": started_at,
+                    "export": export_record,
+                },
                 options=options,
                 finished=finished,
                 quiet=quiet,
@@ -7024,7 +7029,7 @@ def _run_performance_suite(
         else:
             all_results = suite.run(n_bots, bot_log_file=bot_log_file)
         if export and all_results:
-            _record_performance_export(all_results)
+            export_record = _measure_export(all_results[-1].db_rows_after)
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
@@ -7491,11 +7496,23 @@ def _stop_server(server_info):
     print(f"Server stopped (log: {tmp_log_path})")
 
 
-def _record_performance_export(results):
-    """Measure the final export before saving results or stopping the server."""
+def _measure_export(db_rows):
+    """Time the export of the database after the last test, which holds ``db_rows``.
+
+    Returns
+    -------
+    dict
+        The ``export`` record of the JSON results: ``duration_s``, ``error``
+        (``None`` on success) and ``db_rows``, the rows in each table.
+    """
+    sizes = [
+        f"{db_rows[table]:,} {table}s"
+        for table in ("participant", "response")
+        if table in db_rows
+    ]
+    print(f"\n▶ Exporting {' and '.join(sizes) or 'the database'}...")
     duration, error = _time_export()
-    results[-1].export_duration_s = duration
-    results[-1].export_error = error
+    return {"duration_s": duration, "error": error, "db_rows": dict(db_rows)}
 
 
 def _path_with_interpreter_bin():
@@ -7514,7 +7531,6 @@ def _time_export():
     tuple
         ``(duration_s, error)``, where ``error`` is ``None`` on success.
     """
-    print("\n▶ Running export...")
     start = time.time()
     try:
         with tempfile.TemporaryDirectory(prefix="psynet_export_") as tmpdir:
