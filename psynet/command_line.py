@@ -51,7 +51,6 @@ from dallinger.config import experiment_available, get_config
 from dallinger.deployment_plan import DeploymentPolicyError
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import ProlificRecruiter
-from dallinger.utils import port_is_open
 from dallinger.version import __version__ as dallinger_version
 from sqlalchemy.exc import ProgrammingError
 from yaspin import yaspin
@@ -90,7 +89,7 @@ from .experiment_scaffold import (
     requirement_includes_experiment_extra,
     scaffold_experiment_directory,
 )
-from .log import bold, error
+from .log import bold
 from .lucid import get_lucid_service
 from .recruiters import BaseLucidRecruiter, GenericRecruiter, HotAirRecruiter
 from .redis import redis_vars
@@ -1404,36 +1403,6 @@ def _cleanup_exp_directory():
             shutil.rmtree(dir)
         except FileNotFoundError:
             pass
-
-
-def _check_port_available():
-    """Raise ClickException if configured base_port is already in use."""
-    config = get_config(load=True)
-    port = config.get("base_port")
-    port_in_use = port_is_open(port)
-    if not port_in_use:
-        return
-
-    # Port is occupied — gather diagnostics
-    msg = error(f"Port {port} is already in use.")
-
-    if sys.platform in ("darwin", "linux"):
-        lsof_args = ["lsof", "-i", f":{port}", "-P", "-n"]
-        try:
-            result = subprocess.run(
-                lsof_args,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            lsof_out = result.stdout.strip()
-            if lsof_out:
-                msg += f"\n\nlsof output:\n{lsof_out}"
-        except Exception:
-            pass
-        msg += f"\n\nTo investigate, run: {' '.join(lsof_args)}"
-
-    raise click.ClickException(msg)
 
 
 def _develop_path(config):
@@ -6733,13 +6702,14 @@ def performance_test(ctx):
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
 @click.option(
-    "--no-export",
-    is_flag=True,
-    help="Skip export timing after each test stage",
+    "--export/--no-export",
+    default=True,
+    show_default=True,
+    help="Time psynet export local after the tests.",
 )
 @_in_isolated_test_environment
 def performance_test__local(
-    existing=False, json_output=None, debug=False, no_export=False, **options
+    existing=False, json_output=None, debug=False, export=True, **options
 ):
     """
     Run a performance test of the experiment locally.
@@ -6764,13 +6734,13 @@ def performance_test__local(
             existing=existing,
             json_output=json_output,
             debug=debug,
-            no_export=no_export,
+            export=export,
             **options,
         )
 
 
 def _run_performance_test_local(
-    *, existing, json_output, debug, no_export=False, **options
+    *, existing, json_output, debug, export=False, **options
 ):
     """Run a local performance test and return its result records.
 
@@ -6779,10 +6749,10 @@ def _run_performance_test_local(
     _check_arrival_options(**options)
     if existing:
         return _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, no_export=no_export, **options
+            debug=debug, json_output=json_output, export=export, **options
         )
     return _run_performance_test_with_new_server(
-        debug=debug, json_output=json_output, no_export=no_export, **options
+        debug=debug, json_output=json_output, export=export, **options
     )
 
 
@@ -6877,28 +6847,6 @@ def _performance_log_directory():
     return directory
 
 
-def _resolve_perf_test_options(exp, n_bots, stagger, time_factor, duration_minutes):
-    """Fill in CLI arguments with experiment-level defaults when not provided.
-
-    Returns a dict with concrete values for bot_counts, stagger, time_factor,
-    and duration_minutes.
-    """
-    return {
-        "bot_counts": (
-            [int(x.strip()) for x in n_bots.split(",")] if n_bots else [exp.test_n_bots]
-        ),
-        "stagger": float(stagger)
-        if stagger is not None
-        else exp.test_parallel_stagger_interval_s,
-        "time_factor": time_factor if time_factor is not None else 1.0,
-        "duration_minutes": (
-            duration_minutes
-            if duration_minutes is not None
-            else exp.test_duration_minutes
-        ),
-    }
-
-
 def _run_performance_test_with_existing_server(
     *,
     debug=False,
@@ -6913,7 +6861,7 @@ def _run_performance_test_with_existing_server(
     test_label=None,
     suite_started_s_ago=None,
     force=False,
-    no_export=True,
+    export=False,
     **suite_options,
 ):
     """Run performance test connecting to an already-running server.
@@ -6998,7 +6946,7 @@ def _run_performance_test_with_existing_server(
                 metadata=_collect_run_metadata(exp.label),
                 json_output=json_output,
                 quiet=remote,
-                no_export=no_export,
+                export=export,
                 **suite_options,
             )
         with tester.bot_runner(bot_counts[0], bot_log_file):
@@ -7014,8 +6962,6 @@ def _run_performance_test_with_existing_server(
                 tester.duration_minutes,
                 arrival_minutes,
             )
-        if not no_export:
-            _record_performance_export([result])
         if json_output:
             _write_json_results(
                 json_output,
@@ -7048,7 +6994,7 @@ def _run_performance_suite(
     ssh_options=None,
     quiet=False,
     cleanup=None,
-    no_export=True,
+    export=False,
 ):
     """Run the tests of ``n_bots`` with ``tester`` and return their results.
 
@@ -7077,9 +7023,9 @@ def _run_performance_suite(
     cleanup : callable, optional
         Called after ``database_reset`` closes, even after an error, for
         example to start the services it stopped.
-    no_export : bool
-        Skip the final local export. Local CLI runs forward their --no-export
-        setting; remote suites leave this enabled.
+    export : bool
+        Time ``psynet export local`` after the last test. Only for local
+        servers: remote suites would time the export of the local database.
 
     Raises
     ------
@@ -7129,7 +7075,7 @@ def _run_performance_suite(
             )
         else:
             all_results = suite.run(n_bots, bot_log_file=bot_log_file)
-        if not no_export and all_results:
+        if export and all_results:
             _record_performance_export(all_results)
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
@@ -7454,10 +7400,7 @@ def _start_local_server_and_wait_for_ready(
     env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
-    # Ensure the current Python's bin dir is on PATH so psynet is found
-    # even when invoked from a virtualenv without PATH activation.
-    bin_dir = os.path.dirname(sys.executable)
-    env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+    env["PATH"] = _path_with_interpreter_bin()
     env.update(extra_env or {})
 
     try:
@@ -7485,14 +7428,10 @@ def _start_local_server_and_wait_for_ready(
             daemon=True,
         )
         drain_thread.start()
-
-        base_url = _extract_base_url_from_server_output(process.before or "")
-
         return {
             "process": process,
             "tmp_log_path": tmp_log_path,
             "log_file": log_file,
-            "base_url": base_url,
         }
     except (pexpect.TIMEOUT, pexpect.EOF) as exc:
         recent_output = (process.before or "").splitlines()[-50:]
@@ -7588,7 +7527,6 @@ def _stop_server(server_info):
     process = server_info["process"]
     tmp_log_path = server_info["tmp_log_path"]
     log_file = server_info["log_file"]
-    externally_managed = server_info.get("externally_managed_log", False)
     try:
         stop_local_debug_process(process)
     finally:
@@ -7597,27 +7535,12 @@ def _stop_server(server_info):
         except Exception:
             pass
 
-        if not externally_managed:
-            try:
-                log_file.close()
-            except Exception:
-                pass
+        try:
+            log_file.close()
+        except Exception:
+            pass
 
-        config = get_config(load=True)
-        base_port = config.get("base_port")
-        deadline = time.monotonic() + 10
-        while port_is_open(base_port) and time.monotonic() < deadline:
-            time.sleep(0.2)
-        if port_is_open(base_port):
-            print(
-                f"Port {base_port} still in use after server stop; "
-                "next stage may fail to start."
-            )
-
-        if externally_managed:
-            print("Server stopped")
-        else:
-            print(f"Server stopped (log: {tmp_log_path})")
+    print(f"Server stopped (log: {tmp_log_path})")
 
 
 def _record_performance_export(results):
@@ -7627,73 +7550,56 @@ def _record_performance_export(results):
     results[-1].export_error = error
 
 
-def _time_export(_run=subprocess.run):
-    """Run ``psynet export local`` in a subprocess.
+def _path_with_interpreter_bin():
+    """Return ``PATH`` with this interpreter's ``bin`` directory first.
 
-    Returns ``(duration_s, error_str)`` where ``error_str`` is None on success.
+    This finds ``psynet`` in an unactivated virtual environment.
     """
-    cmd = [
-        "psynet",
-        "export",
-        "local",
-        "--assets",
-        "none",
-    ]
+    return os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _time_export():
+    """Run ``psynet export local`` in a subprocess and time it.
+
+    Returns
+    -------
+    tuple
+        ``(duration_s, error)``, where ``error`` is ``None`` on success.
+    """
     print("\n▶ Running export...")
     start = time.time()
     try:
         with tempfile.TemporaryDirectory(prefix="psynet_export_") as tmpdir:
-            result = _run(
-                cmd + ["--path", tmpdir],
+            result = subprocess.run(
+                ["psynet", "export", "local", "--assets", "none", "--path", tmpdir],
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env={**os.environ, "PATH": _path_with_interpreter_bin()},
             )
             duration = time.time() - start
-        if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
-            err = f"Exit code {result.returncode}" + (f": {stderr}" if stderr else "")
-            print(f"Export finished with error in {duration:.1f}s: {err}")
-            return duration, err
-        print(f"Export completed in {duration:.1f}s")
-        return duration, None
     except subprocess.TimeoutExpired:
         duration = time.time() - start
-        err = "Export timed out (600s)"
-        print(err)
-        return duration, err
-    except Exception as e:
+        error = "Export timed out (600s)"
+    except OSError as e:
         duration = time.time() - start
-        err = str(e)
-        print(f"Export failed in {duration:.1f}s: {err}")
-        return duration, err
-
-
-def _extract_base_url_from_server_output(output):
-    # Workaround for a Dallinger bug: in legacy mode with num_dynos_web > 1,
-    # dallinger_get_base_url() picks a random port, so redis_vars["base_url"]
-    # can have the wrong port. Dallinger prints "Server is running on <url>"
-    # only after the server is confirmed reachable at that URL, so this source
-    # is reliable. Remove once Dallinger's multi-web-race-condition branch is merged.
-    for line in output.splitlines():
-        if "Server is running on" in line:
-            match = re.search(r"(https?://[^:\s]+:\d+)", line)
-            if match:
-                return match.group(1)
-    return None
-
-
-def _load_server_url(server_info):
-    """Load config from the experiment directory the server started in, then return the server's base URL."""
-    config = get_config(load=True)
-    working_dir = redis_vars.get("server_working_directory")
-    if working_dir:
-        config.load_from_file(os.path.join(working_dir, "config.txt"))
-    return server_info.get("base_url") or redis_vars.get("base_url")
+        error = f"Export could not run: {e}"
+    else:
+        error = None
+        if result.returncode != 0:
+            stderr_tail = "\n".join((result.stderr or "").strip().splitlines()[-20:])
+            error = f"Exit code {result.returncode}" + (
+                f": {stderr_tail}" if stderr_tail else ""
+            )
+    if error:
+        print(f"Export failed after {duration:.1f}s: {error}")
+    else:
+        print(f"Export completed in {duration:.1f}s")
+    return duration, error
 
 
 def _run_performance_test_with_new_server(
-    *, debug=False, json_output=None, no_export=False, **options
+    *, debug=False, json_output=None, export=False, **options
 ):
     """Run performance test after starting a new experiment server."""
     from .testing.locks import TEST_SESSION
@@ -7710,7 +7616,7 @@ def _run_performance_test_with_new_server(
         )
         try:
             all_results = _run_performance_test_with_existing_server(
-                debug=debug, json_output=json_output, no_export=no_export, **options
+                debug=debug, json_output=json_output, export=export, **options
             )
             print("Performance test completed.")
             return all_results
