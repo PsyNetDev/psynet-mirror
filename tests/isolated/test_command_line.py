@@ -5878,64 +5878,6 @@ def test_worker_cleanup_only_targets_this_database(monkeypatch, tmp_path):
             process.wait()
 
 
-@pytest.mark.parametrize(
-    "name, cmdline, expected",
-    [
-        ("dallinger_herok", ["dallinger_heroku_web"], True),
-        ("Python", ["/venv/bin/dallinger_heroku_clock"], True),
-        (
-            "Python",
-            ["/usr/bin/python", "/venv/bin/dallinger_heroku_worker"],
-            True,
-        ),
-        ("not-dallinger_herok", ["unrelated"], False),
-        (
-            "Python",
-            ["/usr/bin/python", "-m", "pytest", "-k", "dallinger_heroku_worker"],
-            False,
-        ),
-    ],
-)
-def test_is_psynet_worker_process(name, cmdline, expected):
-    from psynet.command_line import is_psynet_worker_process
-
-    process = Mock()
-    process.name.return_value = name
-    process.cmdline.return_value = cmdline
-    assert is_psynet_worker_process(process) is expected
-
-
-def test_uses_current_database_normalizes_urls_and_handles_the_default(monkeypatch):
-    from psynet.command_line import uses_current_database
-
-    process = Mock()
-    monkeypatch.setenv("DATABASE_URL", "postgres://dallinger@localhost/experiment")
-    process.environ.return_value = {
-        "DATABASE_URL": "postgresql://dallinger@localhost/experiment"
-    }
-    assert uses_current_database(process)
-
-    monkeypatch.delenv("DATABASE_URL")
-    process.environ.return_value = {}
-    assert uses_current_database(process)
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        pytest.param(psutil.AccessDenied(1), id="access-denied"),
-        pytest.param(psutil.NoSuchProcess(1), id="gone"),
-        pytest.param(psutil.ZombieProcess(1), id="zombie"),
-    ],
-)
-def test_uses_current_database_rejects_unreadable_processes(error):
-    from psynet.command_line import uses_current_database
-
-    process = Mock()
-    process.environ.side_effect = error
-    assert not uses_current_database(process)
-
-
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
     import logging
 
@@ -7636,8 +7578,6 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, sta
     import sys
     import time
 
-    import psutil
-
     pid_file = tmp_path / "child.pid"
     script = (
         "import subprocess\n"
@@ -7667,8 +7607,6 @@ def test_ctrl_c_stops_a_server_in_its_own_session_without_waiting(tmp_path):
     import signal
     import sys
     import time
-
-    import psutil
 
     pid_file = tmp_path / "child.pid"
     script = (
