@@ -268,12 +268,12 @@ def format_path_list(paths, limit=10):
     return "\n".join(lines)
 
 
-def warn_about_uncommitted_deployment_changes(confirm):
+def warn_about_uncommitted_deployment_changes(confirm_or_cancel):
     """Warn before a deployment whose files have uncommitted changes.
 
     Parameters
     ----------
-    confirm : callable or None
+    confirm_or_cancel : callable or None
         Asks the user whether to deploy anyway and cancels the deployment if
         they decline. ``None`` (non-interactive sessions) only warns, so
         scripted deployments keep working.
@@ -292,8 +292,8 @@ def warn_about_uncommitted_deployment_changes(confirm):
         fg="yellow",
         err=True,
     )
-    if confirm is not None:
-        confirm("Deploy anyway?")
+    if confirm_or_cancel is not None:
+        confirm_or_cancel("Deploy anyway?")
 
 
 def init(

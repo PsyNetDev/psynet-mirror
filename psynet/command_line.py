@@ -2097,7 +2097,7 @@ def run_pre_checks_deploy(local_, recruiter):
     if not local_:
         confirm_deploying_development_psynet()
         deployment_info.warn_about_uncommitted_deployment_changes(
-            confirm=_confirm_deployment if _stdin_is_interactive() else None
+            confirm_or_cancel=_confirm_deployment if _stdin_is_interactive() else None
         )
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):

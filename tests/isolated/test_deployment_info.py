@@ -109,20 +109,24 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
         Path("deploy.toml").write_text('version = 1\n[exclude]\nnames = [".env"]\n')
         _git("add", ".")
         _git("commit", "--quiet", "-m", "Initial commit")
-        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm_or_cancel=None
+        )
         assert capsys.readouterr().err == ""
 
         Path(".env").write_text("excluded")
         for i in range(12):
             Path(f"stimulus_{i:02}.txt").write_text("new")
-        deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm_or_cancel=None
+        )
         err = capsys.readouterr().err
         assert "  stimulus_00.txt" in err and "... and 2 more" in err
         assert ".env" not in err
 
         questions = []
         deployment_info.warn_about_uncommitted_deployment_changes(
-            confirm=questions.append
+            confirm_or_cancel=questions.append
         )
         assert questions == ["Deploy anyway?"]
 
