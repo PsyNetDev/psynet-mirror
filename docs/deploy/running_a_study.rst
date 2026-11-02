@@ -76,7 +76,8 @@ Check the code and dependencies
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
 - Heroku deploys with ``--docker`` push the image to a registry, so
   ``docker_image_base_name`` must be set in ``config.txt`` or
-  ``~/.dallingerconfig``. SSH deploys don't need it (see
+  ``~/.dallingerconfig`` and name a registry or namespace, for example
+  ``ghcr.io/<github-user>/<experiment>``. SSH deploys don't need it (see
   :doc:`/deploy/setting_up_a_server`).
 
 Consent

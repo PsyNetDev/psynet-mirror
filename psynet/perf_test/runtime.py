@@ -197,7 +197,7 @@ def prefill_database(n_participants, bot_log_file=None):
     n_bots = min(_PREFILL_BOTS, n_participants)
     logger.info("")
     logger.info(
-        bold(f"PRE-FILL: {n_participants:,} participants, {n_bots:,} bots at once")
+        bold(f"Pre-fill: {n_participants:,} participants, {n_bots:,} bots at once")
     )
     experiment = get_experiment()
     _fit_redis_pool_to_bots(n_bots)
@@ -414,6 +414,15 @@ class PerformanceTester:
             return None
         return self.estimated_duration_minutes * self.time_factor
 
+    def describe_bot_processes(self, max_bots):
+        """Return the number of bot processes for up to ``max_bots`` bots, for the suite's settings."""
+        n_processes = _choose_bot_processes(self.bot_processes, max_bots)
+        return (
+            f"{n_processes} (auto)"
+            if self.bot_processes == "auto"
+            else str(n_processes)
+        )
+
     @contextmanager
     def bot_runner(self, max_bots, bot_log_file):
         """Start the bot processes a suite of up to ``max_bots`` bots needs, if any.
@@ -425,8 +434,6 @@ class PerformanceTester:
         self._suite_started_at = datetime.datetime.now()
         n_processes = _choose_bot_processes(self.bot_processes, max_bots)
         self._n_bot_processes = n_processes
-        chosen = " (auto)" if self.bot_processes == "auto" else ""
-        logger.info(f"Bot processes:        {n_processes}{chosen}")
         if n_processes == 1:
             yield
             return
@@ -468,15 +475,14 @@ class PerformanceTester:
         """Run one test of ``n`` bots for ``duration_minutes``, print its results and return them.
 
         With ``arrival_minutes`` the bots arrive evenly over that window.
-        ``title`` heads the test's output, e.g. ``TEST 2/3``.
+        ``title`` heads the test's output, e.g. ``Test 2/3``.
         """
         logger.info("")
-        logger.info(bold("=" * 80))
-        logger.info(bold(f"{title}: Running with {n:,} concurrent bots"))
-        logger.info("")
+        logger.info(bold(title))
         arriving = f", arriving over {arrival_minutes:g} min" if arrival_minutes else ""
+        together = "" if arrival_minutes else " at once"
         logger.info(
-            f"\u25b6 Starting load test with {n:,} concurrent bots for "
+            f"Starting the load test with {n:,} bots{together} for "
             f"{duration_minutes:g} min{arriving}..."
         )
 
@@ -737,7 +743,11 @@ class PerformanceTester:
 
         # Build status line
         failed = bot_state.bots_failed_during_test
-        status = f"\U0001f916 Running: {running} | \u2713 Completed: {completed:,} | \u2717 Failed by experiment: {failed:,} | \u2717 Errors: {errors} | \u23f1 Avg: {avg_duration} | \u23f3 {mins_left}:{secs_left:02d} left"
+        status = (
+            f"Running: {running} | Completed: {completed:,} | "
+            f"Failed by the experiment: {failed:,} | Errors: {errors} | "
+            f"Avg: {avg_duration} | {mins_left}:{secs_left:02d} left"
+        )
 
         if not interactive:
             print(status, flush=True)

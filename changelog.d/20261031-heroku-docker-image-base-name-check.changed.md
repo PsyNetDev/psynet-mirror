@@ -1,0 +1,1 @@
+`psynet deploy heroku --docker` and `psynet debug heroku --docker` now use Dallinger's check of `docker_image_base_name`, before preparing the experiment. Besides being set, it must name a registry or namespace, for example `ghcr.io/<github-user>/<experiment>` or `<dockerhub-user>/<experiment>`.

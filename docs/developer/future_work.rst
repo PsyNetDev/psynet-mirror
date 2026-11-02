@@ -3,8 +3,8 @@
 Future work
 ===========
 
-This page records **unconfirmed** ideas for PsyNet maintainers. It is not a
-roadmap, not a commitment, and not a substitute for GitLab issues.
+This page records ideas and small follow-ups for PsyNet maintainers, such
+as limitations left by a merge request. It is not a roadmap or a commitment.
 
 Each idea is a section with Date, Problem, and Idea subsections. Delete
 the entry when it ships or is rejected. If it becomes a GitLab issue,
@@ -64,28 +64,6 @@ Idea
 Depend on ``psycopg2-binary`` (or ``psycopg[binary]``) in Dallinger so no
 local libpq is needed. The installation docs could then drop the libpq
 step entirely.
-
-Drop the Heroku CLI requirement
--------------------------------
-
-Date
-++++
-
-2026-09-24
-
-Problem
-+++++++
-
-``psynet test local`` uses the Heroku CLI only for its ``heroku local``
-process manager. Users have to install a non-Python tool for a platform
-they will not deploy to, and the docs have to explain why.
-
-Idea
-++++
-
-Replace ``heroku local`` in Dallinger with a Python process manager
-installed as a normal dependency, so the Python environment is the only
-requirement for local testing.
 
 Installation checker
 --------------------
