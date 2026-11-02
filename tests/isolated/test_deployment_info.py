@@ -3,7 +3,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import click
 import jsonpickle
 import pytest
 
@@ -111,7 +110,7 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
         _git("add", ".")
         _git("commit", "--quiet", "-m", "Initial commit")
         deployment_info.warn_about_uncommitted_deployment_changes(confirm=None)
-        assert "uncommitted" not in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
 
         Path(".env").write_text("excluded")
         for i in range(12):
@@ -121,12 +120,11 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
         assert "  stimulus_00.txt" in err and "... and 2 more" in err
         assert ".env" not in err
 
-        with pytest.raises(click.exceptions.Exit) as excinfo:
-            deployment_info.warn_about_uncommitted_deployment_changes(
-                confirm=lambda question: False
-            )
-        assert excinfo.value.exit_code == 1
-        assert "Deployment cancelled." in capsys.readouterr().err
+        questions = []
+        deployment_info.warn_about_uncommitted_deployment_changes(
+            confirm=questions.append
+        )
+        assert questions == ["Deploy anyway?"]
 
 
 def test_git_ignored_scaffold_files_are_not_uncommitted_changes(tmp_path):

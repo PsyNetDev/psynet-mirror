@@ -406,9 +406,11 @@ def test_live_deploys_ask_before_installing_a_development_psynet(
         assert not questions
         return
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(click.exceptions.Exit) as excinfo:
         command_line.confirm_deploying_development_psynet()
+    assert excinfo.value.exit_code == 1
     assert requirement in questions[0]
+    assert "Deployment cancelled." in capsys.readouterr().err
 
     monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
     command_line.confirm_deploying_development_psynet()

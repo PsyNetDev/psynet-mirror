@@ -274,14 +274,9 @@ def warn_about_uncommitted_deployment_changes(confirm):
     Parameters
     ----------
     confirm : callable or None
-        Asks the user whether to continue and returns a boolean. ``None``
-        (non-interactive sessions) only warns, so scripted deployments keep
-        working.
-
-    Raises
-    ------
-    click.exceptions.Exit
-        With exit code 1 if the user declines to continue.
+        Asks the user whether to deploy anyway and cancels the deployment if
+        they decline. ``None`` (non-interactive sessions) only warns, so
+        scripted deployments keep working.
     """
     import click
 
@@ -297,9 +292,8 @@ def warn_about_uncommitted_deployment_changes(confirm):
         fg="yellow",
         err=True,
     )
-    if confirm is not None and not confirm("Deploy anyway?"):
-        click.echo("Deployment cancelled.", err=True)
-        raise click.exceptions.Exit(1)
+    if confirm is not None:
+        confirm("Deploy anyway?")
 
 
 def init(
