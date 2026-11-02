@@ -52,7 +52,9 @@ COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
 # Generate PsyNet constraints.txt (experiment runtime + demos extras) and install it.
 # Use a vendored Dallinger dev-requirements snapshot so parallel CI Docker
 # builds do not depend on raw.githubusercontent.com availability.
-RUN uv pip compile --python-version ${PYTHON_VERSION} pyproject.toml \
+# Compile for the image's full Python version: uv reads a bare 3.11 as 3.11.0,
+# which rejects pins that need a later 3.11 patch release.
+RUN uv pip compile --python-version "$(python -c 'import platform; print(platform.python_version())')" pyproject.toml \
         --extra experiment --extra demos \
         --constraint dallinger-dev-requirements.txt \
         --output-file constraints.txt
