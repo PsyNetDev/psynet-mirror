@@ -6414,6 +6414,118 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     )
 
 
+# --- _run_performance_test_local export persistence ---
+
+
+@pytest.mark.parametrize(
+    "existing, export, test_label, expect_export",
+    [
+        (True, True, None, True),
+        (False, True, None, True),
+        (False, False, None, False),
+        # Each test of a remote suite runs alone with a label; the suite skips exports.
+        (True, True, "remote test", False),
+    ],
+)
+def test_export_is_saved_before_server_cleanup(
+    monkeypatch, tmp_path, existing, export, test_label, expect_export
+):
+    """Exercise the real suite and JSON writer with simulated bots and export."""
+    from psynet import command_line as cli
+    from psynet.perf_test import PerformanceTester, PerformanceTestResult
+
+    tester = PerformanceTester(authenticated_session=Mock(), base_url="http://test")
+    monkeypatch.setattr("psynet.perf_test.PerformanceTester", lambda **kwargs: tester)
+    monkeypatch.setattr(
+        tester,
+        "run_test",
+        lambda title, n, *args: PerformanceTestResult(
+            n_bots=n, db_rows_after={"participant": n, "response": 2 * n}
+        ),
+    )
+    monkeypatch.setattr(tester, "pause_between_tests", lambda *args: None)
+    monkeypatch.setattr("psynet.perf_test.runtime.raise_open_file_limit", lambda: None)
+    monkeypatch.setattr("psynet.perf_test.log_to_console", lambda *args: None)
+    monkeypatch.setattr(
+        "psynet.experiment.get_experiment",
+        lambda: Mock(
+            label="export-test",
+            estimated_duration_in_minutes=1,
+            test_duration_minutes=1,
+            test_parallel_stagger_interval_s=0.1,
+        ),
+    )
+    for name in (
+        "load_runtime_server_config",
+        "_check_existing_server_answers",
+        "_check_no_real_participants",
+        "_hold_experiment_directory",
+    ):
+        monkeypatch.setattr(cli, name, lambda *args: None)
+    monkeypatch.setattr(cli, "_collect_run_metadata", lambda label: {})
+    monkeypatch.setattr(cli, "_open_link_recruiter", lambda: False)
+    monkeypatch.setattr(cli, "_performance_log_directory", lambda: tmp_path)
+    monkeypatch.setattr(
+        cli, "_start_local_server_and_wait_for_ready", lambda *args, **kwargs: {}
+    )
+    stop = Mock()
+    monkeypatch.setattr(cli, "_stop_server", stop)
+
+    def time_export():
+        stop.assert_not_called()
+        return 2.5, None
+
+    measure = Mock(side_effect=time_export)
+    monkeypatch.setattr(cli, "_time_export", measure)
+    output = tmp_path / "results.json"
+    cli._run_performance_test_local(
+        existing=existing,
+        json_output=str(output),
+        debug=False,
+        export=export,
+        n_bots=[10] if test_label else [5, 10],
+        test_label=test_label,
+    )
+
+    expected = {
+        "duration_s": 2.5,
+        "error": None,
+        "db_rows": {"participant": 10, "response": 20},
+    }
+    assert json.loads(output.read_text()).get("export") == (
+        expected if expect_export else None
+    )
+    assert measure.call_count == int(expect_export)
+    assert stop.call_count == (0 if existing else 1)
+
+
+@pytest.mark.parametrize(
+    "outcome, expected_error",
+    [
+        (subprocess.CompletedProcess([], 0), None),
+        (
+            subprocess.CompletedProcess([], 1, stderr="config not found"),
+            "Exit code 1: config not found",
+        ),
+        (subprocess.CompletedProcess([], 2, stderr=""), "Exit code 2"),
+        (subprocess.TimeoutExpired([], 600), "Export timed out (600s)"),
+        (FileNotFoundError("psynet"), "Export could not run: psynet"),
+    ],
+)
+def test_time_export_reports_errors(outcome, expected_error):
+    from psynet.command_line import _time_export
+
+    effect = (
+        {"side_effect": outcome}
+        if isinstance(outcome, Exception)
+        else {"return_value": outcome}
+    )
+    with patch("psynet.command_line.subprocess.run", **effect):
+        duration, error = _time_export()
+    assert isinstance(duration, float)
+    assert error == expected_error
+
+
 @pytest.mark.parametrize(
     "option, value",
     [

@@ -33,9 +33,10 @@ Benchmarks are split by directory:
   debug-launch benchmark records the fastest of three launches per profile to
   damp that noise. Because the ``master`` job is allowed to fail (see below),
   slow-tier results are tracked in the published history rather than gating
-  merges. The slow ASV history focuses on median request latency and median
-  async-job queue delay; participant failures and incomplete bots are left
-  in the performance-test output instead of being tracked as ASV metrics.
+  merges. The slow ASV history focuses on median request latency, median
+  async-job queue delay and the time ``psynet export local`` takes after the
+  load test; participant failures and incomplete bots are left in the
+  performance-test output instead of being tracked as ASV metrics.
 
 Merge-request checks
 ====================
@@ -52,10 +53,11 @@ see :doc:`running_tests`. Merge requests stacked on another feature branch
 (whose target is neither ``master`` nor a ``release-`` branch) offer the job
 as a manual action instead of running it.
 
-Export performance is not included in the ASV suite. End-to-end exports depend
-on mutable database fixtures, filesystem caches, and subprocess startup, which
-do not provide a stable enough signal for the merge-request gate's fixed
-regression threshold. Export correctness remains covered by functional tests.
+Export performance is only tracked in the slow tier, as the export time of
+each experiment-performance benchmark. End-to-end exports depend on mutable
+database fixtures, filesystem caches, and subprocess startup, which do not
+provide a stable enough signal for the merge-request gate's fixed regression
+threshold. Export correctness remains covered by functional tests.
 
 Default-branch checks and publishing
 ====================================
