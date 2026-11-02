@@ -9,6 +9,7 @@ import inspect
 import io
 import itertools
 import json
+import logging
 import os
 import re
 import shlex
@@ -1997,7 +1998,7 @@ def psynet_browser_prefix(kind):
 
     ``kind`` is ``"chrome"`` (profile directory) or ``"chromedriver"`` (log file).
     The prefix includes a hash of ``DATABASE_URL``, which identifies a local
-    run in the same way as :func:`uses_current_database`.
+    run in the same way as :func:`list_psynet_worker_processes`.
     """
     return f"psynet-{kind}-{_database_url_tag()}-"
 
@@ -2013,49 +2014,11 @@ def _current_database_url():
     return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
 
 
-def uses_current_database(process):
-    """
-    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
-
-    Local servers inherit ``DATABASE_URL`` from the command that launched them,
-    so this distinguishes this experiment's leftovers from other local
-    experiments on the same machine. Processes whose environment can't be read
-    are treated as someone else's.
-    """
-    from dallinger.db import corrected_db_url, db_url_default
-
-    try:
-        url = process.environ().get("DATABASE_URL", db_url_default)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return False
-    return corrected_db_url(url) == _current_database_url()
-
-
 def list_psynet_worker_processes():
-    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
-    return [
-        p
-        for p in psutil.process_iter()
-        if is_psynet_worker_process(p) and uses_current_database(p)
-    ]
+    """List local Dallinger web, worker and real-time processes using this shell's database."""
+    from dallinger.heroku.tools import local_worker_processes
 
-
-def is_psynet_worker_process(process):
-    """Return whether ``process`` is a local Dallinger web or worker process."""
-    try:
-        # This version catches processes in Linux
-        if process.name().startswith("dallinger_herok"):
-            return True
-        # This version catches process in MacOS
-        if "python" in process.name().lower():
-            return any(
-                Path(argument).name.startswith("dallinger_heroku_")
-                for argument in process.cmdline()[:2]
-            )
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-
-    return False
+    return local_worker_processes(_current_database_url())
 
 
 def list_chromedriver_processes():
@@ -2082,8 +2045,6 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
     from .experiment import get_experiment
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
-
-    import logging
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -2371,7 +2332,10 @@ def _pre_launch(
         ssh_host = server_info["host"]
         ssh_user = server_info.get("user")
 
-        from dallinger.command_line.docker_ssh import ensure_remote_host_in_known_hosts
+        from dallinger.command_line.docker_ssh import (
+            _check_app_name_not_reserved,
+            ensure_remote_host_in_known_hosts,
+        )
 
         try:
             ensure_remote_host_in_known_hosts(ssh_host, ssh_user)
@@ -2382,6 +2346,8 @@ def _pre_launch(
         if app is None:
             app = _default_ssh_app_name(server)
             deployment_info.write(app=app)
+        # Dallinger checks this too, but only after ``prepare`` has run.
+        _check_app_name_not_reserved(app)
         resolved_ingress = server_ingress(server_info, ingress)
         deployment_info.write(
             ssh_host=ssh_host,
@@ -2705,7 +2671,6 @@ def _invoke_docker_ssh_deploy(
         kwargs["ingress"] = ingress
     if "show_summary" in params:
         kwargs["show_summary"] = dallinger_summary
-    _default_image_base_name(app)
     output = io.StringIO()
     with redirect_stdout(_OutputTee(sys.stdout, output)):
         result = ctx.invoke(command, **kwargs)
@@ -2721,28 +2686,6 @@ def _invoke_docker_ssh_deploy(
         if link:
             result["participant_link"] = link
     return result
-
-
-def _default_image_base_name(app):
-    """Name an SSH deploy's image after the app if ``docker_image_base_name`` is unset.
-
-    PsyNet's SSH deploys build the image on the server and never push it, so
-    any valid Docker repository name works. The name goes on the loaded
-    config, not into ``config_options``: the pinned Dallinger reads it before
-    applying those. Dallinger versions with Dallinger#10166 fall back to the
-    app name themselves; remove this once PsyNet pins one.
-
-    Parameters
-    ----------
-    app : str or None
-        The ``--app`` name, which ``verify_id`` limits to ``a-z``, ``0-9``
-        and ``-``. Without one, the image is named ``psynet-experiment``.
-    """
-    config = get_config(load=True)
-    if not config.get("docker_image_base_name", None):
-        config.set(
-            "docker_image_base_name", (app or "").strip("-") or "psynet-experiment"
-        )
 
 
 def _recorded_launch_info():
@@ -2781,9 +2724,10 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
-    Also names the deployed Docker image, if Dallinger reports it.
-    Passwords are not printed, so that pasted logs don't leak them; they
-    are saved in ``launch_info``. Without a single participant link, the
+    Also names the deployed Docker image, if Dallinger reports it, and the
+    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not
+    printed, so that pasted logs don't leak them; they are saved in
+    ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead. An ``update`` doesn't open recruitment again,
     so it shows what the first deploy recorded on this computer, or, without
@@ -2805,6 +2749,7 @@ def _print_ssh_ready(result, launch_info, update=False):
         ("Logs", result.get("log_command")),
         ("Log viewer", log_viewer),
         ("Image", result.get("image_name")),
+        ("Bot log", result.get("bot_log")),
     ]
     click.echo(f"\nReady: {result['app']} on {result['server']}")
     for label, value in rows:
@@ -3221,6 +3166,12 @@ def run_pre_checks(
     from .experiment import get_experiment
     from .utils import check_todos_before_deployment
 
+    if heroku and shutil.which("heroku") is None:
+        raise click.UsageError(
+            "Deploying to Heroku needs the Heroku CLI; install it from "
+            "https://devcenter.heroku.com/articles/heroku-cli"
+        )
+
     # Directory readiness is checked earlier in ``_pre_launch`` (before Redis)
     # and directly from ``psynet test local``. Avoid duplicating that work here.
 
@@ -3277,13 +3228,12 @@ def run_pre_checks(
         check_todos_before_deployment()
 
         if docker:
-            if heroku and not config.get("docker_image_base_name", None):
-                raise click.UsageError(
-                    "docker_image_base_name must be specified in config.txt or ~/.dallingerconfig "
-                    "before you can deploy to Heroku with Docker, which pushes the image to a "
-                    "registry. For example:\n"
-                    "docker_image_base_name = ghcr.io/<github-user>/<experiment>"
-                )
+            if heroku:
+                from dallinger.docker.tools import image_base_name
+
+                # Heroku Docker deploys push the image. Dallinger checks this
+                # too, but only after ``prepare`` has run.
+                image_base_name(config, None, pushed_by="Heroku with --docker")
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
             if _expected_docker_volumes not in config.get(
                 "docker_volumes", ""
@@ -3450,7 +3400,7 @@ def _debug_ssh(
     performance_test_app=False,
     check_consents=True,
 ):
-    """Deploy or update ``app`` on ``server`` in debug mode, as ``psynet debug ssh`` does.
+    """Deploy or update ``app`` in debug mode, as ``psynet debug ssh`` does; return Dallinger's result and the launch-info path.
 
     The app's environment sets ``debug_ssh_app``, which lets ``psynet
     destroy ssh`` destroy it when its pending async jobs can't be checked.
@@ -3498,7 +3448,7 @@ def _debug_ssh(
                 ingress=ingress,
                 update=update,
                 config_options=config_options,
-                dallinger_summary=bool(performance_test_app),
+                dallinger_summary=False,
             )
 
         launch_info = _post_deploy(result)
@@ -3506,6 +3456,7 @@ def _debug_ssh(
             _print_ssh_ready(result, launch_info, update=update)
     finally:
         _cleanup_exp_directory()
+    return result, launch_info
 
 
 ##########
@@ -3527,9 +3478,6 @@ def install_autocomplete():
     This command automatically detects your shell (bash or zsh) and adds the appropriate
     completion setup to your shell configuration file.
     """
-    import os
-    import subprocess
-
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     psynet_root = os.path.dirname(script_dir)
@@ -3774,11 +3722,8 @@ def _estimate(mode):
     from .utils import get_config
 
     experiment_class = import_local_experiment()["class"]
-    wage_per_hour = get_config().get("wage_per_hour")
-
     config = get_config()
-    if not config.ready:
-        config.load()
+    wage_per_hour = config.get("wage_per_hour")
 
     if mode in ["reward", "both"]:
         max_reward = experiment_class.estimated_max_reward(wage_per_hour)
@@ -4501,9 +4446,7 @@ def export_(
 
     experiment_class = import_local_experiment()["class"]
 
-    config = get_config()
-    if not config.ready:
-        config.load()
+    config = get_config(load=True)
 
     if local:
         exp_variables = get_exp_variables()
@@ -6706,8 +6649,16 @@ def performance_test(ctx):
 @_test_options["performance_suite_started_s_ago"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
+@click.option(
+    "--export/--no-export",
+    default=True,
+    show_default=True,
+    help="Time psynet export local after the tests.",
+)
 @_in_isolated_test_environment
-def performance_test__local(existing=False, json_output=None, debug=False, **options):
+def performance_test__local(
+    existing=False, json_output=None, debug=False, export=True, **options
+):
     """
     Run a performance test of the experiment locally.
 
@@ -6722,16 +6673,23 @@ def performance_test__local(existing=False, json_output=None, debug=False, **opt
     local ones instead, which resets them). Use --existing to connect to an
     already-running server instead.
 
-    This command never updates an experiment audit. Use
-    ``psynet audit performance-test`` to collect audit evidence.
+    Results are not saved to the experiment's audit record. Use
+    ``psynet audit performance-test`` if you need a permanent record
+    (e.g., before a study launch).
     """
     with _exit_on_termination_signal():
         return _run_performance_test_local(
-            existing=existing, json_output=json_output, debug=debug, **options
+            existing=existing,
+            json_output=json_output,
+            debug=debug,
+            export=export,
+            **options,
         )
 
 
-def _run_performance_test_local(*, existing, json_output, debug, **options):
+def _run_performance_test_local(
+    *, existing, json_output, debug, export=True, **options
+):
     """Run a local performance test and return its result records.
 
     ``options`` are the performance-test options, such as ``n_bots``.
@@ -6739,10 +6697,10 @@ def _run_performance_test_local(*, existing, json_output, debug, **options):
     _check_arrival_options(**options)
     if existing:
         return _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+            debug=debug, json_output=json_output, export=export, **options
         )
     return _run_performance_test_with_new_server(
-        debug=debug, json_output=json_output, **options
+        debug=debug, json_output=json_output, export=export, **options
     )
 
 
@@ -6851,6 +6809,7 @@ def _run_performance_test_with_existing_server(
     test_label=None,
     suite_started_s_ago=None,
     force=False,
+    export=False,
     **suite_options,
 ):
     """Run performance test connecting to an already-running server.
@@ -6860,7 +6819,6 @@ def _run_performance_test_with_existing_server(
     first pauses as between the tests of a suite that started that long ago.
     ``suite_options`` are those of :func:`_run_performance_suite`.
     """
-    import logging
     import sys
 
     from psynet.experiment import get_experiment
@@ -6925,7 +6883,7 @@ def _run_performance_test_with_existing_server(
         bot_log_file = open(bot_log, "a")
     remote = test_label is not None or bot_log is not None
     if not remote:
-        print(f"Bot output log: {bot_log_file.name}")
+        print(f"Bot log: {bot_log_file.name}")
     with bot_log_file:
         if test_label is None:
             return _run_performance_suite(
@@ -6936,6 +6894,7 @@ def _run_performance_test_with_existing_server(
                 metadata=_collect_run_metadata(exp.label),
                 json_output=json_output,
                 quiet=remote,
+                export=export,
                 **suite_options,
             )
         with tester.bot_runner(bot_counts[0], bot_log_file):
@@ -6983,6 +6942,7 @@ def _run_performance_suite(
     ssh_options=None,
     quiet=False,
     cleanup=None,
+    export=False,
 ):
     """Run the tests of ``n_bots`` with ``tester`` and return their results.
 
@@ -7011,6 +6971,9 @@ def _run_performance_suite(
     cleanup : callable, optional
         Called after ``database_reset`` closes, even after an error, for
         example to start the services it stopped.
+    export : bool
+        Time ``psynet export local`` after the last test. Only for local
+        servers: remote suites would time the export of the local database.
 
     Raises
     ------
@@ -7030,6 +6993,7 @@ def _run_performance_suite(
     if find_capacity:
         options["confirm"] = not no_confirm
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
+    export_record = None
 
     def save_json(all_results, finished=False):
         if json_output:
@@ -7037,7 +7001,11 @@ def _run_performance_suite(
                 json_output,
                 suite,
                 all_results,
-                metadata={**metadata, "started_at": started_at},
+                metadata={
+                    **metadata,
+                    "started_at": started_at,
+                    "export": export_record,
+                },
                 options=options,
                 finished=finished,
                 quiet=quiet,
@@ -7060,6 +7028,8 @@ def _run_performance_suite(
             )
         else:
             all_results = suite.run(n_bots, bot_log_file=bot_log_file)
+        if export and all_results:
+            export_record = _measure_export(all_results[-1].db_rows_after)
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
@@ -7366,7 +7336,7 @@ def _start_local_server_and_wait_for_ready(
     extra_env : dict[str, str], optional
         Environment variables to set for the server process.
     """
-    print("▶ Starting experiment server...")
+    print("Starting the experiment server...")
 
     tmp_log = tempfile.NamedTemporaryFile(
         delete=False,
@@ -7383,6 +7353,7 @@ def _start_local_server_and_wait_for_ready(
     env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
+    env["PATH"] = _path_with_interpreter_bin()
     env.update(extra_env or {})
 
     try:
@@ -7398,11 +7369,11 @@ def _start_local_server_and_wait_for_ready(
         raise click.ClickException("Failed to start experiment server process.")
 
     process.logfile = logfile
-    print("⏳ Waiting for server to be ready...", end="", flush=True)
+    print("Waiting for the server...", end="", flush=True)
 
     try:
         process.expect_exact(ready_phrase, timeout=max_wait)
-        print(" Ready!")
+        print(" ready.")
         print()
         drain_thread = threading.Thread(
             target=_drain_pexpect_output,
@@ -7424,7 +7395,7 @@ def _start_local_server_and_wait_for_ready(
         else:
             failure_message = f"Server failed to start within {max_wait} seconds"
         print(
-            f"\n❌ {failure_message}",
+            f"\n{failure_message}.",
             file=sys.stderr,
         )
         if recent_output:
@@ -7522,10 +7493,78 @@ def _stop_server(server_info):
         except Exception:
             pass
 
-    print(f"✓ Server stopped (log: {tmp_log_path})")
+    print(f"Server stopped (log: {tmp_log_path})")
 
 
-def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
+def _measure_export(db_rows):
+    """Time the export of the database after the last test, which holds ``db_rows``.
+
+    Returns
+    -------
+    dict
+        The ``export`` record of the JSON results: ``duration_s``, ``error``
+        (``None`` on success) and ``db_rows``, the rows in each table.
+    """
+    sizes = [
+        f"{db_rows[table]:,} {table}s"
+        for table in ("participant", "response")
+        if table in db_rows
+    ]
+    print(f"\n▶ Exporting {' and '.join(sizes) or 'the database'}...")
+    duration, error = _time_export()
+    return {"duration_s": duration, "error": error, "db_rows": dict(db_rows)}
+
+
+def _path_with_interpreter_bin():
+    """Return ``PATH`` with this interpreter's ``bin`` directory first.
+
+    This finds ``psynet`` in an unactivated virtual environment.
+    """
+    return os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _time_export():
+    """Run ``psynet export local`` in a subprocess and time it.
+
+    Returns
+    -------
+    tuple
+        ``(duration_s, error)``, where ``error`` is ``None`` on success.
+    """
+    start = time.time()
+    try:
+        with tempfile.TemporaryDirectory(prefix="psynet_export_") as tmpdir:
+            result = subprocess.run(
+                ["psynet", "export", "local", "--assets", "none", "--path", tmpdir],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env={**os.environ, "PATH": _path_with_interpreter_bin()},
+            )
+            duration = time.time() - start
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start
+        error = "Export timed out (600s)"
+    except OSError as e:
+        duration = time.time() - start
+        error = f"Export could not run: {e}"
+    else:
+        error = None
+        if result.returncode != 0:
+            stderr_tail = "\n".join((result.stderr or "").strip().splitlines()[-20:])
+            error = f"Exit code {result.returncode}" + (
+                f": {stderr_tail}" if stderr_tail else ""
+            )
+    if error:
+        print(f"Export failed after {duration:.1f}s: {error}")
+    else:
+        print(f"Export completed in {duration:.1f}s")
+    return duration, error
+
+
+def _run_performance_test_with_new_server(
+    *, debug=False, json_output=None, export=False, **options
+):
     """Run performance test after starting a new experiment server."""
     from .testing.locks import TEST_SESSION
 
@@ -7541,9 +7580,9 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
         )
         try:
             all_results = _run_performance_test_with_existing_server(
-                debug=debug, json_output=json_output, **options
+                debug=debug, json_output=json_output, export=export, **options
             )
-            print("✓ Performance test completed")
+            print("Performance test completed.")
             return all_results
         finally:
             _stop_server(server_info)
@@ -7647,7 +7686,6 @@ def performance_test__prepare_reset(
     ones. Then it pre-fills the database, waits for async jobs, and
     writes the number of async jobs still waiting to --json-output.
     """
-    import logging
 
     from psynet.experiment import get_experiment
     from psynet.perf_test import (
@@ -7761,7 +7799,7 @@ def performance_test__docker_ssh(
     app is in use during the performance test, results may not be reliable.
     """
     _check_arrival_options(**options)
-    experiment = _prepare_performance_test_app(
+    experiment, deployed = _prepare_performance_test_app(
         ctx,
         app,
         server=server,
@@ -7775,6 +7813,7 @@ def performance_test__docker_ssh(
             app,
             server,
             experiment,
+            deployed=deployed,
             reset=reset_database or bool(prefill_participants),
             prefill_participants=prefill_participants,
             json_output=json_output,
@@ -7795,9 +7834,11 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
 
     Returns
     -------
-    dict
+    tuple of (dict, tuple)
         The experiment's test defaults that ``performance-test app-info``
-        reports.
+        reports, and what :func:`_debug_ssh` returned plus whether the app
+        was updated, for the Ready block
+        that :func:`_run_ssh_performance_test` prints.
 
     Raises
     ------
@@ -7814,10 +7855,10 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
     update = app in {entry.name for entry in get_apps(server)}
     if update:
         _require_performance_test_app(server, app)
-        print(f"▶ Updating {app} on {server}, keeping its database...")
+        print(f"Updating {app} on {server}, keeping its database...")
     else:
-        print(f"▶ Deploying {app} on {server} for performance tests...")
-    _debug_ssh(
+        print(f"Deploying {app} on {server} for performance tests...")
+    result, launch_info = _debug_ssh(
         ctx,
         app=app,
         server=server,
@@ -7825,13 +7866,17 @@ def _prepare_performance_test_app(ctx, app, *, server, **deploy_options):
         performance_test_app=True,
         **deploy_options,
     )
-    info = _require_performance_test_app(server, app)
-    if "experiment" not in info:
-        raise click.ClickException(
-            f"Could not load the experiment in {app}'s web container; see the "
-            "output above."
-        )
-    return info["experiment"]
+    try:
+        info = _require_performance_test_app(server, app)
+        if "experiment" not in info:
+            raise click.ClickException(
+                f"Could not load the experiment in {app}'s web container; see the "
+                "output above."
+            )
+    except click.ClickException as e:
+        e.message += f" The app's passwords are saved in {launch_info}."
+        raise
+    return info["experiment"], (result, launch_info, update)
 
 
 def _run_ssh_performance_test(
@@ -7839,6 +7884,7 @@ def _run_ssh_performance_test(
     server,
     experiment,
     *,
+    deployed=None,
     reset=False,
     prefill_participants=None,
     n_bots=None,
@@ -7853,13 +7899,14 @@ def _run_ssh_performance_test(
     """Run a suite from this computer, each test in ``app``'s web container.
 
     ``experiment`` holds the experiment's test defaults (see
-    :func:`_prepare_performance_test_app`). With ``reset``, the database is
+    :func:`_prepare_performance_test_app`), and ``deployed`` the deploy's
+    result, launch-info path and whether it updated the app, for the Ready block that starts the run's
+    output. With ``reset``, the database is
     reset before each test, after ``prefill_participants`` bots have run
     through the experiment. Default test lengths are those of
     ``performance-test local``, and ``suite_options`` those of
     :func:`_run_performance_suite`.
     """
-    import logging
 
     from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
     from psynet.perf_test import log_to_console
@@ -7872,7 +7919,13 @@ def _run_ssh_performance_test(
         suffix=".log",
         dir=_performance_log_directory(),
     )
-    print(f"Bot output log: {bot_log_file.name}")
+    if deployed:
+        result, launch_info, update = deployed
+        _print_ssh_ready(
+            {**result, "bot_log": bot_log_file.name}, launch_info, update=update
+        )
+    else:
+        print(f"Bot log: {bot_log_file.name}")
     remote = RemoteApp(
         _ssh_executor(server), app, server, force=force, bot_log_file=bot_log_file
     )
@@ -7931,7 +7984,7 @@ def _ssh_database_reset(remote, prefill_participants):
     except ValueError as e:
         raise click.ClickException(str(e)) from e
     print(
-        f"Database to reset: {database_reset.database} in "
+        f"\nDatabase to reset: {database_reset.database} in "
         f"{database_reset.container} on {remote.server}"
     )
     return database_reset

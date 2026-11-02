@@ -22,7 +22,7 @@ An isolated environment gives the test session:
 - its own ``dallinger_develop_directory``.
 
 PsyNet's process cleanup already only targets processes that use the current
-``DATABASE_URL`` (see ``psynet.command_line.uses_current_database``), so once
+``DATABASE_URL`` (see ``psynet.command_line.list_psynet_worker_processes``), so once
 the URLs differ the tests leave a running ``psynet debug local`` alone.
 
 ``psynet debug local --isolated`` gives a debug server the same kind of

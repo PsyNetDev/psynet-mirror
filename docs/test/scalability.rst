@@ -181,7 +181,7 @@ hour, also run a long test of the recommended number by hand with
 The summary at the end tabulates the tests and gives the verdict. For
 example, from a static rating study on an SSH server (some rows left out)::
 
-    PERFORMANCE TEST SUMMARY
+    Performance test summary
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 500 ms, at most 0.1% of requests failing, at most 1% of bots failing.
 

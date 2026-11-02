@@ -3,8 +3,8 @@
 Future work
 ===========
 
-This page records **unconfirmed** ideas for PsyNet maintainers. It is not a
-roadmap, not a commitment, and not a substitute for GitLab issues.
+This page records ideas and small follow-ups for PsyNet maintainers, such
+as limitations left by a merge request. It is not a roadmap or a commitment.
 
 Each idea is a section with Date, Problem, and Idea subsections. Delete
 the entry when it ships or is rejected. If it becomes a GitLab issue,
@@ -64,28 +64,6 @@ Idea
 Depend on ``psycopg2-binary`` (or ``psycopg[binary]``) in Dallinger so no
 local libpq is needed. The installation docs could then drop the libpq
 step entirely.
-
-Drop the Heroku CLI requirement
--------------------------------
-
-Date
-++++
-
-2026-09-24
-
-Problem
-+++++++
-
-``psynet test local`` uses the Heroku CLI only for its ``heroku local``
-process manager. Users have to install a non-Python tool for a platform
-they will not deploy to, and the docs have to explain why.
-
-Idea
-++++
-
-Replace ``heroku local`` in Dallinger with a Python process manager
-installed as a normal dependency, so the Python environment is the only
-requirement for local testing.
 
 Installation checker
 --------------------
@@ -677,3 +655,133 @@ Once PsyNet pins a Dallinger release that includes
   that case to Dallinger.
 - Keep ``_require_ssh_apps_exist``'s ``dlgr-<first 8 characters>`` suggestion
   for a full experiment UUID; that is PsyNet's own help.
+
+Pin a Dallinger that checks Redis before clearing the database
+--------------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+PsyNet pins Dallinger master ``96e5cf8eb``. If Redis is down, that
+Dallinger's ``init_db(drop_all=True)`` drops the tables before it fails to
+clear the real-time sessions, so ``psynet prepare`` leaves the database
+without its tables.
+
+Idea
+++++
+
+Move the pin to a Dallinger that includes
+`Dallinger PR #10251 <https://github.com/Dallinger/Dallinger/pull/10251>`_,
+for example at the next Dallinger release.
+
+Reject reserved SSH app names before contacting the server
+----------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``_pre_launch`` calls Dallinger's ``_check_app_name_not_reserved`` only after
+``_abort_if_app_exists`` has connected over SSH. With ``--app logs``, an SSH
+failure hides the reserved-name error.
+
+Idea
+++++
+
+Run the check as soon as an explicit ``--app`` is known, and again after
+``_default_ssh_app_name`` when ``--app`` was omitted.
+
+Show real-time runners in ``psynet services list``
+--------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``psynet/service_usage.py`` treats only ``dallinger_heroku_*`` processes as
+Dallinger servers, so a leftover ``dallinger_realtime`` runner isn't
+attached to its session. Cleanup already stops these runners.
+
+Idea
+++++
+
+Also match ``dallinger_realtime``, or reuse Dallinger's
+``local_worker_processes`` as the cleanup code does.
+
+Check for the Heroku CLI in every Heroku command
+------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+Only ``psynet deploy heroku`` and ``psynet debug heroku`` stop early with
+install instructions when the Heroku CLI is missing. ``export heroku``,
+``destroy heroku``, ``db heroku`` and ``experiment-variables heroku`` still
+fail with Dallinger's "You are not logged into Heroku." or a
+``FileNotFoundError``.
+
+Idea
+++++
+
+Move the ``shutil.which("heroku")`` check into a helper that every Heroku
+code path calls before using ``HerokuApp``.
+
+Node 20 in the experiment ``Dockerfile``
+----------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+The experiment ``Dockerfile`` template, which also defines development
+environments such as Codespaces, installs Debian bookworm's Node 18.
+PsyNet's Playwright tests need Node 20 or later.
+
+Idea
+++++
+
+Copy ``node`` and ``npm`` from ``node:20-bookworm-slim``, as the root
+``Dockerfile`` does.
+
+Remove obsolete warning filters
+-------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``tests/isolated/test_warnings.py`` still filters warnings from the Heroku
+CLI and Node, which local launches no longer produce now that they use
+honcho. Its broad ``DeprecationWarning:`` filter can hide real warnings.
+
+Idea
+++++
+
+Remove the Heroku and Node patterns, check the test still passes, and
+narrow the remaining filters.

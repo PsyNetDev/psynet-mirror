@@ -11,9 +11,10 @@ FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-bookworm
 ARG PYTHON_VERSION
 ARG CHROME_VERSION=149.0.7827.54
 
-RUN pip install uv
 # Every CI job builds this image, so a brief PyPI outage fails them all at
-# once; uv's default 3 retries give up within seconds.
+# once; uv's default 3 retries give up within seconds, and pip's defaults
+# (15 s, 5 retries) still fail on longer blips.
+RUN pip install --timeout 60 --retries 15 uv
 ENV UV_HTTP_RETRIES=8
 
 # TODO: delete some of these if we can
@@ -29,12 +30,6 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
     node --version && npm --version
 
-# Heroku CLI is currently needed to run `psynet test local`, this should change soon
-RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \
-        --output /tmp/heroku-install.sh https://cli-assets.heroku.com/install.sh && \
-    sh /tmp/heroku-install.sh && \
-    rm /tmp/heroku-install.sh && \
-    heroku --version
 RUN service redis-server start
 ENV HEADLESS=TRUE
 

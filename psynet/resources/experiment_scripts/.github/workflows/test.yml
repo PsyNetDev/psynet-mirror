@@ -34,10 +34,6 @@ jobs:
           ensure_constraints_file_presence(os.getcwd())
           "
 
-      - name: Install heroku CLI
-        run: |
-          curl https://cli-assets.heroku.com/install.sh | sh
-
       - name: Start Dallinger Docker services
         run: dallinger docker start-services
 
