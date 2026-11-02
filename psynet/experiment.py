@@ -271,6 +271,20 @@ def error_response(*args, **kwargs):
         return dallinger_error_response(*args, **kwargs)
 
 
+def _request_carries_unique_id(participant):
+    """Return whether the request's ``unique_id`` parameter is ``participant``'s, warning if not."""
+    supplied = request.values.get("unique_id", "")
+    if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
+        return True
+    logger.warning(
+        "Refused %s for participant_id=%s: its unique_id is missing or "
+        "belongs to another participant.",
+        request.path,
+        participant.id,
+    )
+    return False
+
+
 def is_experiment_launched():
     """
     Return ``True`` once :meth:`Experiment.on_launch` has finished.
@@ -3596,17 +3610,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``super().check_recruiter_exit(participant)`` whenever it would
         otherwise return ``None``.
         """
-        supplied = request.args.get("unique_id", "")
-        if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
+        if _request_carries_unique_id(participant):
             return None
-        logger.warning(
-            "Refused /recruiter-exit for participant_id=%s: its unique_id is "
-            "missing or belongs to another participant.",
-            participant.id,
-        )
         response = make_response(self.error_page())
         response.status_code = 403
         return response
+
+    def check_worker_status(self, participant):
+        """Refuse ``/worker_complete`` and ``/worker_failed`` unless their ``unique_id`` is the participant's.
+
+        An experiment that overrides this method must return the result of
+        ``super().check_worker_status(participant)`` whenever it would
+        otherwise return ``None``.
+        """
+        if _request_carries_unique_id(participant):
+            return None
+        return error_response(
+            error_type=f"{request.path}: unique_id is missing or wrong",
+            status=403,
+        )
 
     def on_recruiter_submission_complete(self, participant, event):
         """Record payment fields, complete or approve on the platform, pay the bonus, and recruit.
