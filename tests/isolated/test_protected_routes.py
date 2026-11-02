@@ -69,8 +69,13 @@ class TestExp:
         ).json()["participant"]
         bare = {"participant_id": participant["id"]}
 
-        assert requests.post(host + "/worker_complete", data=bare).status_code == 403
-        assert requests.get(host + "/worker_failed", params=bare).status_code == 403
+        for params in (bare, {**bare, "unique_id": "other-worker:other-assignment"}):
+            assert (
+                requests.post(host + "/worker_complete", data=params).status_code == 403
+            )
+            assert (
+                requests.get(host + "/worker_failed", params=params).status_code == 403
+            )
 
         response = requests.post(
             host + "/worker_complete",
