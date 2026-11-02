@@ -9,6 +9,10 @@ DASHBOARD_EXPERIMENT_ROUTES = [
     ("/module/progress_info", "get_progress_info"),
     ("/module/update_spending_limits", "update_spending_limits"),
     ("/change_lucid_status", "change_lucid_status"),
+    ("/node/<int:node_id>/fail", "fail_node"),
+    ("/info/<int:info_id>/fail", "fail_info"),
+    ("/trial/<int:trial_id>/fail", "fail_trial"),
+    ("/network/<int:network_id>/grow", "grow_network"),
 ]
 
 
@@ -47,6 +51,10 @@ def client():
         ("GET", "/module/progress_info"),
         ("POST", "/module/update_spending_limits"),
         ("GET", "/change_lucid_status?status=paused"),
+        ("GET", "/node/1/fail"),
+        ("GET", "/info/1/fail"),
+        ("POST", "/trial/1/fail"),
+        ("GET", "/network/1/grow"),
     ],
 )
 def test_dashboard_routes_reject_anonymous_requests(client, method, path):

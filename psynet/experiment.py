@@ -5550,6 +5550,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_node(node_id):
         from dallinger.models import Node
@@ -5560,6 +5561,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/info/<int:info_id>/fail", methods=["GET", "POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_info(info_id):
         from dallinger.models import Info
@@ -5570,6 +5572,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/trial/<int:trial_id>/fail", methods=["GET", "POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_trial(trial_id):
         from .trial.main import Trial
@@ -5582,6 +5585,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route("/network/<int:network_id>/grow", methods=["GET", "POST"])
     @classmethod
+    @login_required
     @with_transaction
     def grow_network(cls, network_id):
         exp = get_experiment()
