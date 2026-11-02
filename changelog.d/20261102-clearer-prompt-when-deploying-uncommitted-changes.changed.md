@@ -1,0 +1,1 @@
+When deployed files have uncommitted changes, `psynet deploy ssh` and `psynet deploy heroku` now ask "Deploy anyway?" instead of "Deploy with uncommitted changes?", which could be read as offering to deploy without those changes. Answering no now prints "Deployment cancelled." instead of a bare "Aborted!".

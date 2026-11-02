@@ -121,10 +121,12 @@ def test_deploy_warns_about_uncommitted_files(tmp_path, capsys):
         assert "  stimulus_00.txt" in err and "... and 2 more" in err
         assert ".env" not in err
 
-        with pytest.raises(click.Abort):
+        with pytest.raises(click.exceptions.Exit) as excinfo:
             deployment_info.warn_about_uncommitted_deployment_changes(
                 confirm=lambda question: False
             )
+        assert excinfo.value.exit_code == 1
+        assert "Deployment cancelled." in capsys.readouterr().err
 
 
 def test_git_ignored_scaffold_files_are_not_uncommitted_changes(tmp_path):
