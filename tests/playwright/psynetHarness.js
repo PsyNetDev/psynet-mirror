@@ -47,11 +47,9 @@ function extractRecruitmentUrlFromLine(line) {
       if (parsed.pathname !== "/ad") {
         continue;
       }
-      // Dallinger's console shows the link that generates a new participant
-      // on each visit; older versions showed one link per participant.
-      const requiredParams = parsed.searchParams.has("generate_tokens")
-        ? ["recruiter"]
-        : ["recruiter", "assignmentId", "hitId", "workerId"];
+      // Dallinger's console shows one link, which creates a new participant
+      // on each visit.
+      const requiredParams = ["recruiter", "generate_tokens"];
       if (!requiredParams.every((param) => parsed.searchParams.has(param))) {
         continue;
       }

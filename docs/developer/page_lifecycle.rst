@@ -210,6 +210,7 @@ PsyNet:
 * stops page media and invalidates outstanding media loads;
 * clears Lucid termination state;
 * runs registered page cleanup callbacks and event-listener cleanup;
+* closes the page's ``psynet.websocket`` connection and drops its handlers;
 * resets page-scoped response and JavaScript state.
 
 2. Commit the new fragment
@@ -563,6 +564,23 @@ retry those busy 503s the same way. If this waiter already advanced, or last-arr
 skipped its own later hold, an ordinary POST of the previous hold uuid is
 catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
 so the browser can swap in place.
+
+Page sockets
+------------
+
+``psynet.websocket`` connects a page to Dallinger's ``/experiment-socket``
+route. Its scope is the page's token, an HMAC of the participant's
+``page_uuid`` keyed with ``FLASK_SECRET_KEY``.
+``Experiment.accept_websocket_connection`` accepts only the token of the
+participant's current page. Dallinger closes any other connection with code
+1008, and the browser doesn't reconnect it.
+
+``rotate_page_uuid`` gives the participant a new ``page_uuid`` when a page is
+consumed, and when error recovery skips its page. After the commit it
+publishes ``{"type": "psynet_page_ended"}`` to the old token's connections,
+for example the same page open in another tab. They close for good without
+running handlers. Delivery is best effort: a connection that misses the
+notice stays open until it next reconnects, and is then refused.
 
 Adding new frontend components
 ------------------------------
