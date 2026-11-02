@@ -2320,7 +2320,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "host": "0.0.0.0",
             "initial_recruitment_size": INITIAL_RECRUITMENT_SIZE,
             "label": cls.get_experiment_folder_name(),
-            "lock_table_when_creating_participant": False,
             "loglevel": 1,
             "loglevel_worker": 1,
             "min_reward_for_paid_early_exit": 0.20,
