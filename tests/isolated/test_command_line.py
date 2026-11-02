@@ -5716,17 +5716,9 @@ def test_start_local_server_uses_debug_local_subprocess(performance_logs_in_tmp)
     process = Mock()
     process.expect_exact.return_value = None
     process.isalive.return_value = False
-    process.before = ""
     command_args = ["debug", "local", "--legacy", "--no-browsers"]
 
-    mock_cfg = Mock()
-    mock_cfg.get.return_value = 5000
-    with (
-        patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn,
-        patch("psynet.command_line.port_is_open", return_value=False),
-        patch("psynet.command_line.get_config", return_value=mock_cfg),
-        patch("psynet.command_line.kill_psynet_worker_processes"),
-    ):
+    with patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn:
         server_info = _start_local_server_and_wait_for_ready(
             command_args,
             debug=False,
@@ -5750,7 +5742,6 @@ def test_start_local_server_uses_exact_command_args(performance_logs_in_tmp):
     process = Mock()
     process.expect_exact.return_value = None
     process.isalive.return_value = False
-    process.before = ""
     command_args = ["debug", "local"]
 
     with patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn:
@@ -5811,13 +5802,7 @@ def test_stop_server_gracefully_stops_debug_subprocess():
         "log_file": log_file,
     }
 
-    mock_cfg = Mock()
-    mock_cfg.get.return_value = 5000
-    with (
-        patch("psynet.command_line.kill_psynet_worker_processes") as kill_workers,
-        patch("psynet.command_line.port_is_open", return_value=False),
-        patch("psynet.command_line.get_config", return_value=mock_cfg),
-    ):
+    with patch("psynet.command_line.kill_psynet_worker_processes") as kill_workers:
         _stop_server(server_info)
 
     process.sendcontrol.assert_called_once_with("c")
@@ -5825,14 +5810,6 @@ def test_stop_server_gracefully_stops_debug_subprocess():
     process.close.assert_called_once()
     log_file.close.assert_called_once()
     kill_workers.assert_called_once()
-
-
-def _make_server_info():
-    return {
-        "process": Mock(),
-        "tmp_log_path": "/tmp/psynet_server_test.log",
-        "log_file": Mock(),
-    }
 
 
 def test_stop_local_debug_process_reaps_workers_even_if_terminate_fails():
