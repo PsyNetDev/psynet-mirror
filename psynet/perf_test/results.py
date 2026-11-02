@@ -260,10 +260,6 @@ class PerformanceTestResult:
     startup_phase: dict = field(default_factory=dict)
     #: The same metrics from first_completion_s to the end of the test.
     steady_state_phase: dict = field(default_factory=dict)
-    #: Seconds that ``psynet export local`` took after this test, or ``None`` if not timed.
-    export_duration_s: float | None = None
-    #: Error message from the export command, or ``None`` if it succeeded.
-    export_error: str | None = None
 
     @property
     def steady_state_s(self):

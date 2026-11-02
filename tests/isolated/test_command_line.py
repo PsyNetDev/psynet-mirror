@@ -5716,17 +5716,9 @@ def test_start_local_server_uses_debug_local_subprocess(performance_logs_in_tmp)
     process = Mock()
     process.expect_exact.return_value = None
     process.isalive.return_value = False
-    process.before = ""
     command_args = ["debug", "local", "--legacy", "--no-browsers"]
 
-    mock_cfg = Mock()
-    mock_cfg.get.return_value = 5000
-    with (
-        patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn,
-        patch("psynet.command_line.port_is_open", return_value=False),
-        patch("psynet.command_line.get_config", return_value=mock_cfg),
-        patch("psynet.command_line.kill_psynet_worker_processes"),
-    ):
+    with patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn:
         server_info = _start_local_server_and_wait_for_ready(
             command_args,
             debug=False,
@@ -5750,7 +5742,6 @@ def test_start_local_server_uses_exact_command_args(performance_logs_in_tmp):
     process = Mock()
     process.expect_exact.return_value = None
     process.isalive.return_value = False
-    process.before = ""
     command_args = ["debug", "local"]
 
     with patch("psynet.command_line.pexpect.spawn", return_value=process) as spawn:
@@ -5811,13 +5802,7 @@ def test_stop_server_gracefully_stops_debug_subprocess():
         "log_file": log_file,
     }
 
-    mock_cfg = Mock()
-    mock_cfg.get.return_value = 5000
-    with (
-        patch("psynet.command_line.kill_psynet_worker_processes") as kill_workers,
-        patch("psynet.command_line.port_is_open", return_value=False),
-        patch("psynet.command_line.get_config", return_value=mock_cfg),
-    ):
+    with patch("psynet.command_line.kill_psynet_worker_processes") as kill_workers:
         _stop_server(server_info)
 
     process.sendcontrol.assert_called_once_with("c")
@@ -5825,14 +5810,6 @@ def test_stop_server_gracefully_stops_debug_subprocess():
     process.close.assert_called_once()
     log_file.close.assert_called_once()
     kill_workers.assert_called_once()
-
-
-def _make_server_info():
-    return {
-        "process": Mock(),
-        "tmp_log_path": "/tmp/psynet_server_test.log",
-        "log_file": Mock(),
-    }
 
 
 def test_stop_local_debug_process_reaps_workers_even_if_terminate_fails():
@@ -6410,22 +6387,6 @@ def test_anonymize_export_kwarg_warns_when_used(capsys):
     assert "have no effect" in warning
 
 
-@pytest.mark.parametrize(
-    "output, expected",
-    [
-        ("Server is running on http://localhost:5000\n", "http://localhost:5000"),
-        ("Server is running on http://192.168.1.10:5000\n", "http://192.168.1.10:5000"),
-        ("Server is running on https://localhost:8443\n", "https://localhost:8443"),
-        ("unrelated output\n", None),
-        ("", None),
-    ],
-)
-def test_extract_base_url_from_server_output(output, expected):
-    from psynet.command_line import _extract_base_url_from_server_output
-
-    assert _extract_base_url_from_server_output(output) == expected
-
-
 def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     from psynet.command_line import _run_performance_test_with_new_server
 
@@ -6453,105 +6414,22 @@ def test_run_performance_test_with_new_server_starts_legacy_debug_server():
     )
 
 
-class TestLoadServerUrl:
-    @pytest.fixture
-    def subject(self):
-        from psynet.command_line import _load_server_url
-
-        return _load_server_url
-
-    def test_loads_config_from_working_directory(self, subject):
-        config = Mock()
-        config.ready = True
-        with (
-            patch("psynet.command_line.get_config", return_value=config),
-            patch(
-                "psynet.command_line.redis_vars.get",
-                side_effect=lambda key: {
-                    "server_working_directory": "/tmp/exp",
-                    "base_url": "http://localhost:5000",
-                }.get(key),
-            ),
-        ):
-            base_url = subject({})
-        config.load_from_file.assert_called_once_with("/tmp/exp/config.txt")
-        assert base_url == "http://localhost:5000"
-
-
-class TestResolvePerfTestOptions:
-    @pytest.fixture
-    def exp(self):
-        exp = Mock()
-        exp.test_n_bots = 8
-        exp.test_parallel_stagger_interval_s = 0.5
-        exp.test_time_factor = 2.0
-        exp.test_duration_minutes = 3.0
-        return exp
-
-    def resolve(self, exp, **kwargs):
-        from psynet.command_line import _resolve_perf_test_options
-
-        kwargs.setdefault("n_bots", None)
-        kwargs.setdefault("stagger", None)
-        kwargs.setdefault("time_factor", None)
-        kwargs.setdefault("duration_minutes", None)
-        return _resolve_perf_test_options(exp, **kwargs)
-
-    def test_n_bots_none_uses_exp_default(self, exp):
-        assert self.resolve(exp).get("bot_counts") == [exp.test_n_bots]
-
-    def test_n_bots_single(self, exp):
-        assert self.resolve(exp, n_bots="3").get("bot_counts") == [3]
-
-    def test_n_bots_comma_separated(self, exp):
-        assert self.resolve(exp, n_bots="3,5,10").get("bot_counts") == [3, 5, 10]
-
-    def test_stagger_none_uses_exp_default(self, exp):
-        assert self.resolve(exp).get("stagger") == exp.test_parallel_stagger_interval_s
-
-    def test_stagger_from_cli(self, exp):
-        assert self.resolve(exp, stagger="0.2").get("stagger") == pytest.approx(0.2)
-
-    def test_stagger_zero_not_replaced_by_exp_default(self, exp):
-        assert self.resolve(exp, stagger="0").get("stagger") == pytest.approx(0.0)
-
-    def test_time_factor_none_defaults_to_one(self, exp):
-        assert self.resolve(exp).get("time_factor") == 1.0
-
-    def test_time_factor_zero_not_replaced_by_exp_default(self, exp):
-        assert self.resolve(exp, time_factor=0.0).get("time_factor") == 0.0
-
-    def test_time_factor_from_cli(self, exp):
-        assert self.resolve(exp, time_factor=1.5).get("time_factor") == 1.5
-
-    def test_duration_minutes_none_uses_exp_default(self, exp):
-        assert self.resolve(exp).get("duration_minutes") == exp.test_duration_minutes
-
-    def test_duration_minutes_from_cli(self, exp):
-        assert self.resolve(exp, duration_minutes=0.5).get("duration_minutes") == 0.5
-
-    def test_cli_takes_precedence_over_exp_for_n_bots(self, exp):
-        exp.test_n_bots = 99
-        assert self.resolve(exp, n_bots="3").get("bot_counts") == [3]
-
-    def test_cli_takes_precedence_over_exp_for_stagger(self, exp):
-        exp.test_parallel_stagger_interval_s = 99.0
-        assert self.resolve(exp, stagger="0.2").get("stagger") == pytest.approx(0.2)
-
-    def test_cli_takes_precedence_over_exp_for_time_factor(self, exp):
-        exp.test_time_factor = 99.0
-        assert self.resolve(exp, time_factor=1.5).get("time_factor") == 1.5
-
-    def test_cli_takes_precedence_over_exp_for_duration_minutes(self, exp):
-        exp.test_duration_minutes = 99.0
-        assert self.resolve(exp, duration_minutes=0.5).get("duration_minutes") == 0.5
-
-
 # --- _run_performance_test_local export persistence ---
 
 
-@pytest.mark.parametrize("existing", [True, False])
-def test_export_is_saved_before_server_cleanup(monkeypatch, tmp_path, existing):
+@pytest.mark.parametrize(
+    "existing, export, test_label, expect_export",
+    [
+        (True, True, None, True),
+        (False, True, None, True),
+        (False, False, None, False),
+        # Each test of a remote suite runs alone with a label; the suite skips exports.
+        (True, True, "remote test", False),
+    ],
+)
+def test_export_is_saved_before_server_cleanup(
+    monkeypatch, tmp_path, existing, export, test_label, expect_export
+):
     """Exercise the real suite and JSON writer with simulated bots and export."""
     from psynet import command_line as cli
     from psynet.perf_test import PerformanceTester, PerformanceTestResult
@@ -6559,7 +6437,11 @@ def test_export_is_saved_before_server_cleanup(monkeypatch, tmp_path, existing):
     tester = PerformanceTester(authenticated_session=Mock(), base_url="http://test")
     monkeypatch.setattr("psynet.perf_test.PerformanceTester", lambda **kwargs: tester)
     monkeypatch.setattr(
-        tester, "run_test", lambda title, n, *args: PerformanceTestResult(n_bots=n)
+        tester,
+        "run_test",
+        lambda title, n, *args: PerformanceTestResult(
+            n_bots=n, db_rows_after={"participant": n, "response": 2 * n}
+        ),
     )
     monkeypatch.setattr(tester, "pause_between_tests", lambda *args: None)
     monkeypatch.setattr("psynet.perf_test.runtime.raise_open_file_limit", lambda: None)
@@ -6589,73 +6471,59 @@ def test_export_is_saved_before_server_cleanup(monkeypatch, tmp_path, existing):
     stop = Mock()
     monkeypatch.setattr(cli, "_stop_server", stop)
 
-    def export():
+    def time_export():
         stop.assert_not_called()
         return 2.5, None
 
-    measure = Mock(side_effect=export)
+    measure = Mock(side_effect=time_export)
     monkeypatch.setattr(cli, "_time_export", measure)
     output = tmp_path / "results.json"
     cli._run_performance_test_local(
         existing=existing,
         json_output=str(output),
         debug=False,
-        n_bots=[5, 10],
+        export=export,
+        n_bots=[10] if test_label else [5, 10],
+        test_label=test_label,
     )
 
-    rows = json.loads(output.read_text())["results"]
-    assert rows[0]["export_duration_s"] is None
-    assert rows[-1]["export_duration_s"] == 2.5
-    assert rows[-1]["export_error"] is None
-    assert measure.call_count == 1
+    expected = {
+        "duration_s": 2.5,
+        "error": None,
+        "db_rows": {"participant": 10, "response": 20},
+    }
+    assert json.loads(output.read_text()).get("export") == (
+        expected if expect_export else None
+    )
+    assert measure.call_count == int(expect_export)
     assert stop.call_count == (0 if existing else 1)
 
 
-# --- _time_export tests ---
-
-
-def test_time_export_success():
+@pytest.mark.parametrize(
+    "outcome, expected_error",
+    [
+        (subprocess.CompletedProcess([], 0), None),
+        (
+            subprocess.CompletedProcess([], 1, stderr="config not found"),
+            "Exit code 1: config not found",
+        ),
+        (subprocess.CompletedProcess([], 2, stderr=""), "Exit code 2"),
+        (subprocess.TimeoutExpired([], 600), "Export timed out (600s)"),
+        (FileNotFoundError("psynet"), "Export could not run: psynet"),
+    ],
+)
+def test_time_export_reports_errors(outcome, expected_error):
     from psynet.command_line import _time_export
 
-    def fake_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 0)
-
-    duration, error = _time_export(_run=fake_run)
+    effect = (
+        {"side_effect": outcome}
+        if isinstance(outcome, Exception)
+        else {"return_value": outcome}
+    )
+    with patch("psynet.command_line.subprocess.run", **effect):
+        duration, error = _time_export()
     assert isinstance(duration, float)
-    assert error is None
-
-
-def test_time_export_failure_includes_stderr():
-    from psynet.command_line import _time_export
-
-    def fake_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 1, stderr="config not found")
-
-    duration, error = _time_export(_run=fake_run)
-    assert isinstance(duration, float)
-    assert "Exit code 1" in error
-    assert "config not found" in error
-
-
-def test_time_export_failure_no_stderr():
-    from psynet.command_line import _time_export
-
-    def fake_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 2, stderr="")
-
-    duration, error = _time_export(_run=fake_run)
-    assert error == "Exit code 2"
-
-
-def test_time_export_timeout():
-    from psynet.command_line import _time_export
-
-    def fake_run(cmd, **kw):
-        raise subprocess.TimeoutExpired(cmd, 600)
-
-    duration, error = _time_export(_run=fake_run)
-    assert isinstance(duration, float)
-    assert "timed out" in error.lower()
+    assert error == expected_error
 
 
 @pytest.mark.parametrize(

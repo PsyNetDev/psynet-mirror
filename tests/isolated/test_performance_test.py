@@ -2684,67 +2684,6 @@ def test_performance_summary_handles_no_completed_or_failed_bots():
     assert isinstance(lines, list)
 
 
-# --- format_test_results: export section ---
-
-
-def test_format_test_results_export_section():
-    lines = format_test_results(_base_result(export_duration_s=5.2))
-    text = _join(lines)
-    assert "EXPORT" in text
-    assert "5.2s" in text
-
-
-def test_format_test_results_no_export_section():
-    lines = format_test_results(_base_result())
-    text = _join(lines)
-    assert "EXPORT" not in text
-
-
-def test_format_test_results_export_error():
-    lines = format_test_results(
-        _base_result(export_duration_s=2.0, export_error="Exit code 1")
-    )
-    text = _join(lines)
-    assert "EXPORT" in text
-    assert "Exit code 1" in text
-
-
-# --- format_performance_summary: export column ---
-
-
-def test_format_performance_summary_with_export():
-    r1 = _base_result(export_duration_s=3.0)
-    r2 = _base_result(n_bots=4, export_duration_s=6.0)
-    lines = format_performance_summary([r1, r2])
-    text = _join(lines)
-    assert "Export" in text
-
-
-def test_format_performance_summary_export_shown():
-    r1 = _base_result(n_bots=1, p95_response_time=0.1, export_duration_s=1.0)
-    r2 = _base_result(n_bots=2, p95_response_time=0.2, export_duration_s=2.0)
-    lines = format_performance_summary([r1, r2])
-    text = _join(lines)
-    assert "Export" in text
-    assert "1.0" in text
-    assert "2.0" in text
-
-
-def test_format_performance_summary_no_export():
-    lines = format_performance_summary([_base_result()])
-    text = _join(lines)
-    assert "Export" not in text
-
-
-def test_format_performance_summary_export_only_on_last_row():
-    """--existing stamps export on last row only; summary shows value for last row, empty for first."""
-    r1 = _base_result(n_bots=5)
-    r2 = _base_result(n_bots=10, export_duration_s=2.5)
-    lines = format_performance_summary([r1, r2])
-    assert "Export" in _join(lines)
-    assert "2.5" in _join(lines)
-
-
 def _remote_search(
     monkeypatch,
     reset=False,

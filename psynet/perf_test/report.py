@@ -125,18 +125,7 @@ def format_test_results(result):
         *_async_job_lines(result),
         *_phase_lines(result),
         *_database_row_lines(result),
-        *_export_lines(result),
     ]
-
-
-def _export_lines(result):
-    """Return the EXPORT section if ``result`` has export timing, else []."""
-    if result.export_duration_s is None:
-        return []
-    rows = [["Duration", f"{result.export_duration_s:.1f}s"]]
-    if result.export_error:
-        rows.append(["Error", result.export_error])
-    return [*_section("EXPORT"), *_label_table(rows), ""]
 
 
 def _phase_lines(result):
@@ -705,17 +694,6 @@ def _summary_columns(results, limits):
         for priority in PRIORITIES
         if priority in seen
     ]
-    if any(r.export_duration_s is not None for r in results):
-        extra.append(
-            (
-                "Export\n(s)",
-                lambda r: (
-                    f"{r.export_duration_s:.1f}"
-                    if r.export_duration_s is not None
-                    else _EMPTY
-                ),
-            )
-        )
     if extra:
         extra.insert(0, main[0])
     return main, extra
