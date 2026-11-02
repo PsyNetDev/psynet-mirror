@@ -16,8 +16,8 @@ experiment deployment, monitoring, and data export.
 
 ## Get started
 
-First install uv, Git, Docker, Google Chrome, the PostgreSQL client library
-and the Heroku CLI ([install guide](https://psynetdev.gitlab.io/PsyNet/alpha/install.html)).
+First install uv, Git, Docker, Google Chrome and the PostgreSQL client library
+([install guide](https://psynetdev.gitlab.io/PsyNet/alpha/install.html)).
 On Windows, use WSL (Ubuntu). Then create an experiment and run it:
 
 ```bash

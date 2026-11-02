@@ -103,14 +103,26 @@ def _check_docker_constraints_compile(
     dockerfile_path: Path,
     python_versions=supported_python_major_minor_versions,
 ) -> None:
-    """Validate the vendored constraints for every supported Python version."""
+    """Validate the vendored constraints for every supported Python version.
+
+    ``uv pip compile --python-version 3.11`` resolves as Python 3.11.0, so the
+    Python line that Dallinger compiled its lockfile for is checked at the
+    patch release named in the snapshot's ``Compiled for Python`` line.
+    """
     default_python_version = _get_docker_python_version(dockerfile_path)
     if default_python_version not in python_versions:
         raise ValueError(
             f"Docker's default Python {default_python_version} is not supported."
         )
+    compiled_for = re.search(
+        r"^# Compiled for Python ((\d+\.\d+)\.\d+)$",
+        dallinger_constraints_path.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
 
     for python_version in python_versions:
+        if compiled_for and compiled_for.group(2) == python_version:
+            python_version = compiled_for.group(1)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "pyproject.toml").write_text(
