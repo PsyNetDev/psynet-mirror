@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -166,9 +167,33 @@ def test_docker_constraints_compile_checks_all_supported_versions(
         compiled_versions.append(command[command.index("--python-version") + 1])
 
     monkeypatch.setattr(ci_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        ci_module, "_latest_cpython_patch", lambda series: series + ".9"
+    )
 
     ci_module._check_docker_constraints_compile(
         pyproject, constraints, dockerfile, python_versions=("3.11", "3.12", "3.13")
     )
 
-    assert compiled_versions == ["3.11.17", "3.12", "3.13"]
+    assert compiled_versions == ["3.11.9", "3.12.9", "3.13.9"]
+
+
+def test_latest_cpython_patch_picks_newest_default_cpython_release(monkeypatch):
+    rows = [
+        {"version": "3.11.9", "implementation": "cpython", "variant": "default"},
+        {"version": "3.11.10", "implementation": "cpython", "variant": "default"},
+        {"version": "3.11.12", "implementation": "cpython", "variant": "freethreaded"},
+        {"version": "3.11.13", "implementation": "pypy", "variant": "default"},
+        {"version": "3.11.14rc1", "implementation": "cpython", "variant": "default"},
+        {"version": "3.110.1", "implementation": "cpython", "variant": "default"},
+    ]
+    commands = []
+
+    def fake_check_output(command, text):
+        commands.append(command)
+        return json.dumps(rows)
+
+    monkeypatch.setattr(ci_module.subprocess, "check_output", fake_check_output)
+
+    assert ci_module._latest_cpython_patch("3.11") == "3.11.10"
+    assert commands[0][:4] == ["uv", "python", "list", "3.11"]
