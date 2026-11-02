@@ -207,8 +207,9 @@ General
     collisions. New code should read ``psynet.var`` directly. Default:
     ``warn``.
 
-Dallinger still accepts ``lock_table_when_creating_participant`` but it has
-no effect: participant signup always takes a PostgreSQL advisory lock.
+``lock_table_when_creating_participant`` *bool* |dlgr-icon|
+    Deprecated and has no effect: participant signup always takes a PostgreSQL
+    advisory lock. Setting it raises a ``FutureWarning``.
 
 ``logfile`` *str* |dlgr-icon|
     Where to write logs.

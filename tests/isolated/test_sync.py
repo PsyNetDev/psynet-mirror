@@ -918,11 +918,13 @@ def test_queued_redirect_still_checks_the_page_uuid(
         (stayer, leaver), _ = _pair_sync_group(exp, db_session)
         assert _json_timeline(exp, stayer).status_code == 200
         leaver.fail("returned the study")
+        stayer.client_ip_address = "203.0.113.9"
         db_session.commit()
 
         result = _process_response(exp, stayer, "not-the-open-page")
         assert result.payload["submission"] == "rejected"
         assert stayer.unique_id not in json.dumps(result.payload)
+        assert stayer.client_ip_address == "203.0.113.9"
         assert stayer.pending_redirect == "unsuccessful_end"
     finally:
         exp.timeline = original_timeline

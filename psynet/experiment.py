@@ -1,4 +1,5 @@
 import configparser
+import hmac
 import inspect
 import json
 import logging
@@ -3595,7 +3596,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``super().check_recruiter_exit(participant)`` whenever it would
         otherwise return ``None``.
         """
-        if request.args.get("unique_id") == participant.unique_id:
+        supplied = request.args.get("unique_id", "")
+        if hmac.compare_digest(supplied.encode(), participant.unique_id.encode()):
             return None
         logger.warning(
             "Refused /recruiter-exit for participant_id=%s: its unique_id is "
@@ -3818,7 +3820,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     .populate_existing()
                     .get(participant_id)
                 )
-            if not isinstance(participant, Bot):
+            if not isinstance(participant, Bot) and page_uuid == participant.page_uuid:
                 participant.client_ip_address = client_ip_address
             if Experiment._pending_redirect_replaces_open_page(participant):
                 if page_uuid != participant.page_uuid and not (
