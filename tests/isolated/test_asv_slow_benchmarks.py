@@ -1,3 +1,5 @@
+import pytest
+
 from benchmarks.slow.experiment_performance import AsyncJobs, Static
 
 
@@ -35,19 +37,18 @@ def test_slow_asv_tracks_export_time():
     assert benchmark.track_export_time_s(data, 5, 2.0) == 3.5
 
 
-def test_slow_asv_raises_on_export_error():
-    import pytest
-
+@pytest.mark.parametrize(
+    "result, message",
+    [
+        ({"export_duration_s": 0.1, "export_error": "timeout"}, "export failed"),
+        ({"export_duration_s": None, "export_error": None}, "--no-export"),
+    ],
+)
+def test_slow_asv_raises_without_export_time(result, message):
     benchmark = Static()
-    data = {
-        (5, 2.0): {
-            "export_duration_s": 0.1,
-            "export_error": "timeout",
-        }
-    }
 
-    with pytest.raises(RuntimeError, match="export failed"):
-        benchmark.track_export_time_s(data, 5, 2.0)
+    with pytest.raises(RuntimeError, match=message):
+        benchmark.track_export_time_s({(5, 2.0): result}, 5, 2.0)
 
 
 def test_slow_asv_no_longer_tracks_completion_window_metrics():

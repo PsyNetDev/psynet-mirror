@@ -3722,9 +3722,8 @@ def _estimate(mode):
     from .utils import get_config
 
     experiment_class = import_local_experiment()["class"]
-    wage_per_hour = get_config().get("wage_per_hour")
-
     config = get_config()
+    wage_per_hour = config.get("wage_per_hour")
 
     if mode in ["reward", "both"]:
         max_reward = experiment_class.estimated_max_reward(wage_per_hour)
@@ -6689,7 +6688,7 @@ def performance_test__local(
 
 
 def _run_performance_test_local(
-    *, existing, json_output, debug, export=False, **options
+    *, existing, json_output, debug, export=True, **options
 ):
     """Run a local performance test and return its result records.
 
