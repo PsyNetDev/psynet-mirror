@@ -154,7 +154,9 @@ def test_docker_constraints_compile_checks_all_supported_versions(
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text("[project]\ndependencies = []\n", encoding="utf-8")
     constraints = tmp_path / "dallinger-dev-requirements.txt"
-    constraints.write_text("requests==2.33.1\n", encoding="utf-8")
+    constraints.write_text(
+        "# Compiled for Python 3.11.17\nrequests==2.33.1\n", encoding="utf-8"
+    )
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text("ARG PYTHON_VERSION=3.13\n", encoding="utf-8")
 
@@ -169,4 +171,4 @@ def test_docker_constraints_compile_checks_all_supported_versions(
         pyproject, constraints, dockerfile, python_versions=("3.11", "3.12", "3.13")
     )
 
-    assert compiled_versions == ["3.11", "3.12", "3.13"]
+    assert compiled_versions == ["3.11.17", "3.12", "3.13"]

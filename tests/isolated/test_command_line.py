@@ -79,7 +79,6 @@ def _invoke_stubbed_ssh_command(dallinger_command, psynet_command, *args):
     dallinger_name = "deploy" if psynet_command == "deploy" else "sandbox"
     with (
         patch("psynet.command_line._pre_launch") as pre_launch,
-        patch("psynet.command_line._default_image_base_name"),
         patch("psynet.command_line._cleanup_exp_directory"),
         patch("psynet.command_line.reset_console"),
         patch("psynet.command_line.deployment_info.read", return_value="dep-1"),
@@ -349,35 +348,6 @@ class TestCommandLine(object):
             update=True,
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
-
-    @pytest.mark.parametrize(
-        "config_txt, app, expected",
-        [
-            ("[Docker]\n", "consonance", "consonance"),
-            ("[Docker]\n", None, "psynet-experiment"),
-            (
-                "[Docker]\ndocker_image_base_name = ghcr.io/me/exp\n",
-                "consonance",
-                "ghcr.io/me/exp",
-            ),
-        ],
-    )
-    def test_invoke_docker_ssh_deploy_names_an_unnamed_image_after_the_app(
-        self, fresh_dallinger_config, config_txt, app, expected
-    ):
-        from dallinger.config import get_config
-
-        from psynet.command_line import _invoke_docker_ssh_deploy
-
-        Path("config.txt").write_text(config_txt)
-        ctx = Mock()
-        ctx.invoke.side_effect = lambda command, **kwargs: get_config().get(
-            "docker_image_base_name"
-        )
-        result = _invoke_docker_ssh_deploy(
-            ctx, Mock(params=[]), server="musix", dns_host=None, app=app
-        )
-        assert result == expected
 
     @pytest.mark.parametrize("new_dallinger", [False, True])
     def test_deploy_ssh_ends_with_a_ready_block(
@@ -2286,6 +2256,7 @@ def test_heroku_pre_checks_do_not_prompt_to_unignore_deploy(tmp_path, monkeypatc
         return True
 
     monkeypatch.setattr("psynet.command_line.user_confirms", fake_confirm)
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     with working_directory(tmp_path):
         run_pre_checks(
@@ -2314,26 +2285,44 @@ def test_remote_pre_checks_leave_local_database_alone(tmp_path, monkeypatch):
     init_db.assert_not_called()
 
 
-@pytest.mark.parametrize("heroku", [False, True])
-def test_only_heroku_docker_needs_an_image_base_name(tmp_path, monkeypatch, heroku):
+@pytest.mark.parametrize(
+    "heroku, base_name, error",
+    [
+        (False, None, None),
+        (True, None, "docker_image_base_name is not set"),
+        (True, "exp", "has no registry or namespace"),
+        (True, "ghcr.io/me/exp", None),
+    ],
+)
+def test_only_heroku_docker_needs_a_pushable_image_base_name(
+    tmp_path, monkeypatch, heroku, base_name, error
+):
     (tmp_path / "requirements.txt").write_text("psynet\n")
     monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
     monkeypatch.setenv("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT", "1")
     monkeypatch.setattr("psynet.experiment.get_experiment", Mock)
+    settings = {"docker_image_base_name": base_name}
     config = Mock()
-    config.get.side_effect = lambda key, default=None: default
+    config.get.side_effect = lambda key, default=None: settings.get(key) or default
     monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
     monkeypatch.setattr("psynet.command_line.check_dockerfile", Mock())
     monkeypatch.setattr("psynet.command_line.user_confirms", lambda *args: True)
     monkeypatch.setattr("psynet.utils.check_todos_before_deployment", Mock())
     monkeypatch.setattr("psynet.command_line.run_pre_checks_sandbox", Mock())
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
     with working_directory(tmp_path):
-        if heroku:
-            with pytest.raises(click.UsageError, match="docker_image_base_name"):
-                run_pre_checks("sandbox", False, heroku=True, docker=True)
+        if error:
+            with pytest.raises(click.ClickException, match=error):
+                run_pre_checks("sandbox", False, heroku=heroku, docker=True)
         else:
-            run_pre_checks("sandbox", False, docker=True, app="test-app")
+            run_pre_checks("sandbox", False, heroku=heroku, docker=True, app="app")
+
+
+def test_heroku_pre_checks_need_the_heroku_cli(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    with pytest.raises(click.UsageError, match="needs the Heroku CLI"):
+        run_pre_checks("sandbox", False, heroku=True, app="app")
 
 
 @pytest.mark.parametrize(
@@ -5291,6 +5280,36 @@ def test_pre_launch_aborts_when_app_exists():
     mock_run_pre_checks.assert_not_called()
 
 
+def test_pre_launch_rejects_a_reserved_ssh_app_name_before_prepare():
+    from psynet.command_line import _pre_launch
+
+    hosts = {"test-server": {"host": "example.com", "user": "test-user"}}
+    with (
+        patch("psynet.command_line._check_experiment_directory"),
+        patch("psynet.command_line.redis_vars.clear"),
+        patch("psynet.command_line.deployment_info.init"),
+        patch("psynet.command_line.deployment_info.write"),
+        patch("dallinger.command_line.docker_ssh.ensure_remote_host_in_known_hosts"),
+        patch("psynet.command_line._abort_if_app_exists"),
+        patch("psynet.command_line.run_pre_checks") as mock_run_pre_checks,
+        patch("psynet.command_line.CONFIGURED_HOSTS", hosts),
+        patch("dallinger.command_line.docker_ssh.CONFIGURED_HOSTS", hosts),
+    ):
+        with pytest.raises(click.UsageError, match='"logs" is reserved'):
+            _pre_launch(
+                Mock(),
+                mode="live",
+                archive=None,
+                local_=False,
+                ssh=True,
+                docker=True,
+                server="test-server",
+                app="logs",
+            )
+
+    mock_run_pre_checks.assert_not_called()
+
+
 def test_pre_launch_reports_a_missing_server_pem_without_a_traceback():
     from psynet.command_line import _pre_launch
 
@@ -5888,64 +5907,6 @@ def test_worker_cleanup_only_targets_this_database(monkeypatch, tmp_path):
         for process in (ours, theirs):
             process.kill()
             process.wait()
-
-
-@pytest.mark.parametrize(
-    "name, cmdline, expected",
-    [
-        ("dallinger_herok", ["dallinger_heroku_web"], True),
-        ("Python", ["/venv/bin/dallinger_heroku_clock"], True),
-        (
-            "Python",
-            ["/usr/bin/python", "/venv/bin/dallinger_heroku_worker"],
-            True,
-        ),
-        ("not-dallinger_herok", ["unrelated"], False),
-        (
-            "Python",
-            ["/usr/bin/python", "-m", "pytest", "-k", "dallinger_heroku_worker"],
-            False,
-        ),
-    ],
-)
-def test_is_psynet_worker_process(name, cmdline, expected):
-    from psynet.command_line import is_psynet_worker_process
-
-    process = Mock()
-    process.name.return_value = name
-    process.cmdline.return_value = cmdline
-    assert is_psynet_worker_process(process) is expected
-
-
-def test_uses_current_database_normalizes_urls_and_handles_the_default(monkeypatch):
-    from psynet.command_line import uses_current_database
-
-    process = Mock()
-    monkeypatch.setenv("DATABASE_URL", "postgres://dallinger@localhost/experiment")
-    process.environ.return_value = {
-        "DATABASE_URL": "postgresql://dallinger@localhost/experiment"
-    }
-    assert uses_current_database(process)
-
-    monkeypatch.delenv("DATABASE_URL")
-    process.environ.return_value = {}
-    assert uses_current_database(process)
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        pytest.param(psutil.AccessDenied(1), id="access-denied"),
-        pytest.param(psutil.NoSuchProcess(1), id="gone"),
-        pytest.param(psutil.ZombieProcess(1), id="zombie"),
-    ],
-)
-def test_uses_current_database_rejects_unreadable_processes(error):
-    from psynet.command_line import uses_current_database
-
-    process = Mock()
-    process.environ.side_effect = error
-    assert not uses_current_database(process)
 
 
 def test_kill_psynet_worker_processes_warns_with_pids(caplog):
@@ -7869,8 +7830,6 @@ def test_signalled_debug_process_stops_its_child_processes(tmp_path, signum, sta
     import sys
     import time
 
-    import psutil
-
     pid_file = tmp_path / "child.pid"
     script = (
         "import subprocess\n"
@@ -7900,8 +7859,6 @@ def test_ctrl_c_stops_a_server_in_its_own_session_without_waiting(tmp_path):
     import signal
     import sys
     import time
-
-    import psutil
 
     pid_file = tmp_path / "child.pid"
     script = (
