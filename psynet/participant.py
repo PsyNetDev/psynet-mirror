@@ -363,6 +363,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The number of pages that the participant has advanced through.
         Should not be modified directly.
 
+    live_sessions : dict or None
+        The ids of the participant's live sessions, keyed by the id of the
+        :class:`~psynet.live_session.LiveSessionInitializer` that started
+        each one. Read it with :func:`~psynet.live_session.live_session_id`.
+        Should not be modified directly.
+
     complete : bool
         Whether the participant has successfully completed the experiment.
         A participant is considered to have successfully completed the experiment
@@ -448,6 +454,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     page_uuid = Column(String)
     page_count = Column(Integer)
+    live_sessions = Column(PythonDict)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)

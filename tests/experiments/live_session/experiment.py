@@ -1,14 +1,43 @@
-"""The test experiment for live sessions. Its first page opens the page's websocket."""
+"""The test experiment for live sessions. Its first page opens the page's
+websocket, and then pairs start a session of a toy game."""
 
+from dallinger.realtime import RealtimeGame, Reject
 from dominate import tags
 
 import psynet.experiment
+from psynet.live_session import LiveSessionInitializer
 from psynet.page import InfoPage
+from psynet.sync import SimpleGrouper
 from psynet.timeline import Timeline
+
+
+class PickNumbers(RealtimeGame):
+    """Each player picks a whole number, and the game ends once both have."""
+
+    channel = "pick_numbers"
+
+    def initial_state(self, players):
+        return {"picks": {str(player): None for player in players}}
+
+    def apply(self, state, player_id, message, now, sent):
+        if not isinstance(message, int) or isinstance(message, bool):
+            raise Reject("Pick a whole number.")
+        state["picks"][str(player_id)] = message
+
+    def view(self, state, player_id):
+        return {"picked": state["picks"][str(player_id)] is not None}
+
+    def is_over(self, state):
+        return all(pick is not None for pick in state["picks"].values())
+
+    def outcome(self, state, reason):
+        return state["picks"]
 
 
 class Exp(psynet.experiment.Experiment):
     label = "Live session test experiment"
+    test_n_bots = 2
+    test_mode = "parallel"
 
     timeline = Timeline(
         InfoPage(
@@ -21,4 +50,9 @@ class Exp(psynet.experiment.Experiment):
             ),
         ),
         InfoPage("The next page.", time_estimate=5),
+        SimpleGrouper(group_type="pair", initial_group_size=2),
+        LiveSessionInitializer(
+            id_="pick_numbers", group_type="pair", game_type=PickNumbers
+        ),
+        InfoPage("The game page.", time_estimate=5),
     )

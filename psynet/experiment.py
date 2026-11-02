@@ -322,6 +322,14 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
+        from .live_session import _timeline_game_types
+
+        listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
+        cls._listed_realtime_games = list(listed)
+        cls.realtime_games = list(
+            dict.fromkeys([*listed, *_timeline_game_types(cls.timeline)])
+        )
+
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
                 "Experiment.test_create_bots has been removed, please do not override it. Instead you should put "
@@ -700,6 +708,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         and refuses to run on apps without it. Setting it yourself declares
         that the app's data may be deleted.
         Default: ``False``.
+
+    realtime_games : ``list``
+        The game types of the experiment's live sessions (see
+        :mod:`psynet.live_session`). PsyNet adds the game type of every
+        :class:`~psynet.live_session.LiveSessionInitializer` in the timeline,
+        so list only games the experiment starts some other way.
+        Default: ``[]``.
 
 
 
