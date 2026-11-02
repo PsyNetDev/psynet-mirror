@@ -1997,7 +1997,7 @@ def psynet_browser_prefix(kind):
 
     ``kind`` is ``"chrome"`` (profile directory) or ``"chromedriver"`` (log file).
     The prefix includes a hash of ``DATABASE_URL``, which identifies a local
-    run in the same way as :func:`uses_current_database`.
+    run in the same way as :func:`list_psynet_worker_processes`.
     """
     return f"psynet-{kind}-{_database_url_tag()}-"
 
@@ -2013,49 +2013,11 @@ def _current_database_url():
     return corrected_db_url(os.environ.get("DATABASE_URL", db_url_default))
 
 
-def uses_current_database(process):
-    """
-    Return whether ``process`` was started with this shell's ``DATABASE_URL``.
-
-    Local servers inherit ``DATABASE_URL`` from the command that launched them,
-    so this distinguishes this experiment's leftovers from other local
-    experiments on the same machine. Processes whose environment can't be read
-    are treated as someone else's.
-    """
-    from dallinger.db import corrected_db_url, db_url_default
-
-    try:
-        url = process.environ().get("DATABASE_URL", db_url_default)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return False
-    return corrected_db_url(url) == _current_database_url()
-
-
 def list_psynet_worker_processes():
-    """List local ``dallinger_heroku_*`` workers that use this shell's database."""
-    return [
-        p
-        for p in psutil.process_iter()
-        if is_psynet_worker_process(p) and uses_current_database(p)
-    ]
+    """List local Dallinger web, worker and real-time processes using this shell's database."""
+    from dallinger.heroku.tools import local_worker_processes
 
-
-def is_psynet_worker_process(process):
-    """Return whether ``process`` is a local Dallinger web or worker process."""
-    try:
-        # This version catches processes in Linux
-        if process.name().startswith("dallinger_herok"):
-            return True
-        # This version catches process in MacOS
-        if "python" in process.name().lower():
-            return any(
-                Path(argument).name.startswith("dallinger_heroku_")
-                for argument in process.cmdline()[:2]
-            )
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-
-    return False
+    return local_worker_processes(_current_database_url())
 
 
 def list_chromedriver_processes():
