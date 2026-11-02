@@ -1,4 +1,4 @@
-"""The test experiment for live sessions. Its page opens the page's websocket."""
+"""The test experiment for live sessions. Its first page opens the page's websocket."""
 
 from dominate import tags
 
@@ -20,4 +20,5 @@ class Exp(psynet.experiment.Experiment):
                 " });"
             ),
         ),
+        InfoPage("The next page.", time_estimate=5),
     )

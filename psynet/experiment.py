@@ -165,7 +165,8 @@ from .timeline import (
     WebSocketElt,
     _is_timeline_hold,
     _timeline_step_name,
-    new_page_uuid,
+    is_current_page_token,
+    rotate_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -2535,6 +2536,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 receive_time=receive_time,
                 experiment=self,
             )
+
+    def accept_websocket_connection(self, participant_id, scope):
+        """Accept an ``/experiment-socket`` connection only from the
+        participant's current page, which gives that page's token as its
+        scope. Dallinger closes a refused connection with code 1008, and
+        ``psynet.websocket`` doesn't reconnect it.
+        """
+        page_uuid = (
+            db.session.query(Participant.page_uuid)
+            .filter_by(id=int(participant_id))
+            .scalar()
+        )
+        return is_current_page_token(page_uuid, scope)
 
     def pre_deploy(self, redeploying_from_archive=False, *, update=False):
         """Prepare the experiment for deployment, on the machine that launches it.
@@ -5739,7 +5753,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            participant.page_uuid = new_page_uuid()
+            rotate_page_uuid(experiment, participant)
         return committed
 
     @staticmethod

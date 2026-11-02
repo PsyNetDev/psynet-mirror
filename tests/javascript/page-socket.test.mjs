@@ -171,6 +171,22 @@ describe("psynet.websocket", () => {
     assert.equal(sockets[0].sent.length, 1);
   });
 
+  it("closes for good when the server says its page has ended", () => {
+    const received = [];
+    pageSocket.handle("psynet_page_ended", () => received.push("ended"));
+    sockets[0].fire("direct", { type: "move", message: 1 });
+    assert.equal(sockets[0].closed, false);
+
+    sockets[0].fire("direct", { type: "psynet_page_ended" });
+    pageSocket.send("ready");
+    pageSocket.handle("move", () => {});
+    pageSocket.onConnect(() => {});
+    assert.equal(sockets[0].closed, true);
+    assert.equal(sockets.length, 1);
+    assert.deepEqual(sockets[0].sent, []);
+    assert.deepEqual(received, []);
+  });
+
   it("replaces a socket opened with an earlier page's token", () => {
     pageSocket.send("ready");
     sockets[0].refuse(1008, "not the current page");

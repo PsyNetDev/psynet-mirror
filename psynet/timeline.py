@@ -17,7 +17,7 @@ import uuid
 import warnings
 from collections import Counter
 from datetime import datetime
-from functools import cached_property
+from functools import cached_property, partial
 from importlib import resources
 from statistics import median
 from types import FunctionType
@@ -37,7 +37,7 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from . import templates
 from .async_job import _deprecated_async_processes
 from .data import SQLBase, SQLMixin, register_table
-from .db import forbid_commits
+from .db import _call_after_commit, forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
 from .static_resources import version_static_urls
@@ -1187,6 +1187,44 @@ def page_token(page_uuid):
     return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()
 
 
+def is_current_page_token(page_uuid, token):
+    """Whether ``token`` is the token of the page with ``page_uuid``."""
+    expected = page_token(page_uuid)
+    if expected is None or not isinstance(token, str):
+        return False
+    # Bytes, because compare_digest raises on non-ASCII text.
+    return hmac.compare_digest(token.encode(), expected.encode())
+
+
+#: The ``type`` of the message that tells a page's websocket its page has
+#: ended. ``page-socket.js`` closes the connection when it arrives, so it is
+#: reserved.
+PAGE_ENDED_MESSAGE_TYPE = "psynet_page_ended"
+
+
+def rotate_page_uuid(experiment, participant):
+    """Move ``participant`` to a new page uuid.
+
+    Once the change commits, the participant's connections still open with
+    the previous page's token are told the page has ended. Like every
+    directed send, that is best effort: a connection that is reconnecting at
+    the time, or that is admitted while the page changes, misses it and stays
+    open until it next reconnects. The connection hook refuses the previous
+    token from the commit on.
+    """
+    previous_token = page_token(participant.page_uuid)
+    participant.page_uuid = new_page_uuid()
+    if previous_token is not None:
+        _call_after_commit(
+            partial(
+                experiment.publish_to_participants,
+                {"type": PAGE_ENDED_MESSAGE_TYPE},
+                [participant.id],
+                scope=previous_token,
+            )
+        )
+
+
 def _arrival_updates_for(page, participant):
     """Return partner-ready websocket config, or None when it cannot be used.
 
@@ -1822,7 +1860,7 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = new_page_uuid()
+        rotate_page_uuid(experiment, participant)
         participant.page_count += 1
 
     def on_complete(self, experiment, participant):

@@ -301,12 +301,14 @@ def test_prepare_commits_with_the_policy_recruiter():
     policy_recruiter = MagicMock()
     policy_recruiter.shows_error_recovery_page.return_value = False
 
-    result = Experiment._prepare_error_recovery_plan(
-        experiment, policy_recruiter, participant
-    )
+    with patch("psynet.experiment.rotate_page_uuid") as rotate_page_uuid:
+        result = Experiment._prepare_error_recovery_plan(
+            experiment, policy_recruiter, participant
+        )
 
     assert result.status is ExitPlanStatus.COMMITTED
     assert result.plan_id == plan.plan_id
+    rotate_page_uuid.assert_called_once_with(experiment, participant)
     policy_recruiter.execute_early_exit_plan.assert_called_once()
     executed_plan = policy_recruiter.execute_early_exit_plan.call_args.args[2]
     assert executed_plan.plan_id == plan.plan_id

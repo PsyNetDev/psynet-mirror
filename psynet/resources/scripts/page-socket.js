@@ -8,6 +8,13 @@
   const CHANNEL = "psynet";
 
   /**
+   * The ``type`` of the message the server sends a page's connections once
+   * the participant has moved on from that page. It is reserved: the
+   * connection closes for good when it arrives, and no handler sees it.
+   */
+  const PAGE_ENDED = "psynet_page_ended";
+
+  /**
    * Create the page's connection to the experiment, on Dallinger's
    * ``/experiment-socket`` route, which ``psynet.js`` makes available as
    * ``psynet.websocket``.
@@ -16,6 +23,8 @@
    * handler, and gives the page's token as its scope. Dallinger reconnects
    * it whenever it drops, and holds messages sent in the meantime. A
    * connection the server refuses stays closed, and sends on it are dropped.
+   * So does the connection of a page the participant has moved on from,
+   * for example in another tab, once the server says that page has ended.
    *
    * Handlers, ``onConnect`` callbacks and the message context belong to the
    * page that registered them. When the page's token changes, they are
@@ -70,8 +79,17 @@
       let state = currentPage();
       if (state.socket === null) {
         state.socket = dallinger.openExperimentSocket({ scope: state.token });
-        state.socket.onDirect((data) => dispatch(state, data));
-        state.socket.onOpen(function (event) {
+        let socket = state.socket;
+        socket.onDirect((data) => {
+          if (data !== null && typeof data === "object" && data.type === PAGE_ENDED) {
+            // Kept as the page's socket, so later sends and handlers don't
+            // open another one.
+            socket.close();
+          } else {
+            dispatch(state, data);
+          }
+        });
+        socket.onOpen(function (event) {
           state.openEvent = event;
           state.connectHandlers.slice().forEach((callback) => callback(event));
         });
