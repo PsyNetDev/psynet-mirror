@@ -9,6 +9,7 @@ import inspect
 import io
 import itertools
 import json
+import logging
 import os
 import re
 import shlex
@@ -2045,8 +2046,6 @@ def _run_bot(time_factor, dashboard_user, dashboard_password):
 
     os.environ["PASSTHROUGH_ERRORS"] = "True"
 
-    import logging
-
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     config = load_runtime_server_config()
@@ -3470,9 +3469,6 @@ def install_autocomplete():
     This command automatically detects your shell (bash or zsh) and adds the appropriate
     completion setup to your shell configuration file.
     """
-    import os
-    import subprocess
-
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
     psynet_root = os.path.dirname(script_dir)
@@ -3717,11 +3713,8 @@ def _estimate(mode):
     from .utils import get_config
 
     experiment_class = import_local_experiment()["class"]
-    wage_per_hour = get_config().get("wage_per_hour")
-
     config = get_config()
-    if not config.ready:
-        config.load()
+    wage_per_hour = config.get("wage_per_hour")
 
     if mode in ["reward", "both"]:
         max_reward = experiment_class.estimated_max_reward(wage_per_hour)
@@ -4443,9 +4436,7 @@ def export_(
 
     experiment_class = import_local_experiment()["class"]
 
-    config = get_config()
-    if not config.ready:
-        config.load()
+    config = get_config(load=True)
 
     if local:
         exp_variables = get_exp_variables()
@@ -6661,8 +6652,16 @@ def performance_test(ctx):
 @_test_options["performance_suite_started_s_ago"]
 @_test_options["performance_force"]
 @click.option("--debug", is_flag=True, help="Enable debug logging for verbose output")
+@click.option(
+    "--export/--no-export",
+    default=True,
+    show_default=True,
+    help="Time psynet export local after the tests.",
+)
 @_in_isolated_test_environment
-def performance_test__local(existing=False, json_output=None, debug=False, **options):
+def performance_test__local(
+    existing=False, json_output=None, debug=False, export=True, **options
+):
     """
     Run a performance test of the experiment locally.
 
@@ -6677,16 +6676,23 @@ def performance_test__local(existing=False, json_output=None, debug=False, **opt
     local ones instead, which resets them). Use --existing to connect to an
     already-running server instead.
 
-    This command never updates an experiment audit. Use
-    ``psynet audit performance-test`` to collect audit evidence.
+    Results are not saved to the experiment's audit record. Use
+    ``psynet audit performance-test`` if you need a permanent record
+    (e.g., before a study launch).
     """
     with _exit_on_termination_signal():
         return _run_performance_test_local(
-            existing=existing, json_output=json_output, debug=debug, **options
+            existing=existing,
+            json_output=json_output,
+            debug=debug,
+            export=export,
+            **options,
         )
 
 
-def _run_performance_test_local(*, existing, json_output, debug, **options):
+def _run_performance_test_local(
+    *, existing, json_output, debug, export=True, **options
+):
     """Run a local performance test and return its result records.
 
     ``options`` are the performance-test options, such as ``n_bots``.
@@ -6694,10 +6700,10 @@ def _run_performance_test_local(*, existing, json_output, debug, **options):
     _check_arrival_options(**options)
     if existing:
         return _run_performance_test_with_existing_server(
-            debug=debug, json_output=json_output, **options
+            debug=debug, json_output=json_output, export=export, **options
         )
     return _run_performance_test_with_new_server(
-        debug=debug, json_output=json_output, **options
+        debug=debug, json_output=json_output, export=export, **options
     )
 
 
@@ -6806,6 +6812,7 @@ def _run_performance_test_with_existing_server(
     test_label=None,
     suite_started_s_ago=None,
     force=False,
+    export=False,
     **suite_options,
 ):
     """Run performance test connecting to an already-running server.
@@ -6815,7 +6822,6 @@ def _run_performance_test_with_existing_server(
     first pauses as between the tests of a suite that started that long ago.
     ``suite_options`` are those of :func:`_run_performance_suite`.
     """
-    import logging
     import sys
 
     from psynet.experiment import get_experiment
@@ -6891,6 +6897,7 @@ def _run_performance_test_with_existing_server(
                 metadata=_collect_run_metadata(exp.label),
                 json_output=json_output,
                 quiet=remote,
+                export=export,
                 **suite_options,
             )
         with tester.bot_runner(bot_counts[0], bot_log_file):
@@ -6938,6 +6945,7 @@ def _run_performance_suite(
     ssh_options=None,
     quiet=False,
     cleanup=None,
+    export=False,
 ):
     """Run the tests of ``n_bots`` with ``tester`` and return their results.
 
@@ -6966,6 +6974,9 @@ def _run_performance_suite(
     cleanup : callable, optional
         Called after ``database_reset`` closes, even after an error, for
         example to start the services it stopped.
+    export : bool
+        Time ``psynet export local`` after the last test. Only for local
+        servers: remote suites would time the export of the local database.
 
     Raises
     ------
@@ -6985,6 +6996,7 @@ def _run_performance_suite(
     if find_capacity:
         options["confirm"] = not no_confirm
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
+    export_record = None
 
     def save_json(all_results, finished=False):
         if json_output:
@@ -6992,7 +7004,11 @@ def _run_performance_suite(
                 json_output,
                 suite,
                 all_results,
-                metadata={**metadata, "started_at": started_at},
+                metadata={
+                    **metadata,
+                    "started_at": started_at,
+                    "export": export_record,
+                },
                 options=options,
                 finished=finished,
                 quiet=quiet,
@@ -7015,6 +7031,8 @@ def _run_performance_suite(
             )
         else:
             all_results = suite.run(n_bots, bot_log_file=bot_log_file)
+        if export and all_results:
+            export_record = _measure_export(all_results[-1].db_rows_after)
         # Before the cleanup, which may fail.
         save_json(all_results, finished=True)
     finally:
@@ -7338,6 +7356,7 @@ def _start_local_server_and_wait_for_ready(
     env = os.environ.copy()
     env.setdefault("SKIP_DEPENDENCY_CHECK", "1")
     env.setdefault("BROWSER", "true")
+    env["PATH"] = _path_with_interpreter_bin()
     env.update(extra_env or {})
 
     try:
@@ -7480,7 +7499,75 @@ def _stop_server(server_info):
     print(f"Server stopped (log: {tmp_log_path})")
 
 
-def _run_performance_test_with_new_server(*, debug=False, json_output=None, **options):
+def _measure_export(db_rows):
+    """Time the export of the database after the last test, which holds ``db_rows``.
+
+    Returns
+    -------
+    dict
+        The ``export`` record of the JSON results: ``duration_s``, ``error``
+        (``None`` on success) and ``db_rows``, the rows in each table.
+    """
+    sizes = [
+        f"{db_rows[table]:,} {table}s"
+        for table in ("participant", "response")
+        if table in db_rows
+    ]
+    print(f"\n▶ Exporting {' and '.join(sizes) or 'the database'}...")
+    duration, error = _time_export()
+    return {"duration_s": duration, "error": error, "db_rows": dict(db_rows)}
+
+
+def _path_with_interpreter_bin():
+    """Return ``PATH`` with this interpreter's ``bin`` directory first.
+
+    This finds ``psynet`` in an unactivated virtual environment.
+    """
+    return os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
+
+
+def _time_export():
+    """Run ``psynet export local`` in a subprocess and time it.
+
+    Returns
+    -------
+    tuple
+        ``(duration_s, error)``, where ``error`` is ``None`` on success.
+    """
+    start = time.time()
+    try:
+        with tempfile.TemporaryDirectory(prefix="psynet_export_") as tmpdir:
+            result = subprocess.run(
+                ["psynet", "export", "local", "--assets", "none", "--path", tmpdir],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env={**os.environ, "PATH": _path_with_interpreter_bin()},
+            )
+            duration = time.time() - start
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start
+        error = "Export timed out (600s)"
+    except OSError as e:
+        duration = time.time() - start
+        error = f"Export could not run: {e}"
+    else:
+        error = None
+        if result.returncode != 0:
+            stderr_tail = "\n".join((result.stderr or "").strip().splitlines()[-20:])
+            error = f"Exit code {result.returncode}" + (
+                f": {stderr_tail}" if stderr_tail else ""
+            )
+    if error:
+        print(f"Export failed after {duration:.1f}s: {error}")
+    else:
+        print(f"Export completed in {duration:.1f}s")
+    return duration, error
+
+
+def _run_performance_test_with_new_server(
+    *, debug=False, json_output=None, export=False, **options
+):
     """Run performance test after starting a new experiment server."""
     from .testing.locks import TEST_SESSION
 
@@ -7496,7 +7583,7 @@ def _run_performance_test_with_new_server(*, debug=False, json_output=None, **op
         )
         try:
             all_results = _run_performance_test_with_existing_server(
-                debug=debug, json_output=json_output, **options
+                debug=debug, json_output=json_output, export=export, **options
             )
             print("Performance test completed.")
             return all_results
@@ -7602,7 +7689,6 @@ def performance_test__prepare_reset(
     ones. Then it pre-fills the database, waits for async jobs, and
     writes the number of async jobs still waiting to --json-output.
     """
-    import logging
 
     from psynet.experiment import get_experiment
     from psynet.perf_test import (
@@ -7824,7 +7910,6 @@ def _run_ssh_performance_test(
     ``performance-test local``, and ``suite_options`` those of
     :func:`_run_performance_suite`.
     """
-    import logging
 
     from psynet.perf_ssh import RemoteApp, RemotePerformanceTester
     from psynet.perf_test import log_to_console
