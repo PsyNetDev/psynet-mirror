@@ -5577,8 +5577,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
         return success_response()
 
-    @experiment_route("/node/<int:node_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/node/<int:node_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_node(node_id):
         from dallinger.models import Node
@@ -5587,8 +5588,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         node.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/info/<int:info_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/info/<int:info_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_info(info_id):
         from dallinger.models import Info
@@ -5597,8 +5599,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         info.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/trial/<int:trial_id>/fail", methods=["GET", "POST"])
+    @experiment_route("/trial/<int:trial_id>/fail", methods=["POST"])
     @staticmethod
+    @login_required
     @with_transaction
     def fail_trial(trial_id):
         from .trial.main import Trial
@@ -5609,8 +5612,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         trial.fail(reason="http_fail_route_called")
         return success_response()
 
-    @experiment_route("/network/<int:network_id>/grow", methods=["GET", "POST"])
+    @experiment_route("/network/<int:network_id>/grow", methods=["POST"])
     @classmethod
+    @login_required
     @with_transaction
     def grow_network(cls, network_id):
         exp = get_experiment()
@@ -5626,9 +5630,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @experiment_route(
         "/network/<int:network_id>/call_async_post_grow_network",
-        methods=["GET", "POST"],
+        methods=["POST"],
     )
     @staticmethod
+    @login_required
     @with_transaction
     def call_async_post_grow_network(network_id):
         from .trial.main import NetworkTrialMaker
