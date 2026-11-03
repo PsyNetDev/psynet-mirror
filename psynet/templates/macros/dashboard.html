@@ -95,6 +95,10 @@
                     method: 'POST',
                     credentials: 'same-origin',
                     body: new URLSearchParams({status: e.target.value}),
+                }).then(function (r) {
+                    if (!r.ok) alert('Failed to change the Lucid status (HTTP ' + r.status + ').');
+                }).catch(function () {
+                    alert('Failed to change the Lucid status. Please try again.');
                 })
             })
         });

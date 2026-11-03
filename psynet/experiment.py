@@ -5512,9 +5512,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 title="Trigger export",
                 html=(
                     f'<form method="post"><input type="hidden" name="assets" '
-                    f'value="{escape(assets)}"><button type="submit" '
-                    f'class="btn btn-primary">Build export (assets: {escape(assets)})'
-                    f"</button></form>"
+                    f'value="{escape(assets)}"><input type="hidden" name="html" '
+                    f'value="1"><button type="submit" class="btn btn-primary">'
+                    f"Build export (assets: {escape(assets)})</button></form>"
                 ),
             )
 
@@ -5524,6 +5524,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             os.makedirs(export_dir)
             store_latest_archive(exp.build_export_archive(export_dir, assets=assets))
 
+        if request.form.get("html"):
+            return render_template(
+                "dashboard_custom.html",
+                title="Trigger export",
+                html=f"<p>Export built and stored (assets: {escape(assets)}).</p>",
+            )
         return success_response(assets=assets)
 
     @experiment_route("/get_participant_info_for_debug_mode", methods=["GET"])
