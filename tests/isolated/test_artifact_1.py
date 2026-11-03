@@ -135,6 +135,8 @@ class TestAPI:
             {"Sec-Fetch-Site": "cross-site"},
             {"Origin": "https://attacker.example"},
             {"Referer": "https://attacker.example/page"},
+            {"Origin": "null"},
+            {"Origin": base_url.replace("http://", "https://", 1)},
         ]:
             response = session.post(url, data={"txt": "forged"}, headers=headers)
             assert response.status_code == 403
@@ -143,6 +145,9 @@ class TestAPI:
             f"{base_url}/dashboard/archive/deployment", data={"id": "../deployments"}
         )
         assert response.json()["status"] == "error"
+        assert (
+            session.get(f"{base_url}/dashboard/comment/get/%2E%2E").status_code == 400
+        )
 
         # Write the comment, as the dashboard's own page does
         response = session.post(

@@ -498,7 +498,8 @@ def _is_cross_site_request(req):
     source = req.headers.get("Origin") or req.headers.get("Referer")
     if source is None:
         return False
-    return urlsplit(source).netloc != req.host
+    source = urlsplit(source)
+    return (source.scheme, source.netloc) != (req.scheme, req.host)
 
 
 def _refuse_cross_site_dashboard_request():
@@ -4755,6 +4756,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except json.JSONDecodeError:
             logger.exception(f"Failed to decode JSON file: {deployment_id}")
             return error_response("Failed to decode JSON file.")
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard.route("/status/get")
     @login_required
@@ -4847,16 +4850,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("No comment specified.")
 
         txt = params["txt"]
-        get_experiment().artifact_storage.write_comment(
-            text=txt, deployment_id=deployment_id
-        )
+        try:
+            get_experiment().artifact_storage.write_comment(
+                text=txt, deployment_id=deployment_id
+            )
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
     @login_required
     def get_comment(deployment_id):  # noqa F811
-        return get_experiment().artifact_storage.read_comment(deployment_id)
+        try:
+            return get_experiment().artifact_storage.read_comment(deployment_id)
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard_tab("Deployments")
     @classmethod
