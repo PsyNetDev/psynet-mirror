@@ -468,7 +468,9 @@ templates that changes the database.
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
-  ``definition["correct_answer"]`` instead.
+  ``definition["correct_answer"]`` instead. A subclass that overrides
+  ``finalize_definition`` must call ``super()`` or set
+  ``definition["correct_answer"]`` (the 1-based position) itself.
 
 17. Groups and barriers
 -----------------------
