@@ -5425,12 +5425,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/artifact/<deployment_id>/<filename>", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_artifact(deployment_id, filename):
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
         exp = get_experiment()
         storage = exp.artifact_storage
         try:
@@ -5455,27 +5452,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/preflight", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def export_preflight():
         """Describe this deployment so a client can validate it before downloading."""
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.identity import server_project_identity
 
         return jsonify(server_project_identity())
 
     @dashboard.route("/export/download", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_export():
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.service import validate_asset_mode
 
         try:

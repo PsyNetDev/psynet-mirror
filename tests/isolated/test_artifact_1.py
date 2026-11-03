@@ -159,16 +159,16 @@ class TestAPI:
         )
         assert response.status_code == 200
 
-        # Download the comment
-        response = requests.get(
-            f"{base_url}/dashboard/artifact/{deployment_id}/comment.txt"
-        )
+        # Download the comment, which needs the dashboard login even locally
+        artifact_url = f"{base_url}/dashboard/artifact/{deployment_id}/comment.txt"
+        assert requests.get(artifact_url).status_code == 401
+        response = session.get(artifact_url)
         assert response.status_code == 200
         assert response.text == comment_text
 
     def check_export(self, base_url, deployment_id):
         # Request a data export (in psynet mode, without assets)
-        response = requests.get(
+        response = get_authenticated_session(base_url).get(
             f"{base_url}/dashboard/export/download",
             params={"type": "psynet", "assets": "none"},
         )

@@ -791,29 +791,3 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
-
-Require login for artifact and export downloads from 127.0.0.1
---------------------------------------------------------------
-
-Date
-++++
-
-2026-11-03
-
-Problem
-+++++++
-
-``/dashboard/artifact/...``, ``/dashboard/export/preflight`` and
-``/dashboard/export/download`` skip the dashboard login for requests from
-``127.0.0.1``, so that local scripts can fetch exports. ``psynet debug local``
-doesn't use ``ProxyFix``, so when it is exposed through a public tunnel every
-visitor appears as ``127.0.0.1`` and can download the export without logging in.
-
-Idea
-++++
-
-The export client in ``psynet/export/client.py`` already sends the dashboard
-credentials, so check which other local callers rely on the ``127.0.0.1``
-exception and then drop it. If that is not practical, at least refuse the
-exception when the request carries forwarding headers such as
-``X-Forwarded-For``.
