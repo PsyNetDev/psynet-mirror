@@ -31,8 +31,10 @@ two ways:
   from the ``sender`` or ``participant_id`` field of the message, which the
   browser writes and nobody checks. Any browser can connect to any channel and
   read everything sent on it, including what the server publishes with
-  ``publish_to_subscribers``. The same connection also receives the server's
-  directed messages for this participant through ``onDirect``.
+  ``publish_to_subscribers``. The socket itself is admitted with the
+  participant's token, so it also receives the server's directed messages for
+  this participant through ``onDirect``; only those are trusted, never the
+  channel's own messages.
 
 In both cases only browsers connected at that moment receive a message;
 nothing is stored for later.
@@ -118,7 +120,8 @@ if it carries their token.
    message with a fixed ``type``, for example
    ``{"type": "chat_message", "text": text}``. PsyNet raises ``ValueError``
    for the message types it reserves for its own directed messages, such as
-   ``timeline_hold_wake``.
+   ``timeline_hold_wake``. Only ``self.publish_to_participants`` checks this;
+   don't call Dallinger's ``publish_to_participants`` directly.
 
 An element without ``requires_checked_connection`` gets every message on its
 channel from a worker process. It can reply with
