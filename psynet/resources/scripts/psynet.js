@@ -3300,7 +3300,10 @@
       const participantId = dallinger.identity.participantId;
       const exitRoute = dallinger.recruiterExitRoute();
       return dallinger
-        .post("/worker_complete", { participant_id: participantId })
+        .post("/worker_complete", {
+          participant_id: participantId,
+          unique_id: dallinger.identity.uniqueId,
+        })
         .done(function () {
           dallinger.allowExit();
           let openedFromDashboard = false;
