@@ -756,13 +756,13 @@ Problem
 +++++++
 
 The experiment ``Dockerfile`` template, which also defines development
-environments such as Codespaces, installs Debian bookworm's Node 18.
-PsyNet's Playwright tests need Node 20 or later.
+environments such as Codespaces, installs Debian trixie's Node 20.19.
+That release reached end of life in April 2026.
 
 Idea
 ++++
 
-Copy ``node`` and ``npm`` from ``node:20-bookworm-slim``, as the root
+Copy ``node`` and ``npm`` from ``node:20-trixie-slim``, as the root
 ``Dockerfile`` does.
 
 Remove obsolete warning filters
