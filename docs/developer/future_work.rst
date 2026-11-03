@@ -655,3 +655,134 @@ Once PsyNet pins a Dallinger release that includes
   that case to Dallinger.
 - Keep ``_require_ssh_apps_exist``'s ``dlgr-<first 8 characters>`` suggestion
   for a full experiment UUID; that is PsyNet's own help.
+
+Pin a Dallinger that checks Redis before clearing the database
+--------------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+PsyNet pins Dallinger master ``96e5cf8eb``. If Redis is down, that
+Dallinger's ``init_db(drop_all=True)`` drops the tables before it fails to
+clear the real-time sessions, so ``psynet prepare`` leaves the database
+without its tables.
+
+Idea
+++++
+
+Move the pin to a Dallinger that includes
+`Dallinger PR #10251 <https://github.com/Dallinger/Dallinger/pull/10251>`_,
+for example at the next Dallinger release.
+
+Reject reserved SSH app names before contacting the server
+----------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``_pre_launch`` calls Dallinger's ``_check_app_name_not_reserved`` only after
+``_abort_if_app_exists`` has connected over SSH. With ``--app logs``, an SSH
+failure hides the reserved-name error.
+
+Idea
+++++
+
+Run the check as soon as an explicit ``--app`` is known, and again after
+``_default_ssh_app_name`` when ``--app`` was omitted.
+
+Show real-time runners in ``psynet services list``
+--------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``psynet/service_usage.py`` treats only ``dallinger_heroku_*`` processes as
+Dallinger servers, so a leftover ``dallinger_realtime`` runner isn't
+attached to its session. Cleanup already stops these runners.
+
+Idea
+++++
+
+Also match ``dallinger_realtime``, or reuse Dallinger's
+``local_worker_processes`` as the cleanup code does.
+
+Check for the Heroku CLI in every Heroku command
+------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+Only ``psynet deploy heroku`` and ``psynet debug heroku`` stop early with
+install instructions when the Heroku CLI is missing. ``export heroku``,
+``destroy heroku``, ``db heroku`` and ``experiment-variables heroku`` still
+fail with Dallinger's "You are not logged into Heroku." or a
+``FileNotFoundError``.
+
+Idea
+++++
+
+Move the ``shutil.which("heroku")`` check into a helper that every Heroku
+code path calls before using ``HerokuApp``.
+
+Supported Node in the experiment ``Dockerfile``
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+The experiment ``Dockerfile`` template, which also defines development
+environments such as Codespaces, installs Debian trixie's ``nodejs``
+package, Node 20.19. Node 20 reached end of life in April 2026.
+
+Idea
+++++
+
+Copy ``node`` and ``npm`` from the official Node image that the root
+``Dockerfile`` copies from, so that both images use the Node release
+set by its ``NODE_VERSION`` build argument.
+
+Remove obsolete warning filters
+-------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``tests/isolated/test_warnings.py`` still filters warnings from the Heroku
+CLI and Node, which local launches no longer produce now that they use
+honcho. Its broad ``DeprecationWarning:`` filter can hide real warnings.
+
+Idea
+++++
+
+Remove the Heroku and Node patterns, check the test still passes, and
+narrow the remaining filters.

@@ -1,4 +1,5 @@
 import pytest
+from dallinger.experiment import EXPERIMENT_ROUTE_REGISTRATIONS
 from dallinger.experiment_server.dashboard import dashboard
 from flask import Blueprint, Flask
 from flask_login import LoginManager
@@ -6,9 +7,14 @@ from flask_login import LoginManager
 from psynet.experiment import Experiment
 
 DASHBOARD_EXPERIMENT_ROUTES = [
-    ("/module/progress_info", "get_progress_info"),
-    ("/module/update_spending_limits", "update_spending_limits"),
-    ("/change_lucid_status", "change_lucid_status"),
+    "get_progress_info",
+    "update_spending_limits",
+    "change_lucid_status",
+    "fail_node",
+    "fail_info",
+    "fail_trial",
+    "grow_network",
+    "call_async_post_grow_network",
 ]
 
 
@@ -19,13 +25,14 @@ def client():
     LoginManager(app).user_loader(lambda user_id: None)
     app.register_blueprint(dashboard)
     experiment_routes = Blueprint("experiment_routes", __name__)
-    for rule, func_name in DASHBOARD_EXPERIMENT_ROUTES:
-        experiment_routes.add_url_rule(
-            rule,
-            endpoint=func_name,
-            view_func=getattr(Experiment, func_name),
-            methods=["GET", "POST"],
-        )
+    for route in EXPERIMENT_ROUTE_REGISTRATIONS:
+        if route["func_name"] in DASHBOARD_EXPERIMENT_ROUTES:
+            experiment_routes.add_url_rule(
+                route["rule"],
+                endpoint=route["func_name"],
+                view_func=getattr(Experiment, route["func_name"]),
+                **dict(route["kwargs"]),
+            )
     app.register_blueprint(experiment_routes)
     return app.test_client()
 
@@ -47,7 +54,26 @@ def client():
         ("GET", "/module/progress_info"),
         ("POST", "/module/update_spending_limits"),
         ("GET", "/change_lucid_status?status=paused"),
+        ("POST", "/node/1/fail"),
+        ("POST", "/info/1/fail"),
+        ("POST", "/trial/1/fail"),
+        ("POST", "/network/1/grow"),
+        ("POST", "/network/1/call_async_post_grow_network"),
     ],
 )
 def test_dashboard_routes_reject_anonymous_requests(client, method, path):
     assert client.open(path, method=method).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/node/1/fail",
+        "/info/1/fail",
+        "/trial/1/fail",
+        "/network/1/grow",
+        "/network/1/call_async_post_grow_network",
+    ],
+)
+def test_data_changing_routes_refuse_get(client, path):
+    assert client.get(path).status_code == 405

@@ -3,11 +3,13 @@
 # Can be overridden with: docker build --build-arg DOCKER_PLATFORM=linux/arm64
 ARG DOCKER_PLATFORM=linux/amd64
 ARG PYTHON_VERSION=3.14
-# Debian bookworm ships Node 18, but Playwright needs Node 20 or later.
+# Playwright needs Node 20 or later. Copy the pinned Node release from the
+# official image, built on the same Debian release as the Python image,
+# instead of Debian's nodejs package.
 ARG NODE_VERSION=20
-FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-bookworm-slim AS node
+FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-trixie-slim AS node
 
-FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-bookworm
+FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-trixie
 ARG PYTHON_VERSION
 ARG CHROME_VERSION=149.0.7827.54
 
@@ -52,7 +54,8 @@ COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
 # Generate PsyNet constraints.txt (experiment runtime + demos extras) and install it.
 # Use a vendored Dallinger dev-requirements snapshot so parallel CI Docker
 # builds do not depend on raw.githubusercontent.com availability.
-RUN uv pip compile --python-version ${PYTHON_VERSION} pyproject.toml \
+# Compile for the image's full Python version: uv reads 3.11 as 3.11.0.
+RUN uv pip compile --python-version "$(python -c 'import platform; print(platform.python_version())')" pyproject.toml \
         --extra experiment --extra demos \
         --constraint dallinger-dev-requirements.txt \
         --output-file constraints.txt

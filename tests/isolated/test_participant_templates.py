@@ -11,6 +11,7 @@ reintroduce and hard to spot by eye:
   drops the participant theme for that page.
 """
 
+import json
 import re
 from importlib import resources
 from pathlib import Path
@@ -1016,3 +1017,31 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
     assert 'id="error-identifiers"' not in error
     assert "error_page_presentation.researcher_contact_message" in error
     assert "experiment.error_page_content" not in error
+
+
+def test_layout_identity_carries_participant_ids_verbatim():
+    source = (resources.files("psynet") / "templates" / "psynet_layout.html").read_text(
+        encoding="utf-8"
+    )
+    start = source.index("{% if participant is defined %}")
+    end = source.index("{% endif %}", start) + len("{% endif %}")
+    participant = SimpleNamespace(
+        id=1, worker_id="W</script>&'\"\\", assignment_id="A&1", hit_id="H<1>"
+    )
+    participant.unique_id = f"{participant.worker_id}:{participant.assignment_id}"
+
+    html = (
+        Environment(autoescape=True)
+        .from_string(source[start:end])
+        .render(participant=participant)
+    )
+
+    assert html.count("</script>") == 1
+    identity = {k: json.loads(v) for k, v in re.findall(r"(\w+): (.+?),?\n", html)}
+    assert identity == {
+        "participantId": 1,
+        "assignmentId": "A&1",
+        "hitId": "H<1>",
+        "uniqueId": participant.unique_id,
+        "workerId": participant.worker_id,
+    }
