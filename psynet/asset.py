@@ -141,10 +141,10 @@ def _sandbox_asset_response(response):
     """
     if 300 <= response.status_code < 400:
         return response
-    # Chrome's built-in PDF viewer shows nothing for a sandboxed document.
-    if response.mimetype != "application/pdf":
-        response.headers["Content-Security-Policy"] = "sandbox"
     mimetype = response.mimetype or ""
+    # Chrome's built-in PDF and media viewers can't load a sandboxed document.
+    if mimetype != "application/pdf" and not mimetype.startswith(("audio/", "video/")):
+        response.headers["Content-Security-Policy"] = "sandbox"
     if mimetype in _ACTIVE_ASSET_MIMETYPES or mimetype.endswith("+xml"):
         disposition = response.headers.get("Content-Disposition", "inline")
         _, separator, parameters = disposition.partition(";")

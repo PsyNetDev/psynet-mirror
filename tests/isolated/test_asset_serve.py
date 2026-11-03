@@ -110,6 +110,7 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
         (".xslt", "attachment", "sandbox"),
         (".png", "inline", "sandbox"),
         (".pdf", "inline", None),
+        (".wav", "inline", None),
     ],
 )
 def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition, policy):

@@ -200,7 +200,7 @@ contents change. External assets keep their original URL.
 
 Files served from ``/asset/<access_token>`` carry
 ``Content-Security-Policy: sandbox``, so a participant's upload can't run as a
-page on the experiment's site; PDFs are exempt so browsers can display them.
+page on the experiment's site; PDF, audio and video files are exempt so browsers can display them.
 HTML, XHTML, SVG, XML, XSL and JavaScript files are sent as downloads. They
 still work as ``img``, ``audio`` or ``video`` sources, but a page that must
 open in the browser belongs in ``static/``.
