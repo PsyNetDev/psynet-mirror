@@ -381,29 +381,35 @@ or honor the visible page's full-reload requirement. Refreshing during a hold
 loads a neutral fallback page and reconnects to the same durable hold record.
 
 Workers and barriers queue participant-targeted wake messages in the current
-database transaction. PsyNet publishes the messages on that participant's hold
-channel (``psynet_timeline_hold_<id>``) only after commit. Delivery is an
-optimization rather than authority: the browser always submits an idempotent
-resume check, and the server re-evaluates the condition. ``check_interval``
-remains the bounded fallback for missed messages and arbitrary conditions
-without a framework event.
+database transaction. Only after commit, PsyNet sends them with
+``publish_to_participants`` as directed messages, which reach only that
+participant's checked connections (see :ref:`realtime_interaction`); the
+browser handles them in its ``onDirect`` callback. Nothing is published on the
+per-participant channel (``psynet_timeline_hold_<id>``), because any browser
+can read a channel. Delivery is an optimization rather than authority: the
+browser always submits an idempotent resume check, and the server re-evaluates
+the condition. ``check_interval`` remains the bounded fallback for missed
+wakes and arbitrary conditions without a framework event.
 
 Dallinger subscribes the server to Redis only after the WebSocket opens, so a
-wake published in that gap would be lost. Hold and arrival-update sockets
-therefore connect with ``confirmListening``: the browser publishes a probe on
-its own channel, repeating it each second until it echoes back, and ``onOpen``
-(with its resume check) runs only after that echo. Dallinger treats everything
+wake sent in that gap could be lost. Hold and arrival-update sockets therefore
+connect with ``confirmListening``: the browser publishes a probe on the
+per-participant channel, which carries nothing else, repeating it each
+second until it echoes back, and ``onOpen`` (with its resume check) runs only
+after that echo. Dallinger registers a socket for directed messages before it
+reads the socket's frames, so the echo normally means wakes reach it too; if
+not, the safety poll covers a missed wake. Dallinger treats everything
 before the first colon of a browser-sent message as the channel name, so these
 channel names must not contain a colon. A hold whose barrier released it before
 the deadline does not time out, even if the participant's next check arrives
 after the deadline.
 
 When the last hold on a page ends, the browser closes the hold-channel
-WebSocket. The next hold reconnects. Partner-ready notices use the same
-channel; the extra arrival-update socket opens only while the participant
-is in an active sync group and not already on a hold. If membership is not
-already loaded, a cheap existence check decides whether to open that socket.
-Redis delivery is an optimization: when that socket opens, the browser also
+WebSocket. The next hold reconnects. Partner-ready notices arrive as directed
+messages on the same socket; the extra arrival-update socket opens only while
+the participant is in an active sync group and not already on a hold. If
+membership is not already loaded, a cheap existence check decides whether to
+open that socket. Directed delivery is an optimization: when that socket opens, the browser also
 fetches ``GET /timeline/arrival_notice`` so a partner who arrived during
 connect is still shown. Hold-resume POSTs set
 ``timeline_hold_resume`` so that if a partner already advanced this waiter

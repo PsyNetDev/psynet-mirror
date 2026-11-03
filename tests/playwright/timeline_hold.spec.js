@@ -469,7 +469,7 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
     );
     await experimentPage.evaluate(installTimelineHoldWakeCounter);
     // check_interval is 1s. An in-place safety-poll POST can return the next
-    // page and stop the hold controller before websocket onMessage dispatches
+    // page and stop the hold controller before websocket onDirect dispatches
     // timelineHoldWakeReceived, so the wake counter stays 0.
     expect(await silenceTimelineHoldSafetyPoll(experimentPage)).toBe(true);
 
