@@ -139,7 +139,9 @@ def _sandbox_asset_response(response):
     """
     if 300 <= response.status_code < 400:
         return response
-    response.headers["Content-Security-Policy"] = "sandbox"
+    # Chrome's built-in PDF viewer shows nothing for a sandboxed document.
+    if response.mimetype != "application/pdf":
+        response.headers["Content-Security-Policy"] = "sandbox"
     if response.mimetype in _ACTIVE_ASSET_MIMETYPES:
         disposition = response.headers.get("Content-Disposition", "inline")
         _, separator, parameters = disposition.partition(";")

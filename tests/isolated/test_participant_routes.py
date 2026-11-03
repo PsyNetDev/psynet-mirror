@@ -75,11 +75,11 @@ def lucid(client, monkeypatch):
     "query, terminated",
     [
         ("RID=rid", False),
-        ("unique_id=rid:rid", False),
-        ("RID=rid&unique_id=worker:rid", True),
-        ("unique_id=worker:rid", True),
-        ("RID=rid&unique_id=other:missing", False),
-        ("assignmentId=rid&RID=other&unique_id=worker:rid", False),
+        ("assignmentId=rid", False),
+        ("unique_id=rid:rid", True),
+        ("RID=rid&unique_id=rid:rid", True),
+        ("RID=rid&unique_id=rid:missing", False),
+        ("assignmentId=rid&RID=other&unique_id=rid:rid", False),
     ],
 )
 def test_terminating_a_lucid_participant_needs_their_unique_id(
@@ -87,7 +87,7 @@ def test_terminating_a_lucid_participant_needs_their_unique_id(
 ):
     from psynet.participant import Participant
 
-    _add_lucid_participant("worker")
+    _add_lucid_participant()
     response = client.get("/terminate_participant?reason=wrong-browser&" + query)
 
     assert response.status_code == (200 if terminated else 403)
@@ -95,14 +95,26 @@ def test_terminating_a_lucid_participant_needs_their_unique_id(
     assert lucid.terminate_respondent.called is terminated
 
 
-def _add_lucid_participant(worker_id, rid="rid", progress=0):
+def test_a_unique_id_with_another_worker_id_is_refused(client, lucid):
+    from psynet.participant import Participant
+
+    _add_lucid_participant(worker_id="worker")
+    response = client.get("/terminate_participant?reason=wrong-browser&unique_id=x:rid")
+
+    assert response.status_code == 403
+    assert not Participant.query.one().failed
+    assert not lucid.terminate_respondent.called
+
+
+def _add_lucid_participant(worker_id=None, rid="rid", progress=0):
+    """Add a Lucid participant; like Lucid, the worker ID defaults to the RID."""
     from psynet.experiment import get_experiment
     from psynet.participant import Participant
 
     participant = Participant(
         get_experiment(),
         recruiter_id="lucid-recruiter",
-        worker_id=worker_id,
+        worker_id=worker_id or rid,
         assignment_id=rid,
         hit_id=rid,
         mode="debug",
@@ -113,7 +125,7 @@ def _add_lucid_participant(worker_id, rid="rid", progress=0):
 
 
 @pytest.mark.parametrize(
-    "query, verified", [("RID=rid", False), ("unique_id=worker:rid", True)]
+    "query, verified", [("RID=rid", False), ("unique_id=rid:rid", True)]
 )
 def test_a_completed_lucid_participant_needs_their_unique_id(
     client, lucid, query, verified
@@ -121,7 +133,7 @@ def test_a_completed_lucid_participant_needs_their_unique_id(
     """A completed participant gets the exit page but is never terminated."""
     from psynet.participant import Participant
 
-    _add_lucid_participant("worker", progress=1)
+    _add_lucid_participant(progress=1)
     response = client.get("/terminate_participant?reason=wrong-browser&" + query)
 
     assert response.status_code == (200 if verified else 403)
@@ -133,8 +145,8 @@ def test_a_completed_lucid_participant_needs_their_unique_id(
 def test_a_lucid_rid_shared_by_two_participants_is_refused(client, lucid):
     from psynet.participant import Participant
 
-    _add_lucid_participant("worker")
-    _add_lucid_participant("other")
+    _add_lucid_participant()
+    _add_lucid_participant(worker_id="other")
     response = client.get("/terminate_participant?reason=wrong-browser&RID=rid")
 
     assert response.status_code == 500

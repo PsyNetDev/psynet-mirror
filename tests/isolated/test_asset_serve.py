@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -13,6 +15,7 @@ from psynet.asset import (
     Asset,
     LocalStorage,
     ManagedAsset,
+    OnDemandAsset,
     S3Storage,
     _safe_asset_subpath,
 )
@@ -100,10 +103,15 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
 
 
 @pytest.mark.parametrize(
-    "extension, disposition",
-    [(".html", "attachment"), (".svg", "attachment"), (".png", "inline")],
+    "extension, disposition, policy",
+    [
+        (".html", "attachment", "sandbox"),
+        (".svg", "attachment", "sandbox"),
+        (".png", "inline", "sandbox"),
+        (".pdf", "inline", None),
+    ],
 )
-def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition):
+def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition, policy):
     """An uploaded HTML or SVG asset must not run as a page on the experiment's origin."""
     root = tmp_path / "storage"
     (root / "objects").mkdir(parents=True)
@@ -121,12 +129,30 @@ def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition):
     with Flask("test-asset-serve-sandbox").test_request_context("/"):
         response = Asset.serve(asset)
         try:
-            assert response.headers["Content-Security-Policy"] == "sandbox"
+            assert response.headers.get("Content-Security-Policy") == policy
             value, options = parse_options_header(
                 response.headers["Content-Disposition"]
             )
             assert value == disposition
             assert options["filename"] == "abc123" + extension
+        finally:
+            response.close()
+
+
+def _write_html_page(path):
+    Path(path).write_text("<script>alert(1)</script>")
+
+
+def test_on_demand_asset_serve_is_sandboxed(tmp_path, monkeypatch):
+    # Flask's test request context never runs the temp-file cleanup.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    asset = OnDemandAsset(function=_write_html_page, extension=".html")
+
+    with Flask("test-on-demand-asset-sandbox").test_request_context("/"):
+        response = asset.serve()
+        try:
+            assert response.headers["Content-Security-Policy"] == "sandbox"
+            assert response.headers["Content-Disposition"].startswith("attachment")
         finally:
             response.close()
 
