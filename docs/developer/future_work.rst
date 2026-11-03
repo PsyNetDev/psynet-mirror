@@ -744,8 +744,8 @@ Idea
 Move the ``shutil.which("heroku")`` check into a helper that every Heroku
 code path calls before using ``HerokuApp``.
 
-Node 20 in the experiment ``Dockerfile``
-----------------------------------------
+Supported Node in the experiment ``Dockerfile``
+-----------------------------------------------
 
 Date
 ++++
@@ -756,14 +756,15 @@ Problem
 +++++++
 
 The experiment ``Dockerfile`` template, which also defines development
-environments such as Codespaces, installs Debian trixie's Node 20.19.
-That release reached end of life in April 2026.
+environments such as Codespaces, installs Debian trixie's ``nodejs``
+package, Node 20.19. Node 20 reached end of life in April 2026.
 
 Idea
 ++++
 
-Copy ``node`` and ``npm`` from ``node:20-trixie-slim``, as the root
-``Dockerfile`` does.
+Copy ``node`` and ``npm`` from the official Node image that the root
+``Dockerfile`` copies from, so that both images use the Node release
+set by its ``NODE_VERSION`` build argument.
 
 Remove obsolete warning filters
 -------------------------------
