@@ -322,12 +322,12 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
-        from .live_session import _timeline_game_types
+        from .live_session import _live_session_types
 
         listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
         cls._listed_realtime_games = list(listed)
         cls.realtime_games = list(
-            dict.fromkeys([*listed, *_timeline_game_types(cls.timeline)])
+            dict.fromkeys([*listed, *_live_session_types.values()])
         )
 
         if hasattr(cls, "test_create_bots"):
@@ -711,9 +711,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     realtime_games : ``list``
         The game types of the experiment's live sessions (see
-        :mod:`psynet.live_session`). PsyNet adds the game type of every
-        :class:`~psynet.live_session.LiveSessionInitializer` in the timeline,
-        so list only games the experiment starts some other way.
+        :mod:`psynet.live_session`). PsyNet adds every
+        :class:`~psynet.live_session.LiveSession` defined or imported before
+        the experiment class, so list only other game types it plays.
         Default: ``[]``.
 
 
@@ -2708,6 +2708,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls.check_stale_ad_page_override()
         cls.check_unused_dallinger_quality_checks()
         cls.check_stale_bonus_override()
+        cls.check_live_session_games()
         PsyNetProlificRecruiterMixin.check_screen_out_config(config)
 
         parser = configparser.ConfigParser()
@@ -2948,6 +2949,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "`bad_data` or `did_not_attend`). Fail participants during "
                 "the timeline instead, for example with `fail()` or "
                 "`UnsuccessfulEndPage`."
+            )
+
+    @classmethod
+    def check_live_session_games(cls):
+        """Check that each live session game is defined or imported before
+        the experiment class, since PsyNet adds only those to
+        ``realtime_games``."""
+        from .live_session import _live_session_types
+
+        listed = {game_type.channel for game_type in cls.realtime_games}
+        missing = [
+            game_type.__name__
+            for channel, game_type in _live_session_types.items()
+            if channel not in listed
+        ]
+        if missing:
+            raise RuntimeError(
+                f"{', '.join(missing)} must be defined or imported before the "
+                f"experiment class, {cls.__name__}, for PsyNet to add them to "
+                "its realtime_games."
             )
 
     @classmethod

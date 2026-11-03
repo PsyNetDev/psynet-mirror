@@ -1,3 +1,6 @@
+import datetime
+import enum
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -5,11 +8,18 @@ import pytest
 from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.models import RealtimeSession
-from dallinger.realtime import RealtimeGame
+from dallinger.realtime import RealtimeGame, Reject, Sent
 from dallinger.realtime.store import RUNNING
+from pydantic import BaseModel, ConfigDict
 
+from psynet import live_session
 from psynet.experiment import Experiment, get_experiment
-from psynet.live_session import LiveSessionInitializer, live_session_id
+from psynet.live_session import (
+    LiveMessage,
+    LiveSession,
+    LiveSessionInitializer,
+    live_session_id,
+)
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -105,28 +115,403 @@ def test_a_follower_who_reloads_finds_the_group_s_session(pair):
     assert redis_conn.sismember(RUNNING, session_id)
 
 
-class Listed(RealtimeGame):
-    channel = "listed"
+def _pick_numbers():
+    return {game.channel: game for game in get_experiment().realtime_games}[
+        "pick_numbers"
+    ]()
 
 
-class Played(RealtimeGame):
-    channel = "played"
+@pytest.mark.parametrize(
+    "message, reason",
+    [
+        (
+            {"type": "pick", "message": {"number": "7", "colour": "red"}},
+            "Invalid 'pick' message: colour: Extra inputs are not permitted; "
+            "number: Input should be a valid integer.",
+        ),
+        (
+            {"type": "pick", "message": 7},
+            "Invalid 'pick' message: Input should be an object.",
+        ),
+        (
+            {"type": "pick"},
+            "Invalid 'pick' message: number: Field required.",
+        ),
+        ({"type": "choose", "message": {}}, "Unknown message type 'choose'."),
+        (
+            {"type": "pick", "message": {"number": 7}, "round": 1},
+            'A message is an object with a "type" and a "message".',
+        ),
+        (7, 'A message is an object with a "type" and a "message".'),
+        ({"type": ["pick"]}, 'A message is an object with a "type" and a "message".'),
+    ],
+)
+def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
+    game = _pick_numbers()
+    state = game.initial_state(["1", "2"])
+
+    with pytest.raises(Reject) as rejected:
+        game.apply(state, "1", message, 0.5, Sent())
+
+    assert rejected.value.reason == reason
+    assert state == {"picks": {"1": None, "2": None}}
 
 
-def test_realtime_games_adds_the_timeline_s_game_types_to_the_listed_ones():
-    class TwoGames(Experiment):
-        realtime_games = [Listed]
-        timeline = Timeline(
-            LiveSessionInitializer(id_="first", group_type="pair", game_type=Played),
-            LiveSessionInitializer(id_="second", group_type="pair", game_type=Played),
-        )
+class Move(LiveMessage):
+    type = "move"
+    to: tuple[int, int]
 
-    class SameTimeline(TwoGames):
+    def apply(self, game, state, player_id, now):
+        state["held"] = type(self.to).__name__
+        state["at"] = self.to
+
+
+@pytest.fixture
+def registry(monkeypatch):
+    monkeypatch.setattr(live_session, "_live_session_types", {})
+    return live_session._live_session_types
+
+
+class Point(BaseModel):
+    x: int
+    y: int
+
+
+class Place(LiveMessage):
+    type = "place"
+    at: Point
+    heading: float = 0
+
+    def apply(self, game, state, player_id, now):
+        state["at"] = self.at
+
+
+@pytest.fixture
+def walk(registry):
+    class Walk(LiveSession):
+        channel = "walk"
+        messages = [Move, Place]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+    return Walk()
+
+
+def test_a_field_holds_its_type_and_is_stored_as_json(walk):
+    state = {}
+
+    walk.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
+
+    assert state == {"held": "tuple", "at": [2, 3]}
+
+
+def test_a_nested_model_is_stored_as_a_dict(walk):
+    state = {}
+
+    walk.apply(
+        state, "1", {"type": "place", "message": {"at": {"x": 1, "y": 2}}}, 0, Sent()
+    )
+
+    assert state == {"at": {"x": 1, "y": 2}}
+
+
+@pytest.mark.parametrize(
+    "fields, reason",
+    [
+        (
+            {"at": {"x": "1", "y": 2, "z": 3}},
+            "Invalid 'place' message: at.z: Extra inputs are not permitted; "
+            "at.x: Input should be a valid integer.",
+        ),
+        (
+            {"at": {"x": 1, "y": 2}, "heading": float("nan")},
+            "Invalid 'place' message: heading: Input should be a finite number.",
+        ),
+    ],
+)
+def test_model_fields_and_numbers_are_checked_strictly(walk, fields, reason):
+    with pytest.raises(Reject) as rejected:
+        walk.apply({}, "1", {"type": "place", "message": fields}, 0, Sent())
+
+    assert rejected.value.reason == reason
+
+
+def test_realtime_games_lists_every_live_session_and_the_listed_games(registry):
+    class Listed(RealtimeGame):
+        channel = "listed"
+
+    class Played(LiveSession):
+        channel = "played"
+
+    class AlsoListed(LiveSession):
+        channel = "also_listed"
+
+    class Unplayed(LiveSession):
+        """A base class for games, with no channel."""
+
+    class Games(Experiment):
+        realtime_games = [Listed, AlsoListed]
+        timeline = Timeline(InfoPage("No initializer.", time_estimate=5))
+
+    class SameGames(Games):
         pass
 
-    class NewTimeline(TwoGames):
-        timeline = Timeline(InfoPage("No games.", time_estimate=5))
+    assert Games.realtime_games == [Listed, AlsoListed, Played]
+    assert SameGames.realtime_games == [Listed, AlsoListed, Played]
 
-    assert TwoGames.realtime_games == [Listed, Played]
-    assert SameTimeline.realtime_games == [Listed, Played]
-    assert NewTimeline.realtime_games == [Listed]
+
+def _import_games(tmp_path, name, directory):
+    games = tmp_path / directory / "games.py"
+    games.parent.mkdir(exist_ok=True)
+    games.write_text(
+        "from psynet.live_session import LiveSession\n"
+        "class Imported(LiveSession):\n"
+        "    channel = 'imported'\n"
+    )
+    spec = importlib.util.spec_from_file_location(name, games)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        del sys.modules[name]
+    return module
+
+
+def test_a_copy_imported_under_the_same_name_is_the_same_game(registry, tmp_path):
+    _import_games(tmp_path, "games", "original")
+    copy = _import_games(tmp_path, "games", "copy")
+
+    assert registry == {"imported": copy.Imported}
+
+
+def test_a_file_imported_under_two_names_is_refused(registry, tmp_path):
+    _import_games(tmp_path, "games", "original")
+
+    with pytest.raises(ValueError, match="one file imported under two names"):
+        _import_games(tmp_path, "experiment_games", "original")
+
+
+def test_a_game_defined_after_the_experiment_class_is_refused(registry):
+    class Early(Experiment):
+        timeline = Timeline(InfoPage("No initializer.", time_estimate=5))
+
+    class Late(LiveSession):
+        channel = "late"
+
+    with pytest.raises(RuntimeError, match="Late must be defined or imported before"):
+        Early.check_live_session_games()
+
+
+def test_a_subclass_with_its_parent_s_channel_is_refused(registry):
+    class Parent(LiveSession):
+        channel = "shared"
+
+    with pytest.raises(ValueError, match="Parent and Child both use the channel"):
+
+        class Child(Parent):
+            pass
+
+
+class NoType(LiveMessage):
+    def apply(self, game, state, player_id, now):
+        pass
+
+
+class NoApply(LiveMessage):
+    type = "no_apply"
+
+
+class AlsoMove(Move):
+    pass
+
+
+def test_an_annotated_type_is_refused():
+    with pytest.warns(UserWarning):
+
+        class Annotated(LiveMessage):
+            type: str = "annotated"
+
+            def apply(self, game, state, player_id, now):
+                pass
+
+    with pytest.raises(TypeError, match="Annotated.type has an annotation"):
+
+        class Game(LiveSession):
+            messages = [Annotated]
+
+
+def test_an_initializer_s_game_type_must_be_a_live_session():
+    class Plain(RealtimeGame):
+        channel = "plain"
+
+    with pytest.raises(TypeError, match="game_type must be a LiveSession subclass"):
+        LiveSessionInitializer(id_="plain", group_type="pair", game_type=Plain)
+
+
+@pytest.mark.parametrize(
+    "listed, error",
+    [
+        ([dict], "lists <class 'dict'>, which isn't a LiveMessage subclass"),
+        ([NoType], "NoType.type must be a non-empty string"),
+        ([NoApply], "NoApply must define apply"),
+        ([Move, AlsoMove], "Move and AlsoMove both have the type 'move'"),
+    ],
+)
+def test_a_game_s_message_types_are_checked_when_it_is_defined(registry, listed, error):
+    with pytest.raises((TypeError, ValueError), match=error):
+
+        class Game(LiveSession):
+            messages = listed
+
+
+class Colour(enum.Enum):
+    RED = "red"
+
+
+class Thing:
+    pass
+
+
+@pytest.mark.parametrize(
+    "value, converted",
+    [
+        ((1, 2), [1, 2]),
+        ({3}, [3]),
+        (Colour.RED, "red"),
+        (datetime.datetime(2026, 11, 2, 9, 30), "2026-11-02T09:30:00"),
+        (datetime.timedelta(seconds=90), "PT1M30S"),
+        (Point(x=1, y=2), {"x": 1, "y": 2}),
+        ({1: (2, 3)}, {"1": [2, 3]}),
+    ],
+)
+def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
+    registry, value, converted
+):
+    class Store(LiveSession):
+        def initial_state(self, players):
+            return {"value": value}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state["value"] = value
+
+        def on_join(self, state, player_id, now):
+            state["value"] = value
+
+        def on_leave(self, state, player_id, now):
+            state["value"] = value
+
+    game = Store()
+    assert game.initial_state(["1"]) == {"value": converted}
+    for name, args in [("tick", (0,)), ("on_join", ("1", 0)), ("on_leave", ("1", 0))]:
+        state = {}
+        getattr(game, name)(state, *args)
+        assert state == {"value": converted}, name
+
+
+def test_the_state_s_own_keys_are_converted(registry):
+    class Numbered(LiveSession):
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state[1] = "a"
+
+    state = {}
+
+    Numbered().tick(state, 0)
+
+    assert state == {"1": "a"}
+
+
+def test_an_overridden_apply_and_a_list_state_are_converted(registry):
+    class Overridden(LiveSession):
+        messages = [Move]
+
+        def initial_state(self, players):
+            return []
+
+        def view(self, state, player_id):
+            return state
+
+        def apply(self, state, player_id, message, now, sent):
+            state.append(self.read_message(message).to)
+
+    class ViaSuper(Overridden):
+        def apply(self, state, player_id, message, now, sent):
+            super().apply(state, player_id, message, now, sent)
+            state.append(Colour.RED)
+
+    state = []
+    message = {"type": "move", "message": {"to": [2, 3]}}
+
+    ViaSuper().apply(state, "1", message, 0, Sent())
+
+    assert state == [[2, 3], "red"]
+
+
+def test_a_game_can_turn_the_conversion_off(registry):
+    class Converted(LiveSession):
+        messages = [Move]
+
+        def initial_state(self, players):
+            return {"start": (0, 0)}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state["ticked"] = (1, 1)
+
+    class Unconverted(Converted):
+        convert_state_to_json = False
+
+    game = Unconverted()
+    state = game.initial_state(["1"])
+    game.tick(state, 0)
+    game.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
+
+    assert state == {"start": (0, 0), "ticked": (1, 1), "held": "tuple", "at": (2, 3)}
+
+
+def test_a_state_that_can_t_be_converted_fails_loudly(registry):
+    class Keep(LiveSession):
+        def initial_state(self, players):
+            return {"thing": Thing()}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state["thing"] = Thing()
+
+    with pytest.raises(ValueError, match="After Keep.initial_state, the state holds"):
+        Keep().initial_state(["1"])
+    with pytest.raises(ValueError, match="After Keep.tick, .* unknown type"):
+        Keep().tick({}, 0)
+
+
+class Holds(LiveMessage):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    type = "holds"
+    thing: Thing
+
+    def apply(self, game, state, player_id, now):
+        pass
+
+
+def test_a_field_pydantic_can_t_read_from_json_is_refused(registry):
+    with pytest.raises(TypeError, match="Holds has a field of a type Pydantic can't"):
+
+        class Game(LiveSession):
+            messages = [Holds]

@@ -1,31 +1,34 @@
 """The test experiment for live sessions. Its first page opens the page's
 websocket, and then pairs start a session of a toy game."""
 
-from dallinger.realtime import RealtimeGame, Reject
 from dominate import tags
 
 import psynet.experiment
-from psynet.live_session import LiveSessionInitializer
+from psynet.live_session import LiveMessage, LiveSession, LiveSessionInitializer
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import Timeline
 
 
-class PickNumbers(RealtimeGame):
+class Pick(LiveMessage):
+    type = "pick"
+    number: int
+
+    def apply(self, game, state, player_id, now):
+        state["picks"][player_id] = self.number
+
+
+class PickNumbers(LiveSession):
     """Each player picks a whole number, and the game ends once both have."""
 
     channel = "pick_numbers"
+    messages = [Pick]
 
     def initial_state(self, players):
-        return {"picks": {str(player): None for player in players}}
-
-    def apply(self, state, player_id, message, now, sent):
-        if not isinstance(message, int) or isinstance(message, bool):
-            raise Reject("Pick a whole number.")
-        state["picks"][str(player_id)] = message
+        return {"picks": {player: None for player in players}}
 
     def view(self, state, player_id):
-        return {"picked": state["picks"][str(player_id)] is not None}
+        return {"picked": state["picks"][player_id] is not None}
 
     def is_over(self, state):
         return all(pick is not None for pick in state["picks"].values())
