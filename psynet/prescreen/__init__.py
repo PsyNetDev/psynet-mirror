@@ -1910,6 +1910,8 @@ class AudioForcedChoiceTest(StaticTrialMaker):
 
     csv_path :
         The path to a valid csv file with headers. The file must contain the two columns `url` and `answer`.
+        The URLs are passed to the browser unchanged, so participants can read them;
+        make sure the file names don't reveal the answer.
 
     answer_options :
         List of answer options.

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import psynet.prescreen
 from psynet.asset import ExternalAsset
 from psynet.prescreen import (
     AntiphaseHeadphoneTest,
@@ -15,6 +16,7 @@ from psynet.prescreen import (
     LanguageVocabularyTrial,
     LexTaleTest,
     NumpySerializer,
+    _opaque_media_asset,
 )
 
 
@@ -54,6 +56,32 @@ def test_prescreen_stimulus_urls_do_not_reveal_answers(trial_maker_class):
     assert assets
     for asset in assets:
         assert re.fullmatch(r"/asset/[\w-]+", asset.get_url())
+
+
+def test_opaque_media_asset_fetches_the_source_url(monkeypatch, tmp_path):
+    fetched = []
+
+    def get(url, timeout):
+        fetched.append(url)
+        return SimpleNamespace(content=b"RIFF", raise_for_status=lambda: None)
+
+    monkeypatch.setattr(psynet.prescreen.requests, "get", get)
+    asset = _opaque_media_asset("https://example.com/bell.wav")
+    asset.export(tmp_path / "out.wav")
+
+    assert asset.extension == ".wav"
+    assert fetched == ["https://example.com/bell.wav"]
+    assert (tmp_path / "out.wav").read_bytes() == b"RIFF"
+
+
+def test_on_demand_assets_have_no_id_based_route():
+    from dallinger.experiment import EXPERIMENT_ROUTE_REGISTRATIONS
+
+    import psynet.experiment  # noqa: F401
+
+    rules = {route["rule"] for route in EXPERIMENT_ROUTE_REGISTRATIONS}
+    assert "/asset/<access_token>" in rules
+    assert "/on-demand-asset" not in rules
 
 
 def test_language_vocabulary_page_hides_and_checks_the_answer():
