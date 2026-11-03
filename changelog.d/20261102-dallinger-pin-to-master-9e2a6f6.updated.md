@@ -1,0 +1,1 @@
+Updated the pinned Dallinger to master commit `9e2a6f69f`. Under `psynet debug local`, a websocket connection the server refuses now reaches the browser with its close code instead of 1006, so a refused page stops trying to reconnect.

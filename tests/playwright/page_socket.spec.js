@@ -73,12 +73,6 @@ test("the server refuses an old page's token and a wrong one with 1008", { tag: 
   page,
   context
 }) => {
-  // Flask's development server writes an HTTP response after the close
-  // frame, so browsers see 1006 instead of the code. CI runs gunicorn.
-  test.skip(
-    !process.env.PSYNET_USE_LEGACY_DEBUG,
-    "needs PSYNET_USE_LEGACY_DEBUG=1, which serves the experiment with gunicorn"
-  );
   const absDir = path.resolve("tests/experiments/live_session");
 
   await withExperiment(page, context, absDir, async (experimentPage) => {
