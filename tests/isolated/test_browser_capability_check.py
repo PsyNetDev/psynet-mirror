@@ -137,7 +137,18 @@ def test_experiment_classes_cannot_share_a_timeline():
     with pytest.raises(ValueError, match="same Timeline object"):
 
         class Other(Experiment):
+            browser_capabilities = {"camera"}
             timeline = Exp.timeline
+
+
+def test_timeline_from_mixin_must_be_redefined_to_add_capabilities():
+    class Mixin:
+        timeline = _make_timeline()
+
+    with pytest.raises(ValueError, match="Define timeline on Exp"):
+
+        class Exp(Mixin, Experiment):
+            browser_capabilities = {"camera"}
 
 
 def test_permission_intro_counts_towards_time_estimate():

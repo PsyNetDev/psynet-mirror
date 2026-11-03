@@ -27,7 +27,12 @@ async function runChecks(capabilities) {
             console.warn(`browser-capability-check: no JS check for token "${cap}"; skipping`);
             continue;
         }
-        const passed = await check();
+        let passed = false;
+        try {
+            passed = await check();
+        } catch (error) {
+            console.warn(`browser-capability-check: check for "${cap}" failed`, error);
+        }
         if (!passed) {
             return {passed: false, missing: cap};
         }

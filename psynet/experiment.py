@@ -404,13 +404,17 @@ def __init__(self, session=None):
 
 
 def _reject_inherited_browser_capability_check(cls):
-    """Reject a subclass whose browser check would differ from the inherited timeline's."""
-    owner = cls.timeline.experiment_class
-    if owner is not None and owner is not Experiment:
+    """Reject a class whose browser check would differ from its inherited timeline's.
+
+    Only the placeholder timeline of :class:`Experiment` may be inherited this way,
+    so that base classes can declare capabilities for subclasses that define
+    ``timeline``.
+    """
+    if cls.timeline is not Experiment.timeline:
         raise ValueError(
             f"{cls.__name__} changes browser_capabilities or "
-            f"get_browser_capability_check but inherits its timeline from "
-            f"{owner.__name__}, whose browser check has already been inserted. "
+            "get_browser_capability_check but inherits its timeline, whose "
+            "browser check has already been decided. "
             f"Define timeline on {cls.__name__} as well."
         )
 
@@ -418,14 +422,16 @@ def _reject_inherited_browser_capability_check(cls):
 def _insert_browser_capability_check(cls):
     """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
     owner = cls.timeline.experiment_class
-    if owner is not None:
-        raise ValueError(
-            f"{cls.__name__} uses the same Timeline object as {owner.__name__}. "
-            "Each experiment class needs its own Timeline."
-        )
-    cls.timeline.experiment_class = cls
+    if owner is None:
+        cls.timeline.experiment_class = cls
 
     check = cls.get_browser_capability_check()
+    if check is not None and owner is not None:
+        raise ValueError(
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__}, "
+            "so PsyNet can't insert its browser check. Give each experiment "
+            "class its own Timeline."
+        )
     if check is None and not cls.browser_capabilities:
         return
 
@@ -445,9 +451,10 @@ def _insert_browser_capability_check(cls):
         return
     if has_manual_check:
         raise ValueError(
-            "PsyNet inserts BrowserCapabilityCheck at the start of the timeline "
-            "automatically when browser_capabilities is set, so please remove it "
-            "from your timeline. To customize the check, override "
+            "PsyNet inserts the module returned by get_browser_capability_check "
+            "(by default, a BrowserCapabilityCheck whenever browser_capabilities "
+            "is set) at the start of the timeline, so please remove "
+            "BrowserCapabilityCheck from your timeline. To customize the check, override "
             "Experiment.get_browser_capability_check; to place it yourself, make "
             "that method return None."
         )
