@@ -8,7 +8,7 @@ from psynet.prescreen import (
     BrowserCapabilityCheckPage,
     _capability_failure_prompt,
 )
-from psynet.timeline import StartSwitch, Timeline
+from psynet.timeline import StartSwitch, Timeline, conditional
 
 
 def _make_timeline(*elts):
@@ -28,6 +28,26 @@ def test_experiment_inserts_capability_check_at_start():
     assert isinstance(first, BrowserCapabilityCheck)
     assert first.capabilities == {"microphone"}
     assert Exp.timeline["main"][0].id == ["main", 0]
+
+
+def test_insert_at_start_matches_timeline_built_with_element():
+    def elts():
+        return [
+            conditional("cond", lambda: True, InfoPage("A", time_estimate=2)),
+            InfoPage("B", time_estimate=1),
+        ]
+
+    def summary(timeline):
+        return (
+            [(type(e).__name__, e.id) for e in timeline.all_elts],
+            timeline.estimated_time_credit.get_max("time"),
+        )
+
+    inserted = Timeline(*elts())
+    inserted.insert_at_start(BrowserCapabilityCheck({"microphone"}))
+    built = Timeline(BrowserCapabilityCheck({"microphone"}), *elts())
+
+    assert summary(inserted) == summary(built)
 
 
 def test_experiment_without_capabilities_has_no_check():
@@ -138,6 +158,8 @@ def test_browser_capability_check_validates_capabilities():
         BrowserCapabilityCheck({"not_a_real_capability"})
     with pytest.raises(ValueError, match="not a string"):
         BrowserCapabilityCheck("microphone")
+    with pytest.raises(ValueError, match="not None"):
+        BrowserCapabilityCheck(None)
 
 
 def test_empty_capabilities_check_has_no_pages():

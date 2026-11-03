@@ -249,6 +249,11 @@ PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
 
 def validate_browser_capabilities(capabilities):
     """Return ``capabilities`` as a frozenset, raising ValueError for invalid tokens."""
+    if capabilities is None:
+        raise ValueError(
+            "browser_capabilities must be a set of tokens, not None. "
+            "Use an empty set if the experiment has no requirements."
+        )
     if isinstance(capabilities, str):
         raise ValueError(
             "browser_capabilities must be a set of tokens, not a string. "
@@ -421,17 +426,30 @@ def _insert_browser_capability_check(cls):
     cls.timeline.experiment_class = cls
 
     check = cls.get_browser_capability_check()
-    if check is None:
+    if check is None and not cls.browser_capabilities:
         return
 
     from .prescreen import BrowserCapabilityCheck
 
-    if any(isinstance(m, BrowserCapabilityCheck) for m in cls.timeline.module_list):
+    has_manual_check = any(
+        isinstance(m, BrowserCapabilityCheck) for m in cls.timeline.module_list
+    )
+    if check is None:
+        if not has_manual_check:
+            logger.warning(
+                f"{cls.__name__} declares browser_capabilities, but "
+                "get_browser_capability_check returns None and the timeline "
+                "contains no BrowserCapabilityCheck, so participants are not "
+                "screened for them."
+            )
+        return
+    if has_manual_check:
         raise ValueError(
-            "PsyNet now inserts BrowserCapabilityCheck at the start of the timeline "
-            "automatically, so please remove it from your timeline. To customize "
-            "the check, override Experiment.get_browser_capability_check; to place "
-            "it yourself, make that method return None."
+            "PsyNet inserts BrowserCapabilityCheck at the start of the timeline "
+            "automatically when browser_capabilities is set, so please remove it "
+            "from your timeline. To customize the check, override "
+            "Experiment.get_browser_capability_check; to place it yourself, make "
+            "that method return None."
         )
     cls.timeline.insert_at_start(check)
 
