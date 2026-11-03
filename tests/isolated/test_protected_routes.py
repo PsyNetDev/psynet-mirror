@@ -62,6 +62,27 @@ class TestExp:
         assert response.status_code == 200
         assert "exit-assignment" in response.text
 
+    def test_worker_status_routes_require_the_participants_unique_id(self):
+        host = get_base_url()
+        participant = requests.post(
+            host + "/participant/status-worker/status-hit/status-assignment/debug"
+        ).json()["participant"]
+        bare = {"participant_id": participant["id"]}
+
+        for params in (bare, {**bare, "unique_id": "other-worker:other-assignment"}):
+            assert (
+                requests.post(host + "/worker_complete", data=params).status_code == 403
+            )
+            assert (
+                requests.get(host + "/worker_failed", params=params).status_code == 403
+            )
+
+        response = requests.post(
+            host + "/worker_complete",
+            data={**bare, "unique_id": participant["unique_id"]},
+        )
+        assert response.status_code == 200
+
 
 def test_configured_protected_routes_add_to_psynets():
     from psynet.experiment import Experiment
@@ -76,7 +97,8 @@ def test_configured_protected_routes_add_to_psynets():
     assert "/my_experiment_data" in protected
 
 
-def test_dallinger_has_the_recruiter_exit_hook():
+@pytest.mark.parametrize("hook", ["check_recruiter_exit", "check_worker_status"])
+def test_dallinger_has_the_participant_check_hooks(hook):
     import dallinger.experiment
 
-    assert "check_recruiter_exit" in vars(dallinger.experiment.Experiment)
+    assert hook in vars(dallinger.experiment.Experiment)

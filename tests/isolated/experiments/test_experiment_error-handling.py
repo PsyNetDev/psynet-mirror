@@ -177,7 +177,11 @@ class TestExp(object):
             # The built-in Dallinger.complete_experiment doesn't work because it mistakenly
             # uses a GET request instead of a POST request
             requests.post(
-                f"{get_base_url()}/worker_complete?participant_id={bot.participant_id}"
+                f"{get_base_url()}/worker_complete",
+                params={
+                    "participant_id": bot.participant_id,
+                    "unique_id": bot.unique_id,
+                },
             )
 
             bot.driver.quit()
