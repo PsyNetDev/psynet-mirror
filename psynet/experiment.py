@@ -3694,6 +3694,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def check_worker_status(self, participant):
         """Refuse ``/worker_complete`` and ``/worker_failed`` unless their ``unique_id`` is the participant's.
 
+        Dallinger also calls this from ``/handle-error``, which then still
+        records the error report but doesn't complete the participant.
+
         An experiment that overrides this method must return the result of
         ``super().check_worker_status(participant)`` whenever it would
         otherwise return ``None``.

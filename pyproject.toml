@@ -62,8 +62,8 @@ experiment = [
     # optional for server-only docker-ssh builds), the real-time engine
     # (#10100, #10229), check_recruiter_exit (#10239) and check_worker_status
     # (#10268) are on PyPI. The SHA is the head of #10287's branch, which is
-    # stacked on #10281 and #10268; move it to Dallinger master once they merge.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@76b56914f8a51e21729ba417c55292d9b6823b5d",
+    # stacked on #10281; move it to Dallinger master once they merge.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@039e385379e6d86b7f6a7b9c9bb44bd6e0f6d934",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
