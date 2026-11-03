@@ -810,3 +810,47 @@ Idea
 When ``browser.incognitoDetectionFailed`` is true, also suggest opening
 the experiment in an incognito window of a browser where detection works,
 such as Chrome.
+
+Single permission prompt and retry in the browser capability check
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``browser_capabilities = {"microphone", "camera"}``, the capability
+check calls ``getUserMedia`` once per device, so the browser can ask twice
+although the intro page promises one request. A participant who dismisses
+a prompt by accident goes straight to the unsuccessful end page, and a
+participant who ignores the prompt waits on the spinner indefinitely.
+
+Idea
+++++
+
+Request audio and video in one ``getUserMedia`` call when both are needed,
+and offer a retry button on the failure page before ending the experiment.
+
+Browser-neutral incognito instructions for Chromium browsers
+------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``browser.isChrome`` in ``browser-detect.html`` now covers every
+Chromium-based browser, so Edge, Brave and Opera users who must use
+incognito mode get instructions that name Chrome.
+
+Idea
+++++
+
+Rename the flag to ``isChromium`` and use browser-neutral wording when
+``browser.name`` is not ``Chrome``.
