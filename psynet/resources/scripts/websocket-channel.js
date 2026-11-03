@@ -133,9 +133,11 @@
    * ``onMessage`` receives what any page publishes on the channel, so never
    * trust it. ``onDirect`` receives what the server sends this participant
    * with ``publish_to_participants``; PsyNet accepts the socket only with the
-   * participant's token, so only they get it. The listening probe also proves
-   * that directed sends reach the socket, because Dallinger only reads a
-   * socket's frames once it is registered for them.
+   * participant's token, so only they get it. Dallinger registers a socket
+   * for directed sends before it reads the socket's frames, so a probe echo
+   * normally means directed sends reach it too; if Dallinger's listener is
+   * slow to confirm, it proceeds anyway, and the hold's safety poll covers a
+   * missed wake.
    */
   function connect({
     channel,
