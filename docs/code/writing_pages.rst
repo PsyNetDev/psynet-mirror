@@ -39,6 +39,9 @@ than using an f-string:
 
     Markup("Another participant wrote: <strong>{}</strong>").format(answer)
 
+``Markup.format`` escapes a ``dominate`` tag too, so pass
+``Markup(tag.render())`` to insert one.
+
 The same rule applies to control labels, such as the ``labels`` of
 :class:`~psynet.modular_page.PushButtonControl`, to
 :class:`~psynet.modular_page.Button` text and to

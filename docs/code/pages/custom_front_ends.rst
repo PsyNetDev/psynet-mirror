@@ -63,7 +63,9 @@ than run as markup. To insert HTML that you wrote yourself, return a
 participant-provided text in ``Markup``. Inside ``<script>``, write values
 with ``{{ value | tojson }}``. In templates, pass only literal strings to
 ``gettext`` and ``pgettext``: their result is marked as safe HTML, so text
-from a variable would not be escaped.
+from a variable would not be escaped. Escaping follows the template's file
+name: give templates an ``.html`` name, because templates ending in other
+extensions such as ``.jinja`` or ``.txt`` aren't escaped.
 
 Custom macros can reuse PsyNet's built-in macros. ``psynet_prompts.simple``
 displays the prompt's text. The built-in prompt macros are defined in
