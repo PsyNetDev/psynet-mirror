@@ -78,6 +78,8 @@ def lucid(client, monkeypatch):
         ("unique_id=rid:rid", False),
         ("RID=rid&unique_id=worker:rid", True),
         ("unique_id=worker:rid", True),
+        ("RID=rid&unique_id=other:missing", False),
+        ("assignmentId=rid&RID=other&unique_id=worker:rid", False),
     ],
 )
 def test_terminating_a_lucid_participant_needs_their_unique_id(
@@ -108,3 +110,11 @@ def test_a_lucid_rid_without_a_participant_can_be_terminated(client, lucid):
 
     assert response.status_code == 200
     lucid.terminate_respondent.assert_called_once_with("fresh", "mobile-phone", None)
+
+
+@pytest.mark.parametrize("query", ["", "unique_id=no-colon", "unique_id=worker:"])
+def test_terminating_needs_a_well_formed_lucid_rid(client, lucid, query):
+    response = client.get("/terminate_participant?reason=wrong-browser&" + query)
+
+    assert response.status_code == 400
+    assert not lucid.terminate_respondent.called

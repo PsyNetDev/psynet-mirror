@@ -62,7 +62,8 @@ def test_redacted_asset_request_path():
     assert _redacted_asset_request_path("/timeline") == "/timeline"
 
 
-def test_local_storage_serve_file(tmp_path):
+@pytest.mark.parametrize("asset_extension", [".png", "png"])
+def test_local_storage_serve_file(tmp_path, asset_extension):
     root = tmp_path / "storage"
     object_rel = "objects/sha256/abc123"
     stored = root / object_rel
@@ -73,7 +74,7 @@ def test_local_storage_serve_file(tmp_path):
         object_path = object_rel
         host_path = object_rel
         is_folder = False
-        extension = ".png"
+        extension = asset_extension
 
     storage = LocalStorage(root=str(root))
     app = Flask("test-local-storage-serve")
@@ -83,7 +84,9 @@ def test_local_storage_serve_file(tmp_path):
             assert response.status_code == 200
             # The stored object has no extension; the asset's own one decides.
             assert response.mimetype == "image/png"
-            assert response.headers["Content-Disposition"].startswith("inline")
+            assert response.headers["Content-Disposition"] == (
+                "inline; filename=abc123.png"
+            )
             assert response.cache_control.private
             assert not response.cache_control.public
             assert response.cache_control.max_age == 31_536_000

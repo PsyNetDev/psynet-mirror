@@ -5687,10 +5687,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         their ``unique_id``. A bare ``RID`` or ``assignmentId`` is accepted only
         when no participant has that RID yet (for example the mobile-phone
         check on the ad page), so it can end only a session that has not
-        started.
+        started. A request whose ``assignmentId``, ``RID`` and ``unique_id``
+        name different RIDs is refused.
         """
         recruiter = get_experiment().recruiter
-        participant = recruiter.get_participant(request)
+        try:
+            assignment_id = recruiter.requested_assignment_id(request)
+        except ValueError as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(error_text=str(err), status=400, simple=True)
+        except PermissionError as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
+        participant = recruiter.get_participant(assignment_id)
 
         supplied_unique_id = request.values.get("unique_id", "")
         if participant is not None and not hmac.compare_digest(
@@ -5706,6 +5719,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 status=403,
                 simple=True,
             )
+        if participant is not None:
+            recruiter.link_lucid_rid_to_participant(participant)
 
         # Don't terminate participants who have already completed the experiment.
         # This can happen due to race conditions when the page redirects to Lucid
@@ -5720,16 +5735,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 external_submit_url=external_submit_url,
             )
 
-        # If participant lookup failed, we still need to terminate on Lucid's side
-        # using the assignment_id from the request
         if participant is None:
-            assignment_id = request.values.get("assignmentId") or request.values.get(
-                "RID"
-            )
-            unique_id = request.values.get("unique_id")
-            if assignment_id is None and unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-
             external_submit_url = recruiter.terminate_participant(
                 assignment_id=assignment_id, reason=request.values.get("reason")
             )

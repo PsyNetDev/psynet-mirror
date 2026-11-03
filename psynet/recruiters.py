@@ -3573,21 +3573,65 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
 
         return lucid_recruitment_config.get(key)
 
-    def get_participant(self, request):
-        # Not by participant_id: it is sequential, and the page this request
-        # renders shows the participant's RID.
-        assignment_id = request.values.get("assignmentId")
+    @staticmethod
+    def requested_assignment_id(request):
+        """Return the Lucid RID that a request names.
+
+        The RID may come from ``assignmentId``, ``RID`` or the part of
+        ``unique_id`` after the colon. Not from ``participant_id``: it is
+        sequential, and the page this request renders shows the participant's
+        RID.
+
+        Parameters
+        ----------
+        request : flask.Request
+            The incoming request.
+
+        Returns
+        -------
+        str
+            The RID.
+
+        Raises
+        ------
+        ValueError
+            If the request names no RID or ``unique_id`` is malformed.
+        PermissionError
+            If the supplied identifiers name different RIDs.
+        """
+        candidates = {
+            "assignmentId": request.values.get("assignmentId"),
+            "RID": request.values.get("RID"),
+        }
         unique_id = request.values.get("unique_id")
-        rid = request.values.get("RID")
+        if unique_id is not None:
+            worker_id, colon, unique_id_rid = unique_id.partition(":")
+            if not (worker_id and colon and unique_id_rid):
+                raise ValueError("unique_id must have the form 'worker_id:RID'.")
+            candidates["unique_id"] = unique_id_rid
 
-        if assignment_id is None:
-            if unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-            elif rid is not None:
-                assignment_id = rid
+        supplied = {key: value for key, value in candidates.items() if value}
+        if not supplied:
+            raise ValueError("The request names no Lucid RID.")
+        if len(set(supplied.values())) > 1:
+            raise PermissionError(
+                f"The request names different Lucid RIDs: {sorted(supplied)}."
+            )
+        return next(iter(supplied.values()))
 
-        assert assignment_id is not None, "Could not determine assignment_id."
+    def get_participant(self, assignment_id):
+        """Return the participant with this Lucid RID, or ``None``.
 
+        Parameters
+        ----------
+        assignment_id : str
+            The Lucid RID, as returned by :meth:`requested_assignment_id`.
+
+        Returns
+        -------
+        Participant or None
+            The participant, or ``None`` if there is no unique match.
+        """
         participant = None
         try:
             participant = Participant.query.filter_by(assignment_id=assignment_id).one()
@@ -3601,9 +3645,6 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
             logger.error(
                 f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
             )
-
-        if participant is not None:
-            self.link_lucid_rid_to_participant(participant)
 
         return participant
 

@@ -2285,6 +2285,8 @@ class LocalStorage(AssetStorage):
             abort(400)
         download_name = None
         extension = asset.extension
+        if extension and not extension.startswith("."):
+            extension = "." + extension
         if not subpath and extension and not file_system_path.endswith(extension):
             # Content-addressed objects have no extension of their own.
             download_name = os.path.basename(file_system_path) + extension
