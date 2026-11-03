@@ -74,6 +74,14 @@ def test_opaque_media_asset_fetches_the_source_url(monkeypatch, tmp_path):
     assert (tmp_path / "out.wav").read_bytes() == b"RIFF"
 
 
+def test_opaque_media_asset_keeps_non_http_urls_with_a_warning():
+    with pytest.warns(UserWarning, match="participants can see it"):
+        asset = _opaque_media_asset("/static/headphone-check/1.wav")
+
+    assert isinstance(asset, ExternalAsset)
+    assert asset.url == "/static/headphone-check/1.wav"
+
+
 def test_on_demand_assets_have_no_id_based_route():
     from dallinger.experiment import EXPERIMENT_ROUTE_REGISTRATIONS
 

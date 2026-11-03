@@ -1,10 +1,12 @@
 import json
 import random
+import warnings
 from importlib import resources
 from os.path import exists as file_exists
 from os.path import join as join_path
 from random import shuffle
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import requests
 from markupsafe import Markup
@@ -820,8 +822,18 @@ def _opaque_media_asset(url):
 
     Use this for pre-screen stimuli whose file names would reveal the correct
     answer. The browser only sees ``/asset/<access_token>``; the server fetches
-    ``url`` when the asset is requested.
+    ``url`` when the asset is requested. The server can only fetch http(s)
+    URLs, so other URLs (for example relative paths served by the experiment)
+    fall back to an :class:`~psynet.asset.ExternalAsset` that the browser loads
+    directly.
     """
+    if urlparse(url).scheme not in ("http", "https"):
+        warnings.warn(
+            f"Pre-screen media URL {url!r} is not an http(s) URL, so it is served "
+            "unchanged and participants can see it. Use an http(s) media_url to "
+            "hide stimulus file names."
+        )
+        return ExternalAsset(url)
     return OnDemandAsset(
         function=_download_media,
         arguments={"source_url": url},
@@ -829,9 +841,12 @@ def _opaque_media_asset(url):
     )
 
 
+_LANGUAGE_VOCABULARY_IMAGES = ["correct", "wrong1", "wrong2", "wrong3"]
+
+
 class LanguageVocabularyTrial(StaticTrial):
     time_estimate = None
-    image_keys = ["image_correct", "image_wrong1", "image_wrong2", "image_wrong3"]
+    image_keys = [f"image_{image}" for image in _LANGUAGE_VOCABULARY_IMAGES]
 
     def finalize_definition(self, definition, experiment, participant):
         order = random.sample(range(4), 4)
@@ -886,7 +901,9 @@ class LanguageVocabularyTest(StaticTrialMaker):
         The language code of the target language for the test (en-US, de-DE, hi-IN, pt-BR,sp-SP), default: "en-US".
 
     media_url:
-        Location of the test materials, default: "https://s3.amazonaws.com/langauge-test-materials"
+        Location of the test materials, default: "https://s3.amazonaws.com/langauge-test-materials".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -975,7 +992,7 @@ class LanguageVocabularyTest(StaticTrialMaker):
                         f"image_{choice}": _opaque_media_asset(
                             f"{media_url}/images/{word}/{choice}.png"
                         )
-                        for choice in ["correct", "wrong1", "wrong2", "wrong3"]
+                        for choice in _LANGUAGE_VOCABULARY_IMAGES
                     },
                 },
             )
@@ -1037,7 +1054,9 @@ class LexTaleTest(StaticTrialMaker):
         The performance threshold, default: 8.
 
     media_url: str
-        Location of the media resources, default: "https://s3.amazonaws.com/lextale-test-materials"
+        Location of the media resources, default: "https://s3.amazonaws.com/lextale-test-materials".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     hide_after : float
         The time in seconds after the word disappears, default: 1.0.
@@ -1306,6 +1325,8 @@ class ColorBlindnessTest(StaticTrialMaker):
         ``https://s3.amazonaws.com/ishihara-eye-test/jpg``.
         Files under that prefix are public, for example
         https://s3.amazonaws.com/ishihara-eye-test/jpg/ishihara-1.jpg.
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -1612,8 +1633,10 @@ class GeneralHeadphoneTest(StaticTrialMaker):
         Trial class to use, recommended HugginsHeadphoneTrial.
 
     media_url : string
-        The url under which the images to be displayed can be referenced, default:
+        The url under which the sounds to be played can be referenced, default:
         "https://s3.amazonaws.com/headphone-check".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 7.5.
@@ -1817,6 +1840,8 @@ class BeepHeadphoneTest(GeneralHeadphoneTest):
         Trial maker ID.
     media_url : str, optional
         Base URL of the test sounds; defaults to PsyNet's hosted copies.
+        The experiment server downloads http(s) files from here and serves them under
+        opaque URLs; other URLs are passed to the browser unchanged, revealing the file names.
     time_estimate_per_trial : float
         Time estimate in seconds per trial.
     performance_threshold : int

@@ -67,9 +67,10 @@ and participants can read stimulus URLs in the page source. The built-in test
 therefore wraps each URL with the internal helper ``_opaque_media_asset``,
 which serves the image through PsyNet under an opaque ``/asset/<access_token>``
 URL. In your own pre-screen, give stimulus files names that don't reveal the
-answer, or add them with :func:`~psynet.asset.asset` or
+answer, or add local files with :func:`~psynet.asset.asset` or
 :class:`~psynet.asset.FileAsset`, whose URLs don't contain the file name.
-:class:`~psynet.asset.ExternalAsset` keeps the original URL.
+Passing an http(s) URL to :func:`~psynet.asset.asset` creates an
+:class:`~psynet.asset.ExternalAsset`, which keeps the original URL.
 
 .. literalinclude:: ../../../psynet/prescreen/__init__.py
    :pyobject: ColorBlindnessTest.__init__

@@ -98,6 +98,13 @@ def test_vocab_scores_only_complete_answers(tmp_path):
     )
 
 
+@pytest.mark.parametrize("answer", [None, "real", {"hash": "h", "answer": "real"}])
+def test_vocab_scores_non_list_answers_as_zero(tmp_path, answer):
+    vocab_test = _make_vocab_test(tmp_path)
+    hashes = [item["hash"] for item in vocab_test.start_nodes[0].seed]
+    assert _score(vocab_test, hashes, answer) == 0
+
+
 def test_vocab_consistency_rejects_answers_for_other_items(tmp_path):
     vocab_test = _make_vocab_test(
         tmp_path, performance_check_type="consistency", n_repeat_items=2
