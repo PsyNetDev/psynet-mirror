@@ -62,6 +62,13 @@ def _merge_js_var_sources(*sources):
     return merged
 
 
+def _dominate_label(label):
+    """Return a label for dominate, keeping ``Markup`` labels as HTML."""
+    if isinstance(label, Markup):
+        return raw(str(label))
+    return label
+
+
 class Blob:
     """
     Imitates the blob objects which are returned from the Flask front-end;
@@ -1101,7 +1108,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1194,9 +1201,11 @@ class DropdownControl(OptionControl):
             ):
                 for choice, label in zip(self.choices, self.labels):
                     if answer == choice:
-                        tags.option(value=choice, selected=True).add(label)
+                        tags.option(value=choice, selected=True).add(
+                            _dominate_label(label)
+                        )
                     else:
-                        tags.option(value=choice).add(label)
+                        tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
     def validate(self, response, **kwargs):
@@ -1281,7 +1290,7 @@ class PushButtonControl(OptionControl):
                     id=choice,
                     _class=f"btn push-button {color} response {mode}",
                     style=self.style,
-                ).add(label)
+                ).add(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1571,7 +1580,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 

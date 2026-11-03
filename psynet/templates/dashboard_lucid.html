@@ -92,7 +92,8 @@
     {% if params.respondents %}
         {{ make_status_card({
             'title': 'Respondents',
-            'body': "How many respondents enter over time <div id='respondents'></div>",
+            'body': "How many respondents enter over time",
+            'chart_id': "respondents",
             'col': "col-12"
         }) }}
         <script>
@@ -144,7 +145,8 @@
     {% if params.response_per_participant %}
         {{ make_status_card({
             'title': 'Responses per participant',
-            'body': "Comparison of termination LOI between  PsyNet vs Lucid. <div id='responses_per_participant'></div>",
+            'body': "Comparison of termination LOI between  PsyNet vs Lucid.",
+            'chart_id': "responses_per_participant",
             'col': "col-12"
         }) }}
         <script>
@@ -192,7 +194,8 @@
         {% if params.lucid_completion_loi %}
             {{ make_status_card({
         'title': params.lucid_completion_loi.title,
-        'body': params.lucid_completion_loi.body +  "<div id='completion_loi'></div>",
+        'body': params.lucid_completion_loi.body,
+        'chart_id': "completion_loi",
         'status': params.lucid_completion_loi.status,
         'col': "col-4",
         'border': true
@@ -245,7 +248,8 @@
         {% if params.lucid_termination_loi and params.lucid_termination_loi.data | length > 0 %}
             {{ make_status_card({
         'title': params.lucid_termination_loi.title,
-        'body': params.lucid_termination_loi.body +  "<div id='termination_loi'></div>",
+        'body': params.lucid_termination_loi.body,
+        'chart_id': "termination_loi",
         'col': "col-4",
         'status': params.lucid_termination_loi.status,
         'border': true
@@ -299,7 +303,8 @@
         {% if params.termination_loi_scatter and params.termination_loi_scatter.data | length > 0 %}
             {{ make_status_card({
         'title': params.termination_loi_scatter.title,
-        'body': params.termination_loi_scatter.body + "<div id='termination_loi_scatter'></div>",
+        'body': params.termination_loi_scatter.body,
+        'chart_id': "termination_loi_scatter",
         'col': "col-4",
         'status': params.termination_loi_scatter.status,
         'border': true

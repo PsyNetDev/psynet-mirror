@@ -348,14 +348,14 @@ def report_lucid():
     if n_lucid_working != n_psynet_working:
         items[1] += Markup(
             "<br><span class='text-danger'>Detected a mismatch in working participants in Psynet (n = "
-            f"{n_psynet_working}) and Lucid (n = {n_lucid_working}).</span>"
-        )
+            "{}) and Lucid (n = {}).</span>"
+        ).format(n_psynet_working, n_lucid_working)
 
     if n_lucid_terminated != n_psynet_terminated:
         items[2] += Markup(
             "<br><span class='text-danger'>Detected a mismatch in terminated participants in Psynet (n = "
-            f"{n_psynet_terminated}) and Lucid (n = {n_lucid_terminated}).</span>"
-        )
+            "{}) and Lucid (n = {}).</span>"
+        ).format(n_psynet_terminated, n_lucid_terminated)
 
     completes_df = entry_df.query("lucid_status == @completed_status")
     n_lucid_completed = len(completes_df)
@@ -371,8 +371,8 @@ def report_lucid():
         items[3] += (
             Markup(
                 "<br><span class='text-danger'>Detected a mismatch in completed participants in Psynet (n = "
-                f"{n_psynet_completed}) and Lucid (n = {n_lucid_completed}).</span><br>"
-            )
+                "{}) and Lucid (n = {}).</span><br>"
+            ).format(n_psynet_completed, n_lucid_completed)
             + button
         )
 

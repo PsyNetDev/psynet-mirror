@@ -56,6 +56,9 @@
             <div class="card-body">
                 <h5 class="card-title">{{ params.title }}</h5>
                 <p class="card-text">{{ params.body }}</p>
+                {% if params.chart_id %}
+                    <div id="{{ params.chart_id }}"></div>
+                {% endif %}
             </div>
         </div>
     </div>

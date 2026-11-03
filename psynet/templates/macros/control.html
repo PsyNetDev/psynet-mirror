@@ -1038,7 +1038,7 @@
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-valuenow="0"
-                aria-label="{{ pgettext('audio_meter', 'Microphone level') }}"
+                aria-label="{{ pgettext('audio_meter', 'Microphone level') | forceescape }}"
             >
                 <div class="audio-meter__fill"></div>
             </div>

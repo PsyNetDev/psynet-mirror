@@ -168,3 +168,48 @@ def test_lucid_dashboard_cards_escape_termination_reasons(app):
     assert "<script>alert(1)" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "<span style='font-weight:bold'>" in html
+
+
+def test_status_card_chart_container_is_html_but_body_is_escaped(app):
+    with app.test_request_context("/"):
+        html = app.jinja_env.from_string(
+            '{% from "macros/dashboard.html" import make_status_card %}'
+            "{{ make_status_card(card) }}"
+        ).render(card={"title": "T", "body": PAYLOAD, "chart_id": "respondents"})
+
+    assert "<script>alert(1)" not in html
+    assert '<div id="respondents"></div>' in html
+
+
+def test_free_text_placeholder_is_attribute_escaped(app):
+    from psynet.modular_page import RadioButtonControl
+
+    control = RadioButtonControl(
+        choices=["a"], show_free_text_option=True, placeholder_text_free_text=PAYLOAD
+    )
+    html = render(
+        app,
+        '{% import "macros/control.html" as c %}{{ c.radiobuttons(control) }}',
+        control=control,
+    )
+
+    assert "<script>alert(1)" not in html
+    assert (
+        "<input id='free_text_input' placeholder=\"&#34;&#39;&gt;&lt;script&gt;" in html
+    )
+
+
+@pytest.mark.parametrize(
+    "control_class",
+    ["CheckboxControl", "DropdownControl", "PushButtonControl", "RadioButtonControl"],
+)
+def test_response_visualizations_keep_markup_labels(control_class):
+    from psynet import modular_page
+
+    control = getattr(modular_page, control_class)(
+        choices=["a", "b"], labels=[Markup("<b>A</b>"), PAYLOAD]
+    )
+    html = control.visualize_response(answer="a", response=None, trial=None)
+
+    assert "<b>A</b>" in html
+    assert "<script>alert(1)" not in html

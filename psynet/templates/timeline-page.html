@@ -217,7 +217,7 @@
                         <div class="modal-content">
                             <div><span class="close">&times;</span></div>
                             <h5>{{ pgettext("timeline_comment", "Leave a comment") }}</h5>
-                            <textarea id="comment-text" class="form-control" placeholder='{{ pgettext("timeline_comment", "Write a comment here") }}'></textarea>
+                            <textarea id="comment-text" class="form-control" placeholder="{{ pgettext("timeline_comment", "Write a comment here") | forceescape }}"></textarea>
                             <button type="button" class="btn btn-primary mt-2"
                                     id="send-comment">{{ pgettext("timeline_comment", "Send comment") }}</button>
                         </div>
