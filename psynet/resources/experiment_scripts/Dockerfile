@@ -54,7 +54,8 @@ RUN set -- /experiment/dallinger-*.whl; \
     fi
 
 # The SSH account is chosen when the container starts. These directories must
-# be writable so that account can create server.log and the static/assets link.
+# be writable so that account can create server.log and remove a static/assets
+# link left by older PsyNet versions.
 # Shipped source files stay owned by root.
 RUN mkdir -p /experiment/static \
  && chmod a+rwx /experiment /experiment/static
