@@ -786,3 +786,28 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Re-host pre-screen stimuli under neutral names
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens serve their stimuli under opaque ``/asset/<token>``
+URLs, but the original files are still public under paths that name the
+answer, such as ``images/<word>/correct.png``. A scripted cheater can
+download them and match the bytes PsyNet serves. The server also fetches
+each file from S3 on every request, without caching.
+
+Idea
+++++
+
+Re-host the files under neutral names in a location participants can't
+list, and serve them as ordinary assets (or cache the on-demand
+downloads) so that stimulus requests no longer wait on S3.
+
