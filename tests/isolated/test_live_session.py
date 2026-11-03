@@ -115,6 +115,13 @@ def test_a_follower_who_reloads_finds_the_group_s_session(pair):
     assert redis_conn.sismember(RUNNING, session_id)
 
 
+def _problems(reason):
+    """A rejection's reason with its problems as a set, since Pydantic's
+    versions list them in different orders."""
+    head, _, problems = reason.partition(" message: ")
+    return head, set(problems.removesuffix(".").split("; "))
+
+
 def _pick_numbers():
     return {game.channel: game for game in get_experiment().realtime_games}[
         "pick_numbers"
@@ -153,7 +160,7 @@ def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
     with pytest.raises(Reject) as rejected:
         game.apply(state, "1", message, 0.5, Sent())
 
-    assert rejected.value.reason == reason
+    assert _problems(rejected.value.reason) == _problems(reason)
     assert state == {"picks": {"1": None, "2": None}}
 
 
@@ -237,7 +244,7 @@ def test_model_fields_and_numbers_are_checked_strictly(walk, fields, reason):
     with pytest.raises(Reject) as rejected:
         walk.apply({}, "1", {"type": "place", "message": fields}, 0, Sent())
 
-    assert rejected.value.reason == reason
+    assert _problems(rejected.value.reason) == _problems(reason)
 
 
 def test_realtime_games_lists_every_live_session_and_the_listed_games(registry):
@@ -460,6 +467,73 @@ def test_an_overridden_apply_and_a_list_state_are_converted(registry):
     assert state == [[2, 3], "red"]
 
 
+def test_a_method_from_a_mixin_is_converted(registry):
+    class Timer:
+        def tick(self, state, now):
+            state["at"] = (now,)
+
+    class Timed(Timer, LiveSession):
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+    state = {}
+
+    Timed().tick(state, 1)
+
+    assert state == {"at": [1]}
+
+
+def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
+    registry,
+):
+    class Nested(LiveSession):
+        def initial_state(self, players):
+            return {"players": {}}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state["ticked"] = (now,)
+
+        def on_join(self, state, player_id, now):
+            players = state["players"]
+            self.tick(state, now)
+            players[player_id] = (now,)
+
+    state = {"players": {}}
+
+    Nested().on_join(state, "1", 2)
+
+    assert state == {"players": {"1": [2]}, "ticked": [2]}
+
+
+def test_the_state_is_converted_after_a_rejected_message(registry):
+    class Ticking(LiveSession):
+        messages = [Move]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+        def tick(self, state, now):
+            state["ticked"] = (now,)
+
+    game = Ticking()
+    state = {}
+    with pytest.raises(Reject):
+        game.apply(state, "1", {"type": "jump", "message": {}}, 0, Sent())
+
+    game.tick(state, 1)
+
+    assert state == {"ticked": [1]}
+
+
 def test_a_game_can_turn_the_conversion_off(registry):
     class Converted(LiveSession):
         messages = [Move]
@@ -495,10 +569,16 @@ def test_a_state_that_can_t_be_converted_fails_loudly(registry):
         def tick(self, state, now):
             state["thing"] = Thing()
 
+        def on_join(self, state, player_id, now):
+            state["loop"] = loop = []
+            loop.append(loop)
+
     with pytest.raises(ValueError, match="After Keep.initial_state, the state holds"):
         Keep().initial_state(["1"])
     with pytest.raises(ValueError, match="After Keep.tick, .* unknown type"):
         Keep().tick({}, 0)
+    with pytest.raises(ValueError, match="After Keep.on_join, .* Circular"):
+        Keep().on_join({}, "1", 0)
 
 
 class Holds(LiveMessage):

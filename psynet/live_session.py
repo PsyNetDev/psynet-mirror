@@ -66,6 +66,7 @@ Define each game, or import it, before the experiment class. PsyNet then
 adds it to the experiment's ``realtime_games``, so you don't list it there.
 """
 
+import contextvars
 import functools
 import json
 from typing import ClassVar
@@ -77,7 +78,7 @@ from pydantic import (
     PydanticInvalidForJsonSchema,
     ValidationError,
 )
-from pydantic_core import PydanticSerializationError, to_jsonable_python
+from pydantic_core import to_jsonable_python
 
 from .sync import GroupBarrier
 
@@ -156,11 +157,24 @@ class LiveMessage(BaseModel):
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave")
 
+# Set while a state method runs, so one that calls another, as through
+# super(), converts once, after the outermost call. Converting rebuilds every
+# dict and list in the state, which would cut off references the outer call
+# still holds.
+_changing_state = contextvars.ContextVar("_changing_state", default=False)
+
 
 def _stores_json(method):
     @functools.wraps(method)
     def convert_state(self, state, *args, **kwargs):
-        method(self, state, *args, **kwargs)
+        if _changing_state.get():
+            method(self, state, *args, **kwargs)
+            return
+        token = _changing_state.set(True)
+        try:
+            method(self, state, *args, **kwargs)
+        finally:
+            _changing_state.reset(token)
         if not self.convert_state_to_json:
             return
         converted = _to_json(state, f"{type(self).__name__}.{method.__name__}")
@@ -171,6 +185,7 @@ def _stores_json(method):
         elif isinstance(state, list):
             state[:] = converted
 
+    convert_state.converts_state = True
     return convert_state
 
 
@@ -182,13 +197,14 @@ def _returns_json(method):
             return state
         return _to_json(state, f"{type(self).__name__}.{method.__name__}")
 
+    convert_state.converts_state = True
     return convert_state
 
 
 def _to_json(state, what):
     try:
         return to_jsonable_python(state)
-    except PydanticSerializationError as error:
+    except ValueError as error:
         raise ValueError(
             f"After {what}, the state holds a value PsyNet can't convert to "
             f"JSON. {error}."
@@ -210,11 +226,13 @@ class LiveSession(RealtimeGame):
     message's :meth:`~LiveMessage.apply` or the game's ``tick``, ``on_join``
     or ``on_leave`` runs:
 
-    - a tuple or a set becomes a list
+    - a tuple becomes a list, and a set a list in no fixed order, so store
+      ``sorted(...)`` where the order matters
     - an enum member becomes its value
     - a date, time or datetime becomes a string such as
       ``"2026-11-02T09:30:00"``, and a timedelta one such as ``"PT1M30S"``
     - a Pydantic model becomes a dict
+    - a ``Decimal`` or ``bytes`` value becomes a string
     - a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}``.
       Player ids are already strings.
 
@@ -230,27 +248,30 @@ class LiveSession(RealtimeGame):
 
     #: Whether PsyNet converts the state to plain data after each method that
     #: changes it. The conversion takes time in proportion to the size of the
-    #: whole state, which for a very large state, such as a big grid, is tens
-    #: of milliseconds each time. Such a game can set this to ``False``, and
-    #: then must store only plain data itself: ``list(self.to)``, not
-    #: ``self.to``, and ``self.colour.value``, not ``self.colour``. A tuple
-    #: it stores comes back as a list only after Dallinger next saves the
-    #: state, so a game that stores one can behave differently before and
-    #: after a save.
+    #: whole state, so a game with a very large state, such as a big grid,
+    #: can set this to ``False``. It then stores only plain data itself, such
+    #: as ``list(...)`` of a message's tuple field and an enum field's
+    #: ``.value``. Anything else changes only when Dallinger next saves the
+    #: state or rejects a message, which restores the state from plain data:
+    #: a tuple then becomes a list and ``{1: "a"}`` becomes ``{"1": "a"}``.
     convert_state_to_json = True
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        for name in _STATE_METHODS:
-            if name in cls.__dict__:
-                setattr(cls, name, _stores_json(cls.__dict__[name]))
-        if "initial_state" in cls.__dict__:
-            cls.initial_state = _returns_json(cls.__dict__["initial_state"])
+        # Resolved through the MRO, so methods from a mixin are wrapped too.
+        for name, wrap in [
+            *((name, _stores_json) for name in _STATE_METHODS),
+            ("initial_state", _returns_json),
+        ]:
+            method = getattr(cls, name)
+            if method is not getattr(RealtimeGame, name) and not getattr(
+                method, "converts_state", False
+            ):
+                setattr(cls, name, wrap(method))
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
             _register_live_session(cls)
 
-    @_stores_json
     def apply(self, state, player_id, message, now, sent):
         """Apply a page's message with its message type's
         :meth:`LiveMessage.apply`.
