@@ -84,6 +84,8 @@ def test_artifact_paths_reject_unsafe_deployment_ids(artifact_storage, deploymen
         artifact_storage.write_comment("text", deployment_id=deployment_id)
     with pytest.raises(ValueError, match="Invalid deployment ID"):
         artifact_storage.archive(deployment_id)
+    with pytest.raises(ValueError, match="Invalid filename"):
+        artifact_storage.prepare_path("ok", filename=deployment_id)
 
 
 def test_get_modification_date(artifact_storage, tmp_path):

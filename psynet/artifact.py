@@ -922,6 +922,7 @@ class S3ArtifactStorage(ArtifactStorage):
         deployment_id : str
             ID of the deployment to be archived.
         """
+        _check_path_component(deployment_id, "deployment ID")
         self._switch_folders(
             deployment_id,
             self.DEPLOYMENT_FOLDER,
@@ -937,6 +938,7 @@ class S3ArtifactStorage(ArtifactStorage):
         deployment_id : str
             ID of the deployment to be restored.
         """
+        _check_path_component(deployment_id, "deployment ID")
         self._switch_folders(
             deployment_id,
             self.ARCHIVE_FOLDER,

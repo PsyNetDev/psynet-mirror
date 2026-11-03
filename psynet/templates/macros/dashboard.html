@@ -91,7 +91,7 @@
         document.addEventListener("DOMContentLoaded", function (e) {
             selectpicker = $('#status').selectpicker();
             document.getElementById('status').addEventListener('change', function (e) {
-                fetch('/change_lucid_status', {
+                fetch('/dashboard/change_lucid_status', {
                     method: 'POST',
                     credentials: 'same-origin',
                     body: new URLSearchParams({status: e.target.value}),

@@ -7,7 +7,6 @@ from flask_login import LoginManager
 from psynet.experiment import Experiment
 
 DASHBOARD_EXPERIMENT_ROUTES = [
-    "change_lucid_status",
     "fail_node",
     "fail_info",
     "fail_trial",
@@ -32,6 +31,8 @@ def client():
                 **dict(route["kwargs"]),
             )
     app.register_blueprint(experiment_routes)
+    app.add_url_rule("/response", view_func=lambda: "ok", methods=["POST"])
+    app.before_request(Experiment.before_request)
     return app.test_client()
 
 
@@ -53,7 +54,7 @@ def client():
         ("POST", "/dashboard/module/tooltip"),
         ("GET", "/dashboard/module/progress_info"),
         ("POST", "/dashboard/module/update_spending_limits"),
-        ("POST", "/change_lucid_status?status=paused"),
+        ("POST", "/dashboard/change_lucid_status?status=paused"),
         ("POST", "/node/1/fail"),
         ("POST", "/info/1/fail"),
         ("POST", "/trial/1/fail"),
@@ -71,7 +72,10 @@ def test_dashboard_routes_reject_anonymous_requests(client, method, path):
         "/dashboard/archive/deployment?id=x",
         "/dashboard/restore/deployment?id=x",
         "/dashboard/update/recruitment?deployment_id=x",
-        "/change_lucid_status?status=paused",
+        "/dashboard/change_lucid_status?status=paused",
+        "/dashboard/module",
+        "/dashboard/module/tooltip",
+        "/dashboard/module/update_spending_limits",
         "/node/1/fail",
         "/info/1/fail",
         "/trial/1/fail",
@@ -81,3 +85,25 @@ def test_dashboard_routes_reject_anonymous_requests(client, method, path):
 )
 def test_data_changing_routes_refuse_get(client, path):
     assert client.get(path).status_code == 405
+
+
+@pytest.mark.parametrize(
+    "headers, status_code",
+    [
+        ({"Sec-Fetch-Site": "cross-site"}, 403),
+        ({"Sec-Fetch-Site": "same-site"}, 403),
+        ({"Origin": "https://localhost"}, 403),
+        ({"Origin": ""}, 403),
+        ({"Sec-Fetch-Site": "same-origin"}, 401),
+        ({"Origin": "http://localhost"}, 401),
+        ({}, 401),
+    ],
+)
+def test_dashboard_refuses_cross_site_posts(client, headers, status_code):
+    path = "/dashboard/archive/deployment?id=x"
+    assert client.post(path, headers=headers).status_code == status_code
+
+
+def test_cross_site_posts_to_participant_routes_are_allowed(client):
+    response = client.post("/response", headers={"Sec-Fetch-Site": "cross-site"})
+    assert response.status_code == 200

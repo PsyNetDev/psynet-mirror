@@ -488,14 +488,18 @@ def _is_cross_site_request(req):
 
     ``Sec-Fetch-Site`` is set by the browser and survives reverse proxies, so
     it is checked first. Older browsers fall back to ``Origin`` or ``Referer``,
-    compared with the ``Host`` header. Browsers send ``Origin`` with every
-    cross-site POST, so requests with none of these headers come from scripts
-    such as the PsyNet CLI and bots, which are allowed.
+    whose scheme and host are compared with the request's scheme and ``Host``
+    header. A header that is present but empty counts as cross-site.
+    Browsers send ``Origin`` with every cross-site POST, so requests with none
+    of these headers come from scripts such as the PsyNet CLI and bots, which
+    are allowed.
     """
     fetch_site = req.headers.get("Sec-Fetch-Site")
     if fetch_site is not None:
         return fetch_site not in ("same-origin", "none")
-    source = req.headers.get("Origin") or req.headers.get("Referer")
+    source = req.headers.get("Origin")
+    if source is None:
+        source = req.headers.get("Referer")
     if source is None:
         return False
     source = urlsplit(source)
@@ -4776,6 +4780,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             exp.artifact_storage.archive(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to archive deployment: {str(e)}")
 
@@ -4789,6 +4795,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             exp.artifact_storage.restore(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to restore deployment: {str(e)}")
 
@@ -4801,6 +4809,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             deployment_id = params["deployment_id"]
             params["type"] = "recruitment"
             status = exp._parse_status(params)
+            if isinstance(status, flask.Response):
+                return status
             recruiter_name = status.get("recruiter_name", None)
             if recruiter_name is None:
                 recruiter_name = status.get("recruiter", None)
@@ -5799,10 +5809,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             external_submit_url=external_submit_url,
         )
 
-    @experiment_route("/change_lucid_status", methods=["POST"])
-    @classmethod
+    @dashboard.route("/change_lucid_status", methods=["POST"])
     @login_required
-    def change_lucid_status(cls):
+    def change_lucid_status():  # noqa F811
+        """Set the Lucid survey status chosen on the dashboard's Lucid tab."""
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
 
