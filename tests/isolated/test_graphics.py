@@ -31,7 +31,7 @@ def test_image():
 
 def test_text():
     text = Text("title", "PsyNet is great!", x=50, y=20)
-    assert text.js_init == ["this.raphael = paper.text(50, 20, 'PsyNet is great!');"]
+    assert text.js_init == ['this.raphael = paper.text(50, 20, "PsyNet is great!");']
 
 
 def test_validate_object_ids():

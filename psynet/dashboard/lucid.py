@@ -86,11 +86,13 @@ def report_lucid():
         return render_template(
             TEMPLATE_NAME,
             title=title,
-            html="""
+            html=Markup(
+                """
                 <div class="alert alert-danger" role="alert">
                     This experiment is not using Lucid as a recruiter.
                 </div>
-            """,
+            """
+            ),
             params=params,
         )
     all_entrants = LucidRID.query.all()
@@ -134,11 +136,13 @@ def report_lucid():
         return render_template(
             TEMPLATE_NAME,
             title=title,
-            html="""
+            html=Markup(
+                """
                 <div class="alert alert-primary" role="alert">
                     No participants entered the experiment.
                 </div>
-            """,
+            """
+            ),
             params=params,
         )
     else:

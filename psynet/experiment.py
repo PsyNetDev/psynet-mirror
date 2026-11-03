@@ -4236,6 +4236,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (``psynet_exit_recruiter.html``), with the assignment ID as a reference.
         Otherwise, one can return a custom message in various ways.
         If you return a string, this will be escaped appropriately and presented as text.
+        To show HTML that you wrote yourself, return a ``markupsafe.Markup`` string.
         Alternatively, more complex HTML structures can be constructed using the
         Python package ``dominate``, see Examples for details.
 

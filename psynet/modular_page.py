@@ -1798,7 +1798,8 @@ class Button(BaseButton):
         When the button is pressed, an event is triggered with this exact ID.
 
     text :
-        Text to display on the button.
+        Text to display on the button. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style :
         Optional CSS styling for the button.
@@ -1817,7 +1818,7 @@ class Button(BaseButton):
     def __init__(
         self,
         id_: str,
-        text: Union[str, dom_tag],
+        text: Union[str, Markup, dom_tag],
         style: str = "",
         is_response_button=False,
         start_disabled=False,
@@ -2461,17 +2462,15 @@ class AudioMeterControl(Control):
     msg_duration = {"high": 0.25, "low": 0.25}
 
     def to_json(self):
-        return Markup(
-            json.dumps(
-                {
-                    "display_range": self.display_range,
-                    "decay": self.decay,
-                    "threshold": self.threshold,
-                    "grace": self.grace,
-                    "warn_on_clip": self.warn_on_clip,
-                    "msg_duration": self.msg_duration,
-                }
-            )
+        return json.dumps(
+            {
+                "display_range": self.display_range,
+                "decay": self.decay,
+                "threshold": self.threshold,
+                "grace": self.grace,
+                "warn_on_clip": self.warn_on_clip,
+                "msg_duration": self.msg_duration,
+            }
         )
 
     def update_events(self, events):

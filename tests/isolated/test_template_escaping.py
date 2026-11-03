@@ -1,5 +1,6 @@
 """Participant and dashboard templates escape untrusted text."""
 
+import json
 from importlib import resources
 
 import pytest
@@ -84,6 +85,48 @@ def test_push_button_labels_escape_strings_and_keep_markup(app):
     assert "<script>alert(1)" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "<img alt='b'>" in html
+
+
+def test_button_text_escapes_strings_and_keeps_markup(app):
+    from psynet.modular_page import Button
+
+    template = '{% import "macros/control.html" as c %}{{ c.generic_button(button) }}'
+    plain = render(app, template, button=Button("buttonA", PAYLOAD))
+    trusted = render(app, template, button=Button("buttonB", Markup("<kbd>B</kbd>")))
+
+    assert "<script>alert(1)" not in plain
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in plain
+    assert "<kbd>B</kbd>" in trusted
+
+
+def test_graphic_text_is_written_as_json():
+    from psynet.graphics import Text
+
+    js = Text("label", PAYLOAD + "\\", x=0, y=0).js_init[-1]
+
+    assert "</script>" not in js
+    assert json.loads(js[js.index('"') : js.rindex(")")]) == PAYLOAD + "\\"
+
+
+@pytest.mark.parametrize(
+    "message, expected",
+    [
+        (PAYLOAD, "&lt;script&gt;alert(1)&lt;/script&gt;"),
+        (Markup("<em>Thanks</em>"), "<em>Thanks</em>"),
+    ],
+)
+def test_generic_recruiter_exit_message(app, message, expected):
+    from psynet.recruiters import GenericRecruiter
+
+    class Experiment:
+        def render_exit_message(self, participant):
+            return message
+
+    with app.test_request_context("/"):
+        html = GenericRecruiter().exit_response(Experiment(), participant=None)
+
+    assert "<script>alert(1)" not in html
+    assert expected in html
 
 
 def test_error_page_escapes_the_assignment_id(app):

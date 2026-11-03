@@ -359,6 +359,15 @@ migration instructions in the error.
 * The Next and Reset buttons sit in ``.psynet-actions``. Rules that selected
   them as direct children of ``#trial-stage`` should target
   ``.psynet-actions`` instead.
+* Participant pages escape HTML in plain strings. Search for ``labels=``,
+  ``choices=``, ``Button(``, ``WaitPage(``, ``KeyboardPage(`` and
+  ``template_arg=`` with HTML tags in the text, and wrap HTML that you wrote
+  in ``markupsafe.Markup``, for example
+  ``labels=[Markup("Yes <kbd>Y</kbd>")]``. Never wrap participant-provided
+  text in ``Markup``; to mix it into HTML, write
+  ``Markup("<b>{}</b>").format(answer)``, which escapes ``answer``. In custom
+  templates, write values inside ``<script>`` with ``{{ value | tojson }}``.
+  See :doc:`/code/writing_pages`.
 
 13. Set up the experiment environment
 -------------------------------------

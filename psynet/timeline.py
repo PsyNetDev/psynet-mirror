@@ -1255,6 +1255,9 @@ class Page(Elt):
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
+        ``{{ ... }}`` escapes plain strings; pass HTML as ``markupsafe.Markup``
+        or a ``dominate`` tag, and write values inside ``<script>`` with
+        ``| tojson``.
 
     label:
         Internal label to give the page, used for example in results saving.

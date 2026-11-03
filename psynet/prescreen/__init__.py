@@ -1892,7 +1892,8 @@ class AudioForcedChoiceTest(StaticTrialMaker):
         List of answer options.
 
     instructions :
-        Text of initial instruction page.
+        Text of initial instruction page. It is shown as HTML, so it may
+        contain tags; do not build it from participant-provided text.
 
     question :
         Question asked at every trial of the test. If the table already contains a column `question` this value will be

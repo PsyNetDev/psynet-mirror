@@ -320,7 +320,7 @@
         browser.allowMobileDevices = {{ config.allow_mobile_devices|tojson }};
         browser.forceGoogleChrome = {{ config.force_google_chrome|tojson }};
         browser.forceIncognitoMode = {{ config.force_incognito_mode|tojson }};
-        browser.minVersion = "{{ config.min_browser_version }}";
+        browser.minVersion = {{ config.min_browser_version | string | tojson }};
         browser.version = platform.version;
         browser.isOldVersion = !isVersionAtLeast(browser.version, browser.minVersion);
         browser.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -446,8 +446,8 @@
 
 {% macro svg(id, viewbox, content, class_name="small_icon", width=none, height=none, fill="currentColor") %}
     <svg id="{{ id }}" class="{{ class_name }}" viewBox="{{ viewbox }}"
-            {% if width is not none %} width="{{ width }} {% endif %}"
-            {% if height is not none %} height="{{ height }} {% endif %}"
+            {% if width is not none %} width="{{ width }}"{% endif %}
+            {% if height is not none %} height="{{ height }}"{% endif %}
          fill="{{ fill }}">
         {{ content }}
     </svg>

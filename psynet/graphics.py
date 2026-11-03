@@ -5,6 +5,8 @@ from importlib import resources
 from numbers import Real
 from typing import List, Optional
 
+from jinja2.utils import htmlsafe_json_dumps
+
 from .modular_page import Control, ModularPage, Prompt
 from .timeline import MediaSpec
 from .utils import is_valid_html5_id
@@ -426,10 +428,9 @@ class Text(GraphicObject):
 
     @property
     def js_init(self):
-        escaped_text = self.text.replace("'", "\\'")
         return [
             *super().js_init,
-            f"this.raphael = paper.text({self.x}, {self.y}, '{escaped_text}');",
+            f"this.raphael = paper.text({self.x}, {self.y}, {htmlsafe_json_dumps(self.text)});",
         ]
 
 

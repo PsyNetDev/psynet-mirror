@@ -82,10 +82,10 @@ class AudioTimedButtonTrial(StaticTrial):
                 f"event_description_{i}",
                 AudioPrompt(
                     self.definition["audio_url"],
-                    Markup(f"""<div style='text-align: center;'>
-                           You indicated that at {event_time} seconds you found the music interesting.<br>
+                    Markup("""<div style='text-align: center;'>
+                           You indicated that at {} seconds you found the music interesting.<br>
                            Can you tell us why? We'll play that moment again for you.
-                           </div>"""),
+                           </div>""").format(event_time),
                     play_window=[max(0, event_time - 3), event_time + 3],
                     controls={"Play": "Replay"},
                 ),

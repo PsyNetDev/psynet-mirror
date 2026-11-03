@@ -12,7 +12,7 @@
     </button>
     <script>
         psynet.trial.onEvent("trialConstruct", function() {
-            let button = document.getElementById("{{ params.id }}");
+            let button = document.getElementById({{ params.id | tojson }});
             if (!button) {
                 return;
             }
@@ -194,7 +194,7 @@
 {% macro keyboard_push_buttons(params) %}
     {{ push_buttons(params) }}
     <script>
-        const keyCodeIdx = JSON.parse(`{{ params.keys | tojson }}`);
+        const keyCodeIdx = {{ params.keys | tojson }};
         psynet.trial.onEvent("trialConstruct", function() {
             psynet.addPageEventListener(document, "keydown", function(event) {
                 let keyCode = event.code;
@@ -236,7 +236,7 @@
 
     <script>
         psynet.setRetrieveResponseHandler(function() {
-            let elements = document.getElementsByName('{{ params.name }}')
+            let elements = document.getElementsByName({{ params.name | tojson }})
             checkedValues = Array.from(elements).map(function(element, i) {
                 if (element.checked) {return element.id}
             }).filter(function (element) {
@@ -282,7 +282,7 @@
         {% endif %}
 
         psynet.setRetrieveResponseHandler(function() {
-            let element = document.querySelector('input[name="{{ params.name }}"]:checked')
+            let element = document.querySelector('input[name="' + CSS.escape({{ params.name | tojson }}) + '"]:checked')
             var rawAnswer = (element != null) ? element.id : null;
 
             {% if params.show_free_text_option %}
@@ -319,7 +319,7 @@
 
     <script>
         psynet.setRetrieveResponseHandler(function() {
-            let element = document.getElementById("{{ params.name }}");
+            let element = document.getElementById({{ params.name | tojson }});
             return {
                 rawAnswer: (element != null) ? element.value : null
             }
@@ -1053,7 +1053,7 @@
 
     <script>
         {% include "macros/control/audio_meter.js" %}
-        psynet.page.control.audioMeter.init('{{ params.to_json() }}');
+        psynet.page.control.audioMeter.init({{ params.to_json() | tojson }});
 
     </script>
 {% endmacro %}
