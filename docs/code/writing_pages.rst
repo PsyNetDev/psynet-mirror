@@ -33,6 +33,17 @@ Use one approach per piece of content. ``dominate`` escapes strings placed
 inside its tags, including ``Markup`` strings, so their HTML is shown as text.
 Only put trusted text in ``Markup``, never participant-provided data.
 
+The same rule applies to control labels, such as the ``labels`` of
+:class:`~psynet.modular_page.PushButtonControl`: a plain string is shown as
+text, and HTML needs ``Markup`` or a ``dominate`` tag:
+
+.. code-block:: python
+
+    PushButtonControl(
+        choices=["cat", "dog"],
+        labels=[Markup('<img src="/static/cat.png" alt="Cat">'), "Dog"],
+    )
+
 A :class:`~psynet.modular_page.ModularPage` takes a label, a prompt (plain text
 or a prompt object), and optionally a control. The
 :doc:`API reference </reference/api/modular_page>` documents every prompt and

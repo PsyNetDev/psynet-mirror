@@ -4,6 +4,7 @@ from math import ceil
 
 import pandas as pd
 from flask import render_template
+from markupsafe import Markup
 
 from psynet.participant import Participant
 from psynet.recruiters import BaseLucidRecruiter, LucidRID, LucidStatus
@@ -14,7 +15,17 @@ TEMPLATE_NAME = "dashboard_lucid.html"
 
 
 def render_msg(title, msg, details, color):
-    return f"<span style='color:{color}'><span style='font-weight:bold'>{title}</span>: {msg}</span> {details}"
+    """Return a card item as HTML, escaping every interpolated value."""
+    return Markup(
+        "<span style='color:{}'><span style='font-weight:bold'>{}</span>: {}</span> {}"
+    ).format(color, title, msg, details)
+
+
+def _json_safe(obj):
+    """Convert NumPy and pandas values so that Jinja's ``tojson`` accepts them."""
+    return json.loads(
+        json.dumps(obj, default=lambda x: x.item() if hasattr(x, "item") else str(x))
+    )
 
 
 def get_count_items(series):
@@ -175,7 +186,7 @@ def report_lucid():
     ).to_dict(orient="records")
 
     params["respondents"] = {
-        "data": data,
+        "data": _json_safe(data),
         "type2color": {
             "Marketplace codes": "black",
             "Terminated": "red",
@@ -183,7 +194,7 @@ def report_lucid():
             "Working": "blue",
         },
         "n_bins": 100,
-        "x_dict": x_dict,
+        "x_dict": _json_safe(x_dict),
     }
     entry_df.lucid_last_date = pd.to_datetime(entry_df.lucid_last_date, format="mixed")
     if len(entry_df) > 0:
@@ -229,11 +240,13 @@ def report_lucid():
 
     items = entrant_info_to_status_items(entrant_info)
 
-    items[0] += (
+    items[0] += Markup(
         "<br>The total number of working participants or participants who dropped out (e.g., close window)."
     )
-    items[1] += "<br>The total number of respondents send to termination by PsyNet."
-    items[2] += "<br>The total number of complete participants."
+    items[1] += Markup(
+        "<br>The total number of respondents send to termination by PsyNet."
+    )
+    items[2] += Markup("<br>The total number of complete participants.")
 
     params["psynet_status"] = {
         "title": "Status",
@@ -276,9 +289,13 @@ def report_lucid():
     ]
     items = entrant_info_to_status_items(entrant_info)
 
-    items[0] += "<br>The total number of respondents clicking on the survey link."
-    items[1] += "<br>The total number of respondents who passed the qualifications."
-    items[2] += (
+    items[0] += Markup(
+        "<br>The total number of respondents clicking on the survey link."
+    )
+    items[1] += Markup(
+        "<br>The total number of respondents who passed the qualifications."
+    )
+    items[2] += Markup(
         "<br>The total number of respondents who are marked as complete by Lucid."
     )
 
@@ -308,30 +325,30 @@ def report_lucid():
     ]
     items = entrant_info_to_status_items(entrant_info)
 
-    items[0] += (
+    items[0] += Markup(
         "<br>The total number of respondents who did not enter the experiment (e.g., not passsing the qualifications, "
         "marketplace error, rejection based on respondent quality score; see next card for breakdown)."
     )
-    items[1] += (
+    items[1] += Markup(
         "<br>The total number of respondents who are doing the experiment or were not returned to the marketplace "
         "(e.g., closing the window)."
     )
-    items[2] += (
+    items[2] += Markup(
         "<br>The total number of respondents who are marked as terminated in Lucid."
     )
-    items[3] += (
+    items[3] += Markup(
         "<br>The total number of respondents who are marked as complete in Lucid."
     )
     n_psynet_working = len(entry_df.query("psynet_status == 'Working'"))
     n_lucid_working = len(lucid_entry_df.query("lucid_status == @in_survey_status"))
     if n_lucid_working != n_psynet_working:
-        items[1] += (
+        items[1] += Markup(
             "<br><span class='text-danger'>Detected a mismatch in working participants in Psynet (n = "
             f"{n_psynet_working}) and Lucid (n = {n_lucid_working}).</span>"
         )
 
     if n_lucid_terminated != n_psynet_terminated:
-        items[2] += (
+        items[2] += Markup(
             "<br><span class='text-danger'>Detected a mismatch in terminated participants in Psynet (n = "
             f"{n_psynet_terminated}) and Lucid (n = {n_lucid_terminated}).</span>"
         )
@@ -343,12 +360,15 @@ def report_lucid():
     if n_lucid_completed != n_psynet_completed:
         lucid_complete_rids = psynet_completes_df.rid.to_list()
         cmd = f"psynet lucid compensate {params['survey_number']} {' '.join(lucid_complete_rids)}"
-        button = f"""
-        <a class="btn btn-primary mt-2" onclick="copyToClipboard('{cmd}')">Copy compensation command</a>
-        """
+        button = Markup(
+            '<a class="btn btn-primary mt-2" onclick="copyToClipboard({})">'
+            "Copy compensation command</a>"
+        ).format(json.dumps(cmd))
         items[3] += (
-            "<br><span class='text-danger'>Detected a mismatch in completed participants in Psynet (n = "
-            + f"{n_psynet_completed}) and Lucid (n = {n_lucid_completed}).</span><br>"
+            Markup(
+                "<br><span class='text-danger'>Detected a mismatch in completed participants in Psynet (n = "
+                f"{n_psynet_completed}) and Lucid (n = {n_lucid_completed}).</span><br>"
+            )
             + button
         )
 
@@ -458,7 +478,7 @@ def report_lucid():
                 "status": status,
                 "border": True,
                 "col": "col-4",
-                "data": data,
+                "data": _json_safe(data),
             }
 
         if len(terminated_df) > 0 and len(psynet_terminated_df) > 0:
@@ -518,7 +538,7 @@ def report_lucid():
                 "status": status,
                 "border": True,
                 "col": "col-4",
-                "data": data,
+                "data": _json_safe(data),
             }
 
             data = [
@@ -531,7 +551,7 @@ def report_lucid():
                 "status": status,
                 "border": True,
                 "col": "col-4",
-                "data": data,
+                "data": _json_safe(data),
             }
 
         responses = Response.query.filter_by(failed=False).all()
@@ -582,7 +602,7 @@ def report_lucid():
 
             n_bins = answer_counts.value.max()
             params["response_per_participant"] = {
-                "data": answer_counts.to_dict(orient="records"),
+                "data": _json_safe(answer_counts.to_dict(orient="records")),
                 "type2color": type2color,
                 "n_bins": n_bins,
             }

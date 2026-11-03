@@ -57,10 +57,11 @@ class AnimalTrial(StaticTrial):
                 """
             ),
             KeyboardPushButtonControl(
-                choices=[
-                    "Not at all <kbd>A</kbd>",
-                    "A little <kbd>S</kbd>",
-                    "Very much <kbd>D</kbd>",
+                choices=["Not at all", "A little", "Very much"],
+                labels=[
+                    Markup("Not at all <kbd>A</kbd>"),
+                    Markup("A little <kbd>S</kbd>"),
+                    Markup("Very much <kbd>D</kbd>"),
                 ],
                 keys=["KeyA", "KeyS", "KeyD"],
                 bot_response="Very much",

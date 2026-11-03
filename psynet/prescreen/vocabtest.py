@@ -831,7 +831,7 @@ class VocabTest(StaticTrialMaker):
 
     @classmethod
     def get_instructions_keyboard(cls):
-        prompt = (
+        prompt = Markup(
             _("To do the task quickly, you should use the keys on your keyboard.")
             + " "
             + _("You can use the following keys:")

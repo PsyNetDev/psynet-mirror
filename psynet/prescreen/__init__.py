@@ -827,7 +827,9 @@ class LanguageVocabularyTrial(StaticTrial):
             PushButtonControl(
                 choices=[choices[i] for i in order],
                 labels=[
-                    f'<img src="{image_urls[i]}" alt="notworking" height="65px" width="65px"/>'
+                    Markup(
+                        '<img src="{}" alt="notworking" height="65px" width="65px"/>'
+                    ).format(image_urls[i])
                     for i in order
                 ],
                 style="min-width: 100px; margin: 10px; background: none; border-color: grey;",

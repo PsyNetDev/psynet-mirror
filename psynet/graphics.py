@@ -848,6 +848,10 @@ class SVGLogo:
     def __str__(self):
         return self.html
 
+    def __html__(self):
+        """Render as trusted HTML in autoescaped templates."""
+        return self.html
+
     @property
     def html(self):
         with open(self.svg_path, "r") as f:

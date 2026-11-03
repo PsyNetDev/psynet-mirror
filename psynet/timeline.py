@@ -2115,7 +2115,7 @@ class Page(Elt):
             "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
             "js_page_modules": js_page_modules,
-            "css": self.css + experiment.css,
+            "css": [Markup(x) for x in self.css + experiment.css],
             "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,

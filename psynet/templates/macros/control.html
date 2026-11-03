@@ -129,9 +129,7 @@
             style="{{ params.style }}"
             disabled="true"
     >
-        {% autoescape off %}
         {{ params.label }}
-        {% endautoescape %}
     </button>
 {% endmacro %}
 
@@ -343,11 +341,9 @@
     {{ slider(params) }}
 
     <script>
-        {% autoescape off %}
-        var mediaLocations = {{ params.js_vars.media_locations }};
-        var autoplay = {{ params.js_vars.autoplay | lower }};
-        var disableWhilePlaying = {{ params.js_vars.disable_while_playing | lower }};
-        {% endautoescape %}
+        var mediaLocations = {{ params.js_vars.media_locations | tojson }};
+        var autoplay = {{ params.js_vars.autoplay | tojson }};
+        var disableWhilePlaying = {{ params.js_vars.disable_while_playing | tojson }};
 
         // Overwrites corresponding method in slider-page.html
         slider.updateLog = function() {
@@ -425,9 +421,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -472,9 +466,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -518,9 +510,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -759,17 +749,15 @@
     <p class="vspace"></p>
 
     <script>
-        {% autoescape off %}
         // ---- Slider configuration -------------------------------------------
-        var snapValues = {% if params.js_vars.snap_values is none %}null{% else %}{{ params.js_vars.snap_values }}{% endif %};
-        var minimalInteractions = {% if params.js_vars.minimal_interactions is none %}null{% else %}{{ params.js_vars.minimal_interactions }}{% endif %};
-        var continuousUpdates = {% if params.js_vars.continuous_updates is not defined or params.js_vars.continuous_updates is none %}null{% else %}{{ params.js_vars.continuous_updates | lower }}{% endif %};
+        var snapValues = {{ params.js_vars.snap_values | tojson }};
+        var minimalInteractions = {{ params.js_vars.minimal_interactions | tojson }};
+        var continuousUpdates = {{ params.js_vars.continuous_updates | default(none) | tojson }};
         var disableWhilePlaying = typeof disableWhilePlaying === "undefined" ? false : disableWhilePlaying;
-        var sliderId = '{{ params.slider_id }}';
+        var sliderId = {{ params.slider_id | tojson }};
         var randomWrap = {{ params.random_wrap | lower }}; // Decide whether to add to js_vars
         var minVal = {{ params.min_value }}; // Decide whether to add to js_vars
         var maxVal = {{ params.max_value }}; // Decide whether to add to js_vars
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -1943,9 +1931,7 @@
                 class="{{ item.class }}"
                 data-allowed="{{ item.allowed | tojson }}"
         >
-            {% autoescape off %}
             {{ item.label }}
-            {% endautoescape %}
         </button>
         {% endfor %}
     </div>
@@ -1955,7 +1941,7 @@
             if (allowed) {
                 psynet.nextPage(id);
             } else {
-                terminateParticipant("{{ params.label }}_" + id)
+                terminateParticipant({{ params.label | tojson }} + "_" + id)
             }
         };
 

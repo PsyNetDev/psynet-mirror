@@ -1038,6 +1038,7 @@ class CheckboxControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the checkboxes,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     arrange_vertically:
         Whether to arrange the checkboxes vertically. Default: ``True``.
@@ -1224,6 +1225,7 @@ class PushButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
@@ -1357,6 +1359,7 @@ class TimedPushButtonControl(PushButtonControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     button_highlight_duration:
         How long to highlight the button for once it has been clicked (seconds).
@@ -1486,6 +1489,7 @@ class RadioButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the radiobuttons,
         which the participant will see instead of ``choices``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS style attributes to apply to the radiobuttons. Default: ``"cursor: pointer"``.
@@ -1541,14 +1545,14 @@ class RadioButtonControl(OptionControl):
             placeholder_text = (
                 ""
                 if self.placeholder_text_free_text is None
-                else f'placeholder="{self.placeholder_text_free_text}"'
+                else Markup('placeholder="{}"').format(self.placeholder_text_free_text)
             )
             self.radiobuttons.append(
                 RadioButton(
                     name=self.name,
                     id_="free_text",
-                    label=Markup(
-                        f"<input id='free_text_input' {placeholder_text} type='text'>"
+                    label=Markup("<input id='free_text_input' {} type='text'>").format(
+                        placeholder_text
                     ),
                     style=self.style,
                 )

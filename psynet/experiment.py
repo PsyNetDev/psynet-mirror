@@ -71,6 +71,7 @@ from flask import (
 )
 from flask import g as flask_app_globals
 from flask_login import login_required
+from jinja2.utils import htmlsafe_json_dumps
 from markupsafe import escape
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
@@ -4840,7 +4841,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard_timeline.html",
             title="Timeline modules",
             panes=panes,
-            timeline_modules=json.dumps(module_info, default=serialise),
+            timeline_modules=htmlsafe_json_dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
 
