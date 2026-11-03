@@ -3630,23 +3630,22 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         Returns
         -------
         Participant or None
-            The participant, or ``None`` if there is no unique match.
+            The participant, or ``None`` if no participant has this RID.
+
+        Raises
+        ------
+        MultipleResultsFound
+            If several participants have this RID.
         """
-        participant = None
         try:
-            participant = Participant.query.filter_by(assignment_id=assignment_id).one()
+            return Participant.query.filter_by(assignment_id=assignment_id).one()
         except NoResultFound:
             logger.warning(
                 f"No Participant for Lucid RID '{assignment_id}' found. "
                 "This can happen when users are terminated before completing recruitment "
                 "(e.g., mobile detection, wrong browser, or other early termination)."
             )
-        except MultipleResultsFound:
-            logger.error(
-                f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
-            )
-
-        return participant
+            return None
 
     @property
     def termination_time_in_s(self):

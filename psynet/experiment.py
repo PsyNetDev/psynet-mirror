@@ -5688,9 +5688,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         when no participant has that RID yet (for example the mobile-phone
         check on the ad page), so it can end only a session that has not
         started. A request whose ``assignmentId``, ``RID`` and ``unique_id``
-        name different RIDs is refused.
+        name different RIDs is refused, as is any request when several
+        participants share the RID. Experiments that don't recruit through
+        Lucid return 404.
         """
         recruiter = get_experiment().recruiter
+        if not isinstance(recruiter, BaseLucidRecruiter):
+            flask.abort(404)
         try:
             assignment_id = recruiter.requested_assignment_id(request)
         except ValueError as err:
@@ -5703,17 +5707,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 status=403,
                 simple=True,
             )
-        participant = recruiter.get_participant(assignment_id)
-
-        supplied_unique_id = request.values.get("unique_id", "")
-        if participant is not None and not hmac.compare_digest(
-            supplied_unique_id.encode(), participant.unique_id.encode()
-        ):
-            logger.warning(
-                "Refused /terminate_participant for participant_id=%s: its "
-                "unique_id is missing or belongs to another participant.",
-                participant.id,
+        try:
+            participant = recruiter.get_participant(assignment_id)
+        except sqlalchemy.orm.exc.MultipleResultsFound:
+            logger.error(
+                "Refused /terminate_participant: several participants have "
+                "Lucid RID '%s'.",
+                assignment_id,
             )
+            return error_response(
+                error_text="This session could not be verified.",
+                status=500,
+                simple=True,
+            )
+
+        if participant is not None and not _request_carries_unique_id(participant):
             return error_response(
                 error_text="This session could not be verified.",
                 status=403,

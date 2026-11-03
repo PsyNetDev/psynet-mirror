@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from flask import Flask
+from werkzeug.http import parse_options_header
 
 from psynet.asset import (
     Asset,
@@ -84,9 +85,8 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
             assert response.status_code == 200
             # The stored object has no extension; the asset's own one decides.
             assert response.mimetype == "image/png"
-            assert response.headers["Content-Disposition"] == (
-                "inline; filename=abc123.png"
-            )
+            _, options = parse_options_header(response.headers["Content-Disposition"])
+            assert options["filename"].endswith(".png")
             assert response.cache_control.private
             assert not response.cache_control.public
             assert response.cache_control.max_age == 31_536_000

@@ -87,7 +87,9 @@ Pregenerated stimuli
 --------------------
 
 Git-ignored files under ``static/`` are deployed unless ``deploy.toml``
-excludes them; the generated ``static/assets`` folder stays excluded. The
+excludes them. The stock ``deploy.toml`` still excludes ``static/assets``,
+where older PsyNet versions left a link to local asset storage (remove it with
+``psynet scripts prune``), so keep your own files elsewhere in ``static/``. The
 deployment plan has a size limit, described in
 :doc:`/deploy/how_deployment_works`. PsyNet commands apply PsyNet's default
 limit, but ``dallinger verify`` run on its own uses Dallinger's smaller

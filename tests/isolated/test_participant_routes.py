@@ -85,24 +85,59 @@ def lucid(client, monkeypatch):
 def test_terminating_a_lucid_participant_needs_their_unique_id(
     client, lucid, query, terminated
 ):
+    from psynet.participant import Participant
+
+    _add_lucid_participant("worker")
+    response = client.get("/terminate_participant?reason=wrong-browser&" + query)
+
+    assert response.status_code == (200 if terminated else 403)
+    assert Participant.query.one().failed is terminated
+    assert lucid.terminate_respondent.called is terminated
+
+
+def _add_lucid_participant(worker_id, rid="rid", progress=0):
     from psynet.experiment import get_experiment
     from psynet.participant import Participant
 
     participant = Participant(
         get_experiment(),
         recruiter_id="lucid-recruiter",
-        worker_id="worker",
-        assignment_id="rid",
-        hit_id="rid",
+        worker_id=worker_id,
+        assignment_id=rid,
+        hit_id=rid,
         mode="debug",
     )
+    participant.progress = progress
     db.session.add(participant)
     db.session.commit()
-    response = client.get("/terminate_participant?reason=wrong-browser&" + query)
 
-    assert response.status_code == (200 if terminated else 403)
-    assert Participant.query.one().failed is terminated
-    assert lucid.terminate_respondent.called is terminated
+
+def test_a_completed_lucid_participant_needs_their_unique_id(client, lucid):
+    _add_lucid_participant("worker", progress=1)
+    response = client.get("/terminate_participant?reason=wrong-browser&RID=rid")
+
+    assert response.status_code == 403
+    assert "lucid.test" not in response.get_data(as_text=True)
+    assert not lucid.generate_submit_url.called
+    assert not lucid.terminate_respondent.called
+
+
+def test_a_lucid_rid_shared_by_two_participants_is_refused(client, lucid):
+    from psynet.participant import Participant
+
+    _add_lucid_participant("worker")
+    _add_lucid_participant("other")
+    response = client.get("/terminate_participant?reason=wrong-browser&RID=rid")
+
+    assert response.status_code == 500
+    assert not any(participant.failed for participant in Participant.query)
+    assert not lucid.terminate_respondent.called
+
+
+def test_terminate_participant_is_not_found_without_lucid(client):
+    response = client.get("/terminate_participant?RID=rid")
+
+    assert response.status_code == 404
 
 
 def test_a_lucid_rid_without_a_participant_can_be_terminated(client, lucid):
