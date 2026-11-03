@@ -58,7 +58,9 @@ class ChatRoomMember(SQLBase, SQLMixin):
     A new record is created each time a participant joins a room, so there may
     be multiple records per (participant_id, room_id) pair.  ``active=True``
     indicates the participant is currently in the room; ``leave_time`` is set
-    when they leave.
+    when they leave. A membership counts only while the participant is still
+    on the page they joined from (``page_uuid``), so moving on leaves the room
+    even if the page never sent ``leave_room``.
     """
 
     __tablename__ = "chat_room_member"
@@ -66,6 +68,7 @@ class ChatRoomMember(SQLBase, SQLMixin):
     id = Column(Integer, primary_key=True)
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     room_id = Column(String(128), index=True)
+    page_uuid = Column(String)
     active = Column(Boolean, default=True, index=True)
     join_time = Column(DateTime(timezone=True))
     leave_time = Column(DateTime(timezone=True), nullable=True)
@@ -125,6 +128,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 ChatRoomMember(
                     participant_id=participant.id,
                     room_id=room_id,
+                    page_uuid=participant.page_uuid,
                     active=True,
                     join_time=receive_time,
                 )
@@ -191,13 +195,16 @@ class EnableChatrooms(NullElt, WebSocketElt):
     def _is_member(participant, room_id):
         return (
             ChatRoomMember.query.filter_by(
-                participant_id=participant.id, room_id=room_id, active=True
+                participant_id=participant.id,
+                room_id=room_id,
+                page_uuid=participant.page_uuid,
+                active=True,
             ).first()
             is not None
         )
 
     def _occupant_ids(self, room_id):
-        """Return participant IDs currently subscribed to this room."""
+        """Return the IDs of participants in this room who are still on the page they joined from."""
         from psynet.participant import Participant
 
         return [
@@ -208,6 +215,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
             .filter(
                 ChatRoomMember.room_id == room_id,
                 ChatRoomMember.active.is_(True),
+                ChatRoomMember.page_uuid == Participant.page_uuid,
                 Participant.failed.is_(False),
             )
             .all()

@@ -26,6 +26,7 @@ def _new_participant(experiment):
         assignment_id=_random_id(),
         mode="debug",
     )
+    participant.page_uuid = _random_id()
     db.session.add(participant)
     return participant
 
@@ -404,6 +405,30 @@ class TestHandleMessage:
         exp.publish_to_participants.assert_not_called()
         assert ChatRoomMember.query.filter_by(room_id=room).count() == 0
 
+    def test_a_participant_who_moved_to_another_page_has_left_the_room(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        experiment = get_experiment()
+        mover, stayer = _new_participant(experiment), _new_participant(experiment)
+        db.session.flush()
+        room = _random_id()
+        for p in (mover, stayer):
+            self._send(handler, exp, p, {"type": "join_room", "room_id": room})
+        mover.page_uuid = _random_id()
+        exp.reset_mock()
+
+        for msg_type in ("message", "request_state"):
+            self._send(
+                handler, exp, mover, {"type": msg_type, "room_id": room, "content": "x"}
+            )
+        exp.publish_to_participants.assert_not_called()
+
+        self._send(
+            handler, exp, stayer, {"type": "message", "room_id": room, "content": "y"}
+        )
+        assert _recipients(exp) == [{str(stayer.id)}]
+
     @pytest.mark.parametrize("msg_type", ["message", "request_state"])
     def test_a_non_member_is_ignored(
         self, in_experiment_directory, db_session, msg_type
@@ -493,12 +518,20 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p1.id, room_id="room_X", active=True, join_time=now
+                participant_id=p1.id,
+                page_uuid=p1.page_uuid,
+                room_id="room_X",
+                active=True,
+                join_time=now,
             )
         )
         db.session.add(
             ChatRoomMember(
-                participant_id=p2.id, room_id="room_Y", active=True, join_time=now
+                participant_id=p2.id,
+                page_uuid=p2.page_uuid,
+                room_id="room_Y",
+                active=True,
+                join_time=now,
             )
         )
         # p3 is not subscribed
@@ -524,6 +557,7 @@ class TestOccupantIds:
         db.session.add(
             ChatRoomMember(
                 participant_id=p.id,
+                page_uuid=p.page_uuid,
                 room_id="room_Z",
                 active=False,
                 join_time=now,
@@ -544,7 +578,11 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z2", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z2",
+                active=True,
+                join_time=now,
             )
         )
         p.failed = True
@@ -564,12 +602,20 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z3", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z3",
+                active=True,
+                join_time=now,
             )
         )
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z3", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z3",
+                active=True,
+                join_time=now,
             )
         )
         db.session.commit()
