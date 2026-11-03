@@ -72,7 +72,7 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import Column, Float, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
 from sqlalchemy.orm.exc import DetachedInstanceError
@@ -371,7 +371,9 @@ class Request(SQLBase, SQLMixin):
     vars = None
 
     id = Column(Integer, primary_key=True)
-    unique_id = Column(String, ForeignKey("participant.unique_id"))
+    # Not a foreign key: the value comes from the request's query string,
+    # which may name no participant.
+    unique_id = Column(String)
     duration = Column(Float)
     method = Column(String)
     endpoint = Column(String)
@@ -1147,6 +1149,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def after_request(request, response):
         diff = time.monotonic() - flask_app_globals.request_start_time
         response = apply_versioned_static_cache_headers(response)
+        # Participant URLs carry ?unique_id=, which must not reach other origins
+        # through Referer.
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         relevant_endpoints = [
             "/ad",
             "/consent",
@@ -1174,11 +1181,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return response
 
         params = dict(request.args)
-        unique_id = params.get("unique_id", None)
-        if getattr(flask_app_globals, "unknown_participant", False):
-            unique_id = None
         request_obj = Request(
-            unique_id=unique_id,
+            unique_id=params.get("unique_id"),
             duration=diff,
             method=request.method,
             endpoint=endpoint,
@@ -4114,7 +4118,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         HTTP status is 404. The log line leaves out the request's IDs, which
         can be recruiter worker IDs.
         """
-        flask_app_globals.unknown_participant = True
         logger.warning(
             "%s %s: unknown participant, answered 'session no longer available' "
             "(a browser tab from an earlier session?).",
@@ -5653,8 +5656,31 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def terminate_participant(cls):
+        """Terminate a Lucid respondent and send them back to their panel.
+
+        An existing participant is only terminated by a request that carries
+        their ``unique_id``. A bare ``RID`` or ``assignmentId`` is accepted only
+        when no participant has that RID yet (for example the mobile-phone
+        check on the ad page), so it can end only a session that has not
+        started.
+        """
         recruiter = get_experiment().recruiter
         participant = recruiter.get_participant(request)
+
+        supplied_unique_id = request.values.get("unique_id", "")
+        if participant is not None and not hmac.compare_digest(
+            supplied_unique_id.encode(), participant.unique_id.encode()
+        ):
+            logger.warning(
+                "Refused /terminate_participant for participant_id=%s: its "
+                "unique_id is missing or belongs to another participant.",
+                participant.id,
+            )
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
 
         # Don't terminate participants who have already completed the experiment.
         # This can happen due to race conditions when the page redirects to Lucid

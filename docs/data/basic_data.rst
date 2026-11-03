@@ -38,6 +38,12 @@ JSON data, so check ``context`` and return data frames only when it is
    :pyobject: Exp.get_basic_data
    :dedent: 4
 
+So that a spreadsheet such as Excel doesn't run a participant's answer as a
+formula, the CSV files prefix ``'`` to text that starts with ``=``, ``+``,
+``-``, ``@``, a tab or a carriage return. Numbers, and text that reads as a
+number such as ``"-2"``, are written unchanged. The JSON file is written
+unchanged.
+
 PsyNet doesn't anonymize basic data. If a public release must omit
 identifiers, leave them out in ``get_basic_data``.
 

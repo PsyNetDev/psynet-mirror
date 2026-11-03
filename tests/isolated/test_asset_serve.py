@@ -73,6 +73,7 @@ def test_local_storage_serve_file(tmp_path):
         object_path = object_rel
         host_path = object_rel
         is_folder = False
+        extension = ".png"
 
     storage = LocalStorage(root=str(root))
     app = Flask("test-local-storage-serve")
@@ -80,6 +81,9 @@ def test_local_storage_serve_file(tmp_path):
         response = storage.serve(_Asset())
         try:
             assert response.status_code == 200
+            # The stored object has no extension; the asset's own one decides.
+            assert response.mimetype == "image/png"
+            assert response.headers["Content-Disposition"].startswith("inline")
             assert response.cache_control.private
             assert not response.cache_control.public
             assert response.cache_control.max_age == 31_536_000
@@ -103,6 +107,7 @@ def test_local_storage_serve_rejects_subpath_on_file(tmp_path):
         object_path = object_rel
         host_path = object_rel
         is_folder = False
+        extension = None
 
     storage = LocalStorage(root=str(root))
     app = Flask("test-local-storage-serve-subpath")
@@ -186,3 +191,19 @@ def test_managed_asset_recomputes_digests_when_same_path_changes(tmp_path):
     first_folder_sha256 = asset._get_sha256_contents(str(folder), True)
     nested.write_text("second", encoding="utf-8")
     assert asset._get_sha256_contents(str(folder), True) != first_folder_sha256
+
+
+def test_local_storage_launch_removes_a_legacy_static_assets_link(
+    tmp_path, monkeypatch
+):
+    """Flask would serve every stored object through this link unchecked."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "static").mkdir()
+    (tmp_path / "static/assets").symlink_to(tmp_path, target_is_directory=True)
+    storage = LocalStorage(root=str(tmp_path / "storage"))
+    monkeypatch.setattr(storage, "on_deployed_server", lambda: True)
+
+    storage.on_every_launch()
+
+    assert not (tmp_path / "static/assets").is_symlink()
+    assert (tmp_path / "storage").is_dir()

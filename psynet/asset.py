@@ -12,7 +12,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import cache, cached_property
-from os import environ, makedirs, remove, symlink, unlink, walk
+from os import environ, makedirs, remove, unlink, walk
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -2058,7 +2058,7 @@ class LocalStorage(AssetStorage):
     def setup_files(self):
         if self.on_deployed_server() or deployment_info.read("is_local_deployment"):
             self._ensure_root_dir_exists()
-            self._create_symlink()
+            self._remove_legacy_static_link()
 
     def prepare_for_deployment(self):
         self.setup_files()
@@ -2087,34 +2087,16 @@ class LocalStorage(AssetStorage):
 
         Path(self.root).mkdir(parents=True, exist_ok=True)
 
-    @property
-    def local_path(self):
-        return os.path.join("static", self.label)
+    @staticmethod
+    def _remove_legacy_static_link():
+        """Remove ``static/assets``, which older PsyNet versions linked to the root.
 
-    @property
-    def public_path(self):
+        Flask serves ``static/`` without access checks, so the link would expose
+        every stored object; assets are served through ``/asset/<access_token>``.
         """
-        This is the publicly exposed path by which the web browser can access the storage registry.
-        This corresponds to a (symlinked) directory inside the experiment directory.
-        """
-        return "/" + self.local_path
-
-    def _create_symlink(self):
-        try:
-            unlink(self.local_path)
-        except (FileNotFoundError, IsADirectoryError, PermissionError):
-            # Path(self.local_path).rmdir()
-            try:
-                shutil.rmtree(self.local_path)
-            except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
-                pass
-
-        makedirs("static", exist_ok=True)
-
-        try:
-            symlink(self.root, self.local_path)
-        except FileExistsError:
-            pass
+        path = os.path.join("static", "assets")
+        if os.path.islink(path):
+            unlink(path)
 
     def update_asset_metadata(self, asset: Asset):
         host_path = asset.host_path
@@ -2286,12 +2268,6 @@ class LocalStorage(AssetStorage):
         else:
             return None
 
-    def get_url(self, host_path):
-        assert (
-            self.root
-        )  # Makes sure that the root storage location has been instantiated
-        return urllib.parse.quote(os.path.join(self.public_path, host_path))
-
     def serve(self, asset: Asset, subpath: Optional[str] = None):
         from flask import abort, send_file
 
@@ -2307,7 +2283,16 @@ class LocalStorage(AssetStorage):
             abort(404)
         if os.path.isdir(file_system_path):
             abort(400)
-        response = send_file(file_system_path, max_age=IMMUTABLE_CACHE_MAX_AGE)
+        download_name = None
+        extension = asset.extension
+        if not subpath and extension and not file_system_path.endswith(extension):
+            # Content-addressed objects have no extension of their own.
+            download_name = os.path.basename(file_system_path) + extension
+        response = send_file(
+            file_system_path,
+            download_name=download_name,
+            max_age=IMMUTABLE_CACHE_MAX_AGE,
+        )
         response.cache_control.public = None
         response.cache_control.private = True
         response.cache_control.immutable = True
