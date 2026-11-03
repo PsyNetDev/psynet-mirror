@@ -64,6 +64,28 @@
         "unit": "s",
         "version": "3"
     },
+    "slow.experiment_performance.AsyncJobs.track_export_time_s": {
+        "code": "class _BaseExperiment:\n    def track_export_time_s(self, data, *param_values):\n        export = self._result_for(data, *param_values)[\"export\"]\n        if export is None:\n            raise RuntimeError(\"performance test recorded no export; was --no-export passed?\")\n        if export[\"error\"]:\n            raise RuntimeError(f\"export failed: {export['error']}\")\n        return export[\"duration_s\"]\n\nclass AsyncJobs:\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.AsyncJobs.track_export_time_s",
+        "param_names": [
+            "n_bots",
+            "duration_minutes"
+        ],
+        "params": [
+            [
+                "5"
+            ],
+            [
+                "2.0"
+            ]
+        ],
+        "pretty_name": "async_jobs Export time",
+        "setup_cache_key": "slow.experiment_performance:220",
+        "timeout": 1800,
+        "type": "track",
+        "unit": "s",
+        "version": "5"
+    },
     "slow.experiment_performance.AsyncJobs.track_median_queue_delay_ms": {
         "code": "class AsyncJobs:\n    def track_median_queue_delay_ms(self, data, *param_values):\n        value = self._result_for(data, *param_values)[\"q_delay_median\"]\n        if value is None:\n            raise RuntimeError(\"performance test recorded no async job queue delay\")\n        return value * 1000.0\n\n    def setup_cache(self):\n        return super().setup_cache()",
         "name": "slow.experiment_performance.AsyncJobs.track_median_queue_delay_ms",
@@ -80,7 +102,7 @@
             ]
         ],
         "pretty_name": "async_jobs Median queue delay",
-        "setup_cache_key": "slow.experiment_performance:209",
+        "setup_cache_key": "slow.experiment_performance:220",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
@@ -102,10 +124,32 @@
             ]
         ],
         "pretty_name": "async_jobs Median request time",
-        "setup_cache_key": "slow.experiment_performance:209",
+        "setup_cache_key": "slow.experiment_performance:220",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
+        "version": "5"
+    },
+    "slow.experiment_performance.Static.track_export_time_s": {
+        "code": "class _BaseExperiment:\n    def track_export_time_s(self, data, *param_values):\n        export = self._result_for(data, *param_values)[\"export\"]\n        if export is None:\n            raise RuntimeError(\"performance test recorded no export; was --no-export passed?\")\n        if export[\"error\"]:\n            raise RuntimeError(f\"export failed: {export['error']}\")\n        return export[\"duration_s\"]\n\nclass Static:\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.Static.track_export_time_s",
+        "param_names": [
+            "n_bots",
+            "duration_minutes"
+        ],
+        "params": [
+            [
+                "5"
+            ],
+            [
+                "2.0"
+            ]
+        ],
+        "pretty_name": "static Export time",
+        "setup_cache_key": "slow.experiment_performance:200",
+        "timeout": 1800,
+        "type": "track",
+        "unit": "s",
         "version": "5"
     },
     "slow.experiment_performance.Static.track_median_response_time_ms": {
@@ -124,10 +168,32 @@
             ]
         ],
         "pretty_name": "static Median request time",
-        "setup_cache_key": "slow.experiment_performance:189",
+        "setup_cache_key": "slow.experiment_performance:200",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
+        "version": "5"
+    },
+    "slow.experiment_performance.StaticBig.track_export_time_s": {
+        "code": "class _BaseExperiment:\n    def track_export_time_s(self, data, *param_values):\n        export = self._result_for(data, *param_values)[\"export\"]\n        if export is None:\n            raise RuntimeError(\"performance test recorded no export; was --no-export passed?\")\n        if export[\"error\"]:\n            raise RuntimeError(f\"export failed: {export['error']}\")\n        return export[\"duration_s\"]\n\nclass StaticBig:\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.StaticBig.track_export_time_s",
+        "param_names": [
+            "n_bots",
+            "duration_minutes"
+        ],
+        "params": [
+            [
+                "5"
+            ],
+            [
+                "2.0"
+            ]
+        ],
+        "pretty_name": "static_big Export time",
+        "setup_cache_key": "slow.experiment_performance:211",
+        "timeout": 1800,
+        "type": "track",
+        "unit": "s",
         "version": "5"
     },
     "slow.experiment_performance.StaticBig.track_median_response_time_ms": {
@@ -146,10 +212,32 @@
             ]
         ],
         "pretty_name": "static_big Median request time",
-        "setup_cache_key": "slow.experiment_performance:200",
+        "setup_cache_key": "slow.experiment_performance:211",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
+        "version": "5"
+    },
+    "slow.experiment_performance.Timeline.track_export_time_s": {
+        "code": "class _BaseExperiment:\n    def track_export_time_s(self, data, *param_values):\n        export = self._result_for(data, *param_values)[\"export\"]\n        if export is None:\n            raise RuntimeError(\"performance test recorded no export; was --no-export passed?\")\n        if export[\"error\"]:\n            raise RuntimeError(f\"export failed: {export['error']}\")\n        return export[\"duration_s\"]\n\nclass Timeline:\n    def setup_cache(self):\n        return super().setup_cache()",
+        "name": "slow.experiment_performance.Timeline.track_export_time_s",
+        "param_names": [
+            "n_bots",
+            "duration_minutes"
+        ],
+        "params": [
+            [
+                "12"
+            ],
+            [
+                "8.0"
+            ]
+        ],
+        "pretty_name": "timeline Export time",
+        "setup_cache_key": "slow.experiment_performance:190",
+        "timeout": 1800,
+        "type": "track",
+        "unit": "s",
         "version": "5"
     },
     "slow.experiment_performance.Timeline.track_median_response_time_ms": {
@@ -168,7 +256,7 @@
             ]
         ],
         "pretty_name": "timeline Median request time",
-        "setup_cache_key": "slow.experiment_performance:179",
+        "setup_cache_key": "slow.experiment_performance:190",
         "timeout": 1800,
         "type": "track",
         "unit": "ms",
