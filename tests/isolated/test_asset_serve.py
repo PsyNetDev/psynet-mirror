@@ -107,10 +107,11 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
     [
         (".html", "attachment", "sandbox"),
         (".svg", "attachment", "sandbox"),
-        (".xslt", "attachment", "sandbox"),
+        (".xsl", "attachment", "sandbox"),
         (".png", "inline", "sandbox"),
         (".pdf", "inline", None),
         (".wav", "inline", None),
+        (".gz", "inline", "sandbox"),
     ],
 )
 def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition, policy):
@@ -132,6 +133,7 @@ def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition, po
         response = Asset.serve(asset)
         try:
             assert response.headers.get("Content-Security-Policy") == policy
+            assert "Content-Encoding" not in response.headers
             value, options = parse_options_header(
                 response.headers["Content-Disposition"]
             )

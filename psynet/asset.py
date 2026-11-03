@@ -1,3 +1,4 @@
+import mimetypes
 import os.path
 import secrets
 import shutil
@@ -2328,8 +2329,12 @@ class LocalStorage(AssetStorage):
         if not subpath and extension and not file_system_path.endswith(extension):
             # Content-addressed objects have no extension of their own.
             download_name = os.path.basename(file_system_path) + extension
+        # Passing the type stops Werkzeug adding Content-Encoding for .gz and
+        # similar, which would make browsers decompress or reject the file.
+        mimetype, _ = mimetypes.guess_type(download_name or file_system_path)
         response = send_file(
             file_system_path,
+            mimetype=mimetype or "application/octet-stream",
             download_name=download_name,
             max_age=IMMUTABLE_CACHE_MAX_AGE,
         )
