@@ -45,6 +45,11 @@ export async function activate({root, vars}) {
     function sendMessage() {
         var text  = input.value.trim();
         if (!text) return;
+        if (chatConnection.raw.readyState !== WebSocket.OPEN) {
+            // dallinger.Socket would queue the line; keep it as a draft instead.
+            sendButton.disabled = true;
+            return;
+        }
         chatConnection.send(CHANNEL, {type: "message", room_id: ROOM_ID, content: text});
         input.value = "";
         input.focus();
@@ -135,6 +140,9 @@ export async function activate({root, vars}) {
                 return;
             }
             enableChat();
+        });
+        chatConnection.raw.addEventListener("close", function () {
+            if (!leftChat) sendButton.disabled = true;
         });
         chatConnection.onRefused(function (code, reason) {
             sendButton.disabled = true;

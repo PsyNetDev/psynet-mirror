@@ -1,12 +1,13 @@
 import json
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from dallinger import db
 
-from psynet.chatroom import ChatMessage, ChatRoomMember, EnableChatrooms
+from psynet.chatroom import ChatMessage, ChatRoom, ChatRoomMember, EnableChatrooms
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -69,7 +70,13 @@ class TestHandleMessage:
         return EnableChatrooms(), _mock_experiment()
 
     @staticmethod
-    def _send(handler, exp, participant, payload, node=None):
+    def _send(handler, exp, participant, payload, node=None, page_room=None):
+        """Send ``payload``; a join comes from a page showing ``page_room``, by default the joined room."""
+        if payload.get("type") == "join_room":
+            room = page_room if page_room is not None else payload.get("room_id")
+            exp.timeline.get_current_elt.return_value = SimpleNamespace(
+                chatroom=ChatRoom(room_id=room)
+            )
         time = datetime.now(UTC)
         handler.handle_message(
             json.dumps(payload),
@@ -377,6 +384,25 @@ class TestHandleMessage:
             }
         ]
         assert _recipients(exp) == [{str(sender.id), str(member.id)}]
+
+    def test_a_room_the_page_does_not_show_cannot_be_joined(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        participant = _new_participant(get_experiment())
+        db.session.flush()
+        room = _random_id()
+
+        self._send(
+            handler,
+            exp,
+            participant,
+            {"type": "join_room", "room_id": room},
+            page_room="my-own-room",
+        )
+
+        exp.publish_to_participants.assert_not_called()
+        assert ChatRoomMember.query.filter_by(room_id=room).count() == 0
 
     @pytest.mark.parametrize("msg_type", ["message", "request_state"])
     def test_a_non_member_is_ignored(

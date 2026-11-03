@@ -183,6 +183,13 @@ class Exp(psynet.experiment.Experiment):
         events, this method additionally calls _broadcast_occupancy() to push an
         authoritative occupancy snapshot to all clients (both the room-selection
         page and chatroom participant sidebars).
+
+        This low-level pattern is not secure. ``participant`` is whoever the
+        frame's ``sender`` field names, so any page can post as anyone, and
+        every subscriber to the channel reads every room. For real experiments,
+        use :class:`~psynet.chatroom.ChatRoom` with
+        :class:`~psynet.chatroom.EnableChatrooms`, which check the sender and
+        send each room's messages to its members only.
         """
         try:
             msg = json.loads(message)

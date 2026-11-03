@@ -30,6 +30,9 @@ from .data import SQLBase, SQLMixin, register_table
 from .javascript_hooks import JavaScriptContributor
 from .static_resources import package_static_url
 from .timeline import NullElt, WebSocketElt
+from .utils import get_logger
+
+logger = get_logger()
 
 
 @register_table
@@ -102,6 +105,14 @@ class EnableChatrooms(NullElt, WebSocketElt):
         msg_type = data.get("type")
 
         if msg_type == "join_room":
+            if not self._page_shows_room(experiment, participant, room_id):
+                logger.warning(
+                    "Refused to let participant %s join chat room %r, which "
+                    "their current page doesn't show.",
+                    participant.id,
+                    room_id,
+                )
+                return
             # Close any active session for this participant in this room,
             # then open a new one.  This handles reconnects cleanly and
             # preserves a full join/leave history per room.
@@ -160,6 +171,21 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 },
                 self._occupant_ids(room_id),
             )
+
+    @staticmethod
+    def _page_shows_room(experiment, participant, room_id):
+        """Return whether the participant's current page has a chat room called ``room_id``."""
+        try:
+            page = experiment.timeline.get_current_elt(experiment, participant)
+        except Exception:
+            logger.warning(
+                "Could not find the current page of participant %s.",
+                participant.id,
+                exc_info=True,
+            )
+            return False
+        chatroom = getattr(page, "chatroom", None)
+        return chatroom is not None and str(chatroom.room_id) == str(room_id)
 
     @staticmethod
     def _is_member(participant, room_id):
@@ -226,9 +252,8 @@ class ChatRoom(JavaScriptContributor):
     ----------
     room_id
         The unique identifier for this chatroom instance. Can be a dynamic
-        value computed per trial (e.g. a group ID). The server doesn't check
-        that a participant was given the room, so a participant who knows or
-        guesses a ``room_id`` can join that room.
+        value computed per trial (e.g. a group ID). A participant can only
+        join the room that their current page shows.
     show_participants
         Whether to display a sidebar listing current participants.
     show_history
