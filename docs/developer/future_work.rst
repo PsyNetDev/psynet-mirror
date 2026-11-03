@@ -835,3 +835,69 @@ Once few experiments still have the link, remove the exclusion from the
 ``deploy.toml`` and ``.gitignore`` templates, and have debug and deploy
 commands remove a leftover link (or point to ``psynet scripts prune``) before
 they build the deployment plan.
+
+Fix the Resources dashboard slider under jQuery 4
+-------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The Resources dashboard loads PsyNet's copy of jQuery UI on top of the
+jQuery that Dallinger's dashboard provides. Dallinger now ships jQuery 4,
+which removed ``$.isArray``, so the page logs ``t.isArray is not a
+function`` and its slider doesn't work.
+
+Idea
+++++
+
+Update the vendored jQuery UI to a release that supports jQuery 4, or
+replace the slider with a native ``<input type="range">``.
+
+Play media in the generic ``MediaSliderControl``
+------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+In the ``simple_multimedia_slider`` demo, the video and audio never play:
+the generic ``MediaSliderControl`` macro in ``macros/control.html`` calls
+``playMedia`` without defining it, unlike the audio and video slider
+macros.
+
+Idea
+++++
+
+Define ``playMedia`` for the generic macro, or route it through the
+audio and video slider implementations, and add a browser test that the
+demo's media starts.
+
+Ignore downloaded fonts in experiment directories
+-------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``psynet debug local`` in an experiment that uses ``VocabTest`` downloads
+``static/fonts/GoNotoKurrent-Bold.ttf``. The stock experiment ``.gitignore``
+only ignores ``static/assets``, so the font appears as an untracked file.
+
+Idea
+++++
+
+Add ``static/fonts/`` to ``psynet/resources/experiment_scripts/.gitignore``,
+or download the font into a cache directory outside the experiment.
