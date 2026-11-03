@@ -6,9 +6,10 @@ from os.path import join as join_path
 from random import shuffle
 from typing import List, Optional
 
+import requests
 from markupsafe import Markup
 
-from psynet.asset import ExternalAsset
+from psynet.asset import ExternalAsset, OnDemandAsset
 from psynet.bot import Bot
 from psynet.modular_page import (
     AudioMeterControl,
@@ -34,7 +35,7 @@ from psynet.timeline import (
 )
 from psynet.trial.audio import AudioRecordTrial
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import get_logger, get_translator
+from psynet.utils import get_extension, get_logger, get_translator
 
 from .vocabtest import BibleVocab, WikiVocab  # noqa: F401
 
@@ -805,18 +806,42 @@ class REPPMarkersTest(StaticTrialMaker):
         ]
 
 
+def _download_media(path, source_url):
+    """Download ``source_url`` to ``path``."""
+    response = requests.get(source_url, timeout=30)
+    response.raise_for_status()
+    with open(path, "wb") as file:
+        file.write(response.content)
+
+
+def _opaque_media_asset(url):
+    """
+    Serve externally hosted media through PsyNet under an opaque URL.
+
+    Use this for pre-screen stimuli whose file names would reveal the correct
+    answer. The browser only sees ``/asset/<access_token>``; the server fetches
+    ``url`` when the asset is requested.
+    """
+    return OnDemandAsset(
+        function=_download_media,
+        arguments={"source_url": url},
+        extension=get_extension(url),
+    )
+
+
 class LanguageVocabularyTrial(StaticTrial):
     time_estimate = None
+    image_keys = ["image_correct", "image_wrong1", "image_wrong2", "image_wrong3"]
 
     def finalize_definition(self, definition, experiment, participant):
-        indices = range(4)
-        definition["order"] = random.sample(indices, len(indices))
+        order = random.sample(range(4), 4)
+        definition["order"] = order
+        definition["correct_answer"] = str(order.index(0) + 1)
         return definition
 
     def show_trial(self, experiment, participant):
         order = self.definition["order"]
-        choices = ["correct", "wrong1", "wrong2", "wrong3"]
-        image_urls = [self.assets[f"image_{choice}"].url for choice in choices]
+        image_urls = [self.assets[self.image_keys[i]].url for i in order]
 
         return ModularPage(
             "language_vocabulary_trial",
@@ -825,19 +850,19 @@ class LanguageVocabularyTrial(StaticTrial):
                 "Select the picture that matches the word that you heard.",
             ),
             PushButtonControl(
-                choices=[choices[i] for i in order],
+                choices=[str(position) for position in range(1, 5)],
                 labels=[
-                    f'<img src="{image_urls[i]}" alt="notworking" height="65px" width="65px"/>'
-                    for i in order
+                    f'<img src="{url}" alt="notworking" height="65px" width="65px"/>'
+                    for url in image_urls
                 ],
                 style="min-width: 100px; margin: 10px; background: none; border-color: grey;",
                 arrange_vertically=False,
-                bot_response="correct",
+                bot_response=self.definition["correct_answer"],
             ),
         )
 
     def score_answer(self, answer, definition):
-        if answer == "correct":
+        if answer == definition["correct_answer"]:
             return 1
         else:
             return 0
@@ -943,11 +968,11 @@ class LanguageVocabularyTest(StaticTrialMaker):
                     "word": word,
                 },
                 assets={
-                    "audio": ExternalAsset(
+                    "audio": _opaque_media_asset(
                         f"{media_url}/recordings/{language_code}/{word}.wav"
                     ),
                     **{
-                        f"image_{choice}": ExternalAsset(
+                        f"image_{choice}": _opaque_media_asset(
                             f"{media_url}/images/{word}/{choice}.png"
                         )
                         for choice in ["correct", "wrong1", "wrong2", "wrong3"]
@@ -1074,7 +1099,9 @@ class LexTaleTest(StaticTrialMaker):
                     "correct_answer": correct_answer,
                     "url": f"{media_url}/lextale-{label}.png",  # Redundant but kept for back-compatibility
                 },
-                assets={"word": ExternalAsset(f"{media_url}/lextale-{label}.png")},
+                assets={
+                    "word": _opaque_media_asset(f"{media_url}/lextale-{label}.png")
+                },
             )
             for label, correct_answer in [
                 ("1", "yes"),
@@ -1358,9 +1385,7 @@ class ColorBlindnessTest(StaticTrialMaker):
                     "correct_answer": answer,
                 },
                 assets={
-                    "image": ExternalAsset(
-                        url=f"{media_url}/ishihara-{label}.jpg",
-                    )
+                    "image": _opaque_media_asset(f"{media_url}/ishihara-{label}.jpg")
                 },
             )
             for label, answer in [
@@ -1662,8 +1687,8 @@ class GeneralHeadphoneTest(StaticTrialMaker):
                     "correct_answer": answer,
                 },
                 assets={
-                    "stimulus": ExternalAsset(
-                        join_path(media_url, f"{label}.wav"),
+                    "stimulus": _opaque_media_asset(
+                        join_path(media_url, f"{label}.wav")
                     )
                 },
             )

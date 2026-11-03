@@ -1,9 +1,21 @@
 import json
+import re
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from psynet.prescreen import LanguageVocabularyTest, NumpySerializer
+from psynet.asset import ExternalAsset
+from psynet.prescreen import (
+    AntiphaseHeadphoneTest,
+    BeepHeadphoneTest,
+    ColorBlindnessTest,
+    HugginsHeadphoneTest,
+    LanguageVocabularyTest,
+    LanguageVocabularyTrial,
+    LexTaleTest,
+    NumpySerializer,
+)
 
 
 class TestNumpySerializer:
@@ -22,17 +34,49 @@ class TestNumpySerializer:
         assert result == expected
 
 
-def test_language_vocabulary_images_are_specific_to_each_word():
-    node = LanguageVocabularyTest.get_nodes(
-        None,
-        media_url="https://example.com",
-        language_code="en-US",
-        words=["bell"],
-    )[0]
+@pytest.mark.parametrize(
+    "trial_maker_class",
+    [
+        AntiphaseHeadphoneTest,
+        BeepHeadphoneTest,
+        ColorBlindnessTest,
+        HugginsHeadphoneTest,
+        LanguageVocabularyTest,
+        LexTaleTest,
+    ],
+)
+def test_prescreen_stimulus_urls_do_not_reveal_answers(trial_maker_class):
+    assets = [
+        asset
+        for node in trial_maker_class().start_nodes
+        for asset in node.assets.values()
+    ]
+    assert assets
+    for asset in assets:
+        assert re.fullmatch(r"/asset/[\w-]+", asset.get_url())
 
-    assert node.assets["image_correct"].url == (
-        "https://example.com/images/bell/correct.png"
+
+def test_language_vocabulary_page_hides_and_checks_the_answer():
+    trial = SimpleNamespace(
+        definition={},
+        assets={
+            key: ExternalAsset(f"/asset/{i}")
+            for i, key in enumerate(LanguageVocabularyTrial.image_keys + ["audio"])
+        },
+        image_keys=LanguageVocabularyTrial.image_keys,
     )
-    assert node.assets["image_wrong1"].url == (
-        "https://example.com/images/bell/wrong1.png"
+    trial.definition = LanguageVocabularyTrial.finalize_definition(
+        trial, {}, None, None
     )
+    control = LanguageVocabularyTrial.show_trial(trial, None, None).control
+
+    assert control.choices == ["1", "2", "3", "4"]
+    correct = control.choices[trial.definition["order"].index(0)]
+    assert control.labels[int(correct) - 1].startswith('<img src="/asset/0"')
+
+    def score(answer):
+        return LanguageVocabularyTrial.score_answer(None, answer, trial.definition)
+
+    assert score(correct) == 1
+    assert [score(c) for c in control.choices if c != correct] == [0, 0, 0]
+    assert score("correct") == 0
