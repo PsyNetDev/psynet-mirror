@@ -495,7 +495,8 @@ See :doc:`/code/multiplayer/synchronization`.
 ----------------------
 
 Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
-``personal=``, ``cache=`` and ``compile_nodes_from_directory``.
+``personal=``, ``cache=``, ``compile_nodes_from_directory`` and
+``on-demand-asset``.
 
 * Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
   ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
@@ -507,6 +508,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   pass ``self.definition["url"]`` to prompts.
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
+* ``/on-demand-asset?id=…`` URLs no longer work. Use the asset's ``url``
+  attribute instead, which has the form ``/asset/<access_token>``.
 
 19. Async jobs
 --------------

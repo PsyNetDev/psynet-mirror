@@ -815,3 +815,27 @@ list, and serve them as ordinary assets (or cache the on-demand
 downloads) so that stimulus requests no longer wait on S3. Until then,
 the route could read what it needs from the database and release the
 session before downloading.
+
+Add a public way to proxy a remote stimulus
+-------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens hide answer-revealing stimulus URLs with the
+internal helper ``_opaque_media_asset``, which wraps a remote file in an
+:class:`~psynet.asset.OnDemandAsset` that the server downloads. Experiment
+authors with the same problem have no public equivalent, yet the
+pre-screening tutorial shows this helper.
+
+Idea
+++++
+
+Add a public constructor such as ``OnDemandAsset.from_url(url)`` that
+serves a remote file under an opaque ``/asset/<access_token>`` URL, use it
+in the built-in pre-screens and document it in the tutorial.

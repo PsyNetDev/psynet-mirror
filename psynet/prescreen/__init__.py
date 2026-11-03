@@ -8,6 +8,7 @@ from random import shuffle
 from typing import List, Optional
 from urllib.parse import urlparse
 
+import flask
 import requests
 from markupsafe import Markup
 
@@ -809,9 +810,13 @@ class REPPMarkersTest(StaticTrialMaker):
 
 
 def _download_media(path, source_url):
-    """Download ``source_url`` to ``path``."""
-    response = requests.get(source_url, timeout=30)
-    response.raise_for_status()
+    """Download ``source_url`` to ``path``, aborting with 502 if the download fails."""
+    try:
+        response = requests.get(source_url, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as error:
+        logger.warning("Could not download pre-screen media %s: %s", source_url, error)
+        flask.abort(502)
     with open(path, "wb") as file:
         file.write(response.content)
 

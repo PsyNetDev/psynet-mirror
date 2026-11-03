@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import requests
+from werkzeug.exceptions import HTTPException
 
 import psynet.prescreen
 from psynet.asset import ExternalAsset
@@ -58,6 +60,44 @@ def test_prescreen_stimulus_urls_do_not_reveal_answers(trial_maker_class):
         assert re.fullmatch(r"/asset/[\w-]+", asset.get_url())
 
 
+def test_prescreen_assets_fetch_the_matching_remote_files():
+    def source_urls(node):
+        return {key: a.arguments["source_url"] for key, a in node.assets.items()}
+
+    media_url = "https://s3.amazonaws.com/langauge-test-materials"
+    for node in LanguageVocabularyTest().start_nodes:
+        word = node.definition["word"]
+        assert source_urls(node) == {
+            "audio": f"{media_url}/recordings/en-US/{word}.wav",
+            **{
+                f"image_{image}": f"{media_url}/images/{word}/{image}.png"
+                for image in ["correct", "wrong1", "wrong2", "wrong3"]
+            },
+        }
+
+    for node in ColorBlindnessTest().start_nodes:
+        label = node.definition["label"]
+        assert source_urls(node) == {
+            "image": f"https://s3.amazonaws.com/ishihara-eye-test/jpg/ishihara-{label}.jpg"
+        }
+
+
+def test_opaque_media_asset_returns_502_when_the_download_fails(
+    monkeypatch, tmp_path, caplog
+):
+    def get(url, timeout):
+        raise requests.Timeout("timed out")
+
+    monkeypatch.setattr(psynet.prescreen.requests, "get", get)
+    asset = _opaque_media_asset("https://example.com/bell.wav")
+
+    with pytest.raises(HTTPException) as error:
+        asset.export(tmp_path / "out.wav")
+
+    assert error.value.code == 502
+    assert "https://example.com/bell.wav" in caplog.text
+
+
 def test_opaque_media_asset_fetches_the_source_url(monkeypatch, tmp_path):
     fetched = []
 
@@ -74,7 +114,10 @@ def test_opaque_media_asset_fetches_the_source_url(monkeypatch, tmp_path):
     assert (tmp_path / "out.wav").read_bytes() == b"RIFF"
 
 
-def test_opaque_media_asset_keeps_non_http_urls_with_one_warning_per_directory():
+def test_opaque_media_asset_keeps_non_http_urls_with_one_warning_per_directory(
+    monkeypatch,
+):
+    monkeypatch.setattr(psynet.prescreen, "_warned_non_http_media_directories", set())
     with pytest.warns(UserWarning, match="participants can see them") as record:
         asset = _opaque_media_asset("/static/opaque-media-test/1.wav")
         _opaque_media_asset("/static/opaque-media-test/2.wav")
