@@ -2,6 +2,7 @@
 
 import json
 from importlib import resources
+from types import SimpleNamespace
 
 import pytest
 from dominate import tags
@@ -114,6 +115,28 @@ def test_graphic_strings_are_written_as_json():
 
         assert "</script>" not in js
         assert json.loads(js[start : js.index(after, start)]) == value
+
+
+def test_browser_detect_script_json_encodes_translations(app, monkeypatch):
+    from psynet import utils
+
+    translation = "\"'`${x}</script>"
+    monkeypatch.setattr(utils, "get_translator", lambda **_: lambda *_: translation)
+    monkeypatch.setitem(app.extensions, utils._PSYNET_JINJA_LOCALES_KEY, {})
+    html = render(
+        app,
+        '{% import "macros/browser-detect.html" as b with context %}{{ b.head() }}',
+        experiment=SimpleNamespace(
+            psynet_logo=SimpleNamespace(html="<svg></svg>"),
+            with_lucid_recruitment=lambda: False,
+        ),
+    )
+    script = html[html.index("var browser = (function") :]
+    script = script[: script.index("</script>")]
+
+    assert '"\\"\\u0027`${x}\\u003c/script\\u003e"' in script
+    assert "browser.minVersion = " in script
+    assert "escapeBrowserWarningHtml(browser.name)" in script
 
 
 @pytest.mark.parametrize(
