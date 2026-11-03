@@ -58,9 +58,11 @@ experiment = [
     "babel",
     # TODO: Replace this Git pin with a released dallinger[docker] version once
     # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout),
-    # #10087 (no croniter at worker start-up) and #10166 (docker_image_base_name
-    # optional for server-only docker-ssh builds) are on PyPI. The SHA is a
-    # commit on Dallinger master that includes them.
+    # #10087 (no croniter at worker start-up), #10166 (docker_image_base_name
+    # optional for server-only docker-ssh builds), the real-time engine
+    # (#10100, #10229), check_recruiter_exit (#10239) and websocket close codes
+    # under flask run (#10274) are on PyPI. The SHA is a commit on Dallinger
+    # master that includes them.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@9e2a6f69fcc1de8599d62cdf3e7b8e1167d29629",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
