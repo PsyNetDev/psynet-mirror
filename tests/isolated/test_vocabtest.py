@@ -143,6 +143,30 @@ def test_vocab_consistency_rejects_answers_for_other_items(tmp_path):
     assert _score(vocab_test, hashes, answer) == 0
 
 
+@pytest.mark.parametrize(
+    "performance_check_type, expected", [("accuracy", 1), ("consistency", 0.5)]
+)
+def test_vocab_scores_answers_with_repeat_items(
+    tmp_path, performance_check_type, expected
+):
+    vocab_test = _make_vocab_test(
+        tmp_path, performance_check_type=performance_check_type, n_repeat_items=2
+    )
+    seed = vocab_test.start_nodes[0].seed
+    correct = [
+        {
+            "hash": item["hash"],
+            "answer": "real" if item["stimulus"] in ("cat", "dog") else "fake",
+        }
+        for item in seed
+    ]
+    flipped = {"real": "fake", "fake": "real"}[correct[1]["answer"]]
+    repeats = [correct[0], {**correct[1], "answer": flipped}]
+    answer = correct + repeats
+
+    assert _score(vocab_test, [item["hash"] for item in answer], answer) == expected
+
+
 def test_vocab_test_rejects_sync_groups(tmp_path):
     csv_path = tmp_path / "items.csv"
     csv_path.write_text("stimulus,correct_answer\ncat,correct\nxzz,incorrect\n")

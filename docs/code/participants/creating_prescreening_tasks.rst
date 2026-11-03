@@ -62,8 +62,9 @@ image, and passes the threshold and trial count on to
 .. literalinclude:: ../../../psynet/prescreen/__init__.py
    :pyobject: ColorBlindnessTest.get_nodes
 
-The images are hosted on S3 under file names that contain the correct answer,
-and participants can read stimulus URLs in the page source. The built-in test
+The images are hosted on S3 under file names that reveal the correct answer,
+either directly or when looked up in PsyNet's public source code (here, the
+plate numbers), and participants can read stimulus URLs in the page source. The built-in test
 therefore wraps each URL with the internal helper ``_opaque_media_asset``,
 which serves the image through PsyNet under an opaque ``/asset/<access_token>``
 URL. In your own pre-screen, give stimulus files names that don't reveal the

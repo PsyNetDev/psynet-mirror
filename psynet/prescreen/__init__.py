@@ -816,6 +816,9 @@ def _download_media(path, source_url):
         file.write(response.content)
 
 
+_warned_non_http_media_directories = set()
+
+
 def _opaque_media_asset(url):
     """
     Serve externally hosted media through PsyNet under an opaque URL.
@@ -829,11 +832,14 @@ def _opaque_media_asset(url):
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        warnings.warn(
-            f"Pre-screen media URL {url!r} is not an http(s) URL, so it is served "
-            "unchanged and participants can see it. Use an http(s) media_url to "
-            "hide stimulus file names."
-        )
+        directory = url.rsplit("/", 1)[0]
+        if directory not in _warned_non_http_media_directories:
+            _warned_non_http_media_directories.add(directory)
+            warnings.warn(
+                f"Pre-screen media URLs under {directory!r} are not http(s) URLs, "
+                "so they are served unchanged and participants can see them. Use "
+                "an http(s) media_url to hide stimulus file names."
+            )
         return ExternalAsset(url)
     return OnDemandAsset(
         function=_download_media,

@@ -74,12 +74,14 @@ def test_opaque_media_asset_fetches_the_source_url(monkeypatch, tmp_path):
     assert (tmp_path / "out.wav").read_bytes() == b"RIFF"
 
 
-def test_opaque_media_asset_keeps_non_http_urls_with_a_warning():
-    with pytest.warns(UserWarning, match="participants can see it"):
-        asset = _opaque_media_asset("/static/headphone-check/1.wav")
+def test_opaque_media_asset_keeps_non_http_urls_with_one_warning_per_directory():
+    with pytest.warns(UserWarning, match="participants can see them") as record:
+        asset = _opaque_media_asset("/static/opaque-media-test/1.wav")
+        _opaque_media_asset("/static/opaque-media-test/2.wav")
 
+    assert len(record) == 1
     assert isinstance(asset, ExternalAsset)
-    assert asset.url == "/static/headphone-check/1.wav"
+    assert asset.url == "/static/opaque-media-test/1.wav"
 
 
 def test_on_demand_assets_have_no_id_based_route():

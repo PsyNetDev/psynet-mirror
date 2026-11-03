@@ -465,6 +465,10 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than ``"correct"``. A custom subclass that compares an
+  answer with ``"correct"`` should compare it with
+  ``definition["correct_answer"]`` instead.
 
 17. Groups and barriers
 -----------------------
@@ -563,6 +567,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
   ``ProgrammingError``.
+* ``LanguageVocabularyTest`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than image names. Find the asset key of the chosen image
+  with ``LanguageVocabularyTrial.image_keys[definition["order"][int(answer) - 1]]``;
+  the correct image is ``"image_correct"``.
 
 See :doc:`/data/what_an_export_contains`.
 
