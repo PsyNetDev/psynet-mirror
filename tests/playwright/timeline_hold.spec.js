@@ -918,11 +918,15 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
 
     // A resume POST can consume the next stacked hold, and that hold's
     // release can arrive on the socket before the response carries its token.
+    // Wakes are directed sends: any page can publish on the hold channel, so
+    // the hold socket must not listen to it.
     const earlyWakeRequests = await experimentPage.evaluate(() => {
       const originalConnect = PsyNetWebSocketChannel.connect;
-      let onMessage = null;
+      let onDirect = null;
+      let listensToChannel = null;
       PsyNetWebSocketChannel.connect = (options) => {
-        onMessage = options.onMessage;
+        onDirect = options.onDirect;
+        listensToChannel = options.onMessage !== undefined;
         return { close() {} };
       };
       const stub = {
@@ -940,13 +944,21 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         type: "timeline_hold_wake",
         targets: [{ wake_token: "next-hold-token", reason: "barrier_released" }]
       };
-      onMessage(wake);
+      onDirect(wake);
       const whileIdle = stub.resumeRequested;
       stub.resumeInFlight = true;
-      onMessage(wake);
-      return { whileIdle, whileInFlight: stub.resumeRequested };
+      onDirect(wake);
+      return {
+        listensToChannel,
+        whileIdle,
+        whileInFlight: stub.resumeRequested
+      };
     });
-    expect(earlyWakeRequests).toEqual({ whileIdle: false, whileInFlight: true });
+    expect(earlyWakeRequests).toEqual({
+      listensToChannel: false,
+      whileIdle: false,
+      whileInFlight: true
+    });
     await experimentPage.evaluate(() => {
       if (psynet.timelineHold) {
         psynet.resumeTimelineHold("test after pending probe");

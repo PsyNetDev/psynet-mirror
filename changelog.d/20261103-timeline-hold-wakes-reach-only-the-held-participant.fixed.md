@@ -1,0 +1,1 @@
+Fixed a security hole in which any page could publish on a participant's timeline-hold channel, injecting markup into their waiting overlay or releasing it early. Hold wake-ups and arrival notices now go only to that participant's checked WebSocket connections, and the browser ignores anything else published on the channel.

@@ -979,7 +979,7 @@
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
           confirmListening: true,
-          onMessage: psynet.handleArrivalUpdateMessage,
+          onDirect: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
@@ -1151,7 +1151,7 @@
             psynet.resumeTimelineHold("websocket connection");
           }
         },
-        onMessage(message) {
+        onDirect(message) {
           if (controller.stopped) return;
           psynet.handleArrivalUpdateMessage(message);
           let matchingTarget = (message.targets || []).find(

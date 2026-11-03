@@ -4,6 +4,7 @@
   const channels = new Map();
   const LISTENING_PROBE_TYPE = "psynet_listening_probe";
   const LISTENING_PROBE_RETRY_MS = 1000;
+  const DIRECT_PREFIX = "dallinger_direct:";
 
   function buildUrl(channel) {
     const scheme = location.protocol === "https:" ? "wss://" : "ws://";
@@ -74,14 +75,21 @@
       }
     };
     socket.onmessage = function (event) {
-      if (event.data.indexOf(channel + ":") !== 0) {
+      let direct = event.data.indexOf(DIRECT_PREFIX) === 0;
+      if (!direct && event.data.indexOf(channel + ":") !== 0) {
         return;
       }
       let message;
       try {
-        message = JSON.parse(event.data.slice(channel.length + 1));
+        message = JSON.parse(
+          event.data.slice(direct ? DIRECT_PREFIX.length : channel.length + 1),
+        );
       } catch (error) {
         console.warn(`Ignored malformed JSON on WebSocket channel "${channel}".`);
+        return;
+      }
+      if (direct) {
+        subscribers.forEach((subscriber) => subscriber.onDirect?.(message));
         return;
       }
       if (message?.type === LISTENING_PROBE_TYPE) {
@@ -121,6 +129,13 @@
    * a message published during connection. The first ``connect`` for a
    * channel decides this. Probes are published on the channel itself, so only
    * use it on channels without server-side message handlers.
+   *
+   * ``onMessage`` receives what any page publishes on the channel, so never
+   * trust it. ``onDirect`` receives what the server sends this participant
+   * with ``publish_to_participants``; PsyNet accepts the socket only with the
+   * participant's token, so only they get it. The listening probe also proves
+   * that directed sends reach the socket, because Dallinger only reads a
+   * socket's frames once it is registered for them.
    */
   function connect({
     channel,
@@ -128,6 +143,7 @@
     confirmListening = false,
     onOpen,
     onMessage,
+    onDirect,
     onClose,
   }) {
     if (!channel) {
@@ -178,6 +194,9 @@
       },
       onMessage: (message) => {
         if (!closed && onMessage) onMessage(message, connection);
+      },
+      onDirect: (message) => {
+        if (!closed && onDirect) onDirect(message, connection);
       },
       onClose: (event) => {
         if (!closed && onClose) onClose(event, connection);

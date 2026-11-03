@@ -17,7 +17,6 @@ participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 
-import json
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -46,10 +45,12 @@ _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
 
 def _timeline_hold_channel(participant_id):
-    """Return the Redis/Websocket channel for one participant's holds.
+    """Return the WebSocket channel a participant's hold socket subscribes to.
 
-    No colon: Dallinger splits browser-sent messages at the first colon to
-    find the channel, so the browser's listening probe needs a colon-free name.
+    Any page can publish on it, so it carries only the browser's listening
+    probe; wakes are directed messages (see :func:`_publish_wakes`). No colon:
+    Dallinger splits browser-sent messages at the first colon to find the
+    channel, so the probe needs a colon-free name.
     """
     return f"{_TIMELINE_HOLD_CHANNEL}_{participant_id}"
 
@@ -260,26 +261,26 @@ def _stash_committed_wakes(pending):
 
 
 def _publish_wakes(wakes):
-    """Publish copied wake payloads on their participant Redis channels."""
+    """Send copied wake payloads to their participants as directed messages.
+
+    Directed messages reach only sockets that carry the participant's
+    token. A participant's hold channel is public, so nothing is published
+    on it.
+    """
     if not wakes:
         return
     try:
         from collections import defaultdict
 
-        by_channel = defaultdict(list)
+        from dallinger.experiment_server.sockets import publish_to_participants
+
+        by_participant = defaultdict(list)
         for wake in wakes:
             payload = dict(wake)
-            participant_id = payload.pop("participant_id", None)
-            channel = (
-                _timeline_hold_channel(participant_id)
-                if participant_id is not None
-                else _TIMELINE_HOLD_CHANNEL
-            )
-            by_channel[channel].append(payload)
-        for channel, targets in by_channel.items():
-            db.redis_conn.publish(
-                channel,
-                json.dumps({"type": "timeline_hold_wake", "targets": targets}),
+            by_participant[payload.pop("participant_id")].append(payload)
+        for participant_id, targets in by_participant.items():
+            publish_to_participants(
+                {"type": "timeline_hold_wake", "targets": targets}, [participant_id]
             )
     except Exception:
         logger.warning("Failed to publish timeline hold wake.", exc_info=True)

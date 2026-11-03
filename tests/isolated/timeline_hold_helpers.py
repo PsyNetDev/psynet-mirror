@@ -249,13 +249,15 @@ def _route_timeline_via_route_in_thread(unique_id):
 
 
 def _hold_wake_publications(monkeypatch):
-    """Capture Redis hold-wake publishes as ``(channel, payload)`` pairs."""
+    """Capture hold wakes as ``(participant_id, payload)`` directed sends."""
+    from dallinger.experiment_server import sockets
+
     publications = []
     monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda channel_name, data: publications.append(
-            (channel_name, json.loads(data))
+        sockets,
+        "publish_to_participants",
+        lambda payload, participant_ids, scope=None: publications.extend(
+            (int(participant_id), payload) for participant_id in participant_ids
         ),
     )
     return publications
