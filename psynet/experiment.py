@@ -139,6 +139,7 @@ from .recruiters import (  # noqa: F401
     CapRecruiter,  # noqa: F401  # Backward compatibility alias
     DevLucidRecruiter,
     LabRecruiter,
+    LucidIdentifierMismatch,
     LucidRecruiter,
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
@@ -4520,15 +4521,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             ]
         )
-        # We don't think this is needed any more but just keeping a note in case we're proved wrong (25 Sep 2023)
-        # if isinstance(cls.assets.storage, DebugStorage):
-        #     _path = f"static/{cls.assets.storage.label}"
-        #     files.append(
-        #         (
-        #             _path,
-        #             _path,
-        #         )
-        #     )
         return files
 
     @classmethod
@@ -5491,10 +5483,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return redirect(target)
 
         # Fallback for rows that somehow lack a token.
-        suffix = asset.extension if asset.extension else ""
-        with tempfile.NamedTemporaryFile(suffix=suffix) as temp_file:
-            asset.export(temp_file.name)
-            return send_file(temp_file.name, max_age=0)
+        return asset.serve()
 
     @experiment_route("/error-page", methods=["POST", "GET"])
     @classmethod
@@ -5700,7 +5689,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except ValueError as err:
             logger.warning("Refused /terminate_participant: %s", err)
             return error_response(error_text=str(err), status=400, simple=True)
-        except PermissionError as err:
+        except LucidIdentifierMismatch as err:
             logger.warning("Refused /terminate_participant: %s", err)
             return error_response(
                 error_text="This session could not be verified.",

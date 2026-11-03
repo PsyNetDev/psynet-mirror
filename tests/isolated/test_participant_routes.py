@@ -112,14 +112,22 @@ def _add_lucid_participant(worker_id, rid="rid", progress=0):
     db.session.commit()
 
 
-def test_a_completed_lucid_participant_needs_their_unique_id(client, lucid):
-    _add_lucid_participant("worker", progress=1)
-    response = client.get("/terminate_participant?reason=wrong-browser&RID=rid")
+@pytest.mark.parametrize(
+    "query, verified", [("RID=rid", False), ("unique_id=worker:rid", True)]
+)
+def test_a_completed_lucid_participant_needs_their_unique_id(
+    client, lucid, query, verified
+):
+    """A completed participant gets the exit page but is never terminated."""
+    from psynet.participant import Participant
 
-    assert response.status_code == 403
-    assert "lucid.test" not in response.get_data(as_text=True)
-    assert not lucid.generate_submit_url.called
+    _add_lucid_participant("worker", progress=1)
+    response = client.get("/terminate_participant?reason=wrong-browser&" + query)
+
+    assert response.status_code == (200 if verified else 403)
+    assert lucid.generate_submit_url.called is verified
     assert not lucid.terminate_respondent.called
+    assert not Participant.query.one().failed
 
 
 def test_a_lucid_rid_shared_by_two_participants_is_refused(client, lucid):
@@ -147,7 +155,9 @@ def test_a_lucid_rid_without_a_participant_can_be_terminated(client, lucid):
     lucid.terminate_respondent.assert_called_once_with("fresh", "mobile-phone", None)
 
 
-@pytest.mark.parametrize("query", ["", "unique_id=no-colon", "unique_id=worker:"])
+@pytest.mark.parametrize(
+    "query", ["", "unique_id=no-colon", "unique_id=worker:", "RID=rid&unique_id=bad"]
+)
 def test_terminating_needs_a_well_formed_lucid_rid(client, lucid, query):
     response = client.get("/terminate_participant?reason=wrong-browser&" + query)
 

@@ -2589,6 +2589,10 @@ class LucidRecruiterException(Exception):
     """Custom exception for LucidRecruiter"""
 
 
+class LucidIdentifierMismatch(Exception):
+    """A request's Lucid identifiers name different respondents."""
+
+
 @dataclass
 class LucidRecruitmentStatus(RecruitmentStatus):
     survey_sid: str
@@ -3596,7 +3600,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         ------
         ValueError
             If the request names no RID or ``unique_id`` is malformed.
-        PermissionError
+        LucidIdentifierMismatch
             If the supplied identifiers name different RIDs.
         """
         candidates = {
@@ -3614,7 +3618,7 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         if not supplied:
             raise ValueError("The request names no Lucid RID.")
         if len(set(supplied.values())) > 1:
-            raise PermissionError(
+            raise LucidIdentifierMismatch(
                 f"The request names different Lucid RIDs: {sorted(supplied)}."
             )
         return next(iter(supplied.values()))

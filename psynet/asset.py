@@ -110,6 +110,43 @@ def _safe_asset_subpath(subpath: Optional[str]) -> Optional[str]:
         raise ValueError(f"Unsafe asset subpath: {subpath!r}") from exc
 
 
+# Types a browser runs as a document or script; a participant-named asset of
+# one of these types must not run with the experiment origin's cookies.
+_ACTIVE_ASSET_MIMETYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/xml",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+        "application/x-javascript",
+        "application/ecmascript",
+        "text/ecmascript",
+    }
+)
+
+
+def _sandbox_asset_response(response):
+    """
+    Stop an asset response from running as a document on the experiment's origin.
+
+    ``Content-Security-Policy: sandbox`` gives a document opened from the
+    response an opaque origin but doesn't affect use as an ``img``, ``audio``
+    or ``video`` source. Active types are also sent as attachments.
+    Redirects, such as those to S3, are left unchanged.
+    """
+    if 300 <= response.status_code < 400:
+        return response
+    response.headers["Content-Security-Policy"] = "sandbox"
+    if response.mimetype in _ACTIVE_ASSET_MIMETYPES:
+        disposition = response.headers.get("Content-Disposition", "inline")
+        _, separator, parameters = disposition.partition(";")
+        response.headers["Content-Disposition"] = "attachment" + separator + parameters
+    return response
+
+
 def filter_botocore_deprecation_warnings():
     boto3.compat.filter_python_deprecation_warnings()
 
@@ -872,13 +909,13 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
         except ValueError:
             abort(400)
         if isinstance(self, OnDemandAsset):
-            return self._serve_on_demand(safe_subpath)
+            return _sandbox_asset_response(self._serve_on_demand(safe_subpath))
         if isinstance(self, ExternalAsset):
             abort(404)
         if not self.deposited:
             abort(404)
         storage = self.storage or self.default_storage
-        return storage.serve(self, safe_subpath)
+        return _sandbox_asset_response(storage.serve(self, safe_subpath))
 
     def _serve_on_demand(self, subpath: Optional[str] = None):
         """Generate an on-demand asset into a temp file and return ``send_file``."""
@@ -2035,7 +2072,6 @@ class LocalStorage(AssetStorage):
     same file system.
     """
 
-    label = "assets"
     heroku_compatible = False
 
     def __init__(self, root=None):
@@ -2046,9 +2082,6 @@ class LocalStorage(AssetStorage):
         root :
             Optional path to the directory to be used for storage.
             Tilde expansion (e.g. '~/psynet') is performed automatically.
-
-        label :
-            Label for the storage object.
         """
         super().__init__()
 

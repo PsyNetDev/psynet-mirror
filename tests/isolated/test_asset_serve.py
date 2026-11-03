@@ -99,6 +99,38 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
             response.close()
 
 
+@pytest.mark.parametrize(
+    "extension, disposition",
+    [(".html", "attachment"), (".svg", "attachment"), (".png", "inline")],
+)
+def test_asset_serve_sandboxes_active_types(tmp_path, extension, disposition):
+    """An uploaded HTML or SVG asset must not run as a page on the experiment's origin."""
+    root = tmp_path / "storage"
+    (root / "objects").mkdir(parents=True)
+    (root / "objects/abc123").write_bytes(b"<svg onload=alert(1)>")
+    storage = LocalStorage(root=str(root))
+    asset = SimpleNamespace(
+        deposited=True,
+        storage=storage,
+        object_path="objects/abc123",
+        host_path="objects/abc123",
+        is_folder=False,
+        extension=extension,
+    )
+
+    with Flask("test-asset-serve-sandbox").test_request_context("/"):
+        response = Asset.serve(asset)
+        try:
+            assert response.headers["Content-Security-Policy"] == "sandbox"
+            value, options = parse_options_header(
+                response.headers["Content-Disposition"]
+            )
+            assert value == disposition
+            assert options["filename"] == "abc123" + extension
+        finally:
+            response.close()
+
+
 def test_local_storage_serve_rejects_subpath_on_file(tmp_path):
     root = tmp_path / "storage"
     object_rel = "objects/sha256/abc123"
