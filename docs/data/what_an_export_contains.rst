@@ -52,7 +52,7 @@ Folder layout
 
 ``database/`` contains a CSV only for tables with at least one row, so
 unused tables such as ``chat_message.csv`` are absent. ``manifest.json``
-still lists every table under ``table_row_counts``, with ``0`` for omitted
+still lists every exported table under ``table_row_counts``, with ``0`` for omitted
 files. Boolean columns are written as ``True`` / ``False`` rather than
 PostgreSQL's ``t`` / ``f``.
 
