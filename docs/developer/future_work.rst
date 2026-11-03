@@ -744,7 +744,7 @@ Idea
 Move the ``shutil.which("heroku")`` check into a helper that every Heroku
 code path calls before using ``HerokuApp``.
 
-Node 20 in the experiment ``Dockerfile``
+Node 22 in the experiment ``Dockerfile``
 ----------------------------------------
 
 Date
@@ -762,7 +762,7 @@ PsyNet's Playwright tests need Node 20 or later.
 Idea
 ++++
 
-Copy ``node`` and ``npm`` from ``node:20-bookworm-slim``, as the root
+Copy ``node`` and ``npm`` from ``node:22-bookworm-slim``, as the root
 ``Dockerfile`` does.
 
 Remove obsolete warning filters

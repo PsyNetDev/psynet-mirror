@@ -3,8 +3,9 @@
 # Can be overridden with: docker build --build-arg DOCKER_PLATFORM=linux/arm64
 ARG DOCKER_PLATFORM=linux/amd64
 ARG PYTHON_VERSION=3.14
-# Debian bookworm ships Node 18, but Playwright needs Node 20 or later.
-ARG NODE_VERSION=20
+# Debian bookworm ships Node 18, which is past end of life; Playwright needs
+# Node 20 or later.
+ARG NODE_VERSION=22
 FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-bookworm-slim AS node
 
 FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-bookworm
