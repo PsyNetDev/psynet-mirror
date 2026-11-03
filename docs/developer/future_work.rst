@@ -788,7 +788,7 @@ Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
 
 Give Lucid participants a secret ``unique_id``
----------------------------------------------
+----------------------------------------------
 
 Date
 ++++
