@@ -806,6 +806,76 @@ def test_recruiter_handshake_replaces_history():
     assert 'window.location = "/timeline' not in start
 
 
+def _render_recruiter_page(name, lucid):
+    import dallinger
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader
+
+    from psynet.graphics import PsyNetLogo
+
+    app = Flask(__name__)
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            FileSystemLoader(
+                str(Path(dallinger.__file__).parent / "frontend/templates")
+            ),
+        ]
+    )
+    app.add_url_rule("/consent", "consent", lambda: "")
+    app.jinja_env.add_extension("jinja2.ext.i18n")
+    app.jinja_env.install_null_translations(newstyle=True)
+    app.jinja_env.globals.update(
+        pgettext=lambda context, message: message,
+        get_from_config=lambda key: False,
+        presence_settings=lambda: None,
+    )
+    experiment = SimpleNamespace(
+        psynet_logo=PsyNetLogo(),
+        with_lucid_recruitment=lambda: lucid,
+        start_experiment_in_popup_window=False,
+    )
+    config = SimpleNamespace(
+        allow_mobile_devices=False,
+        force_google_chrome=True,
+        force_incognito_mode=False,
+        min_browser_version="80.0",
+        window_width=1024,
+        window_height=768,
+    )
+    with app.test_request_context(f"/{name}"):
+        return render_template(
+            f"{name}.html",
+            experiment=experiment,
+            config=config,
+            mode="live",
+            app_id="app",
+            query_string="RID=abc",
+        )
+
+
+@pytest.mark.parametrize(
+    "name, advance",
+    [("ad", "proceedToConsentPage(null);"), ("consent", "start();")],
+)
+def test_lucid_pages_validate_the_browser_before_advancing(name, advance):
+    """/start creates the participant, after which a RID-only mobile termination
+    is refused, so Lucid pages must not advance before the mobile check."""
+    lucid = _render_recruiter_page(name, lucid=True)
+    script = lucid[lucid.rindex("<script>") :]
+    assert re.search(
+        r"if \(browser\.validate\(\)\) \{\s*" + re.escape(advance) + r"\s*\}", script
+    )
+    assert script.count("browser.validate()") == 1
+    assert "DOMContentLoaded" not in script
+
+    other = _render_recruiter_page(name, lucid=False)
+    script = other[other.rindex("<script>") :]
+    assert script.count("browser.validate()") == 1
+    assert 'addEventListener("DOMContentLoaded"' in script
+    assert advance not in script
+
+
 def test_exit_navigation_replaces_the_finished_timeline_in_history():
     """Back from exit must not revive a completed timeline page from history/bfcache."""
     js = (resources.files("psynet") / "resources/scripts/psynet.js").read_text(
