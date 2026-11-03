@@ -91,15 +91,10 @@
         document.addEventListener("DOMContentLoaded", function (e) {
             selectpicker = $('#status').selectpicker();
             document.getElementById('status').addEventListener('change', function (e) {
-                fetch(window.location.origin + '/change_lucid_status?status=' + e.target.value, {
-                    method: 'GET',
-                    method: 'GET',
+                fetch('/change_lucid_status', {
+                    method: 'POST',
                     credentials: 'same-origin',
-                    agent: null,
-                    headers: {
-                        "Content-Type": "text/plain",
-                        'Authorization': 'Basic ' + btoa('username:password'),
-                    },
+                    body: new URLSearchParams({status: e.target.value}),
                 })
             })
         });

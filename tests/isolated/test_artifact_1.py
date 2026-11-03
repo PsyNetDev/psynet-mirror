@@ -78,6 +78,14 @@ def test_move_missing_file_raises(artifact_storage):
         storage.move_file("does_not_exist.txt", "target.txt")
 
 
+@pytest.mark.parametrize("deployment_id", ["", "..", "../x", "a/b", "a\\b"])
+def test_artifact_paths_reject_unsafe_deployment_ids(artifact_storage, deployment_id):
+    with pytest.raises(ValueError, match="Invalid deployment ID"):
+        artifact_storage.write_comment("text", deployment_id=deployment_id)
+    with pytest.raises(ValueError, match="Invalid deployment ID"):
+        artifact_storage.archive(deployment_id)
+
+
 def test_get_modification_date(artifact_storage, tmp_path):
     storage = artifact_storage
     src_file = tmp_path / "source" / "timestamped.txt"
@@ -120,11 +128,27 @@ class TestAPI:
 
     def check_commenting(self, base_url, deployment_id):
         comment_text = "This is a test comment."
+        session = get_authenticated_session(base_url)
+        url = f"{base_url}/dashboard/comment/set/{deployment_id}"
 
-        # Write the comment
-        response = get_authenticated_session(base_url).post(
-            f"{base_url}/dashboard/comment/set/{deployment_id}",
+        for headers in [
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Origin": "https://attacker.example"},
+            {"Referer": "https://attacker.example/page"},
+        ]:
+            response = session.post(url, data={"txt": "forged"}, headers=headers)
+            assert response.status_code == 403
+
+        response = session.post(
+            f"{base_url}/dashboard/archive/deployment", data={"id": "../deployments"}
+        )
+        assert response.json()["status"] == "error"
+
+        # Write the comment, as the dashboard's own page does
+        response = session.post(
+            url,
             data={"txt": comment_text},
+            headers={"Sec-Fetch-Site": "same-origin", "Origin": base_url},
         )
         assert response.status_code == 200
 

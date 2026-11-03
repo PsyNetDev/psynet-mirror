@@ -7,8 +7,6 @@ from flask_login import LoginManager
 from psynet.experiment import Experiment
 
 DASHBOARD_EXPERIMENT_ROUTES = [
-    "get_progress_info",
-    "update_spending_limits",
     "change_lucid_status",
     "fail_node",
     "fail_info",
@@ -41,9 +39,9 @@ def client():
     "method, path",
     [
         ("GET", "/dashboard/status/get?deployment_id=x&type=experiment"),
-        ("GET", "/dashboard/archive/deployment?id=x"),
-        ("GET", "/dashboard/restore/deployment?id=x"),
-        ("GET", "/dashboard/update/recruitment?deployment_id=x"),
+        ("POST", "/dashboard/archive/deployment?id=x"),
+        ("POST", "/dashboard/restore/deployment?id=x"),
+        ("POST", "/dashboard/update/recruitment?deployment_id=x"),
         ("POST", "/dashboard/comment/set/x"),
         ("GET", "/dashboard/comment/get/x"),
         ("GET", "/dashboard/export/trigger?assets=none"),
@@ -51,9 +49,11 @@ def client():
         ("POST", "/dashboard/participants/dismiss-bonus"),
         ("POST", "/dashboard/sync-groups/1/participant/1/fail"),
         ("POST", "/dashboard/sync-groups/1/participant/1/kick"),
-        ("GET", "/module/progress_info"),
-        ("POST", "/module/update_spending_limits"),
-        ("GET", "/change_lucid_status?status=paused"),
+        ("POST", "/dashboard/module"),
+        ("POST", "/dashboard/module/tooltip"),
+        ("GET", "/dashboard/module/progress_info"),
+        ("POST", "/dashboard/module/update_spending_limits"),
+        ("POST", "/change_lucid_status?status=paused"),
         ("POST", "/node/1/fail"),
         ("POST", "/info/1/fail"),
         ("POST", "/trial/1/fail"),
@@ -68,6 +68,10 @@ def test_dashboard_routes_reject_anonymous_requests(client, method, path):
 @pytest.mark.parametrize(
     "path",
     [
+        "/dashboard/archive/deployment?id=x",
+        "/dashboard/restore/deployment?id=x",
+        "/dashboard/update/recruitment?deployment_id=x",
+        "/change_lucid_status?status=paused",
         "/node/1/fail",
         "/info/1/fail",
         "/trial/1/fail",
