@@ -2579,6 +2579,42 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 experiment=self,
             )
 
+    def publish_to_participants(self, payload, participant_ids, scope=None):
+        """Send a payload to specific participants' WebSocket connections.
+
+        Behaves like Dallinger's
+        :meth:`~dallinger.experiment.Experiment.publish_to_participants`, but
+        refuses payloads whose ``type`` is one that PsyNet's own pages trust,
+        such as ``"timeline_hold_wake"``. Wrap forwarded participant content
+        in a message with your own fixed ``type`` instead of forwarding a
+        participant's payload unchanged.
+
+        Parameters
+        ----------
+        payload : object
+            The JSON-serializable message to deliver.
+        participant_ids : list of int or str, or int or str
+            The participants to deliver to.
+        scope : str or None
+            Deliver only to connections that supplied this scope.
+
+        Raises
+        ------
+        ValueError
+            If ``payload`` is a dict whose ``type`` is reserved by PsyNet.
+        """
+        from .timeline_hold import RESERVED_DIRECT_MESSAGE_TYPES
+
+        message_type = payload.get("type") if isinstance(payload, dict) else None
+        if isinstance(message_type, str) and (
+            message_type in RESERVED_DIRECT_MESSAGE_TYPES
+        ):
+            raise ValueError(
+                f"Message type {message_type!r} is reserved for PsyNet's own "
+                "directed messages."
+            )
+        super().publish_to_participants(payload, participant_ids, scope=scope)
+
     def accept_websocket_connection(self, participant_id, scope):
         """Accept a websocket connection only from one of the participant's own pages.
 

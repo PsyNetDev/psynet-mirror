@@ -409,9 +409,9 @@ WebSocket. The next hold reconnects. Partner-ready notices arrive as directed
 messages on the same socket; the extra arrival-update socket opens only while
 the participant is in an active sync group and not already on a hold. If
 membership is not already loaded, a cheap existence check decides whether to
-open that socket. Directed delivery is an optimization: when that socket opens, the browser also
-fetches ``GET /timeline/arrival_notice`` so a partner who arrived during
-connect is still shown. Hold-resume POSTs set
+open that socket. Directed delivery is an optimization: when that socket
+opens, the browser also fetches ``GET /timeline/arrival_notice`` so a partner
+who arrived during connect is still shown. Hold-resume POSTs set
 ``timeline_hold_resume`` so that if a partner already advanced this waiter
 (rotating ``page_uuid``), the server still returns the current page for an
 in-place update. A genuine reject, or a missing timeline fragment, still

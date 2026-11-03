@@ -4481,12 +4481,25 @@ def test_failing_a_held_participant_wakes_their_overlay(
         first = Participant.query.get(first.id)
         wake_token = first.timeline_holds[0].wake_token
         publications = _hold_wake_publications(monkeypatch)
+        redis_channels = []
+        original_publish = db.redis_conn.publish
+
+        def recording_publish(channel, message):
+            redis_channels.append(channel)
+            return original_publish(channel, message)
+
+        monkeypatch.setattr(db.redis_conn, "publish", recording_publish)
 
         first.fail("manual")
         db_session.commit()
     finally:
         exp.timeline = original_timeline
 
+    assert not [
+        channel
+        for channel in redis_channels
+        if str(channel).startswith("psynet_timeline_hold")
+    ]
     assert publications == [
         (
             first.id,

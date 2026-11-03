@@ -43,6 +43,13 @@ from psynet.utils import call_function_with_context, get_logger, get_translator
 
 _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
+RESERVED_DIRECT_MESSAGE_TYPES = frozenset({"timeline_hold_wake"})
+"""Directed message types that only PsyNet itself may send.
+
+The browser trusts directed messages of these types, so
+:meth:`psynet.experiment.Experiment.publish_to_participants` refuses them.
+"""
+
 
 def _timeline_hold_channel(participant_id):
     """Return the WebSocket channel a participant's hold socket subscribes to.
@@ -269,21 +276,25 @@ def _publish_wakes(wakes):
     """
     if not wakes:
         return
-    try:
-        from collections import defaultdict
+    from collections import defaultdict
 
-        from dallinger.experiment_server.sockets import publish_to_participants
+    by_participant = defaultdict(list)
+    for wake in wakes:
+        payload = dict(wake)
+        by_participant[payload.pop("participant_id")].append(payload)
+    for participant_id, targets in by_participant.items():
+        try:
+            from dallinger.experiment_server.sockets import publish_to_participants
 
-        by_participant = defaultdict(list)
-        for wake in wakes:
-            payload = dict(wake)
-            by_participant[payload.pop("participant_id")].append(payload)
-        for participant_id, targets in by_participant.items():
             publish_to_participants(
                 {"type": "timeline_hold_wake", "targets": targets}, [participant_id]
             )
-    except Exception:
-        logger.warning("Failed to publish timeline hold wake.", exc_info=True)
+        except Exception:
+            logger.warning(
+                "Failed to publish timeline hold wake to participant %s.",
+                participant_id,
+                exc_info=True,
+            )
 
 
 def _publish_timeline_hold_wakes(pending):
