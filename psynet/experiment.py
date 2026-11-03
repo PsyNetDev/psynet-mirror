@@ -163,10 +163,10 @@ from .timeline import (
     Response,
     Timeline,
     WebSocketElt,
+    _is_current_page_token,
     _is_timeline_hold,
+    _rotate_page_uuid,
     _timeline_step_name,
-    is_current_page_token,
-    rotate_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -2553,17 +2553,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
 
     def accept_websocket_connection(self, participant_id, scope):
-        """Accept an ``/experiment-socket`` connection only from the
-        participant's current page, which gives that page's token as its
-        scope. Dallinger closes a refused connection with code 1008, and
-        ``psynet.websocket`` doesn't reconnect it.
+        """Accept a page's ``psynet.websocket`` connection only if it comes
+        from the page the participant is on, so a page they have moved on
+        from, or left open in another tab, can't send or receive messages.
+
+        PsyNet's pages connect with their page's token as the ``scope``. A
+        refused page doesn't try to connect again. An experiment that
+        overrides this method to add its own checks should also call
+        ``super().accept_websocket_connection(participant_id, scope)``.
         """
         page_uuid = (
             db.session.query(Participant.page_uuid)
             .filter_by(id=int(participant_id))
             .scalar()
         )
-        return is_current_page_token(page_uuid, scope)
+        return _is_current_page_token(page_uuid, scope)
 
     def pre_deploy(self, redeploying_from_archive=False, *, update=False):
         """Prepare the experiment for deployment, on the machine that launches it.
@@ -5768,7 +5772,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            rotate_page_uuid(experiment, participant)
+            _rotate_page_uuid(experiment, participant)
         return committed
 
     @staticmethod

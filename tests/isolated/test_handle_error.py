@@ -301,7 +301,7 @@ def test_prepare_commits_with_the_policy_recruiter():
     policy_recruiter = MagicMock()
     policy_recruiter.shows_error_recovery_page.return_value = False
 
-    with patch("psynet.experiment.rotate_page_uuid") as rotate_page_uuid:
+    with patch("psynet.experiment._rotate_page_uuid") as rotate_page_uuid:
         result = Experiment._prepare_error_recovery_plan(
             experiment, policy_recruiter, participant
         )

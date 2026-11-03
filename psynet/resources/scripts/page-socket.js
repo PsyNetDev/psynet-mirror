@@ -2,37 +2,38 @@
   "use strict";
 
   /**
-   * The channel ``psynet.websocket`` sends on, which the experiment's
-   * ``handle_websocket_message`` gets as its ``channel_name``.
+   * The channel ``psynet.websocket`` sends on. The experiment's
+   * ``handle_websocket_message`` gets it as its ``channel_name``.
    */
   const CHANNEL = "psynet";
 
   /**
-   * The ``type`` of the message the server sends a page's connections once
-   * the participant has moved on from that page. It is reserved: the
-   * connection closes for good when it arrives, and no handler sees it.
+   * The ``type`` of the message PsyNet sends a page once the participant has
+   * moved on from it, for example the same page left open in another tab.
+   * The page's connection closes for good when it arrives, and no handler
+   * sees it, so don't give your own messages this type.
    */
   const PAGE_ENDED = "psynet_page_ended";
 
   /**
-   * Create the page's connection to the experiment, on Dallinger's
-   * ``/experiment-socket`` route, which ``psynet.js`` makes available as
-   * ``psynet.websocket``.
+   * ``psynet.websocket`` lets a page and the experiment send each other
+   * messages while the page is open, without the participant submitting it.
+   * A page sends with ``send`` and receives with ``handle``. Each message has
+   * a ``type``, a name the page and the experiment agree on, and usually a
+   * ``message``, the data that goes with it.
    *
    * The connection opens when the page first sends a message or registers a
-   * handler, and gives the page's token as its scope. Dallinger reconnects
-   * it whenever it drops, and holds messages sent in the meantime. A
-   * connection the server refuses stays closed, and sends on it are dropped.
-   * So does the connection of a page the participant has moved on from,
-   * for example in another tab, once the server says that page has ended.
+   * handler. If it drops, it reconnects by itself, and messages sent in the
+   * meantime go once it's back. Only the page the participant is on can
+   * connect. Once the participant moves on, the earlier page's connection
+   * closes and stops sending, and so does the same page left open in another
+   * tab. Handlers and ``onConnect`` callbacks belong to the page that
+   * registered them, and go with it.
    *
-   * Handlers, ``onConnect`` callbacks and the message context belong to the
-   * page that registered them. When the page's token changes, they are
-   * discarded with the earlier page's connection.
-   *
-   * Each message is a JSON object with a ``type``, and a ``message`` unless
-   * there is nothing to send. ``handle`` passes each message the experiment
-   * sends the participant to the callbacks for its ``type``.
+   * ``psynet.js`` creates ``psynet.websocket`` with this function. The
+   * connection is Dallinger's ``/experiment-socket``, with the page's token
+   * as its scope, which the experiment's ``accept_websocket_connection``
+   * checks.
    *
    * @param {function} pageToken - Returns the current page's token
    */
@@ -97,6 +98,19 @@
       return state.socket;
     }
 
+    /**
+     * Send the experiment a message. The experiment's
+     * ``handle_websocket_message`` receives it with ``channel_name``
+     * ``"psynet"``, as the JSON text of an object with the ``type`` and, if
+     * given, the ``message``.
+     *
+     * @example
+     * psynet.websocket.send("choice", { option: "left" });
+     *
+     * @param {string} type - What kind of message this is
+     * @param {*} [message] - The data that goes with it, anything
+     *   ``JSON.stringify`` accepts
+     */
     function send(type, message) {
       let context = currentPage().context;
       if (
@@ -114,6 +128,24 @@
       connect().send(CHANNEL, data);
     }
 
+    /**
+     * Run ``callback`` for each message of ``type`` the experiment sends this
+     * participant. The callback gets the message's ``message`` (the whole
+     * message if it has none), and the whole message as its second argument.
+     *
+     * The experiment sends a page a message with
+     * ``publish_to_participants({"type": type, "message": message},
+     * [participant.id])``.
+     *
+     * @example
+     * psynet.websocket.handle("partner_choice", (message) => {
+     *   root.querySelector("#partner").textContent = message.option;
+     * });
+     *
+     * @param {string} type - The kind of message to handle
+     * @param {function} callback - Called with each message's data
+     * @returns {function} Call it to stop handling these messages
+     */
     function handle(type, callback) {
       connect();
       let handlers = page.handlers;
@@ -127,6 +159,15 @@
       };
     }
 
+    /**
+     * Run ``callback`` each time the page connects, including after it
+     * reconnects, for example to ask the experiment for anything the page
+     * may have missed while it was disconnected. If the page is already
+     * connected, the callback also runs straight away.
+     *
+     * @param {function} callback - Called with the connection's open event
+     * @returns {function} Call it to stop running the callback
+     */
     function onConnect(callback) {
       let socket = connect();
       let state = page;
@@ -141,11 +182,19 @@
       };
     }
 
+    /**
+     * Add ``context``'s fields to every object message the page sends after
+     * this, such as the id of the trial the page shows. A field the message
+     * has itself takes precedence.
+     *
+     * @param {Object} context - The fields to add
+     */
     function setMessageContext(context) {
       let state = currentPage();
       state.context = Object.assign({}, state.context, context || {});
     }
 
+    /** Close the page's connection. Sending or handling opens a new one. */
     function close() {
       if (page !== null && page.socket !== null) {
         let closing = page.socket;

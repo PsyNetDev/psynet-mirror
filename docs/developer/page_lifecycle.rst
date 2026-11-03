@@ -575,7 +575,7 @@ route. Its scope is the page's token, an HMAC of the participant's
 participant's current page. Dallinger closes any other connection with code
 1008, and the browser doesn't reconnect it.
 
-``rotate_page_uuid`` gives the participant a new ``page_uuid`` when a page is
+``_rotate_page_uuid`` gives the participant a new ``page_uuid`` when a page is
 consumed, and when error recovery skips its page. After the commit it
 publishes ``{"type": "psynet_page_ended"}`` to the old token's connections,
 for example the same page open in another tab. They close for good without

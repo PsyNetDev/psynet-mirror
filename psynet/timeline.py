@@ -1173,7 +1173,7 @@ def new_page_uuid():
     return str(uuid.uuid4())
 
 
-def page_token(page_uuid):
+def _page_token(page_uuid):
     """Return the token a page's websocket gives as its scope, or ``None``
     without a ``page_uuid`` or a ``FLASK_SECRET_KEY``.
 
@@ -1187,22 +1187,22 @@ def page_token(page_uuid):
     return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()
 
 
-def is_current_page_token(page_uuid, token):
+def _is_current_page_token(page_uuid, token):
     """Whether ``token`` is the token of the page with ``page_uuid``."""
-    expected = page_token(page_uuid)
+    expected = _page_token(page_uuid)
     if expected is None or not isinstance(token, str):
         return False
     # Bytes, because compare_digest raises on non-ASCII text.
     return hmac.compare_digest(token.encode(), expected.encode())
 
 
-#: The ``type`` of the message that tells a page's websocket its page has
-#: ended. ``page-socket.js`` closes the connection when it arrives, so it is
-#: reserved.
+#: The ``type`` of the message PsyNet sends a page's ``psynet.websocket``
+#: once the participant has moved on from that page. The page's connection
+#: closes when it arrives, so don't give your own messages this type.
 PAGE_ENDED_MESSAGE_TYPE = "psynet_page_ended"
 
 
-def rotate_page_uuid(experiment, participant):
+def _rotate_page_uuid(experiment, participant):
     """Move ``participant`` to a new page uuid.
 
     Once the change commits, the participant's connections still open with
@@ -1212,7 +1212,7 @@ def rotate_page_uuid(experiment, participant):
     open until it next reconnects. The connection hook refuses the previous
     token from the commit on.
     """
-    previous_token = page_token(participant.page_uuid)
+    previous_token = _page_token(participant.page_uuid)
     participant.page_uuid = new_page_uuid()
     if previous_token is not None:
         _call_after_commit(
@@ -1860,7 +1860,7 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        rotate_page_uuid(experiment, participant)
+        _rotate_page_uuid(experiment, participant)
         participant.page_count += 1
 
     def on_complete(self, experiment, participant):
@@ -2127,7 +2127,7 @@ class Page(Elt):
         internal_js_vars = {
             "uniqueId": participant.unique_id,
             "pageUuid": participant.page_uuid,
-            "pageToken": page_token(participant.page_uuid),
+            "pageToken": _page_token(participant.page_uuid),
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
         }
         locale = get_locale()
