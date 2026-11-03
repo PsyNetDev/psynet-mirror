@@ -55,16 +55,20 @@ it("routes directed, channel and probe frames to the right callbacks", () => {
   const deliver = (data) => socket.onmessage({ data });
 
   socket.onopen({});
-  assert.deepEqual(calls, []);
+  // Directed frames can arrive before the probe echo runs onOpen.
+  deliver('dallinger_direct:{"type":"early"}');
+  assert.deepEqual(calls, [["direct", "early"]]);
   deliver(socket.sent[0]);
-  assert.deepEqual(calls, [["open"]]);
+  assert.deepEqual(calls.slice(1), [["open"]]);
 
   deliver('dallinger_direct:{"type":"timeline_hold_wake"}');
   // A forged wake on the public channel must never reach onDirect.
   deliver(`${channel}:{"type":"timeline_hold_wake","targets":[]}`);
-  assert.deepEqual(calls.slice(1), [
+  assert.deepEqual(calls.slice(2), [
     ["direct", "timeline_hold_wake"],
     ["message", "timeline_hold_wake"],
   ]);
   connection.close();
+  deliver('dallinger_direct:{"type":"after_close"}');
+  assert.equal(calls.length, 4);
 });

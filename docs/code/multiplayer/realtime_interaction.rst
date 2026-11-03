@@ -142,7 +142,9 @@ message so that the handler receives a participant. ``onMessage`` receives
 frames published on the channel, which any page can publish, so never trust
 them. ``onDirect`` receives directed messages that the server sends with
 ``publish_to_participants``; these reach only this participant's checked
-connections, and can arrive before ``onOpen`` runs.
+connections, and can arrive before ``onOpen`` runs. PsyNet sends its own
+directed messages too (for example ``{"type": "timeline_hold_wake", ...}``),
+so check ``message.type`` and ignore types you don't handle.
 
 Keeping shared state consistent
 -------------------------------

@@ -220,7 +220,7 @@ def _copy_pending_wakes(wakes):
 
 @contextmanager
 def _defer_timeline_hold_wakes():
-    """Hold Redis wake publishes across inner commits, then flush on exit.
+    """Hold directed wake sends across inner commits, then flush on exit.
 
     The barrier poller nests this context around a sweep so stacked poller
     skips can finish before partners overlay-resume. Last-arrival GET/POST do

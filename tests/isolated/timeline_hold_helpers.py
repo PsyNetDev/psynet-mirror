@@ -264,7 +264,7 @@ def _hold_wake_publications(monkeypatch):
 
 
 def _released_wake_count(publications):
-    """Count committed barrier-release wakes in captured Redis publishes."""
+    """Count committed barrier-release wakes in captured directed sends."""
     return sum(
         1
         for _, payload in publications
