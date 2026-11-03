@@ -480,9 +480,12 @@ Allowed browsers and devices
 
 ``browser_capabilities`` *set* |psynet-icon| — *class attribute*
     Declares the browser features your experiment requires. PsyNet inserts a
-    :class:`~psynet.prescreen.BrowserCapabilityCheck` at the start of your
-    timeline, which screens out participants whose browsers lack a listed
-    capability.
+    :class:`~psynet.prescreen.BrowserCapabilityCheck` at the very start of
+    your timeline, which screens out participants whose browsers lack a listed
+    capability. The check runs before any consent page, so for ``microphone``
+    and ``camera`` the browser asks for device access before the participant
+    has consented; place the check yourself (see below) if your consent
+    procedure needs to come first.
 
     Valid tokens:
 
@@ -540,7 +543,7 @@ Allowed browsers and devices
     sees instructions to install Google Chrome.
     Default: ``False``.
 
-    Setting this emits a :class:`DeprecationWarning` at startup. For most
+    Setting this logs a deprecation warning at startup. For most
     use cases ``browser_capabilities`` is the better alternative — it
     screens for the specific browser features your experiment actually needs.
     Leave ``force_google_chrome`` unset to admit all modern browsers (Chrome,

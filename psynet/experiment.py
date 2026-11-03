@@ -398,13 +398,9 @@ def __init__(self, session=None):
             _reject_inherited_browser_capability_check(cls)
 
 
-def _timeline_owner(timeline):
-    return getattr(timeline, "_browser_capability_check_owner", None)
-
-
 def _reject_inherited_browser_capability_check(cls):
     """Reject a subclass whose browser check would differ from the inherited timeline's."""
-    owner = _timeline_owner(cls.timeline)
+    owner = cls.timeline.experiment_class
     if owner is not None and owner is not Experiment:
         raise ValueError(
             f"{cls.__name__} changes browser_capabilities or "
@@ -416,13 +412,13 @@ def _reject_inherited_browser_capability_check(cls):
 
 def _insert_browser_capability_check(cls):
     """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
-    owner = _timeline_owner(cls.timeline)
+    owner = cls.timeline.experiment_class
     if owner is not None:
         raise ValueError(
             f"{cls.__name__} uses the same Timeline object as {owner.__name__}. "
             "Each experiment class needs its own Timeline."
         )
-    cls.timeline._browser_capability_check_owner = cls
+    cls.timeline.experiment_class = cls
 
     check = cls.get_browser_capability_check()
     if check is None:
@@ -2784,23 +2780,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls._warn_about_overridden_experiment_config(config)
 
         if config.get("force_google_chrome"):
-            import warnings
-
-            warnings.warn(
+            logger.warning(
                 "force_google_chrome is deprecated and will be removed in a future release. "
                 "It still works, but consider migrating: use browser_capabilities for "
                 "feature-specific requirements (e.g. microphone, screen_capture), or leave "
-                "force_google_chrome unset to admit all modern browsers via the css_has check.",
-                DeprecationWarning,
-                stacklevel=2,
+                "force_google_chrome unset to admit all modern browsers that support CSS :has()."
             )
 
     @classmethod
     def get_browser_capability_check(cls):
         """Return the module that screens participants' browsers.
 
-        PsyNet inserts the returned module at the start of the timeline when the
-        experiment class is defined. The default checks
+        PsyNet inserts the returned module at the very start of the timeline,
+        before any consent pages, when the experiment class is defined. The
+        default checks
         :attr:`browser_capabilities` and returns ``None`` (no check) if that set
         is empty. Override this method to customize the check, or return
         ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`

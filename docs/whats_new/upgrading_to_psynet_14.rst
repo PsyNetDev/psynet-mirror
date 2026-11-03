@@ -351,7 +351,9 @@ migration instructions in the error.
 * ``force_google_chrome`` now defaults to ``false`` and is deprecated, so
   Chrome, Edge, Firefox and Safari are admitted. Every experiment rejects
   browsers without CSS ``:has()`` support (Chrome < 105, Firefox < 121,
-  Safari < 15.4), and ``min_browser_version`` has been removed. Declare
+  Safari < 15.4), and ``min_browser_version`` has been removed: delete it
+  from ``config.txt`` and ``~/.dallingerconfig``, because PsyNet refuses to
+  start with unknown config keys. Declare
   required features such as ``{"microphone"}`` in
   ``Experiment.browser_capabilities`` instead; see
   :doc:`/reference/configuration`.

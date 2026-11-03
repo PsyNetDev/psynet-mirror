@@ -2684,6 +2684,8 @@ class Timeline:
         )
         default_branches.update(branch_kwargs)
         self.terminal_branch_names = frozenset(default_branches)
+        self.experiment_class = None
+        """The experiment class that this timeline belongs to, set when that class is defined."""
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
