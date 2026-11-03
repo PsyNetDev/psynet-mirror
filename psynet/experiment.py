@@ -248,18 +248,20 @@ PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
 
 
 def validate_browser_capabilities(capabilities):
-    """Raise ValueError if capabilities is not a valid set of browser capability tokens."""
+    """Return ``capabilities`` as a frozenset, raising ValueError for invalid tokens."""
     if isinstance(capabilities, str):
         raise ValueError(
             "browser_capabilities must be a set of tokens, not a string. "
             f"Did you mean: {{{capabilities!r}}}"
         )
-    unknown = frozenset(capabilities) - BROWSER_CAPABILITY_TOKENS
+    capabilities = frozenset(capabilities)
+    unknown = capabilities - BROWSER_CAPABILITY_TOKENS
     if unknown:
         raise ValueError(
             f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
             f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
         )
+    return capabilities
 
 
 @dataclass
@@ -387,13 +389,41 @@ def __init__(self, session=None):
         _reject_overridden_fail_participant(cls)
 
         if "browser_capabilities" in dct:
-            validate_browser_capabilities(cls.browser_capabilities)
+            cls.browser_capabilities = validate_browser_capabilities(
+                cls.browser_capabilities
+            )
         if "timeline" in dct:
             _insert_browser_capability_check(cls)
+        elif "browser_capabilities" in dct or "get_browser_capability_check" in dct:
+            _reject_inherited_browser_capability_check(cls)
+
+
+def _timeline_owner(timeline):
+    return getattr(timeline, "_browser_capability_check_owner", None)
+
+
+def _reject_inherited_browser_capability_check(cls):
+    """Reject a subclass whose browser check would differ from the inherited timeline's."""
+    owner = _timeline_owner(cls.timeline)
+    if owner is not None and owner is not Experiment:
+        raise ValueError(
+            f"{cls.__name__} changes browser_capabilities or "
+            f"get_browser_capability_check but inherits its timeline from "
+            f"{owner.__name__}, whose browser check has already been inserted. "
+            f"Define timeline on {cls.__name__} as well."
+        )
 
 
 def _insert_browser_capability_check(cls):
     """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
+    owner = _timeline_owner(cls.timeline)
+    if owner is not None:
+        raise ValueError(
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__}. "
+            "Each experiment class needs its own Timeline."
+        )
+    cls.timeline._browser_capability_check_owner = cls
+
     check = cls.get_browser_capability_check()
     if check is None:
         return
@@ -770,6 +800,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     logos = []
     max_allowed_base_payment = 30
     browser_capabilities: frozenset = frozenset()
+    """Browser features the experiment requires, such as ``{"microphone"}``.
+
+    PsyNet screens participants for these at the start of the timeline; see
+    :meth:`get_browser_capability_check` and :doc:`/reference/configuration`.
+    """
 
     timeline = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
@@ -2771,8 +2806,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`
         in the timeline yourself.
 
-        The insertion happens on the class that defines ``timeline``; a subclass
-        that inherits its parent's timeline also inherits the parent's check.
+        The insertion happens on the class that defines ``timeline``. A subclass
+        that changes :attr:`browser_capabilities` or this method must therefore
+        define its own ``timeline``.
 
         Returns
         -------

@@ -522,9 +522,12 @@ Allowed browsers and devices
 
             timeline = Timeline(
                 MainConsent(),
-                BrowserCapabilityCheck(),
+                BrowserCapabilityCheck(browser_capabilities),
                 ...
             )
+
+    A subclass that changes ``browser_capabilities`` or
+    ``get_browser_capability_check`` must define its own ``timeline``.
 
     PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
     Firefox 121+, Safari 15.4+); you do not need to add a token for that.
@@ -538,7 +541,7 @@ Allowed browsers and devices
     Default: ``False``.
 
     Setting this emits a :class:`DeprecationWarning` at startup. For most
-    use cases :attr:`browser_capabilities` is the better alternative — it
+    use cases ``browser_capabilities`` is the better alternative — it
     screens for the specific browser features your experiment actually needs.
     Leave ``force_google_chrome`` unset to admit all modern browsers (Chrome,
     Edge, Firefox, Safari) that pass the CSS ``:has()`` check.

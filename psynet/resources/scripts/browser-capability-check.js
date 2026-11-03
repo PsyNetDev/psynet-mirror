@@ -1,14 +1,23 @@
-export async function activate({vars, psynet}) {
+export function activate({vars, psynet}) {
     const capabilities = vars["capabilities"] ?? [];
-    const result = await runChecks(capabilities);
-    // nextPage() requires pageReady=true, which is set by the framework after
-    // activate() returns — so calling it directly or via setTimeout(0) fires too
-    // early. timelinePageReady is dispatched when pageReady becomes true; the
-    // nested setTimeout(0) gives the framework one more tick to finish before
-    // we navigate.
-    window.addEventListener("timelinePageReady", () => {
-        setTimeout(() => psynet.nextPage(result), 0);
-    }, {once: true});
+    let cancelled = false;
+    let timer = null;
+    // Checks may wait on a permission prompt, so they must not block page
+    // activation. nextPage() requires pageReady, which the framework sets
+    // after activate() returns and announces with timelinePageReady; the
+    // setTimeout(0) lets it finish that activation before we navigate.
+    const onReady = () => {
+        timer = setTimeout(async () => {
+            const result = await runChecks(capabilities);
+            if (!cancelled) psynet.nextPage(result);
+        }, 0);
+    };
+    window.addEventListener("timelinePageReady", onReady, {once: true});
+    return () => {
+        cancelled = true;
+        clearTimeout(timer);
+        window.removeEventListener("timelinePageReady", onReady);
+    };
 }
 
 async function runChecks(capabilities) {

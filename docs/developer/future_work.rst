@@ -785,3 +785,28 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Incognito warning when detection is unavailable
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``force_incognito_mode = true``, browsers where incognito detection
+fails (such as Firefox) are rejected with a message asking the
+participant to open an incognito window. Now that ``force_google_chrome``
+defaults to ``false``, Firefox participants are admitted otherwise, and
+following that instruction in a private Firefox window shows the same
+message again.
+
+Idea
+++++
+
+When ``browser.incognitoDetectionFailed`` is true, also suggest opening
+the experiment in an incognito window of a browser where detection works,
+such as Chrome.

@@ -2148,74 +2148,46 @@ class BrowserCapabilityCheck(Module):
 
     Parameters
     ----------
+    capabilities : iterable of str
+        Capability tokens to test, typically ``Experiment.browser_capabilities``.
     label : str
-    capabilities : iterable[str] | None
-        Capability tokens to test.  ``None`` (default) resolves to
-        ``Experiment.browser_capabilities`` at runtime.
+        Module label, also used as the failure tag.
     """
 
-    def __init__(self, label="browser_capability_check", capabilities=None):
-        from psynet.experiment import (
-            PERMISSION_CAPABILITY_TOKENS,
-            validate_browser_capabilities,
-        )
+    def __init__(self, capabilities, label="browser_capability_check"):
+        from psynet.experiment import validate_browser_capabilities
 
-        if capabilities is not None:
-            if isinstance(capabilities, str):
-                raise ValueError(
-                    "capabilities must be a set of tokens, not a string. "
-                    f"Did you mean: capabilities={{{capabilities!r}}}"
-                )
-            capabilities = frozenset(capabilities)
-            validate_browser_capabilities(capabilities)
+        self.capabilities = validate_browser_capabilities(capabilities)
+        super().__init__(label, self._make_elts(label))
 
-        self.capabilities = capabilities
+    def _make_elts(self, label):
+        from psynet.experiment import PERMISSION_CAPABILITY_TOKENS
 
-        def _make_pages(experiment, participant):
-            caps = (
-                self.capabilities
-                if self.capabilities is not None
-                else frozenset(experiment.browser_capabilities)
+        caps = self.capabilities
+        if not caps:
+            return []
+
+        def _make_fail_page(participant):
+            missing = (
+                participant.answer.get("missing")
+                if isinstance(participant.answer, dict)
+                else None
             )
-            if not caps:
-                return []
-            perm_caps = caps & PERMISSION_CAPABILITY_TOKENS
-            pages = []
-            if perm_caps:
-                pages.append(_browser_capability_permission_intro(perm_caps))
-            pages.append(BrowserCapabilityCheckPage(caps, label=label))
+            return InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)
 
-            def _make_fail_page(experiment, participant):
-                missing = (
-                    participant.answer.get("missing")
-                    if isinstance(participant.answer, dict)
-                    else None
-                )
-                return [
-                    InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)
-                ]
-
-            pages.extend(
-                conditional(
-                    f"{label}_fail",
-                    lambda participant: (
-                        isinstance(participant.answer, dict)
-                        and not participant.answer.get("passed", True)
-                    ),
-                    [
-                        PageMaker(_make_fail_page, time_estimate=5.0),
-                        UnsuccessfulEndPage(failure_tags=[label]),
-                    ],
-                )
-            )
-            return pages
-
-        perm_caps = (
-            capabilities & PERMISSION_CAPABILITY_TOKENS
-            if capabilities is not None
-            else frozenset()
+        perm_caps = caps & PERMISSION_CAPABILITY_TOKENS
+        return join(
+            _browser_capability_permission_intro(perm_caps) if perm_caps else None,
+            BrowserCapabilityCheckPage(caps, label=label),
+            conditional(
+                f"{label}_fail",
+                lambda participant: (
+                    isinstance(participant.answer, dict)
+                    and not participant.answer.get("passed", True)
+                ),
+                [
+                    PageMaker(_make_fail_page, time_estimate=5.0),
+                    UnsuccessfulEndPage(failure_tags=[label]),
+                ],
+            ),
         )
-        pm_time_estimate = 5.0 if perm_caps else 0.0
-
-        elts = PageMaker(_make_pages, time_estimate=pm_time_estimate)
-        super().__init__(label, elts)
