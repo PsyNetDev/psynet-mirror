@@ -158,10 +158,20 @@ class LiveMessage(BaseModel):
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave")
 
 # Set while a state method runs, so one that calls another, as through
-# super(), converts once, after the outermost call. Converting rebuilds every
-# dict and list in the state, which would cut off references the outer call
-# still holds.
+# super() or from initial_state, converts once, after the outermost call.
+# Converting rebuilds every dict and list in the state, which would cut off
+# references the outer call still holds.
 _changing_state = contextvars.ContextVar("_changing_state", default=False)
+
+
+def _run_outermost(method, *args, **kwargs):
+    # In a copy of the context, so nothing has to unset the flag, even when
+    # Dallinger's time limit interrupts the call.
+    def run():
+        _changing_state.set(True)
+        return method(*args, **kwargs)
+
+    return contextvars.copy_context().run(run)
 
 
 def _stores_json(method):
@@ -170,11 +180,7 @@ def _stores_json(method):
         if _changing_state.get():
             method(self, state, *args, **kwargs)
             return
-        token = _changing_state.set(True)
-        try:
-            method(self, state, *args, **kwargs)
-        finally:
-            _changing_state.reset(token)
+        _run_outermost(method, self, state, *args, **kwargs)
         if not self.convert_state_to_json:
             return
         converted = _to_json(state, f"{type(self).__name__}.{method.__name__}")
@@ -192,7 +198,9 @@ def _stores_json(method):
 def _returns_json(method):
     @functools.wraps(method)
     def convert_state(self, *args, **kwargs):
-        state = method(self, *args, **kwargs)
+        if _changing_state.get():
+            return method(self, *args, **kwargs)
+        state = _run_outermost(method, self, *args, **kwargs)
         if not self.convert_state_to_json:
             return state
         return _to_json(state, f"{type(self).__name__}.{method.__name__}")
@@ -204,7 +212,7 @@ def _returns_json(method):
 def _to_json(state, what):
     try:
         return to_jsonable_python(state)
-    except ValueError as error:
+    except (ValueError, TypeError) as error:
         raise ValueError(
             f"After {what}, the state holds a value PsyNet can't convert to "
             f"JSON. {error}."
@@ -233,11 +241,13 @@ class LiveSession(RealtimeGame):
       ``"2026-11-02T09:30:00"``, and a timedelta one such as ``"PT1M30S"``
     - a Pydantic model becomes a dict
     - a ``Decimal`` or ``bytes`` value becomes a string
-    - a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}``.
-      Player ids are already strings.
+    - a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}`` and
+      ``{(1, 2): "a"}`` becomes ``{"1,2": "a"}``. Player ids are already
+      strings.
 
     A value PsyNet can't convert, such as an object of a class of your own,
-    makes the session fail. :class:`LiveMessage` shows how to compare a
+    makes the session fail. So does ``math.inf`` or ``NaN``, which JSON can't
+    hold: store ``None`` instead. :class:`LiveMessage` shows how to compare a
     message's fields with the converted state. A game with a very large
     state can turn the conversion off with :attr:`convert_state_to_json`.
     """
@@ -272,6 +282,9 @@ class LiveSession(RealtimeGame):
         if cls.channel is not None:
             _register_live_session(cls)
 
+    # Wrapped here, so __init_subclass__ doesn't copy a wrapper onto each
+    # subclass, which would hide a later base's apply.
+    @_stores_json
     def apply(self, state, player_id, message, now, sent):
         """Apply a page's message with its message type's
         :meth:`LiveMessage.apply`.
@@ -299,7 +312,7 @@ class LiveSession(RealtimeGame):
             raise Reject('A message is an object with a "type" and a "message".')
         message_type = self._message_types.get(message["type"])
         if message_type is None:
-            raise Reject(f"Unknown message type {message['type']!r}.")
+            raise Reject(f"Unknown message type {message['type'][:50]!r}.")
         # JSON mode, as for what pages send: a list is accepted for a tuple.
         # Given here, strict and extra also reach fields that are models.
         try:
@@ -312,11 +325,17 @@ class LiveSession(RealtimeGame):
             ) from None
 
 
+_MAX_PROBLEMS = 5
+
+
 def _problems(error):
+    errors = error.errors(include_url=False)
     problems = []
-    for item in error.errors(include_url=False):
+    for item in errors[:_MAX_PROBLEMS]:
         where = ".".join(str(part) for part in item["loc"])
         problems.append(f"{where}: {item['msg']}" if where else item["msg"])
+    if len(errors) > _MAX_PROBLEMS:
+        problems.append(f"and {len(errors) - _MAX_PROBLEMS} more")
     return "; ".join(problems)
 
 
@@ -419,6 +438,11 @@ class LiveSessionInitializer(GroupBarrier):
         if not (isinstance(game_type, type) and issubclass(game_type, LiveSession)):
             raise TypeError(
                 f"game_type must be a LiveSession subclass, not {game_type!r}."
+            )
+        if game_type.channel is None:
+            raise TypeError(
+                f"{game_type.__name__} has no channel, so it can't be played. "
+                "Set its channel to a name for the game."
             )
         super().__init__(
             id_=id_, group_type=group_type, on_release=_start_live_session, **kwargs

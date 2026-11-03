@@ -145,6 +145,7 @@ def _pick_numbers():
             "Invalid 'pick' message: number: Field required.",
         ),
         ({"type": "choose", "message": {}}, "Unknown message type 'choose'."),
+        ({"type": "x" * 60}, f"Unknown message type '{'x' * 50}'."),
         (
             {"type": "pick", "message": {"number": 7}, "round": 1},
             'A message is an object with a "type" and a "message".',
@@ -224,6 +225,35 @@ def test_a_nested_model_is_stored_as_a_dict(walk):
     )
 
     assert state == {"at": {"x": 1, "y": 2}}
+
+
+def test_a_rejection_lists_at_most_five_problems(registry):
+    class Many(LiveMessage):
+        type = "many"
+        numbers: list[int]
+
+        def apply(self, game, state, player_id, now):
+            pass
+
+    class Counting(LiveSession):
+        messages = [Many]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+    message = {"type": "many", "message": {"numbers": ["a"] * 8}}
+
+    with pytest.raises(Reject) as rejected:
+        Counting().apply({}, "1", message, 0, Sent())
+
+    assert rejected.value.reason == (
+        "Invalid 'many' message: "
+        + "; ".join(f"numbers.{i}: Input should be a valid integer" for i in range(5))
+        + "; and 3 more."
+    )
 
 
 @pytest.mark.parametrize(
@@ -352,12 +382,19 @@ def test_an_annotated_type_is_refused():
             messages = [Annotated]
 
 
-def test_an_initializer_s_game_type_must_be_a_live_session():
+def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel(
+    registry,
+):
     class Plain(RealtimeGame):
         channel = "plain"
 
+    class Unnamed(LiveSession):
+        pass
+
     with pytest.raises(TypeError, match="game_type must be a LiveSession subclass"):
         LiveSessionInitializer(id_="plain", group_type="pair", game_type=Plain)
+    with pytest.raises(TypeError, match="Unnamed has no channel"):
+        LiveSessionInitializer(id_="unnamed", group_type="pair", game_type=Unnamed)
 
 
 @pytest.mark.parametrize(
@@ -511,6 +548,57 @@ def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
     assert state == {"players": {"1": [2]}, "ticked": [2]}
 
 
+def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
+    registry,
+):
+    class Joining(LiveSession):
+        def initial_state(self, players):
+            state = {"scores": {}}
+            scores = state["scores"]
+            for player_id in players:
+                self.on_join(state, player_id, 0)
+                scores[player_id] = (0,)
+            return state
+
+        def view(self, state, player_id):
+            return state
+
+        def on_join(self, state, player_id, now):
+            state.setdefault("joined", []).append((player_id,))
+
+    assert Joining().initial_state(["1", "2"]) == {
+        "scores": {"1": [0], "2": [0]},
+        "joined": [["1"], ["2"]],
+    }
+
+
+def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
+    class Plain(LiveSession):
+        messages = [Move]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+    class Logged(LiveSession):
+        messages = [Move]
+
+        def apply(self, state, player_id, message, now, sent):
+            state["logged"] = (True,)
+            super().apply(state, player_id, message, now, sent)
+
+    class Both(Plain, Logged):
+        pass
+
+    state = {}
+
+    Both().apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
+
+    assert state == {"logged": [True], "held": "tuple", "at": [2, 3]}
+
+
 def test_the_state_is_converted_after_a_rejected_message(registry):
     class Ticking(LiveSession):
         messages = [Move]
@@ -573,12 +661,17 @@ def test_a_state_that_can_t_be_converted_fails_loudly(registry):
             state["loop"] = loop = []
             loop.append(loop)
 
+        def on_leave(self, state, player_id, now):
+            state["keys"] = {frozenset(): 1}
+
     with pytest.raises(ValueError, match="After Keep.initial_state, the state holds"):
         Keep().initial_state(["1"])
     with pytest.raises(ValueError, match="After Keep.tick, .* unknown type"):
         Keep().tick({}, 0)
     with pytest.raises(ValueError, match="After Keep.on_join, .* Circular"):
         Keep().on_join({}, "1", 0)
+    with pytest.raises(ValueError, match="After Keep.on_leave, .*frozenset"):
+        Keep().on_leave({}, "1", 0)
 
 
 class Holds(LiveMessage):
