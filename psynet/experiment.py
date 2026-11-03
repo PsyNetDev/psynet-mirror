@@ -1162,13 +1162,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def after_request(request, response):
-        diff = time.monotonic() - flask_app_globals.request_start_time
-        response = apply_versioned_static_cache_headers(response)
         # Participant URLs carry ?unique_id=, which must not reach other origins
-        # through Referer.
-        response.headers.setdefault("Referrer-Policy", "same-origin")
+        # through Referer. Embeds such as YouTube still need the bare origin.
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        start_time = getattr(flask_app_globals, "request_start_time", None)
+        response = apply_versioned_static_cache_headers(response)
         relevant_endpoints = [
             "/ad",
             "/consent",
@@ -1198,7 +1200,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         params = dict(request.args)
         request_obj = Request(
             unique_id=params.get("unique_id"),
-            duration=diff,
+            duration=None if start_time is None else time.monotonic() - start_time,
             method=request.method,
             endpoint=endpoint,
             params=params,

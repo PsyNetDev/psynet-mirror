@@ -14,52 +14,64 @@ const match = SOURCE.match(
 );
 assert.ok(match, "could not extract psynet.initLucidTermination");
 
+function initLucidTermination(lucidRecruitment) {
+  const calls = { redirectedTo: null, errors: [] };
+  const psynet = {
+    clearLucidTermination() {},
+    addBeforeUnloadEventListener() {},
+    removeBeforeUnloadEventListener() {},
+    log: { error: (message) => calls.errors.push(message) },
+  };
+  const psynetTemplateData = {
+    flags: { lucidRecruitment },
+    uniqueId: "rid:rid",
+    lucid: { secondsLeft: 600 },
+  };
+  const window = {
+    addEventListener() {},
+    location: {
+      replace(url) {
+        calls.redirectedTo = url;
+      },
+    },
+  };
+  new Function(
+    "psynet",
+    "psynetTemplateData",
+    "window",
+    "setInterval",
+    "clearInterval",
+    "$",
+    "document",
+    `let beforeunloadFunction; return ${match[1]};`
+  )(
+    psynet,
+    psynetTemplateData,
+    window,
+    () => 1,
+    () => {},
+    () => ({ on() {} }),
+    {}
+  )();
+  return { psynet, calls };
+}
+
 describe("initLucidTermination", () => {
   it("exposes psynet.terminateParticipant for Lucid screening controls", () => {
-    let redirectedTo = null;
-    const psynet = {
-      clearLucidTermination() {},
-      addBeforeUnloadEventListener() {},
-      removeBeforeUnloadEventListener() {},
-    };
-    const psynetTemplateData = {
-      flags: { lucidRecruitment: true },
-      uniqueId: "rid:rid",
-      lucid: { secondsLeft: 600 },
-    };
-    const window = {
-      addEventListener() {},
-      location: {
-        replace(url) {
-          redirectedTo = url;
-        },
-      },
-    };
-    const init = new Function(
-      "psynet",
-      "psynetTemplateData",
-      "window",
-      "setInterval",
-      "clearInterval",
-      "$",
-      "document",
-      `let beforeunloadFunction; return ${match[1]};`
-    )(
-      psynet,
-      psynetTemplateData,
-      window,
-      () => 1,
-      () => {},
-      () => ({ on() {} }),
-      {}
-    );
-
-    init();
+    const { psynet, calls } = initLucidTermination(true);
     psynet.terminateParticipant("screening_no");
 
     assert.equal(
-      redirectedTo,
+      calls.redirectedTo,
       "/terminate_participant?unique_id=rid%3Arid&reason=screening_no"
     );
+  });
+
+  it("logs instead of terminating without Lucid recruitment", () => {
+    const { psynet, calls } = initLucidTermination(false);
+    psynet.terminateParticipant("screening_no");
+
+    assert.equal(calls.redirectedTo, null);
+    assert.match(calls.errors[0], /does not recruit through Lucid/);
   });
 });

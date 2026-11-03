@@ -39,10 +39,12 @@ def client(db_session, deployment_info, monkeypatch):
     return app.test_client()
 
 
-def test_responses_send_security_headers(client):
-    response = client.get("/start")
+@pytest.mark.parametrize("path, status", [("/start", 200), ("/no-such-page", 404)])
+def test_responses_send_security_headers(client, path, status):
+    response = client.get(path)
 
-    assert response.headers["Referrer-Policy"] == "same-origin"
+    assert response.status_code == status
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
 
@@ -64,7 +66,7 @@ def test_an_experiment_can_allow_framing_in_after_request(client, monkeypatch):
     response = client.get("/start")
 
     assert "X-Frame-Options" not in response.headers
-    assert response.headers["Referrer-Policy"] == "same-origin"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 
 def test_a_logged_route_accepts_a_unique_id_that_names_no_participant(client):
@@ -189,10 +191,22 @@ def test_a_lucid_rid_without_a_participant_can_be_terminated(client, lucid):
 
 
 @pytest.mark.parametrize(
-    "query", ["", "unique_id=no-colon", "unique_id=worker:", "RID=rid&unique_id=bad"]
+    "query",
+    [
+        "",
+        "participant_id=1",
+        "unique_id=no-colon",
+        "unique_id=worker:",
+        "RID=rid&unique_id=bad",
+    ],
 )
 def test_terminating_needs_a_well_formed_lucid_rid(client, lucid, query):
+    """The sequential ``participant_id`` cannot select a respondent either."""
+    from psynet.participant import Participant
+
+    _add_lucid_participant()
     response = client.get("/terminate_participant?reason=wrong-browser&" + query)
 
     assert response.status_code == 400
+    assert not Participant.query.one().failed
     assert not lucid.terminate_respondent.called
