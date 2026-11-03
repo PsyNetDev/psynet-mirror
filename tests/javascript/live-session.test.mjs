@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { beforeEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const read = (name) => fs.readFileSync(path.join(ROOT, "psynet/resources/scripts", name), "utf8");
+const PAGE_SOCKET = read("page-socket.js");
+const SOURCE = read("live-session.js");
+const CALLBACKS = ["onView", "onRejected", "onEnded", "onResultSaved", "onRefused"];
+
+// Stands in for the dallinger.Socket that openExperimentSocket returns.
+class FakeSocket {
+  constructor(options) {
+    this.options = options;
+    this.gameChannel = options.gameChannel;
+    this.sent = [];
+    this.closed = false;
+    this.callbacks = Object.fromEntries(CALLBACKS.map((name) => [name, []]));
+    for (const name of CALLBACKS) {
+      this[name] = (callback) => {
+        this.callbacks[name].push(callback);
+        return this;
+      };
+    }
+  }
+  send(channel, payload) {
+    this.sent.push([channel, payload]);
+    return this.sent.length;
+  }
+  close() {
+    this.closed = true;
+  }
+}
+
+// The script builds its objects in another realm, so compare JSON copies.
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+let sockets;
+let token;
+let session;
+let liveSession;
+
+beforeEach(() => {
+  sockets = [];
+  token = "token-1";
+  session = { initializerId: "pick_numbers", sessionId: 7, gameChannel: "pick_numbers" };
+  const context = {
+    dallinger: {
+      pageScope: "load-1",
+      openExperimentSocket(options) {
+        const socket = new FakeSocket(options);
+        sockets.push(socket);
+        return socket;
+      },
+    },
+  };
+  context.window = context;
+  vm.createContext(context);
+  vm.runInContext(PAGE_SOCKET, context);
+  vm.runInContext(SOURCE, context);
+  liveSession = context.PsyNetLiveSession.create(
+    () => session,
+    () => token
+  );
+});
+
+describe("psynet.liveSession", () => {
+  it("joins the page's session once, scoped by the page token and page load", () => {
+    assert.equal(sockets.length, 0);
+    liveSession.onView(() => {});
+    liveSession.send("pick", { number: 7 });
+    assert.equal(sockets.length, 1);
+    assert.deepEqual(plain(sockets[0].options), {
+      session: 7,
+      gameChannel: "pick_numbers",
+      scope: "token-1.load-1",
+    });
+    assert.equal(liveSession.socket, sockets[0]);
+    assert.ok(!Object.keys(liveSession).includes("socket"));
+    assert.ok(!Object.keys(liveSession).includes("resetPageState"));
+  });
+
+  it("sends a message's type and fields on the game's channel", () => {
+    assert.equal(liveSession.send("pick", { number: 7 }), 1);
+    assert.equal(liveSession.send("pass"), 2);
+    assert.deepEqual(plain(sockets[0].sent), [
+      ["pick_numbers", { type: "pick", message: { number: 7 } }],
+      ["pick_numbers", { type: "pass" }],
+    ]);
+  });
+
+  it("passes callbacks to the socket and returns itself", () => {
+    const callback = () => {};
+    for (const name of CALLBACKS) {
+      assert.equal(liveSession[name](callback), liveSession);
+      assert.deepEqual(sockets[0].callbacks[name], [callback]);
+    }
+  });
+
+  it("leaves the session when the page changes", () => {
+    liveSession.send("pick", { number: 1 });
+    token = "token-2";
+    liveSession.send("pick", { number: 2 });
+    assert.equal(sockets[0].closed, true);
+    assert.equal(sockets[1].options.scope, "token-2.load-1");
+    assert.deepEqual(plain(sockets[1].sent), [
+      ["pick_numbers", { type: "pick", message: { number: 2 } }],
+    ]);
+
+    liveSession.resetPageState();
+    assert.equal(sockets[1].closed, true);
+    assert.equal(sockets.length, 2);
+  });
+
+  it("says whether the group has a session, without joining it", () => {
+    assert.equal(liveSession.hasSession, true);
+    session = { initializerId: "pick_numbers", sessionId: null, gameChannel: null };
+    assert.equal(liveSession.hasSession, false);
+    session = undefined;
+    assert.equal(liveSession.hasSession, false);
+    assert.equal(sockets.length, 0);
+  });
+
+  it("explains a page with no session or no page token", () => {
+    session = undefined;
+    assert.throws(() => liveSession.send("pick"), /control isn't a LiveSessionControl/);
+    session = { initializerId: "pick_numbers", sessionId: null, gameChannel: null };
+    assert.throws(
+      () => liveSession.onView(() => {}),
+      /hasn't started a live session at the initializer "pick_numbers"/
+    );
+    session = { initializerId: "pick_numbers", sessionId: 7, gameChannel: "pick_numbers" };
+    token = null;
+    assert.throws(() => liveSession.send("pick"), /needs a FLASK_SECRET_KEY/);
+    assert.equal(sockets.length, 0);
+  });
+});

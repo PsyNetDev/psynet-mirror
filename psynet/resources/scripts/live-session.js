@@ -1,0 +1,174 @@
+(function () {
+  "use strict";
+
+  /**
+   * ``psynet.liveSession`` lets a page with a ``LiveSessionControl`` play
+   * the live session its group started: send the game messages, and show
+   * the views the game sends back.
+   *
+   * The page joins the session when it first uses ``psynet.liveSession``,
+   * and leaves it when the participant moves on. If the connection drops,
+   * it reconnects by itself and rejoins. The same page left open in another
+   * tab can go on playing until its connection drops, or the session ends:
+   * then it can't connect again.
+   *
+   * ``psynet.js`` creates ``psynet.liveSession`` with this function. The
+   * connection is Dallinger's ``/experiment-socket``, joined to the session,
+   * with the page's token, a ``.`` and ``dallinger.pageScope`` as its
+   * scope, which the experiment's ``accept_websocket_connection`` checks.
+   *
+   * @param {function} liveSession - Returns the page's ``liveSession``
+   *   variable: the control's ``initializerId``, and the session's
+   *   ``sessionId`` and ``gameChannel``, which are ``null`` without a
+   *   session, or nothing on a page without a ``LiveSessionControl``
+   * @param {function} pageToken - Returns the current page's token
+   */
+  function createLiveSession(liveSession, pageToken) {
+    let api = null;
+
+    function session() {
+      let current = liveSession();
+      if (!current) {
+        throw new Error(
+          "This page has no live session to play: its control isn't a " +
+            "LiveSessionControl.",
+        );
+      }
+      if (current.sessionId == null) {
+        throw new Error(
+          "The participant's group hasn't started a live session at the " +
+            "initializer " +
+            JSON.stringify(current.initializerId) +
+            ". Check the LiveSessionControl's initializer id, and that the " +
+            "page comes after that initializer. A participant removed from " +
+            "their group there has no session, which the page can check " +
+            "with psynet.liveSession.hasSession.",
+        );
+      }
+      return current;
+    }
+
+    let pages = window.PsyNetPageSocket.createPageScopedSocket(pageToken, {
+      noTokenError:
+        "This page has no page token, so it can't join its live session. " +
+        "The server needs a FLASK_SECRET_KEY.",
+      open: (state) => {
+        let current = session();
+        return dallinger.openExperimentSocket({
+          session: current.sessionId,
+          gameChannel: current.gameChannel,
+          scope: state.token + "." + dallinger.pageScope,
+        });
+      },
+    });
+
+    function socket() {
+      session();
+      return pages.socket();
+    }
+
+    /**
+     * Send the game a message, which it reads as the ``LiveMessage`` with
+     * this ``type``. If the game rejects it, ``onRejected``'s callback gets
+     * its number and the reason. The game ignores messages sent after the
+     * session ends, which still get a number.
+     *
+     * @example
+     * psynet.liveSession.send("choose", { action: "rock" });
+     *
+     * @param {string} type - The message's ``type``
+     * @param {Object} [message] - Its fields
+     * @returns {number|undefined} The message's number, or ``undefined``
+     *   once the connection is closed or refused
+     */
+    function send(type, message) {
+      let gameSocket = socket();
+      return gameSocket.send(gameSocket.gameChannel, { type: type, message: message });
+    }
+
+    function passOn(name) {
+      return function (callback) {
+        socket()[name](callback);
+        return api;
+      };
+    }
+
+    api = {
+      /**
+       * Whether the participant's group started a session at the page's
+       * initializer. A participant removed from their group there has none,
+       * and then the other methods throw. Reading it doesn't join the
+       * session.
+       *
+       * @member {boolean} hasSession
+       */
+      get hasSession() {
+        let current = liveSession();
+        return Boolean(current && current.sessionId != null);
+      },
+      send: send,
+      /**
+       * Call ``callback`` with each new view of the game, what the game's
+       * ``view`` returns for this player, starting when the page joins.
+       * Dallinger's ``Socket.onView`` describes the view's details.
+       *
+       * @function onView
+       * @param {function} callback - Called with each view
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onView: passOn("onView"),
+      /**
+       * Call ``callback`` with the number of each message the game rejected
+       * and the reason, such as a field of the wrong type.
+       *
+       * @function onRejected
+       * @param {function} callback - Called with the number and the reason
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onRejected: passOn("onRejected"),
+      /**
+       * Call ``callback`` once, when the page learns the session has ended,
+       * with why it ended and this player's final view. Dallinger's
+       * ``Socket.onEnded`` lists the reasons.
+       *
+       * @function onEnded
+       * @param {function} callback - Called with the reason and the view
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onEnded: passOn("onEnded"),
+      /**
+       * Call ``callback`` once the session's result has been saved, after
+       * it ends, so the page can move on.
+       *
+       * @function onResultSaved
+       * @param {function} callback - Called once the result is saved
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onResultSaved: passOn("onResultSaved"),
+      /**
+       * Call ``callback`` with the close code and reason if the server
+       * refuses the page's connection, as it does long after the session
+       * ended. The page then gets no ``onEnded`` or ``onResultSaved``, so
+       * move on here too.
+       *
+       * @function onRefused
+       * @param {function} callback - Called with the code and the reason
+       * @returns {Object} ``psynet.liveSession``
+       */
+      onRefused: passOn("onRefused"),
+    };
+    /**
+     * The page's Dallinger socket for the session, for anything else, such
+     * as ``serverTime`` or ``predictedView``.
+     *
+     * @member {dallinger.Socket} socket
+     */
+    // Not enumerable, since reading it joins the session.
+    Object.defineProperty(api, "socket", { get: socket });
+    // For psynet.resetPageState, not for pages.
+    Object.defineProperty(api, "resetPageState", { value: pages.reset });
+    return api;
+  }
+
+  window.PsyNetLiveSession = { create: createLiveSession };
+})();

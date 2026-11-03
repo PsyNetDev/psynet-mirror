@@ -16,6 +16,66 @@
   const PAGE_ENDED = "psynet_page_ended";
 
   /**
+   * Keeps the current page's state and its Dallinger socket, which opens
+   * when first asked for. When the page token changes, or ``reset`` runs,
+   * the old page's socket closes and the next call starts the new page
+   * afresh. ``psynet.websocket`` and ``psynet.liveSession`` are built on it.
+   *
+   * @param {function} pageToken - Returns the current page's token
+   * @param {Object} options
+   * @param {string} options.noTokenError - The error's message when the
+   *   page has no token
+   * @param {function} [options.newPage] - Returns the fields a new page's
+   *   state starts with, besides its ``token`` and ``socket``
+   * @param {function} options.open - Opens the socket for the page's state
+   * @returns {{current: function, socket: function, close: function,
+   *   reset: function}} ``current`` returns the page's state, ``socket`` its
+   *   socket, ``close`` closes the socket, so that the next ``socket`` call
+   *   opens another, and ``reset`` also forgets the page
+   */
+  function createPageScopedSocket(pageToken, options) {
+    let page = null;
+
+    function current() {
+      let token = pageToken();
+      if (!token) {
+        throw new Error(options.noTokenError);
+      }
+      if (page === null || page.token !== token) {
+        close();
+        page = Object.assign(
+          { token: token, socket: null },
+          options.newPage ? options.newPage() : {},
+        );
+      }
+      return page;
+    }
+
+    function socket() {
+      let state = current();
+      if (state.socket === null) {
+        state.socket = options.open(state);
+      }
+      return state.socket;
+    }
+
+    function close() {
+      if (page !== null && page.socket !== null) {
+        let closing = page.socket;
+        page.socket = null;
+        closing.close();
+      }
+    }
+
+    function reset() {
+      close();
+      page = null;
+    }
+
+    return { current: current, socket: socket, close: close, reset: reset };
+  }
+
+  /**
    * ``psynet.websocket`` lets a page and the experiment send each other
    * messages while the page is open, without the participant submitting it.
    * A page sends with ``send`` and receives with ``handle``. Each message has
@@ -38,7 +98,18 @@
    * @param {function} pageToken - Returns the current page's token
    */
   function createPageSocket(pageToken) {
-    let page = null;
+    let pages = createPageScopedSocket(pageToken, {
+      noTokenError:
+        "This page has no page token, so it can't open a websocket. " +
+        "The server needs a FLASK_SECRET_KEY.",
+      newPage: () => ({
+        openEvent: null,
+        handlers: new Map(),
+        connectHandlers: [],
+        context: {},
+      }),
+      open: openSocket,
+    });
 
     function dispatch(state, data) {
       if (data === null || typeof data !== "object") return;
@@ -54,48 +125,26 @@
       });
     }
 
-    function currentPage() {
-      let token = pageToken();
-      if (!token) {
-        throw new Error(
-          "This page has no page token, so it can't open a websocket. " +
-            "The server needs a FLASK_SECRET_KEY.",
-        );
-      }
-      if (page === null || page.token !== token) {
-        close();
-        page = {
-          token: token,
-          socket: null,
-          openEvent: null,
-          handlers: new Map(),
-          connectHandlers: [],
-          context: {},
-        };
-      }
-      return page;
+    function openSocket(state) {
+      let socket = dallinger.openExperimentSocket({ scope: state.token });
+      socket.onDirect((data) => {
+        if (data !== null && typeof data === "object" && data.type === PAGE_ENDED) {
+          // Kept as the page's socket, so later sends and handlers don't
+          // open another one.
+          socket.close();
+        } else {
+          dispatch(state, data);
+        }
+      });
+      socket.onOpen(function (event) {
+        state.openEvent = event;
+        state.connectHandlers.slice().forEach((callback) => callback(event));
+      });
+      return socket;
     }
 
     function connect() {
-      let state = currentPage();
-      if (state.socket === null) {
-        state.socket = dallinger.openExperimentSocket({ scope: state.token });
-        let socket = state.socket;
-        socket.onDirect((data) => {
-          if (data !== null && typeof data === "object" && data.type === PAGE_ENDED) {
-            // Kept as the page's socket, so later sends and handlers don't
-            // open another one.
-            socket.close();
-          } else {
-            dispatch(state, data);
-          }
-        });
-        socket.onOpen(function (event) {
-          state.openEvent = event;
-          state.connectHandlers.slice().forEach((callback) => callback(event));
-        });
-      }
-      return state.socket;
+      return pages.socket();
     }
 
     /**
@@ -112,7 +161,7 @@
      *   ``JSON.stringify`` accepts
      */
     function send(type, message) {
-      let context = currentPage().context;
+      let context = pages.current().context;
       if (
         message &&
         typeof message === "object" &&
@@ -148,7 +197,7 @@
      */
     function handle(type, callback) {
       connect();
-      let handlers = page.handlers;
+      let handlers = pages.current().handlers;
       if (!handlers.has(type)) handlers.set(type, []);
       handlers.get(type).push(callback);
       return function () {
@@ -170,7 +219,7 @@
      */
     function onConnect(callback) {
       let socket = connect();
-      let state = page;
+      let state = pages.current();
       state.connectHandlers.push(callback);
       if (socket.raw.readyState === WebSocket.OPEN) {
         setTimeout(function () {
@@ -190,35 +239,25 @@
      * @param {Object} context - The fields to add
      */
     function setMessageContext(context) {
-      let state = currentPage();
+      let state = pages.current();
       state.context = Object.assign({}, state.context, context || {});
-    }
-
-    /** Close the page's connection. Sending or handling opens a new one. */
-    function close() {
-      if (page !== null && page.socket !== null) {
-        let closing = page.socket;
-        page.socket = null;
-        page.openEvent = null;
-        closing.close();
-      }
-    }
-
-    function resetPageState() {
-      close();
-      page = null;
     }
 
     return {
       connect: connect,
-      close: close,
+      /** Close the page's connection. Sending or handling opens a new one. */
+      close: pages.close,
       handle: handle,
       onConnect: onConnect,
-      resetPageState: resetPageState,
+      resetPageState: pages.reset,
       send: send,
       setMessageContext: setMessageContext,
     };
   }
 
-  window.PsyNetPageSocket = { CHANNEL: CHANNEL, create: createPageSocket };
+  window.PsyNetPageSocket = {
+    CHANNEL: CHANNEL,
+    create: createPageSocket,
+    createPageScopedSocket: createPageScopedSocket,
+  };
 })();

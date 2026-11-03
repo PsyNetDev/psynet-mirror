@@ -70,6 +70,7 @@ has written, checking it, and changing it yourself.
    multiplayer/synchronization
    multiplayer/chatroom
    multiplayer/realtime_interaction
+   multiplayer/live_sessions
 
 .. toctree::
    :caption: Database

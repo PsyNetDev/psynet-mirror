@@ -2077,6 +2077,18 @@ class ModularPage(Page):
             **kwargs,
         )
 
+    def _js_vars_for(self, experiment, participant):
+        return _merge_js_var_sources(
+            ("the page's js_vars or a component's get_js_vars", self.js_vars),
+            *(
+                (
+                    f"{role} {type(component).__name__}",
+                    component.get_render_js_vars(experiment, participant),
+                )
+                for role, component in self._iter_layout_components()
+            ),
+        )
+
     def _iter_layout_components(self):
         """Yield layout-active components that contribute page assets."""
         if "prompt" in self.layout:

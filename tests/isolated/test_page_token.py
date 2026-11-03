@@ -91,14 +91,25 @@ def test_the_hook_accepts_only_the_current_page_s_token(
     participant_id = str(participant.id)
     token = _page_token(participant.page_uuid)
 
-    assert experiment.accept_websocket_connection(participant_id, token) is True
-    for scope in [None, "", "wrong", token.upper(), "é" + token[1:]]:
+    for scope in [token, token + ".load", token + ".load.more"]:
+        assert experiment.accept_websocket_connection(participant_id, scope) is True
+    for scope in [
+        None,
+        "",
+        "wrong",
+        token.upper(),
+        "é" + token[1:],
+        token + ".",
+        "wrong." + token,
+        "." + token,
+    ]:
         assert not experiment.accept_websocket_connection(participant_id, scope)
 
     _rotate_page_uuid(publishing, participant)
     db.session.commit()
 
     assert not experiment.accept_websocket_connection(participant_id, token)
+    assert not experiment.accept_websocket_connection(participant_id, token + ".load")
     new_token = _page_token(participant.page_uuid)
     assert experiment.accept_websocket_connection(participant_id, new_token) is True
 

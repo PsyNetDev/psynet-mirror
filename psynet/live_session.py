@@ -48,7 +48,9 @@ and Dallinger's "Real-Time Games" documentation explains them.
 To have groups play the game, put a :class:`LiveSessionInitializer` in the
 timeline after the :class:`~psynet.sync.Grouper` that forms the groups. When
 all of a group's members reach it, it starts a session, and the group moves
-on together. A page after it finds the session with :func:`live_session_id`.
+on together. The page where they play is a
+:class:`~psynet.modular_page.ModularPage` with a :class:`LiveSessionControl`,
+and its JavaScript plays the game through ``psynet.liveSession``.
 
 ::
 
@@ -59,8 +61,18 @@ on together. A page after it finds the session with :func:`live_session_id`.
             group_type="pair",
             game_type=RockPaperScissors,
         ),
+        ModularPage(
+            "rock_paper_scissors",
+            "Choose rock, paper or scissors.",
+            LiveSessionControl("rock_paper_scissors"),
+            js_page_modules=["/static/rock_paper_scissors.js"],
+            time_estimate=30,
+        ),
         ...
     )
+
+:doc:`/code/multiplayer/live_sessions` walks through a whole game, its
+page's JavaScript, and the cases a game page should allow for.
 
 Define each game, or import it, before the experiment class. PsyNet then
 adds it to the experiment's ``realtime_games``, so you don't list it there.
@@ -71,6 +83,8 @@ import functools
 import json
 from typing import ClassVar
 
+from dallinger import db
+from dallinger.models import RealtimeSession
 from dallinger.realtime import RealtimeGame, Reject, create_realtime_session
 from pydantic import (
     BaseModel,
@@ -80,7 +94,9 @@ from pydantic import (
 )
 from pydantic_core import to_jsonable_python
 
+from .modular_page import NullControl
 from .sync import GroupBarrier
+from .utils import NoArgumentProvided
 
 
 class LiveMessage(BaseModel):
@@ -144,12 +160,21 @@ class LiveMessage(BaseModel):
         with a reason. The sender's page gets the reason, and the state stays
         as it was.
 
-        :param game: the game, for its settings or to call
-            :meth:`~LiveSession.queue_effect`
-        :param state: the session's state
-        :param player_id: the sender's player id
-        :param now: when the message arrived, in seconds since the session
-            started
+        Parameters
+        ----------
+
+        game
+            The game, for its settings or to call
+            :meth:`~LiveSession.queue_effect`.
+
+        state
+            The session's state.
+
+        player_id
+            The sender's player id.
+
+        now
+            When the message arrived, in seconds since the session started.
         """
         raise NotImplementedError
 
@@ -314,10 +339,19 @@ class LiveSession(RealtimeGame):
     def read_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.
 
-        :param message: what the page sent, such as
-            ``{"type": "choose", "message": {"action": "rock"}}``
-        :raises ~dallinger.realtime.Reject: if the ``type`` isn't one of
-            :attr:`messages`, or the fields don't match it
+        Parameters
+        ----------
+
+        message
+            What the page sent, such as
+            ``{"type": "choose", "message": {"action": "rock"}}``.
+
+        Raises
+        ------
+
+        ~dallinger.realtime.Reject
+            If the ``type`` isn't one of :attr:`messages`, or the fields don't
+            match it.
         """
         if (
             not isinstance(message, dict)
@@ -477,6 +511,97 @@ def _start_live_session(participants, barrier):
     )
     for member in participants:
         member.live_sessions = {**(member.live_sessions or {}), barrier.id: session_id}
+
+
+class LiveSessionControl(NullControl):
+    """The part of a page where the participant plays the session their
+    group started at a :class:`LiveSessionInitializer`.
+
+    Give it the initializer's id, and give the page a JavaScript file that
+    plays the game, listed in its ``js_page_modules``:
+
+    ::
+
+        ModularPage(
+            "rock_paper_scissors",
+            Prompt(tags.div(tags.p(id="status"), ...)),
+            LiveSessionControl("rock_paper_scissors"),
+            js_page_modules=["/static/rock_paper_scissors.js"],
+            time_estimate=30,
+        )
+
+    The JavaScript plays through ``psynet.liveSession``:
+
+    - ``send(type, message)`` sends the game the :class:`LiveMessage` with
+      that ``type``, and returns its number, or ``undefined`` once the
+      page's connection is closed or refused.
+    - ``onView(callback)`` calls ``callback`` with each new view, what the
+      game's ``view`` returns for this player.
+    - ``onRejected(callback)`` calls ``callback`` with the number of each
+      message the game rejected and the reason.
+    - ``onEnded(callback)`` calls ``callback`` once the session ends, with
+      why it ended and the player's final view.
+    - ``onResultSaved(callback)`` calls ``callback`` once the session's
+      result has been saved.
+    - ``onRefused(callback)`` calls ``callback`` with the close code and
+      reason if the server refuses the page's connection.
+    - ``hasSession`` says whether the group started a session at the
+      initializer. Without one, the other methods throw an error.
+    - ``socket`` is the page's Dallinger socket, for anything else, such as
+      ``serverTime``.
+
+    :doc:`/code/multiplayer/live_sessions` has a full example, and the cases
+    a game page should allow for, such as a participant with no session or
+    a reload.
+
+    Parameters
+    ----------
+
+    initializer_id
+        The ``id_`` of the :class:`LiveSessionInitializer` that started the
+        session.
+
+    bot_response
+        What a bot answers on the page, as for any control.
+
+    buttons
+        Any extra buttons, as for any control.
+
+    show_next_button
+        Whether the page has a Next button.
+    """
+
+    def __init__(
+        self,
+        initializer_id,
+        *,
+        bot_response=NoArgumentProvided,
+        buttons=None,
+        show_next_button=True,
+    ):
+        super().__init__(
+            bot_response=bot_response,
+            buttons=buttons,
+            show_next_button=show_next_button,
+        )
+        self.initializer_id = initializer_id
+
+    def get_render_js_vars(self, experiment, participant):
+        session_id = live_session_id(participant, self.initializer_id)
+        game_channel = None
+        if session_id is not None:
+            game_channel = (
+                db.session.query(RealtimeSession.game_type)
+                .filter_by(id=session_id)
+                .scalar()
+            )
+        return {
+            "liveSession": {
+                "initializerId": self.initializer_id,
+                "sessionId": session_id,
+                "gameChannel": game_channel,
+            }
+        }
 
 
 def live_session_id(participant, initializer_id):

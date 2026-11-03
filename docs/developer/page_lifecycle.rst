@@ -582,6 +582,16 @@ for example the same page open in another tab. They close for good without
 running handlers. Delivery is best effort: a connection that misses the
 notice stays open until it next reconnects, and is then refused.
 
+``psynet.liveSession`` joins a page with a ``LiveSessionControl`` to its live
+session. The control adds the session's id and game channel to the page's
+``js_vars`` each time the page renders, through ``get_render_js_vars``. The
+socket's scope is the page's token, a ``.`` and ``dallinger.pageScope``, which
+names the page load, so the session can tell two loads of the same page apart.
+``accept_websocket_connection`` checks the part before the ``.``. The
+page-ended notice goes only to the bare token, so a game socket for the same
+page in another tab plays on until it reconnects, and is then refused, or the
+session ends. A tab closes its own game socket when its page changes.
+
 Adding new frontend components
 ------------------------------
 
@@ -589,6 +599,8 @@ For new Prompt and Control components:
 
 * keep templates focused on markup;
 * use ``get_js_vars()`` for serialized page configuration;
+* use ``get_render_js_vars(experiment, participant)`` for configuration that
+  depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;
 * use ``get_js_page_modules()`` for per-page module behavior;

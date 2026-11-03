@@ -16,7 +16,7 @@
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
-  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "pageToken"]);
+  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "pageToken", "liveSession"]);
   let legacyJsVarGlobalStates = new Map();
   let warnedLegacyJsVarGlobalCollisionKeys = new Set();
   let warnedLegacyJsVarGlobalLockedKeys = new Set();
@@ -518,6 +518,7 @@
     psynet.resetPageState = function () {
       psynet.runPageCleanupCallbacks();
       psynet.websocket.resetPageState();
+      psynet.liveSession.resetPageState();
       psynet.clearPageEventListeners();
       psynet.comments = [];
       psynet.page = {
@@ -3979,6 +3980,10 @@
 
   window.psynet = psynet;
   psynet.websocket = window.PsyNetPageSocket.create(() => psynet.var.pageToken);
+  psynet.liveSession = window.PsyNetLiveSession.create(
+    () => psynet.var.liveSession,
+    () => psynet.var.pageToken,
+  );
   if (window.psynetLayout) {
     psynet.layout = window.psynetLayout;
   }

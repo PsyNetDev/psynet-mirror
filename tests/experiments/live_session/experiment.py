@@ -1,10 +1,16 @@
 """The test experiment for live sessions. Its first page opens the page's
-websocket, and then pairs start a session of a toy game."""
+websocket, and then pairs play a session of a toy game."""
 
 from dominate import tags
 
 import psynet.experiment
-from psynet.live_session import LiveMessage, LiveSession, LiveSessionInitializer
+from psynet.live_session import (
+    LiveMessage,
+    LiveSession,
+    LiveSessionControl,
+    LiveSessionInitializer,
+)
+from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import Timeline
@@ -57,5 +63,20 @@ class Exp(psynet.experiment.Experiment):
         LiveSessionInitializer(
             id_="pick_numbers", group_type="pair", game_type=PickNumbers
         ),
-        InfoPage("The game page.", time_estimate=5),
+        ModularPage(
+            "pick_numbers",
+            Prompt(
+                tags.div(
+                    tags.p("Joining...", id="game-status"),
+                    tags.p("Connecting...", id="page-socket-status"),
+                    tags.input_(type="number", id="pick-number", value="7"),
+                    tags.button("Pick", type="button", id="pick"),
+                    tags.p(id="game-error"),
+                )
+            ),
+            LiveSessionControl("pick_numbers"),
+            js_page_modules=["/static/pick-numbers.js"],
+            time_estimate=5,
+        ),
+        InfoPage("The page after the game.", time_estimate=5),
     )

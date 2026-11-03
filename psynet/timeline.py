@@ -2112,6 +2112,10 @@ class Page(Elt):
             or get_config().get("show_early_exit_button", False)
         )
 
+    def _js_vars_for(self, experiment, participant):
+        """The page's ``js_vars`` when it renders for ``participant``."""
+        return self.js_vars
+
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
 
@@ -2137,7 +2141,7 @@ class Page(Elt):
         self._check_spa_template_contract(
             inplace_timeline_transitions=config.get("inplace_timeline_transitions"),
         )
-        js_vars = {**self.js_vars, **internal_js_vars}
+        js_vars = {**self._js_vars_for(experiment, participant), **internal_js_vars}
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
         show_early_exit_button = self.early_exit_available(experiment, participant)
         if show_early_exit_button:

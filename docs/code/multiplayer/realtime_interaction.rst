@@ -7,6 +7,8 @@ Real-time interaction
 Participants on the same page can interact live by exchanging WebSocket
 messages through the server, for example to take turns in a game or to edit a
 shared answer. The :doc:`chatroom <chatroom>` is built this way.
+For a game whose state the server keeps and updates as players move, see
+:doc:`live sessions <live_sessions>`.
 
 How messages travel
 -------------------

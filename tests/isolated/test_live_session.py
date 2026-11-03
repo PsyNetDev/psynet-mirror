@@ -11,6 +11,7 @@ from dallinger.models import RealtimeSession
 from dallinger.realtime import RealtimeGame, Reject, Sent
 from dallinger.realtime.game import queued_effects
 from dallinger.realtime.store import RUNNING
+from flask import Flask
 from pydantic import BaseModel, ConfigDict
 
 from psynet import live_session
@@ -18,9 +19,11 @@ from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
     LiveMessage,
     LiveSession,
+    LiveSessionControl,
     LiveSessionInitializer,
     live_session_id,
 )
+from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -95,6 +98,60 @@ def test_each_pass_through_the_initializer_starts_a_new_session(pair):
     assert None not in session_ids
     assert session_ids[0] != session_ids[1]
     assert live_session_id(members[0], "earlier") == 7
+
+
+def _rendered_js_vars(page, participant, monkeypatch):
+    rendered = {}
+
+    def capture(template_string, **template_args):
+        rendered.update(template_args)
+        return ""
+
+    monkeypatch.setattr("psynet.timeline.render_string_with_translations", capture)
+    with Flask(__name__).test_request_context("/timeline"):
+        page.render(get_experiment(), participant)
+    return rendered["js_vars"]
+
+
+def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch):
+    members, initializer = pair
+    page = ModularPage(
+        "game", "Play.", LiveSessionControl(initializer.id), time_estimate=5
+    )
+
+    assert _rendered_js_vars(page, members[0], monkeypatch)["liveSession"] == {
+        "initializerId": initializer.id,
+        "sessionId": None,
+        "gameChannel": None,
+    }
+    for member in members:
+        _arrive(initializer, member)
+
+    session_id = live_session_id(members[1], initializer.id)
+    assert _rendered_js_vars(page, members[1], monkeypatch)["liveSession"] == {
+        "initializerId": initializer.id,
+        "sessionId": session_id,
+        "gameChannel": "pick_numbers",
+    }
+
+
+def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
+    members, initializer = pair
+    page = ModularPage(
+        "game",
+        "Play.",
+        LiveSessionControl(initializer.id),
+        time_estimate=5,
+        js_vars={"liveSession": "mine"},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Duplicate JavaScript variable 'liveSession': contributed by "
+        "the page's js_vars or a component's get_js_vars and control "
+        "LiveSessionControl.",
+    ):
+        _rendered_js_vars(page, members[0], monkeypatch)
 
 
 def test_a_follower_who_reloads_finds_the_group_s_session(pair):

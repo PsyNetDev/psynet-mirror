@@ -2562,17 +2562,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from the page the participant is on, so a page they have moved on
         from, or left open in another tab, can't send or receive messages.
 
-        PsyNet's pages connect with their page's token as the ``scope``. A
-        refused page doesn't try to connect again. An experiment that
+        PsyNet's pages connect with their page's token as the ``scope``, and
+        a live session's game with the token, a ``.`` and a name for the page
+        load. A refused page doesn't try to connect again. An experiment that
         overrides this method to add its own checks should also call
         ``super().accept_websocket_connection(participant_id, scope)``.
         """
+        if not isinstance(scope, str):
+            return False
+        token, dot, page_load = scope.partition(".")
+        if dot and not page_load:
+            return False
         page_uuid = (
             db.session.query(Participant.page_uuid)
             .filter_by(id=int(participant_id))
             .scalar()
         )
-        return _is_current_page_token(page_uuid, scope)
+        return _is_current_page_token(page_uuid, token)
 
     def pre_deploy(self, redeploying_from_archive=False, *, update=False):
         """Prepare the experiment for deployment, on the machine that launches it.
@@ -4380,6 +4386,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/page-socket.js",
                     "/static/scripts/page-socket.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/live-session.js",
+                    "/static/scripts/live-session.js",
                 ),
                 (
                     resources.files("psynet")
