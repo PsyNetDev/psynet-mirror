@@ -386,6 +386,29 @@ def __init__(self, session=None):
 
         _reject_overridden_fail_participant(cls)
 
+        if "browser_capabilities" in dct:
+            validate_browser_capabilities(cls.browser_capabilities)
+        if "timeline" in dct:
+            _insert_browser_capability_check(cls)
+
+
+def _insert_browser_capability_check(cls):
+    """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
+    check = cls.get_browser_capability_check()
+    if check is None:
+        return
+
+    from .prescreen import BrowserCapabilityCheck
+
+    if any(isinstance(m, BrowserCapabilityCheck) for m in cls.timeline.module_list):
+        raise ValueError(
+            "PsyNet now inserts BrowserCapabilityCheck at the start of the timeline "
+            "automatically, so please remove it from your timeline. To customize "
+            "the check, override Experiment.get_browser_capability_check; to place "
+            "it yourself, make that method return None."
+        )
+    cls.timeline.insert_at_start(check)
+
 
 @register_table
 class Request(SQLBase, SQLMixin):
@@ -2737,11 +2760,30 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 stacklevel=2,
             )
 
-        cls.check_browser_capabilities()
-
     @classmethod
-    def check_browser_capabilities(cls):
-        validate_browser_capabilities(cls.browser_capabilities)
+    def get_browser_capability_check(cls):
+        """Return the module that screens participants' browsers.
+
+        PsyNet inserts the returned module at the start of the timeline when the
+        experiment class is defined. The default checks
+        :attr:`browser_capabilities` and returns ``None`` (no check) if that set
+        is empty. Override this method to customize the check, or return
+        ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`
+        in the timeline yourself.
+
+        The insertion happens on the class that defines ``timeline``; a subclass
+        that inherits its parent's timeline also inherits the parent's check.
+
+        Returns
+        -------
+        Module or None
+            The browser-check module, or ``None`` to skip automatic insertion.
+        """
+        if not cls.browser_capabilities:
+            return None
+        from .prescreen import BrowserCapabilityCheck
+
+        return BrowserCapabilityCheck(capabilities=cls.browser_capabilities)
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):

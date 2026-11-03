@@ -2690,10 +2690,21 @@ class Timeline:
         for name, content in default_branches.items():
             self.elts[name] = join(content)
 
+        self._compile()
+
+    def _compile(self):
         self.modules, self.module_list = self.compile_modules()
         self.check_elts()
         self.add_elt_ids()
         self.estimated_time_credit = CreditEstimate(list(self.all_elts))
+
+    def insert_at_start(self, *elts):
+        """Insert elements at the start of the main branch and recompile the timeline."""
+        for elt in self.all_elts:
+            elt.id = None
+        self.elts["main"] = join(*elts, self.elts["main"])
+        self.__dict__.pop("trial_makers", None)
+        self._compile()
 
     @property
     def all_elts(self):

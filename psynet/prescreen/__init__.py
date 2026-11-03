@@ -2139,7 +2139,12 @@ class BrowserCapabilityCheck(Module):
     """
     Prescreener that tests the participant's browser against declared capability
     requirements and terminates with :class:`~psynet.page.UnsuccessfulEndPage`
-    if any check fails.  Place near the start of the timeline.
+    if any check fails.
+
+    PsyNet inserts this module at the start of the timeline automatically when
+    ``Experiment.browser_capabilities`` is non-empty; see
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check` for how
+    to customize or disable that.
 
     Parameters
     ----------

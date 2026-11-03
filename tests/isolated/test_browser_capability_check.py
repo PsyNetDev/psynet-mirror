@@ -1,5 +1,63 @@
 import pytest
 
+from psynet.experiment import Experiment
+from psynet.page import InfoPage
+from psynet.prescreen import BrowserCapabilityCheck
+from psynet.timeline import Timeline
+
+
+def _make_timeline(*elts):
+    return Timeline(*elts, InfoPage("Hello", time_estimate=1))
+
+
+def test_experiment_inserts_capability_check_at_start():
+    class Exp(Experiment):
+        browser_capabilities = {"microphone"}
+        timeline = _make_timeline()
+
+    first = Exp.timeline.module_list[0]
+    assert isinstance(first, BrowserCapabilityCheck)
+    assert first.capabilities == {"microphone"}
+    assert Exp.timeline["main"][0].id == ["main", 0]
+
+
+def test_experiment_without_capabilities_has_no_check():
+    class Exp(Experiment):
+        timeline = _make_timeline()
+
+    assert not Exp.timeline.module_list
+
+
+def test_experiment_rejects_unknown_capability_at_definition():
+    with pytest.raises(ValueError, match="not_a_real_capability"):
+
+        class Exp(Experiment):
+            browser_capabilities = {"not_a_real_capability"}
+
+
+def test_experiment_rejects_check_already_in_timeline():
+    with pytest.raises(ValueError, match="get_browser_capability_check"):
+
+        class Exp(Experiment):
+            browser_capabilities = {"microphone"}
+            timeline = _make_timeline(BrowserCapabilityCheck())
+
+
+def test_experiment_can_place_check_manually():
+    class Exp(Experiment):
+        browser_capabilities = {"microphone"}
+
+        @classmethod
+        def get_browser_capability_check(cls):
+            return None
+
+        timeline = _make_timeline(
+            InfoPage("Consent", time_estimate=1), BrowserCapabilityCheck()
+        )
+
+    assert len(Exp.timeline.module_list) == 1
+    assert isinstance(Exp.timeline["main"][0], InfoPage)
+
 
 def test_browser_capability_check_default_instantiation():
     from psynet.prescreen import BrowserCapabilityCheck

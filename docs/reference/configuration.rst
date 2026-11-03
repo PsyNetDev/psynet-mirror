@@ -479,9 +479,10 @@ Allowed browsers and devices
     Default: ``True``.
 
 ``browser_capabilities`` *set* |psynet-icon| — *class attribute*
-    Declares the browser features your experiment requires. Participants whose
-    browsers lack a listed capability are screened out when you add
-    :class:`~psynet.prescreen.BrowserCapabilityCheck` to your timeline.
+    Declares the browser features your experiment requires. PsyNet inserts a
+    :class:`~psynet.prescreen.BrowserCapabilityCheck` at the start of your
+    timeline, which screens out participants whose browsers lack a listed
+    capability.
 
     Valid tokens:
 
@@ -504,8 +505,26 @@ Allowed browsers and devices
 
     Example::
 
-        class MyExperiment(PsyNet):
+        class Exp(psynet.experiment.Experiment):
             browser_capabilities = {"microphone", "video_recording"}
+
+    To change the inserted module, override
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check`. To
+    place the check somewhere else, for example after the consent page, make
+    that method return ``None`` and add the check to your timeline yourself::
+
+        class Exp(psynet.experiment.Experiment):
+            browser_capabilities = {"microphone"}
+
+            @classmethod
+            def get_browser_capability_check(cls):
+                return None
+
+            timeline = Timeline(
+                MainConsent(),
+                BrowserCapabilityCheck(),
+                ...
+            )
 
     PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
     Firefox 121+, Safari 15.4+); you do not need to add a token for that.
