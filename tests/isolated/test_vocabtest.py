@@ -48,15 +48,16 @@ def _make_vocab_test(tmp_path, **kwargs):
     csv_path.write_text(
         "stimulus,correct_answer\ncat,correct\ndog,correct\nxzz,incorrect\nqrv,incorrect\n"
     )
-    return VocabTest(
-        locale="en",
-        label="vocab",
-        csv_path=str(csv_path),
-        performance_threshold_per_trial=None,
-        n_items=4,
-        present_as_image=False,
-        **kwargs,
-    )
+    with pytest.warns(UserWarning, match="not presented as images"):
+        return VocabTest(
+            locale="en",
+            label="vocab",
+            csv_path=str(csv_path),
+            performance_threshold_per_trial=None,
+            n_items=4,
+            present_as_image=False,
+            **kwargs,
+        )
 
 
 def _score(vocab_test, hashes, answer):
