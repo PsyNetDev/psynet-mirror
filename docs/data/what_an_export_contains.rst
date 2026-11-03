@@ -60,8 +60,8 @@ The table CSVs hold the database values unchanged, so that they reload
 exactly. A participant's free-text answer that starts with ``=``, ``+``,
 ``-`` or ``@`` can therefore run as a formula if you open the CSV in a
 spreadsheet such as Excel. Read the tables with R or pandas, or import them
-in the spreadsheet with every column set to text. Basic data CSVs are
-protected against this (see :doc:`/data/basic_data`).
+in the spreadsheet with every column set to text. The same applies to basic
+data CSVs (see :doc:`/data/basic_data`).
 
 ``manifest.json`` also records the deployed Git commit
 (``git_commit_sha``), whether the working tree had uncommitted changes

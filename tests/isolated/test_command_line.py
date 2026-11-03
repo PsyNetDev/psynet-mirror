@@ -1681,27 +1681,6 @@ def test_export_data_writes_basic_data_folder_for_dataframes(
     ]
 
 
-def test_basic_data_csv_text_cannot_start_a_spreadsheet_formula(
-    monkeypatch, run_basic_data_export
-):
-    answers = ['=HYPERLINK("x")', "+cmd", "@SUM(A1)", "\tx", "-2", "-1e3", "ok"]
-    basic_data = {"trial": pd.DataFrame({"answer": answers, "score": [-1] * 7})}
-    _setup_basic_data_export(monkeypatch, basic_data)
-    export_path = run_basic_data_export()
-
-    exported = pd.read_csv(export_path / "basic_data/trial.csv", dtype=str)
-    assert list(exported["answer"]) == [
-        '\'=HYPERLINK("x")',
-        "'+cmd",
-        "'@SUM(A1)",
-        "'\tx",
-        "-2",
-        "-1e3",
-        "ok",
-    ]
-    assert set(exported["score"]) == {"-1"}
-
-
 def test_export_data_sanitizes_basic_data_dataframe_keys(
     monkeypatch, run_basic_data_export
 ):

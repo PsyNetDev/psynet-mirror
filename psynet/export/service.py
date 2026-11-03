@@ -231,26 +231,7 @@ def _write_basic_dataframes(export_path, data):
     used_filenames = set()
     for key, dataframe in data.items():
         filename = _make_basic_data_filename(key, filename_counts, used_filenames)
-        dataframe.apply(
-            lambda column: column.map(_neutralize_spreadsheet_formula)
-        ).to_csv(os.path.join(basic_data_dir, f"{filename}.csv"), index=False)
-
-
-_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _neutralize_spreadsheet_formula(value):
-    """Prefix ``'`` to text that a spreadsheet would run as a formula.
-
-    Numbers, and text that reads as a number such as ``"-2"``, are unchanged.
-    """
-    if not isinstance(value, str) or not value.startswith(_FORMULA_PREFIXES):
-        return value
-    try:
-        float(value)
-    except ValueError:
-        return "'" + value
-    return value
+        dataframe.to_csv(os.path.join(basic_data_dir, f"{filename}.csv"), index=False)
 
 
 def _write_basic_data_json(export_path, data):

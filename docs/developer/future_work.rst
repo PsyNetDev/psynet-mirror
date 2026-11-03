@@ -786,3 +786,27 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Give Lucid participants a secret ``unique_id``
+---------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The Lucid recruiter sets the worker, assignment and HIT ids all to the
+respondent's RID, so a Lucid participant's ``unique_id`` is ``RID:RID``.
+Anyone who knows the RID can open ``/timeline?unique_id=RID:RID`` and act
+as that participant, or terminate them through ``/terminate_participant``.
+
+Idea
+++++
+
+Generate the assignment id on the server when a Lucid participant is
+created, and update the Lucid callbacks that read ``assignment_id`` as the
+RID to use the stored RID instead.
+
