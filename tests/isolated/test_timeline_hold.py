@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from dominate import tags
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
@@ -454,3 +455,9 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+
+
+def test_compose_hold_overlay_html_escapes_strings_and_keeps_dominate_tags():
+    html = compose_hold_overlay_html(tags.strong("Waiting"), "<b>1</b> of 3")
+    assert "<strong>Waiting</strong>" in html
+    assert "&lt;b&gt;1&lt;/b&gt; of 3" in html

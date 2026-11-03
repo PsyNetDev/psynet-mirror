@@ -255,7 +255,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Optional[str] = None,
+    content: Union[str, Markup, dom_tag, None] = None,
     on_timeout: Optional[Callable] = None,
 ):
     """
@@ -307,7 +307,7 @@ def wait_while(
     content
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
-        for HTML.
+        or a dominate tag for HTML.
 
     on_timeout
         Optional function called with ``participant=...`` when

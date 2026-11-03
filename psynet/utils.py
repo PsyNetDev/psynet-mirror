@@ -687,7 +687,7 @@ _PSYNET_JINJA_LOCALES_KEY = "psynet_jinja_locale_envs"
 _PSYNET_STRING_TEMPLATE_CACHE_SIZE = 256
 
 
-def _finalize_template_value(value):
+def finalize_template_value(value):
     """Mark dominate tags as safe HTML before Jinja autoescapes template output.
 
     Dominate escapes the text it is given, so a rendered tag is trusted HTML.
@@ -742,7 +742,7 @@ def _translation_environment(app, locale):
         extensions=["jinja2.ext.i18n"],
         app=app,
         autoescape=app.select_jinja_autoescape,
-        finalize=_finalize_template_value,
+        finalize=finalize_template_value,
     )
     environment.install_gettext_translations(translation)
     environment.globals.update(**jinja_functions)

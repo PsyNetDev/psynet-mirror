@@ -9,18 +9,18 @@ from psynet.timeline import Timeline, join
 
 
 def print_dict(x):
-    return "<pre>" + json.dumps(x, indent=4) + "</pre>"
+    return Markup("<pre>{}</pre>").format(json.dumps(x, indent=4))
 
 
 def make_example(args):
     prompt = Markup(
-        f"""
+        """
         Raw slider value is <strong id="slider-raw-value">NA</strong> <br>
         Output slider value is <strong id="slider-output-value">NA</strong>
         (phase = <strong id="phase">NA</strong>, random wrap = <strong id="random-wrap">NA</strong>)
-        {print_dict(args)}
+        {settings}
         """
-    )
+    ).format(settings=print_dict(args))
 
     return join(
         ModularPage(

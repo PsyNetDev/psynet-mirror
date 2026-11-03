@@ -99,13 +99,21 @@ def test_button_text_escapes_strings_and_keeps_markup(app):
     assert "<kbd>B</kbd>" in trusted
 
 
-def test_graphic_text_is_written_as_json():
-    from psynet.graphics import Text
+def test_graphic_strings_are_written_as_json():
+    from psynet.graphics import Image, Path, Text
 
-    js = Text("label", PAYLOAD + "\\", x=0, y=0).js_init[-1]
+    value = PAYLOAD + "\\"
+    cases = [
+        (Text("label", value, x=0, y=0), "paper.text(0, 0, ", ");"),
+        (Path("path", value), "paper.path(", ");"),
+        (Image("image", value, x=0, y=0, width=1), "psynet.image[", "].url"),
+    ]
+    for graphic_object, before, after in cases:
+        js = graphic_object.js_init[-1]
+        start = js.index(before) + len(before)
 
-    assert "</script>" not in js
-    assert json.loads(js[js.index('"') : js.rindex(")")]) == PAYLOAD + "\\"
+        assert "</script>" not in js
+        assert json.loads(js[start : js.index(after, start)]) == value
 
 
 @pytest.mark.parametrize(

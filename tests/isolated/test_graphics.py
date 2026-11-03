@@ -25,7 +25,7 @@ def test_id():
 def test_image():
     img = Image("logo", "logo_src", x=50, y=50, width=76, height=25)
     assert img.js_init == [
-        "this.raphael = paper.image(psynet.image['logo_src'].url, 50, 50, 76, 25);"
+        'this.raphael = paper.image(psynet.image["logo_src"].url, 50, 50, 76, 25);'
     ]
 
 

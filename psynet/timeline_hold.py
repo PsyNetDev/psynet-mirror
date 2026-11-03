@@ -40,7 +40,12 @@ from sqlalchemy.orm import relationship
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
-from psynet.utils import call_function_with_context, get_logger, get_translator
+from psynet.utils import (
+    call_function_with_context,
+    finalize_template_value,
+    get_logger,
+    get_translator,
+)
 
 _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
@@ -194,14 +199,15 @@ def default_group_barrier_arrival_message(
 def compose_hold_overlay_html(title, progress_text=None):
     """Join a hold title with an optional progress line as ``Markup``.
 
-    Plain strings are escaped; trusted ``Markup`` is kept as HTML.
+    Plain strings are escaped; trusted ``Markup`` and dominate tags are kept as
+    HTML, as in page templates.
     """
     html = Markup('<span class="psynet-timeline-hold-title">{}</span>').format(
-        "" if title is None else title
+        "" if title is None else finalize_template_value(title)
     )
     if progress_text:
         html += Markup('<span class="psynet-timeline-hold-progress">{}</span>').format(
-            progress_text
+            finalize_template_value(progress_text)
         )
     return html
 
