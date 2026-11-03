@@ -96,7 +96,7 @@
 
         {% if participant is not none %}
             function copyURLForResumingSession() {
-                let url = {{ (app_base_url ~ "/timeline?unique_id=" ~ (participant.unique_id | urlencode)) | tojson }};
+                let url = {{ get_timeline_url(participant).unescape() | tojson }};
                 navigator.clipboard.writeText(url).then(function() {
                   console.log("Copied URL to cliboard.");
                 });

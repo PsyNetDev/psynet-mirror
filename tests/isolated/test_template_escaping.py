@@ -39,6 +39,7 @@ def app(db_session, deployment_info, monkeypatch):
                 {
                     "base/layout.html": layout,
                     "base/consent.html": layout,
+                    "base/dashboard.html": layout,
                     "layout.html": layout,
                 }
             ),
@@ -244,3 +245,95 @@ def test_response_visualizations_keep_markup_labels(control_class):
 
     assert "<b>A</b>" in html
     assert "<script>alert(1)" not in html
+
+
+def _between(text, start, end):
+    text = text[text.index(start) + len(start) :]
+    return text[: text.index(end)]
+
+
+def test_basic_data_dashboard_escapes_data_and_json_encodes_the_url(app):
+    from psynet.experiment import get_experiment
+
+    url = "https://x/basic_data?a=1&b='\");alert(1)//"
+
+    class Exp(type(get_experiment())):
+        basic_data_url = url
+
+        @classmethod
+        def get_basic_data(cls, context=None, **kwargs):
+            return [{"answer": PAYLOAD}]
+
+    with app.test_request_context("/"):
+        html = Exp.dashboard_data()
+    copied = _between(html, "onclick='copyToClipboard(", ")'>Copy data URL")
+
+    assert "<script>alert(1)" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in _between(html, "<pre>", "</pre>")
+    assert "'" not in copied
+    assert json.loads(copied) == url
+
+
+def test_timeline_dashboard_module_ids_cannot_close_the_script(app, monkeypatch):
+    from psynet.experiment import get_experiment
+
+    experiment = get_experiment()
+    module_id = "</script><script>alert(1)//"
+    monkeypatch.setattr(experiment.timeline.module_list[0], "id", module_id)
+    with app.test_request_context("/"):
+        html = experiment.dashboard_timeline()
+    modules = _between(html, "window.timelineModules = ", ";\n")
+
+    assert "</script>" not in modules
+    assert json.loads(modules)["modules"][0]["id"] == module_id
+
+
+def test_lucid_dashboard_renders_pandas_data_as_json(app):
+    import numpy as np
+    import pandas as pd
+    from flask import render_template
+
+    from psynet.dashboard.lucid import TEMPLATE_NAME, _json_safe
+
+    data = [
+        {
+            "rid": "r1",
+            "participant_id": np.int64(7),
+            "reason": "</script>" + PAYLOAD,
+            "value": np.nan,
+            "registered_at": pd.Timestamp("2026-01-01"),
+            "type": "Terminated",
+        }
+    ]
+    chart = {"data": _json_safe(data), "type2color": {}, "n_bins": np.int64(1)}
+    params = {"respondents": {**chart, "x_dict": {}}, "response_per_participant": chart}
+    with app.test_request_context("/"):
+        html = render_template(TEMPLATE_NAME, title="Lucid", html="", params=params)
+    charts = [
+        chunk[: chunk.index(";\n")] for chunk in html.split("responseData = ")[1:]
+    ]
+    response_data = charts[0]
+
+    assert len(charts) == 2 and "</script>" not in "".join(charts)
+    assert '"participant_id": 7' in response_data
+    assert '"value": NaN' in response_data
+    assert '"registered_at": "2026-01-01 00:00:00"' in response_data
+
+
+def test_participant_dashboard_copies_the_linked_resume_url(app):
+    from html import unescape
+
+    from flask import render_template
+
+    participant = SimpleNamespace(id=1, unique_id="1:a\"'&<b>", bonus=None)
+    with app.test_request_context("/"):
+        html = render_template(
+            "dashboard_participant.html",
+            participant=participant,
+            participants_needing_review=[],
+            app_base_url="https://x",
+        )
+    link = unescape(_between(html, '<a href="', '" target="_blank">'))
+
+    assert json.loads(_between(html, "let url = ", ";\n")) == link
+    assert link == "https://x/timeline?unique_id=1%3Aa%22%27%26%3Cb%3E"
