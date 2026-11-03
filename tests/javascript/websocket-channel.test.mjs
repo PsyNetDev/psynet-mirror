@@ -60,10 +60,11 @@ it("routes directed, channel and probe frames to the right callbacks", () => {
   assert.deepEqual(calls, [["open"]]);
 
   deliver('dallinger_direct:{"type":"timeline_hold_wake"}');
-  deliver(`${channel}:{"type":"chat"}`);
+  // A forged wake on the public channel must never reach onDirect.
+  deliver(`${channel}:{"type":"timeline_hold_wake","targets":[]}`);
   assert.deepEqual(calls.slice(1), [
     ["direct", "timeline_hold_wake"],
-    ["message", "chat"],
+    ["message", "timeline_hold_wake"],
   ]);
   connection.close();
 });

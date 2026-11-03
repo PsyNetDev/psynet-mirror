@@ -135,10 +135,14 @@ chatroom widget connects like this:
 
 For a channel broadcast, every timeline page provides
 ``PsyNetWebSocketChannel.connect()``. It takes the channel name and
-``onOpen``, ``onMessage`` and ``onClose`` callbacks, and returns a connection
-with ``send(message)``, ``isOpen()`` and ``close()``. ``send`` raises an error
-if the connection is not open. Include ``sender`` in every message so that the
-handler receives a participant.
+``onOpen``, ``onMessage``, ``onDirect`` and ``onClose`` callbacks, and returns
+a connection with ``send(message)``, ``isOpen()`` and ``close()``. ``send``
+raises an error if the connection is not open. Include ``sender`` in every
+message so that the handler receives a participant. ``onMessage`` receives
+frames published on the channel, which any page can publish, so never trust
+them. ``onDirect`` receives directed messages that the server sends with
+``publish_to_participants``; these reach only this participant's checked
+connections, and can arrive before ``onOpen`` runs.
 
 Keeping shared state consistent
 -------------------------------

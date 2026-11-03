@@ -63,6 +63,9 @@ experiment = [
     # (#10100, #10229), check_recruiter_exit (#10239) and check_worker_status
     # (#10268) are on PyPI. The SHA is the head of #10287's branch, which is
     # stacked on #10281; move it to Dallinger master once they merge.
+    # #10287 (participant socket admission and scope check) is a security
+    # requirement for directed timeline-hold wakes: never move this pin to a
+    # Dallinger without it.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@039e385379e6d86b7f6a7b9c9bb44bd6e0f6d934",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:

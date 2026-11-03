@@ -133,7 +133,8 @@
    * ``onMessage`` receives what any page publishes on the channel, so never
    * trust it. ``onDirect`` receives what the server sends this participant
    * with ``publish_to_participants``; PsyNet accepts the socket only with the
-   * participant's token, so only they get it. Dallinger registers a socket
+   * participant's token, so only they get it. Directed frames can arrive
+   * before ``onOpen`` runs. Dallinger registers a socket
    * for directed sends before it reads the socket's frames, so a probe echo
    * normally means directed sends reach it too; if Dallinger's listener is
    * slow to confirm, it proceeds anyway, and the hold's safety poll covers a
