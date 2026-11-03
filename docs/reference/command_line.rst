@@ -271,7 +271,9 @@ customized helpers and other files under ``docker/`` are kept. This is **not**
 Remove scaffold-managed boilerplate and generated leftovers (a
 ``static/assets`` link left by older PsyNet versions, untracked
 ``constraints.txt``), leaving authored files such as ``experiment.py`` and
-``requirements.txt``. A real ``static/assets`` file or directory is kept.
+``requirements.txt``. A real ``static/assets`` file or directory is kept,
+but the stock ``.gitignore`` and ``deploy.toml`` exclude it, so it is not
+tracked or deployed.
 
 By default only unmodified, untracked scaffold paths are removed. Git-tracked
 managed paths are kept. ``--include-modified`` also removes divergent untracked

@@ -47,6 +47,26 @@ def test_responses_send_security_headers(client):
     assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
 
 
+def test_an_experiment_can_allow_framing_in_after_request(client, monkeypatch):
+    """The recipe in the changelog works when Dallinger calls it on the class."""
+    from dallinger.experiment_server import experiment_server
+
+    import psynet.experiment
+
+    class Exp(psynet.experiment.Experiment):
+        @classmethod
+        def after_request(cls, request, response):
+            response = super().after_request(request, response)
+            response.headers.pop("X-Frame-Options", None)
+            return response
+
+    monkeypatch.setattr(experiment_server, "exp_klass", Exp)
+    response = client.get("/start")
+
+    assert "X-Frame-Options" not in response.headers
+    assert response.headers["Referrer-Policy"] == "same-origin"
+
+
 def test_a_logged_route_accepts_a_unique_id_that_names_no_participant(client):
     from psynet.experiment import Request
 
@@ -78,6 +98,7 @@ def lucid(client, monkeypatch):
         ("assignmentId=rid", False),
         ("unique_id=rid:rid", True),
         ("RID=rid&unique_id=rid:rid", True),
+        ("assignmentId=rid&unique_id=rid:rid", True),
         ("RID=rid&unique_id=rid:missing", False),
         ("assignmentId=rid&RID=other&unique_id=rid:rid", False),
     ],

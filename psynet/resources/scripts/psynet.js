@@ -4039,6 +4039,7 @@
           new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
+    psynet.terminateParticipant = terminateParticipant;
 
     function checkTriedToLeave() {
       if (triedToLeave) {

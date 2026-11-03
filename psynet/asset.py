@@ -111,13 +111,15 @@ def _safe_asset_subpath(subpath: Optional[str]) -> Optional[str]:
 
 
 # Types a browser runs as a document or script; a participant-named asset of
-# one of these types must not run with the experiment origin's cookies.
+# one of these types, or of any ``+xml`` type, must not run with the
+# experiment origin's cookies.
 _ACTIVE_ASSET_MIMETYPES = frozenset(
     {
         "text/html",
         "application/xhtml+xml",
         "image/svg+xml",
         "text/xml",
+        "text/xsl",
         "application/xml",
         "text/javascript",
         "application/javascript",
@@ -142,7 +144,8 @@ def _sandbox_asset_response(response):
     # Chrome's built-in PDF viewer shows nothing for a sandboxed document.
     if response.mimetype != "application/pdf":
         response.headers["Content-Security-Policy"] = "sandbox"
-    if response.mimetype in _ACTIVE_ASSET_MIMETYPES:
+    mimetype = response.mimetype or ""
+    if mimetype in _ACTIVE_ASSET_MIMETYPES or mimetype.endswith("+xml"):
         disposition = response.headers.get("Content-Disposition", "inline")
         _, separator, parameters = disposition.partition(";")
         response.headers["Content-Disposition"] = "attachment" + separator + parameters

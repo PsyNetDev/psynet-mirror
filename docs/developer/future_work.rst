@@ -810,8 +810,8 @@ Generate the assignment id on the server when a Lucid participant is
 created, and update the Lucid callbacks that read ``assignment_id`` as the
 RID to use the stored RID instead.
 
-Stop excluding ``static/assets`` from deployments
--------------------------------------------------
+Stop excluding ``static/assets`` from deployments and Git
+---------------------------------------------------------
 
 Date
 ++++
@@ -823,13 +823,16 @@ Problem
 
 The stock ``deploy.toml`` excludes ``static/assets`` because older PsyNet
 versions left a link to local asset storage there, and deployment plans
-reject links. PsyNet no longer creates that link, so the exclusion now only
-drops an author's own ``static/assets`` folder without a warning.
+reject links; the stock experiment ``.gitignore`` also ignores it as
+generated content. PsyNet no longer creates that link, so these exclusions now only
+leave an author's own ``static/assets`` folder untracked and undeployed
+without a warning.
 
 Idea
 ++++
 
 Once few experiments still have the link, remove the exclusion from the
-template, and have debug and deploy commands remove a leftover link (or
-point to ``psynet scripts prune``) before they build the deployment plan.
+``deploy.toml`` and ``.gitignore`` templates, and have debug and deploy
+commands remove a leftover link (or point to ``psynet scripts prune``) before
+they build the deployment plan.
 

@@ -107,6 +107,7 @@ def test_local_storage_serve_file(tmp_path, asset_extension):
     [
         (".html", "attachment", "sandbox"),
         (".svg", "attachment", "sandbox"),
+        (".xslt", "attachment", "sandbox"),
         (".png", "inline", "sandbox"),
         (".pdf", "inline", None),
     ],

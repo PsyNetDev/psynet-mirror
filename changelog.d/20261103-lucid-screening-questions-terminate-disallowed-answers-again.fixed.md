@@ -1,0 +1,1 @@
+Choosing a disallowed answer on a Lucid screening question (`LucidScreeningQuestion` and its subclasses) terminates the participant and returns them to Lucid again; since PsyNet 13.2 the click raised a JavaScript error and did nothing. The ad and consent pages also no longer raise a JavaScript error after their mobile-phone check redirects to Lucid.
