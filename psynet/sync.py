@@ -2635,7 +2635,7 @@ def _time_out_overdue_waiters(sweep_ends):
             logger.exception("Failed to time out overdue waiter %s.", participant_id)
 
 
-def arrival_notice_payload(participant_id):
+def arrival_notice_payload(unique_id):
     """Return the partner-ready notice snapshot for one participant.
 
     Redis arrival wakes are fire-and-forget. The browser fetches this when
@@ -2644,9 +2644,9 @@ def arrival_notice_payload(participant_id):
     """
     from psynet.participant import Participant
 
-    if participant_id is None or participant_id == "":
+    if not unique_id:
         return {"notice": None}
-    participant = Participant.query.get(participant_id)
+    participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
         return {"notice": None}
     return {"notice": pending_arrival_notice_for(participant)}

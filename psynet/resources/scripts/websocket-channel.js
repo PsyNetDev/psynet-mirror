@@ -12,10 +12,10 @@
       location.host +
       "/chat?channel=" +
       encodeURIComponent(channel) +
-      "&worker_id=" +
-      encodeURIComponent(dallinger.identity.workerId) +
       "&participant_id=" +
-      encodeURIComponent(dallinger.identity.participantId)
+      encodeURIComponent(dallinger.identity.participantId) +
+      "&scope=" +
+      encodeURIComponent(psynetTemplateData.websocketScope)
     );
   }
 

@@ -945,13 +945,13 @@
     };
 
     psynet.fetchArrivalNotice = function () {
-      if (psynet.participantId === undefined || typeof $ === "undefined") {
+      if (psynet.uniqueId === undefined || typeof $ === "undefined") {
         return;
       }
       $.ajax({
         url: "/timeline/arrival_notice",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
       }).done(function (data) {
         if (!psynet.arrivalUpdates) {
           return;
@@ -3896,11 +3896,11 @@
   })();
 
   let updateProgressAndReward = function () {
-    if (psynet.participantId !== undefined) {
+    if (psynet.uniqueId !== undefined) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
         error: function (request) {
           if (psynet.isUnknownParticipantResponse(request)) {
             clearInterval(psynet.progressAndRewardTimer);

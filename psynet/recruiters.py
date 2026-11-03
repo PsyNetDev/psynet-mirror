@@ -1554,6 +1554,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             "exit_recruiter_prolific_submitted.html",
             assignment_id=participant.assignment_id,
             participant_id=participant.id,
+            unique_id=participant.unique_id,
             submission_recorded=recorded,
             confirmation_heading=heading,
             confirmation_body=body,

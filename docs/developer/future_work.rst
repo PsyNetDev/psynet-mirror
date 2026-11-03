@@ -785,3 +785,51 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Chat room membership is self-declared
+-------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``EnableChatrooms`` now checks who sends each chat frame, but not which
+rooms a participant may join. A participant who knows or guesses another
+room's ``room_id``, such as a sequential group id, can join it and read
+its history and new messages.
+
+Idea
+++++
+
+Record the room ids a participant's pages render a ``ChatRoom`` with, for
+example on the participant when the page is rendered, and have
+``join_room`` refuse any other room.
+
+Websocket chatroom demo trusts the sender field
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``demos/features/websocket_chatroom`` opens ``/chat`` without a
+participant and broadcasts every message on one channel. Its
+``receive_message`` stores each message under the participant that the
+frame's ``sender`` field names, so any page can post as anyone and read
+every room.
+
+Idea
+++++
+
+Port the demo to ``dallinger.openExperimentSocket`` with
+``psynetTemplateData.websocketScope``, a ``WebSocketElt`` with
+``requires_checked_connection = True``, and directed sends to room
+members, as ``psynet.chatroom`` does.

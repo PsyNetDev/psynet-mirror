@@ -5698,7 +5698,9 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
         for message in hold_messages
     )
     assert pending_arrival_notice_for(last) == "Your partner is ready."
-    assert arrival_notice_payload(last.id) == {"notice": "Your partner is ready."}
+    assert arrival_notice_payload(last.unique_id) == {
+        "notice": "Your partner is ready."
+    }
     assert arrival_notice_payload(None) == {"notice": None}
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "Waiting for your partner" in overlay

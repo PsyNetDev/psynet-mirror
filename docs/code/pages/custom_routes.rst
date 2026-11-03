@@ -87,7 +87,8 @@ greeting and a random number:
 
 Arguments come from the query string for GET requests and from the JSON body
 for POST requests (for example ``/api/hello?name=world``), and the return
-value is sent back as the response. A dictionary arrives as JSON:
+value is sent back as the response. A string arrives as plain text, so a
+browser never runs it as HTML, and a dictionary arrives as JSON:
 
 .. code-block:: javascript
 
