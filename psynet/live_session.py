@@ -145,7 +145,7 @@ class LiveMessage(BaseModel):
         as it was.
 
         :param game: the game, for its settings or to call
-            :meth:`~dallinger.realtime.RealtimeGame.queue_effect`
+            :meth:`~LiveSession.queue_effect`
         :param state: the session's state
         :param player_id: the sender's player id
         :param now: when the message arrived, in seconds since the session
@@ -295,6 +295,21 @@ class LiveSession(RealtimeGame):
         itself.
         """
         self.read_message(message).apply(self, state, player_id, now)
+
+    def queue_effect(self, name, payload):
+        """Queue an effect, as
+        :meth:`~dallinger.realtime.RealtimeGame.queue_effect` does, with the
+        payload converted to plain data in the same way as the state. A
+        message's fields can go in the payload as they are.
+        """
+        try:
+            payload = to_jsonable_python(payload)
+        except (ValueError, TypeError) as error:
+            raise ValueError(
+                f"The {name!r} effect's payload holds a value PsyNet can't "
+                f"convert to JSON. {error}."
+            ) from None
+        super().queue_effect(name, payload)
 
     def read_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.

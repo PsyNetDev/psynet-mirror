@@ -9,6 +9,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.models import RealtimeSession
 from dallinger.realtime import RealtimeGame, Reject, Sent
+from dallinger.realtime.game import queued_effects
 from dallinger.realtime.store import RUNNING
 from pydantic import BaseModel, ConfigDict
 
@@ -620,6 +621,41 @@ def test_the_state_is_converted_after_a_rejected_message(registry):
     game.tick(state, 1)
 
     assert state == {"ticked": [1]}
+
+
+class Paint(LiveMessage):
+    type = "paint"
+    colour: Colour
+    when: datetime.datetime
+
+    def apply(self, game, state, player_id, now):
+        game.queue_effect("painted", {"colour": self.colour, "when": self.when})
+
+
+def test_an_effect_s_payload_is_converted_to_json(registry):
+    class Painting(LiveSession):
+        messages = [Paint]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+    message = {
+        "type": "paint",
+        "message": {"colour": "red", "when": "2026-11-03T09:30:00"},
+    }
+    effects = []
+    token = queued_effects.set(effects)
+    try:
+        Painting().apply({}, "1", message, 0, Sent())
+        with pytest.raises(ValueError, match="'kept' effect's payload holds a value"):
+            Painting().queue_effect("kept", {"thing": Thing()})
+    finally:
+        queued_effects.reset(token)
+
+    assert effects == [("painted", {"colour": "red", "when": "2026-11-03T09:30:00"})]
 
 
 def test_a_game_can_turn_the_conversion_off(registry):
