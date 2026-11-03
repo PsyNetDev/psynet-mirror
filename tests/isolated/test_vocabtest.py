@@ -48,12 +48,12 @@ def _make_vocab_test(tmp_path, **kwargs):
     csv_path.write_text(
         "stimulus,correct_answer\ncat,correct\ndog,correct\nxzz,incorrect\nqrv,incorrect\n"
     )
+    kwargs.setdefault("performance_threshold_per_trial", None)
     with pytest.warns(UserWarning, match="not presented as images"):
         return VocabTest(
             locale="en",
             label="vocab",
             csv_path=str(csv_path),
-            performance_threshold_per_trial=None,
             n_items=4,
             present_as_image=False,
             **kwargs,
@@ -93,9 +93,36 @@ def test_vocab_scores_only_complete_answers(tmp_path):
     assert _score(vocab_test, hashes, correct) == 1
     assert _score(vocab_test, hashes, correct[:1]) == 0
     assert _score(vocab_test, hashes, correct[:1] * 4) == 0
+    assert _score(vocab_test, hashes, list(reversed(correct))) == 0
     assert (
         _score(vocab_test, hashes, [{**item, "answer": "yes"} for item in correct]) == 0
     )
+
+
+def test_vocab_performance_check_scores_the_latest_trial(tmp_path):
+    vocab_test = _make_vocab_test(
+        tmp_path, n_trials=2, performance_threshold_per_trial=1
+    )
+    seed = vocab_test.start_nodes[0].seed
+    hashes = [item["hash"] for item in seed]
+    correct = [
+        {
+            "hash": item["hash"],
+            "answer": "real" if item["stimulus"] in ("cat", "dog") else "fake",
+        }
+        for item in seed
+    ]
+
+    def trial(answer):
+        return SimpleNamespace(
+            id=1,
+            definition={"hashes": hashes},
+            node=SimpleNamespace(seed=seed),
+            answer=answer,
+        )
+
+    result = vocab_test.performance_check(None, None, [trial(correct), trial(None)])
+    assert result["passed"] is False
 
 
 @pytest.mark.parametrize("answer", [None, "real", {"hash": "h", "answer": "real"}])

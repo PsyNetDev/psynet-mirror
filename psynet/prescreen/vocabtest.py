@@ -791,7 +791,7 @@ class VocabTest(StaticTrialMaker):
             )
 
     def performance_check(self, experiment, participant, participant_trials):
-        score = self.score_trial(participant_trials[0])
+        score = self.score_trial(participant_trials[-1])
         passed = (
             True
             if self.performance_threshold_per_trial is None

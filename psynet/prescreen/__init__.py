@@ -827,7 +827,8 @@ def _opaque_media_asset(url):
     fall back to an :class:`~psynet.asset.ExternalAsset` that the browser loads
     directly.
     """
-    if urlparse(url).scheme not in ("http", "https"):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
         warnings.warn(
             f"Pre-screen media URL {url!r} is not an http(s) URL, so it is served "
             "unchanged and participants can see it. Use an http(s) media_url to "
@@ -837,7 +838,7 @@ def _opaque_media_asset(url):
     return OnDemandAsset(
         function=_download_media,
         arguments={"source_url": url},
-        extension=get_extension(url),
+        extension=get_extension(parsed.path),
     )
 
 
