@@ -166,15 +166,24 @@
             }
         }
 
+        function escapeBrowserWarningHtml(value) {
+            return String(value)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
         function renderBrowserWarning() {
             hideResumeModal();
             var warningMsg = "";
             if (browser.forceGoogleChrome) {
                 if (!browser.isChrome) {
-                    warningMsg = "{{ pgettext("browser_compatibility", "You need to use Google Chrome to take part in the experiment.")  | replace('"',"'")|safe }} {{ pgettext("browser_compatibility", "You are using")  | replace('"',"'")|safe }} " + browser.name + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
+                    warningMsg = "{{ pgettext("browser_compatibility", "You need to use Google Chrome to take part in the experiment.")  | replace('"',"'")|safe }} {{ pgettext("browser_compatibility", "You are using")  | replace('"',"'")|safe }} " + escapeBrowserWarningHtml(browser.name) + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
                 } else {
                     if (browser.isOldVersion) {
-                        warningMsg = "{{ pgettext("browser_compatibility", "You need to use the latest version of Google Chrome to take part in the experiment.")  | replace('"',"'") | safe  }}  (> " + browser.minVersion + "). {{ pgettext("browser_compatibility", "You are using:") | replace('"',"'") | safe }}: " + browser.version + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
+                        warningMsg = "{{ pgettext("browser_compatibility", "You need to use the latest version of Google Chrome to take part in the experiment.")  | replace('"',"'") | safe  }}  (> " + escapeBrowserWarningHtml(browser.minVersion) + "). {{ pgettext("browser_compatibility", "You are using:") | replace('"',"'") | safe }}: " + escapeBrowserWarningHtml(browser.version) + ". {{ pgettext("browser_compatibility", "Please follow the instructions below to continue.")  | replace('"',"'") | safe }}";
                     }
                 }
             }
@@ -356,7 +365,7 @@
 
         function renderCopyArea(id, text) {
             var out = '<div class="input-group my-3">';
-            out += '<input id="' + id + '" type="text" class="form-control" value="' + text + '" readonly>';
+            out += '<input id="' + id + '" type="text" class="form-control" value="' + escapeBrowserWarningHtml(text) + '" readonly>';
             out += '<div class="input-group-append">';
             out += '<button onclick="browser.onclickCopy(\'' + id + '\')" class="btn btn-outline-secondary" type="button" id="copy-button">';
             out += getIcon('copy-outline');
