@@ -6,6 +6,7 @@ import warnings
 from datetime import time
 from hashlib import sha256
 from importlib import resources
+from pathlib import Path
 from typing import Optional, Type
 
 import arabic_reshaper
@@ -599,7 +600,7 @@ class VocabTest(StaticTrialMaker):
                 os.chmod(temp_path, 0o644)
                 os.replace(temp_path, font_path)
             except BaseException:
-                os.unlink(temp_path)
+                Path(temp_path).unlink(missing_ok=True)
                 raise
         return os.path.abspath(font_path)
 
