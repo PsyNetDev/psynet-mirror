@@ -348,8 +348,15 @@ migration instructions in the error.
 
 * Phones and tablets are allowed by default. Set
   ``allow_mobile_devices = false`` to keep a study desktop-only.
-* Default ``min_browser_version`` is Chrome 105. Lower it in
-  ``config.txt`` only if you must admit older browsers.
+* ``force_google_chrome`` now defaults to ``false`` and is deprecated, so
+  Chrome, Edge, Firefox and Safari are admitted. Every experiment rejects
+  browsers without CSS ``:has()`` support (Chrome < 105, Firefox < 121,
+  Safari < 15.4), and ``min_browser_version`` has been removed: delete it
+  from ``config.txt`` and ``~/.dallingerconfig``, because PsyNet refuses to
+  start with unknown config keys. Declare
+  required features such as ``{"microphone"}`` in
+  ``Experiment.browser_capabilities`` instead; see
+  :doc:`/reference/configuration`.
 * Leaving ``show_reward`` unset means the recruiter decides: Prolific and
   lab show it, generic/local do not, Lucid hides it. Set
   ``show_reward = true`` to show it anyway where the recruiter allows.

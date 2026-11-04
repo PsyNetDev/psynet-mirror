@@ -18,6 +18,13 @@ AudioForcedChoiceTest
 .. autoclass:: psynet.prescreen.AudioForcedChoiceTrial
     :members:
 
+======================
+BrowserCapabilityCheck
+======================
+
+.. autoclass:: psynet.prescreen.BrowserCapabilityCheck
+    :members:
+
 ==================
 ColorBlindnessTest
 ==================

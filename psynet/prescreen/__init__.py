@@ -21,6 +21,7 @@ from psynet.modular_page import (
     ColorPrompt,
     ImagePrompt,
     ModularPage,
+    NullControl,
     PushButtonControl,
     RadioButtonControl,
     TextControl,
@@ -2087,3 +2088,170 @@ class AudioForcedChoiceTest(StaticTrialMaker):
             )
             for i, stimulus in enumerate(stimuli)
         ]
+
+
+class BrowserCapabilityCheckPage(ModularPage):
+    """Spinner page that runs JS capability checks and submits pass/fail result."""
+
+    skip_beforeunload = True
+
+    def __init__(self, capabilities, label="browser_capability_check"):
+        spinner = Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))
+
+        super().__init__(
+            label=label,
+            prompt=spinner,
+            control=NullControl(),
+            time_estimate=0.0,
+            show_next_button=False,
+            js_vars={"capabilities": sorted(capabilities)},
+            js_page_modules=["/static/scripts/browser-capability-check.js"],
+        )
+
+    def get_bot_response(self, experiment, bot, page=None, prompt=None):
+        from psynet.bot import BotResponse
+
+        return BotResponse(answer={"passed": True}, metadata=self.metadata())
+
+
+def _browser_capability_permission_intro(perm_caps):
+    """InfoPage explaining an upcoming browser permission prompt."""
+    has_mic = "microphone" in perm_caps
+    has_cam = "camera" in perm_caps
+    if has_mic and has_cam:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone and camera are working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone and camera.",
+        )
+    elif has_mic:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone.",
+        )
+    else:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your camera is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your camera.",
+        )
+    allow_sentence = _p(
+        "browser_capability_check",
+        "Please click Allow when prompted.",
+    )
+    return InfoPage(
+        Markup("<p>{}</p><p>{} {}</p>").format(
+            check_sentence, access_sentence, allow_sentence
+        ),
+        time_estimate=5.0,
+    )
+
+
+def _capability_failure_prompt(missing):
+    """Return a translated Markup paragraph explaining which capability failed."""
+    if missing == "microphone":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your microphone. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "camera":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your camera. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "screen_capture":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support screen capture.",
+        )
+    elif missing == "video_recording":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support video recording.",
+        )
+    elif missing == "audio_playback":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support audio playback.",
+        )
+    else:
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not meet the technical requirements for this experiment.",
+        )
+    return Markup("<p>{}</p>").format(msg)
+
+
+class BrowserCapabilityCheck(Module):
+    """
+    Prescreener that tests the participant's browser against declared capability
+    requirements and terminates with :class:`~psynet.page.UnsuccessfulEndPage`
+    if any check fails.
+
+    PsyNet inserts this module at the start of the timeline automatically when
+    ``Experiment.browser_capabilities`` is non-empty; see
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check` for how
+    to customize or disable that.
+
+    Parameters
+    ----------
+    capabilities : iterable of str
+        Capability tokens to test, typically ``Experiment.browser_capabilities``.
+    label : str
+        Module label, also used as the failure tag.
+    """
+
+    def __init__(self, capabilities, label="browser_capability_check"):
+        from psynet.experiment import validate_browser_capabilities
+
+        self.capabilities = validate_browser_capabilities(capabilities)
+        super().__init__(label, self._make_elts(label))
+
+    def _make_elts(self, label):
+        from psynet.experiment import PERMISSION_CAPABILITY_TOKENS
+
+        caps = self.capabilities
+        if not caps:
+            return []
+
+        def _make_fail_page(participant):
+            missing = (
+                participant.answer.get("missing")
+                if isinstance(participant.answer, dict)
+                else None
+            )
+            return InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)
+
+        perm_caps = caps & PERMISSION_CAPABILITY_TOKENS
+        return join(
+            _browser_capability_permission_intro(perm_caps) if perm_caps else None,
+            BrowserCapabilityCheckPage(caps, label=label),
+            conditional(
+                f"{label}_fail",
+                lambda participant: (
+                    isinstance(participant.answer, dict)
+                    and not participant.answer.get("passed", True)
+                ),
+                [
+                    PageMaker(_make_fail_page, time_estimate=5.0),
+                    UnsuccessfulEndPage(failure_tags=[label]),
+                ],
+            ),
+        )

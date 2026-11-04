@@ -787,6 +787,99 @@ Idea
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
 
+Incognito warning when detection is unavailable
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``force_incognito_mode = true``, browsers where incognito detection
+fails (such as Firefox) are rejected with a message asking the
+participant to open an incognito window. Now that ``force_google_chrome``
+defaults to ``false``, Firefox participants are admitted otherwise, and
+following that instruction in a private Firefox window shows the same
+message again.
+
+Idea
+++++
+
+When ``browser.incognitoDetectionFailed`` is true, also suggest opening
+the experiment in an incognito window of a browser where detection works,
+such as Chrome.
+
+Single permission prompt and retry in the browser capability check
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``browser_capabilities = {"microphone", "camera"}``, the capability
+check calls ``getUserMedia`` once per device, so the browser can ask twice
+although the intro page promises one request. A participant who dismisses
+a prompt by accident goes straight to the unsuccessful end page, and a
+participant who ignores the prompt waits on the spinner indefinitely.
+
+Idea
+++++
+
+Request audio and video in one ``getUserMedia`` call when both are needed,
+and offer a retry button on the failure page before ending the experiment.
+
+Name every failed capability on the browser capability failure page
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``browser-capability-check.js`` stops at the first failing capability,
+in alphabetical order, so the failure page names only that one. In a
+manual test with ``browser_capabilities = {"microphone", "camera"}``
+and both devices denied, the page said only "We were unable to access
+your camera", so a participant might fix the camera and fail again on
+the microphone.
+
+Idea
+++++
+
+Run every check, collect all failures, and list each failed capability
+on the failure page.
+
+Browser-neutral incognito instructions for Chromium browsers
+------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``browser.isChrome`` in ``browser-detect.html`` now covers every
+Chromium-based browser, so Edge, Brave and Opera users who must use
+incognito mode get instructions that name Chrome.
+
+Idea
+++++
+
+Rename the flag to ``isChromium`` and use browser-neutral wording when
+``browser.name`` is not ``Chrome``.
+
 Re-host pre-screen stimuli under neutral names
 ----------------------------------------------
 
