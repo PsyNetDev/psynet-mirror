@@ -274,20 +274,15 @@ def format_path_list(paths, limit=10):
     return "\n".join(lines)
 
 
-def warn_about_uncommitted_deployment_changes(confirm):
+def warn_about_uncommitted_deployment_changes(confirm_or_cancel):
     """Warn before a deployment whose files have uncommitted changes.
 
     Parameters
     ----------
-    confirm : callable or None
-        Asks the user whether to continue and returns a boolean. ``None``
-        (non-interactive sessions) only warns, so scripted deployments keep
-        working.
-
-    Raises
-    ------
-    click.Abort
-        If the user declines to continue.
+    confirm_or_cancel : callable or None
+        Asks the user whether to deploy anyway and cancels the deployment if
+        they decline. ``None`` (non-interactive sessions) only warns, so
+        scripted deployments keep working.
     """
     import click
 
@@ -295,7 +290,7 @@ def warn_about_uncommitted_deployment_changes(confirm):
     if not paths:
         return
     click.secho(
-        "Warning: these deployed files have uncommitted changes:\n"
+        "Warning: these files have changes that aren't committed to Git:\n"
         f"{format_path_list(paths)}\n"
         "The deployment records the Git commit, so it will not match your "
         "files exactly, and 'psynet export' will ask you to confirm the "
@@ -303,8 +298,8 @@ def warn_about_uncommitted_deployment_changes(confirm):
         fg="yellow",
         err=True,
     )
-    if confirm is not None and not confirm("Deploy with uncommitted changes?"):
-        raise click.Abort
+    if confirm_or_cancel is not None:
+        confirm_or_cancel("Deploy anyway?")
 
 
 def init(
