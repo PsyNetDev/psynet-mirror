@@ -30,14 +30,19 @@ export class RecordingDevices {
         stream = await (source === "camera"
           ? navigator.mediaDevices.getUserMedia({video:true, audio})
           : navigator.mediaDevices.getDisplayMedia({video:true, audio}));
+        const {width, height, frameRate} = stream.getVideoTracks()[0]?.getSettings() ?? {};
+        stream._psynetNative = {width, height, frameRate};
       }
       stream._psynetAudio = JSON.stringify(audio);
       this.streams.set(source, stream);
     }
     try {
+      // Removing constraints need not undo an earlier downscale, so answer
+      // capture asks for the track's original settings again.
       const constraints = lowResolution
         ? {width:{ideal:640,max:640},height:{ideal:480,max:480},frameRate:{ideal:15,max:15}}
-        : {};
+        : Object.fromEntries(Object.entries(stream._psynetNative ?? {})
+          .filter(([, value]) => value).map(([key, value]) => [key, {ideal:value}]));
       await Promise.all(stream.getVideoTracks().map(track => track.applyConstraints(constraints)));
     } catch (error) {
       console.warn("Could not apply recording resolution", source, error);

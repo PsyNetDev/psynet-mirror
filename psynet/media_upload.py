@@ -711,6 +711,10 @@ def _deposit_recording(recording_id, output):
             if trial is not None:
                 trial.fail(reason="after_deposit_error")
                 trial._wake_participant(reason="trial_failed")
+    elif asset.deposited and asset.participant_id is not None:
+        from psynet.timeline_hold import _queue_timeline_hold_wake
+
+        _queue_timeline_hold_wake(asset.participant_id, reason="asset_deposited")
     return input_path, asset.trial_id
 
 

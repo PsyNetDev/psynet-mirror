@@ -963,6 +963,11 @@ def test_required_background_deposit_releases_finalization(
 
     monkeypatch.setattr(Recording, "after_deposit", unexpected_analysis)
     monkeypatch.setattr(LocalStorage, "on_deployed_server", lambda self: True)
+    wakes = []
+    monkeypatch.setattr(
+        "psynet.timeline_hold._queue_timeline_hold_wake",
+        lambda participant_id, reason=None, **kwargs: wakes.append(reason),
+    )
     path = (
         Path(__file__).resolve().parents[2]
         / "demos/experiments/imitation_chain_video/assets/example_recording.webm"
@@ -973,6 +978,8 @@ def test_required_background_deposit_releases_finalization(
     media_upload._process_recording(asset_id)
     trial = db.session.get(Trial, trial_id)
     assert db.session.get(Recording, asset_id).deposited
+    # Waits on the clip itself still wake without the analysis callbacks.
+    assert "asset_deposited" in wakes
     assert trial.finalized and not trial.failed
     assert trial.ready_for_feedback
     assert trial.answer == answer
