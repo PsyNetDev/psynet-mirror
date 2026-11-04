@@ -323,6 +323,9 @@ def test_subclasses_that_read_the_answer_bytes_keep_uploading_with_it(submission
     assert not OwnTemplate(duration=1)._uses_async_upload(exp)
     assert LongerIdle(duration=1)._uses_async_upload(exp)
     assert FromMixin(duration=1)._uses_async_upload(exp)
+    instance_template = AudioRecordControl(duration=1)
+    instance_template.macro = "my_audio_record"
+    assert not instance_template._uses_async_upload(exp)
 
 
 def test_record_controls_opting_in_defer_their_recordings(submission):
@@ -398,6 +401,13 @@ def test_audio_answers_upload_after_acceptance(submission, monkeypatch, size, up
     control.bot_response_media = str(bot_file)
     bot = control.get_bot_response(exp, bot=None, page=page, prompt=None)
     assert bot.metadata["recording_uploads"] == {"audio": bot_file.stat().st_size}
+
+    control.bot_response_media = str(
+        bot_file.parents[2]
+        / "experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    with pytest.raises(ValueError, match="must be a RIFF/WAVE file"):
+        control.get_bot_response(exp, bot=None, page=page, prompt=None)
 
 
 @pytest.mark.parametrize(

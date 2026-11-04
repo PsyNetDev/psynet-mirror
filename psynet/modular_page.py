@@ -3705,11 +3705,14 @@ class RecordControl(Control):
     def _async_upload_enabled(self):
         """Whether this control's answer and template support asynchronous upload.
 
-        A subclass that overrides ``format_answer`` or ``macro`` may read the
-        recording bytes from the answer, so it keeps uploading with the answer.
+        A subclass or instance that overrides ``format_answer`` or ``macro`` may
+        read the recording bytes from the answer, so it keeps uploading with the
+        answer.
         """
         if "_async_upload" in self.__dict__:
             return self._async_upload
+        if "macro" in self.__dict__:
+            return False
         # The most specific class that sets _async_upload or overrides one of
         # these decides; setting _async_upload alongside an override re-opts in.
         for cls in type(self).__mro__:
@@ -3857,6 +3860,16 @@ class RecordControl(Control):
         }
         if not self._uses_async_upload(experiment):
             return BotResponse(raw_answer=None, blobs=blobs)
+        from .media_upload import _MEDIA_FORMATS
+
+        header_size, valid_header, format_name = _MEDIA_FORMATS[self._upload_format]
+        for source in self.recording_sources:
+            with open(files[source], "rb") as file:
+                if not valid_header(file.read(header_size)):
+                    raise ValueError(
+                        f"Bot recording {files[source]} must be a {format_name} "
+                        f"file for {type(self).__name__}."
+                    )
         sizes = {
             source: os.path.getsize(files[source]) for source in self.recording_sources
         }
@@ -3904,7 +3917,10 @@ class AudioRecordControl(RecordControl):
     one in the same trial, use :func:`~psynet.page.wait_for_recording` and
     provide an unavailable-media fallback. Legacy navigation, other storage
     backends and subclasses that override ``format_answer`` or ``macro``
-    upload the recording with the answer.
+    upload the recording with the answer. Uploaded recordings are limited to
+    about one and a half times ``duration`` plus 5 seconds, so a page that ends
+    recording on its own event should set ``duration`` to the longest expected
+    recording.
 
     Parameters
     ----------
