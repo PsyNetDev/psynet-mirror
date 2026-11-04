@@ -32,6 +32,11 @@ path = ".deploy/deployment_info.json"
 # Enough for export to name the changed files without bloating experiment variables.
 _MAX_RECORDED_DIRTY_PATHS = 20
 
+# Files PsyNet downloads into the experiment, which the stock ``.gitignore``
+# ignores but deployments include. Keep in sync with VocabTest's default
+# ``font_url`` and the stock ``.gitignore``.
+DOWNLOADED_RESOURCE_PATHS = frozenset({"static/fonts/GoNotoKurrent-Bold.ttf"})
+
 # ``(cache_key, content)``, replaced in a single assignment so threads never
 # observe a partially updated cache.
 _cache = None
@@ -235,7 +240,7 @@ def uncommitted_deployment_paths():
         return None
 
     selected = plan.destinations
-    selected_untracked = selected - tracked - _ignored_scaffold_paths()
+    selected_untracked = selected - tracked - _ignored_generated_paths()
     selected_changed = selected & changed
     selected_deleted = {
         path for path in deleted if policy_selects_path(path, plan.policy)
@@ -243,20 +248,21 @@ def uncommitted_deployment_paths():
     return sorted(selected_untracked | selected_changed | selected_deleted)
 
 
-def _ignored_scaffold_paths():
-    """Return the Git-ignored deployment files that are scaffold boilerplate.
+def _ignored_generated_paths():
+    """Return the Git-ignored deployment files that PsyNet generates.
 
-    An experiment that leaves them out of Git, as PsyNet's bundled demos do,
-    gets them from the scaffold rather than from its commits, so they are
-    not uncommitted changes. See
-    :func:`psynet.experiment_scaffold.is_stock_scaffold_path`.
+    These are scaffold boilerplate (see
+    :func:`psynet.experiment_scaffold.is_stock_scaffold_path`) and files
+    PsyNet downloads. An experiment that leaves them out of Git, as PsyNet's
+    bundled demos do, gets them from PsyNet rather than from its commits, so
+    they are not uncommitted changes.
     """
     from .experiment_scaffold import is_stock_scaffold_path
 
     return {
         path
         for path in _git_ignored_deployment_paths() or ()
-        if is_stock_scaffold_path(path)
+        if is_stock_scaffold_path(path) or path in DOWNLOADED_RESOURCE_PATHS
     }
 
 
