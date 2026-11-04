@@ -136,7 +136,6 @@ def test_browser_detect_script_json_encodes_translations(app, monkeypatch):
     script = script[: script.index("</script>")]
 
     assert '"\\"\\u0027`${x}\\u003c/script\\u003e"' in script
-    assert "browser.minVersion = " in script
     assert "escapeBrowserWarningHtml(browser.name)" in script
 
 

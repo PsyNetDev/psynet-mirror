@@ -1442,14 +1442,7 @@ class OnDemandAsset(FunctionAssetMixin, ManagedAsset):
         parent=None,
         personal=_PERSONAL_ARG_REMOVED,
         obfuscate=_OBFUSCATE_ARG_REMOVED,
-        secret=_OBFUSCATE_ARG_REMOVED,
     ):
-        if secret is not _OBFUSCATE_ARG_REMOVED:
-            raise TypeError(
-                "OnDemandAsset no longer accepts secret=. "
-                "Access is via the shared permanent access_token field "
-                "and the /asset/<access_token> route."
-            )
         super().__init__(
             function=function,
             local_key=local_key,

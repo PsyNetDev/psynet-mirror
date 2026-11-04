@@ -1,14 +1,18 @@
 import json
 import random
+import warnings
 from importlib import resources
 from os.path import exists as file_exists
 from os.path import join as join_path
 from random import shuffle
 from typing import List, Optional
+from urllib.parse import urlparse
 
+import flask
+import requests
 from markupsafe import Markup
 
-from psynet.asset import ExternalAsset
+from psynet.asset import ExternalAsset, OnDemandAsset
 from psynet.bot import Bot
 from psynet.modular_page import (
     AudioMeterControl,
@@ -17,6 +21,7 @@ from psynet.modular_page import (
     ColorPrompt,
     ImagePrompt,
     ModularPage,
+    NullControl,
     PushButtonControl,
     RadioButtonControl,
     TextControl,
@@ -34,7 +39,7 @@ from psynet.timeline import (
 )
 from psynet.trial.audio import AudioRecordTrial
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import get_logger, get_translator
+from psynet.utils import get_extension, get_logger, get_translator
 
 from .vocabtest import BibleVocab, WikiVocab  # noqa: F401
 
@@ -805,18 +810,66 @@ class REPPMarkersTest(StaticTrialMaker):
         ]
 
 
+def _download_media(path, source_url):
+    """Download ``source_url`` to ``path``, aborting with 502 if the download fails."""
+    try:
+        response = requests.get(source_url, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as error:
+        logger.warning("Could not download pre-screen media %s: %s", source_url, error)
+        flask.abort(502)
+    with open(path, "wb") as file:
+        file.write(response.content)
+
+
+_warned_non_http_media_directories = set()
+
+
+def _opaque_media_asset(url):
+    """
+    Serve externally hosted media through PsyNet under an opaque URL.
+
+    Use this for pre-screen stimuli whose file names would reveal the correct
+    answer. The browser only sees ``/asset/<access_token>``; the server fetches
+    ``url`` when the asset is requested. The server can only fetch http(s)
+    URLs, so other URLs (for example relative paths served by the experiment)
+    fall back to an :class:`~psynet.asset.ExternalAsset` that the browser loads
+    directly.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        directory = url.rsplit("/", 1)[0]
+        if directory not in _warned_non_http_media_directories:
+            _warned_non_http_media_directories.add(directory)
+            warnings.warn(
+                f"Pre-screen media URLs under {directory!r} are not http(s) URLs, "
+                "so they are served unchanged and participants can see them. Use "
+                "an http(s) media_url to hide stimulus file names."
+            )
+        return ExternalAsset(url)
+    return OnDemandAsset(
+        function=_download_media,
+        arguments={"source_url": url},
+        extension=get_extension(parsed.path),
+    )
+
+
+_LANGUAGE_VOCABULARY_IMAGES = ["correct", "wrong1", "wrong2", "wrong3"]
+
+
 class LanguageVocabularyTrial(StaticTrial):
     time_estimate = None
+    image_keys = [f"image_{image}" for image in _LANGUAGE_VOCABULARY_IMAGES]
 
     def finalize_definition(self, definition, experiment, participant):
-        indices = range(4)
-        definition["order"] = random.sample(indices, len(indices))
+        order = random.sample(range(4), 4)
+        definition["order"] = order
+        definition["correct_answer"] = str(order.index(0) + 1)
         return definition
 
     def show_trial(self, experiment, participant):
         order = self.definition["order"]
-        choices = ["correct", "wrong1", "wrong2", "wrong3"]
-        image_urls = [self.assets[f"image_{choice}"].url for choice in choices]
+        image_urls = [self.assets[self.image_keys[i]].url for i in order]
 
         return ModularPage(
             "language_vocabulary_trial",
@@ -825,21 +878,21 @@ class LanguageVocabularyTrial(StaticTrial):
                 "Select the picture that matches the word that you heard.",
             ),
             PushButtonControl(
-                choices=[choices[i] for i in order],
+                choices=[str(position) for position in range(1, 5)],
                 labels=[
                     Markup(
                         '<img src="{}" alt="notworking" height="65px" width="65px"/>'
-                    ).format(image_urls[i])
-                    for i in order
+                    ).format(url)
+                    for url in image_urls
                 ],
                 style="min-width: 100px; margin: 10px; background: none; border-color: grey;",
                 arrange_vertically=False,
-                bot_response="correct",
+                bot_response=self.definition["correct_answer"],
             ),
         )
 
     def score_answer(self, answer, definition):
-        if answer == "correct":
+        if answer == definition["correct_answer"]:
             return 1
         else:
             return 0
@@ -863,7 +916,9 @@ class LanguageVocabularyTest(StaticTrialMaker):
         The language code of the target language for the test (en-US, de-DE, hi-IN, pt-BR,sp-SP), default: "en-US".
 
     media_url:
-        Location of the test materials, default: "https://s3.amazonaws.com/langauge-test-materials"
+        Location of the test materials, default: "https://s3.amazonaws.com/langauge-test-materials".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -945,14 +1000,14 @@ class LanguageVocabularyTest(StaticTrialMaker):
                     "word": word,
                 },
                 assets={
-                    "audio": ExternalAsset(
+                    "audio": _opaque_media_asset(
                         f"{media_url}/recordings/{language_code}/{word}.wav"
                     ),
                     **{
-                        f"image_{choice}": ExternalAsset(
+                        f"image_{choice}": _opaque_media_asset(
                             f"{media_url}/images/{word}/{choice}.png"
                         )
-                        for choice in ["correct", "wrong1", "wrong2", "wrong3"]
+                        for choice in _LANGUAGE_VOCABULARY_IMAGES
                     },
                 },
             )
@@ -1014,7 +1069,9 @@ class LexTaleTest(StaticTrialMaker):
         The performance threshold, default: 8.
 
     media_url: str
-        Location of the media resources, default: "https://s3.amazonaws.com/lextale-test-materials"
+        Location of the media resources, default: "https://s3.amazonaws.com/lextale-test-materials".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     hide_after : float
         The time in seconds after the word disappears, default: 1.0.
@@ -1076,7 +1133,9 @@ class LexTaleTest(StaticTrialMaker):
                     "correct_answer": correct_answer,
                     "url": f"{media_url}/lextale-{label}.png",  # Redundant but kept for back-compatibility
                 },
-                assets={"word": ExternalAsset(f"{media_url}/lextale-{label}.png")},
+                assets={
+                    "word": _opaque_media_asset(f"{media_url}/lextale-{label}.png")
+                },
             )
             for label, correct_answer in [
                 ("1", "yes"),
@@ -1281,6 +1340,8 @@ class ColorBlindnessTest(StaticTrialMaker):
         ``https://s3.amazonaws.com/ishihara-eye-test/jpg``.
         Files under that prefix are public, for example
         https://s3.amazonaws.com/ishihara-eye-test/jpg/ishihara-1.jpg.
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 5.0.
@@ -1360,9 +1421,7 @@ class ColorBlindnessTest(StaticTrialMaker):
                     "correct_answer": answer,
                 },
                 assets={
-                    "image": ExternalAsset(
-                        url=f"{media_url}/ishihara-{label}.jpg",
-                    )
+                    "image": _opaque_media_asset(f"{media_url}/ishihara-{label}.jpg")
                 },
             )
             for label, answer in [
@@ -1589,8 +1648,10 @@ class GeneralHeadphoneTest(StaticTrialMaker):
         Trial class to use, recommended HugginsHeadphoneTrial.
 
     media_url : string
-        The url under which the images to be displayed can be referenced, default:
+        The url under which the sounds to be played can be referenced, default:
         "https://s3.amazonaws.com/headphone-check".
+        The experiment server downloads http(s) files from here and serves them under opaque URLs;
+        other URLs are passed to the browser unchanged, revealing the file names.
 
     time_estimate_per_trial : float
         The time estimate in seconds per trial, default: 7.5.
@@ -1664,8 +1725,8 @@ class GeneralHeadphoneTest(StaticTrialMaker):
                     "correct_answer": answer,
                 },
                 assets={
-                    "stimulus": ExternalAsset(
-                        join_path(media_url, f"{label}.wav"),
+                    "stimulus": _opaque_media_asset(
+                        join_path(media_url, f"{label}.wav")
                     )
                 },
             )
@@ -1794,6 +1855,8 @@ class BeepHeadphoneTest(GeneralHeadphoneTest):
         Trial maker ID.
     media_url : str, optional
         Base URL of the test sounds; defaults to PsyNet's hosted copies.
+        The experiment server downloads http(s) files from here and serves them under
+        opaque URLs; other URLs are passed to the browser unchanged, revealing the file names.
     time_estimate_per_trial : float
         Time estimate in seconds per trial.
     performance_threshold : int
@@ -1887,6 +1950,8 @@ class AudioForcedChoiceTest(StaticTrialMaker):
 
     csv_path :
         The path to a valid csv file with headers. The file must contain the two columns `url` and `answer`.
+        The URLs are passed to the browser unchanged, so participants can read them;
+        make sure the file names don't reveal the answer.
 
     answer_options :
         List of answer options.
@@ -2026,3 +2091,170 @@ class AudioForcedChoiceTest(StaticTrialMaker):
             )
             for i, stimulus in enumerate(stimuli)
         ]
+
+
+class BrowserCapabilityCheckPage(ModularPage):
+    """Spinner page that runs JS capability checks and submits pass/fail result."""
+
+    skip_beforeunload = True
+
+    def __init__(self, capabilities, label="browser_capability_check"):
+        spinner = Markup(
+            '<div class="psynet-activity" role="status">'
+            '<span class="spinner-border" aria-hidden="true"></span>'
+            '<span class="visually-hidden">{}</span>'
+            "</div>"
+        ).format(_p("status", "Working..."))
+
+        super().__init__(
+            label=label,
+            prompt=spinner,
+            control=NullControl(),
+            time_estimate=0.0,
+            show_next_button=False,
+            js_vars={"capabilities": sorted(capabilities)},
+            js_page_modules=["/static/scripts/browser-capability-check.js"],
+        )
+
+    def get_bot_response(self, experiment, bot, page=None, prompt=None):
+        from psynet.bot import BotResponse
+
+        return BotResponse(answer={"passed": True}, metadata=self.metadata())
+
+
+def _browser_capability_permission_intro(perm_caps):
+    """InfoPage explaining an upcoming browser permission prompt."""
+    has_mic = "microphone" in perm_caps
+    has_cam = "camera" in perm_caps
+    if has_mic and has_cam:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone and camera are working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone and camera.",
+        )
+    elif has_mic:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your microphone is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your microphone.",
+        )
+    else:
+        check_sentence = _p(
+            "browser_capability_check",
+            "This experiment needs to check that your camera is working.",
+        )
+        access_sentence = _p(
+            "browser_capability_check",
+            "Your browser will ask for permission to access your camera.",
+        )
+    allow_sentence = _p(
+        "browser_capability_check",
+        "Please click Allow when prompted.",
+    )
+    return InfoPage(
+        Markup("<p>{}</p><p>{} {}</p>").format(
+            check_sentence, access_sentence, allow_sentence
+        ),
+        time_estimate=5.0,
+    )
+
+
+def _capability_failure_prompt(missing):
+    """Return a translated Markup paragraph explaining which capability failed."""
+    if missing == "microphone":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your microphone. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "camera":
+        msg = _p(
+            "browser_capability_check",
+            "We were unable to access your camera. "
+            "It may be in use by another app, unavailable on your device, or access was not granted.",
+        )
+    elif missing == "screen_capture":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support screen capture.",
+        )
+    elif missing == "video_recording":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support video recording.",
+        )
+    elif missing == "audio_playback":
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not support audio playback.",
+        )
+    else:
+        msg = _p(
+            "browser_capability_check",
+            "Your browser does not meet the technical requirements for this experiment.",
+        )
+    return Markup("<p>{}</p>").format(msg)
+
+
+class BrowserCapabilityCheck(Module):
+    """
+    Prescreener that tests the participant's browser against declared capability
+    requirements and terminates with :class:`~psynet.page.UnsuccessfulEndPage`
+    if any check fails.
+
+    PsyNet inserts this module at the start of the timeline automatically when
+    ``Experiment.browser_capabilities`` is non-empty; see
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check` for how
+    to customize or disable that.
+
+    Parameters
+    ----------
+    capabilities : iterable of str
+        Capability tokens to test, typically ``Experiment.browser_capabilities``.
+    label : str
+        Module label, also used as the failure tag.
+    """
+
+    def __init__(self, capabilities, label="browser_capability_check"):
+        from psynet.experiment import validate_browser_capabilities
+
+        self.capabilities = validate_browser_capabilities(capabilities)
+        super().__init__(label, self._make_elts(label))
+
+    def _make_elts(self, label):
+        from psynet.experiment import PERMISSION_CAPABILITY_TOKENS
+
+        caps = self.capabilities
+        if not caps:
+            return []
+
+        def _make_fail_page(participant):
+            missing = (
+                participant.answer.get("missing")
+                if isinstance(participant.answer, dict)
+                else None
+            )
+            return InfoPage(_capability_failure_prompt(missing), time_estimate=5.0)
+
+        perm_caps = caps & PERMISSION_CAPABILITY_TOKENS
+        return join(
+            _browser_capability_permission_intro(perm_caps) if perm_caps else None,
+            BrowserCapabilityCheckPage(caps, label=label),
+            conditional(
+                f"{label}_fail",
+                lambda participant: (
+                    isinstance(participant.answer, dict)
+                    and not participant.answer.get("passed", True)
+                ),
+                [
+                    PageMaker(_make_fail_page, time_estimate=5.0),
+                    UnsuccessfulEndPage(failure_tags=[label]),
+                ],
+            ),
+        )

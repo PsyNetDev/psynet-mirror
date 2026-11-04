@@ -20,6 +20,16 @@ from psynet.asset import (
 )
 
 
+def _check_path_component(name: str, kind: str):
+    """Raise ``ValueError`` unless ``name`` names one entry inside a folder.
+
+    Deployment IDs and filenames reach storage paths from dashboard URLs, so
+    they must not climb out of their folder or into another one.
+    """
+    if not name or name in (".", "..") or any(c in name for c in "/\\\0"):
+        raise ValueError(f"Invalid {kind}: {name!r}.")
+
+
 class ArtifactStorage:
     """
     Manage the storage of artifacts.
@@ -161,7 +171,14 @@ class ArtifactStorage:
         -------
         str
             The path to the file in the storage, expressed relative to the root of the storage.
+
+        Raises
+        ------
+        ValueError
+            If ``deployment_id`` or ``filename`` is not a single path component.
         """
+        _check_path_component(deployment_id, "deployment ID")
+        _check_path_component(filename, "filename")
         folder = os.path.join(folder, deployment_id)
         return os.path.join(folder, filename)
 
@@ -407,6 +424,7 @@ class ArtifactStorage:
     def _switch_folders(
         self, deployment_id: str, source_folder: str, target_folder: str
     ):
+        _check_path_component(deployment_id, "deployment ID")
         source_folder = os.path.join(source_folder, deployment_id)
 
         if not self.folder_exists(source_folder):

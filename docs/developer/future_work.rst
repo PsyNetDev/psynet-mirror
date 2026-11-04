@@ -586,30 +586,35 @@ both packages would let runs share one server. And ``psynet debug local
 --isolated`` picks a free slot for a debug server, but other commands, such as
 ``psynet deploy local``, still need these variables set by hand.
 
-Cross-site request protection for dashboard actions
----------------------------------------------------
+SameSite dashboard login cookies and POST-only Dallinger actions
+----------------------------------------------------------------
 
 Date
 ++++
 
-2026-10-01
+2026-11-03
 
 Problem
 +++++++
 
-Several dashboard actions that change state are plain GET requests, for
-example archiving or restoring a deployment, updating recruitment status,
-triggering an export and changing the Lucid survey status. They require a
-login, but a logged-in operator who opens a malicious page could still
-trigger them through the browser's session cookie.
+PsyNet's dashboard actions are now POST-only, and
+``Experiment.before_request`` refuses cross-site POST, PUT, PATCH and DELETE
+requests to the dashboard or made with the dashboard login, using
+``Sec-Fetch-Site`` and then ``Origin``/``Referer``. This is the only layer of
+protection: the experiment server still sets the Flask session and
+Flask-Login "remember me" cookies without a ``SameSite`` attribute (Chrome
+treats that as ``Lax``; other browsers may not), and some Dallinger dashboard
+actions, such as ``/dashboard/logout``, still change state on GET.
 
 Idea
 ++++
 
-Move state-changing dashboard actions to POST and set
-``SESSION_COOKIE_SAMESITE`` (``"Lax"`` or ``"Strict"``) on the experiment
-server, so browsers don't send the session cookie with cross-site requests.
-Update the dashboard JavaScript and the Slack "Trigger export" link to match.
+In Dallinger, where the Flask app is configured, set
+``SESSION_COOKIE_SAMESITE`` and ``REMEMBER_COOKIE_SAMESITE`` to ``"Lax"``
+(``"Strict"`` would drop the login when a researcher follows a dashboard link
+from Slack or email) and move its remaining state-changing GET routes to POST.
+Participants don't rely on the Flask session, so this should not affect
+experiments embedded in recruiter iframes; check that before changing it.
 
 Use Dallinger's app addresses and app-name checks for SSH commands
 ------------------------------------------------------------------
@@ -786,3 +791,149 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Incognito warning when detection is unavailable
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``force_incognito_mode = true``, browsers where incognito detection
+fails (such as Firefox) are rejected with a message asking the
+participant to open an incognito window. Now that ``force_google_chrome``
+defaults to ``false``, Firefox participants are admitted otherwise, and
+following that instruction in a private Firefox window shows the same
+message again.
+
+Idea
+++++
+
+When ``browser.incognitoDetectionFailed`` is true, also suggest opening
+the experiment in an incognito window of a browser where detection works,
+such as Chrome.
+
+Single permission prompt and retry in the browser capability check
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``browser_capabilities = {"microphone", "camera"}``, the capability
+check calls ``getUserMedia`` once per device, so the browser can ask twice
+although the intro page promises one request. A participant who dismisses
+a prompt by accident goes straight to the unsuccessful end page, and a
+participant who ignores the prompt waits on the spinner indefinitely.
+
+Idea
+++++
+
+Request audio and video in one ``getUserMedia`` call when both are needed,
+and offer a retry button on the failure page before ending the experiment.
+
+Name every failed capability on the browser capability failure page
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``browser-capability-check.js`` stops at the first failing capability,
+in alphabetical order, so the failure page names only that one. In a
+manual test with ``browser_capabilities = {"microphone", "camera"}``
+and both devices denied, the page said only "We were unable to access
+your camera", so a participant might fix the camera and fail again on
+the microphone.
+
+Idea
+++++
+
+Run every check, collect all failures, and list each failed capability
+on the failure page.
+
+Browser-neutral incognito instructions for Chromium browsers
+------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``browser.isChrome`` in ``browser-detect.html`` now covers every
+Chromium-based browser, so Edge, Brave and Opera users who must use
+incognito mode get instructions that name Chrome.
+
+Idea
+++++
+
+Rename the flag to ``isChromium`` and use browser-neutral wording when
+``browser.name`` is not ``Chrome``.
+
+Re-host pre-screen stimuli under neutral names
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens serve their stimuli under opaque ``/asset/<token>``
+URLs, but the original files are still public under paths that name the
+answer, such as ``images/<word>/correct.png``. A scripted cheater can
+download them and match the bytes PsyNet serves. The server also fetches
+each file from S3 on every request, without caching. The ``/asset/<token>``
+route holds its database session while it downloads (with a 30-second
+timeout), so a slow S3 response keeps a database connection busy and many
+concurrent stimulus requests could exhaust the connection pool.
+
+Idea
+++++
+
+Re-host the files under neutral names in a location participants can't
+list, and serve them as ordinary assets (or cache the on-demand
+downloads) so that stimulus requests no longer wait on S3. Until then,
+the route could read what it needs from the database and release the
+session before downloading.
+
+Add a public way to proxy a remote stimulus
+-------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens hide answer-revealing stimulus URLs with the
+internal helper ``_opaque_media_asset``, which wraps a remote file in an
+:class:`~psynet.asset.OnDemandAsset` that the server downloads. Experiment
+authors with the same problem have no public equivalent, yet the
+pre-screening tutorial shows this helper.
+
+Idea
+++++
+
+Add a public constructor such as ``OnDemandAsset.from_url(url)`` that
+serves a remote file under an opaque ``/asset/<access_token>`` URL, use it
+in the built-in pre-screens and document it in the tutorial.
