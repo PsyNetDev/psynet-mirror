@@ -220,5 +220,5 @@ The generated HTML from ``psynet dev docs make`` is written to
 
 On completion of updating the documentation commit the corresponding `rst` files only. The compiled `html` files in the ``_build`` directory should be left ignored by Git.
 
-Ideas and small follow-ups for later go in GitLab issues. :doc:`future_work`
-holds older entries that have not yet moved to issues.
+Ideas and small follow-ups for later go in
+`GitLab issues <https://gitlab.com/PsyNetDev/PsyNet/-/issues>`__.
