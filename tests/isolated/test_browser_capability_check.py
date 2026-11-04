@@ -1,190 +1,265 @@
 import pytest
 
-
-def test_browser_capability_check_default_instantiation():
-    from psynet.prescreen import BrowserCapabilityCheck
-
-    BrowserCapabilityCheck()
-
-
-def test_browser_capability_check_explicit_capabilities():
-    from psynet.prescreen import BrowserCapabilityCheck
-
-    BrowserCapabilityCheck(capabilities={"microphone", "camera"})
+from psynet.experiment import BROWSER_CAPABILITY_TOKENS, Experiment
+from psynet.modular_page import NextButton
+from psynet.page import InfoPage, UnsuccessfulEndPage
+from psynet.prescreen import (
+    BrowserCapabilityCheck,
+    BrowserCapabilityCheckPage,
+    _capability_failure_prompt,
+)
+from psynet.timeline import StartSwitch, Timeline, conditional
 
 
-def test_browser_capability_check_all_tokens():
-    from psynet.experiment import BROWSER_CAPABILITY_TOKENS
-    from psynet.prescreen import BrowserCapabilityCheck
-
-    BrowserCapabilityCheck(capabilities=BROWSER_CAPABILITY_TOKENS)
+def _make_timeline(*elts):
+    return Timeline(*elts, InfoPage("Hello", time_estimate=1))
 
 
-def test_browser_capability_check_generator_input():
-    from psynet.prescreen import BrowserCapabilityCheck
-
-    # Generator is consumed by frozenset() before validation; capabilities must
-    # not be silently dropped if a generator is passed.
-    check = BrowserCapabilityCheck(capabilities=(x for x in ["microphone"]))
-    assert check.capabilities == frozenset({"microphone"})
+def _max_time(cls):
+    return cls.timeline.estimated_time_credit.get_max("time")
 
 
-def test_browser_capability_check_rejects_unknown_token():
-    from psynet.prescreen import BrowserCapabilityCheck
+def test_experiment_inserts_capability_check_at_start():
+    class Exp(Experiment):
+        browser_capabilities = {"microphone"}
+        timeline = _make_timeline()
+
+    first = Exp.timeline.module_list[0]
+    assert isinstance(first, BrowserCapabilityCheck)
+    assert first.capabilities == {"microphone"}
+    assert Exp.timeline["main"][0].id == ["main", 0]
+
+
+def test_insert_at_start_matches_timeline_built_with_element():
+    def elts():
+        return [
+            conditional("cond", lambda: True, InfoPage("A", time_estimate=2)),
+            InfoPage("B", time_estimate=1),
+        ]
+
+    def summary(timeline):
+        return (
+            [(type(e).__name__, e.id) for e in timeline.all_elts],
+            timeline.estimated_time_credit.get_max("time"),
+        )
+
+    inserted = Timeline(*elts())
+    inserted.insert_at_start(BrowserCapabilityCheck({"microphone"}))
+    built = Timeline(BrowserCapabilityCheck({"microphone"}), *elts())
+
+    assert summary(inserted) == summary(built)
+
+
+def test_experiment_without_capabilities_has_no_check():
+    class Exp(Experiment):
+        timeline = _make_timeline()
+
+    assert not Exp.timeline.module_list
+
+
+def test_experiment_accepts_generator_capabilities():
+    class Exp(Experiment):
+        browser_capabilities = (x for x in ["camera"])
+        timeline = _make_timeline()
+
+    assert Exp.browser_capabilities == {"camera"}
+    assert Exp.timeline.module_list[0].capabilities == {"camera"}
+
+
+def test_experiment_rejects_unknown_capability_at_definition():
+    with pytest.raises(ValueError, match="not_a_real_capability"):
+
+        class Exp(Experiment):
+            browser_capabilities = {"not_a_real_capability"}
+
+
+def test_experiment_rejects_check_already_in_timeline():
+    shared = _make_timeline(BrowserCapabilityCheck({"microphone"}))
+    with pytest.raises(ValueError, match="get_browser_capability_check"):
+
+        class Exp(Experiment):
+            browser_capabilities = {"microphone"}
+            timeline = shared
+
+    assert shared.experiment_class is None
+
+
+def test_experiment_rejects_unknown_capability_from_mixin():
+    class Mixin:
+        browser_capabilities = {"not_a_real_capability"}
 
     with pytest.raises(ValueError, match="not_a_real_capability"):
-        BrowserCapabilityCheck(capabilities={"not_a_real_capability"})
+
+        class Exp(Mixin, Experiment):
+            pass
 
 
-def test_empty_capabilities_conditional_is_noop():
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker, StartSwitch
+def test_experiment_can_place_check_manually():
+    class Exp(Experiment):
+        browser_capabilities = {"microphone"}
 
-    check = BrowserCapabilityCheck(capabilities=frozenset())
+        @classmethod
+        def get_browser_capability_check(cls):
+            return None
 
-    # The conditional is built inside _make_pages, so when caps are empty
-    # _make_pages returns [] and no StartSwitch ever appears in the timeline.
-    # The only top-level elt should be the PageMaker itself.
-    assert not any(isinstance(e, StartSwitch) for e in check.elts)
-    assert any(isinstance(e, PageMaker) for e in check.elts)
+        timeline = _make_timeline(
+            InfoPage("Consent", time_estimate=1),
+            BrowserCapabilityCheck(browser_capabilities),
+        )
+
+    assert len(Exp.timeline.module_list) == 1
+    assert isinstance(Exp.timeline["main"][0], InfoPage)
 
 
-def test_browser_capability_check_rejects_string_capabilities():
-    from psynet.prescreen import BrowserCapabilityCheck
+def test_experiment_uses_custom_check():
+    class Exp(Experiment):
+        @classmethod
+        def get_browser_capability_check(cls):
+            return BrowserCapabilityCheck({"camera"}, label="custom_check")
 
+        timeline = _make_timeline()
+
+    assert Exp.timeline.module_list[0].id == "custom_check"
+
+
+def test_subclass_changing_capabilities_must_define_timeline():
+    class Base(Experiment):
+        browser_capabilities = {"audio_playback"}
+        timeline = _make_timeline()
+
+    with pytest.raises(ValueError, match="Define timeline on Sub"):
+
+        class Sub(Base):
+            browser_capabilities = {"microphone"}
+
+
+def test_base_class_may_declare_capabilities_without_timeline():
+    class Base(Experiment):
+        browser_capabilities = {"camera"}
+
+    class Exp(Base):
+        timeline = _make_timeline()
+
+    assert Exp.timeline.module_list[0].capabilities == {"camera"}
+
+
+def test_experiment_classes_cannot_share_a_timeline():
+    class Exp(Experiment):
+        timeline = _make_timeline()
+
+    with pytest.raises(ValueError, match="same Timeline object"):
+
+        class Other(Experiment):
+            browser_capabilities = {"camera"}
+            timeline = Exp.timeline
+
+
+def test_classes_without_checks_may_share_a_timeline():
+    class Exp(Experiment):
+        timeline = _make_timeline()
+
+    class Other(Experiment):
+        timeline = Exp.timeline
+
+    assert not Other.timeline.module_list
+
+
+def test_subclass_may_redeclare_parent_timeline_and_capabilities():
+    class Base(Experiment):
+        browser_capabilities = {"camera"}
+        timeline = _make_timeline()
+
+    class Sub(Base):
+        browser_capabilities = {"camera"}
+        timeline = Base.timeline
+
+    assert len(Sub.timeline.module_list) == 1
+
+
+def test_subclass_inheriting_different_capabilities_must_define_timeline():
+    class Base(Experiment):
+        timeline = _make_timeline()
+
+    class MicBase(Experiment):
+        browser_capabilities = {"microphone"}
+
+    with pytest.raises(ValueError, match="Define timeline on Sub"):
+
+        class Sub(Base, MicBase):
+            pass
+
+
+@pytest.mark.parametrize("caps_on_class", [True, False])
+def test_timeline_from_mixin_gets_check(caps_on_class):
+    class Mixin:
+        timeline = _make_timeline()
+
+    class CapBase(Experiment):
+        browser_capabilities = {"camera"}
+
+    if caps_on_class:
+
+        class Exp(Mixin, Experiment):
+            browser_capabilities = {"camera"}
+
+    else:
+
+        class Exp(Mixin, CapBase):
+            pass
+
+    assert Exp.timeline.module_list[0].capabilities == {"camera"}
+
+
+def test_permission_intro_counts_towards_time_estimate():
+    class Mic(Experiment):
+        browser_capabilities = {"microphone"}
+        timeline = _make_timeline()
+
+    class Audio(Experiment):
+        browser_capabilities = {"audio_playback"}
+        timeline = _make_timeline()
+
+    assert _max_time(Mic) == _max_time(Audio) + 5.0
+
+
+def test_browser_capability_check_validates_capabilities():
+    BrowserCapabilityCheck(BROWSER_CAPABILITY_TOKENS)
+    with pytest.raises(ValueError, match="not_a_real_capability"):
+        BrowserCapabilityCheck({"not_a_real_capability"})
     with pytest.raises(ValueError, match="not a string"):
-        BrowserCapabilityCheck(capabilities="microphone")
+        BrowserCapabilityCheck("microphone")
+    with pytest.raises(ValueError, match="not None"):
+        BrowserCapabilityCheck(None)
+
+
+def test_empty_capabilities_check_has_no_pages():
+    check = BrowserCapabilityCheck(frozenset())
+    assert not check.elts
 
 
 def test_browser_capability_check_label_propagates():
-    from unittest.mock import MagicMock
-
-    from psynet.page import UnsuccessfulEndPage
-    from psynet.prescreen import BrowserCapabilityCheck, BrowserCapabilityCheckPage
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck(label="my_check", capabilities={"audio_playback"})
+    check = BrowserCapabilityCheck({"audio_playback"}, label="my_check")
     assert check.id == "my_check"
 
-    page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
-    resolved = page_maker.resolve(MagicMock(), MagicMock(), position=[0])
-
-    cap_page = next(e for e in resolved if isinstance(e, BrowserCapabilityCheckPage))
-    assert cap_page.label == "my_check"
-
-    end_page = next(e for e in resolved if isinstance(e, UnsuccessfulEndPage))
+    page = next(e for e in check.elts if isinstance(e, BrowserCapabilityCheckPage))
+    assert page.label == "my_check"
+    assert any(isinstance(e, StartSwitch) for e in check.elts)
+    end_page = next(e for e in check.elts if isinstance(e, UnsuccessfulEndPage))
     assert end_page.failure_tags == ["my_check"]
 
 
-def test_permission_capability_includes_intro_page():
-    from unittest.mock import MagicMock
-
-    from psynet.page import InfoPage
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck(capabilities={"microphone"})
-    page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
-    resolved = page_maker.resolve(MagicMock(), MagicMock(), position=[0])
-
-    assert any(isinstance(e, InfoPage) for e in resolved)
-
-
-def test_browser_capability_check_page_js_vars():
-    from psynet.prescreen import BrowserCapabilityCheckPage
-
+def test_browser_capability_check_page():
     caps = {"microphone", "audio_playback"}
     page = BrowserCapabilityCheckPage(caps)
-    assert "capabilities" in page.js_vars
     assert set(page.js_vars["capabilities"]) == caps
-
-
-def test_browser_capability_check_page_has_module():
-    from psynet.prescreen import BrowserCapabilityCheckPage
-
-    page = BrowserCapabilityCheckPage({"screen_capture"})
     assert any("browser-capability-check.js" in m for m in page.js_page_modules)
+    assert not any(isinstance(b, NextButton) for b in page.buttons)
 
 
 def test_capability_failure_prompt_per_token():
-    from psynet.prescreen import _capability_failure_prompt
+    messages = [str(_capability_failure_prompt(t)) for t in BROWSER_CAPABILITY_TOKENS]
+    assert all(messages)
+    assert len(set(messages)) == len(messages)
 
-    # Each known token produces a distinct, non-empty message.
-    tokens = [
-        "microphone",
-        "camera",
-        "screen_capture",
-        "video_recording",
-        "audio_playback",
-    ]
-    messages = [str(_capability_failure_prompt(t)) for t in tokens]
-    assert all(messages), "at least one token produced an empty message"
-    assert len(set(messages)) == len(tokens), "two tokens produced the same message"
-
-    # Unknown token falls back gracefully.
     fallback = str(_capability_failure_prompt("unknown_token"))
-    assert fallback, "fallback message is empty"
-    assert fallback not in messages, "fallback collides with a known-token message"
-
-
-def test_capability_failure_page_appears_in_conditional():
-    from unittest.mock import MagicMock
-
-    from psynet.page import InfoPage, UnsuccessfulEndPage
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck(capabilities={"audio_playback"})
-    outer_page_maker = next(e for e in check.elts if isinstance(e, PageMaker))
-
-    mock_participant = MagicMock()
-    mock_participant.answer = {"passed": False, "missing": "audio_playback"}
-    resolved = outer_page_maker.resolve(MagicMock(), mock_participant, position=[0])
-
-    # The conditional body contains a PageMaker (the fail explanation page)
-    # followed by UnsuccessfulEndPage. Resolve the inner PageMaker to check content.
-    inner_makers = [e for e in resolved if isinstance(e, PageMaker)]
-    assert inner_makers, "No inner PageMaker found for failure explanation page."
-    fail_pages = inner_makers[-1].resolve(MagicMock(), mock_participant, position=[0])
-    info_pages = [e for e in fail_pages if isinstance(e, InfoPage)]
-    assert any("audio playback" in p.prompt.text.lower() for p in info_pages), (
-        "Failure InfoPage does not mention 'audio playback'."
-    )
-
-    assert any(isinstance(e, UnsuccessfulEndPage) for e in resolved)
-
-
-def test_page_maker_time_estimate_no_permission_caps():
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck(capabilities={"audio_playback", "screen_capture"})
-    pm = next(e for e in check.elts if isinstance(e, PageMaker))
-    assert pm.time_estimate == 0.0
-
-
-def test_page_maker_time_estimate_with_permission_caps():
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck(capabilities={"microphone"})
-    pm = next(e for e in check.elts if isinstance(e, PageMaker))
-    assert pm.time_estimate == 5.0
-
-
-def test_page_maker_time_estimate_default_capabilities():
-    from psynet.prescreen import BrowserCapabilityCheck
-    from psynet.timeline import PageMaker
-
-    check = BrowserCapabilityCheck()  # capabilities=None — unknown until runtime
-    pm = next(e for e in check.elts if isinstance(e, PageMaker))
-    assert pm.time_estimate == 0.0
-
-
-def test_browser_capability_check_page_no_next_button():
-    from psynet.prescreen import BrowserCapabilityCheckPage
-
-    page = BrowserCapabilityCheckPage({"audio_playback"})
-    from psynet.modular_page import NextButton
-
-    assert not any(isinstance(b, NextButton) for b in page.buttons)
+    assert fallback and fallback not in messages

@@ -479,9 +479,13 @@ Allowed browsers and devices
     Default: ``True``.
 
 ``browser_capabilities`` *set* |psynet-icon| — *class attribute*
-    Declares the browser features your experiment requires. Participants whose
-    browsers lack a listed capability are screened out when you add
-    :class:`~psynet.prescreen.BrowserCapabilityCheck` to your timeline.
+    Declares the browser features your experiment requires. PsyNet inserts a
+    :class:`~psynet.prescreen.BrowserCapabilityCheck` at the very start of
+    your timeline, which screens out participants whose browsers lack a listed
+    capability. The check runs before any consent page, so for ``microphone``
+    and ``camera`` the browser asks for device access before the participant
+    has consented; place the check yourself (see below) if your consent
+    procedure needs to come first.
 
     Valid tokens:
 
@@ -504,8 +508,30 @@ Allowed browsers and devices
 
     Example::
 
-        class MyExperiment(PsyNet):
+        class Exp(psynet.experiment.Experiment):
             browser_capabilities = {"microphone", "video_recording"}
+
+    To change the inserted module, override
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check`. To
+    place the check somewhere else, for example after the consent page, make
+    that method return ``None`` and add the check to your timeline yourself::
+
+        class Exp(psynet.experiment.Experiment):
+            browser_capabilities = {"microphone"}
+
+            @classmethod
+            def get_browser_capability_check(cls):
+                return None
+
+            timeline = Timeline(
+                MainConsent(),
+                BrowserCapabilityCheck(browser_capabilities),
+                ...
+            )
+
+    A subclass whose effective ``browser_capabilities`` or
+    ``get_browser_capability_check`` differs from its parent's, for example
+    through a second base class, must define its own ``timeline``.
 
     PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
     Firefox 121+, Safari 15.4+); you do not need to add a token for that.
@@ -518,8 +544,8 @@ Allowed browsers and devices
     sees instructions to install Google Chrome.
     Default: ``False``.
 
-    Setting this emits a :class:`DeprecationWarning` at startup. For most
-    use cases :attr:`browser_capabilities` is the better alternative — it
+    Setting this logs a deprecation warning at startup. For most
+    use cases ``browser_capabilities`` is the better alternative — it
     screens for the specific browser features your experiment actually needs.
     Leave ``force_google_chrome`` unset to admit all modern browsers (Chrome,
     Edge, Firefox, Safari) that pass the CSS ``:has()`` check.

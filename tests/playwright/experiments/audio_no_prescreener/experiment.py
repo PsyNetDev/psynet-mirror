@@ -9,6 +9,10 @@ class Exp(psynet.experiment.Experiment):
     label = "Audio no prescreener test"
     browser_capabilities = {"audio_playback"}
 
+    @classmethod
+    def get_browser_capability_check(cls):
+        return None
+
     timeline = Timeline(
         InfoPage(
             Markup('<p id="page-loaded">Page loaded without prescreener</p>'),
