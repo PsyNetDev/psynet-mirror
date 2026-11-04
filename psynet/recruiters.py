@@ -50,6 +50,7 @@ Key design constraints for maintainers:
 """
 
 import hashlib
+import hmac
 import json
 import re
 from collections import Counter
@@ -1140,6 +1141,22 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             currency=get_config().get("currency", "$"),
         )
 
+    @staticmethod
+    def _unique_id_from_request(participant) -> dict[str, str]:
+        """Return ``{"unique_id": ...}`` if the current request carried it.
+
+        The page repeats only a credential its visitor already sent, so a
+        render path that never checked the visitor can't reveal it.
+        """
+        from flask import has_request_context, request
+
+        if not has_request_context():
+            return {}
+        unique_id = request.values.get("unique_id")
+        if unique_id and hmac.compare_digest(unique_id, participant.unique_id):
+            return {"unique_id": unique_id}
+        return {}
+
     def error_page_presentation(
         self,
         *,
@@ -1231,7 +1248,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 action_post_data={
                     "assignmentId": participant.assignment_id,
                     "participantId": str(participant.id),
-                    "unique_id": participant.unique_id,
+                    **self._unique_id_from_request(participant),
                 },
             )
 
