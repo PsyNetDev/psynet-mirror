@@ -70,9 +70,10 @@ this module. That loop:
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
-wake. Each participant's hold channel (`psynet_timeline_hold_<id>`) publishes
-that wake only after the database transaction commits; the browser then
-rechecks the authoritative link state.
+wake. After the database transaction commits, PsyNet sends that wake with
+``publish_to_participants`` to the participant's checked connections; the
+browser then rechecks the authoritative link state. See "Timeline holds" in
+:doc:`/developer/page_lifecycle`.
 
 ``Barrier`` also queues those hooks when a participant arrives. After the
 arrival transaction commits, the response route evaluates the barrier in a
