@@ -52,11 +52,9 @@ Design constraints:
 
 import csv
 import datetime
-import hashlib
 import io
 import json
 import logging
-import os
 import re
 import shlex
 import time
@@ -67,6 +65,8 @@ from rich.text import Text
 
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
 from psynet.perf_test.report import format_text, warning
+from psynet.perf_test.runtime import _choose_bot_processes
+from psynet.server_logs import where_to_read_logs
 
 logger = logging.getLogger(__name__)
 
@@ -98,42 +98,6 @@ _OBJECT_IN_USE = "55006"
 _DUPLICATE_DATABASE = "42P04"
 _MAX_NAME_LENGTH = 63
 _SYSTEM_DATABASES = frozenset({"postgres", "template0", "template1", "dallinger"})
-_SETTINGS_FILES = ("config.txt", "requirements.txt", "constraints.txt")
-
-
-def experiment_code_key():
-    """Return a short hash of the experiment's files and the PsyNet and Dallinger versions.
-
-    ``performance-test ssh`` updates its app when this changes. The files are
-    those that a deployment would copy, without the ones Git ignores, such
-    as generated boilerplate, plus the ``_SETTINGS_FILES`` that exist.
-
-    Raises
-    ------
-    ValueError
-        If the experiment has no ``deploy.toml``.
-    """
-    import dallinger.version
-
-    import psynet
-    from psynet.deployment_info import authored_deployment_files
-
-    files = authored_deployment_files()
-    if files is None:
-        raise ValueError("The experiment has no deploy.toml.")
-    listed = {destination for destination, _ in files}
-    files += [(name, name) for name in _SETTINGS_FILES if name not in listed]
-    digest = hashlib.sha256(
-        f"{psynet.__version__}\0{dallinger.version.__version__}".encode()
-    )
-    for destination, source in sorted(files):
-        if not os.path.isfile(source):
-            continue
-        digest.update(f"\0{destination}\0".encode())
-        with open(source, "rb") as f:
-            while chunk := f.read(1 << 20):
-                digest.update(chunk)
-    return digest.hexdigest()[:12]
 
 
 def run_with_status(executor, cmd):
@@ -158,7 +122,11 @@ def run_with_status(executor, cmd):
 
 
 class RemoteApp:
-    """An app on an SSH server, as ``psynet performance-test ssh`` deployed it.
+    """A docker-ssh app on an SSH server, whose web container runs ``psynet`` commands.
+
+    ``psynet performance-test ssh`` uses it to drive and reset an app it
+    deployed; ``psynet destroy ssh`` and ``psynet export ssh`` use it to ask
+    any app for its pending async jobs.
 
     Parameters
     ----------
@@ -207,28 +175,31 @@ class RemoteApp:
         """Run ``docker compose`` with the app's compose file and return its output."""
         return self.run(" ".join([self._compose, *map(shlex.quote, args)]))
 
-    def run_psynet(self, args, *, bot_log=False):
+    def run_psynet(self, args, *, bot_log=False, timeout_s=None):
         """Run ``psynet <args> --json-output PATH`` in the web container and return that JSON.
 
         The output is echoed as it arrives. With ``bot_log``, the command
         also gets ``--bot-log``, whose contents are appended to
-        :attr:`bot_log_file`.
+        :attr:`bot_log_file`. With ``timeout_s``, the command and the read
+        of its JSON each fail after that many seconds; if the command fails,
+        removing its JSON file can take up to another ``timeout_s``.
 
         Raises
         ------
         click.ClickException
-            If the command fails.
+            If the command fails or times out.
         RuntimeError
             If its JSON can't be read back.
         """
         from psynet.command_line import (
             _CONTAINER_WEB_PORT,
+            _with_remote_timeout,
             build_remote_experiment_command,
             run_remote_experiment_command,
         )
 
         run_id = uuid.uuid4().hex
-        json_path = f"/tmp/psynet_perf_{run_id}.json"
+        json_path = f"/tmp/psynet_remote_{run_id}.json"
         log_path = f"/tmp/psynet_bots_{run_id}.log"
         cmd = (
             f"env PSYNET_EXPERIMENT_URL=http://localhost:{_CONTAINER_WEB_PORT} "
@@ -236,16 +207,28 @@ class RemoteApp:
         )
         if bot_log:
             cmd += f" --bot-log {log_path}"
+        read = shlex.quote(f"cat {json_path}; s=$?; rm -f {json_path}; exit $s")
+        read = build_remote_experiment_command(self.app, f"sh -c {read}")
+        if timeout_s is not None:
+            read = _with_remote_timeout(read, timeout_s)
         try:
-            run_remote_experiment_command(self.executor, self.app, cmd)
+            run_remote_experiment_command(
+                self.executor, self.app, cmd, timeout_s=timeout_s
+            )
+        except Exception:
+            remove = build_remote_experiment_command(self.app, f"rm -f {json_path}")
+            if timeout_s is not None:
+                remove = _with_remote_timeout(remove, timeout_s)
+            try:
+                run_with_status(self.executor, remove)
+            except Exception as e:
+                logger.debug("Could not remove %s from %s: %s", json_path, self.app, e)
+            raise
         finally:
             if bot_log:
                 self._append_bot_log(log_path)
-        read = shlex.quote(f"cat {json_path} && rm -f {json_path}")
         try:
-            output = self.run(
-                build_remote_experiment_command(self.app, f"sh -c {read}")
-            )
+            output = self.run(read)
             return json.loads(output)
         except (RuntimeError, ValueError) as e:
             raise RuntimeError(
@@ -307,9 +290,9 @@ class RemoteApp:
             raise RuntimeError(
                 f"None of {self.app}'s server processes, such as web, is running "
                 f"on {self.server}, so its database can't be reset; see its logs "
-                "in Dozzle."
+                f"{where_to_read_logs(self.server, self.app)}."
             )
-        print(f"▶ Stopping {self.app}'s server processes...")
+        print(f"Stopping {self.app}'s server processes...")
         self._stopped = list(dict.fromkeys(self._stopped + services))
         self.compose("stop", *services)
 
@@ -326,7 +309,7 @@ class RemoteApp:
             message names the worker containers that didn't register and
             how to restart them.
         """
-        print(f"▶ Starting {self.app}'s server processes...")
+        print(f"Starting {self.app}'s server processes...")
         services = self._stopped
         if services:
             self.compose("start", *services)
@@ -382,7 +365,7 @@ class RemoteApp:
                 f"{self.server} with 'cd ~/dallinger/{self.app} && docker compose "
                 f"restart {' '.join(missing)}', then run the test again."
             )
-        return f"{message} See its logs in Dozzle."
+        return f"{message} See its logs {where_to_read_logs(self.server, self.app)}."
 
     def _unregistered_workers(self, workers):
         """Return those of the ``workers`` services whose container has no RQ worker registration.
@@ -432,7 +415,7 @@ class RemoteApp:
         except BaseException as e:
             reason = (str(e) or type(e).__name__).rstrip(".")
             stopped = Text(
-                f"✗ {self.app} may be stopped: its server processes could not be "
+                f"{self.app} may be stopped: its server processes could not be "
                 f"started again ({reason}). Start them on {self.server} with:",
                 style="bright_red",
             )
@@ -925,6 +908,12 @@ class RemotePerformanceTester:
         """Note when the suite starts: each remote test starts and stops its own bot processes."""
         self._suite_started = time.monotonic()
         yield
+
+    def describe_bot_processes(self, max_bots):
+        """Describe the bot processes for up to ``max_bots`` bots; the server chooses them for each test."""
+        if self.bot_processes == "auto":
+            return "auto, chosen for each test"
+        return str(_choose_bot_processes(self.bot_processes, max_bots))
 
     def pause_between_tests(self):
         """Make the next remote test pause first, as a local suite pauses between tests."""

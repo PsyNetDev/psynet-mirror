@@ -53,8 +53,8 @@ def _pipeline(
 
 def test_passed_jobs_requires_every_shard_to_succeed():
     jobs = [
-        {"name": "tests_python_3_13 1/12", "status": "success"},
-        {"name": "tests_python_3_13 2/12", "status": "failed"},
+        {"name": "tests_python_3_14 1/12", "status": "success"},
+        {"name": "tests_python_3_14 2/12", "status": "failed"},
         {"name": "playwright_e2e_default 1/3", "status": "success"},
         {"name": "compatibility_tests: [3.11, 1, 3]", "status": "success"},
         {"name": "docs", "status": "success"},
@@ -136,7 +136,7 @@ def test_main_runs_everything_when_the_check_fails(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     ("job_name", "event_type", "skipped"),
     [
-        ("tests_python_3_13 10/12", "merge_train", True),
+        ("tests_python_3_14 10/12", "merge_train", True),
         ("compatibility_tests: [3.11, 1, 3]", "merge_train", True),
         ("docs", "merge_train", True),
         ("docs_linkcheck_strict", "merge_train", False),
@@ -153,7 +153,7 @@ def test_skip_hook_ends_only_jobs_that_already_passed(job_name, event_type, skip
             "PATH": "/usr/bin:/bin",
             "CI_JOB_NAME": job_name,
             "CI_MERGE_REQUEST_EVENT_TYPE": event_type,
-            "ALREADY_PASSED_JOBS": ",tests_python_3_13,compatibility_tests,docs,",
+            "ALREADY_PASSED_JOBS": ",tests_python_3_14,compatibility_tests,docs,",
             "ALREADY_TESTED_PIPELINE_URL": "https://example.com/p/1",
         },
         capture_output=True,

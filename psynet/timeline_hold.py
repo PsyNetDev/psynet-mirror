@@ -17,7 +17,6 @@ participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 
-import json
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -25,7 +24,7 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import timenow
-from markupsafe import Markup, escape
+from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
@@ -40,16 +39,30 @@ from sqlalchemy.orm import relationship
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
-from psynet.utils import call_function_with_context, get_logger, get_translator
+from psynet.utils import (
+    call_function_with_context,
+    finalize_template_value,
+    get_logger,
+    get_translator,
+)
 
 _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
+RESERVED_DIRECT_MESSAGE_TYPES = frozenset({"timeline_hold_wake"})
+"""Directed message types that only PsyNet itself may send.
+
+The browser trusts directed messages of these types, so
+:meth:`psynet.experiment.Experiment.publish_to_participants` refuses them.
+"""
+
 
 def _timeline_hold_channel(participant_id):
-    """Return the Redis/Websocket channel for one participant's holds.
+    """Return the WebSocket channel a participant's hold socket subscribes to.
 
-    No colon: Dallinger splits browser-sent messages at the first colon to
-    find the channel, so the browser's listening probe needs a colon-free name.
+    Any page can publish on it, so it carries only the browser's listening
+    probe; wakes are directed messages (see :func:`_publish_wakes`). No colon:
+    Dallinger splits browser-sent messages at the first colon to find the
+    channel, so the probe needs a colon-free name.
     """
     return f"{_TIMELINE_HOLD_CHANNEL}_{participant_id}"
 
@@ -191,25 +204,20 @@ def default_group_barrier_arrival_message(
     )
 
 
-def _html_overlay_line(text):
-    """Escape overlay text unless the author passed trusted ``Markup``."""
-    if text is None:
-        return ""
-    if isinstance(text, Markup):
-        return str(text)
-    return str(escape(text))
+def compose_hold_overlay_html(title, progress_text=None):
+    """Join a hold title with an optional progress line as ``Markup``.
 
-
-def compose_hold_overlay_html(title_html, progress_text=None):
-    """Join a hold title with an optional progress line."""
-    title = f'<span class="psynet-timeline-hold-title">{title_html}</span>'
-    if not progress_text:
-        return title
-    return (
-        f"{title}"
-        f'<span class="psynet-timeline-hold-progress">'
-        f"{_html_overlay_line(progress_text)}</span>"
+    Plain strings are escaped; trusted ``Markup`` and dominate tags are kept as
+    HTML, as in page templates.
+    """
+    html = Markup('<span class="psynet-timeline-hold-title">{}</span>').format(
+        "" if title is None else finalize_template_value(title)
     )
+    if progress_text:
+        html += Markup('<span class="psynet-timeline-hold-progress">{}</span>').format(
+            finalize_template_value(progress_text)
+        )
+    return html
 
 
 def _copy_pending_wakes(wakes):
@@ -219,7 +227,7 @@ def _copy_pending_wakes(wakes):
 
 @contextmanager
 def _defer_timeline_hold_wakes():
-    """Hold Redis wake publishes across inner commits, then flush on exit.
+    """Hold directed wake sends across inner commits, then flush on exit.
 
     The barrier poller nests this context around a sweep so stacked poller
     skips can finish before partners overlay-resume. Last-arrival GET/POST do
@@ -260,29 +268,33 @@ def _stash_committed_wakes(pending):
 
 
 def _publish_wakes(wakes):
-    """Publish copied wake payloads on their participant Redis channels."""
+    """Send copied wake payloads to their participants as directed messages.
+
+    Directed messages reach only sockets that carry the participant's
+    token. A participant's hold channel is public, so nothing is published
+    on it.
+    """
     if not wakes:
         return
-    try:
-        from collections import defaultdict
+    from collections import defaultdict
 
-        by_channel = defaultdict(list)
-        for wake in wakes:
-            payload = dict(wake)
-            participant_id = payload.pop("participant_id", None)
-            channel = (
-                _timeline_hold_channel(participant_id)
-                if participant_id is not None
-                else _TIMELINE_HOLD_CHANNEL
+    by_participant = defaultdict(list)
+    for wake in wakes:
+        payload = dict(wake)
+        by_participant[payload.pop("participant_id")].append(payload)
+    for participant_id, targets in by_participant.items():
+        try:
+            from dallinger.experiment_server.sockets import publish_to_participants
+
+            publish_to_participants(
+                {"type": "timeline_hold_wake", "targets": targets}, [participant_id]
             )
-            by_channel[channel].append(payload)
-        for channel, targets in by_channel.items():
-            db.redis_conn.publish(
-                channel,
-                json.dumps({"type": "timeline_hold_wake", "targets": targets}),
+        except Exception:
+            logger.warning(
+                "Failed to publish timeline hold wake to participant %s.",
+                participant_id,
+                exc_info=True,
             )
-    except Exception:
-        logger.warning("Failed to publish timeline hold wake.", exc_info=True)
 
 
 def _publish_timeline_hold_wakes(pending):
@@ -626,15 +638,8 @@ class _TimelineHoldPage(Page):
         """
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
-        content = self.translated_content()
-        if content is None:
-            title_html = ""
-        elif isinstance(content, Markup):
-            title_html = str(content)
-        else:
-            title_html = str(escape(content))
         return compose_hold_overlay_html(
-            title_html, self.hold_progress_text(participant)
+            self.translated_content(), self.hold_progress_text(participant)
         )
 
     def hold_progress_text(self, participant):

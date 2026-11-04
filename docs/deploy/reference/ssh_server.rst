@@ -21,6 +21,10 @@ list``. With one registered server it can be left out; with several, PsyNet
 asks you to choose, or fails if the command is not run in an interactive
 terminal.
 
+``--app`` names the app on the server and starts its address. It defaults
+to the experiment directory's name, made into a valid app name; see
+:doc:`/deploy/running_a_study`.
+
 ``--dns-host`` sets the domain the experiment is served under. It defaults to
 the ``--server`` name, so the experiment is served at
 ``https://<app>.<server>``. Pass it:
@@ -50,6 +54,8 @@ the ``--dns-host`` name itself rather than a subdomain, and its logs at
 ``https://<dns-host>/logs``. Such a deployment needs a server with no other
 apps: Dallinger offers to destroy any it finds first.
 
+.. _ssh_server_cloudflare:
+
 Cloudflare tunnels (optional)
 -----------------------------
 
@@ -75,27 +81,57 @@ Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
 ``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
 ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
 Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
-records. Until a server default is changed, omitting ``--ingress`` keeps
-classic Caddy. ``psynet export ssh`` reaches a Cloudflare app at its public
-name rather than ``https://<app>.<ssh-host>``.
+records. With a Dallinger version that includes `Dallinger PR #10118
+<https://github.com/Dallinger/Dallinger/pull/10118>`_, ``psynet deploy ssh``,
+``psynet debug ssh`` and ``psynet performance-test ssh`` check that the token
+can be read before they start local services, contact the server or run
+``prepare``. Until a server default is changed, omitting
+``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
+app at its public name rather than ``https://<app>.<ssh-host>``.
+
+Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS name>`` exists
+only on servers with classic ingress. Read a Cloudflare app's logs with the
+``ssh … docker compose … logs -f`` command printed at the end of the
+deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
+The dashboard's **Monitor > Logger** page shows the experiment's own log
+output with either ingress.
 
 .. _ssh_server_launch_info:
 
 Launch information
 ------------------
 
-At the end of a deployment, the command prints the log command, the Dozzle
-address and the dashboard link with its credentials:
+``psynet deploy ssh`` and ``psynet debug ssh`` end with a summary of what
+you need next, and ``psynet performance-test ssh`` starts its tests with
+it:
 
 .. code:: text
 
-    You can now log in to the console at
-    https://admin:XXX@my-study.my-server.example.org/dashboard
-    (user = admin, password = XXX)
+    Ready: my-study on my-server.example.org
+      Participant link: https://my-study.my-server.example.org/ad?recruiter=generic&generate_tokens=1&mode=live
+      Dashboard:        https://my-study.my-server.example.org/dashboard (user: admin)
+      Password:         saved in ~/psynet-data/launch-data/<deployment-id>/launch-info.json
+      Logs:             ssh -i ~/.ssh/my-key.pem ubuntu@my-server.example.org "docker compose -f ~/dallinger/my-study/docker-compose.yml logs -f"
+      Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password in launch-info.json)
+      Image:            ghcr.io/my-lab/my-study:3f2a9c1e
 
-PsyNet also saves the credentials in
-``~/psynet-data/launch-data/<deployment-id>/launch-info.json``, where the
-deployment ID has the form ``<label>__mode=<mode>__launch=<timestamp>``.
+The image row names the deployed Docker image, with Dallinger versions that
+report it. The participant link appears for recruiters that print a single recruitment
+link, such as ``generic``; for other recruiters the summary ends with the
+recruiter's message instead (for Prolific, a link to the new draft study).
+An update (see `Updating a running app`_) doesn't recruit again, so it shows
+the participant link or recruiter's message saved when the app was deployed
+from this computer; without that record, it says that recruitment is unchanged.
+The log viewer row appears for apps with classic ingress.
+``performance-test ssh`` adds a ``Bot log`` row: the file on your computer
+that collects the bots' output.
+Passwords are not printed; they are saved in ``launch-info.json`` together
+with the other details. Dallinger versions without the ``show_summary``
+option of ``dallinger docker-ssh deploy`` and ``sandbox`` still print their
+own summary, including the dashboard password, above this one, for all three
+commands.
+The deployment ID has the form
+``<label>__mode=<mode>__launch=<timestamp>``.
 
 What a deployment does
 ----------------------
@@ -120,14 +156,23 @@ writable, retrying with a root Alpine container if needed.
 its deployment manifest.
 
 ``psynet deploy ssh`` always installs the PsyNet and Dallinger versions pinned
-in ``requirements.txt``. To try unreleased PsyNet or Dallinger checkouts on a
+in ``constraints.txt`` (``requirements.txt`` if there is no
+``constraints.txt``). Before deploying, ``psynet deploy ssh``,
+``psynet debug ssh`` and ``psynet performance-test ssh`` compare these pins
+with the installed PsyNet and Dallinger, including the commit of an editable
+checkout, and stop if they differ, so that you don't test one version locally
+while the server runs another. Install the pinned versions with
+``psynet setup``. To try unreleased PsyNet or Dallinger checkouts on a
 server, bake them into a debug deployment's image::
 
     psynet debug ssh --app your-app-name --use-local-psynet --use-local-dallinger
 
 Each option builds a wheel from the editable checkout (for Dallinger, or
 ``DALLINGER_SOURCE``), and the image build installs it after ``COPY .``, over
-the pinned version. Before the build, PsyNet copies ``constraints.txt`` to
+the pinned version, together with any dependencies the checkout needs that
+the pins don't provide (pinned versions are kept where they satisfy the
+checkout); the build fails if the result conflicts with the other installed
+packages. Before the build, PsyNet copies ``constraints.txt`` to
 ``local-image-pins.txt`` without that package's lines, and the image installs
 the copy instead. Bundled demos and experiments without ``constraints.txt``
 use ``requirements.txt``. This way, an editable pin that points at a path on
@@ -155,7 +200,7 @@ All classic apps share these services, defined in ``~/dallinger/docker-compose.y
 - ``postgresql``, which holds one database for each app;
 - ``httpserver``, a `Caddy <https://caddyserver.com/>`_ server that routes
   each address to its app and obtains HTTPS certificates;
-- ``dozzle``, the log viewer at ``https://logs.<dns-host>``.
+- ``dozzle``, the log viewer at ``https://logs.<server DNS name>``.
 
 Cloudflare-ingress apps instead run their own Postgres in the Compose project
 and reach the internet through ``cloudflared``. They do not publish ports
@@ -164,6 +209,8 @@ hibernation controller.
 
 Every service has the restart policy ``unless-stopped``, so Docker restarts
 the apps when the server reboots.
+
+.. _ssh_server_files:
 
 Files on the server
 ^^^^^^^^^^^^^^^^^^^
@@ -181,12 +228,64 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. The app's database stays in PostgreSQL until an app with the same
-name is deployed, which replaces it. It asks you to confirm first; add
-``--yes`` to skip the confirmation in scripts. It also wakes the app if it is
+uses it. Give it one or more app names, as
+arguments or with ``--app`` (the two are equivalent and can be combined):
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app my-other-app --server my-server.example.org
+
+It first checks that the apps are on the server; if one isn't, it stops and
+lists the apps that are, suggesting the closest name (except with
+``--remove-data``; see below). It then asks you to
+confirm, once for all the apps (pressing Enter answers no); add ``--yes`` to
+skip the confirmation in scripts, where it is required because there is no
+terminal to ask in. If one of several apps fails to be destroyed, it carries
+on with the rest and then exits with status 1. It also wakes each app if it is
 asleep and asks it for pending async jobs, and does not destroy an app that
-has some unless you confirm or pass ``--discard-pending-jobs``; ``--yes`` does
-not skip this check. See :doc:`/reference/api/async_job`.
+has some unless you pass ``--discard-pending-jobs`` or, when destroying a
+single app, confirm; ``--yes`` does not skip this check. If the check cannot
+run, for example because the app's web container is down, it does not destroy
+the app without ``--discard-pending-jobs``, except for apps deployed with
+``psynet debug ssh`` or ``psynet performance-test ssh``, which it destroys
+anyway.
+See :doc:`/reference/api/async_job`.
+
+It also asks whether to delete the apps' data: the database and Postgres user
+in the shared PostgreSQL, the app's Redis and Postgres volumes, and
+``~/dallinger-data/<app>``. For a single app, Dallinger lists the app's data
+with its sizes and asks, just before tearing the app down, and skips the
+question if there is no data. For several apps, PsyNet asks once for all of
+them, before checking any. Answer no, or pass ``--keep-data``, to keep the
+data; each app's kept data is then listed with the command that deletes it
+later. Pass ``--remove-data`` to delete it without a separate question; the
+confirmation then says that the data is deleted too. ``--yes`` does not answer
+the data question, so scripts and other non-interactive runs must pass one of
+the two flags:
+
+.. code-block:: bash
+
+    psynet destroy ssh my-app --server my-server.example.org --yes --keep-data
+
+Just before the question that decides whether the data is deleted (the data
+question, or the confirmation with ``--remove-data``), PsyNet reminds you to
+export any app it finds no export of in ``exports/`` of the current directory,
+so you can still answer no. Nothing is asked about the data with
+``--remove-data --yes`` or ``--keep-data``, so there is no reminder either.
+
+To delete kept data after the app is gone, run the same command with
+``--remove-data``. With ``--remove-data``, an app that is no longer on the
+server is not rejected: PsyNet skips the pending-job check and the export
+reminder for it, asks to delete its leftover data rather than to destroy it,
+and Dallinger deletes whatever data it left behind. If nothing is left, it
+says so and this does not count as a failure, so the command succeeds.
+
+The data question and the two flags need a Dallinger version whose
+``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
+With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
+as before: a classic app's database stays in PostgreSQL until an app with the
+same name is deployed, which replaces it, while a Cloudflare app's volumes are
+deleted.
 
 Updating a running app
 ----------------------
@@ -194,12 +293,21 @@ Updating a running app
 To ship a fix to an app that is already running, add ``--update`` to the
 command that created it: ``psynet deploy ssh --update`` for a live app, or
 ``psynet debug ssh --update`` for a debug app. Repeat the ``--ingress`` the app
-was deployed with. PsyNet asks you to confirm, then rebuilds the image and
-restarts the app. The update keeps:
+was deployed with. If you leave out ``--update``, PsyNet refuses to deploy onto
+the existing app and prints the update command for it. PsyNet asks you to
+confirm, then rebuilds the image and restarts the app. To skip the question,
+for example in a script or another session without a terminal, add ``--yes``::
+
+    psynet debug ssh --app your-app-name --server your-server --update --yes
+
+Without a terminal, PsyNet reads the answer from standard input, and stops
+with an error asking for ``--yes`` if there is none. The update keeps:
 
 - the app's database and the participants in it;
 - its deployment ID and secret, so exports and dashboard records stay together;
-- participants' sessions.
+- participants' sessions;
+- its recruitment, which is not opened again; a participant link stays the
+  same.
 
 An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
@@ -360,10 +468,12 @@ Docker registries
 -----------------
 
 ``psynet debug ssh`` and ``psynet deploy ssh`` never push the image, so they
-need no registry. A registry is needed only to deploy a prebuilt image named
-by ``docker_image_name``, or to push images with Dallinger's ``dallinger
-docker-ssh deploy --push-build`` or ``--local_build``. For pushing,
-``docker_image_base_name`` must name a registry you can push to. The server
+need no registry and no ``docker_image_base_name``. A registry is needed only
+to deploy a prebuilt image named by ``docker_image_name``, to deploy with
+``psynet deploy heroku --docker``, or to push images with Dallinger's
+``dallinger docker-ssh deploy --push-build`` or ``--local_build``. For pushing,
+``docker_image_base_name`` must name a registry or namespace you can push to,
+including a ``/`` (Dallinger stops early if it doesn't). The server
 must be able to pull from the registry: run the same ``docker login`` on the
 server as on your computer.
 

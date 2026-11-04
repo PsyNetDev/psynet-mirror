@@ -114,9 +114,9 @@ df = pd.read_json(url)
     <div id="panel-data-preview" class="accordion-collapse collapse show">
       <div class="accordion-body">
           Showing data from <code>/data</code> endpoint.<br>
-          <button class="btn btn-primary btn-sm btn-copy mb-2" onclick="copyToClipboard('{{ url }}')">Copy data URL</button><br>
+          <button class="btn btn-primary btn-sm btn-copy mb-2" onclick='copyToClipboard({{ url | tojson }})'>Copy data URL</button><br>
         <pre>
-{{ data | safe }}
+{{ data }}
 </pre>
       </div>
     </div>

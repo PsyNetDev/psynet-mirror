@@ -5,10 +5,11 @@ const {withExperiment, completeInitialGateway, waitForVideoRecordingReady, waitF
 test("missing answer expires and the unaffected imitation chain completes @inplace-only", async ({page, context}) => {
   test.setTimeout(180000);
   let uploads = 0;
-  await context.route("**/media-upload/*", route => {
+  await context.route(/\/media-upload\/\d+$/, route => {
     uploads += 1;
-    // Permanent transport rejection leaves the accepted reservation pending until
-    // its real server deadline. Later recordings use the real receiver/worker.
+    // Permanent transport rejection stops the browser renewing the accepted
+    // reservation, so it expires after the fixture's short idle timeout. Later
+    // recordings use the real receiver/worker.
     return uploads === 1 ? route.fulfill({status:403}) : route.continue();
   });
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/missing_chain_recording"), async p => {

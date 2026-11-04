@@ -16,8 +16,9 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet setup``
      - Prepare a standalone experiment: files, ``constraints.txt``,
        packages and Git (see `Set up an experiment (setup)`_).
-   * - ``psynet services check`` / ``ensure``
-     - Check, or start in Docker, the local PostgreSQL and Redis
+   * - ``psynet services check`` / ``ensure`` / ``list``
+     - Check, or start in Docker, the local PostgreSQL and Redis, or list
+       which local sessions use them
        (see `Local PostgreSQL and Redis (services)`_).
    * - ``psynet scripts scaffold`` / ``update`` / ``prune``
      - Create, refresh or remove boilerplate files
@@ -33,10 +34,12 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet debug ssh --app NAME``
      - Run a debug deployment on a server. It uses the configured
        recruiter, so pilot with ``recruiter = generic``; see
-       :doc:`/deploy/running_a_study`.
+       :doc:`/deploy/running_a_study`. Without ``--app``, the app is named
+       after the experiment directory.
    * - ``psynet deploy ssh --app NAME``
      - Deploy the experiment for data collection; see
-       :doc:`/deploy/running_a_study`. ``--archive`` redeploys from a
+       :doc:`/deploy/running_a_study`. Without ``--app``, the app is named
+       after the experiment directory. ``--archive`` redeploys from a
        previous export; see :doc:`/deploy/reference/deploy_from_archive`.
    * - ``psynet export local`` / ``ssh``
      - Export the data to ``exports/latest/``; see
@@ -127,8 +130,8 @@ it:
 
 Useful flags:
 
-* ``--no-install`` — do steps 1–2 only (write files and pin; ensure
-  constraints when missing or stale; do not install packages). After a
+* ``--no-install`` — skip step 3: write files, pin PsyNet, ensure
+  constraints and the Git repository, but do not install packages. After a
   full ``psynet setup``, use ``psynet debug local --docker`` or a Docker
   deploy command when you want Docker.
 * ``--force-shared-env`` — allow installing into the PsyNet repository's
@@ -137,6 +140,8 @@ Useful flags:
 * ``--force-foreign-env`` — allow installing into a virtual environment that
   is not this experiment's ``./.venv`` (for example another project's
   environment). Prefer creating and activating ``./.venv`` instead.
+* ``--yes`` / ``-y`` — set up the folder even if it contains files that
+  don't belong to a PsyNet experiment.
 
 If PsyNet is installed editable, setup asks how to record it in
 ``requirements.txt``: keep the editable checkout, pin a specific pushed Git
@@ -144,15 +149,26 @@ commit URL, or retain an existing explicit requirement. The same choice can be
 supplied non-interactively with ``--psynet-source editable``, ``commit``, or
 ``existing``.
 
+If Dallinger is installed editable, setup keeps it, except with
+``--psynet-source commit``; see
+:doc:`/code/project/using_local_psynet_and_dallinger`.
+
+If the folder has no ``experiment.py`` and contains files that don't belong
+to a PsyNet experiment, setup asks before adding experiment files there.
+Without a terminal to ask in, it stops unless you pass ``--yes``.
+
 If the active virtual environment is the PsyNet repository's development
 ``.venv``, setup refuses to install packages by default. Interactively it
 offers a numeric menu: create a dedicated ``.venv`` here (recommended),
 cancel, write files only, or install into the repository ``.venv`` anyway.
 
 If the active environment is some other foreign virtualenv (not this
-experiment's ``./.venv``), setup still scaffolds and writes constraints, but
-refuses to ``uv pip sync`` into that environment unless you confirm
-interactively or pass ``--force-foreign-env``.
+experiment's ``./.venv``), setup still scaffolds, writes constraints and
+ensures the Git repository, but refuses to ``uv pip sync`` into that
+environment unless you confirm interactively or pass ``--force-foreign-env``.
+If you decline, setup prints the commands that create and use a dedicated
+``./.venv`` instead. Without a terminal to ask, it does the same and exits
+with status 1.
 
 In a demo inside a PsyNet source checkout, ``psynet setup`` only adds the
 boilerplate files; it never installs packages or rewrites requirements, so
@@ -181,6 +197,25 @@ that publish those host ports (``--yes`` skips the prompt). ``psynet debug``,
 before launch or packaging, including SSH deployments that still prepare the
 experiment against local Postgres/Redis on this machine.
 
+When several experiments or test runs share a machine, ``psynet services list``
+shows the port, database, Redis server and directory of each of your running
+sessions, read from your PsyNet, Dallinger and pytest processes and the port
+locks they hold, followed by every local Redis server and database and the
+session that uses it. Use it to pick free settings before starting another
+session.
+
+.. code:: bash
+
+  psynet services list
+
+Isolated test and debug sessions drop their own databases when they end, so
+a ``<database>_test_<port>`` database (such as ``dallinger_test_5100``) with
+no session is left over from a killed session. Drop it with:
+
+.. code:: bash
+
+  PGPASSWORD=dallinger dropdb -h localhost -U dallinger dallinger_test_5100
+
 
 .. _scripts:
 
@@ -208,6 +243,10 @@ generates ``constraints.txt`` when needed (unless ``--skip-constraints``).
   psynet scripts scaffold
   psynet scripts scaffold --skip-constraints
 
+After ``--skip-constraints``, run ``psynet generate-constraints`` before
+``psynet debug local`` or ``psynet test local``: both stop when a standalone
+experiment has no ``constraints.txt``.
+
 ``update``
 ^^^^^^^^^^
 
@@ -229,9 +268,12 @@ customized helpers and other files under ``docker/`` are kept. This is **not**
 ``prune``
 ^^^^^^^^^
 
-Remove scaffold-managed boilerplate and generated leftovers
-(``static/assets``, untracked ``constraints.txt``), leaving authored files
-such as ``experiment.py`` and ``requirements.txt``.
+Remove scaffold-managed boilerplate and generated leftovers (a
+``static/assets`` link left by older PsyNet versions, untracked
+``constraints.txt``), leaving authored files such as ``experiment.py`` and
+``requirements.txt``. A real ``static/assets`` file or directory is kept,
+but the stock ``.gitignore`` and ``deploy.toml`` exclude it, so it is not
+tracked or deployed.
 
 By default only unmodified, untracked scaffold paths are removed. Git-tracked
 managed paths are kept. ``--include-modified`` also removes divergent untracked
@@ -266,9 +308,11 @@ PsyNet version pin):
   psynet generate-constraints
 
 This runs Dallinger's standalone constraints script via ``uv run`` (the same
-lock policy as ``dallinger constraints generate``). An editable Dallinger
-checkout supplies its local script; otherwise PsyNet runs the canonical script
-from Dallinger's GitHub repository.
+lock policy as ``dallinger constraints generate``). An installed Dallinger,
+such as an editable checkout, supplies its local script; otherwise PsyNet runs
+the canonical script from Dallinger's GitHub repository. Either way, the
+Dallinger version in ``constraints.txt`` comes from ``requirements.txt`` or
+PsyNet's Dallinger pin, not from the installed copy.
 
 
 .. _install:

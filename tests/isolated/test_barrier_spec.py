@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from dominate import tags
 from markupsafe import Markup
 
 from psynet.barrier_spec import (
@@ -237,6 +238,14 @@ def test_local_class_value_is_rejected_at_encode_time():
 def test_markup_content_round_trips():
     original = ThresholdBarrier("threshold", threshold=2)
     original.content = Markup("<em>Wait</em>")
+    restored = barrier_from_spec_json(barrier_spec_json(original))
+    assert isinstance(restored.content, Markup)
+    assert str(restored.content) == "<em>Wait</em>"
+
+
+def test_dominate_content_round_trips_as_markup():
+    original = ThresholdBarrier("threshold", threshold=2)
+    original.content = tags.em("Wait")
     restored = barrier_from_spec_json(barrier_spec_json(original))
     assert isinstance(restored.content, Markup)
     assert str(restored.content) == "<em>Wait</em>"

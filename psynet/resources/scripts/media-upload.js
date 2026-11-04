@@ -3,12 +3,17 @@
  *
  * The document owns this queue, not a trial or its DOM fragment. Enqueue only
  * after response acceptance and before page cleanup, using the original blob
- * and the server-issued write capability. The caller translates the remaining
- * server deadline to performance.now(); queueing and retries never extend it.
- * Server-side expiry remains authoritative, including after document loss.
+ * and the server-issued write capability. The caller translates the server's
+ * lifetime cap to performance.now(); the queue never holds bytes beyond it.
  *
- * Failed deliveries are retried until the reservation deadline, never against a
- * fixed attempt count: brief connection losses are common on mobile networks.
+ * The server expires a pending recording once its lease lapses, so while jobs
+ * remain the queue sends heartbeats that renew their leases: a slow upload is
+ * not failed while this document is open. Server-side expiry remains
+ * authoritative, including after document loss.
+ *
+ * Failed deliveries are retried until the server reports the recording expired
+ * or the lifetime cap passes, never against a fixed attempt count: brief
+ * connection losses are common on mobile networks.
  * Network errors and server errors back off exponentially; a 429 means another
  * delivery of the same recording is still being received, so it waits for the
  * server's Retry-After without counting as a failure.
@@ -16,32 +21,63 @@
  * A "received" result means complete server receipt, not deposit.
  * Failures are returned to the caller; this module neither fails trials nor
  * recaptures media. Pending jobs warn on manual unload; document navigation
- * initiated by PsyNet drains the queue within the original upload deadlines.
+ * initiated by PsyNet drains the queue.
  */
+// Consecutive internal server errors after which an upload is given up.
+const MAX_SERVER_ERRORS = 5;
+
 export class MediaUploadQueue {
   constructor({
     concurrency = 2,
     maxBytes = 256 * 1024 * 1024,
     maxPending = 32,
     retryDelay = 500,
-    maxRetryDelay = 10000
+    maxRetryDelay = 10000,
+    heartbeatInterval = 30000,
+    heartbeatUrl = "/media-upload/heartbeat"
   } = {}) {
-    for (const value of [concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay]) {
+    for (const value of [concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay, heartbeatInterval]) {
       if (!Number.isSafeInteger(value) || value <= 0) {
         throw new TypeError("Upload queue limits must be positive integers.");
       }
     }
-    this._limits = { concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay };
+    this._limits = { concurrency, maxBytes, maxPending, retryDelay, maxRetryDelay, heartbeatInterval };
+    this._heartbeatUrl = heartbeatUrl;
+    this._heartbeatTimer = null;
+    this._heartbeatEvery = null;
     this._jobs = new Map();
     this._active = 0;
     this._pendingBytes = 0;
     this._drains = [];
+    this._groupWaiters = [];
     this._beforeUnload = event => { event.preventDefault(); event.returnValue = ""; };
   }
 
   /** Wait for receipt or terminal failure of all outstanding uploads. */
   drain() {
     return this._jobs.size ? new Promise(resolve => this._drains.push(resolve)) : Promise.resolve();
+  }
+
+  /** Number of distinct pages (groups) whose uploads are still outstanding. */
+  get pendingGroups() {
+    return new Set(Array.from(this._jobs.values(), job => job.group)).size;
+  }
+
+  /** Whether another page's recordings may be submitted now: at most one
+   * earlier page still has uploads outstanding, and these recordings fit.
+   */
+  hasRoom(recordings, maxRecordingBytes) {
+    const groups = this.pendingGroups;
+    return groups === 0 || (groups === 1 &&
+      !Object.values(this.prepare(recordings, maxRecordingBytes).unavailable).includes("queue_full"));
+  }
+
+  /** Wait, as earlier pages' uploads finish, until hasRoom() holds. */
+  async waitForRoom(recordings, maxRecordingBytes) {
+    while (!this.hasRoom(recordings, maxRecordingBytes)) {
+      const maxGroups = this.pendingGroups - 1;
+      await new Promise(resolve => this._groupWaiters.push({ maxGroups, resolve }));
+    }
   }
 
   /** Permit a deliberate early-exit/error redirect without an unload warning. */
@@ -62,8 +98,8 @@ export class MediaUploadQueue {
   }
 
   /** Select files within the shared budget before the single in-flight answer.
-   * nextPagePending prevents another submission from adding work until acceptance;
-   * existing jobs may only free capacity meanwhile. This does not send any bytes.
+   * Only one submission is in flight at a time, so existing jobs can only free
+   * capacity before its recordings are enqueued. This does not send any bytes.
    */
   prepare(recordings, maxRecordingBytes) {
     let bytes = this._pendingBytes;
@@ -86,15 +122,20 @@ export class MediaUploadQueue {
     return { recordings: selected, unavailable };
   }
 
-  /** Retain a captured file and return its eventual transport outcome. */
-  enqueue({ id, url, token, deadline, blob }) {
+  /** Retain a captured file and return its eventual transport outcome.
+   *
+   * ``group`` identifies the submitted page, for hasRoom() and waitForRoom().
+   * ``renewInterval`` (ms) must be well within the server's lease timeout.
+   */
+  enqueue({ id, url, token, deadline, blob, group = id, renewInterval = this._limits.heartbeatInterval }) {
     const target = new URL(url, window.location.href);
     if (target.origin !== window.location.origin || target.username || target.password) {
       throw new TypeError("Media uploads must use the same origin without URL credentials.");
     }
     if (typeof id !== "string" || !id || typeof token !== "string" || !token ||
-        !(blob instanceof Blob) || blob.size === 0 || !Number.isFinite(deadline)) {
-      throw new TypeError("An upload needs an ID, capability, nonempty Blob, and finite deadline.");
+        !(blob instanceof Blob) || blob.size === 0 || !Number.isFinite(deadline) ||
+        !Number.isSafeInteger(renewInterval) || renewInterval <= 0) {
+      throw new TypeError("An upload needs an ID, capability, nonempty Blob, finite deadline, and renewal interval.");
     }
     if (this._jobs.has(id)) {
       throw new Error("A recording with this ID is already queued.");
@@ -110,7 +151,7 @@ export class MediaUploadQueue {
         this._jobs.size >= this._limits.maxPending) {
       return Promise.resolve({ status: "failed", reason: "queue_full" });
     }
-    const job = { id, url: target.href, token, deadline, blob, attempts: 0, failures: 0, active: false, done: false };
+    const job = { id, url: target.href, token, deadline, blob, group, attempts: 0, failures: 0, serverErrors: 0, active: false, done: false };
     const result = new Promise((resolve) => { job.resolve = resolve; });
     this._jobs.set(id, job);
     window.addEventListener("beforeunload", this._beforeUnload);
@@ -118,8 +159,38 @@ export class MediaUploadQueue {
     job.deadlineTimer = setTimeout(() => {
       this._finish(job, { status: "failed", reason: "deadline" });
     }, remaining);
+    if (this._heartbeatTimer === null || renewInterval < this._heartbeatEvery) {
+      clearInterval(this._heartbeatTimer);
+      this._heartbeatEvery = renewInterval;
+      this._heartbeatTimer = setInterval(() => void this._heartbeat(), renewInterval);
+    }
     this._pump();
     return result;
+  }
+
+  /** Renew the server leases of outstanding jobs; release ones it has expired. */
+  async _heartbeat() {
+    const uploads = Array.from(this._jobs.values(), job => ({ id: job.id, token: job.token }));
+    if (!uploads.length) return;
+    try {
+      const response = await fetch(this._heartbeatUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uploads }),
+        credentials: "same-origin",
+        redirect: "error"
+      });
+      if (!response.ok) return;
+      const { unavailable = [] } = await response.json();
+      for (const id of unavailable) {
+        const job = this._jobs.get(id);
+        if (job) this._finish(job, { status: "failed", reason: "expired" });
+      }
+    } catch (error) {
+      // A missed heartbeat is retried at the next interval; the server lease
+      // outlasts several intervals.
+      console.debug("Media upload heartbeat failed", error);
+    }
   }
 
   /** Start ready jobs without tying their lifetime to page navigation. */
@@ -157,15 +228,20 @@ export class MediaUploadQueue {
         this._finish(job, { status: "received" });
       } else if (response.status === 429) {
         this._retry(job, retryAfterMilliseconds(response.headers.get("Retry-After")));
+      } else if (response.status === 500 && ++job.serverErrors >= MAX_SERVER_ERRORS) {
+        // Heartbeats keep the lease alive, so a persistent receiver fault
+        // would otherwise hold the participant until the lifetime cap.
+        this._finish(job, { status: "failed", reason: "http_error", httpStatus: 500 });
       } else if ([408, 500, 502, 503, 504].includes(response.status)) {
+        if (response.status !== 500) job.serverErrors = 0;
         this._retry(job);
       } else {
         this._finish(job, { status: "failed", reason: "http_error", httpStatus: response.status });
       }
     } catch (error) {
       if (!job.done) {
-        // The reservation deadline, rather than a short per-attempt timer,
-        // bounds slow transfers. Retry only when delivery actually fails.
+        // The server stops a stalled transfer, so no per-attempt timer is
+        // needed here. Retry only when delivery actually fails.
         if (error instanceof TypeError || error.name === "AbortError") {
           this._retry(job);
         } else {
@@ -182,7 +258,7 @@ export class MediaUploadQueue {
     }
   }
 
-  /** Wait before resending, bounded by the reservation deadline.
+  /** Wait before resending, bounded by the lifetime cap.
    *
    * A server-provided wait (429 Retry-After) is honoured as given and does not
    * count as a failure; other failures double the delay up to maxRetryDelay.
@@ -216,7 +292,15 @@ export class MediaUploadQueue {
     job.blob = null;
     job.token = null;
     job.resolve(result);
+    const groups = this.pendingGroups;
+    this._groupWaiters = this._groupWaiters.filter(waiter => {
+      if (groups > waiter.maxGroups) return true;
+      waiter.resolve();
+      return false;
+    });
     if (!this._jobs.size) {
+      clearInterval(this._heartbeatTimer);
+      this._heartbeatTimer = null;
       window.removeEventListener("beforeunload", this._beforeUnload);
       this._drains.splice(0).forEach(resolve => resolve());
     }

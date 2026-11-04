@@ -399,9 +399,17 @@ class WebSocketElt(Elt):
     channel : str
         The Redis channel name this Elt subscribes to. If ``None``, no
         subscribers will be registered.
+    requires_checked_connection : bool
+        If ``True``, ``handle_message`` is called only for messages sent
+        through ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+        whose connection PsyNet has checked belongs to ``participant``, and runs
+        on the web process holding that socket. Messages on the channel from
+        ``/chat`` sockets are ignored, because they can name any participant.
+        Defaults to ``False``.
     """
 
     channel = None
+    requires_checked_connection = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -651,7 +659,7 @@ class AsyncCodeBlock(EltCollection):
                 if self.on_timeout is None
                 else self._call_on_timeout_unless_finished,
             ),
-            CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
+            CodeBlock(lambda: logger.debug("Finished waiting for async code block.")),
         )
 
     def _call_on_timeout_unless_finished(self, participant):
@@ -1262,6 +1270,9 @@ class Page(Elt):
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
+        ``{{ ... }}`` escapes plain strings; pass HTML as ``markupsafe.Markup``
+        or a ``dominate`` tag, and write values inside ``<script>`` with
+        ``| tojson``.
 
     label:
         Internal label to give the page, used for example in results saving.
@@ -2172,7 +2183,7 @@ class Page(Elt):
             "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
             "js_page_modules": js_page_modules,
-            "css": self.css + experiment.css,
+            "css": [Markup(x) for x in self.css + experiment.css],
             "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,
@@ -2741,16 +2752,29 @@ class Timeline:
         )
         default_branches.update(branch_kwargs)
         self.terminal_branch_names = frozenset(default_branches)
+        self.experiment_class = None
+        """The experiment class that this timeline belongs to, set when that class is defined."""
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
         for name, content in default_branches.items():
             self.elts[name] = join(content)
 
+        self._compile()
+
+    def _compile(self):
         self.modules, self.module_list = self.compile_modules()
         self.check_elts()
         self.add_elt_ids()
         self.estimated_time_credit = CreditEstimate(list(self.all_elts))
+
+    def insert_at_start(self, *elts):
+        """Insert elements at the start of the main branch and recompile the timeline."""
+        for elt in self.all_elts:
+            elt.id = None
+        self.elts["main"] = join(*elts, self.elts["main"])
+        self.__dict__.pop("trial_makers", None)
+        self._compile()
 
     @property
     def all_elts(self):
@@ -3267,6 +3291,7 @@ def while_loop(
     fix_time_credit=True,
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
+    extend_while: Optional[Callable] = None,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
@@ -3313,6 +3338,11 @@ def while_loop(
         Optional callable invoked when ``max_loop_time`` is exceeded.
         Called with ``participant=...``.
 
+    extend_while:
+        Optional callable accepting ``participant`` and/or ``experiment``,
+        checked on each iteration. While it returns ``True`` the loop cannot
+        time out, and ``max_loop_time`` restarts once it returns ``False``.
+
     Returns
     -------
 
@@ -3329,7 +3359,7 @@ def while_loop(
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
-        logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
+        logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
     def start_loop(participant, experiment):
@@ -3347,6 +3377,14 @@ def while_loop(
 
     def max_loop_time_condition(participant, experiment):
         """Check elapsed time against the budget saved on entry."""
+        if extend_while is not None and call_function_with_context(
+            extend_while, participant=participant, experiment=experiment
+        ):
+            participant.var.set(
+                _while_loop_state_key(label, "loop_start_time"),
+                serialise(datetime.now()),
+            )
+            return False
         limit = (
             participant.var.get(_while_loop_state_key(label, "loop_max_time"))
             if callable(max_loop_time)

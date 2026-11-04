@@ -9,7 +9,7 @@ allow-direct-references = true
 
 [project]
 name = "psynet"
-version = "13.4.0a0"
+version = "14.0.0a0"
 authors = [
   {name="Peter Harrison", email="pmch2@cam.ac.uk"},
   {name="Frank Höger", email="frank.hoeger@ae.mpg.de"},
@@ -24,7 +24,7 @@ license = {file = "LICENSE"}
 description = "PsyNet – complex psychological experiments made easy"  # A framework for running advanced psychological experiments
 keywords = ["psychology", "experiments", "online", "networks"]
 readme = "README.md"
-requires-python = ">=3.11"  # recommended Python version: 3.13
+requires-python = ">=3.11"  # recommended Python version: 3.14
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.14",
@@ -44,6 +44,7 @@ classifiers = [
 # Experiment authors need psynet[experiment] (installed automatically by `psynet setup`).
 dependencies = [
     "click",
+    "packaging",
 ]
 
 [project.optional-dependencies]
@@ -56,10 +57,16 @@ dependencies = [
 experiment = [
     "babel",
     # TODO: Replace this Git pin with a released dallinger[docker] version once
-    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout) and
-    # #10087 (no croniter at worker start-up) are on PyPI. The SHA is a commit
-    # on Dallinger master that includes them.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@406f3c147354477fc11d1247403b65577c7a349f",
+    # Dallinger#10065 (worker_processes), #10086 (worker_startup_timeout),
+    # #10087 (no croniter at worker start-up), #10166 (docker_image_base_name
+    # optional for server-only docker-ssh builds), the real-time engine
+    # (#10100, #10229), check_recruiter_exit (#10239) and check_worker_status
+    # (#10268) are on PyPI. The SHA is the head of #10287's branch, which is
+    # stacked on #10281; move it to Dallinger master once they merge.
+    # #10287 (participant socket admission and scope check) is a security
+    # requirement for directed timeline-hold wakes: never move this pin to a
+    # Dallinger without it.
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@f2a2e282a4350473b895b54838c356638238dcdf",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf

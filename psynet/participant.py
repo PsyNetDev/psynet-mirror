@@ -1,9 +1,14 @@
+import hashlib
+import hmac
 import io
 import json
 import os
+import random
 import re
+import secrets
 import shutil
 import tempfile
+import threading
 import time
 import zipfile
 from contextlib import ExitStack
@@ -246,8 +251,13 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
-_BOT_TIMELINE_BUSY_ATTEMPTS = 5
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
+# Under load, a partner's barrier check can hold the participant row for
+# several seconds. A busy reply may itself take up to the lock timeout, so
+# retries stop once the window has passed, however many delays are left.
+# Keep in step with psynet.busyRetryDelayMs in psynet.js.
+_BUSY_RETRY_DELAYS_S = (0.25, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
+_BUSY_RETRY_WINDOW_S = 10.0
 
 
 def _status_is_timeline_hold(status):
@@ -256,29 +266,37 @@ def _status_is_timeline_hold(status):
     return bool(page.get("is_timeline_hold"))
 
 
-def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
+def _retry_busy_http(send, sleep=time.sleep):
     """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
-    Browser submissions retry a structured busy response once; automated
-    drivers follow the same policy by default so lock timeouts do not fail
-    the bot on the first hit. Timeline GETs and bot POSTs may pass a higher
-    ``attempts`` count because a partner skip can hold the participant row
-    for more than one ``lock_timeout``. JSON ``GET /timeline`` also retries
-    HTTP 409 ``status: stale`` when last-arrival advanced this waiter
-    between write and render. Shipped drivers do not issue that JSON GET;
-    they use ``/participant_status``. Generic or malformed 503s and other
-    409s are not retried.
+    The server answers busy before writing anything, so retrying is safe.
+    Retries back off with growing gaps, the same schedule browser submissions
+    use, with up to 25% random shortening so bots do not retry in step. No
+    retry starts more than about 10 s after the first request. JSON
+    ``GET /timeline`` also retries HTTP 409 ``status: stale`` when
+    last-arrival advanced this waiter between write and render. Shipped
+    drivers do not issue that JSON GET; they use ``/participant_status``.
+    Generic or malformed 503s and other 409s are not retried.
+
+    Parameters
+    ----------
+    send : callable
+        Sends the request and returns the response.
+    sleep : callable, optional
+        Waits between attempts; drivers pass their stoppable sleep.
     """
-    if attempts < 1:
-        raise ValueError("attempts must be at least 1.")
+    deadline = time.monotonic() + _BUSY_RETRY_WINDOW_S
     response = send()
-    for _ in range(attempts - 1):
+    for delay_s in _BUSY_RETRY_DELAYS_S:
         if not (
             _is_psynet_busy_response(response)
             or _is_psynet_stale_timeline_response(response)
         ):
             break
-        time.sleep(delay_s)
+        delay_s *= random.uniform(0.75, 1.0)
+        if time.monotonic() + delay_s > deadline:
+            break
+        sleep(delay_s)
         response = send()
     _raise_for_status_with_server_details(response)
     return response
@@ -561,6 +579,20 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def last_response(self):
         return self.response
+
+    @property
+    def websocket_scope(self):
+        """Return the token that this participant's pages open websockets with.
+
+        :meth:`~psynet.experiment.Experiment.accept_websocket_connection`
+        checks it. It is derived from ``unique_id`` by HMAC, so Dallinger can
+        log and store it without revealing the ``unique_id``. Treat it as a
+        secret all the same: anyone holding it can open checked websockets as
+        this participant.
+        """
+        return hmac.new(
+            self.unique_id.encode(), b"psynet-websocket", hashlib.sha256
+        ).hexdigest()
 
     # all_trials = relationship("psynet.trial.main.Trial")
 
@@ -1396,7 +1428,8 @@ class ParticipantDriver:
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
                 f"{self.experiment.base_url}/participant_status/{self.id}"
-            )
+            ),
+            sleep=self._sleep,
         )
 
         self.response_files = {}
@@ -1432,7 +1465,7 @@ class ParticipantDriver:
                 f"{self.experiment.base_url}/timeline",
                 params={"unique_id": self.participant_unique_id},
             ),
-            attempts=_BOT_TIMELINE_BUSY_ATTEMPTS,
+            sleep=self._sleep,
         )
 
     def _simulate_page_time(self, time_factor):
@@ -1543,6 +1576,10 @@ class ParticipantDriver:
         deferred_files = {}
         if "recording_uploads" in submission_data["metadata"]:
             deferred_files, response_files = response_files, {}
+            # Lets a repeat of a POST whose reply was lost recover the receipts.
+            submission_data["metadata"]["recording_recovery_secret"] = (
+                secrets.token_hex(32)
+            )
 
         with ExitStack() as stack:
             files = {}
@@ -1561,7 +1598,7 @@ class ParticipantDriver:
                     files=files,
                 )
 
-            http_response = _retry_busy_http(send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS)
+            http_response = _retry_busy_http(send, sleep=self._sleep)
         resp_json = http_response.json()
         if resp_json.get("submission") != "approved":
             if self._retry_submit_after_page_advanced(
@@ -1583,22 +1620,61 @@ class ParticipantDriver:
         """Upload accepted recordings to ``/media-upload``, as a browser does.
 
         A 429 means another delivery of the same recording is still being
-        received; wait as the server asks and try again.
+        received; wait as the server asks and try again. Stalls and gateway
+        errors are retried too. Meanwhile a heartbeat renews the leases of all
+        recordings not yet uploaded, so later sources do not expire while
+        earlier ones are being sent.
         """
-        for upload in uploads:
-            path = files[f"{upload['source']}Recording"]
-            with open(path, "rb") as file:
-                body = file.read()
-            for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
-                http_response = self.http_session.post(
-                    f"{self.experiment.base_url}{upload['url']}",
-                    data=body,
-                    headers={"Authorization": f"Bearer {upload['token']}"},
+        if not uploads:
+            return
+        pending = list(uploads)
+        interval = min(u.get("renew_interval_ms", 30000) for u in uploads) / 1000
+        stop = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._renew_recording_uploads,
+            args=(pending, interval, stop),
+            daemon=True,
+        )
+        heartbeat.start()
+        try:
+            for upload in uploads:
+                path = files[f"{upload['source']}Recording"]
+                with open(path, "rb") as file:
+                    body = file.read()
+                for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
+                    http_response = self.http_session.post(
+                        f"{self.experiment.base_url}{upload['url']}",
+                        data=body,
+                        headers={"Authorization": f"Bearer {upload['token']}"},
+                    )
+                    if http_response.status_code not in {408, 429, 502, 503, 504}:
+                        break
+                    retry_after = http_response.headers.get("Retry-After", "1")
+                    self._sleep(float(retry_after) if retry_after.isdigit() else 1.0)
+                http_response.raise_for_status()
+                pending.remove(upload)
+        finally:
+            stop.set()
+            heartbeat.join()
+
+    def _renew_recording_uploads(self, pending, interval, stop):
+        """Renew the leases of ``pending`` recordings until ``stop`` is set."""
+        session = keep_alive_session()
+        while pending:
+            try:
+                session.post(
+                    f"{self.experiment.base_url}/media-upload/heartbeat",
+                    json={
+                        "uploads": [
+                            {"id": upload["id"], "token": upload["token"]}
+                            for upload in list(pending)
+                        ]
+                    },
                 )
-                if http_response.status_code != 429:
-                    break
-                self._sleep(float(http_response.headers.get("Retry-After", 1)))
-            http_response.raise_for_status()
+            except requests.RequestException as error:
+                logger.warning(f"Could not renew recording uploads: {error}")
+            if stop.wait(interval):
+                return
 
     def _report_stats(self, total_experiment_time: float):
         """

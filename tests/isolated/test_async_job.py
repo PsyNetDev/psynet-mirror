@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import time
@@ -5,6 +6,7 @@ import types
 from datetime import datetime, timedelta
 
 import pytest
+from click.testing import CliRunner
 from dallinger import db
 from dallinger.db import redis_conn
 from rq import Queue
@@ -14,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 import psynet.experiment  # noqa -- to ensure that all SQLAlchemy classes are registered
 from psynet.async_job import AsyncJob, LocalAsyncJob, WorkerAsyncJob
+from psynet.command_line import psynet
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
@@ -595,7 +598,7 @@ def test_cpu_time_summary_says_where_jobs_run():
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
-def test_pending_jobs_keep_the_app_awake():
+def test_pending_jobs_keep_the_app_awake(tmp_path):
     from psynet.async_job import _get_pending_job_summary
     from psynet.experiment import get_experiment
 
@@ -628,13 +631,15 @@ def test_pending_jobs_keep_the_app_awake():
         "(1 high priority, 2 low priority, 1 in the web process); "
         "the oldest was enqueued under a minute ago"
     )
-    db.session.rollback()
 
-    response = experiment.authenticated_session.get(
-        experiment.base_url + "/async_job_status"
+    # Runs in this process, so it sees the uncommitted jobs.
+    json_output = tmp_path / "status.json"
+    result = CliRunner().invoke(
+        psynet, ["async-job-status", "--json-output", str(json_output)]
     )
-    response.raise_for_status()
-    assert set(response.json()) == {"counts", "total", "oldest_age"}
+    db.session.rollback()
+    assert result.exit_code == 0, result.output
+    assert json.loads(json_output.read_text())["counts"] == summary["counts"]
 
 
 @pytest.mark.parametrize(

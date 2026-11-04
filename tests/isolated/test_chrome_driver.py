@@ -270,6 +270,7 @@ def test_browser_cleanup_only_matches_this_database(monkeypatch):
     assert not is_psynet_chrome_process(_FakeProcess("chrome", [other_profile]))
 
     monkeypatch.setenv("base_port", "5000")
+    monkeypatch.setattr("dallinger.config.config", None)
     for url in ["http://127.0.0.1:5000/ad", "http://localhost:5000"]:
         assert is_psynet_chrome_process(_FakeProcess("chrome", [url]))
     assert not is_psynet_chrome_process(

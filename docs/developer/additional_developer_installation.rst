@@ -86,7 +86,7 @@ Clone PsyNet and Dallinger
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Follow :doc:`/install` for the system tools (uv, Git, Docker, Chrome and
-the Heroku CLI), then clone both repositories next to each other:
+libpq), then clone both repositories next to each other:
 
 .. code-block:: bash
 
@@ -104,7 +104,7 @@ that PsyNet requires.
 .. code-block:: bash
 
     cd ~/PsyNet
-    uv venv --python 3.13
+    uv venv --python 3.14
     source .venv/bin/activate
     uv pip install -e ".[dev,demos,slack]"
     psynet --version

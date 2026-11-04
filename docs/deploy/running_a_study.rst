@@ -51,20 +51,35 @@ Check the code and dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - The experiment must be in a Git repository with at least one commit.
-  PsyNet records the deployed commit and whether the working tree had
-  uncommitted changes, and ``psynet export`` compares them with your
-  checkout later, so commit everything before you deploy and push to your
-  remote.
-- The PsyNet and Dallinger versions you tested locally must match
-  ``requirements.txt``. If you change ``requirements.txt``, regenerate and
-  commit ``constraints.txt`` with ``psynet generate-constraints``. Remote
-  deployment refuses to start while a generated ``constraints.txt`` is out
-  of date with ``requirements.txt``. See :doc:`/code/project/dependencies`.
+  PsyNet records the deployed commit, whether any deployed file had
+  uncommitted changes, and the names of up to 20 such files.
+  ``psynet export`` compares them with your checkout later, so commit
+  everything before you deploy and push to your remote.
+  ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
+  with uncommitted changes and, in a terminal, ask whether to deploy them
+  anyway (the default is no, which cancels the deployment). Without a
+  terminal they only warn.
+- The PsyNet and Dallinger versions you tested locally must match their
+  pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
+  commit or release tag) takes precedence; otherwise its pin in
+  ``constraints.txt`` is used, which is where Dallinger is usually pinned.
+  ``psynet deploy ssh``, ``psynet deploy heroku``, ``psynet debug ssh``,
+  ``psynet debug heroku`` and ``psynet performance-test ssh`` check both
+  packages and stop if they differ; ``psynet debug ssh --use-local-psynet``
+  and ``--use-local-dallinger`` skip the check for that package. If you change
+  ``requirements.txt``, regenerate and commit ``constraints.txt`` with
+  ``psynet generate-constraints``, then reinstall with ``psynet setup``.
+  Remote deployment refuses to start while a generated ``constraints.txt``
+  is out of date with ``requirements.txt``. See
+  :doc:`/code/project/dependencies`.
 - Remote deployment refuses to start while the experiment contains
   ``# TODO`` or ``// TODO`` comments in ``.py``, ``.html`` or ``.js``
   files. Resolve them, or set ``SKIP_TODO_CHECK=1``.
-- ``docker_image_base_name`` must be set in ``config.txt`` or
-  ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`).
+- Heroku deploys with ``--docker`` push the image to a registry, so
+  ``docker_image_base_name`` must be set in ``config.txt`` or
+  ``~/.dallingerconfig`` and name a registry or namespace, for example
+  ``ghcr.io/<github-user>/<experiment>``. SSH deploys don't need it (see
+  :doc:`/deploy/setting_up_a_server`).
 
 Consent
 ^^^^^^^
@@ -179,7 +194,8 @@ trials), then launch a debug deployment:
 
 The experiment is available at
 ``https://my-study-pilot.your-server.example.org`` within a minute or two.
-The terminal prints a *Single recruitment link*; take the experiment
+The command ends with a *Ready* summary whose *Participant link* is the
+single recruitment link; take the experiment
 through it yourself and send it to a few colleagues. Check:
 
 - the median completion time against your estimate;
@@ -220,10 +236,14 @@ from the experiment directory:
    psynet deploy ssh --app my-study --server your-server.example.org
 
 ``--app`` becomes the first part of the participant URL
-(``https://my-study.your-server.example.org``), so use lowercase letters,
-digits and hyphens. If your DNS record only publishes a fixed list of
+(``https://my-study.your-server.example.org``), so use up to 63 lowercase
+letters, digits and hyphens, not starting or ending with a hyphen. If your DNS record only publishes a fixed list of
 subdomains, the app name must be one of them. Several experiments can run
-on one server with different app names.
+on one server with different app names. Without ``--app``, PsyNet offers
+the experiment directory's name, made lowercase with hyphens, and adds
+``-2``, ``-3`` and so on if the server already has an app of that name.
+Press Enter to accept it or type another name. When the command isn't run
+in an interactive terminal, it uses the suggestion and says so.
 
 ``--server`` is the name you registered the server under (see
 :doc:`/deploy/setting_up_a_server`). If you omit it and several servers are
@@ -232,19 +252,19 @@ registered, PsyNet asks you to choose.
 The command builds the experiment image on the server, starts the
 experiment's services, and opens recruitment; see
 :doc:`/deploy/how_deployment_works`. It prepares the experiment's starting
-database on your computer first, which clears the local PostgreSQL database
-and Redis and stops local PsyNet workers, so stop any local experiment before
-you deploy. ``psynet debug ssh`` and ``psynet debug heroku`` do the same. These
-commands ask before resetting if a local server or another program is connected
-to the local database or Redis; pass ``--yes`` to skip the question.
-``--update`` leaves local data alone. When ``psynet deploy ssh`` finishes, it
-prints:
-
-- the recruitment message (for Prolific, a link to the new draft study);
-- the dashboard link with its user name and password;
-- a command and a Dozzle URL for viewing the logs.
-
-Save these. Open the dashboard and check that the experiment is running.
+database on your computer first, in a scratch PostgreSQL database and Redis
+that are removed afterwards, so a local experiment can keep running while you
+deploy. Because the deploy replaces the experiment directory's generated
+files, it doesn't run at the same time as a ``psynet debug local`` or test
+session in the same directory: whichever starts second refuses to.
+``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
+participant link, the dashboard link and user, where the password is saved,
+the logs command and, for apps with classic ingress, the log viewer in the
+browser. Without a single
+participant link, the summary shows the recruiter's message instead (for
+Prolific, a link to the new draft study). Save these. Open the
+dashboard and check that the experiment is running.
 If the command fails or hangs, see
 :doc:`/deploy/reference/troubleshooting`.
 
@@ -366,10 +386,13 @@ spending, errors, server resources and individual participants; see
 :ref:`experiment_dashboard` for each tab. When you run several studies,
 the Deployments tab (the deployment monitor) shows all of them at once.
 
-**Logs.** Dozzle shows the live logs of every container on the server.
-Its URL is printed at launch (``https://logs.your-server.example.org``
-for servers that use subdomains); the login is described in
-:doc:`/deploy/setting_up_a_server`. You can also read the logs over SSH:
+**Logs.** On servers with classic ingress, Dozzle shows the live logs of
+every container on the server. Its URL is printed at launch
+(``https://logs.your-server.example.org`` for servers that use subdomains);
+the login is described in :doc:`/deploy/setting_up_a_server`. Servers with
+Cloudflare ingress, such as lab computers, have no Dozzle (see
+:ref:`ssh_server_cloudflare`); run the log command printed at launch instead.
+With either ingress you can read the logs over SSH:
 
 .. code:: bash
 
@@ -478,13 +501,20 @@ When the target number of participants is reached:
 
       psynet destroy ssh --app my-study --server your-server.example.org
 
-   This stops the experiment's containers and removes its folder from the
-   server. It first wakes the app if it is asleep. If async jobs are still
-   pending, the command says how many and asks you to confirm, or refuses
-   when it cannot ask (for example in a script, or when destroying several
-   apps at once). Pass ``--discard-pending-jobs`` only if you accept losing
-   their results. If the app cannot be checked, the command prints a
-   warning and destroys it anyway.
+   After you confirm, the command wakes the app if it is asleep and checks
+   for pending async jobs. If some are still pending, it says how many and
+   asks you to confirm again, or refuses when it cannot ask (for example in
+   a script, or when destroying several apps at once). It then asks whether
+   to delete the experiment's data too (see :ref:`ssh_server_files`); pass
+   ``--remove-data`` or ``--keep-data`` to answer in advance. Finally it
+   stops the experiment's containers and removes its folder from the
+   server. Pass ``--discard-pending-jobs`` only if you accept losing
+   their results. If the app cannot be checked, for example because its
+   web container is not running, the command says why and does not destroy
+   it: start the container and try again, or check in the app's logs that
+   its jobs have finished and pass ``--discard-pending-jobs``. Apps
+   deployed with ``psynet debug ssh`` are the exception: they are destroyed
+   anyway, even if they recruit real participants.
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with

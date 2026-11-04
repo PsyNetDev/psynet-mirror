@@ -141,7 +141,12 @@ def _dallinger_constraints_script() -> str:
     """
     local_script = _installed_dallinger_constraints_script()
     if local_script is not None:
-        click.echo(f"Using constraints script from installed Dallinger: {local_script}")
+        click.echo(
+            f"Using the constraints script from the installed Dallinger "
+            f"({local_script}). The Dallinger version in constraints.txt comes "
+            "from requirements.txt or PsyNet's Dallinger pin, not from this "
+            "installation."
+        )
         return str(local_script)
 
     ref = dallinger_constraints_github_ref()

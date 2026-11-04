@@ -3,7 +3,7 @@
 {% block title %}{{ pgettext("error", "An error occurred") }}{% endblock %}
 
 {% block body %}
-    <div class="container my-5 psynet-surface">
+    <div id="psynet-error-page" class="container my-5 psynet-surface">
         <div>
             {# The placeholder stays hidden until theme.html swaps in the themed logos,
                otherwise the browser paints the raw PNG first and then replaces it. #}

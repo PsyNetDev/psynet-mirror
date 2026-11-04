@@ -1,0 +1,1 @@
+A function exposed with `expose_to_api` that returns a string now sends it as `text/plain` rather than HTML, so a string that echoes its arguments can no longer run script in the participant's browser. Return a Flask `Response` to send another content type.

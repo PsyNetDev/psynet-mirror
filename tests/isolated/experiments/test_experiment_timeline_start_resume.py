@@ -4,7 +4,11 @@ import pytest
 from selenium.webdriver.common.by import By
 
 from psynet.participant import Participant
-from psynet.pytest_psynet import bot_class, path_to_test_experiment
+from psynet.pytest_psynet import (
+    bot_class,
+    path_to_test_experiment,
+    wait_for_exit_page,
+)
 from psynet.utils import wait_until
 
 PYTEST_BOT_CLASS = bot_class()
@@ -129,11 +133,7 @@ class TestStartResumeDefault:
             db_session.commit()
 
             driver.get(_start_url(base_url, recruitment_params))
-            wait_until(
-                lambda: "/recruiter-exit" in driver.current_url,
-                max_wait=10,
-                error_message="Finished assignment did not return to the exit page.",
-            )
+            wait_for_exit_page(driver, max_wait=10)
             assert not driver.find_elements(By.ID, "consent")
 
 

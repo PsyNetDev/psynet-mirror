@@ -1,5 +1,4 @@
 import json
-import random
 from importlib import resources
 
 from markupsafe import Markup
@@ -10,7 +9,6 @@ from psynet.modular_page import (
     AudioPrompt,
     AudioRecordControl,
     ModularPage,
-    PushButtonControl,
 )
 from psynet.page import InfoPage, wait_while
 from psynet.timeline import (
@@ -63,16 +61,16 @@ class REPPVolumeCalibration(Module):
         return PageMaker(
             lambda assets: InfoPage(
                 Markup(
-                    f"""
+                    """
                       <h3>Requirements</h3>
                       <hr>
-                      <b>Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
+                      Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
                       <br><br>
                       <i>Please do not use headphones, earphones, external speakers, or wireless devices (unplug or deactivate them now)</i>
                       <hr>
-                      <img style="width:70%" src="{assets["rules_image"].url}" alt="rules_image">
+                      <img style="width:70%" src="{url}" alt="rules_image">
                       """
-                ),
+                ).format(url=assets["rules_image"].url),
             ),
             time_estimate=5,
         )
@@ -101,12 +99,12 @@ class REPPVolumeCalibration(Module):
     @property
     def calibration_instructions(self):
         return Markup(
-            f"""
+            """
             <h3>Volume test</h3>
             <hr>
             <h4>We will begin by calibrating your audio volume:</h4>
             <ol>
-                <li>{self.what_are_we_playing}</li>
+                <li>{what_are_we_playing}</li>
                 <li>Set the volume in your laptop to approximately 90% of the maximum.</li>
                 <li><b>The sound meter</b> below indicates whether the audio volume is at the right level.</li>
                 <li>If necessary, turn up the volume on your laptop until the sound meter consistently indicates that
@@ -114,7 +112,7 @@ class REPPVolumeCalibration(Module):
             </ol>
             <hr>
             """
-        )
+        ).format(what_are_we_playing=self.what_are_we_playing)
 
     @property
     def what_are_we_playing(self):
@@ -277,7 +275,7 @@ class REPPTappingCalibration(Module):
 
     def instructions_text(self, assets):
         return Markup(
-            f"""
+            """
             <h3>Practice how to tap on your laptop</h3>
             <hr>
             Please always tap on the surface of your laptop using your index finger (see picture)
@@ -286,10 +284,10 @@ class REPPTappingCalibration(Module):
                 <li>Do not tap on the keyboard or tracking pad, and do not tap using your nails or any other bject.</li>
                 <li>If your tapping is <b style="color:red;">"too quiet!"</b>, try tapping louder or on a different location on your laptop.</li>
             </ul>
-            <img style="width:60%" src="{assets["tapping_instructions_image"].url}"  alt="image_rules">
+            <img style="width:60%" src="{url}"  alt="image_rules">
             <hr>
             """
-        )
+        ).format(url=assets["tapping_instructions_image"].url)
 
     class AudioMeter(AudioMeterControl):
         decay = {"display": 0.1, "high": 0.1, "low": 0}
@@ -368,7 +366,7 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
         if self.failed:
             return InfoPage(
                 Markup(
-                    f"""
+                    """
                     <h4>Your tapping was bad...</h4>
                     We detected {num_resp_onsets_detected} taps in the recording. This is not sufficient for this task.
                     Please try to do one or more of the following:
@@ -379,17 +377,17 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
                     </ol>
                     <b><b>If we cannot detect your tapping signal in the recording, the experiment will terminate.</b></b>
                     """
-                ),
+                ).format(num_resp_onsets_detected=num_resp_onsets_detected),
                 time_estimate=5,
             )
         else:
             return InfoPage(
                 Markup(
-                    f"""
+                    """
                     <h4>Good!</h4>
                     We could detect {num_resp_onsets_detected} taps in the recording.
                     """
-                ),
+                ).format(num_resp_onsets_detected=num_resp_onsets_detected),
                 time_estimate=5,
             )
 
@@ -734,18 +732,18 @@ class REPPMarkersTest(StaticTrialMaker):
         return PageMaker(
             lambda assets: InfoPage(
                 Markup(
-                    f"""
+                    """
             <h3>Recording test</h3>
             <hr>
-            Now we will test the recording quality of your laptop. In {self.n_trials} trials, you will be
+            Now we will test the recording quality of your laptop. In {n_trials} trials, you will be
             asked to remain silent while we play and record a sound.
             <br><br>
-            <img style="width:50%" src="{assets["rules_image"].url}"  alt="rules_image">
+            <img style="width:50%" src="{url}"  alt="rules_image">
             <br><br>
             When ready, click <b>next</b> for the recording test and please wait in silence.
             <hr>
             """
-                ),
+                ).format(n_trials=self.n_trials, url=assets["rules_image"].url),
             ),
             time_estimate=5,
         )
@@ -776,41 +774,3 @@ class REPPMarkersTest(StaticTrialMaker):
             )
             for i in range(3)
         ]
-
-
-class LanguageVocabularyTrial(StaticTrial):
-    time_estimate = None
-
-    def finalize_definition(self, definition, experiment, participant):
-        indices = range(4)
-        definition["order"] = random.sample(indices, len(indices))
-        return definition
-
-    def show_trial(self, experiment, participant):
-        order = self.definition["order"]
-        choices = ["correct", "wrong1", "wrong2", "wrong3"]
-        image_urls = [self.assets[f"image_{choice}"].url for choice in choices]
-
-        return ModularPage(
-            "language_vocabulary_trial",
-            AudioPrompt(
-                self.assets["audio"],
-                "Select the picture that matches the word that you heard.",
-            ),
-            PushButtonControl(
-                choices=[choices[i] for i in order],
-                labels=[
-                    f'<img src="{image_urls[i]}" alt="notworking" height="65px" width="65px"/>'
-                    for i in order
-                ],
-                style="min-width: 100px; margin: 10px; background: none; border-color: grey;",
-                arrange_vertically=False,
-                bot_response="correct",
-            ),
-        )
-
-    def score_answer(self, answer, definition):
-        if answer == "correct":
-            return 1
-        else:
-            return 0

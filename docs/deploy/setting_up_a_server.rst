@@ -234,18 +234,14 @@ running still needs the public key in its ``authorized_keys``.
 Docker image name
 ^^^^^^^^^^^^^^^^^
 
-PsyNet refuses to deploy over SSH unless ``docker_image_base_name`` is set.
-``psynet debug ssh`` and ``psynet deploy ssh`` build the image on the server
-and do not push it, so any name works and you do not need a Docker registry
-account:
+``psynet debug ssh``, ``psynet deploy ssh`` and ``psynet performance-test
+ssh`` build the image on the server and do not push it, so you need neither
+``docker_image_base_name`` nor a Docker registry account. The image is named
+after the app (``--app``). If you do set ``docker_image_base_name``, it names
+the image instead.
 
-.. code-block:: ini
-
-    [Docker]
-    docker_image_base_name = psynet-experiments
-
-A registry is needed only if you push images yourself; see
-:ref:`docker_registry`.
+A registry is needed only if you push images, for example with
+``psynet deploy heroku --docker``; see :ref:`docker_registry`.
 
 Dashboard credentials and contact email
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -404,10 +400,13 @@ List the registered servers, then connect to yours:
 
 A new server reports ``No apps found.`` To check the whole path, deploy a
 pilot of any experiment and open ``https://<app>.<server>`` as described in
-:doc:`/deploy/running_a_study`. The first deployment also starts the log
-viewer at ``https://logs.<server>``; its username is ``dallinger`` and its
-password is the dashboard password of that first deployment. To change it,
-run ``dallinger docker-ssh set-dozzle-password --server <server>``.
+:doc:`/deploy/running_a_study`. On a server with classic ingress, the first
+deployment also starts the log viewer at ``https://logs.<server>``. Its
+username is ``dallinger`` and its password is the dashboard password of that
+first deployment. Each deployment saves it as ``logs_password`` in its
+``launch-info.json``. To change it, run
+``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
+Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 
 Stopping and removing the server
 --------------------------------

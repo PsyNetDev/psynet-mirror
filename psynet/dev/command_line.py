@@ -81,7 +81,7 @@ def update_dallinger_constraints(skip_compile_check):
 @click.option(
     "--junit-dir", default=None, help="Write one JUnit XML file per item here."
 )
-@click.option("--python-version", default="3.13", show_default=True)
+@click.option("--python-version", default="3.14", show_default=True)
 @click.option(
     "--durations-output",
     default=None,
@@ -379,6 +379,23 @@ def changelog_check_mr(base, head):
     assert_changelog_available()
     try:
         changelog_module.check_mr_command(base, head)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@changelog.command("next-alpha")
+@click.option(
+    "--write", is_flag=True, help="Set it in psynet/version.py and pyproject.toml."
+)
+def changelog_next_alpha(write):
+    """Print the development version master should carry.
+
+    That is the next major alpha if changelog.d holds breaking fragments,
+    otherwise the next minor alpha, counted from the last stable release.
+    """
+    assert_changelog_available()
+    try:
+        changelog_module.next_alpha_command(write)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 

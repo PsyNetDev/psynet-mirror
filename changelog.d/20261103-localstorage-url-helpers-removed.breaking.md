@@ -1,0 +1,1 @@
+`LocalStorage.get_url` and the `LocalStorage.local_path`, `LocalStorage.public_path` and `LocalStorage.label` properties have been removed, because locally stored assets are no longer reachable under `static/assets`; use the asset's `url` instead.

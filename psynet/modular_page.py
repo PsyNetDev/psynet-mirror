@@ -18,6 +18,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
+import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
@@ -72,6 +73,13 @@ def _merge_js_var_sources(*sources):
             owners[key] = source_name
 
     return merged
+
+
+def _dominate_label(label):
+    """Return a label for dominate, keeping ``Markup`` labels as HTML."""
+    if isinstance(label, Markup):
+        return raw(str(label))
+    return label
 
 
 class Blob:
@@ -930,6 +938,10 @@ class OptionControl(Control):
     """
     The OptionControl class provides four kinds of controls for the participant in its subclasses
     ``CheckboxControl``, ``DropdownControl``, ``PushButtonControl``, and ``RadioButtonControl``.
+
+    The saved answer is the element of ``choices`` that the participant picked,
+    with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
+    NumPy scalars in ``choices`` become the equivalent Python values.
     """
 
     def __init__(
@@ -941,12 +953,40 @@ class OptionControl(Control):
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
-        self.choices = choices
-        self.labels = choices if labels is None else labels
+        self.choices = [_as_python_value(choice) for choice in choices]
+        self.labels = self.choices if labels is None else labels
         self.style = style
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
+        self._check_choices_have_distinct_text()
+
+    def _check_choices_have_distinct_text(self):
+        # The browser submits a choice as the text of its HTML id or value,
+        # so choices with the same text could not be told apart.
+        seen = {}
+        for choice in self.choices:
+            other = seen.setdefault(str(choice), choice)
+            if other != choice:
+                raise ValueError(
+                    f"Choices {other!r} and {choice!r} have the same text, "
+                    "so their answers cannot be told apart."
+                )
+
+    def _choice_for_text(self, text):
+        if isinstance(text, str):
+            for choice in self.choices:
+                if str(choice) == text:
+                    return choice
+        return text
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the choice named by the browser's string answer.
+
+        Answers that name no choice, such as an empty selection or free text,
+        are returned unchanged.
+        """
+        return self._choice_for_text(raw_answer)
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -968,8 +1008,11 @@ class OptionControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
+        """Answer with a random choice, as a string like the browser submits."""
+        # Browsers submit the choice from its HTML id or value attribute,
+        # so the raw answer is a string even when ``choices`` are numbers.
         return BotResponse(
-            raw_answer=random.choice(self.choices),
+            raw_answer=str(random.choice(self.choices)),
             metadata=self.metadata,
         )
 
@@ -991,6 +1034,14 @@ def _is_html_markup(x):
     return isinstance(x, Markup) or isinstance(x, tags.html_tag)
 
 
+def _as_python_value(x):
+    """Convert a NumPy scalar to the equivalent Python value, so it is stored as plain JSON."""
+    if isinstance(x, np.floating):
+        # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
+        return float(str(x))
+    return x.item() if isinstance(x, np.generic) else x
+
+
 class CheckboxControl(OptionControl):
     """
     This control interface solicits a multiple-choice response from the participant using checkboxes.
@@ -1007,6 +1058,7 @@ class CheckboxControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the checkboxes,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     arrange_vertically:
         Whether to arrange the checkboxes vertically. Default: ``True``.
@@ -1069,7 +1121,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1080,6 +1132,19 @@ class CheckboxControl(OptionControl):
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the ticked choices named by the browser's list of ids."""
+        if not isinstance(raw_answer, list):
+            return raw_answer
+        return [self._choice_for_text(text) for text in raw_answer]
+
+    def get_bot_response(self, experiment, bot, page, prompt):
+        """Tick one random checkbox, submitting the list of ids the browser sends."""
+        return BotResponse(
+            raw_answer=[str(random.choice(self.choices))],
+            metadata=self.metadata,
+        )
 
 
 class Checkbox:
@@ -1149,9 +1214,11 @@ class DropdownControl(OptionControl):
             ):
                 for choice, label in zip(self.choices, self.labels):
                     if answer == choice:
-                        tags.option(value=choice, selected=True).add(label)
+                        tags.option(value=choice, selected=True).add(
+                            _dominate_label(label)
+                        )
                     else:
-                        tags.option(value=choice).add(label)
+                        tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
     def validate(self, response, **kwargs):
@@ -1180,6 +1247,7 @@ class PushButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
@@ -1221,22 +1289,21 @@ class PushButtonControl(OptionControl):
         return {"choices": self.choices, "labels": self.labels}
 
     def visualize_response(self, answer, response, trial):
+        return self._visualize_buttons(lambda choice: choice == answer)
+
+    def _visualize_buttons(self, is_highlighted):
+        """Render the buttons, highlighting those whose choice passes ``is_highlighted``."""
+        mode = "timed" if self.timed else "submit"
         html = tags.div()
         with html:
             for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response submit"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
+                color = "btn-success" if is_highlighted(choice) else "btn-primary"
                 tags.button(
                     type="button",
                     id=choice,
-                    _class=_class,
+                    _class=f"btn push-button {color} response {mode}",
                     style=self.style,
-                ).add(label)
+                ).add(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1314,6 +1381,7 @@ class TimedPushButtonControl(PushButtonControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     button_highlight_duration:
         How long to highlight the button for once it has been clicked (seconds).
@@ -1347,24 +1415,18 @@ class TimedPushButtonControl(PushButtonControl):
         return {**kwargs}["metadata"]["event_log"]
 
     def visualize_response(self, answer, response, trial):
-        html = tags.div()
-        with html:
-            for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response timed"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
-                tags.button(
-                    type="button",
-                    id=choice,
-                    _class=_class,
-                    style=self.style,
-                ).add(label)
-                tags.br()
-        return html.render()
+        """Highlight every button that the response's event log records as pressed."""
+        # Subclasses may reformat the answer, so read the presses from the
+        # browser's event log instead.
+        event_log = []
+        if response is not None and response.metadata:
+            event_log = response.metadata.get("event_log") or []
+        pressed = {
+            event["info"]["buttonId"]
+            for event in event_log
+            if event["eventType"] == "pushButtonClicked"
+        }
+        return self._visualize_buttons(lambda choice: str(choice) in pressed)
 
     def get_bot_response(self, experiment, bot, page, prompt):
         event_log = [
@@ -1449,6 +1511,7 @@ class RadioButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the radiobuttons,
         which the participant will see instead of ``choices``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS style attributes to apply to the radiobuttons. Default: ``"cursor: pointer"``.
@@ -1504,14 +1567,14 @@ class RadioButtonControl(OptionControl):
             placeholder_text = (
                 ""
                 if self.placeholder_text_free_text is None
-                else f'placeholder="{self.placeholder_text_free_text}"'
+                else Markup('placeholder="{}"').format(self.placeholder_text_free_text)
             )
             self.radiobuttons.append(
                 RadioButton(
                     name=self.name,
                     id_="free_text",
-                    label=Markup(
-                        f"<input id='free_text_input' {placeholder_text} type='text'>"
+                    label=Markup("<input id='free_text_input' {} type='text'>").format(
+                        placeholder_text
                     ),
                     style=self.style,
                 )
@@ -1530,7 +1593,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1757,7 +1820,8 @@ class Button(BaseButton):
         When the button is pressed, an event is triggered with this exact ID.
 
     text :
-        Text to display on the button.
+        Text to display on the button. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style :
         Optional CSS styling for the button.
@@ -1776,7 +1840,7 @@ class Button(BaseButton):
     def __init__(
         self,
         id_: str,
-        text: Union[str, dom_tag],
+        text: Union[str, Markup, dom_tag],
         style: str = "",
         is_response_button=False,
         start_disabled=False,
@@ -2420,17 +2484,15 @@ class AudioMeterControl(Control):
     msg_duration = {"high": 0.25, "low": 0.25}
 
     def to_json(self):
-        return Markup(
-            json.dumps(
-                {
-                    "display_range": self.display_range,
-                    "decay": self.decay,
-                    "threshold": self.threshold,
-                    "grace": self.grace,
-                    "warn_on_clip": self.warn_on_clip,
-                    "msg_duration": self.msg_duration,
-                }
-            )
+        return json.dumps(
+            {
+                "display_range": self.display_range,
+                "decay": self.decay,
+                "threshold": self.threshold,
+                "grace": self.grace,
+                "warn_on_clip": self.warn_on_clip,
+                "msg_duration": self.msg_duration,
+            }
         )
 
     def update_events(self, events):
@@ -2438,6 +2500,12 @@ class AudioMeterControl(Control):
             is_triggered_by="trialStart", delay=self.min_time
         )
         events["submitEnable"].add_trigger("audioMeterMinimalTime")
+
+    def get_js_dependencies(self):
+        """Load Bootstrap's JavaScript for the calibration tabs."""
+        if self.calibrate:
+            return ["/static/scripts/bootstrap.bundle.min.js"]
+        return []
 
     def get_bot_response(self, experiment, bot, page, prompt):
         return None
@@ -2702,7 +2770,7 @@ class MediaSliderControl(SliderControl):
             }
 
     modality:
-        Either ``"audio"``,  ``"image"`` or ``"video"``.
+        One of ``"audio"``, ``"image"``, ``"html"`` or ``"video"``.
 
     media_locations:
         Dictionary with IDs as keys and locations on the slider as values.
@@ -2896,7 +2964,10 @@ class MediaSliderControl(SliderControl):
             else 0
         )
 
-    macro = "media_slider"
+    @property
+    def macro(self):
+        """The template macro that plays this control's media modality."""
+        return f"{self.modality}_media_slider"
 
     @property
     def metadata(self):
@@ -3733,6 +3804,7 @@ def _recording_labels():
         "answer": _(
             "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
         ),
+        "answer_required": _("Share your screen to record this answer."),
         "screen": _("Share screen"),
         "skip": _("Continue without recording"),
         "uploading": _("Uploading your recording, please keep this page open."),
@@ -3753,7 +3825,8 @@ class VideoRecordControl(RecordControl):
     In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
     before uploading video, for bots too. A missing recording fails its parent
     trial, without recapturing: immediately if the browser reports it unavailable,
-    otherwise at the upload deadline. For playback outside a trial, use
+    otherwise once the participant's browser stops renewing the upload (for
+    example, because it was closed). For playback outside a trial, use
     :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
     Legacy navigation and other storage backends upload the recording with the
     answer.
@@ -3792,11 +3865,12 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
-    # In-place LocalStorage experiments use acceptance-bound uploads; bots,
-    # legacy navigation, and other storage retain their existing deposit path.
+    # In-place LocalStorage experiments use acceptance-bound uploads; legacy
+    # navigation and other storage retain their existing deposit path.
     # Kept private for transport regression fixtures.
     _async_upload = True
     _async_upload_max_bytes = 128 * 1024 * 1024
+    _async_upload_idle_timeout = None
 
     def __init__(
         self,
@@ -3975,14 +4049,13 @@ class VideoRecordControl(RecordControl):
     def _accept_recordings(self, response, participant, page_uuid):
         """Install final read references and capabilities only after acceptance."""
         from .media_upload import (
+            _IDLE_TIMEOUT,
             _reserve_recording,
             _resolve_unavailable,
-            _upload_timeout,
         )
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        timeout = _upload_timeout(max(1, sum(sizes.values())))
         parent = participant.current_trial or participant
         summary = dict(response.answer)
         uploads = []
@@ -3997,10 +4070,10 @@ class VideoRecordControl(RecordControl):
                 source=source,
                 local_key=label,
                 storage=Recording.default_storage,
-                upload_timeout=timeout,
                 upload_size_bytes=min(sizes[source], self._async_upload_max_bytes)
                 or None,
                 max_bytes=self._async_upload_max_bytes,
+                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
             )
             reason = response._recording_unavailable.get(source)
             asset.upload_context = {
@@ -4010,7 +4083,7 @@ class VideoRecordControl(RecordControl):
             }
             if reason:
                 # The browser already knows these bytes cannot be uploaded, so
-                # resolve now rather than waiting for the upload deadline.
+                # resolve now rather than waiting for the lease to expire.
                 _resolve_unavailable(asset, reason, participant.current_trial)
             summary[f"{source}_id"] = asset.id
             summary[f"{source}_url"] = asset.url

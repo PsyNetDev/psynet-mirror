@@ -10,7 +10,7 @@ export async function activate({root, trial, psynet}) {
                 ...requestOptions,
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({participant_id: psynet.participantId}),
+                body: JSON.stringify({unique_id: psynet.uniqueId}),
             }),
         ]);
         const [digitData, name, pageUuidData] = await Promise.all([

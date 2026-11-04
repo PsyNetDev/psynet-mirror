@@ -113,8 +113,8 @@ class CustomTrial(GibbsTrial):
         target = self.network.definition["target"]
         prompt = Markup(
             "Adjust the slider to match the following word as well as possible: "
-            f"<strong>{target}</strong>"
-        )
+            "<strong>{target}</strong>"
+        ).format(target=target)
         return ColorSliderPage(
             "color_trial",
             prompt,

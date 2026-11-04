@@ -78,6 +78,16 @@ def test_move_missing_file_raises(artifact_storage):
         storage.move_file("does_not_exist.txt", "target.txt")
 
 
+@pytest.mark.parametrize("deployment_id", ["", "..", "../x", "a/b", "a\\b"])
+def test_artifact_paths_reject_unsafe_deployment_ids(artifact_storage, deployment_id):
+    with pytest.raises(ValueError, match="Invalid deployment ID"):
+        artifact_storage.write_comment("text", deployment_id=deployment_id)
+    with pytest.raises(ValueError, match="Invalid deployment ID"):
+        artifact_storage.archive(deployment_id)
+    with pytest.raises(ValueError, match="Invalid filename"):
+        artifact_storage.prepare_path("ok", filename=deployment_id)
+
+
 def test_get_modification_date(artifact_storage, tmp_path):
     storage = artifact_storage
     src_file = tmp_path / "source" / "timestamped.txt"
@@ -120,24 +130,45 @@ class TestAPI:
 
     def check_commenting(self, base_url, deployment_id):
         comment_text = "This is a test comment."
+        session = get_authenticated_session(base_url)
+        url = f"{base_url}/dashboard/comment/set/{deployment_id}"
 
-        # Write the comment
-        response = get_authenticated_session(base_url).post(
-            f"{base_url}/dashboard/comment/set/{deployment_id}",
+        for headers in [
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Origin": "https://attacker.example"},
+            {"Referer": "https://attacker.example/page"},
+            {"Origin": "null"},
+            {"Origin": base_url.replace("http://", "https://", 1)},
+        ]:
+            response = session.post(url, data={"txt": "forged"}, headers=headers)
+            assert response.status_code == 403
+
+        response = session.post(
+            f"{base_url}/dashboard/archive/deployment", data={"id": "../deployments"}
+        )
+        assert response.json()["status"] == "error"
+        assert (
+            session.get(f"{base_url}/dashboard/comment/get/%2E%2E").status_code == 400
+        )
+
+        # Write the comment, as the dashboard's own page does
+        response = session.post(
+            url,
             data={"txt": comment_text},
+            headers={"Sec-Fetch-Site": "same-origin", "Origin": base_url},
         )
         assert response.status_code == 200
 
-        # Download the comment
-        response = requests.get(
-            f"{base_url}/dashboard/artifact/{deployment_id}/comment.txt"
-        )
+        # Download the comment, which needs the dashboard login even locally
+        artifact_url = f"{base_url}/dashboard/artifact/{deployment_id}/comment.txt"
+        assert requests.get(artifact_url).status_code == 401
+        response = session.get(artifact_url)
         assert response.status_code == 200
         assert response.text == comment_text
 
     def check_export(self, base_url, deployment_id):
         # Request a data export (in psynet mode, without assets)
-        response = requests.get(
+        response = get_authenticated_session(base_url).get(
             f"{base_url}/dashboard/export/download",
             params={"type": "psynet", "assets": "none"},
         )

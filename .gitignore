@@ -38,6 +38,9 @@ node_modules
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Dallinger's JSON server log, written to the working directory
+logs.jsonl*
+
 # Unit test / coverage reports
 htmlcov/
 test-results/
@@ -159,6 +162,7 @@ deployment-info_*
 source_code.zip
 .deploy
 **/static/assets
+**/static/fonts/GoNotoKurrent-Bold.ttf
 **/deploy_logs/
 dump.rdb
 

@@ -75,9 +75,10 @@ Deployment
 - `Docker <https://docs.docker.com/>`_ packages the experiment and its
   dependencies into an image, and runs PostgreSQL and Redis on your computer
   during development.
-- On a server, `Caddy <https://caddyserver.com/>`_ routes each experiment's
-  web address to its containers and obtains HTTPS certificates, and
-  `Dozzle <https://dozzle.dev/>`_ shows the containers' logs in the browser.
+- On a server with classic ingress, `Caddy <https://caddyserver.com/>`_
+  routes each experiment's web address to its containers and obtains HTTPS
+  certificates, and `Dozzle <https://dozzle.dev/>`_ shows the containers'
+  logs in the browser.
 - `Amazon Web Services <https://aws.amazon.com/>`_ can host the server (EC2)
   and large stimulus files (S3); PsyNet talks to AWS with
   `boto3 <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>`_.

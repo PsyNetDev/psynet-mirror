@@ -50,6 +50,7 @@ Key design constraints for maintainers:
 """
 
 import hashlib
+import hmac
 import json
 import re
 from collections import Counter
@@ -74,6 +75,7 @@ from dallinger.recruiters import (
     handle_recruitment_error,
 )
 from dallinger.utils import get_base_url
+from markupsafe import Markup
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -270,6 +272,20 @@ def _recruiter_class_by_name(name):
         return None
 
 
+def named_recruiter_class(config=None):
+    """Return the class of the recruiter named in the configuration, or ``None``.
+
+    Unlike :func:`configured_recruiter_class`, this ignores the debug-mode
+    stand-in and replay mode, so it gives the recruiter that a deployment
+    will use. It returns ``None`` when no recruiter is named or the name is
+    unknown.
+    """
+    if config is None:
+        config = get_config()
+    name = config.get("recruiter", None)
+    return _recruiter_class_by_name(name) if name else None
+
+
 def configured_recruiter_class(config=None):
     """Return the recruiter class that the configuration selects.
 
@@ -371,6 +387,10 @@ class PsyNetRecruiterMixin:
             exit_domain.ExitPath.RETURN_WITHOUT_PAYMENT,
         }
     )
+
+    #: Whether ``max_concurrent_participants`` may hold newcomers on the start
+    #: page. Only open-link recruiters support it; see :mod:`psynet.capacity`.
+    supports_max_concurrent_participants = False
 
     #: Whether participants are shown their accumulated reward when the
     #: experiment does not say either way. Recruiters that disburse money
@@ -891,6 +911,7 @@ class HotAirRecruiter(
 ):
     # Local debug recruitment pays nobody, so there is no reward to report.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """HotAir does not pay through an external recruitment platform."""
@@ -1121,6 +1142,24 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             currency=get_config().get("currency", "$"),
         )
 
+    @staticmethod
+    def _unique_id_from_request(participant) -> dict[str, str]:
+        """Return ``{"unique_id": ...}`` if the current request carried it.
+
+        The page repeats only a credential its visitor already sent, so a
+        render path that never checked the visitor can't reveal it.
+        """
+        from flask import has_request_context, request
+
+        if not has_request_context():
+            return {}
+        unique_id = request.values.get("unique_id")
+        if unique_id and hmac.compare_digest(
+            unique_id.encode(), participant.unique_id.encode()
+        ):
+            return {"unique_id": unique_id}
+        return {}
+
     def error_page_presentation(
         self,
         *,
@@ -1212,6 +1251,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 action_post_data={
                     "assignmentId": participant.assignment_id,
                     "participantId": str(participant.id),
+                    **self._unique_id_from_request(participant),
                 },
             )
 
@@ -1535,6 +1575,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             "exit_recruiter_prolific_submitted.html",
             assignment_id=participant.assignment_id,
             participant_id=participant.id,
+            unique_id=participant.unique_id,
             submission_recorded=recorded,
             confirmation_heading=heading,
             confirmation_body=body,
@@ -2570,6 +2611,10 @@ class LucidRecruiterException(Exception):
     """Custom exception for LucidRecruiter"""
 
 
+class LucidIdentifierMismatch(Exception):
+    """A request's Lucid identifiers name different respondents."""
+
+
 @dataclass
 class LucidRecruitmentStatus(RecruitmentStatus):
     survey_sid: str
@@ -3554,48 +3599,79 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
 
         return lucid_recruitment_config.get(key)
 
-    def get_participant(self, request):
-        assignment_id = request.values.get("assignmentId")
+    @staticmethod
+    def requested_assignment_id(request):
+        """Return the Lucid RID that a request names.
+
+        The RID may come from ``assignmentId``, ``RID`` or the part of
+        ``unique_id`` after the colon. Not from ``participant_id``: it is
+        sequential, and the page this request renders shows the participant's
+        RID.
+
+        Parameters
+        ----------
+        request : flask.Request
+            The incoming request.
+
+        Returns
+        -------
+        str
+            The RID.
+
+        Raises
+        ------
+        ValueError
+            If the request names no RID or ``unique_id`` is malformed.
+        LucidIdentifierMismatch
+            If the supplied identifiers name different RIDs.
+        """
+        candidates = {
+            "assignmentId": request.values.get("assignmentId"),
+            "RID": request.values.get("RID"),
+        }
         unique_id = request.values.get("unique_id")
-        participant_id = request.values.get("participant_id")
-        rid = request.values.get("RID")
-        participant = None
+        if unique_id is not None:
+            worker_id, colon, unique_id_rid = unique_id.partition(":")
+            if not (worker_id and colon and unique_id_rid):
+                raise ValueError("unique_id must have the form 'worker_id:RID'.")
+            candidates["unique_id"] = unique_id_rid
 
-        if assignment_id is None:
-            if unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-            elif rid is not None:
-                assignment_id = rid
-            elif participant_id is not None:
-                participant = (
-                    Participant.query.with_for_update(of=Participant)
-                    .populate_existing()
-                    .get(int(participant_id))
-                )
-                assignment_id = participant.assignment_id
+        supplied = {key: value for key, value in candidates.items() if value}
+        if not supplied:
+            raise ValueError("The request names no Lucid RID.")
+        if len(set(supplied.values())) > 1:
+            raise LucidIdentifierMismatch(
+                f"The request names different Lucid RIDs: {sorted(supplied)}."
+            )
+        return next(iter(supplied.values()))
 
-        assert assignment_id is not None, "Could not determine assignment_id."
+    def get_participant(self, assignment_id):
+        """Return the participant with this Lucid RID, or ``None``.
 
-        if participant is None:
-            try:
-                participant = Participant.query.filter_by(
-                    assignment_id=assignment_id
-                ).one()
-            except NoResultFound:
-                logger.warning(
-                    f"No Participant for Lucid RID '{assignment_id}' found. "
-                    "This can happen when users are terminated before completing recruitment "
-                    "(e.g., mobile detection, wrong browser, or other early termination)."
-                )
-            except MultipleResultsFound:
-                logger.error(
-                    f"Multiple participants for Lucid RID '{assignment_id}' found. This should never happen."
-                )
+        Parameters
+        ----------
+        assignment_id : str
+            The Lucid RID, as returned by :meth:`requested_assignment_id`.
 
-        if participant is not None:
-            self.link_lucid_rid_to_participant(participant)
+        Returns
+        -------
+        Participant or None
+            The participant, or ``None`` if no participant has this RID.
 
-        return participant
+        Raises
+        ------
+        MultipleResultsFound
+            If several participants have this RID.
+        """
+        try:
+            return Participant.query.filter_by(assignment_id=assignment_id).one()
+        except NoResultFound:
+            logger.warning(
+                f"No Participant for Lucid RID '{assignment_id}' found. "
+                "This can happen when users are terminated before completing recruitment "
+                "(e.g., mobile detection, wrong browser, or other early termination)."
+            )
+            return None
 
     @property
     def termination_time_in_s(self):
@@ -3819,6 +3895,7 @@ class GenericRecruiter(
     # Generic recruitment has no platform to pay through, so any figure PsyNet
     # showed would be one the experimenter has to disburse by hand.
     shows_reward_by_default = False
+    supports_max_concurrent_participants = True
 
     def has_external_bonus_payment(self) -> bool:
         """Generic/local recruitment does not pay through an external platform."""
@@ -3845,16 +3922,19 @@ class GenericRecruiter(
         elif message == "default_exit_message":
             return super().exit_response(experiment, participant)
 
+        elif isinstance(message, Markup):
+            html = message
+
         elif isinstance(message, str):
-            html = dominate.tags.p(message).render()
+            html = Markup(dominate.tags.p(message).render())
 
         elif isinstance(message, dominate.dom_tag.dom_tag):
-            html = message.render()
+            html = Markup(message.render())
 
         else:
             raise ValueError(
                 f"Invalid value of experiment.render_exit_message: {message}. "
-                "You should return either a string or an HTML specification created using dominate tags "
+                "You should return a string, a markupsafe.Markup string, or an HTML specification created using dominate tags "
                 "(see https://pypi.org/project/dominate/)."
             )
 

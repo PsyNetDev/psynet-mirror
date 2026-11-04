@@ -33,10 +33,15 @@ from .paths import DATABASE_DIRNAME, EXPORT_FORMAT_VERSION
 logger = get_logger()
 
 
+#: Caches of recruiter API payloads. They hold raw recruiter identifiers that
+#: identifier separation does not cover, and the data can be fetched again.
+_UNEXPORTED_TABLES = {"lucid_submissions"}
+
+
 def _export_table_order(inspector=None) -> list[str]:
-    """Return physical table names in a stable export order."""
+    """Return the exported physical table names in a stable order."""
     inspector = inspector if inspector is not None else sa_inspect(db.engine)
-    names = sorted(inspector.get_table_names())
+    names = sorted(set(inspector.get_table_names()) - _UNEXPORTED_TABLES)
     preferred = [
         "network",
         "participant",
@@ -258,8 +263,11 @@ def _provenance_for_manifest() -> dict:
         if provenance["deployment_id"] is None and deployment_info.is_available():
             provenance["deployment_id"] = experiment.deployment_id
         provenance["experiment_label"] = experiment.label
-        provenance["git_commit_sha"] = experiment.var.get("git_commit_sha", None)
-        provenance["git_dirty"] = experiment.var.get("git_dirty", None)
+        from psynet.export.identity import running_git_provenance
+
+        git = running_git_provenance(experiment)
+        provenance["git_commit_sha"] = git["git_commit_sha"]
+        provenance["git_dirty"] = git["git_dirty"]
         return provenance
     except Exception:
         logger.warning(
@@ -290,8 +298,10 @@ def write_export_manifest(
 ) -> str:
     """Write ``manifest.json`` describing the export.
 
-    The manifest records ``git_commit_sha`` and ``git_dirty`` from launch
-    provenance. Exports do not bundle experiment source code. Empty table CSVs
+    The manifest records ``git_commit_sha`` and ``git_dirty`` of the code the
+    server runs (see :func:`psynet.export.identity.running_git_provenance`),
+    which must agree with the export preflight. Exports do not bundle
+    experiment source code. Empty table CSVs
     are omitted from ``database/``; ``table_row_counts`` still includes those
     tables with a count of ``0``.
 

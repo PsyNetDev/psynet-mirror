@@ -360,6 +360,39 @@ def test_timeline_timing_omits_unclosed_phases():
     assert "render;" not in header
 
 
+@pytest.mark.parametrize("total_ms, level", [(100.0, "DEBUG"), (1500.0, "INFO")])
+def test_only_slow_requests_log_their_timing_at_info(caplog, total_ms, level):
+    from flask import Flask, make_response
+
+    from psynet.experiment import Experiment
+
+    with Flask(__name__).app_context(), caplog.at_level("DEBUG", logger="psynet"):
+        Experiment._apply_timeline_timing(
+            make_response("ok"),
+            participant_id=1,
+            phases={},
+            total_ms=total_ms,
+            mode=None,
+        )
+    [record] = [r for r in caplog.records if "GET /timeline timing" in r.message]
+    assert record.levelname == level
+
+
+@pytest.mark.parametrize(
+    "key, expected",
+    [("-----", "Participant 1 done."), ("NOTE", "NOTE Participant 1 done.")],
+)
+def test_experiment_log_uses_the_psynet_logger(caplog, capsys, key, expected):
+    from types import SimpleNamespace
+
+    from psynet.experiment import Experiment
+
+    with caplog.at_level("INFO", logger="psynet"):
+        Experiment.log(SimpleNamespace(verbose=True), "Participant 1 done.", key)
+    assert caplog.messages == [expected]
+    assert capsys.readouterr().out == ""
+
+
 def test_html_timeline_lock_timeout_returns_html_busy_page(monkeypatch):
     import sqlalchemy
     from flask import Flask
@@ -606,13 +639,17 @@ def test_response_render_error_after_commit_reloads_timeline_when_transient(
         "psynet.experiment.success_response",
         lambda **kwargs: ("reload", kwargs),
     )
+    receipts = {"recording_uploads": [{"id": "7"}], "recording_upload_server_time": "t"}
     result = Experiment._handle_response_render_error(
         FakeExperiment(),
         participant_id=1,
         error=err,
+        recording_receipts=receipts,
     )
     assert result[0] == "reload"
     assert result[1]["page"]["attributes"]["requires_full_page_reload"] is True
+    # Committed recordings must still be uploaded before the reload.
+    assert result[1]["recording_uploads"] == receipts["recording_uploads"]
     assert "error" not in handled
     assert rolled_back == [True]
 

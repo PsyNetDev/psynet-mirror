@@ -1,0 +1,1 @@
+When `experiment.py` or a module it imports fails to load, PsyNet commands now print a short traceback showing only the lines from the experiment folder and the line that raised the error, and exit with status 1. Set `PSYNET_SHOW_TRACEBACK=1` to see the full traceback.

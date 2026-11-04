@@ -1,3 +1,4 @@
+import sys
 import warnings
 from importlib import resources
 from math import ceil
@@ -28,7 +29,15 @@ from .timeline import (
 from .utils import call_function, call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-warnings.simplefilter("always", DeprecationWarning)
+# Other packages' deprecation warnings are for their maintainers; PsyNet's,
+# Dallinger's and the experiment's are shown. -W and PYTHONWARNINGS win.
+if not sys.warnoptions:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings(
+        "always",
+        category=DeprecationWarning,
+        module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
+    )
 
 
 class InfoPage(ModularPage):
@@ -194,6 +203,8 @@ class WaitPage(Page):
 
     content:
         Message to display to the participant while they wait.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a
+        ``dominate`` tag for HTML.
         Default: "Please wait, the experiment should continue shortly..."
 
     **kwargs:
@@ -248,7 +259,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Optional[str] = None,
+    content: Union[str, Markup, dom_tag, None] = None,
     on_timeout: Optional[Callable] = None,
 ):
     """
@@ -302,7 +313,8 @@ def wait_while(
 
     content
         Message displayed by the timeline hold. Only used when ``wait_page`` is
-        omitted.
+        omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
+        or a dominate tag for HTML.
 
     on_timeout
         Optional function called with ``participant=...`` when
@@ -336,7 +348,7 @@ def wait_while(
                 participant=participant,
                 experiment=experiment,
             )
-            logger.info(
+            logger.debug(
                 "Evaluating timeline hold (%s) condition: result = %s",
                 label,
                 result,

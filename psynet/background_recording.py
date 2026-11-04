@@ -14,8 +14,8 @@ from dataclasses import asdict, dataclass
 class VideoRecordConfig:
     """Configure background capture with bounded duration and file size.
 
-    ``required=True`` fails the parent trial if media is missing at its upload
-    deadline, and holds finalization until deposit. The default is optional.
+    ``required=True`` fails the parent trial if media is missing when its upload
+    lease expires, and holds finalization until deposit. The default is optional.
     Bots skip capture, including this requirement, for timeline testing only.
     ``source`` is camera, screen, or both. Audio is disabled by default. Limits
     apply per source; capture stops when either limit is reached. Capture starts
@@ -165,7 +165,7 @@ def _browser_config(page, experiment, participant):
 
 def _accept_background_recordings(page, response, participant, experiment, page_uuid):
     """Reserve background clips without replacing or changing the ordinary answer."""
-    from .media_upload import _reserve_recording, _resolve_unavailable, _upload_timeout
+    from .media_upload import _reserve_recording, _resolve_unavailable
     from .trial.main import Trial
     from .trial.record import Recording
 
@@ -204,7 +204,6 @@ def _accept_background_recordings(page, response, participant, experiment, page_
         if type(size) is not int or not 0 <= size <= 2**53 - 1:
             raise ValueError("Invalid background recording size.")
         hints[source] = size
-    timeout = _upload_timeout(max(1, sum(hints.values())))
     receipts = []
     for source, size in hints.items():
         reason = unavailable.get(source)
@@ -223,7 +222,6 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             source=source,
             local_key=f"background_{page_uuid}_{source}",
             storage=Recording.default_storage,
-            upload_timeout=timeout,
             upload_size_bytes=min(size, config["max_bytes"]) or None,
             max_bytes=config["max_bytes"],
             role="background",

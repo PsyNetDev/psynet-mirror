@@ -207,13 +207,6 @@ General
     collisions. New code should read ``psynet.var`` directly. Default:
     ``warn``.
 
-``lock_table_when_creating_participant`` *bool* |dlgr-icon|
-    Prevents possible deadlocks on the `Participant` table.
-    Historically we have locked the participant table when creating participants
-    to avoid database inconsistency problems. However some experimenters have experienced
-    some deadlocking problems associated with this locking, so we have made
-    it an opt-out behavior. Default: ``True``.
-
 ``logfile`` *str* |dlgr-icon|
     Where to write logs.
 
@@ -233,12 +226,17 @@ General
     Default: ``True``.
 
 ``protected_routes`` *str* |dlgr-icon|
-    An optional JSON array of Flask route rule names which should be made inaccessible.
+    An optional JSON array of Flask route rule names which should be made inaccessible
+    to anyone not logged in to the dashboard. PsyNet always protects Dallinger's
+    routes that return database content, such as ``/participant/<participant_id>``
+    and ``/network/<network_id>``; this setting adds routes to that list.
     Example::
 
-        protected_routes = ["/participant/<participant_id>", "/network/<network_id>", "/node/<int:node_id>/neighbors"]
+        protected_routes = ["/my_experiment_data"]
 
     Accessing routes included in this list will raise a ``PermissionError`` and no data will be returned.
+    This setting can't remove a route from PsyNet's list; to do that, override
+    ``Experiment.protected_routes`` in your experiment class.
 
 ``show_early_exit_button`` *bool* |psynet-icon|
     If ``True``, participants may request to leave early. The timeline footer
@@ -480,14 +478,83 @@ Allowed browsers and devices
     ``False``, they are asked to switch to a computer.
     Default: ``True``.
 
+``browser_capabilities`` *set* |psynet-icon| — *class attribute*
+    Declares the browser features your experiment requires. PsyNet inserts a
+    :class:`~psynet.prescreen.BrowserCapabilityCheck` at the very start of
+    your timeline, which screens out participants whose browsers lack a listed
+    capability. The check runs before any consent page, so for ``microphone``
+    and ``camera`` the browser asks for device access before the participant
+    has consented; place the check yourself (see below) if your consent
+    procedure needs to come first.
+
+    Valid tokens:
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 25 75
+
+       * - Token
+         - What is tested
+       * - ``microphone``
+         - Microphone access via ``getUserMedia`` (triggers a permission prompt)
+       * - ``camera``
+         - Camera access via ``getUserMedia`` (triggers a permission prompt)
+       * - ``screen_capture``
+         - ``navigator.mediaDevices.getDisplayMedia`` is present
+       * - ``video_recording``
+         - ``MediaRecorder`` is available and can record WebM video, the only
+           format PsyNet records answers in
+       * - ``audio_playback``
+         - ``AudioContext`` is available
+
+    Example::
+
+        class Exp(psynet.experiment.Experiment):
+            browser_capabilities = {"microphone", "video_recording"}
+
+    To change the inserted module, override
+    :meth:`~psynet.experiment.Experiment.get_browser_capability_check`. To
+    place the check somewhere else, for example after the consent page, make
+    that method return ``None`` and add the check to your timeline yourself::
+
+        class Exp(psynet.experiment.Experiment):
+            browser_capabilities = {"microphone"}
+
+            @classmethod
+            def get_browser_capability_check(cls):
+                return None
+
+            timeline = Timeline(
+                MainConsent(),
+                BrowserCapabilityCheck(browser_capabilities),
+                ...
+            )
+
+    A subclass whose effective ``browser_capabilities`` or
+    ``get_browser_capability_check`` differs from its parent's, for example
+    through a second base class, must define its own ``timeline``.
+
+    PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
+    Firefox 121+, Safari 15.4+); you do not need to add a token for that.
+
+    Default: ``frozenset()`` (no additional requirements beyond the CSS check).
+
 ``force_google_chrome`` *bool* |psynet-icon|
-    Forces the user to use the Google Chrome browser. If another browser is used, it will give detailed instructions on how to install Google Chrome.
-    Default: ``True``.
+    *Deprecated.* Forces the user to use a Chromium-based browser (Chrome,
+    Edge, Brave, or Opera). If an incompatible browser is used, the participant
+    sees instructions to install Google Chrome.
+    Default: ``False``.
 
-    .. note::
+    Setting this logs a deprecation warning at startup. For most
+    use cases ``browser_capabilities`` is the better alternative — it
+    screens for the specific browser features your experiment actually needs.
+    Leave ``force_google_chrome`` unset to admit all modern browsers (Chrome,
+    Edge, Firefox, Safari) that pass the CSS ``:has()`` check.
 
-        PsyNet only officially supports Google Chrome.
-
+    If you use Lucid recruitment with this setting enabled, note that the
+    Lucid qualification (QuestionID 1035) gates on the Chrome brand only, so
+    Edge, Brave, and Opera participants are excluded at the recruitment stage
+    even though PsyNet would admit them at the browser-check stage.
 
 ``leave_comments_on_every_page`` *bool* |psynet-icon|
     Adds a comment box for the experimenter, which is shown on the "Help" modal. This feature is particularly useful for lab or field experiments, where the experimenter can leave comments on every page of the experiment. This is an opt-in feature, and is not enabled by default.
@@ -500,15 +567,6 @@ Allowed browsers and devices
     Furthermore it does not enable addons which can interfere with the experiment. If the user is not using
     incognito mode, it will give detailed instructions on how to open the experiment in incognito mode.
     Default: ``False``.
-
-``min_browser_version`` *str* |psynet-icon|
-    The minimum version of Chrome a participant needs to take a study.
-    Default: ``105.0``.
-
-    Chrome 105 (August 2022) is the first release supporting CSS ``:has()``, which the
-    default participant theme uses to style selected response options. Lowering this
-    value is supported, but participants on older browsers will not see selected
-    options highlighted.
 
 Recruiters
 ~~~~~~~~~~
@@ -854,9 +912,14 @@ Docker
 
 ``docker_image_base_name`` *str* |dlgr-icon|
     A string that will be used to name the docker image generated by this experiment.
-    Defaults to the experiment directory name (``bartlett1932``, ``chatroom`` etc).
+    Optional for ``psynet debug ssh``, ``psynet deploy ssh`` and ``psynet
+    performance-test ssh``, which build the image on the server without pushing
+    it. If unset, they name the image after the app (``--app``).
     To enable repeatability a generated docker image can be pushed to a registry.
     To this end the registry needs to be specified in the ``docker_image_base_name``.
+    ``psynet deploy heroku --docker`` and ``psynet debug heroku --docker`` push
+    the image, so they require it, and stop before preparing the experiment if
+    it is unset or has no registry or namespace (no ``/``).
     For example:
 
     * ``ghcr.io/<GITHUB_USERNAME>/<GITHUB_REPOSITORY>/<EXPERIMENT_NAME>``

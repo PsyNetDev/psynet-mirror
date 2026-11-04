@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -107,7 +108,6 @@ _OBSOLETE_DOCKER_SCRIPT_HASHES = {
 }
 
 _GENERATED_FILES = {
-    "Dockertag": lambda: dockertag_contents(),
     ".python-version": lambda: f"{_current_python_major_minor()}\n",
 }
 
@@ -145,14 +145,19 @@ def _current_python_major_minor() -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def dockertag_contents() -> str:
-    """Return Dockertag file contents for the current experiment directory."""
-    return f"{Path.cwd().name}\n"
-
-
 def _experiment_script_resource(relative_path: str):
     """Return a Traversable for a packaged experiment-script template path."""
     return resources.files("psynet") / f"resources/experiment_scripts/{relative_path}"
+
+
+def _template_contents(relative_path: str) -> bytes:
+    """Return the contents a scaffold-managed template file should have."""
+    contents = _experiment_script_resource(relative_path).read_bytes()
+    if relative_path == "Dockerfile":
+        contents = contents.replace(
+            b"{python_major_minor}", _current_python_major_minor().encode()
+        )
+    return contents
 
 
 def scaffold_managed_paths() -> frozenset[str]:
@@ -167,6 +172,21 @@ def scaffold_managed_paths() -> frozenset[str]:
     paths.update(_MANAGED_DIRECTORIES)
     paths.update(_GENERATED_FILES)
     return frozenset(paths)
+
+
+def is_stock_scaffold_path(relative_path: str) -> bool:
+    """Return whether a path is scaffold boilerplate rather than the author's own file.
+
+    That is, a scaffold-managed path, or a file under a managed directory,
+    except that files authors customize (such as ``config.txt``) only count
+    while they still match their template.
+    """
+    managed = scaffold_managed_paths()
+    if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
+        return _template_file_matches(relative_path)
+    return relative_path in managed or any(
+        relative_path.startswith(f"{path}/") for path in managed
+    )
 
 
 def scaffold_paths_required_for_local_run() -> frozenset[str]:
@@ -531,6 +551,23 @@ def get_editable_psynet_source() -> Path | None:
     return _editable_source(_psynet_direct_url_info())
 
 
+def get_editable_dallinger_source() -> Path | None:
+    """Return the source path when Dallinger is installed in editable mode.
+
+    Falls back to Dallinger's own detection for legacy ``.egg-link`` installs,
+    which do not record ``direct_url.json``.
+    """
+    source = get_editable_source("dallinger")
+    if source is not None:
+        return source
+    try:
+        from dallinger.utils import get_editable_dallinger_path
+    except ImportError:
+        return None
+    legacy_source = get_editable_dallinger_path()
+    return Path(legacy_source).resolve() if legacy_source else None
+
+
 def get_editable_source(package: str) -> Path | None:
     """Return the source path when ``package`` is installed in editable mode.
 
@@ -796,8 +833,7 @@ def _report_scaffold_result(written, *, overwrite):
 
     if overwrite:
         if summary:
-            click.echo(f"Updated experiment scripts in {directory_name}")
-            click.echo(f"  updated: {summary}")
+            click.echo(f"Updated experiment scripts in {directory_name}: {summary}.")
         else:
             click.echo(
                 f"Experiment scripts in {directory_name} are already up to date."
@@ -805,11 +841,7 @@ def _report_scaffold_result(written, *, overwrite):
         return
 
     if summary:
-        click.echo(f"Scaffolded experiment in {directory_name}")
-        click.echo(f"  created: {summary}")
-        return
-
-    click.echo("Nothing to scaffold; experiment boilerplate is already present.")
+        click.echo(f"Scaffolded experiment in {directory_name}: created {summary}.")
 
 
 def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
@@ -829,8 +861,7 @@ def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
         return False
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with resources.as_file(_experiment_script_resource(relative_path)) as path:
-        shutil.copyfile(path, destination)
+    destination.write_bytes(_template_contents(relative_path))
     if (
         relative_path == "deploy.toml"
         and previous_gitignore is not None
@@ -1074,8 +1105,7 @@ def _template_file_matches(relative_path):
     if not destination.is_file():
         return False
 
-    with resources.as_file(_experiment_script_resource(relative_path)) as template:
-        return destination.read_bytes() == template.read_bytes()
+    return destination.read_bytes() == _template_contents(relative_path)
 
 
 def _generated_file_matches(relative_path):
@@ -1245,7 +1275,7 @@ def _update_experiment_skills(*, overwrite: bool = False) -> bool:
         ):
             return False
 
-        click.echo(f"...updating {target} directory.")
+        click.echo(f"Updating {target}.")
         if target.exists():
             shutil.rmtree(target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1370,13 +1400,23 @@ def scaffold_missing_files():
     dict
         The result returned by :func:`scaffold_experiment_directory`.
     """
+    directory = os.getcwd()
     original_paths, original_modes = _snapshot_scaffold_context_paths()
     try:
         with _without_deployment_policy_review():
             yield scaffold_experiment_directory()
     finally:
-        _remove_new_scaffold_context_paths(original_paths)
-        _restore_scaffold_context_modes(original_modes)
+        # The cleanup removes relative paths, so it must not run elsewhere,
+        # e.g. in the repository root when an interrupted pytest session
+        # closes this context during interpreter shutdown.
+        if os.path.isdir(directory):
+            cwd = os.getcwd()
+            os.chdir(directory)
+            try:
+                _remove_new_scaffold_context_paths(original_paths)
+                _restore_scaffold_context_modes(original_modes)
+            finally:
+                os.chdir(cwd)
 
 
 # Shared Click help for the prune command (bootstrap + full CLI).
@@ -1388,7 +1428,8 @@ PRUNE_INCLUDE_TRACKED_OPTION_HELP = (
 )
 PRUNE_COMMAND_HELP = (
     "Remove scaffold-managed boilerplate and generated leftovers "
-    "(static/assets, untracked constraints.txt).\n\n"
+    "(a static/assets link left by older PsyNet versions, untracked "
+    "constraints.txt).\n\n"
     "By default only unmodified, untracked scaffold paths are removed. "
     "--include-modified also removes divergent untracked scaffold paths. "
     "--include-tracked also removes git-tracked managed paths. "
@@ -1592,14 +1633,16 @@ def _git_tracked_paths(root: Path, *, required: bool = False) -> set[str]:
 
 
 def _remove_generated_static_assets(root: Path) -> bool:
-    """Remove generated ``static/assets`` and an empty ``static/`` directory."""
+    """Remove a legacy ``static/assets`` link and an empty ``static/`` directory.
+
+    Older PsyNet versions linked ``static/assets`` to local asset storage.
+    PsyNet no longer creates anything there, so a real file or directory at
+    that path belongs to the author and is kept.
+    """
     assets = root / "static" / "assets"
     removed = False
-    if assets.is_symlink() or assets.is_file():
+    if assets.is_symlink():
         assets.unlink()
-        removed = True
-    elif assets.is_dir():
-        shutil.rmtree(assets)
         removed = True
 
     static_directory = root / "static"

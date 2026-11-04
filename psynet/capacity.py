@@ -1,0 +1,178 @@
+"""Limit how many people take an open-link study at once.
+
+Citizen-science studies shared through a public link (the ``generic`` and
+``hotair`` recruiters) can attract more simultaneous visitors than the server
+can serve. Past capacity every participant's pages slow down, including those
+of people who are already halfway through. Setting the experiment variable
+``max_concurrent_participants`` caps the number of active participants:
+newcomers over the cap wait on the start page, which retries until a place
+frees up. Returning participants are never refused, and nobody already in the
+study is removed.
+
+Design constraints:
+
+* The decision belongs to :meth:`psynet.experiment.Experiment.is_at_capacity`,
+  which experiments may override to measure load differently. It is only for
+  load: newcomers are told the study is busy and retried automatically, which
+  would mislead them if the study were closed instead. The cap is an
+  experiment variable rather than a config option so that it can change while
+  the study runs.
+* The check runs only when a new participant would be created
+  (``POST /participant`` and its path-style variant), before any database
+  row exists, so a waiting visitor costs one cheap request per retry and
+  leaves no trace in the data.
+* A participant is *active* while they are working, have not failed, and have
+  either joined or submitted a page in the last ``DEFAULT_IDLE_TIMEOUT_S`` seconds.
+  People who close the tab stop counting once that timeout passes, so no
+  cleanup job is needed. Pages that run longer than the timeout without a
+  submission (for example long videos or timeline holds) briefly stop counting.
+* While the study is full, each web process remembers that for
+  ``_FULL_CACHE_S`` seconds, so a crowd of retries does not query the database
+  each time. Admissions are always re-checked, so the cache cannot admit extra
+  people; simultaneous admissions can still overshoot the cap by a few
+  participants.
+
+Recruiters opt in through ``supports_max_concurrent_participants``; recruiters
+that send paid participants (Prolific, Lucid) should limit concurrency through
+their own places or quotas instead, because turning away someone who accepted
+a paid place is unfair to them.
+"""
+
+import time
+from datetime import datetime, timedelta
+
+import flask
+from dallinger import db
+
+from .utils import get_logger
+
+logger = get_logger()
+
+#: ``error_code`` of the 503 response that refuses a newcomer; ``start.html``
+#: checks for it to show the waiting message.
+STUDY_FULL_ERROR_CODE = "study_full"
+_FULL_CACHE_S = 2.0
+_RETRY_AFTER_S = 30
+# Dallinger's two views that create a participant.
+_PARTICIPANT_CREATION_ENDPOINTS = {"post_participant", "create_participant"}
+
+DEFAULT_IDLE_TIMEOUT_S = 600
+
+_full_until = 0.0
+_warned_invalid_limits = set()
+
+
+def is_valid_participant_limit(value):
+    """Return whether ``value`` can be ``max_concurrent_participants``.
+
+    Valid limits are ``None`` (no limit) and whole numbers of at least 0.
+    Booleans are rejected even though Python treats them as integers.
+    """
+    return value is None or (
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    )
+
+
+def usable_participant_limit(value):
+    """Return ``value`` if it is a valid ``max_concurrent_participants``, else ``None``.
+
+    An invalid value, for example one set by experiment code while the study
+    runs, is ignored with a warning, logged once per web process and value.
+    """
+    if is_valid_participant_limit(value):
+        return value
+    if repr(value) not in _warned_invalid_limits:
+        _warned_invalid_limits.add(repr(value))
+        logger.warning(
+            "Ignoring max_concurrent_participants=%r: it must be a whole number "
+            "of at least 0, or None for no limit.",
+            value,
+        )
+    return None
+
+
+def recruiter_supports_participant_limits(recruiter_class):
+    """Return whether newcomers from ``recruiter_class`` may wait for a place.
+
+    ``None`` (no recruiter, or an unknown one) does not support limits.
+    """
+    return bool(getattr(recruiter_class, "supports_max_concurrent_participants", False))
+
+
+def count_active_participants(idle_timeout_s=DEFAULT_IDLE_TIMEOUT_S):
+    """Count participants who are working and joined or submitted a page recently.
+
+    Parameters
+    ----------
+    idle_timeout_s : float
+        Participants with no page submission for this many seconds, and who
+        joined longer ago than that, do not count. Default: 600.
+
+    Returns
+    -------
+    int
+        The number of active participants.
+    """
+    from sqlalchemy import exists, or_
+
+    from .participant import Participant
+    from .timeline import Response
+
+    cutoff = datetime.now() - timedelta(seconds=idle_timeout_s)
+    recent_response = exists().where(
+        Response.participant_id == Participant.id,
+        Response.creation_time > cutoff,
+    )
+    return (
+        db.session.query(Participant.id)
+        .filter(
+            Participant.status == "working",
+            Participant.failed.is_(False),
+            or_(Participant.creation_time > cutoff, recent_response),
+        )
+        .count()
+    )
+
+
+def refuse_new_participant_if_full():
+    """Return a 503 "study full" response if the study is at capacity, else ``None``.
+
+    Called before every request; acts only on requests that would create a
+    participant, and only for recruiters that support waiting newcomers. The
+    decision comes from :meth:`~psynet.experiment.Experiment.is_at_capacity`.
+    """
+    global _full_until
+
+    from .experiment import get_experiment
+    from .recruiters import named_recruiter_class
+
+    if flask.request.endpoint not in _PARTICIPANT_CREATION_ENDPOINTS:
+        return None
+    # The named recruiter, not the debug-mode stand-in, matches the launch check.
+    if not recruiter_supports_participant_limits(named_recruiter_class()):
+        return None
+
+    now = time.monotonic()
+    if now >= _full_until:
+        try:
+            full = get_experiment().is_at_capacity()
+        except Exception:
+            # Admitting the newcomer is better than sending them to an error page.
+            db.session.rollback()
+            logger.warning(
+                "is_at_capacity failed, so the newcomer is admitted.", exc_info=True
+            )
+            return None
+        if not full:
+            return None
+        _full_until = now + _FULL_CACHE_S
+        logger.info("The study is at capacity, so newcomers wait on the start page.")
+
+    response = flask.jsonify(
+        status="error",
+        error_code=STUDY_FULL_ERROR_CODE,
+        message="The study is at capacity; please try again shortly.",
+    )
+    response.status_code = 503
+    response.headers["Retry-After"] = str(_RETRY_AFTER_S)
+    return response

@@ -903,6 +903,7 @@ def render_performance_result(
             limits,
             options_data.get("time_factor", 1.0),
             terminal=False,
+            open_link=bool(options_data.get("open_link_recruiter")),
         )
         if line.strip() not in ("", "Notes")
     ]

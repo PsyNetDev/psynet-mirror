@@ -16,14 +16,14 @@ class _MainConsentWithFooter(MainConsent):
 def _media_page(label, marker_id, show_early_exit_button):
     return InfoPage(
         Markup(
-            f"""
+            """
             <p id="{marker_id}">{label}</p>
             <button type="button" class="btn btn-primary wait-for-media-load"
                     onclick="psynet.audio.bier.play();">
                 Play bier
             </button>
             """
-        ),
+        ).format(marker_id=marker_id, label=label),
         time_estimate=1,
         media=MediaSpec(audio={"bier": "/static/bier.wav"}),
         show_early_exit_button=show_early_exit_button,

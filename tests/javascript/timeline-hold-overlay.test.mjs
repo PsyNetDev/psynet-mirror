@@ -105,12 +105,17 @@ function loadHoldFns(document) {
     },
   };
   const showSrc = extractFunction("showTimelineHoldIndicator");
+  const hideSrc = extractFunction("hideTimelineHoldIndicator");
   const stopSrc = extractFunction("stopTimelineHold");
   const show = new Function(
     "psynet",
     "document",
     `${showSrc}; return showTimelineHoldIndicator;`
   )(psynet, document);
+  psynet.hideTimelineHoldIndicator = new Function(
+    "document",
+    `${hideSrc}; return hideTimelineHoldIndicator;`
+  )(document);
   // CI Node has no browser CustomEvent global. Bind a constructor into the
   // eval and assert the dispatched event so a dummy CustomEvent cannot
   // make stop() look successful without actually firing timelineHoldEnded.
@@ -176,4 +181,23 @@ describe("timeline hold overlay reuse", () => {
     assert.equal(commentButton.disabled, false);
     assert.equal(document.getElementById("psynet-timeline-hold-indicator"), null);
   });
+});
+
+it("ignores directed messages that are not hold wakes", () => {
+  let options;
+  const calls = [];
+  const psynet = {
+    handleArrivalUpdateMessage: () => calls.push("update"),
+    resumeTimelineHold: () => calls.push("resume"),
+  };
+  const channel = { connect: (opts) => (options = opts) };
+  const connect = new Function(
+    "psynet",
+    "PsyNetWebSocketChannel",
+    `${extractFunction("_connectTimelineHoldSocket")}; return _connectTimelineHoldSocket;`
+  )(psynet, channel);
+  connect({ stopped: false, hold: { channel: "c", wake_token: "w" } });
+
+  options.onDirect({ type: "message", targets: [{ wake_token: "w", hold_message: "<b>" }] });
+  assert.deepEqual(calls, []);
 });

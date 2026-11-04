@@ -18,7 +18,10 @@ def expose_to_api(endpoint):
 
     The route accepts GET (arguments from the query string) and POST (arguments from
     the JSON body); the arguments are passed to the function as keyword arguments and
-    its return value is sent back as the response. Decorate a module-level function or
+    its return value is sent back as the response. A string is sent as plain
+    text and a dict as JSON; return a Flask ``Response`` to choose another type.
+    Anyone can call the route, so do not return a participant's data unless the
+    caller proves who they are, for example by sending ``psynet.uniqueId``. Decorate a module-level function or
     a static method (place ``@expose_to_api`` above ``@staticmethod``).
 
     Parameters

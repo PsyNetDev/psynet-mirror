@@ -108,10 +108,10 @@ class CustomTrial(GibbsTrial):
     def show_trial(self, experiment, participant):
         target = self.context["target"]
         prompt = Markup(
-            f"<h3 id='participant-group'>Participant group = {participant.module_state.participant_group}</h3>"
+            "<h3 id='participant-group'>Participant group = {}</h3>"
             "<p>Adjust the slider to match the following word as well as possible: "
-            f"<strong>{target}</strong></p>"
-        )
+            "<strong>{}</strong></p>"
+        ).format(participant.module_state.participant_group, target)
         page = ColorSliderPage(
             "color_trial",
             prompt,
@@ -162,8 +162,8 @@ class CustomTrialMaker(GibbsTrialMaker):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
         return InfoPage(
-            Markup(
-                f"Your consistency score was <strong>{score_to_display}&#37;</strong>."
+            Markup("Your consistency score was <strong>{}&#37;</strong>.").format(
+                score_to_display
             ),
             time_estimate=5,
         )

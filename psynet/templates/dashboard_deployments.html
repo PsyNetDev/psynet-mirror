@@ -44,7 +44,7 @@
 
 {% if experiment.artifact_storage %}
 <div class="my-3">
-    {{ experiment.artifact_storage.info_html | safe }}
+    {{ experiment.artifact_storage.info_html }}
 </div>
 {% endif %}
 
@@ -96,13 +96,13 @@
         }
 
         var page = 0;
-        var deploymentsIds = JSON.parse('{{deployments | tojson}}')
-        var archivedIds = JSON.parse('{{archived | tojson}}')
-        var secret = `{{secret}}`
+        var deploymentsIds = {{ deployments | tojson }}
+        var archivedIds = {{ archived | tojson }}
+        var secret = {{ secret | tojson }}
         var experiments = {};
         let archivedExperiments = [];
         var nLoaded = 0;
-        var currentDeploymentId = `{{current_deployment_id}}`
+        var currentDeploymentId = {{ current_deployment_id | tojson }}
         var myModal;
         let totalCost;
         const loadMoreButton = document.getElementById('load-more');
@@ -110,8 +110,8 @@
 
 
         // Add configuration variables
-        const resourceWarningPct = parseFloat('{{exp_config.resource_warning_pct}}') * 100;
-        const resourceDangerPct = parseFloat('{{exp_config.resource_danger_pct }}') * 100;
+        const resourceWarningPct = parseFloat({{ exp_config.resource_warning_pct | tojson }}) * 100;
+        const resourceDangerPct = parseFloat({{ exp_config.resource_danger_pct | tojson }}) * 100;
 
 
         function printResetButton() {
@@ -698,7 +698,7 @@
                 shortcuts += makeIcon("database-fill-down", url, "Export (" + lastExport(ts) + ")")
             }
 
-            if (experiment.is_ssh_deployment) {
+            if (experiment.logs_url) {
                 shortcuts += makeIcon("terminal-fill", experiment.logs_url, "URL to logs")
             }
             let commentId = `comment-${experiment.secret}`
@@ -827,7 +827,7 @@
         function setupArchiveClickHandler(archiveId, experiment) {
             $(`#${archiveId}`).click(function () {
                 if (confirm('Are you sure you want to archive this study?')) {
-                    $.get('/dashboard/archive/deployment?id=' + experiment.deployment_id, function() {
+                    $.post('/dashboard/archive/deployment', {id: experiment.deployment_id}, function() {
                         // Reload the page to reflect changes
                         location.reload();
                     }).fail(function() {
@@ -840,7 +840,7 @@
         function setupRefreshClickHandler(refreshId, experiment) {
             $(`#${refreshId}`).click(function () {
                 if (confirm('Are you sure you want to refresh the recruitment metrics? This action cannot be undone.')) {
-                    $.get('/dashboard/update/recruitment?deployment_id=' + experiment.deployment_id, function() {
+                    $.post('/dashboard/update/recruitment', {deployment_id: experiment.deployment_id}, function() {
                         // Reload the page to reflect changes
                         location.reload();
                     }).fail(function() {
@@ -1123,7 +1123,7 @@
                 btn.addEventListener('click', function () {
                     const deploymentId = this.getAttribute('data-deployment-id');
                     if (confirm('Are you sure you want to restore this experiment?')) {
-                        $.get('/dashboard/restore/deployment?id=' + deploymentId, function() {
+                        $.post('/dashboard/restore/deployment', {id: deploymentId}, function() {
                             location.reload();
                         }).fail(function() {
                             alert('Failed to restore experiment. Please try again.');

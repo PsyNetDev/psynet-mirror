@@ -697,7 +697,7 @@ test(
     });
 
     await page.evaluate((updaterSource) => {
-      window.psynet = { participantId: 7 };
+      window.psynet = { uniqueId: "worker:assignment" };
       const update = new Function(
         `${updaterSource}; return updateProgressAndReward;`
       )();
@@ -706,6 +706,9 @@ test(
         const url = settings && settings.url;
         if (!String(url).includes("/timeline/progress_and_reward")) {
           throw new Error(`Unexpected progress URL: ${url}`);
+        }
+        if (settings.data.uniqueId !== "worker:assignment") {
+          throw new Error("The progress request must send the uniqueId.");
         }
         return {
           done(callback) {

@@ -8,7 +8,7 @@ for (const missingScreen of [false, true]) {
   test(`camera and screen uploads resolve independently (missing screen: ${missingScreen}) @inplace-only`, async ({page, context}) => {
     test.setTimeout(150000);
     const held = new Map();
-    await context.route("**/media-upload/*", route => {
+    await context.route(/\/media-upload\/\d+$/, route => {
       held.set(new URL(route.request().url()).pathname, route);
     });
     const previous = process.env.PSYNET_TEST_RECORDING_DUAL;

@@ -14,6 +14,7 @@ from click import Context
 from psynet.bot import BotDriver
 from psynet.command_line import export__local, populate_db_from_zip_file
 from psynet.export import load_export_table, unpack_json_column
+from psynet.export.database import _UNEXPORTED_TABLES
 from psynet.participant import Participant
 from psynet.pytest_psynet import (
     path_to_test_experiment,
@@ -204,7 +205,9 @@ class TestExpWithExport:
         manifest = json.loads(
             Path(database_dir).parent.joinpath("manifest.json").read_text()
         )
-        db_tables = sorted(dallinger.db.Base.metadata.tables.keys())
+        db_tables = sorted(
+            set(dallinger.db.Base.metadata.tables.keys()) - _UNEXPORTED_TABLES
+        )
         assert sorted(manifest["table_row_counts"]) == db_tables
         for table, count in manifest["table_row_counts"].items():
             csv_name = f"{table}.csv"

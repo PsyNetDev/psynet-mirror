@@ -1,6 +1,6 @@
 CI_NODE_TOTAL=${CI_NODE_TOTAL:=1}
 CI_NODE_INDEX=${CI_NODE_INDEX:=1}
-PYTHON_VERSION=${PYTHON_VERSION:=3.13}
+PYTHON_VERSION=${PYTHON_VERSION:=3.14}
 TEST_SCOPE=${TEST_SCOPE:=full}
 TEST_SLOTS=${TEST_SLOTS:=1}
 
@@ -25,7 +25,7 @@ fi
 
 # Each item runs in its own pytest process; see psynet/dev/ci_tests.py for how
 # shards are balanced and how parallel slots are isolated from each other.
-psynet dev ci run-tests \
+exec psynet dev ci run-tests \
   --scope "$TEST_SCOPE" \
   --node-total "$CI_NODE_TOTAL" \
   --node-index "$CI_NODE_INDEX" \

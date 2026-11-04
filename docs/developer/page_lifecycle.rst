@@ -131,8 +131,12 @@ Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
 HTTP 503 with a JSON ``busy`` payload so the browser and automated drivers can
-retry. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
-automatically. Hold-resume submissions retry a busy 503 once in the same
+retry. Ordinary browser submissions and automated drivers retry with growing
+gaps, starting no retry more than about 10 seconds after the first attempt,
+because under load a partner's barrier check can hold the participant row for
+several seconds; only then does the browser ask the participant to try again.
+Each attempt may also wait up to the lock timeout on the server. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
+automatically. Browser hold-resume submissions retry a busy 503 once in the same
 POST. If that retry is also busy, the browser schedules one delayed queued
 hold wake. A further busy response reschedules the hold safety poll instead of
 retrying immediately, so the browser cannot livelock on contention. Whole timeline requests are not retried
@@ -352,10 +356,8 @@ Same-session pages
 Pages sharing a non-null ``session_id`` update ``psynet.page`` and dispatch
 ``pageUpdated`` without replacing the fragment. This supports persistent
 sessions such as Unity integrations. The submission UUID and page timer advance
-with the logical page even though its DOM stays in place. Background capture
-finishes before submission; after acceptance, the browser queues that clip,
-applies the next page's recording policy, and resolves its permission decision
-before dispatching ``pageUpdated``. Uploads keep their original page identity.
+with the logical page even though its DOM stays in place, and accepted
+recordings upload under their original page identity.
 
 Document-owning pages
 ~~~~~~~~~~~~~~~~~~~~~
@@ -402,31 +404,37 @@ or honor the visible page's full-reload requirement. Refreshing during a hold
 loads a neutral fallback page and reconnects to the same durable hold record.
 
 Workers and barriers queue participant-targeted wake messages in the current
-database transaction. PsyNet publishes the messages on that participant's hold
-channel (``psynet_timeline_hold_<id>``) only after commit. Delivery is an
-optimization rather than authority: the browser always submits an idempotent
-resume check, and the server re-evaluates the condition. ``check_interval``
-remains the bounded fallback for missed messages and arbitrary conditions
-without a framework event.
+database transaction. Only after commit, PsyNet sends them with
+``publish_to_participants`` as directed messages, which reach only that
+participant's checked connections (see :ref:`realtime_interaction`); the
+browser handles them in its ``onDirect`` callback. Nothing is published on the
+per-participant channel (``psynet_timeline_hold_<id>``), because any browser
+can read a channel. Delivery is an optimization rather than authority: the
+browser always submits an idempotent resume check, and the server re-evaluates
+the condition. ``check_interval`` remains the bounded fallback for missed
+wakes and arbitrary conditions without a framework event.
 
 Dallinger subscribes the server to Redis only after the WebSocket opens, so a
-wake published in that gap would be lost. Hold and arrival-update sockets
-therefore connect with ``confirmListening``: the browser publishes a probe on
-its own channel, repeating it each second until it echoes back, and ``onOpen``
-(with its resume check) runs only after that echo. Dallinger treats everything
+wake sent in that gap could be lost. Hold and arrival-update sockets therefore
+connect with ``confirmListening``: the browser publishes a probe on the
+per-participant channel, which carries nothing else, repeating it each
+second until it echoes back, and ``onOpen`` (with its resume check) runs only
+after that echo. Dallinger registers a socket for directed messages before it
+reads the socket's frames, so the echo normally means wakes reach it too; if
+not, the safety poll covers a missed wake. Dallinger treats everything
 before the first colon of a browser-sent message as the channel name, so these
 channel names must not contain a colon. A hold whose barrier released it before
 the deadline does not time out, even if the participant's next check arrives
 after the deadline.
 
 When the last hold on a page ends, the browser closes the hold-channel
-WebSocket. The next hold reconnects. Partner-ready notices use the same
-channel; the extra arrival-update socket opens only while the participant
-is in an active sync group and not already on a hold. If membership is not
-already loaded, a cheap existence check decides whether to open that socket.
-Redis delivery is an optimization: when that socket opens, the browser also
-fetches ``GET /timeline/arrival_notice`` so a partner who arrived during
-connect is still shown. Hold-resume POSTs set
+WebSocket. The next hold reconnects. Partner-ready notices arrive as directed
+messages on the same socket; the extra arrival-update socket opens only while
+the participant is in an active sync group and not already on a hold. If
+membership is not already loaded, a cheap existence check decides whether to
+open that socket. Directed delivery is an optimization: when that socket
+opens, the browser also fetches ``GET /timeline/arrival_notice`` so a partner
+who arrived during connect is still shown. Hold-resume POSTs set
 ``timeline_hold_resume`` so that if a partner already advanced this waiter
 (rotating ``page_uuid``), the server still returns the current page for an
 in-place update. A genuine reject, or a missing timeline fragment, still
@@ -578,7 +586,7 @@ blocking ``FOR UPDATE`` on the participant row. If the overlay is still
 waiting after that submit, the driver pauses briefly before the next page
 instead of busy-looping ordinary Next. Timeline GETs use HTML so
 ``render_pages=True`` still compiles page templates, and retry structured
-busy 503s a few times so a poller skip that briefly holds the row does not
+busy 503s for about 10 seconds so a poller skip that briefly holds the row does not
 fail the bot. A stale HTML render redirects to the live page. Bot POSTs
 retry those busy 503s the same way. If this waiter already advanced, or last-arrival
 skipped its own later hold, an ordinary POST of the previous hold uuid is

@@ -9,7 +9,9 @@ Parts of an export
 ------------------
 
 The **database tables** are a copy of every table in the experiment's
-database, one CSV per table under ``database/``. They are read in one
+database, one CSV per table under ``database/``, except
+``lucid_submissions``, a cache of Lucid's session data that holds Lucid
+respondent and panelist IDs. They are read in one
 repeatable-read transaction, so they describe a single moment. The same
 tables let PsyNet restore the experiment to that state (see
 :doc:`/deploy/reference/deploy_from_archive`).
@@ -50,9 +52,16 @@ Folder layout
 
 ``database/`` contains a CSV only for tables with at least one row, so
 unused tables such as ``chat_message.csv`` are absent. ``manifest.json``
-still lists every table under ``table_row_counts``, with ``0`` for omitted
+still lists every exported table under ``table_row_counts``, with ``0`` for omitted
 files. Boolean columns are written as ``True`` / ``False`` rather than
 PostgreSQL's ``t`` / ``f``.
+
+The table CSVs hold the database values unchanged, so that they reload
+exactly. A participant's free-text answer that starts with ``=``, ``+``,
+``-`` or ``@`` can therefore run as a formula if you open the CSV in a
+spreadsheet such as Excel. Read the tables with R or pandas, or import them
+in the spreadsheet with every column set to text. The same applies to basic
+data CSVs (see :doc:`/data/basic_data`).
 
 ``manifest.json`` also records the deployed Git commit
 (``git_commit_sha``), whether the working tree had uncommitted changes

@@ -44,7 +44,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from psynet.utils import get_logger
 
@@ -92,6 +92,20 @@ _OLD_DEPLOYMENT_PREFLIGHT_MESSAGE = (
 )
 
 
+def _check_login_accepted(response) -> None:
+    """Raise ``TransferError`` if the dashboard refused the request's login.
+
+    Debug servers answer 401; deployed servers redirect to the login page,
+    which ``requests`` follows to a 200 response.
+    """
+    final_path = urlsplit(getattr(response, "url", None) or "").path
+    if response.status_code == 401 or final_path.endswith("/dashboard/login"):
+        raise TransferError(
+            "The dashboard did not accept the login. Check dashboard_user and "
+            "dashboard_password in your config."
+        )
+
+
 def fetch_preflight(endpoint: DashboardEndpoint, *, timeout=60) -> dict:
     """Ask the deployment to describe itself.
 
@@ -115,6 +129,7 @@ def fetch_preflight(endpoint: DashboardEndpoint, *, timeout=60) -> dict:
             f"Could not reach the export preflight endpoint: {exc}"
         ) from exc
 
+    _check_login_accepted(response)
     if response.status_code == 404:
         raise TransferError(_OLD_DEPLOYMENT_PREFLIGHT_MESSAGE)
     if response.status_code != 200:
@@ -201,6 +216,7 @@ def download_archive(
         "dashboard/export/download", assets=assets, asset_bytes=asset_bytes
     )
     with requests.get(url, auth=endpoint.auth, stream=True) as response:
+        _check_login_accepted(response)
         if response.status_code != 200:
             raise TransferError(_describe_failed_response(response))
         os.makedirs(os.path.dirname(os.path.abspath(destination_file)), exist_ok=True)

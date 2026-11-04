@@ -56,6 +56,12 @@ EXPECTED_EXCLUDE_SUFFIXES = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _skip_lockfile_check(monkeypatch):
+    """These scaffolds have no constraints.txt, which this module doesn't test."""
+    monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
+
+
 def test_prototype_metadata_declares_posix_only():
     root = get_psynet_root()
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
@@ -455,6 +461,9 @@ def test_check_experiment_directory_migration_without_newly_deployed_files_is_si
         subprocess.run(["git", "init", "-q"], check=True)
         ensure_deployment_policy()
         assert _deployment_policy_needs_review()
+        # Ignored by the stock .gitignore but deployed on purpose.
+        Path("static/fonts").mkdir(parents=True)
+        Path("static/fonts/GoNotoKurrent-Bold.ttf").write_text("font")
 
         _check_experiment_directory("debug")
         assert not _deployment_policy_needs_review()

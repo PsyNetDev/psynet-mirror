@@ -1,12 +1,13 @@
 import json
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from dallinger import db
 
-from psynet.chatroom import ChatMessage, ChatRoomMember, EnableChatrooms
+from psynet.chatroom import ChatMessage, ChatRoom, ChatRoomMember, EnableChatrooms
 from psynet.experiment import get_experiment
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -25,22 +26,26 @@ def _new_participant(experiment):
         assignment_id=_random_id(),
         mode="debug",
     )
+    participant.page_uuid = _random_id()
     db.session.add(participant)
     return participant
 
 
 def _mock_experiment():
-    """Return a minimal mock that records publish_to_subscribers calls."""
-    exp = MagicMock()
-    exp.publish_to_subscribers = MagicMock()
-    return exp
+    """Return a minimal mock that records publish_to_participants calls."""
+    return MagicMock()
 
 
 def _published_payloads(mock_exp):
-    """Return all JSON payloads passed to publish_to_subscribers."""
+    """Return all payloads passed to publish_to_participants."""
+    return [c.args[0] for c in mock_exp.publish_to_participants.call_args_list]
+
+
+def _recipients(mock_exp):
+    """Return the recipients of each publish_to_participants call, as sets of strings."""
     return [
-        json.loads(call_args[0][0])
-        for call_args in mock_exp.publish_to_subscribers.call_args_list
+        {str(i) for i in c.args[1]}
+        for c in mock_exp.publish_to_participants.call_args_list
     ]
 
 
@@ -66,7 +71,13 @@ class TestHandleMessage:
         return EnableChatrooms(), _mock_experiment()
 
     @staticmethod
-    def _send(handler, exp, participant, payload, node=None):
+    def _send(handler, exp, participant, payload, node=None, page_room=None):
+        """Send ``payload``; a join comes from a page showing ``page_room``, by default the joined room."""
+        if payload.get("type") == "join_room":
+            room = page_room if page_room is not None else payload.get("room_id")
+            exp.timeline.get_current_elt.return_value = SimpleNamespace(
+                chatroom=ChatRoom(room_id=room)
+            )
         time = datetime.now(UTC)
         handler.handle_message(
             json.dumps(payload),
@@ -91,7 +102,7 @@ class TestHandleMessage:
         self._send(handler, exp, participant, {"type": "join_room"})  # no room_id
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_not_called()
+        exp.publish_to_participants.assert_not_called()
 
     # -- join_room --
 
@@ -117,16 +128,16 @@ class TestHandleMessage:
         experiment = get_experiment()
         participant = _new_participant(experiment)
         db.session.flush()
+        room = _random_id()
 
-        self._send(
-            handler, exp, participant, {"type": "join_room", "room_id": "room_A"}
-        )
+        self._send(handler, exp, participant, {"type": "join_room", "room_id": room})
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_called_once()
+        exp.publish_to_participants.assert_called_once()
         payload = _published_payloads(exp)[0]
         assert payload["type"] == "occupancy_update"
-        assert payload["room_id"] == "room_A"
+        assert payload["room_id"] == room
+        assert _recipients(exp) == [{str(participant.id)}]
 
     def test_rejoin_room_rebroadcasts(self, in_experiment_directory, db_session):
         """Joining a room a second time still broadcasts (so the participant list is refreshed)."""
@@ -139,14 +150,14 @@ class TestHandleMessage:
             handler, exp, participant, {"type": "join_room", "room_id": "room_A"}
         )
         db.session.commit()
-        exp.publish_to_subscribers.reset_mock()
+        exp.publish_to_participants.reset_mock()
 
         self._send(
             handler, exp, participant, {"type": "join_room", "room_id": "room_A"}
         )
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_called_once()
+        exp.publish_to_participants.assert_called_once()
 
     def test_rejoin_room_closes_prior_session(
         self, in_experiment_directory, db_session
@@ -217,7 +228,7 @@ class TestHandleMessage:
             handler, exp, participant, {"type": "join_room", "room_id": "room_B"}
         )
         db.session.commit()
-        exp.publish_to_subscribers.reset_mock()
+        exp.publish_to_participants.reset_mock()
 
         self._send(
             handler, exp, participant, {"type": "leave_room", "room_id": "room_B"}
@@ -240,14 +251,14 @@ class TestHandleMessage:
             handler, exp, participant, {"type": "join_room", "room_id": "room_B"}
         )
         db.session.commit()
-        exp.publish_to_subscribers.reset_mock()
+        exp.publish_to_participants.reset_mock()
 
         self._send(
             handler, exp, participant, {"type": "leave_room", "room_id": "room_B"}
         )
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_called_once()
+        exp.publish_to_participants.assert_called_once()
         payload = _published_payloads(exp)[0]
         assert payload["type"] == "occupancy_update"
         assert payload["room_id"] == "room_B"
@@ -296,7 +307,7 @@ class TestHandleMessage:
         )
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_not_called()
+        exp.publish_to_participants.assert_not_called()
 
     def test_leave_room_null_participant_does_not_broadcast(
         self, in_experiment_directory, db_session
@@ -315,7 +326,7 @@ class TestHandleMessage:
         )
         db.session.commit()
 
-        exp.publish_to_subscribers.assert_not_called()
+        exp.publish_to_participants.assert_not_called()
 
     # -- message --
 
@@ -324,6 +335,9 @@ class TestHandleMessage:
         experiment = get_experiment()
         participant = _new_participant(experiment)
         db.session.flush()
+        self._send(
+            handler, exp, participant, {"type": "join_room", "room_id": "room_C"}
+        )
 
         send_time = self._send(
             handler,
@@ -340,31 +354,99 @@ class TestHandleMessage:
         assert record.participant_id == participant.id
         assert record.receive_time == send_time
 
-    def test_message_publishes_untargeted_history(
+    def test_message_is_sent_to_room_members_only(
         self, in_experiment_directory, db_session
     ):
-        """Persisting a line republishes the room log so an empty feed can catch up."""
         handler, exp = self._handler_and_exp()
         experiment = get_experiment()
-        participant = _new_participant(experiment)
+        sender, member, outsider = (_new_participant(experiment) for _ in range(3))
         db.session.flush()
+        room, other_room = _random_id(), _random_id()
+        for participant, joined in [
+            (sender, room),
+            (member, room),
+            (outsider, other_room),
+        ]:
+            self._send(
+                handler, exp, participant, {"type": "join_room", "room_id": joined}
+            )
+        exp.publish_to_participants.reset_mock()
+
+        self._send(
+            handler, exp, sender, {"type": "message", "room_id": room, "content": "hi"}
+        )
+
+        assert _published_payloads(exp) == [
+            {
+                "type": "message",
+                "room_id": room,
+                "content": "hi",
+                "sender": str(sender.id),
+            }
+        ]
+        assert _recipients(exp) == [{str(sender.id), str(member.id)}]
+
+    def test_a_room_the_page_does_not_show_cannot_be_joined(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        participant = _new_participant(get_experiment())
+        db.session.flush()
+        room = _random_id()
 
         self._send(
             handler,
             exp,
             participant,
-            {"type": "message", "room_id": "room_C_history", "content": "hello"},
+            {"type": "join_room", "room_id": room},
+            page_room="my-own-room",
         )
 
-        payloads = _published_payloads(exp)
-        assert len(payloads) == 1
-        history = payloads[0]
-        assert history["type"] == "history"
-        assert history["room_id"] == "room_C_history"
-        assert "target_participant_id" not in history
-        assert history["messages"] == [
-            {"content": "hello", "sender": str(participant.id)}
-        ]
+        exp.publish_to_participants.assert_not_called()
+        assert ChatRoomMember.query.filter_by(room_id=room).count() == 0
+
+    def test_a_participant_who_moved_to_another_page_has_left_the_room(
+        self, in_experiment_directory, db_session
+    ):
+        handler, exp = self._handler_and_exp()
+        experiment = get_experiment()
+        mover, stayer = _new_participant(experiment), _new_participant(experiment)
+        db.session.flush()
+        room = _random_id()
+        for p in (mover, stayer):
+            self._send(handler, exp, p, {"type": "join_room", "room_id": room})
+        mover.page_uuid = _random_id()
+        exp.reset_mock()
+
+        for msg_type in ("message", "request_state"):
+            self._send(
+                handler, exp, mover, {"type": msg_type, "room_id": room, "content": "x"}
+            )
+        exp.publish_to_participants.assert_not_called()
+
+        self._send(
+            handler, exp, stayer, {"type": "message", "room_id": room, "content": "y"}
+        )
+        assert _recipients(exp) == [{str(stayer.id)}]
+
+    @pytest.mark.parametrize("msg_type", ["message", "request_state"])
+    def test_a_non_member_is_ignored(
+        self, in_experiment_directory, db_session, msg_type
+    ):
+        handler, exp = self._handler_and_exp()
+        participant = _new_participant(get_experiment())
+        db.session.flush()
+        room = _random_id()
+
+        self._send(
+            handler,
+            exp,
+            participant,
+            {"type": msg_type, "room_id": room, "content": "x"},
+        )
+
+        exp.publish_to_participants.assert_not_called()
+        assert ChatMessage.query.filter_by(room_id=room).count() == 0
 
     def test_request_state_sends_history(self, in_experiment_directory, db_session):
         handler, exp = self._handler_and_exp()
@@ -382,21 +464,20 @@ class TestHandleMessage:
                 receive_time=datetime.now(UTC),
             )
         )
+        self._send(
+            handler, exp, participant, {"type": "join_room", "room_id": "room_E"}
+        )
         db.session.commit()
-        exp.publish_to_subscribers.reset_mock()
+        exp.publish_to_participants.reset_mock()
 
         self._send(
             handler, exp, participant, {"type": "request_state", "room_id": "room_E"}
         )
 
-        payloads = _published_payloads(exp)
-        types = {p["type"] for p in payloads}
-        assert "occupancy_update" in types
-        assert "history" in types
-
-        history = next(p for p in payloads if p["type"] == "history")
+        (history,) = _published_payloads(exp)
+        assert history["type"] == "history"
         assert history["room_id"] == "room_E"
-        assert history["target_participant_id"] == str(participant.id)
+        assert _recipients(exp) == [{str(participant.id)}]
         assert len(history["messages"]) == 1
         assert history["messages"][0]["content"] == "prior message"
 
@@ -405,6 +486,9 @@ class TestHandleMessage:
         experiment = get_experiment()
         participant = _new_participant(experiment)
         db.session.flush()
+        self._send(
+            handler, exp, participant, {"type": "join_room", "room_id": "room_F"}
+        )
 
         self._send(
             handler, exp, participant, {"type": "request_state", "room_id": "room_F"}
@@ -434,12 +518,20 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p1.id, room_id="room_X", active=True, join_time=now
+                participant_id=p1.id,
+                page_uuid=p1.page_uuid,
+                room_id="room_X",
+                active=True,
+                join_time=now,
             )
         )
         db.session.add(
             ChatRoomMember(
-                participant_id=p2.id, room_id="room_Y", active=True, join_time=now
+                participant_id=p2.id,
+                page_uuid=p2.page_uuid,
+                room_id="room_Y",
+                active=True,
+                join_time=now,
             )
         )
         # p3 is not subscribed
@@ -465,6 +557,7 @@ class TestOccupantIds:
         db.session.add(
             ChatRoomMember(
                 participant_id=p.id,
+                page_uuid=p.page_uuid,
                 room_id="room_Z",
                 active=False,
                 join_time=now,
@@ -485,7 +578,11 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z2", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z2",
+                active=True,
+                join_time=now,
             )
         )
         p.failed = True
@@ -505,12 +602,20 @@ class TestOccupantIds:
         now = datetime.now(UTC)
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z3", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z3",
+                active=True,
+                join_time=now,
             )
         )
         db.session.add(
             ChatRoomMember(
-                participant_id=p.id, room_id="room_Z3", active=True, join_time=now
+                participant_id=p.id,
+                page_uuid=p.page_uuid,
+                room_id="room_Z3",
+                active=True,
+                join_time=now,
             )
         )
         db.session.commit()
@@ -528,3 +633,54 @@ class TestOccupantIds:
         db.session.commit()
 
         assert handler._occupant_ids("room_empty") == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory",
+    [path_to_test_experiment("consents")],
+    indirect=True,
+)
+class TestCheckedConnections:
+    class Recorder(EnableChatrooms):
+        def handle_message(self, message, **kwargs):
+            self.senders.append(kwargs["participant"])
+
+    def test_only_the_participants_own_token_is_accepted(
+        self, in_experiment_directory, db_session
+    ):
+        experiment = get_experiment()
+        participant, other = _new_participant(experiment), _new_participant(experiment)
+        db.session.commit()
+        accept = experiment.accept_websocket_connection
+
+        assert accept(str(participant.id), participant.websocket_scope)
+        assert not accept(str(participant.id), other.websocket_scope)
+        assert not accept(str(participant.id), participant.unique_id)
+        assert not accept(str(participant.id), None)
+
+    def test_chat_handlers_only_take_checked_messages(
+        self, in_experiment_directory, db_session, monkeypatch
+    ):
+        experiment = get_experiment()
+        participant = _new_participant(experiment)
+        db.session.commit()
+        recorder = self.Recorder()
+        recorder.senders = []
+        monkeypatch.setattr(
+            experiment,
+            "_websocket_message_handlers",
+            {recorder.channel: [recorder.handle_message]},
+        )
+        message = json.dumps({"type": "message", "room_id": "r"})
+
+        experiment.receive_message(
+            message, channel_name=recorder.channel, participant=participant
+        )
+        experiment.handle_websocket_message(
+            message,
+            channel_name=recorder.channel,
+            participant_id=str(participant.id),
+            receive_time=datetime.now(UTC),
+        )
+
+        assert recorder.senders == [participant]

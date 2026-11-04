@@ -247,7 +247,8 @@ Before finalizing a merge request, prompt the user to run an automatic code
 review. Suggest the repo-local Cursor command `/branch-review`, which invokes
 the `branch-review` skill at `.cursor/skills/branch-review/SKILL.md`. This
 specific command name avoids ambiguity with generic Cursor-provided review
-commands.
+commands. For repeated reviews of a feature MR, use the `branch-review-loop` skill
+(`.cursor/skills/branch-review-loop/SKILL.md`).
 
 If the user runs `/branch-review`, address any actionable findings before
 finalizing the merge request. If the user declines or the review is not run,
@@ -262,6 +263,15 @@ a public API or migration.
 
 When running `/branch-review`, always update the merge request title and
 description so they match the committed branch diff.
+
+## Recording follow-ups
+
+When a review or dogfood leaves a small follow-up worth doing later (such as
+a Known limitations item), open a GitLab issue for it, one issue per item,
+with a Problem and an Idea section, and link the issue from the merge request
+description. Draft the issue and ask the user before creating it, unless they
+have already approved. Create it with `glab issue create` or the GitLab API
+(`GITLAB_TOKEN`).
 
 ## CLI development
 
@@ -308,6 +318,13 @@ observable behavior rather than internal implementation details.
 Avoid silently suppressing broad exceptions (for example `except Exception: pass`).
 If a broad exception must be caught for resilience, emit at least a warning-level log
 with useful context unless the path is intentionally noisy best-effort cleanup.
+
+## Backward compatibility
+
+Behavior that never reached a final PsyNet release (only on `master`, an
+alpha or a release candidate) needs no backward-compatibility code: change
+or remove it, and if users of those versions must act (for example, rerun
+`psynet scripts update`), say so in the changelog fragment.
 
 ## Database migrations
 

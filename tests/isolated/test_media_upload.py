@@ -22,9 +22,9 @@ from psynet.media_upload import (
     _expire_recordings,
     _process_recording,
     _receive_recording,
+    _renew_uploads,
     _reserve_recording,
     _upload_directory,
-    _upload_timeout,
 )
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -37,12 +37,6 @@ pytestmark = [
     ),
     pytest.mark.usefixtures("in_experiment_directory"),
 ]
-
-
-@pytest.mark.parametrize("size", [0, -1, True, 1.5, None])
-def test_upload_allowance_rejects_invalid_size(size):
-    with pytest.raises(ValueError):
-        _upload_timeout(size)
 
 
 @pytest.mark.parametrize("ssh", [False, True])
@@ -101,36 +95,36 @@ def test_reservation_retains_original_identity_without_deposit(reservation):
     assert receipt["token"] != asset.upload_token_hash
 
 
-@pytest.mark.parametrize(
-    "size, override, seconds",
-    [
-        (1, None, 60),
-        (1024**2, None, 60),
-        (10 * 1024**2, None, 198),
-        (128 * 1024**2, None, 600),
-        (None, None, 600),
-        (10 * 1024**2, 75, 75),
-    ],
-)
-def test_reservation_fixes_size_based_or_explicit_deadline(
-    reservation, monkeypatch, size, override, seconds
-):
-    asset, _ = reservation
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    monkeypatch.setattr("psynet.media_upload._utcnow", lambda: now)
-    response = db.session.get(Response, asset.upload_context["response_id"])
-    pending, _ = _reserve_recording(
-        response=response,
-        parent=asset.parent,
-        page_uuid="sized",
-        source="camera",
-        local_key="sized",
-        storage=asset.storage,
-        upload_size_bytes=size,
-        upload_timeout=override,
-    )
-    assert pending.upload_deadline == now + timedelta(seconds=seconds)
-    assert pending.upload_context["upload_size_bytes"] == size
+def test_heartbeats_renew_the_lease_up_to_the_lifetime_cap(reservation, monkeypatch):
+    from psynet import media_upload
+
+    asset, receipt = reservation
+    cap = datetime.fromisoformat(asset.upload_context["lifetime_deadline"])
+    assert receipt["expires_at"] == cap.replace(tzinfo=timezone.utc).isoformat()
+    asset_id = asset.id
+    upload = {"id": str(asset_id), "token": receipt["token"]}
+
+    def renew_at(now, uploads=(upload,)):
+        monkeypatch.setattr(media_upload, "_utcnow", lambda: now)
+        return _renew_uploads(list(uploads))
+
+    def deadline():
+        db.session.expire_all()
+        return db.session.get(Recording, asset_id).upload_deadline
+
+    later = deadline() - timedelta(seconds=1)
+    assert renew_at(later) == []
+    assert deadline() == later + timedelta(seconds=120)
+    assert renew_at(later, [{"id": str(asset_id), "token": "wrong"}]) == []
+    assert deadline() == later + timedelta(seconds=120)
+    while deadline() < cap:
+        assert renew_at(deadline() - timedelta(seconds=1)) == []
+    assert deadline() == cap
+    assert renew_at(cap) == [str(asset_id)]
+    media_upload._expire_recordings()
+    assert renew_at(cap) == [str(asset_id)]
+    db.session.expire_all()
+    assert db.session.get(Recording, asset_id).upload_status == "expired"
 
 
 def test_complete_receipt_is_unavailable_until_deposit(reservation, tmp_path):
@@ -325,6 +319,22 @@ def test_rejected_answer_cannot_reserve_a_recording(reservation):
     assert "rejected" not in asset.parent.assets
 
 
+def test_heartbeat_route_renews_and_bounds_its_body(reservation):
+    asset, receipt = reservation
+    app = Flask(__name__)
+    app.add_url_rule(
+        "/media-upload/heartbeat",
+        view_func=Experiment.renew_media_uploads,
+        methods=["POST"],
+    )
+    upload = {"id": str(asset.id), "token": receipt["token"]}
+    with app.test_client() as client:
+        response = client.post("/media-upload/heartbeat", json={"uploads": [upload]})
+        assert response.get_json() == {"unavailable": []}
+        oversized = {"uploads": [upload], "padding": "x" * 20000}
+        assert client.post("/media-upload/heartbeat", json=oversized).status_code == 413
+
+
 @pytest.mark.parametrize("supports_deadline", [True, False])
 def test_route_accepts_raw_body_only_with_a_bounded_connection(
     reservation, supports_deadline
@@ -353,8 +363,17 @@ def test_route_accepts_raw_body_only_with_a_bounded_connection(
         assert asset.input_path is None
 
 
-def test_stalled_http_upload_is_interrupted_at_deadline(reservation):
-    """A real partial HTTP body must release the request worker by its deadline."""
+@pytest.mark.parametrize("keeps_sending", [False, True])
+def test_http_upload_is_interrupted_only_when_it_stalls(
+    reservation, keeps_sending, monkeypatch
+):
+    """A real partial HTTP body releases the request worker after the idle timeout,
+    but a slow body that keeps arriving is received in full."""
+    import time
+
+    from psynet import media_upload
+
+    monkeypatch.setattr(media_upload, "_READ_CHUNK_BYTES", 4)
     asset, receipt = reservation
     app = Flask(__name__)
     app.add_url_rule(
@@ -364,27 +383,38 @@ def test_stalled_http_upload_is_interrupted_at_deadline(reservation):
     )
     server = make_server("127.0.0.1", 0, app)
     thread = Thread(target=server.serve_forever, daemon=True)
-    asset.upload_deadline = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
-        seconds=2
-    )
+    asset.upload_context = {**asset.upload_context, "idle_timeout": 1}
     db.session.commit()
+    body = b"\x1aE\xdf\xa3recording"
     thread.start()
     try:
         with socket.create_connection(server.server_address, timeout=5) as client:
             client.sendall(
                 (
                     f"POST /media-upload/{asset.id} HTTP/1.1\r\nHost: localhost\r\n"
-                    f"Authorization: Bearer {receipt['token']}\r\nContent-Length: 9\r\n\r\nx"
+                    f"Authorization: Bearer {receipt['token']}\r\n"
+                    f"Content-Length: {len(body)}\r\n\r\n"
                 ).encode()
+                + body[:4]
             )
+            if keeps_sending:
+                # Slower overall than the idle timeout, but never idle for it.
+                for start in range(4, len(body), 4):
+                    time.sleep(0.4)
+                    client.sendall(body[start : start + 4])
             response = client.recv(4096)
-            assert b"410 GONE" in response
+            # A stall within the upload's lifetime is retryable.
+            assert (b"204" if keeps_sending else b"408 REQUEST TIMEOUT") in response
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
     db.session.refresh(asset)
-    assert asset.input_path is None
+    assert (asset.upload_status == "received") is keeps_sending
+    if keeps_sending:
+        Path(asset.input_path).unlink()
+    else:
+        assert asset.input_path is None
     assert not asset.deposited
 
 

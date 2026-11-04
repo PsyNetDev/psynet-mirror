@@ -62,11 +62,13 @@ The server is a Linux machine that you can reach over SSH, such as an AWS EC2
 instance that Dallinger provisions for you, a virtual machine from another
 cloud provider, or a machine run by you or your institution. You register it
 with Dallinger once; after that, deployment, export and destroy commands
-select it with ``--server``. Registration installs Docker if needed. The first
-deployment starts services that all experiments on the server share: a
-PostgreSQL database server, a Caddy web server that routes each experiment's
-address to it and obtains HTTPS certificates, and a Dozzle log viewer. One
-server can host several experiments at once.
+select it with ``--server``. Registration installs Docker if needed. With
+classic ingress, the first deployment starts services that all experiments on
+the server share: a PostgreSQL database server, a Caddy web server that routes
+each experiment's address to it and obtains HTTPS certificates, and a Dozzle
+log viewer. With Cloudflare ingress, each experiment instead has its own
+database and tunnel, and there is no Dozzle (see :ref:`ssh_server_cloudflare`).
+One server can host several experiments at once.
 
 To collect data on a single computer, for example in the lab or in the field,
 ``psynet deploy local`` runs the experiment on your own computer instead. It
@@ -81,6 +83,35 @@ and its own address, ``https://<app>.<domain>``, where ``<domain>`` is the
 server's DNS name. Participants see the app name in the address. PsyNet
 refuses to deploy an app whose name is already in use on the server, so a
 redeployment needs a new name or the old app destroyed first.
+
+.. _deployment_security_headers:
+
+Security headers
+----------------
+
+Every response from the experiment server, including error pages, sends:
+
+- ``Referrer-Policy: strict-origin-when-cross-origin``, so other sites see
+  only the experiment's address, never a participant URL with its
+  ``unique_id``;
+- ``X-Content-Type-Options: nosniff``, so browsers refuse a script or
+  stylesheet served with the wrong content type; give such files standard
+  extensions such as ``.js`` and ``.css``;
+- ``X-Frame-Options: SAMEORIGIN``, so other sites cannot show the experiment
+  in a frame.
+
+An experiment that must be framed by another site can remove the header in
+its own ``after_request``. Dallinger calls this method on the experiment
+class, so define it as a class method:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        @classmethod
+        def after_request(cls, request, response):
+            response = super().after_request(request, response)
+            response.headers.pop("X-Frame-Options", None)
+            return response
 
 Recruiters
 ----------

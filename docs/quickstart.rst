@@ -10,15 +10,16 @@ the tools in :doc:`install` are in place.
 Create an experiment
 --------------------
 
-Each experiment lives in its own folder. The folder name must contain only
-letters, digits and underscores, must not start with a digit, and must not be
-the name of an existing Python module such as ``code`` or ``test``.
+Each experiment lives in its own folder. The folder name becomes the
+experiment's default label and its Docker image name, and must not be the name
+of an existing Python module such as ``code`` or ``test``. Lowercase letters,
+digits and underscores, with no spaces, are the safest choice.
 
 .. code-block:: bash
 
    mkdir chords
    cd chords
-   uv venv --python 3.13
+   uv venv --python 3.14
    source .venv/bin/activate
    uv pip install psynet
    psynet setup

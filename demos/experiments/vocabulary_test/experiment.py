@@ -68,6 +68,10 @@ class Exp(psynet.experiment.Experiment):
             visited_hashes = [item["hash"] for item in trial.answer]
             # Make sure the participant doesn't revisit the same asset
             assert len(visited_hashes) == len(set(visited_hashes))
+            # The thresholds of 0 pass any answer, so check that the answer has
+            # the shape that scoring accepts.
+            assert visited_hashes == trial.definition["hashes"]
+            assert {item["answer"] for item in trial.answer} <= {"real", "fake"}
 
         assets = trials[0].assets
         assert len(assets) == 30

@@ -13,10 +13,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install pip and wheel
         run: |
@@ -33,10 +33,6 @@ jobs:
           from dallinger.utils import ensure_constraints_file_presence
           ensure_constraints_file_presence(os.getcwd())
           "
-
-      - name: Install heroku CLI
-        run: |
-          curl https://cli-assets.heroku.com/install.sh | sh
 
       - name: Start Dallinger Docker services
         run: dallinger docker start-services

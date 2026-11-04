@@ -3,26 +3,31 @@
     <script src="/static/scripts/d3.v4.js"></script>
     <script src="/static/scripts/d3-tip.min.js"></script>
     <script src="/static/scripts/d3-visualizations.js"></script>
-    <script src="/static/scripts/jquery-ui.min.js"></script>
 {% endblock %}
 {% block stylesheets %}
     {{ super() }}
     <link rel="stylesheet" href="/static/css/d3-tip.css">
-    <link rel="stylesheet" href="/static/css/jquery-ui.css">
 {% endblock %}
 {% block body %}
     <style>
+        /* Bootstrap makes labels inline-block, which would size the inputs
+           relative to their label instead of the row. */
+        .selector label {
+            display: inline;
+        }
 
+        .selector input[type="range"] {
+            width: 35%;
+        }
     </style>
     <h1>{{ title }}</h1>
 
-    {{ html | safe }}
+    {{ html }}
     {% if data | length > 0 %}
         <div class="selector">
             <div>
-                <div id="slider-range" class="ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content">
-                    <span tabindex="0" class="ui-slider-handle ui-corner-all ui-state-default"></span>
-                </div>
+                <label>From <input type="range" id="range-from" step="1"></label>
+                <label>To <input type="range" id="range-to" step="1"></label>
                 <span id="min"></span>
                 <span class="seperator">-</span>
                 <span id="max"></span>
@@ -30,12 +35,12 @@
         </div>
         <div id="lineplot"></div>
         <script>
-            var data = {{ data | safe }};
+            var data = {{ data | tojson }};
             let x2timestamp = {};
             data.forEach(function (d) {
                 x2timestamp[d.x] = d.timestamp;
             });
-            const plotTimeWindow = 2 * 60 * 6;  // 2 hours, status polled every 10 seconds
+            const plotTimeWindow = 2 * 60;  // 2 hours, status recorded every minute
             const max = Object.keys(x2timestamp).length - 1;
             const value = max > plotTimeWindow ? plotTimeWindow : max;
             const min = 0;
@@ -69,29 +74,31 @@
                 linePlot('lineplot', filteredData, margin, xLabel, yLabel, tooltip, height, yLimits, type2color, x2timestamp);
             }
 
-            function createSlider(){
-                let slider = $("#slider-range");
-                slider.slider({
-                    range: true,
-                    min: -max,
-                    max: min,
-                    values: [-value, -min],
-                    slide: function (event, ui) {
-                        end = -ui.values[0];
-                        start = -ui.values[1];
-                        $("#max").text(x2timestamp[start]);
-                        $("#min").text(x2timestamp[end]);
-                        draw(start, end);
-                    }
+            // x counts back from the newest status, so the inputs run from -max
+            // (oldest) to 0 (newest).
+            function createSlider() {
+                const inputs = [document.getElementById("range-from"), document.getElementById("range-to")];
+                inputs.forEach(function (input) {
+                    input.min = -max;
+                    input.max = -min;
                 });
-                $("#max").text(x2timestamp[min]);
-                $("#min").text(x2timestamp[max]);
+                inputs[0].value = -value;
+                inputs[1].value = -min;
+
+                function update() {
+                    const values = inputs.map(input => input.valueAsNumber);
+                    const start = -Math.max(...values);
+                    const end = -Math.min(...values);
+                    $("#max").text(x2timestamp[start]);
+                    $("#min").text(x2timestamp[end]);
+                    draw(start, end);
+                }
+
+                inputs.forEach(input => input.addEventListener("input", update));
+                update();
             }
 
-            document.addEventListener("DOMContentLoaded", function (e) {
-                draw();
-                createSlider();
-            });
+            document.addEventListener("DOMContentLoaded", createSlider);
         </script>
     {% endif %}
 

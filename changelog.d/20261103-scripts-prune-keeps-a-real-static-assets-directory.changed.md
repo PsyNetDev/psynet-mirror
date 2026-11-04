@@ -1,0 +1,1 @@
+`psynet scripts prune` no longer deletes a real `static/assets` file or directory, only a link left there by an earlier PsyNet version. The stock `.gitignore` and `deploy.toml` still exclude `static/assets`, so files you put there are not tracked or deployed; keep your own files elsewhere in `static/`.

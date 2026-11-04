@@ -1,0 +1,1 @@
+The temporary scaffold that PsyNet's pytest fixtures add to an experiment directory is now removed from that directory even if the test session has changed directory in the meantime. Previously, a test session stopped by a signal could run this cleanup in the directory pytest was started from, deleting files such as `README.md`, `AGENTS.md` or `.gitignore` there.

@@ -93,11 +93,11 @@ from the PsyNet checkout:
     PIPELINE=$(curl -s "$P/pipelines?ref=master&source=push&status=success&per_page=1" | jq '.[0].id')
     DIR=$(mktemp -d)
     curl -s "$P/pipelines/$PIPELINE/jobs?per_page=100" \
-      | jq -r '.[] | select(.name | test("^(tests_python_3_13|playwright_e2e_)")) | "\(.id) \(.name)"' \
+      | jq -r '.[] | select(.name | test("^(tests_python_3_14|playwright_e2e_)")) | "\(.id) \(.name)"' \
       | while read -r id name shard; do
           i=${shard%/*}
           case $name in
-            tests_*) f=ci_durations_3.13_$i.json ;;
+            tests_*) f=ci_durations_3.14_$i.json ;;
             *) f=playwright-${name#playwright_e2e_}-$i-junit.xml ;;
           esac
           curl -sfL -o "$DIR/$f" "$P/jobs/$id/artifacts/public/$f" || echo "missing $f"
@@ -148,7 +148,7 @@ by default each local test session gets its own environment and leaves a
 running ``psynet debug local`` alone. The session prints where it runs, for
 example::
 
-    Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
+    Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
 
 It claims a free web port 100 or more above your ``base_port`` (so from 5100
 by default), uses the database ``<database>_test_<port>`` next to
@@ -158,6 +158,8 @@ Docker), the session uses a spare database number on your Redis server
 instead, which keeps its data apart but can still send live notifications to a
 debug server's participants. That database is emptied when the session ends. If the environment can't be set up, the session stops
 with an error rather than falling back to your database.
+``psynet debug local --isolated`` gives a debug server the same environment
+(see :ref:`running_several_local_experiments`).
 
 Each session has its own database, but all of them share your PostgreSQL
 server and its ``max_connections`` limit (100 by default). Several sessions at
@@ -176,9 +178,11 @@ isn't isolated. CI jobs (where ``CI`` is set) always use their configured
 services.
 
 Isolation covers services, not files: tests still create and remove generated
-files in the experiment directory. A test session therefore refuses to start
-while ``psynet debug`` is serving the same directory; run the tests from a copy
-of the experiment (such as a git worktree) instead.
+files in the experiment directory. Each session therefore holds a lock on the
+directory: sessions in the same directory wait for each other, and a session
+refuses to start while ``psynet debug`` (which holds the same lock) is serving
+it, as ``psynet debug local`` refuses a directory that a session is using.
+Run the tests from a copy of the experiment (such as a git worktree) instead.
 
 Set ``PSYNET_TEST_ENVIRONMENT=shared`` to use your current database, Redis and
 port, for example if your PostgreSQL user can't create databases. The session
