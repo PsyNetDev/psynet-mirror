@@ -139,11 +139,11 @@ class CustomTrial(CustomTrialAnalysis):
             AudioPrompt(
                 self.assets["stimulus"],
                 Markup(
-                    f"""
+                    """
                     <h3>Tap in time with the rhythm</h3>
                     <i>Trial number {trial_number} out of {n_trials} trials.</i>
                     """
-                ),
+                ).format(trial_number=trial_number, n_trials=n_trials),
             ),
             AudioRecordControl(
                 duration=duration_rec_sec,
@@ -221,10 +221,10 @@ class Exp(psynet.experiment.Experiment):
         REPPMarkersTest(),  # pre-screening filtering participants based on recording test (markers)
         InfoPage(
             Markup(
-                f"""
+                """
             <h3>Tapping in rhythm - Instructions</h3>
             <hr>
-            You will take {NUM_TRIALS_PARTICIPANT} tapping trials. In each trial, you will hear a metronome sound
+            You will take {n_trials} tapping trials. In each trial, you will hear a metronome sound
             playing a rhythm.
             <br><br>
             <b><b>Your goal is to tap in time to the metronome click</b></b>
@@ -239,7 +239,7 @@ class Exp(psynet.experiment.Experiment):
             <hr>
             Click <b>next</b> to start tapping in rhythm!
             """
-            ),
+            ).format(n_trials=NUM_TRIALS_PARTICIPANT),
             time_estimate=5,
         ),
         AudioImitationChainTrialMaker(

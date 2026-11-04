@@ -2050,8 +2050,8 @@ class TrialMaker(Module):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
         return InfoPage(
-            Markup(
-                f"Your performance score was <strong>{score_to_display}&#37;</strong>."
+            Markup("Your performance score was <strong>{}&#37;</strong>.").format(
+                score_to_display
             ),
             time_estimate=5,
         )

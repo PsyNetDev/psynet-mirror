@@ -33,8 +33,8 @@ class Exp(psynet.experiment.Experiment):
             lambda participant: InfoPage(
                 Markup(
                     "The timeline hold timed out."
-                    f"<span id='fixed-hold-credit'>{participant.var.hold_credit}</span>"
-                ),
+                    "<span id='fixed-hold-credit'>{hold_credit}</span>"
+                ).format(hold_credit=participant.var.hold_credit),
                 time_estimate=1,
             ),
             time_estimate=1,

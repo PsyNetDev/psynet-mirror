@@ -1263,6 +1263,9 @@ class Page(Elt):
 
     template_arg:
         Dictionary of arguments to pass to the jinja2 template.
+        ``{{ ... }}`` escapes plain strings; pass HTML as ``markupsafe.Markup``
+        or a ``dominate`` tag, and write values inside ``<script>`` with
+        ``| tojson``.
 
     label:
         Internal label to give the page, used for example in results saving.
@@ -2123,7 +2126,7 @@ class Page(Elt):
             "js_dependencies": js_dependencies,
             "js_page_code": self.js_page_code,
             "js_page_modules": js_page_modules,
-            "css": self.css + experiment.css,
+            "css": [Markup(x) for x in self.css + experiment.css],
             "css_links": css_links,
             "events": self.events,
             "trial_progress_display_config": self.progress_display,

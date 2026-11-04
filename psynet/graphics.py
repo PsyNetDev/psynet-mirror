@@ -5,6 +5,8 @@ from importlib import resources
 from numbers import Real
 from typing import List, Optional
 
+from jinja2.utils import htmlsafe_json_dumps
+
 from .modular_page import Control, ModularPage, Prompt
 from .timeline import MediaSpec
 from .utils import is_valid_html5_id
@@ -426,10 +428,9 @@ class Text(GraphicObject):
 
     @property
     def js_init(self):
-        escaped_text = self.text.replace("'", "\\'")
         return [
             *super().js_init,
-            f"this.raphael = paper.text({self.x}, {self.y}, '{escaped_text}');",
+            f"this.raphael = paper.text({self.x}, {self.y}, {htmlsafe_json_dumps(self.text)});",
         ]
 
 
@@ -500,14 +501,15 @@ class Image(GraphicObject):
 
     @property
     def js_init(self):
+        image_js = f"psynet.image[{htmlsafe_json_dumps(self.media_id)}]"
         if self.height is None:
-            height_js = f"Math.round({self.width} / psynet.image['{self.media_id}'].aspectRatio)"
+            height_js = f"Math.round({self.width} / {image_js}.aspectRatio)"
         else:
             height_js = self.height
 
         return [
             *super().js_init,
-            f"this.raphael = paper.image(psynet.image['{self.media_id}'].url, {self.x}, {self.y}, {self.width}, {height_js});",
+            f"this.raphael = paper.image({image_js}.url, {self.x}, {self.y}, {self.width}, {height_js});",
         ]
 
     @property
@@ -551,7 +553,10 @@ class Path(GraphicObject):
 
     @property
     def js_init(self) -> str:
-        return [*super().js_init, f"this.raphael = paper.path('{self.path_string}');"]
+        return [
+            *super().js_init,
+            f"this.raphael = paper.path({htmlsafe_json_dumps(self.path_string)});",
+        ]
 
 
 class Circle(GraphicObject):
@@ -846,6 +851,10 @@ class SVGLogo:
         self.url = url
 
     def __str__(self):
+        return self.html
+
+    def __html__(self):
+        """Render as trusted HTML in autoescaped templates."""
         return self.html
 
     @property

@@ -71,6 +71,7 @@ from flask import (
 )
 from flask import g as flask_app_globals
 from flask_login import login_required
+from jinja2.utils import htmlsafe_json_dumps
 from markupsafe import escape
 from sqlalchemy import Column, Float, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
@@ -4599,6 +4600,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (``psynet_exit_recruiter.html``), with the assignment ID as a reference.
         Otherwise, one can return a custom message in various ways.
         If you return a string, this will be escaped appropriately and presented as text.
+        To show HTML that you wrote yourself, return a ``markupsafe.Markup`` string.
         Alternatively, more complex HTML structures can be constructed using the
         Python package ``dominate``, see Examples for details.
 
@@ -5213,7 +5215,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard_timeline.html",
             title="Timeline modules",
             panes=panes,
-            timeline_modules=json.dumps(module_info, default=serialise),
+            timeline_modules=htmlsafe_json_dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
 

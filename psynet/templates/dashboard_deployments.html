@@ -44,7 +44,7 @@
 
 {% if experiment.artifact_storage %}
 <div class="my-3">
-    {{ experiment.artifact_storage.info_html | safe }}
+    {{ experiment.artifact_storage.info_html }}
 </div>
 {% endif %}
 
@@ -96,13 +96,13 @@
         }
 
         var page = 0;
-        var deploymentsIds = JSON.parse('{{deployments | tojson}}')
-        var archivedIds = JSON.parse('{{archived | tojson}}')
-        var secret = `{{secret}}`
+        var deploymentsIds = {{ deployments | tojson }}
+        var archivedIds = {{ archived | tojson }}
+        var secret = {{ secret | tojson }}
         var experiments = {};
         let archivedExperiments = [];
         var nLoaded = 0;
-        var currentDeploymentId = `{{current_deployment_id}}`
+        var currentDeploymentId = {{ current_deployment_id | tojson }}
         var myModal;
         let totalCost;
         const loadMoreButton = document.getElementById('load-more');
@@ -110,8 +110,8 @@
 
 
         // Add configuration variables
-        const resourceWarningPct = parseFloat('{{exp_config.resource_warning_pct}}') * 100;
-        const resourceDangerPct = parseFloat('{{exp_config.resource_danger_pct }}') * 100;
+        const resourceWarningPct = parseFloat({{ exp_config.resource_warning_pct | tojson }}) * 100;
+        const resourceDangerPct = parseFloat({{ exp_config.resource_danger_pct | tojson }}) * 100;
 
 
         function printResetButton() {

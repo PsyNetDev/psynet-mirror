@@ -13,6 +13,6 @@
 {% block scripts %}
   {{ super() }}
   <script>
-    window.location = "{{ external_submit_url | safe }}";
+    window.location = {{ external_submit_url | tojson }};
   </script>
 {% endblock %}
