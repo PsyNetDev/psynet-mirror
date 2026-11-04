@@ -88,7 +88,7 @@ from psynet.utils import (
 
 from . import deployment_info
 from . import exit as exit_domain
-from .asset import Asset, AssetRegistry, LocalStorage, OnDemandAsset, S3Storage
+from .asset import Asset, AssetRegistry, LocalStorage, S3Storage
 from .async_job import AsyncJob
 from .bot import Bot, BotDriver, BotResponse
 from .capacity import (
@@ -207,7 +207,6 @@ else:
     # participants take in the development server's console.
     hide_requests(
         "/asset/",
-        "/on-demand-asset",
         "/log/",
         "/timeline/arrival_notice",
         "/timeline/progress_and_reward",
@@ -1294,7 +1293,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         relevant_endpoints = [
             "/ad",
             "/consent",
-            "/on-demand-asset",
             "/response",
             "/start",
             "/timeline",
@@ -5632,34 +5630,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if asset is None:
             flask.abort(404)
         return asset.serve(subpath)
-
-    @experiment_route("/on-demand-asset", methods=["GET"])
-    @staticmethod
-    def get_on_demand_asset():
-        """
-        Legacy on-demand route.
-
-        Prefer ``/asset/<access_token>``. This endpoint remains as a temporary
-        compatibility shim that redirects when the asset has an access token.
-        """
-        id = request.args.get("id")
-        secret = request.args.get("secret")
-
-        assert id
-        assert secret
-
-        id = int(id)
-
-        asset = OnDemandAsset.query.filter_by(id=id).one()
-        if getattr(asset, "access_token", None):
-            target = asset.access_url()
-            return redirect(target)
-
-        # Fallback for rows that somehow lack a token.
-        suffix = asset.extension if asset.extension else ""
-        with tempfile.NamedTemporaryFile(suffix=suffix) as temp_file:
-            asset.export(temp_file.name)
-            return send_file(temp_file.name, max_age=0)
 
     @experiment_route("/error-page", methods=["POST", "GET"])
     @classmethod
