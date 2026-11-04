@@ -2229,8 +2229,8 @@
         throw new Error(
           "AudioContext is not available in this browser. " +
           "If your experiment uses audio, add 'audio_playback' to " +
-          "Experiment.browser_capabilities and place BrowserCapabilityCheck " +
-          "early in your timeline."
+          "Experiment.browser_capabilities so that PsyNet screens out " +
+          "browsers without it."
         );
       }
       decodeAudioData() { NullAudioContext._unavailable(); }

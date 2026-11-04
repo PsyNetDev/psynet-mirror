@@ -1,1 +1,1 @@
-Fixed `force_incognito_mode=True` passing all participants on browsers where incognito detection is unsupported (e.g. Firefox); unknown incognito status is now treated as a failed check.
+Fixed the browser entry check letting participants through when incognito detection fails, as it does in Firefox: with `force_incognito_mode = true` an unknown incognito status now fails the check, and `force_google_chrome = true` now rejects Firefox.

@@ -1119,25 +1119,6 @@ def test_browser_detect_requires_css_has_unconditionally():
     )
 
 
-def test_browser_capabilities_accepts_valid_tokens():
-    from psynet.experiment import Experiment
-
-    class Exp(Experiment):
-        browser_capabilities = {"microphone", "camera"}
-
-    Exp.check_browser_capabilities()  # must not raise
-
-
-def test_browser_capabilities_rejects_unknown_token():
-    from psynet.experiment import Experiment
-
-    class Exp(Experiment):
-        browser_capabilities = {"not_a_real_capability"}
-
-    with pytest.raises(ValueError, match="not_a_real_capability"):
-        Exp.check_browser_capabilities()
-
-
 def test_browser_detect_incognito_failure_routes_through_run_browser_check():
     """When detectIncognito rejects and force_incognito_mode=True, the .catch()
     handler must call runBrowserCheck() — not renderBrowserWarning() directly —

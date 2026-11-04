@@ -248,18 +248,25 @@ PERMISSION_CAPABILITY_TOKENS = frozenset({"microphone", "camera"})
 
 
 def validate_browser_capabilities(capabilities):
-    """Raise ValueError if capabilities is not a valid set of browser capability tokens."""
+    """Return ``capabilities`` as a frozenset, raising ValueError for invalid tokens."""
+    if capabilities is None:
+        raise ValueError(
+            "browser_capabilities must be a set of tokens, not None. "
+            "Use an empty set if the experiment has no requirements."
+        )
     if isinstance(capabilities, str):
         raise ValueError(
             "browser_capabilities must be a set of tokens, not a string. "
             f"Did you mean: {{{capabilities!r}}}"
         )
-    unknown = frozenset(capabilities) - BROWSER_CAPABILITY_TOKENS
+    capabilities = frozenset(capabilities)
+    unknown = capabilities - BROWSER_CAPABILITY_TOKENS
     if unknown:
         raise ValueError(
             f"Unknown browser_capabilities token(s): {sorted(unknown)}. "
             f"Valid tokens: {sorted(BROWSER_CAPABILITY_TOKENS)}"
         )
+    return capabilities
 
 
 @dataclass
@@ -386,6 +393,91 @@ def __init__(self, session=None):
 
         _reject_overridden_fail_participant(cls)
 
+        capabilities = validate_browser_capabilities(cls.browser_capabilities)
+        # Assigning inherited values here would hide capabilities that a later
+        # base class contributes to subclasses with multiple inheritance.
+        if "browser_capabilities" in dct:
+            cls.browser_capabilities = capabilities
+        _process_browser_capability_check(cls)
+
+
+def _browser_check_spec(cls):
+    """Return what determines the browser check that ``cls`` would insert."""
+    return (
+        validate_browser_capabilities(cls.browser_capabilities),
+        getattr(
+            cls.get_browser_capability_check,
+            "__func__",
+            cls.get_browser_capability_check,
+        ),
+    )
+
+
+def _process_browser_capability_check(cls):
+    """Give ``cls.timeline`` its browser check, once per Timeline object.
+
+    The first class to see a Timeline claims it and inserts its check, whether
+    the timeline was defined on the class, a mixin or a base class. Any later
+    class using the same Timeline must have the same effective
+    ``browser_capabilities`` and ``get_browser_capability_check``. The
+    placeholder timeline is never claimed, so that base classes can declare
+    capabilities for subclasses that define ``timeline``.
+    """
+    timeline = cls.timeline
+    if not isinstance(timeline, Timeline) or timeline is _PLACEHOLDER_TIMELINE:
+        return
+
+    owner = timeline.experiment_class
+    if owner is None:
+        _insert_browser_capability_check(cls)
+        timeline.experiment_class = cls
+    elif _browser_check_spec(cls) != _browser_check_spec(owner):
+        if issubclass(cls, owner):
+            raise ValueError(
+                f"{cls.__name__} inherits its timeline from {owner.__name__} but "
+                "has different browser_capabilities or "
+                "get_browser_capability_check, and the browser check is already "
+                f"inserted. Define timeline on {cls.__name__} as well."
+            )
+        raise ValueError(
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__} "
+            "but has a different browser check. Give each experiment class its "
+            "own Timeline."
+        )
+
+
+def _insert_browser_capability_check(cls):
+    """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
+    check = cls.get_browser_capability_check()
+    if check is None and not cls.browser_capabilities:
+        return
+
+    from .prescreen import BrowserCapabilityCheck
+
+    has_manual_check = any(
+        isinstance(m, BrowserCapabilityCheck) for m in cls.timeline.module_list
+    )
+    if check is None:
+        if not has_manual_check:
+            logger.warning(
+                f"{cls.__name__} declares browser_capabilities, but "
+                "get_browser_capability_check returns None and the timeline "
+                "contains no BrowserCapabilityCheck, so participants are not "
+                "screened for them."
+            )
+        return
+    if has_manual_check:
+        raise ValueError(
+            f"{cls.__name__}'s timeline already contains a BrowserCapabilityCheck. "
+            "PsyNet inserts the module returned by get_browser_capability_check "
+            "(by default, a BrowserCapabilityCheck whenever browser_capabilities "
+            "is set) at the start of the timeline, so please remove "
+            "BrowserCapabilityCheck from your timeline. To customize the check, override "
+            "Experiment.get_browser_capability_check; to place it yourself, make "
+            "that method return None."
+        )
+    cls.timeline.insert_at_start(check)
+
 
 @register_table
 class Request(SQLBase, SQLMixin):
@@ -500,6 +592,9 @@ def _is_replacement_gunicorn_worker(worker):
     ``cfg.workers`` spawns are the initial boot.
     """
     return worker.age > worker.cfg.workers
+
+
+_PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -747,8 +842,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     logos = []
     max_allowed_base_payment = 30
     browser_capabilities: frozenset = frozenset()
+    """Browser features the experiment requires, such as ``{"microphone"}``.
 
-    timeline = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
+    PsyNet screens participants for these at the start of the timeline; see
+    :meth:`get_browser_capability_check` and :doc:`/reference/configuration`.
+    """
+
+    timeline = _PLACEHOLDER_TIMELINE
 
     asset_storage = LocalStorage()
     artifact_storage = LocalArtifactStorage()
@@ -2726,22 +2826,41 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls._warn_about_overridden_experiment_config(config)
 
         if config.get("force_google_chrome"):
-            import warnings
-
-            warnings.warn(
+            logger.warning(
                 "force_google_chrome is deprecated and will be removed in a future release. "
                 "It still works, but consider migrating: use browser_capabilities for "
                 "feature-specific requirements (e.g. microphone, screen_capture), or leave "
-                "force_google_chrome unset to admit all modern browsers via the css_has check.",
-                DeprecationWarning,
-                stacklevel=2,
+                "force_google_chrome unset to admit all modern browsers that support CSS :has()."
             )
 
-        cls.check_browser_capabilities()
-
     @classmethod
-    def check_browser_capabilities(cls):
-        validate_browser_capabilities(cls.browser_capabilities)
+    def get_browser_capability_check(cls):
+        """Return the module that screens participants' browsers.
+
+        PsyNet inserts the returned module at the very start of the timeline,
+        before any consent pages, when the experiment class is defined. The
+        default checks
+        :attr:`browser_capabilities` and returns ``None`` (no check) if that set
+        is empty. Override this method to customize the check, or return
+        ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`
+        in the timeline yourself.
+
+        The insertion happens once per timeline, on the first experiment class
+        that uses it, even if the timeline comes from a mixin. A subclass whose
+        effective :attr:`browser_capabilities` or method differs from its
+        parent's, for example through a second base class, must therefore
+        define its own ``timeline``.
+
+        Returns
+        -------
+        Module or None
+            The browser-check module, or ``None`` to skip automatic insertion.
+        """
+        if not cls.browser_capabilities:
+            return None
+        from .prescreen import BrowserCapabilityCheck
+
+        return BrowserCapabilityCheck(capabilities=cls.browser_capabilities)
 
     @classmethod
     def check_max_concurrent_participants_support(cls, config):
