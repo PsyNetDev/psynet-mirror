@@ -502,7 +502,8 @@ Allowed browsers and devices
        * - ``screen_capture``
          - ``navigator.mediaDevices.getDisplayMedia`` is present
        * - ``video_recording``
-         - ``MediaRecorder`` is available and supports at least one video format
+         - ``MediaRecorder`` is available and can record WebM video, the only
+           format PsyNet records answers in
        * - ``audio_playback``
          - ``AudioContext`` is available
 

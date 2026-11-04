@@ -46,13 +46,8 @@ const CAPABILITY_CHECKS = {
 
     video_recording: async () => {
         if (typeof MediaRecorder === "undefined") return false;
-        const formats = [
-            "video/webm;codecs=vp8",
-            "video/webm;codecs=vp9",
-            "video/webm",
-            "video/mp4",
-        ];
-        return formats.some(f => MediaRecorder.isTypeSupported(f));
+        // Answer recordings are captured and uploaded as WebM only.
+        return MediaRecorder.isTypeSupported("video/webm");
     },
 
     audio_playback: async () =>

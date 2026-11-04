@@ -64,6 +64,9 @@ Deadlines and retries
 The upload deadline starts when the answer is accepted. The allowance is
 30 seconds plus twice the transfer time at 1 Mbit/s, bounded to 60–600 seconds.
 The browser retries a failed upload with increasing delays until that deadline.
+It keeps pending recordings in memory and holds at most 32 recordings, or twice
+the per-recording size limit (256 MiB by default), at once; a recording that would exceed this is reported unavailable
+when the page is submitted, which fails its trial.
 
 Once received, a recording must be stored within 5 minutes. This includes any
 time spent waiting for a free worker; the storage step itself may run for up to
@@ -77,8 +80,8 @@ the server can return its original acceptance; the answer is not recorded twice.
 
 In-place experiments wait for pending uploads before full-page transitions and
 recruiter exit, displaying an upload message; failures and the original deadlines
-bound this wait. Deliberate early-exit and error redirects can abandon pending
-uploads without an additional browser warning.
+bound this wait. Deliberate early exit, Lucid termination and error redirects
+can abandon pending uploads without an additional browser warning.
 
 Bots upload their ``bot_response_media`` files through the same upload route
 after their answer is accepted, so automated runs and load tests exercise the

@@ -4241,11 +4241,13 @@
     let noActivitySince = 0;
     let secondsLeft = psynetTemplateData.lucid.secondsLeft;
 
-    async function terminateParticipant(reason) {
+    function terminateParticipant(reason) {
       psynet.removeBeforeUnloadEventListener();
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
-      await psynet.drainRecordingUploads();
+      // Termination ends the session like early exit, so it abandons pending
+      // uploads instead of holding the participant until their deadlines.
+      psynet.allowRecordingUnload();
       return window.location.replace(
         "/terminate_participant?" +
           new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
