@@ -63,7 +63,7 @@ experiment = [
     # (#10100, #10229), check_recruiter_exit (#10239) and check_worker_status
     # (#10268) are on PyPI. The SHA is the head of #10287's branch, which is
     # stacked on #10281; move it to Dallinger master once they merge.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@039e385379e6d86b7f6a7b9c9bb44bd6e0f6d934",
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@f730df559b24b37806c705630b4896ea1109232e",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
