@@ -971,9 +971,10 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
-def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys):
+@pytest.mark.parametrize("browsers", [False, True])
+def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, browsers):
     """Another experiment's worker on the same Redis may run the launch job."""
-    from psynet.command_line import launch_app_without_browsers
+    from psynet import command_line
 
     config = Mock(ready=True)
     config.get.side_effect = {"dashboard_password": "other-experiment"}.get
@@ -983,9 +984,18 @@ def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys):
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: launches.append(kwargs) or {},
     )
-    launch_app_without_browsers(5001, auth=("admin", "enqueued"))
+    opened = []
+    monkeypatch.setattr(command_line, "_open_browser_async", opened.append)
+    launch = (
+        command_line.launch_app_and_open_browsers
+        if browsers
+        else command_line.launch_app_without_browsers
+    )
+    launch(5001, auth=("admin", "enqueued"))
     assert launches[0]["auth"] == ("admin", "enqueued")
     assert "(user admin, password enqueued)" in capsys.readouterr().out
+    if browsers:
+        assert "admin:enqueued@" in opened[0]
 
 
 @pytest.mark.parametrize("no_browsers", [True, False])

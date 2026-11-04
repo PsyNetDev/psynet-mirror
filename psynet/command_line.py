@@ -1565,7 +1565,10 @@ def launch_app_and_open_browsers(port, auth=None, **kwargs):
 
     _launch_app_and_report(port, auth=auth)
     config = get_config()
-    _open_browser_async(develop.dashboard_url(config, port))
+    login = (
+        {"dashboard_user": auth[0], "dashboard_password": auth[1]} if auth else config
+    )
+    _open_browser_async(develop.dashboard_url(login, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
     _open_browser_async(develop.ad_url(config, port))
 

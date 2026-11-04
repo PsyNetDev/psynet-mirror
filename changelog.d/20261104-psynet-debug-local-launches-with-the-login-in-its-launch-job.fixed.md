@@ -1,1 +1,1 @@
-`psynet debug local` sends the dashboard login that Dallinger's `develop debug` puts in its launch job, when there is one, so the launch still works if another experiment's worker on the same Redis database picks the job up.
+`psynet debug local` uses the dashboard login that Dallinger's `develop debug` puts in its launch job, when there is one, for the launch, the `Ready.` block and the dashboard tab it opens. So these still work if another experiment's worker on the same Redis database picks the job up.
