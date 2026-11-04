@@ -151,15 +151,29 @@ def test_classes_without_checks_may_share_a_timeline():
     assert not Other.timeline.module_list
 
 
-def test_subclass_may_redeclare_parent_timeline():
+def test_subclass_may_redeclare_parent_timeline_and_capabilities():
     class Base(Experiment):
         browser_capabilities = {"camera"}
         timeline = _make_timeline()
 
     class Sub(Base):
+        browser_capabilities = {"camera"}
         timeline = Base.timeline
 
     assert len(Sub.timeline.module_list) == 1
+
+
+def test_subclass_inheriting_different_capabilities_must_define_timeline():
+    class Base(Experiment):
+        timeline = _make_timeline()
+
+    class MicBase(Experiment):
+        browser_capabilities = {"microphone"}
+
+    with pytest.raises(ValueError, match="Define timeline on Sub"):
+
+        class Sub(Base, MicBase):
+            pass
 
 
 @pytest.mark.parametrize("caps_on_class", [True, False])

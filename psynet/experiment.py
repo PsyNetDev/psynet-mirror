@@ -397,45 +397,51 @@ def __init__(self, session=None):
             cls.browser_capabilities = validate_browser_capabilities(
                 cls.browser_capabilities
             )
-        _process_browser_capability_check(cls, dct)
+        _process_browser_capability_check(cls)
 
 
-def _process_browser_capability_check(cls, dct):
+def _browser_check_spec(cls):
+    """Return what determines the browser check that ``cls`` would insert."""
+    return (
+        validate_browser_capabilities(cls.browser_capabilities),
+        getattr(
+            cls.get_browser_capability_check,
+            "__func__",
+            cls.get_browser_capability_check,
+        ),
+    )
+
+
+def _process_browser_capability_check(cls):
     """Give ``cls.timeline`` its browser check, once per Timeline object.
 
     The first class to see a Timeline claims it and inserts its check, whether
-    the timeline was defined on the class, a mixin or a base class. Subclasses
-    reuse their ancestor's timeline and check, so they may not change the
-    check without defining their own timeline. Only ``Experiment``'s placeholder
-    timeline is never claimed, so that base classes can declare capabilities.
+    the timeline was defined on the class, a mixin or a base class. Any later
+    class using the same Timeline must have the same effective
+    ``browser_capabilities`` and ``get_browser_capability_check``. The
+    placeholder timeline is never claimed, so that base classes can declare
+    capabilities for subclasses that define ``timeline``.
     """
     timeline = cls.timeline
-    base = globals().get("Experiment")
-    if not isinstance(timeline, Timeline) or (
-        base is not None and timeline is base.timeline
-    ):
+    if not isinstance(timeline, Timeline) or timeline is _PLACEHOLDER_TIMELINE:
         return
 
     owner = timeline.experiment_class
     if owner is None:
         timeline.experiment_class = cls
         _insert_browser_capability_check(cls)
-    elif issubclass(cls, owner):
-        if "browser_capabilities" in dct or "get_browser_capability_check" in dct:
+    elif _browser_check_spec(cls) != _browser_check_spec(owner):
+        if issubclass(cls, owner):
             raise ValueError(
-                f"{cls.__name__} changes browser_capabilities or "
-                f"get_browser_capability_check but inherits its timeline from "
-                f"{owner.__name__}, whose browser check is already inserted. "
-                f"Define timeline on {cls.__name__} as well."
+                f"{cls.__name__} inherits its timeline from {owner.__name__} but "
+                "has different browser_capabilities or "
+                "get_browser_capability_check, and the browser check is already "
+                f"inserted. Define timeline on {cls.__name__} as well."
             )
-    elif (
-        cls.get_browser_capability_check() is not None
-        or owner.get_browser_capability_check() is not None
-    ):
         raise ValueError(
-            f"{cls.__name__} uses the same Timeline object as {owner.__name__}, "
-            "so PsyNet can't give each class its own browser check. Give each "
-            "experiment class its own Timeline."
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__} "
+            "but has a different browser check. Give each experiment class its "
+            "own Timeline."
         )
 
 
@@ -584,6 +590,9 @@ def _is_replacement_gunicorn_worker(worker):
     ``cfg.workers`` spawns are the initial boot.
     """
     return worker.age > worker.cfg.workers
+
+
+_PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
@@ -837,7 +846,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     :meth:`get_browser_capability_check` and :doc:`/reference/configuration`.
     """
 
-    timeline = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
+    timeline = _PLACEHOLDER_TIMELINE
 
     asset_storage = LocalStorage()
     artifact_storage = LocalArtifactStorage()
