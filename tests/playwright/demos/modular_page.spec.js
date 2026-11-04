@@ -156,6 +156,7 @@ async function expectRejectedSubmissionRestores(page, button) {
     await button.click();
     await expect(spinner).toBeVisible({ timeout: STEP_TIMEOUT_MS });
     await expect(button).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await expect(button).toHaveAttribute("aria-busy", "true");
     expect(await button.boundingBox()).toEqual(boxBefore);
   } finally {
     releaseResponse();
@@ -167,7 +168,8 @@ async function expectRejectedSubmissionRestores(page, button) {
   await page.locator("#alert-button").click();
   await expect(spinner).toHaveCount(0);
   await expect(button).toBeEnabled();
-  await expect(button).toBeVisible();
+  await expect(button).not.toHaveClass(/psynet-button-pending/);
+  await expect(button).not.toHaveAttribute("aria-busy");
 }
 
 test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) => {
