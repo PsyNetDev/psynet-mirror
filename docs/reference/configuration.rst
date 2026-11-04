@@ -529,8 +529,9 @@ Allowed browsers and devices
                 ...
             )
 
-    A subclass that changes ``browser_capabilities`` or
-    ``get_browser_capability_check`` must define its own ``timeline``.
+    A subclass whose effective ``browser_capabilities`` or
+    ``get_browser_capability_check`` differs from its parent's, for example
+    through a second base class, must define its own ``timeline``.
 
     PsyNet unconditionally enforces CSS ``:has()`` support (Chrome 105+,
     Firefox 121+, Safari 15.4+); you do not need to add a token for that.

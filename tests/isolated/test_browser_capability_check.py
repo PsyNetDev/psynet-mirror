@@ -74,11 +74,24 @@ def test_experiment_rejects_unknown_capability_at_definition():
 
 
 def test_experiment_rejects_check_already_in_timeline():
+    shared = _make_timeline(BrowserCapabilityCheck({"microphone"}))
     with pytest.raises(ValueError, match="get_browser_capability_check"):
 
         class Exp(Experiment):
             browser_capabilities = {"microphone"}
-            timeline = _make_timeline(BrowserCapabilityCheck({"microphone"}))
+            timeline = shared
+
+    assert shared.experiment_class is None
+
+
+def test_experiment_rejects_unknown_capability_from_mixin():
+    class Mixin:
+        browser_capabilities = {"not_a_real_capability"}
+
+    with pytest.raises(ValueError, match="not_a_real_capability"):
+
+        class Exp(Mixin, Experiment):
+            pass
 
 
 def test_experiment_can_place_check_manually():

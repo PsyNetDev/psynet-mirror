@@ -393,10 +393,11 @@ def __init__(self, session=None):
 
         _reject_overridden_fail_participant(cls)
 
+        capabilities = validate_browser_capabilities(cls.browser_capabilities)
+        # Assigning inherited values here would hide capabilities that a later
+        # base class contributes to subclasses with multiple inheritance.
         if "browser_capabilities" in dct:
-            cls.browser_capabilities = validate_browser_capabilities(
-                cls.browser_capabilities
-            )
+            cls.browser_capabilities = capabilities
         _process_browser_capability_check(cls)
 
 
@@ -428,8 +429,8 @@ def _process_browser_capability_check(cls):
 
     owner = timeline.experiment_class
     if owner is None:
-        timeline.experiment_class = cls
         _insert_browser_capability_check(cls)
+        timeline.experiment_class = cls
     elif _browser_check_spec(cls) != _browser_check_spec(owner):
         if issubclass(cls, owner):
             raise ValueError(
@@ -467,6 +468,7 @@ def _insert_browser_capability_check(cls):
         return
     if has_manual_check:
         raise ValueError(
+            f"{cls.__name__}'s timeline already contains a BrowserCapabilityCheck. "
             "PsyNet inserts the module returned by get_browser_capability_check "
             "(by default, a BrowserCapabilityCheck whenever browser_capabilities "
             "is set) at the start of the timeline, so please remove "
@@ -2844,8 +2846,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         in the timeline yourself.
 
         The insertion happens once per timeline, on the first experiment class
-        that uses it, even if the timeline comes from a mixin. A subclass that
-        changes :attr:`browser_capabilities` or this method must therefore
+        that uses it, even if the timeline comes from a mixin. A subclass whose
+        effective :attr:`browser_capabilities` or method differs from its
+        parent's, for example through a second base class, must therefore
         define its own ``timeline``.
 
         Returns
