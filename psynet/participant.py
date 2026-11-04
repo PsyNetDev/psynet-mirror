@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -560,6 +562,20 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     @property
     def last_response(self):
         return self.response
+
+    @property
+    def websocket_scope(self):
+        """Return the token that this participant's pages open websockets with.
+
+        :meth:`~psynet.experiment.Experiment.accept_websocket_connection`
+        checks it. It is derived from ``unique_id`` by HMAC, so Dallinger can
+        log and store it without revealing the ``unique_id``. Treat it as a
+        secret all the same: anyone holding it can open checked websockets as
+        this participant.
+        """
+        return hmac.new(
+            self.unique_id.encode(), b"psynet-websocket", hashlib.sha256
+        ).hexdigest()
 
     # all_trials = relationship("psynet.trial.main.Trial")
 

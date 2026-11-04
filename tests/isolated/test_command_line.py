@@ -4839,7 +4839,21 @@ def test_scripts_prune_preserves_authored_resource_directories(tmp_path):
     assert (tmp_path / "templates/custom.html").exists()
 
 
-def test_scripts_prune_removes_generated_static_assets_symlink(tmp_path):
+def test_scripts_prune_keeps_an_authored_static_assets_directory(tmp_path):
+    with working_directory(tmp_path):
+        Path("experiment.py").write_text("class Exp:\n    pass\n")
+        Path("requirements.txt").write_text("psynet==0.0.0\n")
+        scaffold_experiment_directory(overwrite=True)
+        Path("static/assets").mkdir(parents=True)
+        Path("static/assets/logo.png").write_bytes(b"logo")
+
+        result = CliRunner().invoke(psynet, ["scripts", "prune"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "static/assets/logo.png").read_bytes() == b"logo"
+
+
+def test_scripts_prune_removes_a_legacy_static_assets_symlink(tmp_path):
     assets_directory = tmp_path / "generated-assets"
     assets_directory.mkdir()
     (assets_directory / "asset.txt").write_text("Generated asset\n")

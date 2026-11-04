@@ -1,7 +1,7 @@
 import json
 
 import numpy as np
-from markupsafe import Markup, escape
+from markupsafe import Markup
 
 import psynet.experiment
 from psynet.modular_page import AudioSliderControl, ModularPage
@@ -16,10 +16,8 @@ GRANULARITY_SLIDER = 9  # set the number of audio files per slider
 
 
 def print_dict(x, **kwargs):
-    return (
-        "<pre style='overflow: scroll; max-height: 200px'>"
-        + json.dumps(x, indent=4)
-        + "</pre>"
+    return Markup("<pre style='overflow: scroll; max-height: 200px'>{}</pre>").format(
+        json.dumps(x, indent=4)
     )
 
 
@@ -38,9 +36,9 @@ def new_example(
     )
 
     prompt = Markup(
-        f"""
-        {escape(description)}
-        {print_dict(kwargs)}
+        """
+        {description}
+        {settings}
         <p>
             Raw slider value is <strong id="slider-raw-value">NA</strong> <br>
             Output slider value is <strong id="slider-output-value">NA</strong>
@@ -50,7 +48,7 @@ def new_example(
             Closest audio: <strong id="slider-audio">NA</strong>
         </p>
         """
-    )
+    ).format(description=description, settings=print_dict(kwargs))
     time_estimate = kwargs.pop("time_estimate")
 
     return join(

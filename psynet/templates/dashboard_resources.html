@@ -16,7 +16,7 @@
     </style>
     <h1>{{ title }}</h1>
 
-    {{ html | safe }}
+    {{ html }}
     {% if data | length > 0 %}
         <div class="selector">
             <div>
@@ -30,7 +30,7 @@
         </div>
         <div id="lineplot"></div>
         <script>
-            var data = {{ data | safe }};
+            var data = {{ data | tojson }};
             let x2timestamp = {};
             data.forEach(function (d) {
                 x2timestamp[d.x] = d.timestamp;
