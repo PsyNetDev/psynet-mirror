@@ -72,7 +72,7 @@ from flask import (
 from flask import g as flask_app_globals
 from flask_login import login_required
 from markupsafe import escape
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import Column, Float, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import lazyload, load_only
 from sqlalchemy.orm.exc import DetachedInstanceError
@@ -139,6 +139,7 @@ from .recruiters import (  # noqa: F401
     CapRecruiter,  # noqa: F401  # Backward compatibility alias
     DevLucidRecruiter,
     LabRecruiter,
+    LucidIdentifierMismatch,
     LucidRecruiter,
     PsyNetProlificRecruiterMixin,
     StagingCapRecruiter,  # noqa: F401  # Backward compatibility alias
@@ -503,7 +504,9 @@ class Request(SQLBase, SQLMixin):
     vars = None
 
     id = Column(Integer, primary_key=True)
-    unique_id = Column(String, ForeignKey("participant.unique_id"))
+    # Not a foreign key: the value comes from the request's query string,
+    # which may name no participant.
+    unique_id = Column(String)
     duration = Column(Float)
     method = Column(String)
     endpoint = Column(String)
@@ -1345,7 +1348,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def after_request(request, response):
-        diff = time.monotonic() - flask_app_globals.request_start_time
+        # Participant URLs carry ?unique_id=, which must not reach other origins
+        # through Referer. Embeds such as YouTube still need the bare origin.
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        start_time = getattr(flask_app_globals, "request_start_time", None)
         response = apply_versioned_static_cache_headers(response)
         relevant_endpoints = [
             "/ad",
@@ -1373,12 +1383,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return response
 
         params = dict(request.args)
-        unique_id = params.get("unique_id", None)
-        if getattr(flask_app_globals, "unknown_participant", False):
-            unique_id = None
         request_obj = Request(
-            unique_id=unique_id,
-            duration=diff,
+            unique_id=params.get("unique_id"),
+            duration=None if start_time is None else time.monotonic() - start_time,
             method=request.method,
             endpoint=endpoint,
             params=params,
@@ -4358,7 +4365,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         HTTP status is 404. The log line leaves out the request's IDs, which
         can be recruiter worker IDs.
         """
-        flask_app_globals.unknown_participant = True
         logger.warning(
             "%s %s: unknown participant, answered 'session no longer available' "
             "(a browser tab from an earlier session?).",
@@ -4741,15 +4747,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             ]
         )
-        # We don't think this is needed any more but just keeping a note in case we're proved wrong (25 Sep 2023)
-        # if isinstance(cls.assets.storage, DebugStorage):
-        #     _path = f"static/{cls.assets.storage.label}"
-        #     files.append(
-        #         (
-        #             _path,
-        #             _path,
-        #         )
-        #     )
         return files
 
     @classmethod
@@ -5903,8 +5900,54 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @classmethod
     @with_transaction
     def terminate_participant(cls):
+        """Terminate a Lucid respondent and send them back to their panel.
+
+        An existing participant is only terminated by a request that carries
+        their ``unique_id``. A bare ``RID`` or ``assignmentId`` is accepted only
+        when no participant has that RID yet (for example the mobile-phone
+        check on the ad page), so it can end only a session that has not
+        started. A request whose ``assignmentId``, ``RID`` and ``unique_id``
+        name different RIDs is refused, as is any request when several
+        participants share the RID. Experiments that don't recruit through
+        Lucid return 404.
+        """
         recruiter = get_experiment().recruiter
-        participant = recruiter.get_participant(request)
+        if not isinstance(recruiter, BaseLucidRecruiter):
+            flask.abort(404)
+        try:
+            assignment_id = recruiter.requested_assignment_id(request)
+        except ValueError as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(error_text=str(err), status=400, simple=True)
+        except LucidIdentifierMismatch as err:
+            logger.warning("Refused /terminate_participant: %s", err)
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
+        try:
+            participant = recruiter.get_participant(assignment_id)
+        except sqlalchemy.orm.exc.MultipleResultsFound:
+            logger.error(
+                "Refused /terminate_participant: several participants have "
+                "Lucid RID '%s'.",
+                assignment_id,
+            )
+            return error_response(
+                error_text="This session could not be verified.",
+                status=500,
+                simple=True,
+            )
+
+        if participant is not None and not _request_carries_unique_id(participant):
+            return error_response(
+                error_text="This session could not be verified.",
+                status=403,
+                simple=True,
+            )
+        if participant is not None:
+            recruiter.link_lucid_rid_to_participant(participant)
 
         # Don't terminate participants who have already completed the experiment.
         # This can happen due to race conditions when the page redirects to Lucid
@@ -5919,16 +5962,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 external_submit_url=external_submit_url,
             )
 
-        # If participant lookup failed, we still need to terminate on Lucid's side
-        # using the assignment_id from the request
         if participant is None:
-            assignment_id = request.values.get("assignmentId") or request.values.get(
-                "RID"
-            )
-            unique_id = request.values.get("unique_id")
-            if assignment_id is None and unique_id is not None:
-                assignment_id = unique_id.split(":")[1]
-
             external_submit_url = recruiter.terminate_participant(
                 assignment_id=assignment_id, reason=request.values.get("reason")
             )

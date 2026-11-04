@@ -115,9 +115,6 @@ and ``deploy.toml`` exclude them.
 ``server.log``
     The log of the last local run.
 
-``static/assets/``
-    Assets prepared for local runs.
-
 ``exports/``
     Data exported with ``psynet export``.
 
