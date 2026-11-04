@@ -52,6 +52,6 @@ class RandomDigitInputPage(ModularPage):
 
     @expose_to_api("page_uuid")
     @staticmethod
-    def fetch_last_page_uuid(participant_id):
-        participant = Participant.query.filter_by(id=participant_id).one()
+    def fetch_last_page_uuid(unique_id):
+        participant = Participant.query.filter_by(unique_id=unique_id).one()
         return {"page_uuid": participant.page_uuid}

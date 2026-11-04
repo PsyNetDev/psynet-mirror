@@ -391,9 +391,6 @@
                 renderMobileWarning();
                 {% if experiment.with_lucid_recruitment() %}
                     let url = '/terminate_participant?reason=mobile-phone&' + window.location.search.substring(1);
-                    if (typeof participant !== 'undefined') {
-                        url += '&participant_id=' + participant.id;
-                    }
                     window.onbeforeunload = null;
                     window.location.replace(url);
                 {% endif %}
@@ -426,9 +423,6 @@
                     renderBrowserWarning();
                     {% if experiment.with_lucid_recruitment() %}
                         let url = '/terminate_participant?reason=wrong-browser&' + window.location.search.substring(1);
-                        if (typeof participant !== 'undefined') {
-                            url += '&participant_id=' + participant.id;
-                        }
                         window.onbeforeunload = null;
                         window.location.replace(url);
                     {% endif %}

@@ -1,3 +1,4 @@
+import mimetypes
 import os.path
 import secrets
 import shutil
@@ -12,7 +13,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import cache, cached_property
-from os import environ, makedirs, remove, symlink, unlink, walk
+from os import environ, makedirs, remove, unlink, walk
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -108,6 +109,48 @@ def _safe_asset_subpath(subpath: Optional[str]) -> Optional[str]:
         return normalize_relative_path(subpath, strip_leading_slash=True)
     except UnsafePathError as exc:
         raise ValueError(f"Unsafe asset subpath: {subpath!r}") from exc
+
+
+# Types a browser runs as a document or script; a participant-named asset of
+# one of these types, or of any ``+xml`` type, must not run with the
+# experiment origin's cookies.
+_ACTIVE_ASSET_MIMETYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/xml",
+        "text/xsl",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+        "application/x-javascript",
+        "application/ecmascript",
+        "text/ecmascript",
+    }
+)
+
+
+def _sandbox_asset_response(response):
+    """
+    Stop an asset response from running as a document on the experiment's origin.
+
+    ``Content-Security-Policy: sandbox`` gives a document opened from the
+    response an opaque origin but doesn't affect use as an ``img``, ``audio``
+    or ``video`` source. Active types are also sent as attachments.
+    Redirects, such as those to S3, are left unchanged.
+    """
+    if 300 <= response.status_code < 400:
+        return response
+    mimetype = response.mimetype or ""
+    # Chrome's built-in PDF and media viewers can't load a sandboxed document.
+    if mimetype != "application/pdf" and not mimetype.startswith(("audio/", "video/")):
+        response.headers["Content-Security-Policy"] = "sandbox"
+    if mimetype in _ACTIVE_ASSET_MIMETYPES or mimetype.endswith("+xml"):
+        disposition = response.headers.get("Content-Disposition", "inline")
+        _, separator, parameters = disposition.partition(";")
+        response.headers["Content-Disposition"] = "attachment" + separator + parameters
+    return response
 
 
 def filter_botocore_deprecation_warnings():
@@ -872,13 +915,13 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
         except ValueError:
             abort(400)
         if isinstance(self, OnDemandAsset):
-            return self._serve_on_demand(safe_subpath)
+            return _sandbox_asset_response(self._serve_on_demand(safe_subpath))
         if isinstance(self, ExternalAsset):
             abort(404)
         if not self.deposited:
             abort(404)
         storage = self.storage or self.default_storage
-        return storage.serve(self, safe_subpath)
+        return _sandbox_asset_response(storage.serve(self, safe_subpath))
 
     def _serve_on_demand(self, subpath: Optional[str] = None):
         """Generate an on-demand asset into a temp file and return ``send_file``."""
@@ -2028,7 +2071,6 @@ class LocalStorage(AssetStorage):
     same file system.
     """
 
-    label = "assets"
     heroku_compatible = False
 
     def __init__(self, root=None):
@@ -2039,9 +2081,6 @@ class LocalStorage(AssetStorage):
         root :
             Optional path to the directory to be used for storage.
             Tilde expansion (e.g. '~/psynet') is performed automatically.
-
-        label :
-            Label for the storage object.
         """
         super().__init__()
 
@@ -2051,7 +2090,7 @@ class LocalStorage(AssetStorage):
     def setup_files(self):
         if self.on_deployed_server() or deployment_info.read("is_local_deployment"):
             self._ensure_root_dir_exists()
-            self._create_symlink()
+            self._remove_legacy_static_link()
 
     def prepare_for_deployment(self):
         self.setup_files()
@@ -2080,34 +2119,16 @@ class LocalStorage(AssetStorage):
 
         Path(self.root).mkdir(parents=True, exist_ok=True)
 
-    @property
-    def local_path(self):
-        return os.path.join("static", self.label)
+    @staticmethod
+    def _remove_legacy_static_link():
+        """Remove ``static/assets``, which older PsyNet versions linked to the root.
 
-    @property
-    def public_path(self):
+        Flask serves ``static/`` without access checks, so the link would expose
+        every stored object; assets are served through ``/asset/<access_token>``.
         """
-        This is the publicly exposed path by which the web browser can access the storage registry.
-        This corresponds to a (symlinked) directory inside the experiment directory.
-        """
-        return "/" + self.local_path
-
-    def _create_symlink(self):
-        try:
-            unlink(self.local_path)
-        except (FileNotFoundError, IsADirectoryError, PermissionError):
-            # Path(self.local_path).rmdir()
-            try:
-                shutil.rmtree(self.local_path)
-            except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
-                pass
-
-        makedirs("static", exist_ok=True)
-
-        try:
-            symlink(self.root, self.local_path)
-        except FileExistsError:
-            pass
+        path = os.path.join("static", "assets")
+        if os.path.islink(path):
+            unlink(path)
 
     def update_asset_metadata(self, asset: Asset):
         host_path = asset.host_path
@@ -2279,12 +2300,6 @@ class LocalStorage(AssetStorage):
         else:
             return None
 
-    def get_url(self, host_path):
-        assert (
-            self.root
-        )  # Makes sure that the root storage location has been instantiated
-        return urllib.parse.quote(os.path.join(self.public_path, host_path))
-
     def serve(self, asset: Asset, subpath: Optional[str] = None):
         from flask import abort, send_file
 
@@ -2300,7 +2315,22 @@ class LocalStorage(AssetStorage):
             abort(404)
         if os.path.isdir(file_system_path):
             abort(400)
-        response = send_file(file_system_path, max_age=IMMUTABLE_CACHE_MAX_AGE)
+        download_name = None
+        extension = asset.extension
+        if extension and not extension.startswith("."):
+            extension = "." + extension
+        if not subpath and extension and not file_system_path.endswith(extension):
+            # Content-addressed objects have no extension of their own.
+            download_name = os.path.basename(file_system_path) + extension
+        # Passing the type stops Werkzeug adding Content-Encoding for .gz and
+        # similar, which would make browsers decompress or reject the file.
+        mimetype, _ = mimetypes.guess_type(download_name or file_system_path)
+        response = send_file(
+            file_system_path,
+            mimetype=mimetype or "application/octet-stream",
+            download_name=download_name,
+            max_age=IMMUTABLE_CACHE_MAX_AGE,
+        )
         response.cache_control.public = None
         response.cache_control.private = True
         response.cache_control.immutable = True

@@ -1941,7 +1941,7 @@
             if (allowed) {
                 psynet.nextPage(id);
             } else {
-                terminateParticipant({{ params.label | tojson }} + "_" + id)
+                psynet.terminateParticipant({{ params.label | tojson }} + "_" + id)
             }
         };
 
