@@ -5923,7 +5923,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             flask.abort(411)
         if flask.request.content_length > 16384:
             flask.abort(413)
-        uploads = (flask.request.get_json(silent=True) or {}).get("uploads")
+        body = flask.request.get_json(silent=True)
+        uploads = body.get("uploads") if isinstance(body, dict) else None
         if not isinstance(uploads, list):
             flask.abort(400)
         return flask.jsonify({"unavailable": _renew_uploads(uploads)})

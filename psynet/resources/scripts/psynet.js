@@ -4020,10 +4020,9 @@
             }
           };
           request.open("POST", "/response");
-          if (options.timelineHoldResume) {
+          // Long enough for lock waits and barrier checks under load.
+          if (options.timelineHoldResume || Array.isArray(sources)) {
             request.timeout = psynet.timelineHoldResumeTimeoutMs;
-          } else if (Array.isArray(sources)) {
-            request.timeout = 10000;
           }
           request.send(formData);
         };

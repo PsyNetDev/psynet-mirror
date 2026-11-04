@@ -23,6 +23,9 @@
  * recaptures media. Pending jobs warn on manual unload; document navigation
  * initiated by PsyNet drains the queue.
  */
+// Consecutive internal server errors after which an upload is given up.
+const MAX_SERVER_ERRORS = 5;
+
 export class MediaUploadQueue {
   constructor({
     concurrency = 2,
@@ -148,7 +151,7 @@ export class MediaUploadQueue {
         this._jobs.size >= this._limits.maxPending) {
       return Promise.resolve({ status: "failed", reason: "queue_full" });
     }
-    const job = { id, url: target.href, token, deadline, blob, group, attempts: 0, failures: 0, active: false, done: false };
+    const job = { id, url: target.href, token, deadline, blob, group, attempts: 0, failures: 0, serverErrors: 0, active: false, done: false };
     const result = new Promise((resolve) => { job.resolve = resolve; });
     this._jobs.set(id, job);
     window.addEventListener("beforeunload", this._beforeUnload);
@@ -225,7 +228,12 @@ export class MediaUploadQueue {
         this._finish(job, { status: "received" });
       } else if (response.status === 429) {
         this._retry(job, retryAfterMilliseconds(response.headers.get("Retry-After")));
+      } else if (response.status === 500 && ++job.serverErrors >= MAX_SERVER_ERRORS) {
+        // Heartbeats keep the lease alive, so a persistent receiver fault
+        // would otherwise hold the participant until the lifetime cap.
+        this._finish(job, { status: "failed", reason: "http_error", httpStatus: 500 });
       } else if ([408, 500, 502, 503, 504].includes(response.status)) {
+        if (response.status !== 500) job.serverErrors = 0;
         this._retry(job);
       } else {
         this._finish(job, { status: "failed", reason: "http_error", httpStatus: response.status });

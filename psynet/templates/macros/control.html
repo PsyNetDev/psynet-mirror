@@ -1480,7 +1480,11 @@
             psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
-                    videoRecorder = new capture.RecordingClip(cameraStream);
+                    // Only asynchronous uploads are size-limited; legacy uploads never were.
+                    videoRecorder = new capture.RecordingClip(cameraStream, {
+                        maxBytes: psynet.var.asynchronousVideoUploadSources
+                            ? psynet.var.asynchronousVideoUploadMaxBytes : Infinity,
+                    });
                     videoRecorder.stream = cameraStream;
                 }
             });
@@ -1594,7 +1598,10 @@
             psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
-                    screenRecorder = new capture.RecordingClip(screenStream);
+                    screenRecorder = new capture.RecordingClip(screenStream, {
+                        maxBytes: psynet.var.asynchronousVideoUploadSources
+                            ? psynet.var.asynchronousVideoUploadMaxBytes : Infinity,
+                    });
                     screenRecorder.stream = screenStream;
                 }
             });

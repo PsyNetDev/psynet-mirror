@@ -68,7 +68,8 @@ than 64 KB in 2 minutes is closed and retried. The recording is treated as missi
 if 2 minutes pass without either, for example because the browser was closed
 or lost its connection, or if it is still not uploaded 30 minutes after the
 answer was accepted. The browser retries a failed upload with increasing delays
-until the server reports it expired.
+until the server reports it expired, or gives up after five internal server
+errors in a row, so a server fault cannot keep the participant waiting.
 
 To keep a slow connection from building up a backlog, a participant can be at
 most one recording page ahead of their uploads. When they submit a recording

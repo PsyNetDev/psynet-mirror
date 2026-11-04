@@ -21,6 +21,7 @@ for (const [name, statuses, expected] of [
   ["stalled connection (408)", [408, 204], {status:"received"}],
   ["permanent rejection", [403], {status:"failed", reason:"http_error", httpStatus:403}],
   ["expired upload (410)", [410], {status:"failed", reason:"http_error", httpStatus:410}],
+  ["persistent server fault", [500, 500, 500, 500, 500], {status:"failed", reason:"http_error", httpStatus:500}],
   ["repeated network failures until delivery", [null, null, null, null, 204], {status:"received"}],
   ["active upload elsewhere (429) until delivery", [429, 429, 429, 429, 204], {status:"received"}],
 ]) {
