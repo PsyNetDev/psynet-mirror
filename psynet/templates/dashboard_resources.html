@@ -10,6 +10,12 @@
 {% endblock %}
 {% block body %}
     <style>
+        /* Bootstrap makes labels inline-block, which would size the inputs
+           relative to their label instead of the row. */
+        .selector label {
+            display: inline;
+        }
+
         .selector input[type="range"] {
             width: 35%;
         }
