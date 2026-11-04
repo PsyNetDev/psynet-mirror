@@ -24,6 +24,10 @@ local-image-pins.txt
 # Automatically generated resources for running experiments with assets
 static/assets
 
+# Font downloaded by VocabTest; still deployed, because deploy.toml chooses
+# deployed files
+static/fonts/GoNotoKurrent-Bold.ttf
+
 # Local data exports
 exports/
 

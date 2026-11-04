@@ -579,11 +579,10 @@ class VocabTest(StaticTrialMaker):
     def get_font_path(self, font_url):
         """Return a local copy of the font used to draw the word images, downloading it if needed.
 
-        The font is only read on the server, so it is cached in the system's
-        temporary directory rather than in the experiment's ``static/`` folder.
+        The font is saved in the experiment's ``static/fonts/`` folder so that
+        deployments include it; the stock ``.gitignore`` ignores the default font.
         """
-        # One folder per user: another account's folder or font may not be readable.
-        font_dir = os.path.join(tempfile.gettempdir(), f"psynet-fonts-{os.getuid()}")
+        font_dir = os.path.join("static", "fonts")
         font_path = os.path.join(font_dir, os.path.basename(font_url))
         if not os.path.exists(font_path):
             with yaspin(text="Downloading font...", color="yellow") as spinner:
@@ -596,11 +595,13 @@ class VocabTest(StaticTrialMaker):
             try:
                 with os.fdopen(fd, "wb") as f:
                     f.write(response.content)
+                # mkstemp creates the file readable only by its owner.
+                os.chmod(temp_path, 0o644)
                 os.replace(temp_path, font_path)
             except BaseException:
                 os.unlink(temp_path)
                 raise
-        return font_path
+        return os.path.abspath(font_path)
 
     def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
         arabic_regex = r"[^0-9\u0600-\u06ff\u0750-\u077f\ufb50-\ufbc1\ufbd3-\ufd3f\ufd50-\ufd8f\ufd50-\ufd8f\ufe70-\ufefc\uFDF0-\uFDFD]+"

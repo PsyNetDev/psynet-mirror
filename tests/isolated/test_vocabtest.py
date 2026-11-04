@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,16 +61,21 @@ def test_vocab_test_rejects_sync_groups(tmp_path):
         )
 
 
-def test_vocab_font_is_cached_outside_the_experiment(tmp_path, monkeypatch):
-    experiment_dir = tmp_path / "experiment"
-    experiment_dir.mkdir()
-    monkeypatch.chdir(experiment_dir)
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "tmp"))
+def _fake_font_response(content=b"font", error=None):
+    def raise_for_status():
+        if error:
+            raise error
+
+    return SimpleNamespace(content=content, raise_for_status=raise_for_status)
+
+
+def test_vocab_font_is_downloaded_once_into_static_fonts(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     downloads = []
 
-    def fake_get(url, timeout):
+    def fake_get(url, **kwargs):
         downloads.append(url)
-        return SimpleNamespace(content=b"font", raise_for_status=lambda: None)
+        return _fake_font_response()
 
     monkeypatch.setattr("psynet.prescreen.vocabtest.requests.get", fake_get)
 
@@ -79,24 +83,21 @@ def test_vocab_font_is_cached_outside_the_experiment(tmp_path, monkeypatch):
     first = VocabTest.get_font_path(None, url)
     second = VocabTest.get_font_path(None, url)
 
-    font_dir = tmp_path / "tmp" / f"psynet-fonts-{os.getuid()}"
-    assert first == second == str(font_dir / "Font.ttf")
+    assert first == second == str(tmp_path / "static" / "fonts" / "Font.ttf")
     assert Path(first).read_bytes() == b"font"
     assert downloads == [url]
-    assert list(experiment_dir.iterdir()) == []
+    assert sorted(p.name for p in (tmp_path / "static" / "fonts").iterdir()) == [
+        "Font.ttf"
+    ]
 
 
 def test_vocab_font_download_failure_raises(tmp_path, monkeypatch):
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
-
-    def raise_for_status():
-        raise requests.HTTPError("404")
-
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         "psynet.prescreen.vocabtest.requests.get",
-        lambda url, timeout: SimpleNamespace(raise_for_status=raise_for_status),
+        lambda url, **kwargs: _fake_font_response(error=requests.HTTPError("404")),
     )
 
     with pytest.raises(requests.HTTPError):
         VocabTest.get_font_path(None, "https://example.org/fonts/Font.ttf")
-    assert list(tmp_path.iterdir()) == []
+    assert not (tmp_path / "static" / "fonts" / "Font.ttf").exists()
