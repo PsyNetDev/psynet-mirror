@@ -1547,7 +1547,8 @@ def launch_app_without_browsers(port, auth=None, **kwargs):
     auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
     :func:`_launch_app_and_report`). The server log leaves the dashboard
     password out. It must stay importable by module path because RQ workers
-    resolve it that way.
+    resolve it that way. ``auth`` is the ``(user, password)`` dashboard login
+    in the job; it defaults to the login in this worker's config.
     """
     _launch_app_and_report(port, auth=auth)
 
@@ -1559,7 +1560,8 @@ def launch_app_and_open_browsers(port, auth=None, **kwargs):
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
     with the password embedded; this one prints the login once, in the
     ``Ready.`` block. It must stay importable by module path because RQ
-    workers resolve it that way.
+    workers resolve it that way. ``auth`` is as for
+    :func:`launch_app_without_browsers`.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
