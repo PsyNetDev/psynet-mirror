@@ -555,6 +555,7 @@ code {
 .psynet-button-pending {
     position: relative;
     color: transparent !important;
+    transition: none;
 }
 
 .psynet-button-pending > :not(.psynet-button-spinner) {

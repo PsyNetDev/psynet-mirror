@@ -54,30 +54,11 @@
         return { rawAnswer: keyboardIDs ? keyboardIDs.value : null };
     })
 
-    function disableButton() {
-        $("#next-button").prop("disabled", true);
-        $("#next-button-spinner").show();
-        $("#next-button-text").hide();
-    }
-
-    function enableButton() {
-        $("#next-button").prop("disabled", false);
-        $("#next-button-spinner").hide();
-        $("#next-button-text").show();
-    }
-
-    function onNextButton() {
-        let button = $("#next-button");
+    function onNextButton(button) {
         psynet.captureSubmissionControlState();
-        button.width(button.width());
-        button.height(button.height());
-        disableButton();
-
-        function onRejection() {
-            enableButton();
-        }
-
-        psynet.submitResponse(onRejection);
+        psynet.showSubmissionSpinner(button);
+        button.disabled = true;
+        psynet.submitResponse();
     }
 
     psynet.trial.onEvent("trialConstruct", function () {
@@ -111,7 +92,7 @@
 
         psynet.addPageEventListener(nextButton, "click", function () {
             if (isSubset(keyboardState.pressedKeys, psynet.var.pressKeys)) {
-                onNextButton();
+                onNextButton(nextButton);
             } else {
                 psynet.alert({{ gettext("You did not press all required keys.") | tojson }});
             }
@@ -120,7 +101,6 @@
 </script>
 
 <button type="button" id="next-button" class="btn btn-primary btn-lg submit" disabled>
-    <span id="next-button-spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none"></span>
-    <span id="next-button-text">{{ gettext("Next") }}</span>
+    {{ gettext("Next") }}
 </button>
 {% endblock %}
