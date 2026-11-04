@@ -330,29 +330,47 @@ def test_stopping_a_driver_interrupts_its_busy_retries(monkeypatch):
     assert driver.posts == 1
 
 
-def test_bot_renews_later_recordings_while_uploading_earlier_ones(tmp_path):
+def test_bot_renews_later_recordings_while_uploading_earlier_ones(
+    monkeypatch, tmp_path
+):
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.experiment = SimpleNamespace(base_url="http://psynet.test")
-    posts = []
+    screen_renewals = threading.Semaphore(0)
+    ok = SimpleNamespace(status_code=200, raise_for_status=lambda: None)
 
-    def fake_post(url, data=None, json=None, headers=None):
-        posts.append((url, json))
-        return SimpleNamespace(status_code=200, raise_for_status=lambda: None)
+    def heartbeat(_url, json):
+        if "1" in [upload["id"] for upload in json["uploads"]]:
+            screen_renewals.release()
+        return ok
 
-    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
-    uploads = [
-        {"id": str(i), "token": f"t{i}", "source": s, "url": f"/media-upload/{i}"}
-        for i, s in enumerate(["camera", "screen"])
-    ]
+    def upload(url, data, headers):
+        if url.endswith("/0"):
+            # A slow camera upload, during which the screen lease must be renewed.
+            for _ in range(3):
+                assert screen_renewals.acquire(timeout=5)
+        return ok
+
+    monkeypatch.setattr(
+        "psynet.participant.keep_alive_session",
+        lambda: SimpleNamespace(post=heartbeat),
+    )
+    driver.__dict__["_http_session"] = SimpleNamespace(post=upload)
+    uploads = []
     files = {}
-    for upload in uploads:
-        files[f"{upload['source']}Recording"] = tmp_path / upload["source"]
-        files[f"{upload['source']}Recording"].write_bytes(b"clip")
+    for i, source in enumerate(["camera", "screen"]):
+        uploads.append(
+            {
+                "id": str(i),
+                "token": f"t{i}",
+                "source": source,
+                "url": f"/media-upload/{i}",
+                "renew_interval_ms": 10,
+            }
+        )
+        files[f"{source}Recording"] = tmp_path / source
+        files[f"{source}Recording"].write_bytes(b"clip")
 
     driver._upload_recordings(uploads, files)
-
-    heartbeats = [body["uploads"] for url, body in posts if body is not None]
-    assert [[u["id"] for u in renewed] for renewed in heartbeats] == [["0", "1"], ["1"]]
 
 
 @pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])

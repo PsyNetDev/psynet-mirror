@@ -5,8 +5,10 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import tempfile
+import threading
 import time
 import zipfile
 from contextlib import ExitStack
@@ -1574,6 +1576,10 @@ class ParticipantDriver:
         deferred_files = {}
         if "recording_uploads" in submission_data["metadata"]:
             deferred_files, response_files = response_files, {}
+            # Lets a repeat of a POST whose reply was lost recover the receipts.
+            submission_data["metadata"]["recording_recovery_secret"] = (
+                secrets.token_hex(32)
+            )
 
         with ExitStack() as stack:
             files = {}
@@ -1615,37 +1621,58 @@ class ParticipantDriver:
 
         A 429 means another delivery of the same recording is still being
         received; wait as the server asks and try again. Stalls and gateway
-        errors are retried too. Before each attempt the leases of all
-        recordings still to be uploaded are renewed, so later sources do not
-        expire while earlier ones are being sent.
+        errors are retried too. Meanwhile a heartbeat renews the leases of all
+        recordings not yet uploaded, so later sources do not expire while
+        earlier ones are being sent.
         """
-        for index, upload in enumerate(uploads):
-            path = files[f"{upload['source']}Recording"]
-            with open(path, "rb") as file:
-                body = file.read()
-            for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
-                try:
-                    self.http_session.post(
-                        f"{self.experiment.base_url}/media-upload/heartbeat",
-                        json={
-                            "uploads": [
-                                {"id": pending["id"], "token": pending["token"]}
-                                for pending in uploads[index:]
-                            ]
-                        },
+        if not uploads:
+            return
+        pending = list(uploads)
+        stop = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._renew_recording_uploads, args=(pending, stop), daemon=True
+        )
+        heartbeat.start()
+        try:
+            for upload in uploads:
+                path = files[f"{upload['source']}Recording"]
+                with open(path, "rb") as file:
+                    body = file.read()
+                for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
+                    http_response = self.http_session.post(
+                        f"{self.experiment.base_url}{upload['url']}",
+                        data=body,
+                        headers={"Authorization": f"Bearer {upload['token']}"},
                     )
-                except requests.RequestException as error:
-                    logger.warning(f"Could not renew recording uploads: {error}")
-                http_response = self.http_session.post(
-                    f"{self.experiment.base_url}{upload['url']}",
-                    data=body,
-                    headers={"Authorization": f"Bearer {upload['token']}"},
+                    if http_response.status_code not in {408, 429, 502, 503, 504}:
+                        break
+                    retry_after = http_response.headers.get("Retry-After", "1")
+                    self._sleep(float(retry_after) if retry_after.isdigit() else 1.0)
+                http_response.raise_for_status()
+                pending.remove(upload)
+        finally:
+            stop.set()
+            heartbeat.join()
+
+    def _renew_recording_uploads(self, pending, stop):
+        """Renew the leases of ``pending`` recordings until ``stop`` is set."""
+        session = keep_alive_session()
+        interval = min(u.get("renew_interval_ms", 30000) for u in pending) / 1000
+        while pending:
+            try:
+                session.post(
+                    f"{self.experiment.base_url}/media-upload/heartbeat",
+                    json={
+                        "uploads": [
+                            {"id": upload["id"], "token": upload["token"]}
+                            for upload in list(pending)
+                        ]
+                    },
                 )
-                if http_response.status_code not in {408, 429, 502, 503, 504}:
-                    break
-                retry_after = http_response.headers.get("Retry-After", "1")
-                self._sleep(float(retry_after) if retry_after.isdigit() else 1.0)
-            http_response.raise_for_status()
+            except requests.RequestException as error:
+                logger.warning(f"Could not renew recording uploads: {error}")
+            if stop.wait(interval):
+                return
 
     def _report_stats(self, total_experiment_time: float):
         """
