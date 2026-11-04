@@ -5920,6 +5920,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Renew the leases of recordings the browser is still holding."""
         from .media_upload import _renew_uploads
 
+        if flask.request.content_length is None:
+            flask.abort(411)
+        if flask.request.content_length > 16384:
+            flask.abort(413)
         uploads = (flask.request.get_json(silent=True) or {}).get("uploads")
         if not isinstance(uploads, list):
             flask.abort(400)

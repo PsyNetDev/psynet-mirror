@@ -319,6 +319,22 @@ def test_rejected_answer_cannot_reserve_a_recording(reservation):
     assert "rejected" not in asset.parent.assets
 
 
+def test_heartbeat_route_renews_and_bounds_its_body(reservation):
+    asset, receipt = reservation
+    app = Flask(__name__)
+    app.add_url_rule(
+        "/media-upload/heartbeat",
+        view_func=Experiment.renew_media_uploads,
+        methods=["POST"],
+    )
+    upload = {"id": str(asset.id), "token": receipt["token"]}
+    with app.test_client() as client:
+        response = client.post("/media-upload/heartbeat", json={"uploads": [upload]})
+        assert response.get_json() == {"unavailable": []}
+        oversized = {"uploads": [upload], "padding": "x" * 20000}
+        assert client.post("/media-upload/heartbeat", json=oversized).status_code == 413
+
+
 @pytest.mark.parametrize("supports_deadline", [True, False])
 def test_route_accepts_raw_body_only_with_a_bounded_connection(
     reservation, supports_deadline
@@ -387,7 +403,8 @@ def test_http_upload_is_interrupted_only_when_it_stalls(
                     time.sleep(0.4)
                     client.sendall(body[start : start + 4])
             response = client.recv(4096)
-            assert (b"204" if keeps_sending else b"410 GONE") in response
+            # A stall within the upload's lifetime is retryable.
+            assert (b"204" if keeps_sending else b"408 REQUEST TIMEOUT") in response
     finally:
         server.shutdown()
         server.server_close()

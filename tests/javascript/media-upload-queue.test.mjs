@@ -101,19 +101,40 @@ function holdUploads(t, heartbeat = () => ({unavailable: []})) {
 
 test("backpressure waits only while two earlier pages are still uploading", async t => {
   const {deliveries} = holdUploads(t);
+  const next = {camera: blob(14)};
   const first = queue.enqueue({...upload("first"), group:"page-1"});
+  assert.equal(queue.hasRoom(next, 50), true);
   const second = queue.enqueue({...upload("second"), group:"page-2"});
   let released = false;
-  const waiting = queue.waitForPendingGroups(1).then(() => { released = true; });
+  const waiting = queue.waitForRoom(next, 50).then(() => { released = true; });
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(released, false);
   deliveries.get("first")();
   await first;
   await waiting;
-  assert.equal(queue.pendingGroups, 1);
   await new Promise(resolve => setTimeout(resolve, 5));
   deliveries.get("second")();
   assert.deepEqual(await second, {status:"received"});
+});
+
+test("backpressure also waits until the next page's recordings fit", async t => {
+  const {deliveries} = holdUploads(t);
+  // One dual-source page nearly fills the 100-byte queue.
+  const camera = queue.enqueue({...upload("camera", 45), group:"page-1"});
+  const screen = queue.enqueue({...upload("screen", 45), group:"page-1"});
+  const next = {camera: blob(45), screen: blob(45)};
+  assert.equal(queue.hasRoom(next, 50), false);
+  let released = false;
+  const waiting = queue.waitForRoom(next, 50).then(() => { released = true; });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(released, false);
+  deliveries.get("camera")();
+  await camera;
+  await new Promise(resolve => setTimeout(resolve, 5));
+  deliveries.get("screen")();
+  await screen;
+  await waiting;
+  assert.equal(released, true);
 });
 
 test("heartbeats renew outstanding uploads and release expired ones", async t => {

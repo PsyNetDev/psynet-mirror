@@ -49,6 +49,7 @@ from werkzeug.exceptions import (
     Forbidden,
     Gone,
     RequestEntityTooLarge,
+    RequestTimeout,
     TooManyRequests,
 )
 
@@ -281,25 +282,39 @@ def _check_receivable(recording):
     return True
 
 
+def _renew_live_lease(recording):
+    """Renew a pending lease unless it has lapsed; return whether it was live.
+
+    A lapsed lease is final, even before the clock task marks it expired.
+    """
+    if (
+        recording is None
+        or recording.upload_status != "pending"
+        or _utcnow() >= recording.upload_deadline
+    ):
+        return False
+    _renew_lease(recording)
+    return True
+
+
 def _renew_pending_lease(recording_id):
     """Renew a streaming upload's lease in its own short transaction."""
     with Session(db.engine) as session, session.begin():
-        recording = (
+        _renew_live_lease(
             session.query(Recording)
             .filter_by(id=recording_id)
             .with_for_update()
             .one_or_none()
         )
-        if recording is not None and recording.upload_status == "pending":
-            _renew_lease(recording)
 
 
 def _renew_uploads(uploads):
     """Renew leases for a browser that still holds these recordings.
 
     Each upload is a ``{"id", "token"}`` pair; unauthorized entries are ignored.
-    Returns the IDs of recordings that can no longer be uploaded, so the browser
-    can release their bytes. Locks only recording rows, one at a time.
+    Returns the IDs of recordings that can no longer be uploaded, including
+    ones whose lease has lapsed, so the browser can release their bytes.
+    Locks only authorized recording rows, one at a time.
     """
     unavailable = []
     for upload in uploads[:64]:
@@ -309,23 +324,18 @@ def _renew_uploads(uploads):
         except (KeyError, TypeError, ValueError):
             continue
         with Session(db.engine) as session, session.begin():
-            recording = (
-                session.query(Recording)
-                .filter_by(id=recording_id)
-                .with_for_update()
-                .one_or_none()
-            )
+            recording = session.get(Recording, recording_id)
             try:
                 _authorize(recording, token)
             except Forbidden:
                 continue
-            if recording.upload_status != "pending":
-                if recording.upload_status in {"expired", "failed"}:
-                    unavailable.append(str(recording_id))
-            elif _utcnow() >= recording.upload_deadline:
+            session.refresh(recording, with_for_update=True)
+            if not _renew_live_lease(recording) and recording.upload_status in {
+                "pending",
+                "expired",
+                "failed",
+            }:
                 unavailable.append(str(recording_id))
-            else:
-                _renew_lease(recording)
     return unavailable
 
 
@@ -375,6 +385,13 @@ def _receive_recording(
         )
 
 
+def _raise_stalled(lifetime_deadline):
+    """Ask the browser to retry a stalled connection unless the upload's time is up."""
+    if _utcnow() >= lifetime_deadline:
+        raise Gone("The recording upload is no longer pending.") from None
+    raise RequestTimeout("The recording upload stalled.") from None
+
+
 def _receive_recording_body(
     recording_id, token, stream, *, directory, content_length=None, connection=None
 ):
@@ -413,7 +430,7 @@ def _receive_recording_body(
 
     if connection is not None:
         # A blocked WSGI read cannot be timed out directly. Closing only the
-        # read half interrupts it while still allowing a 410 response.
+        # read half interrupts it while still allowing an error response.
         # Gunicorn and Werkzeug expose the owning request socket.
         def _watch():
             """Wake a stalled body reader without closing its response channel."""
@@ -448,12 +465,12 @@ def _receive_recording_body(
                     chunk = stream.read(min(_READ_CHUNK_BYTES, max_bytes - total + 1))
                 except (OSError, ClientDisconnected):
                     if progress["interrupted"] or _stalled():
-                        raise Gone("The recording upload stalled.") from None
+                        _raise_stalled(lifetime_deadline)
                     raise
                 if progress["interrupted"] or (
                     chunk and _utcnow() >= lifetime_deadline
                 ):
-                    raise Gone("The recording upload stalled.")
+                    _raise_stalled(lifetime_deadline)
                 if not chunk:
                     break
                 progress["at"] = _utcnow()
@@ -897,8 +914,8 @@ def _recover_recording_receipt(participant, page_uuid, secret):
 
     The caller holds the participant lock, so a retry waits for the original
     transaction. Replaying never reruns validation, completion, or navigation.
-    The resend is participant activity, so it renews pending leases; the
-    original lifetime cap is preserved across network retries.
+    The resend is participant activity, so it renews leases that have not yet
+    lapsed; the original lifetime cap is preserved across network retries.
     """
     from .timeline import Response
 
@@ -916,7 +933,5 @@ def _recover_recording_receipt(participant, page_uuid, secret):
     payload = copy.deepcopy(saved["payload"])
     for receipt in payload["recording_uploads"]:
         receipt["token"] = _recovery_upload_token(secret, receipt["id"])
-        recording = db.session.get(Recording, int(receipt["id"]))
-        if recording is not None and recording.upload_status == "pending":
-            _renew_lease(recording)
+        _renew_live_lease(db.session.get(Recording, int(receipt["id"])))
     return payload

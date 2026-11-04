@@ -60,10 +60,21 @@ export class MediaUploadQueue {
     return new Set(Array.from(this._jobs.values(), job => job.group)).size;
   }
 
-  /** Wait until at most maxGroups pages still have outstanding uploads. */
-  waitForPendingGroups(maxGroups) {
-    if (this.pendingGroups <= maxGroups) return Promise.resolve();
-    return new Promise(resolve => this._groupWaiters.push({ maxGroups, resolve }));
+  /** Whether another page's recordings may be submitted now: at most one
+   * earlier page still has uploads outstanding, and these recordings fit.
+   */
+  hasRoom(recordings, maxRecordingBytes) {
+    const groups = this.pendingGroups;
+    return groups === 0 || (groups === 1 &&
+      !Object.values(this.prepare(recordings, maxRecordingBytes).unavailable).includes("queue_full"));
+  }
+
+  /** Wait, as earlier pages' uploads finish, until hasRoom() holds. */
+  async waitForRoom(recordings, maxRecordingBytes) {
+    while (!this.hasRoom(recordings, maxRecordingBytes)) {
+      const maxGroups = this.pendingGroups - 1;
+      await new Promise(resolve => this._groupWaiters.push({ maxGroups, resolve }));
+    }
   }
 
   /** Permit a deliberate early-exit/error redirect without an unload warning. */
@@ -84,8 +95,8 @@ export class MediaUploadQueue {
   }
 
   /** Select files within the shared budget before the single in-flight answer.
-   * nextPagePending prevents another submission from adding work until acceptance;
-   * existing jobs may only free capacity meanwhile. This does not send any bytes.
+   * Only one submission is in flight at a time, so existing jobs can only free
+   * capacity before its recordings are enqueued. This does not send any bytes.
    */
   prepare(recordings, maxRecordingBytes) {
     let bytes = this._pendingBytes;
@@ -110,7 +121,7 @@ export class MediaUploadQueue {
 
   /** Retain a captured file and return its eventual transport outcome.
    *
-   * ``group`` identifies the submitted page, for waitForPendingGroups().
+   * ``group`` identifies the submitted page, for hasRoom() and waitForRoom().
    * ``renewInterval`` (ms) must be well within the server's lease timeout.
    */
   enqueue({ id, url, token, deadline, blob, group = id, renewInterval = this._limits.heartbeatInterval }) {

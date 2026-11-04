@@ -3776,15 +3776,19 @@
       psynet.setTimelineTransitionBusy(true);
       psynet.showTimelineHoldIndicator(recordingUploadMessage);
       try { await recordingUploadQueue.drain(); }
-      finally { psynet.setTimelineTransitionBusy(false); }
+      finally {
+        psynet.setTimelineTransitionBusy(false);
+        psynet.hideTimelineHoldIndicator();
+      }
     };
     // Backpressure: a participant may run at most one recording page ahead of
-    // their uploads. On a slow connection they wait here, as they would have
-    // for an upload inside the submission, instead of building a backlog.
-    async function waitForRecordingBacklog() {
-      if (recordingUploadQueue.pendingGroups <= 1) return;
+    // their uploads, and only if the queue has room for this page's
+    // recordings. On a slow connection they wait here, as they would have for
+    // an upload inside the submission, instead of building a backlog.
+    async function waitForRecordingBacklog(recordings, maxBytes) {
+      if (recordingUploadQueue.hasRoom(recordings, maxBytes)) return;
       psynet.showTimelineHoldIndicator(recordingUploadMessage);
-      try { await recordingUploadQueue.waitForPendingGroups(1); }
+      try { await recordingUploadQueue.waitForRoom(recordings, maxBytes); }
       finally { psynet.hideTimelineHoldIndicator(); }
     }
     async function recordingModule(path) {
@@ -3871,7 +3875,7 @@
         try {
           const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
           await getRecordingQueue(maxBytes);
-          await waitForRecordingBacklog();
+          await waitForRecordingBacklog(capturedRecordings, maxBytes);
           const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
           capturedRecordings = prepared.recordings;
           unavailable = prepared.unavailable;
@@ -3907,7 +3911,8 @@
         let wakeRetry = {};
         let send = function (countAttempt = true) {
           if (countAttempt) attempt += 1;
-          firstSentAt ??= Date.now();
+          // The busy window starts once the app is awake, not at the first send.
+          if (busyRetries === 0) firstSentAt = Date.now();
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
