@@ -82,7 +82,7 @@ upload inside the submission before. Participants with fast connections never
 wait.
 
 The browser keeps pending recordings in memory and holds at most 32 recordings,
-or twice the per-recording size limit (256 MiB by default), at once. A page
+or 256 MiB (two maximum-size video recordings), at once. A page
 whose recordings would not fit also waits until earlier uploads finish.
 
 Once received, a recording must be stored within 5 minutes. This includes any

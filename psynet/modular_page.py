@@ -4,7 +4,7 @@ Components declare their media, events, JavaScript variables, and rendering;
 ModularPage combines these declarations and delegates answer formatting and
 validation to its control unless the author supplies page-level validation.
 
-The asynchronous video path stages metadata during formatting and reserves
+The asynchronous recording path stages metadata during formatting and reserves
 recordings only after validation succeeds. Final references must be saved before
 completion hooks or navigation run; rejected answers must not create upload slots.
 """
