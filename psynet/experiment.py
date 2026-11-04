@@ -1093,6 +1093,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard.dashboard_mturk",
             "dashboard.dashboard_lucid",
             "dashboard.dashboard_lifecycle",
+            # The deployment monitor finds no deployments on docker-ssh servers;
+            # its page is still served at /dashboard/deployments.
+            "dashboard.dashboard_deployments",
         ]
         if not (is_local_deployment or is_ssh_deployment):
             optional_tabs.remove(
@@ -1164,7 +1167,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return tab_list + [group]
 
         new_tab_list = [route2tab["dashboard.dashboard_index"]]
-        new_tab_list += [route2tab["dashboard.dashboard_deployments"]]
         new_tab_list = insert_group(new_tab_list, "Server", server_children)
         new_tab_list = insert_group(new_tab_list, "Recruiter", recruiter_children)
         new_tab_list = insert_group(new_tab_list, "Monitor", monitor_children)

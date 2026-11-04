@@ -1,0 +1,1 @@
+Hid the Deployments tab from the experiment dashboard until the deployment monitor is fixed, because it finds no deployments on servers set up with `psynet deploy ssh`. The page is still available at `/dashboard/deployments`.
