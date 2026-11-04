@@ -26,7 +26,7 @@ from platform import python_version
 from smtplib import SMTPAuthenticationError
 from statistics import median
 from typing import Any, List, Optional, Type, Union
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import dallinger.config
 import dallinger.experiment
@@ -210,8 +210,8 @@ else:
         "/log/",
         "/timeline/arrival_notice",
         "/timeline/progress_and_reward",
-        "/module/progress_info",
-        "/module/tooltip",
+        "/dashboard/module/progress_info",
+        "/dashboard/module/tooltip",
         "/participant_status/",
         "/get_participant_info_for_debug_mode",
         "/request_statistics",
@@ -596,6 +596,61 @@ class ExperimentStatus(SQLBase, SQLMixin):
 def _deployment_label_slug(label):
     """Turn an experiment label into the path-safe start of a deployment ID."""
     return re.sub(r"[\W_]+", "-", label.lower()).strip("-") or "experiment"
+
+
+_UNSAFE_HTTP_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _is_cross_site_request(req):
+    """Return whether the browser says ``req`` was sent by another site.
+
+    ``Sec-Fetch-Site`` is set by the browser and survives reverse proxies, so
+    it is checked first. Older browsers fall back to ``Origin`` or ``Referer``,
+    whose scheme and host are compared with the request's scheme and ``Host``
+    header. A header that is present but empty counts as cross-site.
+    Browsers send ``Origin`` with every cross-site POST, so requests with none
+    of these headers come from scripts such as the PsyNet CLI and bots, which
+    are allowed.
+    """
+    fetch_site = req.headers.get("Sec-Fetch-Site")
+    if fetch_site is not None:
+        return fetch_site not in ("same-origin", "none")
+    source = req.headers.get("Origin")
+    if source is None:
+        source = req.headers.get("Referer")
+    if source is None:
+        return False
+    source = urlsplit(source)
+    return (source.scheme, source.netloc) != (req.scheme, req.host)
+
+
+def _refuse_cross_site_dashboard_request():
+    """Refuse state-changing dashboard requests sent from another site.
+
+    This protects against cross-site request forgery (CSRF): another site
+    cannot make a logged-in researcher's browser fail nodes, pay bonuses or
+    archive deployments. It applies to dashboard routes and to every request
+    authenticated as the dashboard user, including Dallinger's routes.
+    """
+    from flask_login import current_user
+
+    if request.method not in _UNSAFE_HTTP_METHODS:
+        return None
+    if not _is_cross_site_request(request):
+        return None
+    if not (request.path.startswith("/dashboard") or current_user.is_authenticated):
+        return None
+    logger.warning(
+        "Refused cross-site %s request to %s (Origin: %s).",
+        request.method,
+        request.path,
+        request.headers.get("Origin"),
+    )
+    return error_response(
+        error_text="Cross-site requests to the dashboard are not allowed.",
+        status=403,
+        simple=True,
+    )
 
 
 def _is_replacement_gunicorn_worker(worker):
@@ -1284,7 +1339,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def before_request():
         flask_app_globals.request_start_time = time.monotonic()
-        return refuse_new_participant_if_full()
+        return (
+            _refuse_cross_site_dashboard_request() or refuse_new_participant_if_full()
+        )
 
     @staticmethod
     def after_request(request, response):
@@ -4869,6 +4926,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         except json.JSONDecodeError:
             logger.exception(f"Failed to decode JSON file: {deployment_id}")
             return error_response("Failed to decode JSON file.")
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard.route("/status/get")
     @login_required
@@ -4877,41 +4936,47 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         exp = get_experiment()
         return exp._parse_status(request.args)
 
-    @dashboard.route("/archive/deployment")
+    @dashboard.route("/archive/deployment", methods=["POST"])
     @login_required
     def archive_deployment():  # noqa F811
         try:
             exp = get_experiment()
-            if "id" not in request.args:
+            if "id" not in request.values:
                 return error_response("No id specified.")
-            exp.artifact_storage.archive(deployment_id=request.args["id"])
+            exp.artifact_storage.archive(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to archive deployment: {str(e)}")
 
-    @dashboard.route("/restore/deployment")
+    @dashboard.route("/restore/deployment", methods=["POST"])
     @login_required
     def restore_deployment():  # noqa F811
         try:
             exp = get_experiment()
-            if "id" not in request.args:
+            if "id" not in request.values:
                 return error_response("No id specified.")
-            exp.artifact_storage.restore(deployment_id=request.args["id"])
+            exp.artifact_storage.restore(deployment_id=request.values["id"])
 
             return success_response()
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         except Exception as e:
             return error_response(f"Failed to restore deployment: {str(e)}")
 
-    @dashboard.route("/update/recruitment")
+    @dashboard.route("/update/recruitment", methods=["POST"])
     @login_required
     def update_recruitment():  # noqa F811
         try:
             exp = get_experiment()
-            params = dict(request.args)
+            params = request.values.to_dict()
             deployment_id = params["deployment_id"]
             params["type"] = "recruitment"
             status = exp._parse_status(params)
+            if isinstance(status, flask.Response):
+                return status
             recruiter_name = status.get("recruiter_name", None)
             if recruiter_name is None:
                 recruiter_name = status.get("recruiter", None)
@@ -4961,16 +5026,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response("No comment specified.")
 
         txt = params["txt"]
-        get_experiment().artifact_storage.write_comment(
-            text=txt, deployment_id=deployment_id
-        )
+        try:
+            get_experiment().artifact_storage.write_comment(
+                text=txt, deployment_id=deployment_id
+            )
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
         return success_response()
 
     @dashboard.route("/comment/get/<deployment_id>", methods=["GET"])
     @login_required
     def get_comment(deployment_id):  # noqa F811
-        return get_experiment().artifact_storage.read_comment(deployment_id)
+        try:
+            return get_experiment().artifact_storage.read_comment(deployment_id)
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
 
     @dashboard_tab("Deployments")
     @classmethod
@@ -5520,17 +5591,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/artifact/<deployment_id>/<filename>", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_artifact(deployment_id, filename):
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
         exp = get_experiment()
+        storage = exp.artifact_storage
+        try:
+            path = storage.prepare_path(deployment_id, filename)
+        except ValueError as exc:
+            return error_response(error_text=str(exc), status=400, simple=True)
         tempdir = tempfile.mkdtemp(prefix="psynet-artifact-")
         try:
-            storage = exp.artifact_storage
-            path = storage.prepare_path(deployment_id, filename)
             destination = os.path.join(tempdir, os.path.basename(path))
             storage.download(path, destination)
             if not os.path.exists(destination):
@@ -5547,27 +5618,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @dashboard.route("/export/preflight", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def export_preflight():
         """Describe this deployment so a client can validate it before downloading."""
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.identity import server_project_identity
 
         return jsonify(server_project_identity())
 
     @dashboard.route("/export/download", methods=["GET"])
     @staticmethod
+    @login_required
     @with_transaction
     def download_export():
-        from flask_login import current_user
-
-        if not current_user.is_authenticated and request.remote_addr != "127.0.0.1":
-            return error_response(error_text="Invalid credentials", simple=True)
-
         from .export.service import validate_asset_mode
 
         try:
@@ -5581,18 +5644,34 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             asset_bytes=request.args.get("asset_bytes", "include"),
         )
 
-    @dashboard.route("/export/trigger", methods=["GET"])
+    @dashboard.route("/export/trigger", methods=["GET", "POST"])
     @staticmethod
     @login_required
     @with_transaction
     def trigger_export():
-        """Build a complete export and store it, without sending it anywhere."""
+        """Build a complete export and store it, without sending it anywhere.
+
+        A GET (such as the Slack "Trigger export" link) only shows a button
+        that POSTs here, so that links on other sites cannot start an export.
+        """
         from .export.service import store_latest_archive, validate_asset_mode
 
         try:
-            assets = validate_asset_mode(request.args.get("assets", "none"))
+            assets = validate_asset_mode(request.values.get("assets", "none"))
         except ValueError as exc:
             return error_response(error_text=str(exc), status=400, simple=True)
+
+        if request.method == "GET":
+            return render_template(
+                "dashboard_custom.html",
+                title="Trigger export",
+                html=(
+                    f'<form method="post"><input type="hidden" name="assets" '
+                    f'value="{escape(assets)}"><input type="hidden" name="html" '
+                    f'value="1"><button type="submit" class="btn btn-primary">'
+                    f"Build export (assets: {escape(assets)})</button></form>"
+                ),
+            )
 
         exp = get_experiment()
         with tempfile.TemporaryDirectory() as tempdir:
@@ -5600,6 +5679,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             os.makedirs(export_dir)
             store_latest_archive(exp.build_export_archive(export_dir, assets=assets))
 
+        if request.form.get("html"):
+            return render_template(
+                "dashboard_custom.html",
+                title="Trigger export",
+                html=f"<p>Export built and stored (assets: {escape(assets)}).</p>",
+            )
         return success_response(assets=assets)
 
     @experiment_route("/get_participant_info_for_debug_mode", methods=["GET"])
@@ -5655,27 +5740,29 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             recruiter=get_experiment().recruiter,
         )
 
-    @experiment_route("/module", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module", methods=["POST"])
+    @staticmethod
+    @login_required
     @with_transaction
-    def get_module_details_as_rendered_html(cls):
+    def get_module_details_as_rendered_html():
         exp = get_experiment()
         module = exp.timeline.get_module(request.values["moduleId"])
         return module.visualize()
 
-    @experiment_route("/module/tooltip", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module/tooltip", methods=["POST"])
+    @staticmethod
+    @login_required
     @with_transaction
-    def get_module_tooltip_as_rendered_html(cls):
+    def get_module_tooltip_as_rendered_html():
         exp = get_experiment()
         module = exp.timeline.get_module(request.values["moduleId"])
         return module.visualize_tooltip()
 
-    @experiment_route("/module/progress_info", methods=["GET"])
-    @classmethod
+    @dashboard.route("/module/progress_info", methods=["GET"])
+    @staticmethod
     @login_required
     @with_transaction
-    def get_progress_info(cls):
+    def get_progress_info():
         exp = get_experiment()
         module_ids = request.args.getlist("module_ids[]")
         return exp._get_progress_info(module_ids)
@@ -5722,11 +5809,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return counts
 
-    @experiment_route("/module/update_spending_limits", methods=["POST"])
-    @classmethod
+    @dashboard.route("/module/update_spending_limits", methods=["POST"])
+    @staticmethod
     @login_required
     @with_transaction
-    def update_spending_limits(cls):
+    def update_spending_limits():
         hard_max_experiment_payment = request.values["hard_max_experiment_payment"]
         soft_max_experiment_payment = request.values["soft_max_experiment_payment"]
         exp = get_experiment()
@@ -5855,10 +5942,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             external_submit_url=external_submit_url,
         )
 
-    @experiment_route("/change_lucid_status", methods=["GET"])
-    @classmethod
+    @dashboard.route("/change_lucid_status", methods=["POST"])
     @login_required
-    def change_lucid_status(cls):
+    def change_lucid_status():  # noqa F811
+        """Set the Lucid survey status chosen on the dashboard's Lucid tab."""
         get_experiment().recruiter.change_lucid_status(request.values.get("status", ""))
         return success_response()
 

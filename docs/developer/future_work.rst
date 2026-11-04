@@ -586,30 +586,35 @@ both packages would let runs share one server. And ``psynet debug local
 --isolated`` picks a free slot for a debug server, but other commands, such as
 ``psynet deploy local``, still need these variables set by hand.
 
-Cross-site request protection for dashboard actions
----------------------------------------------------
+SameSite dashboard login cookies and POST-only Dallinger actions
+----------------------------------------------------------------
 
 Date
 ++++
 
-2026-10-01
+2026-11-03
 
 Problem
 +++++++
 
-Several dashboard actions that change state are plain GET requests, for
-example archiving or restoring a deployment, updating recruitment status,
-triggering an export and changing the Lucid survey status. They require a
-login, but a logged-in operator who opens a malicious page could still
-trigger them through the browser's session cookie.
+PsyNet's dashboard actions are now POST-only, and
+``Experiment.before_request`` refuses cross-site POST, PUT, PATCH and DELETE
+requests to the dashboard or made with the dashboard login, using
+``Sec-Fetch-Site`` and then ``Origin``/``Referer``. This is the only layer of
+protection: the experiment server still sets the Flask session and
+Flask-Login "remember me" cookies without a ``SameSite`` attribute (Chrome
+treats that as ``Lax``; other browsers may not), and some Dallinger dashboard
+actions, such as ``/dashboard/logout``, still change state on GET.
 
 Idea
 ++++
 
-Move state-changing dashboard actions to POST and set
-``SESSION_COOKIE_SAMESITE`` (``"Lax"`` or ``"Strict"``) on the experiment
-server, so browsers don't send the session cookie with cross-site requests.
-Update the dashboard JavaScript and the Slack "Trigger export" link to match.
+In Dallinger, where the Flask app is configured, set
+``SESSION_COOKIE_SAMESITE`` and ``REMEMBER_COOKIE_SAMESITE`` to ``"Lax"``
+(``"Strict"`` would drop the login when a researcher follows a dashboard link
+from Slack or email) and move its remaining state-changing GET routes to POST.
+Participants don't rely on the Flask session, so this should not affect
+experiments embedded in recruiter iframes; check that before changing it.
 
 Use Dallinger's app addresses and app-name checks for SSH commands
 ------------------------------------------------------------------
