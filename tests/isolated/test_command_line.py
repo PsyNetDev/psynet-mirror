@@ -997,6 +997,10 @@ def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, bro
     if browsers:
         assert "admin:enqueued@" in opened[0]
 
+    # Dallinger releases before #10292 neither send ``auth`` nor accept it.
+    launch(5001)
+    assert "auth" not in launches[1]
+
 
 @pytest.mark.parametrize("no_browsers", [True, False])
 def test_debug_auto_reload_prints_the_dashboard_login_once(
