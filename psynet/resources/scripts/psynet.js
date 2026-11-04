@@ -1949,10 +1949,10 @@
       if (!button || psynet.submissionControlState === null) return;
       let spinner = document.createElement("span");
       spinner.className = "psynet-button-spinner spinner-border spinner-border-sm";
-      spinner.setAttribute("role", "status");
       spinner.setAttribute("aria-hidden", "true");
       button.appendChild(spinner);
       button.classList.add("psynet-button-pending");
+      button.setAttribute("aria-busy", "true");
       psynet.submissionControlState.pendingButtons.push({ button, spinner });
     };
 
@@ -1968,6 +1968,7 @@
       psynet.submissionControlState.pendingButtons.forEach(({ button, spinner }) => {
         spinner.remove();
         button.classList.remove("psynet-button-pending");
+        button.removeAttribute("aria-busy");
       });
       let presentation = psynet.submissionControlState.nextButtonPresentation;
       if (presentation) {

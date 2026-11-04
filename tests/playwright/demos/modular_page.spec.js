@@ -188,22 +188,39 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
       await expect(experimentPage.locator(".push-button").first()).toBeVisible({
         timeout: PROMPT_TIMEOUT_MS
       });
-      // Hold the submission so the clicked button's spinner can be checked.
+      // Hold the first submission so the clicked button's spinner can be
+      // checked, then reject it: the spinner must go and the button work.
       let releaseResponse;
       const responseGate = new Promise((resolve) => {
         releaseResponse = resolve;
       });
-      await experimentPage.route("**/response", async (route) => {
-        await responseGate;
-        await route.continue();
-      });
-      await experimentPage.locator(".push-button").first().click();
-      await expect(
-        experimentPage.locator(".push-button").first().locator(".psynet-button-spinner")
-      ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
-      releaseResponse();
+      await experimentPage.route(
+        "**/response",
+        async (route) => {
+          await responseGate;
+          await route.fulfill({
+            json: { submission: "rejected", message: "Held for the spinner check." }
+          });
+        },
+        { times: 1 }
+      );
+      const pushButton = experimentPage.locator(".push-button").first();
+      const spinner = pushButton.locator(".psynet-button-spinner");
+      try {
+        await pushButton.click();
+        await expect(spinner).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      } finally {
+        releaseResponse();
+      }
+      await expect(experimentPage.locator("#alert-message")).toContainText(
+        "Held for the spinner check.",
+        { timeout: STEP_TIMEOUT_MS }
+      );
+      await experimentPage.locator("#alert-button").click();
+      await expect(spinner).toHaveCount(0);
+      await expect(pushButton).toBeEnabled();
+      await pushButton.click();
       await expectMainBodyContains(experimentPage, "Page type", STEP_TIMEOUT_MS);
-      await experimentPage.unroute("**/response");
 
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
