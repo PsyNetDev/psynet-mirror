@@ -3864,8 +3864,8 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
-    # In-place LocalStorage experiments use acceptance-bound uploads; bots,
-    # legacy navigation, and other storage retain their existing deposit path.
+    # In-place LocalStorage experiments use acceptance-bound uploads; legacy
+    # navigation and other storage retain their existing deposit path.
     # Kept private for transport regression fixtures.
     _async_upload = True
     _async_upload_max_bytes = 128 * 1024 * 1024

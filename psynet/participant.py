@@ -1628,9 +1628,12 @@ class ParticipantDriver:
         if not uploads:
             return
         pending = list(uploads)
+        interval = min(u.get("renew_interval_ms", 30000) for u in uploads) / 1000
         stop = threading.Event()
         heartbeat = threading.Thread(
-            target=self._renew_recording_uploads, args=(pending, stop), daemon=True
+            target=self._renew_recording_uploads,
+            args=(pending, interval, stop),
+            daemon=True,
         )
         heartbeat.start()
         try:
@@ -1654,10 +1657,9 @@ class ParticipantDriver:
             stop.set()
             heartbeat.join()
 
-    def _renew_recording_uploads(self, pending, stop):
+    def _renew_recording_uploads(self, pending, interval, stop):
         """Renew the leases of ``pending`` recordings until ``stop`` is set."""
         session = keep_alive_session()
-        interval = min(u.get("renew_interval_ms", 30000) for u in pending) / 1000
         while pending:
             try:
                 session.post(
