@@ -6,9 +6,9 @@ Future work
 This page records ideas and small follow-ups for PsyNet maintainers, such
 as limitations left by a merge request. It is not a roadmap or a commitment.
 
-Each idea is a section with Date, Problem, and Idea subsections. Delete
-the entry when it ships or is rejected. If it becomes a GitLab issue,
-link the issue and shorten the write-up.
+Do not add new entries here: record new follow-ups as GitLab issues
+instead. The entries below are being moved to issues; delete an entry
+when it ships, is rejected, or has its own issue.
 
 Payment event ledger
 --------------------
