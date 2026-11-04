@@ -3,10 +3,10 @@
 # Can be overridden with: docker build --build-arg DOCKER_PLATFORM=linux/arm64
 ARG DOCKER_PLATFORM=linux/amd64
 ARG PYTHON_VERSION=3.14
-# Playwright needs Node 20 or later. Copy the pinned Node release from the
-# official image, built on the same Debian release as the Python image,
-# instead of Debian's nodejs package.
-ARG NODE_VERSION=20
+# Playwright needs Node 20 or later, and Node 20 reached end of life in April
+# 2026. Copy the pinned Node release from the official image, built on the
+# same Debian release as the Python image, instead of Debian's nodejs package.
+ARG NODE_VERSION=22
 FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-trixie-slim AS node
 
 FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-trixie
