@@ -1,6 +1,9 @@
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 from psynet.prescreen.vocabtest import VocabTest, VocabTrial
 
@@ -76,7 +79,24 @@ def test_vocab_font_is_cached_outside_the_experiment(tmp_path, monkeypatch):
     first = VocabTest.get_font_path(None, url)
     second = VocabTest.get_font_path(None, url)
 
-    assert first == second == str(tmp_path / "tmp" / "psynet-fonts" / "Font.ttf")
-    assert open(first, "rb").read() == b"font"
+    font_dir = tmp_path / "tmp" / f"psynet-fonts-{os.getuid()}"
+    assert first == second == str(font_dir / "Font.ttf")
+    assert Path(first).read_bytes() == b"font"
     assert downloads == [url]
     assert list(experiment_dir.iterdir()) == []
+
+
+def test_vocab_font_download_failure_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    def raise_for_status():
+        raise requests.HTTPError("404")
+
+    monkeypatch.setattr(
+        "psynet.prescreen.vocabtest.requests.get",
+        lambda url, timeout: SimpleNamespace(raise_for_status=raise_for_status),
+    )
+
+    with pytest.raises(requests.HTTPError):
+        VocabTest.get_font_path(None, "https://example.org/fonts/Font.ttf")
+    assert list(tmp_path.iterdir()) == []

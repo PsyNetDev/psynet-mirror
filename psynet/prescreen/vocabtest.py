@@ -582,7 +582,8 @@ class VocabTest(StaticTrialMaker):
         The font is only read on the server, so it is cached in the system's
         temporary directory rather than in the experiment's ``static/`` folder.
         """
-        font_dir = os.path.join(tempfile.gettempdir(), "psynet-fonts")
+        # One folder per user: another account's folder or font may not be readable.
+        font_dir = os.path.join(tempfile.gettempdir(), f"psynet-fonts-{os.getuid()}")
         font_path = os.path.join(font_dir, os.path.basename(font_url))
         if not os.path.exists(font_path):
             with yaspin(text="Downloading font...", color="yellow") as spinner:
@@ -591,9 +592,14 @@ class VocabTest(StaticTrialMaker):
                 spinner.ok("✔")
             os.makedirs(font_dir, exist_ok=True)
             # Write then rename so that a parallel process never reads a partial file.
-            with tempfile.NamedTemporaryFile(dir=font_dir, delete=False) as f:
-                f.write(response.content)
-            os.replace(f.name, font_path)
+            fd, temp_path = tempfile.mkstemp(dir=font_dir)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(response.content)
+                os.replace(temp_path, font_path)
+            except BaseException:
+                os.unlink(temp_path)
+                raise
         return font_path
 
     def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
