@@ -1147,8 +1147,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             )
             return tab_list + [group]
 
+        # The deployment monitor finds no deployments on docker-ssh servers, so
+        # its tab is hidden; the page is still served at /dashboard/deployments.
+        hidden_routes = ["dashboard.dashboard_deployments"]
+
         new_tab_list = [route2tab["dashboard.dashboard_index"]]
-        new_tab_list += [route2tab["dashboard.dashboard_deployments"]]
         new_tab_list = insert_group(new_tab_list, "Server", server_children)
         new_tab_list = insert_group(new_tab_list, "Recruiter", recruiter_children)
         new_tab_list = insert_group(new_tab_list, "Monitor", monitor_children)
@@ -1161,6 +1164,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             + server_children
             + recruiter_children
             + monitor_children
+            + hidden_routes
         )
         missing_routes = [
             tab for tab in tab_list if tab.route_name not in inserted_routes
