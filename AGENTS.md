@@ -267,9 +267,11 @@ description so they match the committed branch diff.
 ## Recording follow-ups
 
 When a review or dogfood leaves a small follow-up worth doing later (such as
-a Known limitations item), add an entry to `docs/developer/future_work.rst`
-in the same merge request (or a small docs merge request if there is none),
-in that file's Date / Problem / Idea format, one entry per item.
+a Known limitations item), open a GitLab issue for it, one issue per item,
+with a Problem and an Idea section, and link the issue from the merge request
+description. Draft the issue and ask the user before creating it, unless they
+have already approved. Create it with `glab issue create` or the GitLab API
+(`GITLAB_TOKEN`).
 
 ## CLI development
 

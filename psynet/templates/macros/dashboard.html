@@ -28,7 +28,7 @@
             </div>
             <ul class="list-group list-group-flush">
                 {% for item in params.item_list %}
-                    <li class="list-group-item">{{ item | safe }}</li>
+                    <li class="list-group-item">{{ item }}</li>
                 {% endfor %}
             </ul>
         </div>
@@ -55,7 +55,10 @@
         <div class="card mb-2 {{ bg }}" style="width: 100%;">
             <div class="card-body">
                 <h5 class="card-title">{{ params.title }}</h5>
-                <p class="card-text">{{ params.body | safe }}</p>
+                <p class="card-text">{{ params.body }}</p>
+                {% if params.chart_id %}
+                    <div id="{{ params.chart_id }}"></div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -91,15 +94,14 @@
         document.addEventListener("DOMContentLoaded", function (e) {
             selectpicker = $('#status').selectpicker();
             document.getElementById('status').addEventListener('change', function (e) {
-                fetch(window.location.origin + '/change_lucid_status?status=' + e.target.value, {
-                    method: 'GET',
-                    method: 'GET',
+                fetch('/dashboard/change_lucid_status', {
+                    method: 'POST',
                     credentials: 'same-origin',
-                    agent: null,
-                    headers: {
-                        "Content-Type": "text/plain",
-                        'Authorization': 'Basic ' + btoa('username:password'),
-                    },
+                    body: new URLSearchParams({status: e.target.value}),
+                }).then(function (r) {
+                    if (!r.ok) alert('Failed to change the Lucid status (HTTP ' + r.status + ').');
+                }).catch(function () {
+                    alert('Failed to change the Lucid status. Please try again.');
                 })
             })
         });

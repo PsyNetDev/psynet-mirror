@@ -32,10 +32,15 @@ class CustomTrial(MCMCPTrial):
         age_1 = self.first_stimulus["age"]
         age_2 = self.second_stimulus["age"]
         prompt = Markup(
-            f"<p>Person A is {age_1} years old. "
-            f"Person B is {age_2} years old. "
-            f"Which one is the {occupation}?</p>"
-            f"<em>API output: {self.node.var.api_response['output']}</em>"
+            "<p>Person A is {age_1} years old. "
+            "Person B is {age_2} years old. "
+            "Which one is the {occupation}?</p>"
+            "<em>API output: {api_output}</em>"
+        ).format(
+            age_1=age_1,
+            age_2=age_2,
+            occupation=occupation,
+            api_output=self.node.var.api_response["output"],
         )
         return ModularPage(
             "mcmcp_trial",

@@ -31,7 +31,29 @@ tags, which build longer structured content without writing HTML strings:
 
 Use one approach per piece of content. ``dominate`` escapes strings placed
 inside its tags, including ``Markup`` strings, so their HTML is shown as text.
-Only put trusted text in ``Markup``, never participant-provided data.
+Only put trusted text in ``Markup``, never participant-provided data. To show
+participant text inside your own HTML, let ``Markup.format`` escape it rather
+than using an f-string:
+
+.. code-block:: python
+
+    Markup("Another participant wrote: <strong>{}</strong>").format(answer)
+
+``Markup.format`` escapes a ``dominate`` tag too, so pass
+``Markup(tag.render())`` to insert one.
+
+The same rule applies to control labels, such as the ``labels`` of
+:class:`~psynet.modular_page.PushButtonControl`, to
+:class:`~psynet.modular_page.Button` text and to
+:class:`~psynet.page.WaitPage` content: a plain string is shown as text, and
+HTML needs ``Markup`` or a ``dominate`` tag:
+
+.. code-block:: python
+
+    PushButtonControl(
+        choices=["cat", "dog"],
+        labels=[Markup('<img src="/static/cat.png" alt="Cat">'), "Dog"],
+    )
 
 A :class:`~psynet.modular_page.ModularPage` takes a label, a prompt (plain text
 or a prompt object), and optionally a control. The
