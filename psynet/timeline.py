@@ -399,9 +399,17 @@ class WebSocketElt(Elt):
     channel : str
         The Redis channel name this Elt subscribes to. If ``None``, no
         subscribers will be registered.
+    requires_checked_connection : bool
+        If ``True``, ``handle_message`` is called only for messages sent
+        through ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+        whose connection PsyNet has checked belongs to ``participant``, and runs
+        on the web process holding that socket. Messages on the channel from
+        ``/chat`` sockets are ignored, because they can name any participant.
+        Defaults to ``False``.
     """
 
     channel = None
+    requires_checked_connection = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
