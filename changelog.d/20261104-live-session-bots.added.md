@@ -1,0 +1,1 @@
+Live sessions work with bots. When a group's members include bots, as in `psynet test`, the game plays for them with its `bot` method, which returns each bot's next message, such as `Choose(action="rock")`, or `None` to send nothing.

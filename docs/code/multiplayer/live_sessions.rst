@@ -239,3 +239,42 @@ leave it out. It runs after the game has accepted or rejected the message, and
 A message left out isn't in ``saved_messages`` or the exported data, so leave
 out only what the analysis won't need. Dallinger's
 :meth:`~dallinger.realtime.RealtimeGame.save_message` has the details.
+
+Bots
+----
+
+``psynet test`` runs an experiment with bots, which don't run a page's
+JavaScript. When a group's members include bots, the game plays for them
+through its ``bot`` method. It gets the bot's view, the bot's player id and
+the session time, and returns the bot's next message, or ``None`` to send
+nothing:
+
+.. code-block:: python
+
+    import random
+
+
+    class RockPaperScissors(LiveSession):
+        ...
+
+        def bot(self, view, player_id, now):
+            if view["chosen"]:
+                return None
+            return Choose(action=random.choice(["rock", "paper", "scissors"]))
+
+The game applies and saves a bot's message as it would a page's. If ``bot``
+returns a :class:`~psynet.live_session.LiveMessage` the game can't read, such
+as one whose type isn't in the game's ``messages``, the session fails. The
+error, in the server's log and the session's ``error`` in Dallinger's
+``realtime_session`` table, says why.
+
+In a game without ticks, ``bot`` runs when the session starts, and again after
+every message (other bots' too), join and leave, until no bot sends a message
+the game accepts. So it must return ``None`` once the bot has nothing to do.
+In a game with ticks, it runs once per tick. Dallinger's
+:meth:`~dallinger.realtime.RealtimeGame.bot` has the details.
+
+A group's bots have to reach the initializer together, so set the experiment's
+``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group
+size. A bot moves on from the game page at once, without waiting for the game
+to end.

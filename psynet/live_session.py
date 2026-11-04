@@ -97,6 +97,7 @@ from pydantic import (
 from pydantic_core import to_jsonable_python
 from sqlalchemy import String, cast
 
+from .bot import Bot
 from .modular_page import NullControl
 from .sync import GroupBarrier
 from .utils import NoArgumentProvided, get_logger
@@ -115,8 +116,8 @@ class LiveMessage(BaseModel):
     PsyNet checks each message before :meth:`apply` runs, and rejects one
     with a field missing, an extra field, or a field of the wrong type. The
     sender's page gets the reason. The check is strict: ``"1"`` isn't
-    accepted as a number, nor ``1`` as text, and a number field of the
-    message itself can't be ``NaN`` or infinite.
+    accepted as a number, nor ``1`` as text, and no number in the message
+    can be ``NaN`` or infinite.
 
     A field can have any type Pydantic reads from JSON, such as a ``tuple``,
     an ``Enum``, a ``datetime`` or another Pydantic model, and in
@@ -266,7 +267,7 @@ def _stores_json(method):
         elif isinstance(state, list):
             state[:] = converted
 
-    convert_state.converts_state = True
+    convert_state.wrapped_by_psynet = True
     return convert_state
 
 
@@ -280,8 +281,41 @@ def _returns_json(method):
             return state
         return _to_json(state, f"{type(self).__name__}.{method.__name__}")
 
-    convert_state.converts_state = True
+    convert_state.wrapped_by_psynet = True
     return convert_state
+
+
+def _sends_message(method):
+    @functools.wraps(method)
+    def send(self, *args, **kwargs):
+        message = method(self, *args, **kwargs)
+        # A bot calling super().bot() reaches its parent's wrapper, which
+        # leaves the message for the outermost one.
+        if type(self).bot is not send or not isinstance(message, LiveMessage):
+            return message
+        sent = {
+            "type": message.type,
+            "message": message.model_dump(mode="json", by_alias=True),
+        }
+        # A message the game can't read, such as one of a type it doesn't list
+        # or with a computed field, would otherwise be rejected each time the
+        # bot sent it.
+        try:
+            read = self.read_message(sent)
+        except Reject as rejection:
+            problem = rejection.reason
+        else:
+            if read == message:
+                return sent
+            problem = f"It reads back as {read!r}."
+        raise TypeError(
+            f"{type(self).__name__}.bot returned {message!r}, which the game "
+            f"can't read as it is. {problem} A bot can also return what a page "
+            "sends, as a dict."
+        )
+
+    send.wrapped_by_psynet = True
+    return send
 
 
 def _to_json(state, what):
@@ -301,7 +335,9 @@ class LiveSession(RealtimeGame):
     :attr:`messages`, and define ``initial_state`` and ``view``. Other
     methods, such as ``is_over`` and ``tick``, are optional, and Dallinger's
     :class:`~dallinger.realtime.RealtimeGame` documents them. A subclass of a
-    game needs a ``channel`` of its own.
+    game needs a ``channel`` of its own. For bots, such as those of
+    ``psynet test``, define ``bot``, which can return a :class:`LiveMessage`
+    instance, as :doc:`/code/multiplayer/live_sessions` shows.
 
     **The state holds plain data**: what JSON can hold, which is dicts with
     string keys, lists, strings, numbers, booleans and ``None``. PsyNet
@@ -347,10 +383,11 @@ class LiveSession(RealtimeGame):
         for name, wrap in [
             *((name, _stores_json) for name in _STATE_METHODS),
             ("initial_state", _returns_json),
+            ("bot", _sends_message),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name) and not getattr(
-                method, "converts_state", False
+                method, "wrapped_by_psynet", False
             ):
                 setattr(cls, name, wrap(method))
         cls._message_types = _index_message_types(cls)
@@ -475,8 +512,8 @@ def _parse_message(message_types, message):
 
 @dataclasses.dataclass(frozen=True)
 class SavedMessage:
-    """A message that a player's page sent in a live session, as the
-    session's record saved it. :meth:`LiveSession.saved_messages` and
+    """A message that a player's page, or a bot, sent in a live session, as
+    the session's record saved it. :meth:`LiveSession.saved_messages` and
     :meth:`LiveMessage.saved_messages` return them.
     """
 
@@ -514,11 +551,11 @@ class SavedMessage:
     receive_time: datetime.datetime
 
     #: The number the page gave the message. A page counts its messages up
-    #: by one, from 1 when it loads.
+    #: by one, from 1 when it loads, and a bot from 1 when the session starts.
     number: int | None
 
     #: The browser's clock when the page sent the message, in seconds since
-    #: 1970.
+    #: 1970. For a bot's message, it's the server's clock.
     browser_time: float | None
 
     #: The session time of the view the page was showing when it sent the
@@ -716,7 +753,9 @@ class LiveSessionInitializer(GroupBarrier):
 
 def _start_live_session(participants, barrier):
     session_id = create_realtime_session(
-        barrier.game_type, [member.id for member in participants]
+        barrier.game_type,
+        [member.id for member in participants],
+        bots=[member.id for member in participants if isinstance(member, Bot)],
     )
     for member in participants:
         member.live_sessions = {**(member.live_sessions or {}), barrier.id: session_id}

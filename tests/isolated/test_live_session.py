@@ -16,10 +16,11 @@ from dallinger.realtime.game import queued_effects
 from dallinger.realtime.runner import Runner
 from dallinger.realtime.store import RUNNING
 from flask import Flask
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rq import Queue, SimpleWorker
 
 from psynet import live_session
+from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
     LiveMessage,
@@ -58,7 +59,22 @@ pytestmark = [
 def pair(db_session):
     """A pair group, its leader first, and the experiment's initializer."""
     experiment = get_experiment()
-    members = [new_participant(experiment) for _ in range(2)]
+    return _pair(db_session, [new_participant(experiment) for _ in range(2)])
+
+
+@pytest.fixture
+def bot_and_person(db_session, monkeypatch):
+    """A pair group of a bot and a person, and the experiment's initializer."""
+    # Bot() otherwise waits for a launched server and opens its first page.
+    monkeypatch.setattr(
+        Bot, "wait_until_experiment_launch_is_complete", lambda self: None
+    )
+    monkeypatch.setattr(Bot, "_advance_to_first_page", lambda self: None)
+    return _pair(db_session, [Bot(), new_participant(get_experiment())])
+
+
+def _pair(db_session, members):
+    experiment = get_experiment()
     group = SimpleSyncGroup(
         group_type="pair",
         initial_group_size=2,
@@ -292,6 +308,21 @@ def played(pair):
     return session_id, first, second, before, timenow()
 
 
+def test_the_game_plays_for_a_group_s_bots(bot_and_person):
+    session_id = _pair_session(bot_and_person)
+    bot, person = (str(member.id) for member in bot_and_person[0])
+
+    _play_to_the_end(
+        session_id, [(person, 1, {"type": "pick", "message": {"number": 5}})]
+    )
+
+    assert db.session.get(RealtimeSession, session_id).bots == [int(bot)]
+    saved = live_session._live_session_types["pick_numbers"].saved_messages(session_id)
+    assert [
+        (message.player_id, message.status, message.message.number) for message in saved
+    ] == [(bot, "accepted", int(bot)), (person, "accepted", 5)]
+
+
 def test_a_played_session_s_messages_read_back_in_order_with_their_status(played):
     session_id, first, second, before, after = played
 
@@ -497,6 +528,111 @@ def test_a_nested_model_is_stored_as_a_dict(walk):
     )
 
     assert state == {"at": {"x": 1, "y": 2}}
+
+
+class Jump(LiveMessage):
+    type = "jump"
+    from_: int = Field(alias="from")
+    to: tuple[int, int]
+
+    def apply(self, game, state, player_id, now):
+        state["jumped"] = [self.from_, self.to]
+
+
+@pytest.fixture
+def hop(registry):
+    class Hop(LiveSession):
+        channel = "hop"
+        messages = [Jump]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+        def bot(self, view, player_id, now):
+            return Jump(**{"from": 1, "to": (2, 3)})
+
+    return Hop
+
+
+def test_a_bot_s_message_is_sent_as_a_page_sends_it(hop):
+    class FurtherHop(hop):
+        channel = "further_hop"
+
+        def bot(self, view, player_id, now):
+            # Its parent's message, as a Jump.
+            message = super().bot(view, player_id, now)
+            return message.model_copy(update={"to": (4, 5)})
+
+    game = FurtherHop()
+    message = game.bot({}, "1", 0)
+
+    assert message == {"type": "jump", "message": {"from": 1, "to": [4, 5]}}
+    state = {}
+    game.apply(state, "1", message, 0, Sent())
+    assert state == {"jumped": [1, [4, 5]]}
+
+
+def test_a_bot_can_return_what_a_page_sends(hop):
+    sent = {"type": "jump", "message": {"from": 1, "to": [2, 3]}}
+
+    class PlainHop(hop):
+        channel = "plain_hop"
+
+        def bot(self, view, player_id, now):
+            return sent
+
+    assert PlainHop().bot({}, "1", 0) == sent
+
+
+class Aim(LiveMessage):
+    type = "aim"
+    x: int
+
+    def apply(self, game, state, player_id, now):
+        pass
+
+
+class AimHidden(Aim):
+    x: int = Field(default=0, exclude=True)
+
+
+class Stray(Aim):
+    type = "stray"
+
+
+@pytest.mark.parametrize(
+    "listed, returned, problem",
+    [
+        (AimHidden, AimHidden(x=7), "It reads back as AimHidden(x=0)."),
+        (Aim, Stray(x=1), "Unknown message type 'stray'."),
+    ],
+)
+def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
+    registry, listed, returned, problem
+):
+    class Archery(LiveSession):
+        channel = "archery"
+        messages = [listed]
+
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return state
+
+        def bot(self, view, player_id, now):
+            return returned
+
+    with pytest.raises(TypeError) as raised:
+        Archery().bot({}, "1", 0)
+
+    assert str(raised.value) == (
+        f"Archery.bot returned {returned!r}, which the game can't read as it "
+        f"is. {problem} A bot can also return what a page sends, as a dict."
+    )
 
 
 def test_a_rejection_lists_at_most_five_problems(registry):
