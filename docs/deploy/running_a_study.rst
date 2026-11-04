@@ -205,8 +205,7 @@ through it yourself and send it to a few colleagues. Check:
 - that your analysis scripts work on the pilot data (export it as
   described in `Export`_).
 
-``psynet debug`` deployments do not register with the deployment monitor
-or send Slack notifications. Remove the pilot when you are done:
+``psynet debug`` deployments do not send Slack notifications. Remove the pilot when you are done:
 
 .. code:: bash
 
