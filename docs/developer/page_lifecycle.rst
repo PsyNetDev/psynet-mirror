@@ -567,7 +567,7 @@ blocking ``FOR UPDATE`` on the participant row. If the overlay is still
 waiting after that submit, the driver pauses briefly before the next page
 instead of busy-looping ordinary Next. Timeline GETs use HTML so
 ``render_pages=True`` still compiles page templates, and retry structured
-busy 503s a few times so a poller skip that briefly holds the row does not
+busy 503s for about 10 seconds so a poller skip that briefly holds the row does not
 fail the bot. A stale HTML render redirects to the live page. Bot POSTs
 retry those busy 503s the same way. If this waiter already advanced, or last-arrival
 skipped its own later hold, an ordinary POST of the previous hold uuid is

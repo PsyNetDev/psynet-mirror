@@ -1939,7 +1939,21 @@
               textStyle: nextButtonText?.getAttribute("style"),
             }
           : null,
+        pendingButtons: [],
       };
+    };
+
+    // Covers the clicked button's label with a spinner until the submission
+    // finishes; restoreSubmissionControlState removes it if the page stays.
+    psynet.showSubmissionSpinner = function (button) {
+      if (!button || psynet.submissionControlState === null) return;
+      let spinner = document.createElement("span");
+      spinner.className = "psynet-button-spinner spinner-border spinner-border-sm";
+      spinner.setAttribute("role", "status");
+      spinner.setAttribute("aria-hidden", "true");
+      button.appendChild(spinner);
+      button.classList.add("psynet-button-pending");
+      psynet.submissionControlState.pendingButtons.push({ button, spinner });
     };
 
     psynet.restoreSubmissionControlState = function () {
@@ -1950,6 +1964,10 @@
       }
       psynet.submissionControlState.controls.forEach(({ element, disabled }) => {
         if (element.isConnected) element.disabled = disabled;
+      });
+      psynet.submissionControlState.pendingButtons.forEach(({ button, spinner }) => {
+        spinner.remove();
+        button.classList.remove("psynet-button-pending");
       });
       let presentation = psynet.submissionControlState.nextButtonPresentation;
       if (presentation) {

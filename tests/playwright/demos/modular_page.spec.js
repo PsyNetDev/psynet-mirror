@@ -188,8 +188,22 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
       await expect(experimentPage.locator(".push-button").first()).toBeVisible({
         timeout: PROMPT_TIMEOUT_MS
       });
+      // Hold the submission so the clicked button's spinner can be checked.
+      let releaseResponse;
+      const responseGate = new Promise((resolve) => {
+        releaseResponse = resolve;
+      });
+      await experimentPage.route("**/response", async (route) => {
+        await responseGate;
+        await route.continue();
+      });
       await experimentPage.locator(".push-button").first().click();
+      await expect(
+        experimentPage.locator(".push-button").first().locator(".psynet-button-spinner")
+      ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      releaseResponse();
       await expectMainBodyContains(experimentPage, "Page type", STEP_TIMEOUT_MS);
+      await experimentPage.unroute("**/response");
 
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
