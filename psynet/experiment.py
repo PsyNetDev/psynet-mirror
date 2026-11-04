@@ -305,6 +305,20 @@ def error_response(*args, **kwargs):
         return dallinger_error_response(*args, **kwargs)
 
 
+_FORWARDING_HEADERS = ("X-Forwarded-For", "Forwarded", "X-Real-IP", "CF-Connecting-IP")
+
+
+def _is_direct_local_request():
+    """Return whether the request comes from this machine rather than through a proxy.
+
+    Tunnels such as cloudflared also connect from a loopback address, but
+    they add forwarding headers.
+    """
+    return request.remote_addr in ("127.0.0.1", "::1") and not any(
+        header in request.headers for header in _FORWARDING_HEADERS
+    )
+
+
 def _request_carries_unique_id(participant):
     """Return whether the request's ``unique_id`` parameter is ``participant``'s, warning if not."""
     supplied = request.values.get("unique_id", "")
@@ -1807,14 +1821,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @staticmethod
     def request_contains_valid_dashboard_credentials(request):
-        params = dict(request.args)
-        username = params.get("dashboard_user", None)
-        password = params.get("dashboard_password", None)
         config = get_config()
-        return (
-            config.get("dashboard_user") == username
-            and config.get("dashboard_password") == password
-        )
+
+        def matches(key):
+            expected = config.get(key, None)
+            supplied = request.args.get(key)
+            return bool(expected) and hmac.compare_digest(
+                (supplied or "").encode(), str(expected).encode()
+            )
+
+        return matches("dashboard_user") and matches("dashboard_password")
 
     @experiment_route("/health", methods=["GET"])
     @nocache
@@ -2642,8 +2658,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return error_response(
                 error_text=f"Unsupported request method {request.method}", simple=True
             )
-        function = EXPOSED_FUNCTIONS[endpoint]
-        return function(**data)
+        result = EXPOSED_FUNCTIONS[endpoint](**data)
+        if isinstance(result, str):
+            # As text/html, a string that echoes its arguments would be reflected XSS.
+            return make_response(result, {"Content-Type": "text/plain; charset=utf-8"})
+        return result
 
     @property
     def psynet_logo(self):
@@ -2735,11 +2754,106 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         name, so each Elt only receives messages from its own channel.
         """
         for handler in self._websocket_message_handlers.get(channel_name, []):
+            if handler.__self__.requires_checked_connection:
+                logger.warning(
+                    "Ignored a message on WebSocket channel %s that did not come "
+                    "through /experiment-socket.",
+                    channel_name,
+                )
+                continue
             handler(
                 message,
                 channel_name=channel_name,
                 participant=participant,
                 node=node,
+                receive_time=receive_time,
+                experiment=self,
+            )
+
+    def publish_to_participants(self, payload, participant_ids, scope=None):
+        """Send a payload to specific participants' WebSocket connections.
+
+        Behaves like Dallinger's
+        :meth:`~dallinger.experiment.Experiment.publish_to_participants`, but
+        refuses payloads whose ``type`` is one that PsyNet's own pages trust,
+        such as ``"timeline_hold_wake"``. Wrap forwarded participant content
+        in a message with your own fixed ``type`` instead of forwarding a
+        participant's payload unchanged.
+
+        Parameters
+        ----------
+        payload : object
+            The JSON-serializable message to deliver.
+        participant_ids : list of int or str, or int or str
+            The participants to deliver to.
+        scope : str or None
+            Deliver only to connections that supplied this scope.
+
+        Raises
+        ------
+        ValueError
+            If ``payload`` is a dict whose ``type`` is reserved by PsyNet.
+        """
+        from .timeline_hold import RESERVED_DIRECT_MESSAGE_TYPES
+
+        message_type = payload.get("type") if isinstance(payload, dict) else None
+        if isinstance(message_type, str) and (
+            message_type in RESERVED_DIRECT_MESSAGE_TYPES
+        ):
+            raise ValueError(
+                f"Message type {message_type!r} is reserved for PsyNet's own "
+                "directed messages."
+            )
+        super().publish_to_participants(payload, participant_ids, scope=scope)
+
+    def accept_websocket_connection(self, participant_id, scope):
+        """Accept a websocket connection only from one of the participant's own pages.
+
+        PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
+        as the connection's scope.
+        """
+        participant = Participant.query.get(int(participant_id))
+        return participant is not None and hmac.compare_digest(
+            (scope or "").encode(), participant.websocket_scope.encode()
+        )
+
+    def handle_websocket_message(
+        self,
+        message,
+        *,
+        channel_name,
+        participant_id=None,
+        scope=None,
+        receive_time=None,
+    ):
+        """Pass ``/experiment-socket`` messages to the channel's ``WebSocketElt`` handlers.
+
+        Handlers with ``requires_checked_connection`` run here, on the web
+        process holding the socket, with the participant the connection was
+        checked for. If a channel has any such handler, its other handlers
+        don't receive ``/experiment-socket`` messages. Messages on other
+        channels go to ``receive_message`` as Dallinger's default does.
+        """
+        handlers = [
+            handler
+            for handler in self._websocket_message_handlers.get(channel_name, [])
+            if handler.__self__.requires_checked_connection
+        ]
+        if not handlers:
+            return super().handle_websocket_message(
+                message,
+                channel_name=channel_name,
+                participant_id=participant_id,
+                scope=scope,
+                receive_time=receive_time,
+            )
+        participant = Participant.query.get(int(participant_id))
+        for handler in handlers:
+            handler(
+                message,
+                channel_name=channel_name,
+                participant=participant,
+                node=None,
                 receive_time=receive_time,
                 experiment=self,
             )
@@ -5688,7 +5802,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     @with_transaction
     def get_participant_info_for_debug_mode():
-        if not get_config().get("mode") == "debug":
+        if not get_config().get("mode") == "debug" or not _is_direct_local_request():
             return error_response()
 
         participant = Participant.query.first()
@@ -6135,19 +6249,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 status=404,
                 simple=True,
             )
-        release_url = f"/timeline?unique_id={participant.unique_id}"
-        if participant.early_exited:
-            return success_response(release_url=release_url)
-
         try:
             plan = exit_domain.ExitPlan.from_dict(participant.exit_plan)
         except (AttributeError, KeyError, TypeError, ValueError):
             return cls._stale_early_exit_response()
 
+        # The release URL carries the participant's unique_id, so only a
+        # request that knows the plan's random id may receive it.
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict) or payload.get("plan_id") != plan.plan_id:
             return cls._stale_early_exit_response()
-        if plan.status is exit_domain.ExitPlanStatus.COMMITTED:
+        release_url = f"/timeline?unique_id={participant.unique_id}"
+        if (
+            participant.early_exited
+            or plan.status is exit_domain.ExitPlanStatus.COMMITTED
+        ):
             return success_response(release_url=release_url)
 
         experiment = get_experiment()
@@ -6838,37 +6954,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
-    class UniqueIdError(PermissionError):
-        def __init__(self, expected, provided, participant):
-            self.participant = participant
-
-            message = "".join(
-                [
-                    f"Mismatch between expected unique_id ({expected}) "
-                    f"and provided unique_id ({provided}) "
-                    f"for participant {participant.id}."
-                ]
-            )
-            super().__init__(message)
-
-        def http_response(self):
-            last_exception = sys.exc_info()
-            if last_exception[0]:
-                logger.error(
-                    "Failure for request: {!r}".format(dict(request.args)),
-                    exc_info=last_exception,
-                )
-
-            msg = (
-                "There was a problem authenticating your session, "
-                + "did you switch browsers? Unfortunately this is not currently "
-                + "supported by our system."
-            )
-            return Experiment.error_page(
-                participant=self.participant,
-                error_text=msg,
-            )
-
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
@@ -7247,18 +7332,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "page_uuid": participant.page_uuid,
         }
 
-    @classmethod
-    def check_unique_id(cls, participant, unique_id):
-        valid = participant.unique_id == unique_id
-        if not valid:
-            raise cls.UniqueIdError(
-                expected=unique_id,
-                provided=participant.unique_id,
-                participant=participant,
-            )
-        else:
-            return True
-
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
     @classmethod
     @with_transaction
@@ -7270,14 +7343,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         from .sync import arrival_notice_payload
 
-        return arrival_notice_payload(request.args.get("participantId"))
+        return arrival_notice_payload(request.args.get("uniqueId"))
 
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])
     @classmethod
     @with_transaction
     def get_progress_and_reward(cls):
-        participant_id = request.args.get("participantId")
-        participant = Participant.query.get(participant_id)
+        participant = Participant.query.filter_by(
+            unique_id=request.args.get("uniqueId")
+        ).one_or_none()
         if participant is None:
             return cls._unknown_participant_response()
         progress_percentage = round(participant.progress * 100)
@@ -7438,6 +7512,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # a transaction (and a pooled server connection) open.
         json_data = json.loads(request.values["json"])
         blobs = request.files.to_dict()
+        if not isinstance(json_data.get("page_uuid"), str):
+            return error_response(
+                error_text="page_uuid must be a string.", status=400, simple=True
+            )
 
         exp = get_experiment()
         _set_transaction_lock_timeout(get_config().get("timeline_lock_timeout_seconds"))
@@ -7709,10 +7787,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-        try:
-            cls.check_unique_id(participant, unique_id)
-        except cls.UniqueIdError as e:
-            return e.http_response()
 
         message = request.values["message"]
 
@@ -7752,8 +7826,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-
-        cls.check_unique_id(participant, unique_id)
 
         participant.var.opened_devtools = True
 

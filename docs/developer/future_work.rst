@@ -986,3 +986,46 @@ Once few experiments still have the link, remove the exclusion from the
 ``deploy.toml`` and ``.gitignore`` templates, and have debug and deploy
 commands remove a leftover link (or point to ``psynet scripts prune``) before
 they build the deployment plan.
+
+Tie chat ``leave_room`` to the page that sent it
+------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``EnableChatrooms`` handles ``leave_room`` by deactivating every active
+membership the participant has in that room, whatever page sent it. If a
+second tab on the same page closes, the participant drops out of the room
+in the tab still open, and the widget silently loses the lines they send.
+
+Idea
+++++
+
+Send the page's ``page_uuid`` with ``join_room`` and ``leave_room`` and
+deactivate only the membership for that page. Optionally reply to a
+non-member's message so the widget can rejoin or keep the draft.
+
+Refuse non-object JSON bodies on ``/response``
+----------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``/response`` returns a 400 for a ``page_uuid`` that isn't a string, but a
+JSON body that isn't an object, such as ``[]``, still fails with a server
+error because the route calls ``json_data.get``.
+
+Idea
+++++
+
+Return the same 400 when the decoded body isn't a ``dict``.

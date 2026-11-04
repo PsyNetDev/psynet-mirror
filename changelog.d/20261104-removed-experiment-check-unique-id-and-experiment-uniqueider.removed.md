@@ -1,0 +1,1 @@
+Removed `Experiment.check_unique_id` and `Experiment.UniqueIdError`. Look the participant up with `Experiment.get_participant_from_unique_id` instead, which already proves the request carried their `unique_id`.
