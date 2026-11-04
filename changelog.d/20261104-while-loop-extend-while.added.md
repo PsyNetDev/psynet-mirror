@@ -1,0 +1,1 @@
+Added an `extend_while` option to `while_loop`: while it returns `True` the loop cannot time out, and `max_loop_time` restarts once it returns `False`. Trial makers use it so that waiting for the next trial pauses its time limit only while the participant's last recording is still uploading.
