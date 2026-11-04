@@ -1894,6 +1894,11 @@ def patch_dallinger_develop():
 patch_dallinger_develop()
 
 
+# psutil on macOS can raise SystemError (not a psutil.Error) when a process
+# exits while it is being inspected.
+_UNREADABLE_PROCESS_ERRORS = (psutil.Error, OSError, SystemError)
+
+
 def safely_kill_process(p):
     try:
         p.kill()
@@ -1968,8 +1973,8 @@ def is_psynet_chrome_process(process):
                     return True
                 if "--user-data-dir=" in cmd and profile_prefix in cmd:
                     return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        pass
+    except _UNREADABLE_PROCESS_ERRORS as exc:
+        logger.debug("Skipping process that could not be inspected: %r", exc)
 
     return False
 
@@ -2032,7 +2037,8 @@ def is_chromedriver_process(process):
         return "chromedriver" in process.name().lower() and any(
             prefix in part for part in process.cmdline()
         )
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+    except _UNREADABLE_PROCESS_ERRORS as exc:
+        logger.debug("Skipping process that could not be inspected: %r", exc)
         return False
 
 

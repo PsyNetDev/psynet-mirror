@@ -6,7 +6,7 @@ Exporting data
 From the dashboard
 ------------------
 
-The dashboard's **Export** tab downloads ``export.zip``, with or without the
+The dashboard's **Export** tab downloads ``<deployment ID>__export.zip``, with or without the
 assets created during the run. If the experiment has artifact storage, the
 server also keeps the most recent dashboard download as the deployment's
 latest export; each download replaces the previous one. The default

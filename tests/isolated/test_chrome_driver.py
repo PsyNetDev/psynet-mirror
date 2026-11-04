@@ -276,3 +276,17 @@ def test_browser_cleanup_only_matches_this_database(monkeypatch):
     assert not is_psynet_chrome_process(
         _FakeProcess("chrome", ["http://localhost:50000/"])
     )
+
+
+class _VanishingProcess:
+    def name(self):
+        raise SystemError(
+            "<built-in function proc_cmdline> returned a result with an exception set"
+        )
+
+
+def test_browser_cleanup_skips_a_process_that_vanishes_mid_inspection():
+    from psynet.command_line import is_chromedriver_process, is_psynet_chrome_process
+
+    assert not is_psynet_chrome_process(_VanishingProcess())
+    assert not is_chromedriver_process(_VanishingProcess())
