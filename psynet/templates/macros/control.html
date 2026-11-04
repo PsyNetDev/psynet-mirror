@@ -165,6 +165,7 @@
                 );
             {% else %}
                 psynet.captureSubmissionControlState();
+                psynet.showSubmissionSpinner(button);
                 psynet.response.disable();
                 psynet.submit.disable();
                 psynet.nextPage(id);

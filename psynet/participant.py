@@ -3,6 +3,7 @@ import hmac
 import io
 import json
 import os
+import random
 import re
 import shutil
 import tempfile
@@ -248,7 +249,12 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
-_BOT_TIMELINE_BUSY_ATTEMPTS = 5
+# Under load, a partner's barrier check can hold the participant row for
+# several seconds. A busy reply may itself take up to the lock timeout, so
+# retries stop once the window has passed, however many delays are left.
+# Keep in step with psynet.busyRetryDelayMs in psynet.js.
+_BUSY_RETRY_DELAYS_S = (0.25, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
+_BUSY_RETRY_WINDOW_S = 10.0
 
 
 def _status_is_timeline_hold(status):
@@ -257,29 +263,37 @@ def _status_is_timeline_hold(status):
     return bool(page.get("is_timeline_hold"))
 
 
-def _retry_busy_http(send, *, delay_s=0.25, attempts=2):
+def _retry_busy_http(send, sleep=time.sleep):
     """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
-    Browser submissions retry a structured busy response once; automated
-    drivers follow the same policy by default so lock timeouts do not fail
-    the bot on the first hit. Timeline GETs and bot POSTs may pass a higher
-    ``attempts`` count because a partner skip can hold the participant row
-    for more than one ``lock_timeout``. JSON ``GET /timeline`` also retries
-    HTTP 409 ``status: stale`` when last-arrival advanced this waiter
-    between write and render. Shipped drivers do not issue that JSON GET;
-    they use ``/participant_status``. Generic or malformed 503s and other
-    409s are not retried.
+    The server answers busy before writing anything, so retrying is safe.
+    Retries back off with growing gaps, the same schedule browser submissions
+    use, with up to 25% random shortening so bots do not retry in step. No
+    retry starts more than about 10 s after the first request. JSON
+    ``GET /timeline`` also retries HTTP 409 ``status: stale`` when
+    last-arrival advanced this waiter between write and render. Shipped
+    drivers do not issue that JSON GET; they use ``/participant_status``.
+    Generic or malformed 503s and other 409s are not retried.
+
+    Parameters
+    ----------
+    send : callable
+        Sends the request and returns the response.
+    sleep : callable, optional
+        Waits between attempts; drivers pass their stoppable sleep.
     """
-    if attempts < 1:
-        raise ValueError("attempts must be at least 1.")
+    deadline = time.monotonic() + _BUSY_RETRY_WINDOW_S
     response = send()
-    for _ in range(attempts - 1):
+    for delay_s in _BUSY_RETRY_DELAYS_S:
         if not (
             _is_psynet_busy_response(response)
             or _is_psynet_stale_timeline_response(response)
         ):
             break
-        time.sleep(delay_s)
+        delay_s *= random.uniform(0.75, 1.0)
+        if time.monotonic() + delay_s > deadline:
+            break
+        sleep(delay_s)
         response = send()
     _raise_for_status_with_server_details(response)
     return response
@@ -1411,7 +1425,8 @@ class ParticipantDriver:
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
                 f"{self.experiment.base_url}/participant_status/{self.id}"
-            )
+            ),
+            sleep=self._sleep,
         )
 
         self.response_files = {}
@@ -1447,7 +1462,7 @@ class ParticipantDriver:
                 f"{self.experiment.base_url}/timeline",
                 params={"unique_id": self.participant_unique_id},
             ),
-            attempts=_BOT_TIMELINE_BUSY_ATTEMPTS,
+            sleep=self._sleep,
         )
 
     def _simulate_page_time(self, time_factor):
@@ -1570,7 +1585,7 @@ class ParticipantDriver:
                     files=files,
                 )
 
-            http_response = _retry_busy_http(send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS)
+            http_response = _retry_busy_http(send, sleep=self._sleep)
         resp_json = http_response.json()
         if resp_json.get("submission") != "approved":
             if self._retry_submit_after_page_advanced(

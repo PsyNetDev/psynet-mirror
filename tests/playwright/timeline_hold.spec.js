@@ -288,7 +288,7 @@ async function probeTimelineHoldClientBehavior(page) {
     psynet.nextPagePending = false;
     window.__holdClientNext = { done: false };
     // Do not await nextPage in this evaluate. submitGenericResponse waits
-    // 250ms between the busy 503 and the retry; Playwright's awaitPromise
+    // up to 250ms between the busy 503 and the retry; Playwright's awaitPromise
     // does not flush that timer while the evaluate is still open.
     Promise.resolve()
       .then(() =>
