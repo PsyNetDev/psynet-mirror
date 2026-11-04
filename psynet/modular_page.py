@@ -2745,7 +2745,7 @@ class MediaSliderControl(SliderControl):
             }
 
     modality:
-        Either ``"audio"``,  ``"image"`` or ``"video"``.
+        One of ``"audio"``, ``"image"``, ``"html"`` or ``"video"``.
 
     media_locations:
         Dictionary with IDs as keys and locations on the slider as values.
