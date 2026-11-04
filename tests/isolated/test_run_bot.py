@@ -330,6 +330,31 @@ def test_stopping_a_driver_interrupts_its_busy_retries(monkeypatch):
     assert driver.posts == 1
 
 
+def test_bot_renews_later_recordings_while_uploading_earlier_ones(tmp_path):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    posts = []
+
+    def fake_post(url, data=None, json=None, headers=None):
+        posts.append((url, json))
+        return SimpleNamespace(status_code=200, raise_for_status=lambda: None)
+
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
+    uploads = [
+        {"id": str(i), "token": f"t{i}", "source": s, "url": f"/media-upload/{i}"}
+        for i, s in enumerate(["camera", "screen"])
+    ]
+    files = {}
+    for upload in uploads:
+        files[f"{upload['source']}Recording"] = tmp_path / upload["source"]
+        files[f"{upload['source']}Recording"].write_bytes(b"clip")
+
+    driver._upload_recordings(uploads, files)
+
+    heartbeats = [body["uploads"] for url, body in posts if body is not None]
+    assert [[u["id"] for u in renewed] for renewed in heartbeats] == [["0", "1"], ["1"]]
+
+
 @pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])
 def test_take_page_polls_timeline_hold_at_check_interval(
     monkeypatch, time_factor, poll

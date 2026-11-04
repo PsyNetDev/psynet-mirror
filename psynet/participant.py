@@ -1615,13 +1615,24 @@ class ParticipantDriver:
 
         A 429 means another delivery of the same recording is still being
         received; wait as the server asks and try again. Stalls and gateway
-        errors are retried too.
+        errors are retried too. Before each attempt the leases of all
+        recordings still to be uploaded are renewed, so later sources do not
+        expire while earlier ones are being sent.
         """
-        for upload in uploads:
+        for index, upload in enumerate(uploads):
             path = files[f"{upload['source']}Recording"]
             with open(path, "rb") as file:
                 body = file.read()
             for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
+                self.http_session.post(
+                    f"{self.experiment.base_url}/media-upload/heartbeat",
+                    json={
+                        "uploads": [
+                            {"id": pending["id"], "token": pending["token"]}
+                            for pending in uploads[index:]
+                        ]
+                    },
+                )
                 http_response = self.http_session.post(
                     f"{self.experiment.base_url}{upload['url']}",
                     data=body,
