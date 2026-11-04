@@ -31,7 +31,10 @@ two ways:
   from the ``sender`` or ``participant_id`` field of the message, which the
   browser writes and nobody checks. Any browser can connect to any channel and
   read everything sent on it, including what the server publishes with
-  ``publish_to_subscribers``.
+  ``publish_to_subscribers``. The socket itself is admitted with the
+  participant's token, so it also receives the server's directed messages for
+  this participant through ``onDirect``; only those are trusted, never the
+  channel's own messages.
 
 In both cases only browsers connected at that moment receive a message;
 nothing is stored for later.
@@ -109,6 +112,17 @@ of participant IDs, and delivers the payload to every connection those
 participants hold. PsyNet only accepts a connection that names a participant
 if it carries their token.
 
+.. warning::
+
+   Never forward a participant's payload unchanged with
+   ``publish_to_participants``: the recipients' pages would trust whatever
+   ``type`` that participant chose. Wrap forwarded content in your own
+   message with a fixed ``type``, for example
+   ``{"type": "chat_message", "text": text}``. PsyNet raises ``ValueError``
+   for the message types it reserves for its own directed messages, such as
+   ``timeline_hold_wake``. Only ``self.publish_to_participants`` checks this;
+   don't call Dallinger's ``publish_to_participants`` directly.
+
 An element without ``requires_checked_connection`` gets every message on its
 channel from a worker process. It can reply with
 ``experiment.publish_to_subscribers(json.dumps(payload), channel)``, which
@@ -124,8 +138,11 @@ function and close it in its cleanup function (see
 :doc:`/code/pages/custom_front_ends`). ``send(channel, message)`` encodes the
 message as JSON and queues it while the socket is reconnecting. ``onOpen`` runs
 each time the socket connects, ``onDirect`` receives the server's directed messages
-already decoded, and ``onRefused`` runs if PsyNet refuses the connection. The
-chatroom widget connects like this:
+already decoded, and ``onRefused`` runs if PsyNet refuses the connection.
+PsyNet sends its own directed messages to the same connections (for example
+``{"type": "timeline_hold_wake", ...}``), so every ``onDirect`` handler, here
+and on a channel broadcast below, should check ``message.type`` and ignore
+types it doesn't handle. The chatroom widget connects like this:
 
 .. literalinclude:: ../../../psynet/static/scripts/chatroom-widget.js
    :language: javascript
@@ -135,10 +152,15 @@ chatroom widget connects like this:
 
 For a channel broadcast, every timeline page provides
 ``PsyNetWebSocketChannel.connect()``. It takes the channel name and
-``onOpen``, ``onMessage`` and ``onClose`` callbacks, and returns a connection
-with ``send(message)``, ``isOpen()`` and ``close()``. ``send`` raises an error
-if the connection is not open. Include ``sender`` in every message so that the
-handler receives a participant.
+``onOpen``, ``onMessage``, ``onDirect`` and ``onClose`` callbacks, and returns
+a connection with ``send(message)``, ``isOpen()`` and ``close()``. ``send``
+raises an error if the connection is not open. Include ``sender`` in every
+message so that the handler receives a participant. ``onMessage`` receives
+frames published on the channel, which any page can publish, so never trust
+them. ``onDirect`` receives directed messages that the server sends with
+``publish_to_participants``; these reach only this participant's checked
+connections, and can arrive before ``onOpen`` runs. As above, check
+``message.type`` because PsyNet's own directed messages arrive here too.
 
 Keeping shared state consistent
 -------------------------------

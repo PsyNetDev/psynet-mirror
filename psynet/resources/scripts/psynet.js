@@ -919,7 +919,7 @@
     };
 
     psynet.handleArrivalUpdateMessage = function (message) {
-      if (message.type !== "timeline_hold_wake") {
+      if (message?.type !== "timeline_hold_wake") {
         return;
       }
       (message.targets || []).forEach((target) => {
@@ -979,7 +979,7 @@
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
           confirmListening: true,
-          onMessage: psynet.handleArrivalUpdateMessage,
+          onDirect: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
@@ -1151,13 +1151,13 @@
             psynet.resumeTimelineHold("websocket connection");
           }
         },
-        onMessage(message) {
-          if (controller.stopped) return;
+        onDirect(message) {
+          if (controller.stopped || message?.type !== "timeline_hold_wake") {
+            return;
+          }
           psynet.handleArrivalUpdateMessage(message);
           let matchingTarget = (message.targets || []).find(
-            (target) =>
-              message.type === "timeline_hold_wake" &&
-              target.wake_token === controller.hold.wake_token,
+            (target) => target.wake_token === controller.hold.wake_token,
           );
           if (matchingTarget) {
             window.dispatchEvent(
@@ -1171,7 +1171,6 @@
             psynet.resumeTimelineHold("server notification");
           } else if (
             controller.resumeInFlight &&
-            message.type === "timeline_hold_wake" &&
             (message.targets || []).some((target) => target.wake_token)
           ) {
             // An in-flight resume can consume a later hold whose release is
