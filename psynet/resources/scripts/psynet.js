@@ -2221,6 +2221,24 @@
       };
     };
 
+    class NullAudioContext {
+      get currentTime() { return Date.now() / 1000; }
+      get state() { return "unavailable"; }
+      static _unavailable() {
+        throw new Error(
+          "AudioContext is not available in this browser. " +
+          "If your experiment uses audio, add 'audio_playback' to " +
+          "Experiment.browser_capabilities so that PsyNet screens out " +
+          "browsers without it."
+        );
+      }
+      decodeAudioData() { NullAudioContext._unavailable(); }
+      createBufferSource() { NullAudioContext._unavailable(); }
+      createGain() { NullAudioContext._unavailable(); }
+      createMediaStreamSource() { NullAudioContext._unavailable(); }
+      get destination() { NullAudioContext._unavailable(); }
+    }
+
     psynet.media.initAudioContext = function () {
       if (
         psynet.media.audioContext &&
@@ -2236,9 +2254,12 @@
       if ("webkitAudioContext" in window) context = new webkitAudioContext();
       if ("AudioContext" in window) context = new AudioContext();
       if (!context) {
-        throw Error(
-          "ERROR: No AudioContext available. Try Chrome, Safari or Firefox Nightly.",
+        psynet.log.warn(
+          "No AudioContext available; audio playback is disabled. " +
+            "The browser_capabilities check should detect and route this participant out.",
         );
+        psynet.media.audioContext = new NullAudioContext();
+        return;
       }
       if (context.state == "suspended") {
         context.resume();
