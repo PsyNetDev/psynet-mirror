@@ -38,6 +38,29 @@ test("camera video survives changes in microphone requirements @both", async ({p
   expect(result).toEqual({sameVideo:true,silent:true,microphoneStopped:true,videoRequests:1,microphoneRequests:1});
 });
 
+test("answer capture after background capture restores the camera's settings @both", async ({page}) => {
+  await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
+  await page.route("https://capture.test/recording-capture.js", route => route.fulfill({
+    contentType:"text/javascript",path:path.resolve("psynet/resources/scripts/recording-capture.js"),
+  }));
+  await page.goto("https://capture.test/");
+  const result = await page.evaluate(async () => {
+    const {RecordingDevices} = await import("/recording-capture.js");
+    const devices = new RecordingDevices();
+    try {
+      const rate = stream => stream.getVideoTracks()[0].getSettings().frameRate;
+      const native = rate(await devices.acquire("camera"));
+      const background = rate(await devices.acquire("camera", {lowResolution:true}));
+      const answer = rate(await devices.acquire("camera"));
+      return {native, background, answer};
+    } finally {
+      devices.release("camera");
+    }
+  });
+  expect(result.background).toBeLessThanOrEqual(15);
+  expect(result.answer).toBe(result.native);
+});
+
 test("a recording whose stop is never confirmed keeps playable chunks @both", async ({page}) => {
   await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
   await page.route("https://capture.test/recording-capture.js", route => route.fulfill({
