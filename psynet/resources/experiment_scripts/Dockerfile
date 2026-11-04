@@ -3,7 +3,7 @@
 
 # Must match .python-version, which constraints.txt is compiled for.
 # `psynet scripts update` sets both to the active Python version.
-FROM python:{python_major_minor}-bookworm
+FROM python:{python_major_minor}-trixie
 
 RUN pip install uv
 

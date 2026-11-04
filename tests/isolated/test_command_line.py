@@ -4769,7 +4769,7 @@ def test_scripts_update_bases_dockerfile_on_active_python(tmp_path, monkeypatch)
 
         assert result.exit_code == 0, result.output
         assert Path(".python-version").read_text() == "3.12\n"
-        assert "FROM python:3.12-bookworm\n" in Path("Dockerfile").read_text()
+        assert "FROM python:3.12-trixie\n" in Path("Dockerfile").read_text()
 
 
 def test_scripts_update_reports_only_actual_changes(tmp_path):
