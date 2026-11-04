@@ -1,0 +1,951 @@
+"""Internal reservation and receipt of asynchronous recordings.
+
+Reservations belong to existing Recording assets and must be created in the
+accepted response transaction. Read links and upload capabilities are separate;
+only a hash of the write capability is stored. The receiver authenticates before
+reading bytes, takes a cross-process file lock, and streams to a private bounded
+file without holding database locks. It then locks only the recording row to
+publish complete receipt exactly once.
+
+Receipt is not deposit: a worker stores bytes before a short
+transaction publishes success. The worker job has its own timeout, counted from
+when it starts; a separate bound from receipt covers queueing, so a busy queue
+cannot expire a recording that is merely waiting. The job is deliberately not
+linked to the asset or trial, because a timed-out job would otherwise fail the
+trial automatically, even for optional recordings.
+
+A pending upload holds a lease rather than a fixed deadline: slow uploads are
+not failed while the participant's browser is still there. The browser renews
+the lease with heartbeats while it holds the recording, and the receiver renews
+it while bytes keep arriving. A recording expires only after an idle timeout
+without renewal, or at an absolute lifetime cap from acceptance. A poller
+expires overdue recordings even when the browser has closed. In-place
+LocalStorage video controls use this transport.
+Do not wrap the streaming route in a participant transaction or expose received
+files through the asset endpoint before successful deposit.
+"""
+
+import copy
+import errno
+import fcntl
+import hashlib
+import hmac
+import os
+import secrets
+import socket
+import tempfile
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Event, Thread
+from types import SimpleNamespace
+
+from dallinger import db
+from sqlalchemy.orm import Session
+from werkzeug.exceptions import (
+    BadRequest,
+    ClientDisconnected,
+    Forbidden,
+    Gone,
+    RequestEntityTooLarge,
+    RequestTimeout,
+    TooManyRequests,
+)
+
+from . import deployment_info
+from .asset import LocalStorage
+from .db import transaction, with_transaction
+from .trial.record import Recording
+from .utils import (
+    content_object_path,
+    get_file_size_mb,
+    get_logger,
+    md5_file,
+    sha256_file,
+)
+
+logger = get_logger()
+
+# Seconds from receipt until an unprocessed recording expires. This covers
+# waiting in the worker queue as well as the processing job itself.
+_PROCESSING_BOUND = 300
+# Seconds a processing job may run once a worker starts it.
+_PROCESSING_JOB_TIMEOUT = 120
+# Seconds a client should wait before retrying while another upload of the
+# same recording is still being received.
+_RECEIPT_RETRY_AFTER = 5
+# Attempts at a recording's deposit callbacks before its trial fails. A second
+# attempt absorbs transient errors such as lock timeouts.
+_DEPOSIT_CALLBACK_ATTEMPTS = 2
+# Seconds without a heartbeat or upload progress before a pending recording is
+# treated as missing. Browsers send heartbeats well within this interval.
+_IDLE_TIMEOUT = 120
+# Seconds from acceptance after which a pending recording expires regardless of
+# renewal, so an open but stuck browser cannot hold its trial indefinitely.
+_MAX_UPLOAD_LIFETIME = 1800
+# Seconds between lease renewals while the receiver is streaming bytes.
+_RECEIVER_RENEW_INTERVAL = 30
+# WSGI body reads block until a whole chunk arrives, so an upload counts as
+# stalled if less than this many bytes arrive within the idle timeout.
+_READ_CHUNK_BYTES = 65536
+
+
+def _utcnow():
+    """Return UTC without timezone information, matching existing DB dates."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _lifetime_deadline(recording):
+    """Return the absolute cap after which a pending upload cannot be renewed."""
+    return datetime.fromisoformat(recording.upload_context["lifetime_deadline"])
+
+
+def _renew_lease(recording):
+    """Extend a pending upload's lease by the idle timeout, up to its lifetime cap."""
+    recording.upload_deadline = min(
+        _lifetime_deadline(recording),
+        _utcnow() + timedelta(seconds=recording.upload_context["idle_timeout"]),
+    )
+
+
+def _recording_resolution_deadline(recording):
+    """Return the latest time a recording can resolve, including processing.
+
+    Leases can be renewed, so a pending recording is bounded only by its
+    lifetime cap; it usually resolves much earlier.
+    """
+    if recording.upload_status == "pending":
+        return _lifetime_deadline(recording) + timedelta(
+            seconds=recording.upload_context["processing_timeout"]
+        )
+    return recording.upload_processing_deadline
+
+
+def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=None):
+    """Keep dependent waits alive until outstanding recordings can resolve.
+
+    Compute once on entering a wait. A pending upload can keep renewing its
+    lease until its lifetime cap and then use its processing allowance; waits
+    end as soon as the recording actually resolves. Retain the ordinary wait
+    budget afterwards for analysis and clock polling. This never changes a
+    recording's own expiry or success requirements.
+    """
+    if default_timeout is None:
+        return None
+    query = _outstanding_recordings(participant_id)
+    if trial_id is not None:
+        query = query.filter(Recording.trial_id == trial_id)
+    now = _utcnow()
+    remaining = 0.0
+    for recording in query:
+        deadline = _recording_resolution_deadline(recording)
+        remaining = max(remaining, (deadline - now).total_seconds())
+    return default_timeout + remaining
+
+
+def _has_outstanding_recordings(participant_id):
+    """Return whether a required recording of a live trial is still unresolved."""
+    return _outstanding_recordings(participant_id).first() is not None
+
+
+def _outstanding_recordings(participant_id):
+    """Query required recordings of live trials that have not resolved yet."""
+    from .trial.main import Trial
+
+    return (
+        db.session.query(
+            Recording.upload_status,
+            Recording.upload_deadline,
+            Recording.upload_processing_deadline,
+            Recording.upload_context,
+        )
+        .join(Trial, Recording.trial_id == Trial.id)
+        .filter(
+            Recording.participant_id == participant_id,
+            Recording.required_for_trial,
+            ~Trial.failed,
+            Recording.upload_status.in_(
+                ["pending", "received", "queued", "processing"]
+            ),
+        )
+    )
+
+
+def _upload_directory():
+    """Use private storage shared by web, worker, and clock processes.
+
+    SSH deployments mount Dallinger's experiment data directory in every
+    container. Local Docker mounts the experiment directory in every container;
+    local virtualenv deployments also share that directory. Neither location is
+    under the publicly served static asset tree.
+    """
+    # Model-only/local runs may not have launch metadata.
+    try:
+        is_ssh = deployment_info.read("is_ssh_deployment")
+    except FileNotFoundError:
+        is_ssh = False
+    root = Path("/var/lib/dallinger") if is_ssh else Path.cwd() / ".deploy"
+    return root / "media-uploads"
+
+
+def _reserve_recording(
+    *,
+    response,
+    parent,
+    page_uuid,
+    source,
+    local_key,
+    storage,
+    idle_timeout=_IDLE_TIMEOUT,
+    lifetime=_MAX_UPLOAD_LIFETIME,
+    upload_size_bytes=None,
+    processing_timeout=_PROCESSING_BOUND,
+    max_bytes=128 * 1024 * 1024,
+    role="answer",
+    required_for_trial=True,
+):
+    """Reserve a server-selected recording in the accepted answer transaction."""
+    if not response.successful_validation:
+        raise ValueError("Only accepted responses can reserve recordings.")
+    if not isinstance(storage, LocalStorage):
+        raise ValueError("Asynchronous recordings currently require LocalStorage.")
+    if source not in {"camera", "screen"}:
+        raise ValueError("A recording reservation must identify one capture source.")
+    if any(
+        type(value) is not int or value <= 0
+        for value in (processing_timeout, max_bytes, idle_timeout, lifetime)
+    ):
+        raise ValueError("Recording limits must be positive integers.")
+    if upload_size_bytes is not None and (
+        type(upload_size_bytes) is not int or not 0 < upload_size_bytes <= max_bytes
+    ):
+        raise ValueError("Recording size must be positive and within the upload limit.")
+    if local_key in parent.assets:
+        raise ValueError(f"This parent already has an asset named {local_key!r}.")
+    asset = Recording(
+        input_path=None,
+        is_folder=False,
+        extension=".webm",
+        local_key=local_key,
+        parent=parent,
+    )
+    asset.input_path = None
+    asset.recording_role = role
+    asset.required_for_trial = required_for_trial
+    ancestors = asset.get_ancestors()
+    if ancestors["participant"] != response.participant_id:
+        raise ValueError("Recording and response must belong to the same participant.")
+    db.session.add(response)
+    db.session.flush()
+    asset.storage = storage
+    asset.ensure_keys_and_paths()
+    parent.assets[local_key] = asset
+    for kind in ("network", "node", "trial", "participant"):
+        setattr(asset, f"{kind}_id", ancestors[kind])
+    token = secrets.token_urlsafe(32)
+    asset.upload_token_hash = hashlib.sha256(token.encode()).hexdigest()
+    asset.upload_status = "pending"
+    asset.upload_max_bytes = max_bytes
+    lifetime_deadline = _utcnow() + timedelta(seconds=lifetime)
+    asset.upload_context = {
+        "response_id": response.id,
+        "page_label": response.question,
+        "page_uuid": page_uuid,
+        "source": source,
+        "processing_timeout": processing_timeout,
+        "idle_timeout": idle_timeout,
+        "lifetime_deadline": lifetime_deadline.isoformat(),
+        "upload_size_bytes": upload_size_bytes,
+    }
+    _renew_lease(asset)
+    db.session.add(asset)
+    db.session.flush()
+    return asset, {
+        "id": str(asset.id),
+        "url": f"/media-upload/{asset.id}",
+        "token": token,
+        # The browser keeps the bytes until this cap; leases expire earlier
+        # only if it stops sending heartbeats.
+        "expires_at": lifetime_deadline.replace(tzinfo=timezone.utc).isoformat(),
+        "renew_interval_ms": idle_timeout * 1000 // 4,
+    }
+
+
+def _authorize(recording, token):
+    """Require the write capability, including for an idempotent retry."""
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    if (
+        recording is None
+        or not recording.upload_token_hash
+        or not secrets.compare_digest(recording.upload_token_hash, digest)
+    ):
+        raise Forbidden()
+
+
+def _check_receivable(recording):
+    """Return false for an acknowledged retry, reject expired/terminal slots."""
+    if recording.upload_status in {"received", "queued", "processing", "deposited"}:
+        return False
+    if recording.upload_status != "pending" or _utcnow() >= recording.upload_deadline:
+        raise Gone("The recording upload is no longer pending.")
+    return True
+
+
+def _renew_live_lease(recording):
+    """Renew a pending lease unless it has lapsed; return whether it was live.
+
+    A lapsed lease is final, even before the clock task marks it expired.
+    """
+    if (
+        recording is None
+        or recording.upload_status != "pending"
+        or _utcnow() >= recording.upload_deadline
+    ):
+        return False
+    _renew_lease(recording)
+    return True
+
+
+def _renew_pending_lease(recording_id):
+    """Renew a streaming upload's lease in its own short transaction.
+
+    Returns whether the upload is still live.
+    """
+    with Session(db.engine) as session, session.begin():
+        return _renew_live_lease(
+            session.query(Recording)
+            .filter_by(id=recording_id)
+            .with_for_update()
+            .one_or_none()
+        )
+
+
+def _renew_uploads(uploads):
+    """Renew leases for a browser that still holds these recordings.
+
+    Each upload is a ``{"id", "token"}`` pair; unauthorized entries are ignored.
+    Returns the IDs of recordings that can no longer be uploaded, including
+    ones whose lease has lapsed, so the browser can release their bytes.
+    Locks only authorized recording rows, one at a time.
+    """
+    unavailable = []
+    for upload in uploads[:64]:
+        try:
+            recording_id = int(upload["id"])
+            token = str(upload["token"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        with Session(db.engine) as session, session.begin():
+            recording = session.get(Recording, recording_id)
+            try:
+                _authorize(recording, token)
+            except Forbidden:
+                continue
+            session.refresh(recording, with_for_update=True)
+            if not _renew_live_lease(recording) and recording.upload_status in {
+                "pending",
+                "expired",
+                "failed",
+            }:
+                unavailable.append(str(recording_id))
+    return unavailable
+
+
+@contextmanager
+def _receipt_lock(directory, recording_id):
+    """Serialize receipt and cleanup across processes on the shared volume.
+
+    Keep the small lock file in place: unlinking a live lock could allow another
+    process to lock a different inode. OS process exit releases the lock itself.
+    """
+    directory = Path(directory)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(
+        directory / f".psynet-upload-{recording_id}.lock", os.O_CREAT | os.O_RDWR, 0o600
+    )
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise TooManyRequests(
+                "This recording already has an active upload.",
+                retry_after=_RECEIPT_RETRY_AFTER,
+            ) from None
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def _receive_recording(
+    recording_id, token, stream, *, content_length=None, directory=None, connection=None
+):
+    """Authenticate before taking exclusive receipt ownership or reading bytes."""
+    with Session(db.engine) as session:
+        recording = session.get(Recording, recording_id)
+        _authorize(recording, token)
+        if not _check_receivable(recording):
+            return
+    directory = _upload_directory() if directory is None else Path(directory)
+    with _receipt_lock(directory, recording_id):
+        return _receive_recording_body(
+            recording_id,
+            token,
+            stream,
+            content_length=content_length,
+            directory=directory,
+            connection=connection,
+        )
+
+
+def _raise_stalled(lifetime_deadline):
+    """Ask the browser to retry a stalled connection unless the upload's time is up."""
+    if _utcnow() >= lifetime_deadline:
+        raise Gone("The recording upload is no longer pending.") from None
+    raise RequestTimeout("The recording upload stalled.") from None
+
+
+def _receive_recording_body(
+    recording_id, token, stream, *, directory, content_length=None, connection=None
+):
+    """Publish a complete bounded file without locking its participant.
+
+    An independent short transaction rechecks expiry after the stream is fully
+    received. Concurrent retransmissions can publish only one file; incomplete,
+    late, and losing files are removed. The caller owns no transaction here.
+    """
+    with Session(db.engine) as session:
+        recording = session.get(Recording, recording_id)
+        _authorize(recording, token)
+        if not _check_receivable(recording):
+            return
+        max_bytes = recording.upload_max_bytes
+        idle = timedelta(seconds=recording.upload_context["idle_timeout"])
+        lifetime_deadline = _lifetime_deadline(recording)
+    if content_length is not None and content_length > max_bytes:
+        raise RequestEntityTooLarge()
+
+    # A previous receiver may have died before publishing receipt. Ownership of
+    # this reservation is exclusive, so discard its abandoned partials on retry.
+    for abandoned in Path(directory).glob(f"psynet-upload-{recording_id}-*"):
+        abandoned.unlink(missing_ok=True)
+
+    path = None
+    retained = False
+    progress = {"at": _utcnow(), "renewed_at": _utcnow(), "interrupted": False}
+    stop_watchdog = Event()
+    watchdog = None
+
+    def _stalled():
+        """Return true once no bytes arrived for the idle timeout, or at the cap."""
+        now = _utcnow()
+        return now - progress["at"] >= idle or now >= lifetime_deadline
+
+    if connection is not None:
+        # A blocked WSGI read cannot be timed out directly. Closing only the
+        # read half interrupts it while still allowing an error response.
+        # Gunicorn and Werkzeug expose the owning request socket.
+        def _watch():
+            """Wake a stalled body reader without closing its response channel."""
+            while not stop_watchdog.wait(0.5):
+                if not _stalled():
+                    continue
+                progress["interrupted"] = True
+                try:
+                    connection.shutdown(socket.SHUT_RD)
+                except OSError as error:
+                    if error.errno not in {errno.EBADF, errno.ENOTCONN}:
+                        logger.warning(
+                            "Could not interrupt recording %s upload: %s",
+                            recording_id,
+                            error,
+                        )
+                return
+
+        watchdog = Thread(target=_watch, daemon=True)
+        watchdog.start()
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"psynet-upload-{recording_id}-",
+            dir=directory,
+            delete=False,
+        ) as target:
+            path = Path(target.name)
+            total = 0
+            header = b""
+            while True:
+                try:
+                    chunk = stream.read(min(_READ_CHUNK_BYTES, max_bytes - total + 1))
+                except (OSError, ClientDisconnected):
+                    if progress["interrupted"] or _stalled():
+                        _raise_stalled(lifetime_deadline)
+                    raise
+                if progress["interrupted"] or (
+                    chunk and _utcnow() >= lifetime_deadline
+                ):
+                    _raise_stalled(lifetime_deadline)
+                if not chunk:
+                    break
+                progress["at"] = _utcnow()
+                if (
+                    progress["at"] - progress["renewed_at"]
+                ).total_seconds() >= _RECEIVER_RENEW_INTERVAL:
+                    if not _renew_pending_lease(recording_id):
+                        raise Gone("The recording upload is no longer pending.")
+                    progress["renewed_at"] = progress["at"]
+                total += len(chunk)
+                header += chunk[: max(0, 4 - len(header))]
+                if total > max_bytes:
+                    raise RequestEntityTooLarge()
+                target.write(chunk)
+            if not total or (content_length is not None and total != content_length):
+                raise BadRequest("The recording body is empty or incomplete.")
+            if header != b"\x1a\x45\xdf\xa3":
+                raise BadRequest("The recording must have a WebM/EBML header.")
+            target.flush()
+            os.fsync(target.fileno())
+
+        with Session(db.engine) as session, session.begin():
+            recording = (
+                session.query(Recording)
+                .filter_by(id=recording_id)
+                .with_for_update()
+                .one_or_none()
+            )
+            _authorize(recording, token)
+            if not _check_receivable(recording):
+                return
+            recording.input_path = str(path)
+            recording.upload_received_at = _utcnow()
+            recording.upload_processing_deadline = (
+                recording.upload_received_at
+                + timedelta(seconds=recording.upload_context["processing_timeout"])
+            )
+            recording.upload_status = "received"
+        retained = True
+    finally:
+        stop_watchdog.set()
+        if watchdog is not None:
+            watchdog.join()
+        if path is not None and not retained:
+            path.unlink(missing_ok=True)
+
+
+@with_transaction
+def _claim_recording(recording_id):
+    """Claim work once, returning plain data so file I/O holds no row locks."""
+    asset = (
+        Recording.query.filter_by(id=recording_id)
+        .with_for_update()
+        .populate_existing()
+        .one_or_none()
+    )
+    if asset is None or asset.upload_status not in {"received", "queued"}:
+        return None
+    if asset.upload_processing_deadline <= _utcnow():
+        return None
+    asset.upload_status = "processing"
+    return asset.input_path, asset.storage
+
+
+def _store_recording_bytes(path, storage):
+    """Reuse LocalStorage and content hashes without publishing trial callbacks.
+
+    Copy to a unique sibling before renaming, so another asset sharing this
+    content hash can never serve a partially overwritten file.
+    """
+    digest = sha256_file(path)
+    host_path = content_object_path(digest)
+    staging_host_path = f"{host_path}.upload-{uuid.uuid4().hex}"
+    staging_path = Path(storage.get_file_system_path(staging_host_path)).expanduser()
+    target_path = Path(storage.get_file_system_path(host_path)).expanduser()
+    output = {
+        "sha256_contents": digest,
+        "content_id": digest,
+        "md5_contents": md5_file(path),
+        "host_path": host_path,
+        "object_path": host_path,
+        "size_mb": get_file_size_mb(path),
+    }
+    try:
+        # The backend sets deposited on this plain snapshot, never on the live
+        # asset. Only _complete_recording may publish that database transition.
+        storage._receive_deposit(
+            SimpleNamespace(input_path=path, is_folder=False), staging_host_path
+        )
+        staging_path.replace(target_path)
+    finally:
+        staging_path.unlink(missing_ok=True)
+    return output
+
+
+@with_transaction
+def _complete_recording(recording_id, *, output=None, error=None):
+    """Resolve one recording atomically and return its input path for cleanup."""
+    return _resolve_recording(recording_id, output=output, error=error)
+
+
+def _resolve_recording(recording_id, *, output=None, error=None):
+    """Resolve inside the caller's transaction without committing navigation."""
+    from .participant import Participant
+    from .trial.main import Trial
+
+    identity = (
+        db.session.query(Recording.participant_id, Recording.trial_id)
+        .filter(Recording.id == recording_id)
+        .first()
+    )
+    if identity is None:
+        return None
+    # Match response handling's lock order. Disk I/O happens before these locks.
+    if identity.participant_id is not None:
+        Participant.query.filter_by(id=identity.participant_id).with_for_update(
+            of=Participant
+        ).populate_existing().one()
+    trial = None
+    if identity.trial_id is not None:
+        trial = (
+            Trial.query.filter_by(id=identity.trial_id)
+            .with_for_update(of=Trial)
+            .populate_existing()
+            .one()
+        )
+    asset = (
+        Recording.query.filter_by(id=recording_id)
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
+    if asset.upload_status not in {"pending", "received", "queued", "processing"}:
+        return None
+    deadline = (
+        asset.upload_deadline
+        if asset.upload_status == "pending"
+        else asset.upload_processing_deadline
+    )
+    expired = _utcnow() >= deadline
+    if expired:
+        error = (
+            (asset.upload_context.get("unavailable_reason") or "upload_timeout")
+            if asset.upload_status == "pending"
+            else "processing_timeout"
+        )
+    elif (output is None and error is None) or asset.upload_status != "processing":
+        return None
+    input_path = asset.input_path
+    if error:
+        asset.upload_status = "expired" if expired else "failed"
+        asset.upload_failed_reason = error
+        asset.deposited = False
+        if asset.required_for_trial and trial is not None and not trial.failed:
+            trial.fail(reason=f"recording_{error}")
+    else:
+        for key, value in output.items():
+            setattr(asset, key, value)
+        asset.deployment_id = asset.registry.deployment_id
+        asset.storage.update_asset_metadata(asset)
+        asset.upload_status = "deposited"
+        asset.deposited = True
+    asset.input_path = None
+    return input_path
+
+
+def _resolve_unavailable(asset, reason, trial):
+    """Resolve a source the browser reported as unavailable at acceptance.
+
+    No bytes can arrive, so waiting for the upload deadline would only delay the
+    outcome. Required recordings fail their trial immediately.
+    """
+    asset.upload_token_hash = None
+    asset.upload_status = "failed"
+    asset.upload_failed_reason = reason
+    asset.deposited = False
+    if asset.required_for_trial and trial is not None and not trial.failed:
+        trial.fail(reason=f"recording_{reason}")
+
+
+@with_transaction
+def _deposit_recording(recording_id, output):
+    """Publish stored bytes and run their deposit callbacks in one transaction.
+
+    The callbacks queue ``async_post_trial``. Committing the deposit first would
+    leave a moment with neither an undeposited asset nor requested analysis,
+    in which the finalization poller could finalize the trial without analysis.
+
+    Each callback attempt runs in a savepoint, so a failing callback's changes
+    are discarded without undoing the deposit: stored bytes are never reported
+    as a storage failure. If every attempt fails, the trial fails in the same
+    transaction, as for a failing ``on_finalized``.
+
+    Returns the input path for cleanup and the trial ID to re-check, or
+    ``(None, None)`` when the recording was already resolved.
+    """
+    input_path = _resolve_recording(recording_id, output=output)
+    if input_path is None:
+        return None, None
+    asset = db.session.get(Recording, recording_id)
+    trial = asset.trial
+    if asset.deposited and asset.required_for_trial and not (trial and trial.failed):
+        for attempt in range(1, _DEPOSIT_CALLBACK_ATTEMPTS + 1):
+            try:
+                with db.session.begin_nested():
+                    asset.after_deposit()
+                break
+            except Exception:
+                logger.warning(
+                    "Deposit callbacks failed for recording %s (attempt %s of %s); "
+                    "the recording remains deposited.",
+                    recording_id,
+                    attempt,
+                    _DEPOSIT_CALLBACK_ATTEMPTS,
+                    exc_info=True,
+                )
+        else:
+            if trial is not None:
+                trial.fail(reason="after_deposit_error")
+                trial._wake_participant(reason="trial_failed")
+    return input_path, asset.trial_id
+
+
+def _recheck_trial_finalization(trial_id):
+    """Finalize a trial the deposit unblocked, without waiting for the backstop.
+
+    The processing job is not linked to the trial, so the async job runner does
+    not perform its usual post-job re-check; do it here instead.
+    """
+    from .async_job import _RECHECK_LOCK_TIMEOUT_SECONDS
+    from .db import _set_transaction_lock_timeout
+    from .trial.main import Trial
+
+    try:
+        with transaction():
+            _set_transaction_lock_timeout(_RECHECK_LOCK_TIMEOUT_SECONDS)
+            Trial.recheck_finalization(trial_id)
+    except Exception:
+        db.session.rollback()
+        logger.warning(
+            "Finalize re-check after a recording deposit failed for trial %s; "
+            "leaving it to the finalize backstop.",
+            trial_id,
+            exc_info=True,
+        )
+
+
+def _process_recording(recording_id):
+    """Store received bytes; late completion cannot revive expiry."""
+    claimed = _claim_recording(recording_id)
+    if claimed is None:
+        return
+    path, storage = claimed
+    try:
+        try:
+            output = _store_recording_bytes(path, storage)
+            _, trial_id = _deposit_recording(recording_id, output)
+        except Exception:
+            # In a worker, this runs inside the job's transaction, where a
+            # nested transaction() does not roll back on its own.
+            db.session.rollback()
+            logger.warning(
+                "Processing recording %s failed.", recording_id, exc_info=True
+            )
+            _complete_recording(recording_id, error="processing_error")
+            return
+    finally:
+        Path(path).unlink(missing_ok=True)
+    if trial_id is not None:
+        _recheck_trial_finalization(trial_id)
+
+
+def _clean_abandoned_receipts():
+    """Remove crashed receivers' files once no live reservation needs them."""
+    directory = _upload_directory()
+    if not directory.exists():
+        return
+    for path in directory.glob("psynet-upload-*"):
+        parts = path.name.split("-", 3)
+        if len(parts) != 4 or not parts[2].isdigit():
+            continue
+        recording_id = int(parts[2])
+        try:
+            with _receipt_lock(directory, recording_id):
+                with Session(db.engine) as session:
+                    asset = session.get(Recording, recording_id)
+                    abandoned = asset is None or asset.upload_status in {
+                        "expired",
+                        "failed",
+                        "deposited",
+                    }
+                    if asset is not None and asset.upload_status == "pending":
+                        abandoned = _utcnow() >= asset.upload_deadline
+                    if abandoned:
+                        path.unlink(missing_ok=True)
+        except TooManyRequests:
+            # An active receiver owns its file until its deadline interrupts it.
+            continue
+
+
+def _due_recordings(participant_id=None):
+    """Select elapsed upload/processing deadlines without mutating state."""
+    now = _utcnow()
+    query = db.session.query(Recording.id).filter(
+        ((Recording.upload_status == "pending") & (Recording.upload_deadline <= now))
+        | (
+            Recording.upload_status.in_(["received", "queued", "processing"])
+            & (Recording.upload_processing_deadline <= now)
+        )
+    )
+    if participant_id is not None:
+        query = query.filter(Recording.participant_id == participant_id)
+    return query.order_by(Recording.id)
+
+
+def _expire_participant_recordings(participant_id):
+    """Apply due outcomes under the request's participant lock, without committing.
+
+    Dependency checks must not depend on the clock process being available.
+    The resolver rechecks deadlines under row locks, including receipt races.
+    """
+    for (recording_id,) in _due_recordings(participant_id).all():
+        path = _resolve_recording(recording_id)
+        if path is not None:
+            Path(path).unlink(missing_ok=True)
+
+
+def _expire_recordings():
+    """Expire missing or stalled recordings independently of browser activity.
+
+    Each recording is resolved in its own transaction, so one failure rolls
+    back only that recording and the others still expire.
+    """
+    with transaction():
+        recording_ids = [recording_id for (recording_id,) in _due_recordings().all()]
+    for recording_id in recording_ids:
+        try:
+            path = _complete_recording(recording_id)
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+        except Exception:
+            logger.warning(
+                "Could not expire recording %s; skipping it.",
+                recording_id,
+                exc_info=True,
+            )
+    try:
+        with transaction():
+            _clean_abandoned_receipts()
+    except Exception:
+        logger.warning("Could not clean abandoned recording uploads.", exc_info=True)
+
+
+@with_transaction
+def _queue_received_recordings():
+    """Schedule processing on workers, which mount the LocalStorage volume."""
+    from .async_job import WorkerAsyncJob
+
+    recordings = (
+        Recording.query.filter_by(upload_status="received")
+        .filter(Recording.upload_processing_deadline > _utcnow())
+        .with_for_update(skip_locked=True)
+        .populate_existing()
+        .all()
+    )
+    for asset in recordings:
+        asset.upload_status = "queued"
+        # Not linked to the asset: AsyncJob.failure_cascade would fail the
+        # asset's trial on a job timeout, even for optional recordings. The
+        # recording's own processing bound resolves a stuck job instead.
+        WorkerAsyncJob(
+            _process_recording,
+            arguments={"recording_id": asset.id},
+            label="media_upload",
+            unique=True,
+            timeout=_PROCESSING_JOB_TIMEOUT,
+        ).enqueue()
+
+
+def _recovery_digest(secret):
+    """Validate a browser-only recovery secret without storing its plaintext."""
+    if not isinstance(secret, str) or len(secret) != 64:
+        raise ValueError("Invalid recording recovery secret.")
+    try:
+        value = bytes.fromhex(secret)
+    except ValueError:
+        raise ValueError("Invalid recording recovery secret.") from None
+    if len(value) != 32:
+        raise ValueError("Invalid recording recovery secret.")
+    return hashlib.sha256(value).hexdigest()
+
+
+def _recovery_upload_token(secret, recording_id):
+    """Derive a per-recording capability from an unpersisted browser secret."""
+    return hmac.new(
+        bytes.fromhex(secret),
+        f"recording-upload:{recording_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _save_recording_receipt(response, participant, page_uuid, secret, payload):
+    """Atomically retain accepted navigation and token-free upload descriptors."""
+    cached = copy.deepcopy(payload)
+    for receipt, saved in zip(
+        payload["recording_uploads"], cached["recording_uploads"]
+    ):
+        asset = db.session.get(Recording, int(receipt["id"]))
+        token = _recovery_upload_token(secret, asset.id)
+        asset.upload_token_hash = hashlib.sha256(token.encode()).hexdigest()
+        receipt["token"] = token
+        saved.pop("token")
+    response.recording_receipt_hash = _recovery_digest(secret)
+    response.recording_receipt = {
+        "page_uuid": page_uuid,
+        "next_page_uuid": participant.page_uuid,
+        "payload": cached,
+    }
+
+
+def _refresh_recording_receipt(response_id, participant, payload):
+    """Retain the final successor after barrier settlement and page preparation.
+
+    Receipt capabilities were assigned atomically with answer acceptance. Only
+    navigation metadata changes here; lifetime caps and tokens stay fixed.
+    """
+    from .timeline import Response
+
+    response = db.session.get(Response, response_id)
+    cached = copy.deepcopy(payload)
+    for upload in cached["recording_uploads"]:
+        upload.pop("token", None)
+    response.recording_receipt = {
+        **response.recording_receipt,
+        "next_page_uuid": participant.page_uuid,
+        "payload": cached,
+    }
+
+
+def _recover_recording_receipt(participant, page_uuid, secret):
+    """Replay only this participant's accepted page while its successor is current.
+
+    The caller holds the participant lock, so a retry waits for the original
+    transaction. Replaying never reruns validation, completion, or navigation.
+    The resend is participant activity, so it renews leases that have not yet
+    lapsed; the original lifetime cap is preserved across network retries.
+    """
+    from .timeline import Response
+
+    response = Response.query.filter_by(
+        participant_id=participant.id, recording_receipt_hash=_recovery_digest(secret)
+    ).one_or_none()
+    if response is None:
+        return None
+    saved = response.recording_receipt
+    if (
+        saved["page_uuid"] != page_uuid
+        or saved["next_page_uuid"] != participant.page_uuid
+    ):
+        return False
+    payload = copy.deepcopy(saved["payload"])
+    for receipt in payload["recording_uploads"]:
+        receipt["token"] = _recovery_upload_token(secret, receipt["id"])
+        _renew_live_lease(db.session.get(Recording, int(receipt["id"])))
+    return payload

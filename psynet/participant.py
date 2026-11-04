@@ -5,8 +5,10 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import tempfile
+import threading
 import time
 import zipfile
 from contextlib import ExitStack
@@ -249,6 +251,7 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
+_BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
 # retries stop once the window has passed, however many delays are left.
@@ -1568,6 +1571,16 @@ class ParticipantDriver:
         if "time_taken" not in submission_data["metadata"]:
             submission_data["metadata"]["time_taken"] = time_estimate
 
+        # Asynchronous recordings declare their sizes with the answer and are
+        # uploaded only after acceptance, as a browser does.
+        deferred_files = {}
+        if "recording_uploads" in submission_data["metadata"]:
+            deferred_files, response_files = response_files, {}
+            # Lets a repeat of a POST whose reply was lost recover the receipts.
+            submission_data["metadata"]["recording_recovery_secret"] = (
+                secrets.token_hex(32)
+            )
+
         with ExitStack() as stack:
             files = {}
             for key, path in response_files.items():
@@ -1595,12 +1608,73 @@ class ParticipantDriver:
             raise RuntimeError(
                 f"The participant's response was rejected: {resp_json.get('message')}"
             )
+        self._upload_recordings(resp_json.get("recording_uploads", []), deferred_files)
         # We've made some changes to the database, so we need to expire all objects
         # to ensure that the changes are reflected in our local session.
         db.session.expire_all()
 
         # Update our status to reflect the new state of the participant.
         self._fetch_status()
+
+    def _upload_recordings(self, uploads, files):
+        """Upload accepted recordings to ``/media-upload``, as a browser does.
+
+        A 429 means another delivery of the same recording is still being
+        received; wait as the server asks and try again. Stalls and gateway
+        errors are retried too. Meanwhile a heartbeat renews the leases of all
+        recordings not yet uploaded, so later sources do not expire while
+        earlier ones are being sent.
+        """
+        if not uploads:
+            return
+        pending = list(uploads)
+        interval = min(u.get("renew_interval_ms", 30000) for u in uploads) / 1000
+        stop = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._renew_recording_uploads,
+            args=(pending, interval, stop),
+            daemon=True,
+        )
+        heartbeat.start()
+        try:
+            for upload in uploads:
+                path = files[f"{upload['source']}Recording"]
+                with open(path, "rb") as file:
+                    body = file.read()
+                for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
+                    http_response = self.http_session.post(
+                        f"{self.experiment.base_url}{upload['url']}",
+                        data=body,
+                        headers={"Authorization": f"Bearer {upload['token']}"},
+                    )
+                    if http_response.status_code not in {408, 429, 502, 503, 504}:
+                        break
+                    retry_after = http_response.headers.get("Retry-After", "1")
+                    self._sleep(float(retry_after) if retry_after.isdigit() else 1.0)
+                http_response.raise_for_status()
+                pending.remove(upload)
+        finally:
+            stop.set()
+            heartbeat.join()
+
+    def _renew_recording_uploads(self, pending, interval, stop):
+        """Renew the leases of ``pending`` recordings until ``stop`` is set."""
+        session = keep_alive_session()
+        while pending:
+            try:
+                session.post(
+                    f"{self.experiment.base_url}/media-upload/heartbeat",
+                    json={
+                        "uploads": [
+                            {"id": upload["id"], "token": upload["token"]}
+                            for upload in list(pending)
+                        ]
+                    },
+                )
+            except requests.RequestException as error:
+                logger.warning(f"Could not renew recording uploads: {error}")
+            if stop.wait(interval):
+                return
 
     def _report_stats(self, total_experiment_time: float):
         """

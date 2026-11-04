@@ -506,6 +506,9 @@ test(
 
     await page.goto("http://psynet.test/start");
     await page.addScriptTag({ content: EARLY_EXIT_JS });
+    await page.evaluate(() => {
+      window.psynet = {allowRecordingUnload: () => sessionStorage.setItem("recordingUnloadAllowed", "true")};
+    });
     await Promise.all([
       page.waitForURL(
         "http://psynet.test/timeline?unique_id=worker-1%3Aassignment-1"
@@ -527,6 +530,7 @@ test(
     await page.reload();
     await expect(page.locator("h1")).toHaveText("An error occurred");
     expect(methods).toEqual(["GET", "GET"]);
+    expect(await page.evaluate(() => sessionStorage.getItem("recordingUnloadAllowed"))).toBe("true");
 
     // The failed page is replaced rather than pushed, so Back cannot revive it.
     await page.goBack();

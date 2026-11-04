@@ -14,6 +14,13 @@ from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
 
+MEDIA_HEADERS = {"wav": b"RIFF\x00\x00\x00\x00WAVE", "webm": b"\x1a\x45\xdf\xa3"}
+
+
+def media_bytes(media_format, text):
+    """Return the bytes the run_bot experiment's bot uploads."""
+    return MEDIA_HEADERS[media_format] + text.encode()
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("run_bot")], indirect=True
@@ -67,8 +74,8 @@ class TestRunBot:
 
         assert len(response_files) == 1
         file_name = response_files["audioRecording"]
-        with open(file_name, "r") as f:
-            assert f.read() == f"This is a recording from {bot.id}!"
+        with open(file_name, "rb") as f:
+            assert f.read() == media_bytes("wav", f"This is a recording from {bot.id}!")
 
         # Check the _submit_response function
         assert Asset.query.count() == 0
@@ -89,10 +96,14 @@ class TestRunBot:
         assert status["page"]["time_estimate"] == 5
 
         assert set(response_files.keys()) == {"cameraRecording", "screenRecording"}
-        with open(response_files["cameraRecording"], "r") as f:
-            assert f.read() == f"This is a camera recording from bot {bot.id}."
-        with open(response_files["screenRecording"], "r") as f:
-            assert f.read() == f"This is a screen recording from bot {bot.id}."
+        with open(response_files["cameraRecording"], "rb") as f:
+            assert f.read() == media_bytes(
+                "webm", f"This is a camera recording from bot {bot.id}."
+            )
+        with open(response_files["screenRecording"], "rb") as f:
+            assert f.read() == media_bytes(
+                "webm", f"This is a screen recording from bot {bot.id}."
+            )
 
         prev_response_count = Response.query.count()
         prev_asset_count = Asset.query.count()
@@ -317,6 +328,49 @@ def test_stopping_a_driver_interrupts_its_busy_retries(monkeypatch):
     with pytest.raises(DriverStopped):
         driver._submit_response(driver.status, {})
     assert driver.posts == 1
+
+
+def test_bot_renews_later_recordings_while_uploading_earlier_ones(
+    monkeypatch, tmp_path
+):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    screen_renewals = threading.Semaphore(0)
+    ok = SimpleNamespace(status_code=200, raise_for_status=lambda: None)
+
+    def heartbeat(_url, json):
+        if "1" in [upload["id"] for upload in json["uploads"]]:
+            screen_renewals.release()
+        return ok
+
+    def upload(url, data, headers):
+        if url.endswith("/0"):
+            # A slow camera upload, during which the screen lease must be renewed.
+            for _ in range(3):
+                assert screen_renewals.acquire(timeout=5)
+        return ok
+
+    monkeypatch.setattr(
+        "psynet.participant.keep_alive_session",
+        lambda: SimpleNamespace(post=heartbeat),
+    )
+    driver.__dict__["_http_session"] = SimpleNamespace(post=upload)
+    uploads = []
+    files = {}
+    for i, source in enumerate(["camera", "screen"]):
+        uploads.append(
+            {
+                "id": str(i),
+                "token": f"t{i}",
+                "source": source,
+                "url": f"/media-upload/{i}",
+                "renew_interval_ms": 10,
+            }
+        )
+        files[f"{source}Recording"] = tmp_path / source
+        files[f"{source}Recording"].write_bytes(b"clip")
+
+    driver._upload_recordings(uploads, files)
 
 
 @pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])

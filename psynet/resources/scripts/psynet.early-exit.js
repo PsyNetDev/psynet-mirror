@@ -22,6 +22,7 @@
   // participant endpoint returns structured error codes. Replacing the history
   // entry also keeps Back off the page that just failed.
   function goToErrorPage(identity) {
+    global.psynet?.allowRecordingUnload?.();
     const source =
       identity || (global.dallinger && global.dallinger.identity) || {};
     const uniqueId =
@@ -43,6 +44,7 @@
 
   function continueToRelease(releaseUrl) {
     if (!releaseUrl) throw new Error("The server did not provide a release URL.");
+    global.psynet?.allowRecordingUnload?.();
     if (global.dallinger && global.dallinger.allowExit) {
       global.dallinger.allowExit();
     }
@@ -77,6 +79,7 @@
       // a persistently stale server cannot cause a reload loop.
       if (result.error_code === "stale_early_exit_offer") {
         if (reloadStaleOffer) {
+          global.psynet?.allowRecordingUnload?.();
           global.location.reload();
           return;
         }
@@ -184,6 +187,7 @@
         "click",
         () => {
           if (reloadOnRetry) {
+            global.psynet?.allowRecordingUnload?.();
             global.location.reload();
           } else {
             followParticipantAction();

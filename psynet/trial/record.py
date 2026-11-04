@@ -1,10 +1,18 @@
+"""Recording assets and trial mixins for recording analysis and imitation chains.
+
+Analysis consumes deposited assets. Asynchronous upload receipt is tracked
+separately on Recording: receiving bytes does not make a recording usable.
+Null upload fields retain the existing synchronous browser-upload path.
+"""
+
 import os
 import tempfile
 
 import dominate.tags as tags
+from sqlalchemy import Column, DateTime, Integer, String
 
 from ..asset import FileAsset
-from ..field import claim_var
+from ..field import PythonDict, claim_var
 from ..utils import get_logger
 from .imitation_chain import (
     ImitationChainNetwork,
@@ -17,7 +25,45 @@ logger = get_logger()
 
 
 class Recording(FileAsset):
-    pass
+    """Recorded media, optionally reserved before its bytes reach the server."""
+
+    # Null upload state identifies recordings using the existing deposit path.
+    recording_role = Column(String)
+    upload_status = Column(String, index=True)
+    upload_failed_reason = Column(String)
+    upload_token_hash = Column(String)
+    upload_deadline = Column(DateTime)
+    upload_received_at = Column(DateTime)
+    upload_processing_deadline = Column(DateTime)
+    upload_max_bytes = Column(Integer)
+    upload_context = Column(PythonDict)
+
+    @property
+    def recording_summary(self):
+        """Return researcher-facing outcomes without upload credentials or file paths.
+
+        The dashboard and asset manifest share these columns. A deposited clip
+        can still have a capture outcome (for example, sharing stopped early).
+        Legacy recordings use their existing deposit flag as the status.
+        """
+        context = self.upload_context or {}
+        return {
+            "recording_role": self.recording_role or "answer",
+            "recording_status": self.upload_status
+            or ("deposited" if self.deposited else "awaiting_deposit"),
+            "required_for_trial": self.required_for_trial,
+            "response_id": context.get("response_id"),
+            "page_uuid": context.get("page_uuid"),
+            "page_label": context.get("page_label"),
+            "recording_source": context.get("source"),
+            "capture_outcome": context.get("capture_outcome"),
+            "recording_failure_reason": (
+                self.upload_failed_reason or context.get("unavailable_reason")
+            ),
+            "upload_deadline": self.upload_deadline,
+            "upload_received_at": self.upload_received_at,
+            "upload_processing_deadline": self.upload_processing_deadline,
+        }
 
 
 class RecordingAnalysisPlot(FileAsset):

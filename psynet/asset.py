@@ -21,7 +21,16 @@ import boto3
 import requests
 from dallinger import db
 from dallinger.utils import classproperty
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, inspect
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    inspect,
+    true,
+)
 from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.declarative import declared_attr
@@ -363,6 +372,10 @@ class Asset(AssetSpecification, SQLBase, SQLMixin):
     created_during_experiment = Column(Boolean, default=True)
     deployment_id = Column(String)
     deposited = Column(Boolean)
+    # The server default lets exports from before this column load unchanged.
+    required_for_trial = Column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
     module_id = Column(String, index=True)
     local_key = Column(String)
     key_within_module = Column(String, index=True)

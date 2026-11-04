@@ -257,6 +257,17 @@ Manual-start pages require both ``pageReady`` and ``trialManualRequest`` before
 ``trialPrepare``. This prevents trial-start, response-enable, submit-enable, and
 auto-advance behavior from running while navigation is still blocked.
 
+Recording uploads and navigation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The browser document owns capture streams and the upload queue. Normal page
+cleanup must not stop those streams or cancel accepted uploads. Each logical page
+has its own recorder and collected bytes. PsyNet drains uploads before initiating
+a full-document transition or recruiter exit. Manual navigation warns while
+uploads remain pending; leaving anyway can abandon them. Deliberate early-exit
+and error redirects suppress that warning and can abandon pending uploads.
+See :doc:`/code/pages/recording` for the public recording API and failure policy.
+
 JavaScript resource categories
 ------------------------------
 
@@ -338,7 +349,9 @@ Same-session pages
 
 Pages sharing a non-null ``session_id`` update ``psynet.page`` and dispatch
 ``pageUpdated`` without replacing the fragment. This supports persistent
-sessions such as Unity integrations.
+sessions such as Unity integrations. The submission UUID and page timer advance
+with the logical page even though its DOM stays in place, and accepted
+recordings upload under their original page identity.
 
 Document-owning pages
 ~~~~~~~~~~~~~~~~~~~~~
