@@ -3631,8 +3631,9 @@ class RecordControl(Control):
     # Legacy navigation and other storage keep uploading with the answer.
     # Subclasses opt in and describe their recordings through
     # recording_sources, _upload_format, _answer_metadata and
-    # _answer_reference_keys. Other subclasses, including authors' own, keep
-    # uploading with the answer.
+    # _answer_reference_keys. Other subclasses keep uploading with the answer,
+    # as do authors' subclasses that override format_answer or the macro of a
+    # control that opted in (see _async_upload_enabled).
     _async_upload = False
     _async_upload_max_bytes = 128 * 1024 * 1024
     _async_upload_idle_timeout = None
@@ -3701,12 +3702,27 @@ class RecordControl(Control):
         """Largest recording the server accepts for one source."""
         return self._async_upload_max_bytes
 
+    def _async_upload_enabled(self):
+        """Whether this control's answer and template support asynchronous upload.
+
+        A subclass that overrides ``format_answer`` or ``macro`` may read the
+        recording bytes from the answer, so it keeps uploading with the answer.
+        """
+        if "_async_upload" in self.__dict__:
+            return self._async_upload
+        owner = next(c for c in type(self).__mro__ if "_async_upload" in c.__dict__)
+        return (
+            owner._async_upload
+            and type(self).format_answer is owner.format_answer
+            and self.macro == owner.macro
+        )
+
     def _uses_async_upload(self, experiment):
         """Use independent delivery for the supported shared LocalStorage backend."""
         from .utils import get_config
 
         return (
-            self._async_upload
+            self._async_upload_enabled()
             and isinstance(experiment.asset_storage, LocalStorage)
             and get_config().get("inplace_timeline_transitions")
         )
@@ -3765,7 +3781,7 @@ class RecordControl(Control):
         return {
             "recordingLabels": _recording_labels(),
             "asynchronousUploadSources": self.recording_sources
-            if self._async_upload
+            if self._async_upload_enabled()
             else None,
             "asynchronousUploadMaxBytes": self._recording_max_bytes(),
         }
@@ -3830,14 +3846,21 @@ class RecordControl(Control):
         }
         if not self._uses_async_upload(experiment):
             return BotResponse(raw_answer=None, blobs=blobs)
+        sizes = {
+            source: os.path.getsize(files[source]) for source in self.recording_sources
+        }
+        for source, size in sizes.items():
+            if size > self._recording_max_bytes():
+                logger.warning(
+                    f"Bot recording {files[source]} ({size} bytes) exceeds the "
+                    f"{self._recording_max_bytes()}-byte limit for this control, "
+                    "so its trial will fail with size_limit."
+                )
         return BotResponse(
             raw_answer=None,
             blobs=blobs,
             metadata={
-                "recording_uploads": {
-                    source: os.path.getsize(files[source])
-                    for source in self.recording_sources
-                },
+                "recording_uploads": sizes,
                 "recording_upload_unavailable": {},
             },
         )
@@ -3866,10 +3889,11 @@ class AudioRecordControl(RecordControl):
 
     In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
     before uploading the recording, as a WAV file. A missing recording fails its
-    parent trial, without recapturing. For playback outside a trial, use
-    :func:`~psynet.page.wait_for_recording` and provide an unavailable-media
-    fallback. Legacy navigation and other storage backends upload the recording
-    with the answer.
+    parent trial, without recapturing. For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback. Legacy navigation, other storage
+    backends and subclasses that override ``format_answer`` or ``macro``
+    upload the recording with the answer.
 
     Parameters
     ----------

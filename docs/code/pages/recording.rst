@@ -9,8 +9,10 @@ provide a fallback when a later page needs the recording.
 Waiting for a recording before playback
 ---------------------------------------
 
-For playback outside a trial, use :func:`~psynet.page.wait_for_recording` and
-check whether the recording was deposited before constructing the playback page.
+For playback on any later page, including a later page of the same trial,
+use :func:`~psynet.page.wait_for_recording` and check whether the recording
+was deposited before constructing the playback page. Only trial analysis and
+feedback wait for the recording automatically.
 This preserves navigation when media is unavailable. For example, after a
 recording page with label ``recording``::
 

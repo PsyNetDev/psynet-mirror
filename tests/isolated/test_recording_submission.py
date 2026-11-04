@@ -298,6 +298,26 @@ def test_custom_record_controls_keep_uploading_with_the_answer(submission):
     assert control.get_js_vars()["asynchronousUploadSources"] is None
 
 
+def test_subclasses_that_read_the_answer_bytes_keep_uploading_with_it(submission):
+    """Overriding ``format_answer`` or the macro opts out; other overrides don't."""
+    from psynet.modular_page import AudioRecordControl
+
+    class ReadsBytes(AudioRecordControl):
+        def format_answer(self, raw_answer, **kwargs):
+            return kwargs["blobs"]["audioRecording"]
+
+    class OwnTemplate(AudioRecordControl):
+        macro = "my_audio_record"
+
+    class LongerIdle(AudioRecordControl):
+        _async_upload_idle_timeout = 300
+
+    exp, _, _, _ = submission
+    assert not ReadsBytes(duration=1)._uses_async_upload(exp)
+    assert not OwnTemplate(duration=1)._uses_async_upload(exp)
+    assert LongerIdle(duration=1)._uses_async_upload(exp)
+
+
 @pytest.mark.parametrize("size, uploads", [(1000, 1), (8 * 1024**2, 0)])
 def test_audio_answers_upload_after_acceptance(submission, monkeypatch, size, uploads):
     """Audio answers use the same deferred path as video, as WAV files."""
