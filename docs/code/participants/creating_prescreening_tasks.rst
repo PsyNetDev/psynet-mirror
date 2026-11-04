@@ -62,6 +62,18 @@ image, and passes the threshold and trial count on to
 .. literalinclude:: ../../../psynet/prescreen/__init__.py
    :pyobject: ColorBlindnessTest.get_nodes
 
+The images are hosted on S3 under file names that reveal the correct answer,
+either directly or when looked up in PsyNet's public source code (here, the
+plate numbers), and participants can read stimulus URLs in the page source.
+The built-in test therefore wraps each URL with the internal helper
+``_opaque_media_asset``, which serves the image through PsyNet under an opaque
+``/asset/<access_token>`` URL. This helper is internal for now, so don't
+import it in your own experiments. In your own pre-screen, give stimulus files
+neutral names that don't reveal the answer, or add local files with :func:`~psynet.asset.asset` or
+:class:`~psynet.asset.FileAsset`, whose URLs don't contain the file name.
+Passing an http(s) URL to :func:`~psynet.asset.asset` creates an
+:class:`~psynet.asset.ExternalAsset`, which keeps the original URL.
+
 .. literalinclude:: ../../../psynet/prescreen/__init__.py
    :pyobject: ColorBlindnessTest.__init__
 

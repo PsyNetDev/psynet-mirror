@@ -110,6 +110,18 @@ def test_fetch_preflight_rejects_a_deployment_without_the_endpoint(monkeypatch):
         fetch_preflight(endpoint)
 
 
+def test_fetch_preflight_reports_a_refused_login(monkeypatch):
+    class _LoginPage:
+        status_code = 200
+        url = "https://example.test/dashboard/login?next=%2Fdashboard%2Fexport"
+
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: _LoginPage())
+    endpoint = DashboardEndpoint("https://example.test", ("admin", "wrong"))
+
+    with pytest.raises(TransferError, match="did not accept the login"):
+        fetch_preflight(endpoint)
+
+
 def test_fetch_preflight_rejects_an_unreachable_endpoint(monkeypatch):
     import requests
 
