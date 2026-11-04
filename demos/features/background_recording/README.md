@@ -5,8 +5,9 @@ ordinary button pages, using `background_recording=VideoRecordConfig(...)`. It
 runs one trial whose clip is optional and one whose clip is required: a missing
 optional clip is stored as unavailable without affecting the trial, whereas a
 missing required clip fails its trial. Answers are saved immediately in both
-cases, and no page waits for the upload. After taking part, open the Recordings
-dashboard to see each clip's outcome.
+cases; on a slow connection, a later recording page may wait for earlier
+uploads. After taking part, open the Recordings dashboard to see each clip's
+outcome.
 
 ## Usage
 

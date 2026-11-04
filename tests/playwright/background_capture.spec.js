@@ -237,4 +237,15 @@ test.describe("Shared recording capture @both", () => {
       }
     });
   }
+
+  test("an answer clip over its size limit is discarded, not truncated", async ({page}) => {
+    await page.evaluate(async () => {
+      const {RecordingDevices, RecordingClip} = await import("/recording-capture.js");
+      const stream = await new RecordingDevices().acquire("camera", {audio:false});
+      window.answerClip = new RecordingClip(stream, {maxBytes:1024, maxDuration:30});
+      answerClip.startRecording();
+    });
+    await expect.poll(() => page.evaluate(() => answerClip.error), {timeout:20000}).toBe("size_limit");
+    expect(await page.evaluate(() => answerClip.getBlob().size)).toBe(0);
+  });
 });

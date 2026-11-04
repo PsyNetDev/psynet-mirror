@@ -35,8 +35,9 @@ The shorthand ``background_recording="camera"`` uses the same defaults.
 WebM asset per page visit, including when labels repeat or a
 :class:`~psynet.timeline.PageMaker` generates the page.
 
-Capture requires accepted audiovisual consent and an explicit browser permission
-step before the task starts. Participants can continue without recording; optional
+Capture requires an explicit browser permission step before the task starts.
+If the timeline uses PsyNet's audiovisual consent page, the participant must
+also have accepted it. Participants can continue without recording; optional
 pages do not request skipped or denied sources again. Later required pages offer
 another permission decision when their source is unavailable. Audio is
 off by default. Screen audio availability depends on the browser and shared source.

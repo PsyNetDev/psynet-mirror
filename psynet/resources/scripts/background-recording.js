@@ -70,7 +70,7 @@ export class BackgroundRecorder {
     try {
       const captureStream = await this.devices.acquire(source, {audio:this.config.audio, lowResolution:true});
       const clip = new RecordingClip(captureStream, {
-        maxBytes:this.limits[source], maxDuration:this.config.max_duration, lowBitrate:true,
+        maxBytes:this.limits[source], maxDuration:this.config.max_duration, lowBitrate:true, keepOnSizeLimit:true,
         onChange: current => {
           if (this.clips[source] !== clip) return;
           if (current.error) this.unavailable[source] = current.error;

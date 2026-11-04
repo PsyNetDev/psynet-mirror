@@ -106,9 +106,12 @@ export class RecordingDevices {
 
 export class RecordingClip {
   constructor(stream, {maxBytes = 128 * 1024 * 1024, maxDuration = null,
-    lowBitrate = false, onChange = () => {}} = {}) {
+    lowBitrate = false, keepOnSizeLimit = false, onChange = () => {}} = {}) {
     this.stream = stream;
     this.maxBytes = maxBytes;
+    // Answer recordings are discarded at the size limit rather than submitted
+    // incomplete; background clips keep what was captured.
+    this.keepOnSizeLimit = keepOnSizeLimit;
     this.maxDuration = maxDuration;
     this.lowBitrate = lowBitrate;
     this.onChange = onChange;
@@ -130,9 +133,12 @@ export class RecordingClip {
         this.flushed = null;
         // After the size limit, ignore later chunks: a gap would corrupt the file.
         if (!this.error && this.outcome !== "size_limit") {
-          if (this.size + event.data.size > this.maxBytes) {
-            // Keep what was captured, as for the duration limit.
+          if (this.size + event.data.size > this.maxBytes && this.keepOnSizeLimit) {
             this.outcome = "size_limit";
+            this.stop();
+          } else if (this.size + event.data.size > this.maxBytes) {
+            this.error = "size_limit";
+            this.chunks = [];
             this.stop();
           } else { this.chunks.push(event.data); this.size += event.data.size; }
           this.onChange(this);
