@@ -1,0 +1,1 @@
+Removed the `/on-demand-asset?id=…&secret=…` route, which served any on-demand asset by its ID (in 14.0 release candidates, redirected to its `/asset/<token>` URL) without checking the secret; on-demand assets are served only at `/asset/<access_token>`.

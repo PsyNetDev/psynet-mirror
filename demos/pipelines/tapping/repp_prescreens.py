@@ -1,5 +1,4 @@
 import json
-import random
 from importlib import resources
 
 from markupsafe import Markup
@@ -10,7 +9,6 @@ from psynet.modular_page import (
     AudioPrompt,
     AudioRecordControl,
     ModularPage,
-    PushButtonControl,
 )
 from psynet.page import InfoPage, wait_while
 from psynet.timeline import (
@@ -776,41 +774,3 @@ class REPPMarkersTest(StaticTrialMaker):
             )
             for i in range(3)
         ]
-
-
-class LanguageVocabularyTrial(StaticTrial):
-    time_estimate = None
-
-    def finalize_definition(self, definition, experiment, participant):
-        indices = range(4)
-        definition["order"] = random.sample(indices, len(indices))
-        return definition
-
-    def show_trial(self, experiment, participant):
-        order = self.definition["order"]
-        choices = ["correct", "wrong1", "wrong2", "wrong3"]
-        image_urls = [self.assets[f"image_{choice}"].url for choice in choices]
-
-        return ModularPage(
-            "language_vocabulary_trial",
-            AudioPrompt(
-                self.assets["audio"],
-                "Select the picture that matches the word that you heard.",
-            ),
-            PushButtonControl(
-                choices=[choices[i] for i in order],
-                labels=[
-                    f'<img src="{image_urls[i]}" alt="notworking" height="65px" width="65px"/>'
-                    for i in order
-                ],
-                style="min-width: 100px; margin: 10px; background: none; border-color: grey;",
-                arrange_vertically=False,
-                bot_response="correct",
-            ),
-        )
-
-    def score_answer(self, answer, definition):
-        if answer == "correct":
-            return 1
-        else:
-            return 0

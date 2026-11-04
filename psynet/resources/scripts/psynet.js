@@ -4034,6 +4034,12 @@
 
   psynet.initLucidTermination = function () {
     psynet.clearLucidTermination();
+    psynet.terminateParticipant = function (reason) {
+      psynet.log.error(
+        `Not terminating the participant (reason: ${reason}): ` +
+          "the experiment does not recruit through Lucid.",
+      );
+    };
 
     if (!psynetTemplateData.flags.lucidRecruitment) {
       return;
@@ -4059,6 +4065,7 @@
           new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
+    psynet.terminateParticipant = terminateParticipant;
 
     function checkTriedToLeave() {
       if (triedToLeave) {
