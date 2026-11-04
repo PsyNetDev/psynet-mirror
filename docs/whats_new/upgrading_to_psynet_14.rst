@@ -366,6 +366,26 @@ migration instructions in the error.
 * The Next and Reset buttons sit in ``.psynet-actions``. Rules that selected
   them as direct children of ``#trial-stage`` should target
   ``.psynet-actions`` instead.
+* Participant pages escape HTML in plain strings. Search for ``labels=``,
+  ``choices=``, ``Button(``, ``WaitPage(``, ``KeyboardPage(`` and
+  ``template_arg=`` with HTML tags in the text, and wrap HTML that you wrote
+  in ``markupsafe.Markup``, for example
+  ``labels=[Markup("Yes <kbd>Y</kbd>")]``. Never wrap participant-provided
+  text in ``Markup``; to mix it into HTML, write
+  ``Markup("<b>{}</b>").format(answer)``, which escapes ``answer``. In custom
+  templates, write values inside ``<script>`` with ``{{ value | tojson }}``.
+  See :doc:`/code/writing_pages`.
+* ``AudioPrompt`` ``controls`` labels are escaped too, so wrap HTML labels in
+  ``Markup``.
+* Custom dashboard tabs that render ``dashboard_custom.html`` or the card
+  macros in ``macros/dashboard.html``, and pages that render
+  ``custom_html.html``, escape plain strings. Pass ``html``, card bodies and
+  list items as ``Markup``; for a ``dominate`` tag, ``Markup(tag.render())``.
+* ``KeyboardPage`` now requires ``prompt``.
+* A ``REPPVolumeCalibration`` subclass whose ``what_are_we_playing`` returns
+  HTML must return ``Markup``.
+* Custom templates that call ``AudioMeterControl.to_json`` must write
+  ``{{ params.to_json() | tojson }}``.
 
 13. Set up the experiment environment
 -------------------------------------

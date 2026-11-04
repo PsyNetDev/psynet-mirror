@@ -32,7 +32,7 @@
 
     <script>
         let graphic_{{ params.id }} = {
-            id: "{{ params.id }}",
+            id: {{ params.id | tojson }},
             paper: new Raphael("graphic-{{ params.id }}"),
             paperHtml: $("#graphic-{{ params.id }}"),
             objects: {}
@@ -74,7 +74,7 @@
                     function: async function() {
 
                         {% if frame.audio_id is not none %}
-                            let sound = await waitForAudioStimulus("{{ frame.audio_id }}");
+                            let sound = await waitForAudioStimulus({{ frame.audio_id | tojson }});
                             sound.play();
                         {% endif %}
 
@@ -89,7 +89,7 @@
                         {% for object in frame.objects %}
                             {
                                 let object = {
-                                    id: "{{ object.id }}",
+                                    id: {{ object.id | tojson }},
                                     active: false,
                                     persist: {{ object.persist | lower }},
                                     animations: {{ object.animations_js | tojson }},

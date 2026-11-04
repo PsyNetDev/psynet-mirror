@@ -113,7 +113,7 @@
             if (isSubset(keyboardState.pressedKeys, psynet.var.pressKeys)) {
                 onNextButton();
             } else {
-                psynet.alert(`{{gettext("You did not press all required keys.")}}`);
+                psynet.alert({{ gettext("You did not press all required keys.") | tojson }});
             }
         });
     });

@@ -2,6 +2,7 @@ import datetime
 
 import pandas as pd
 from flask import render_template
+from markupsafe import Markup
 
 
 def report_resource_use():
@@ -12,11 +13,13 @@ def report_resource_use():
         return render_template(
             TEMPLATE_NAME,
             title=title,
-            html="""
+            html=Markup(
+                """
             <div class="alert alert-danger" role="alert">
                 Wait at least 1 minute to see the first data.
             </div>
-            """,
+            """
+            ),
         )
 
     return render_template(

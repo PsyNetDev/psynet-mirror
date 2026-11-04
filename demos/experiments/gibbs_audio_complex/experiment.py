@@ -78,8 +78,8 @@ class CustomTrial(AudioGibbsTrial):
     def get_prompt(self, experiment, participant):
         return Markup(
             "Adjust the slider to make the speaker sound like she is "
-            f"<strong>{self.context['target']}</strong>."
-        )
+            "<strong>{}</strong>."
+        ).format(self.context["target"])
 
 
 class CustomNode(AudioGibbsNode):
