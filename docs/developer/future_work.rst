@@ -937,3 +937,52 @@ Idea
 Add a public constructor such as ``OnDemandAsset.from_url(url)`` that
 serves a remote file under an opaque ``/asset/<access_token>`` URL, use it
 in the built-in pre-screens and document it in the tutorial.
+
+Give Lucid participants a secret ``unique_id``
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The Lucid recruiter sets the worker, assignment and HIT ids all to the
+respondent's RID, so a Lucid participant's ``unique_id`` is ``RID:RID``.
+Anyone who knows the RID can open ``/timeline?unique_id=RID:RID`` and act
+as that participant, or terminate them through ``/terminate_participant``.
+
+Idea
+++++
+
+Generate the assignment id on the server when a Lucid participant is
+created, and update the Lucid callbacks that read ``assignment_id`` as the
+RID to use the stored RID instead.
+
+Stop excluding ``static/assets`` from deployments and Git
+---------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The stock ``deploy.toml`` excludes ``static/assets`` because older PsyNet
+versions left a link to local asset storage there, and deployment plans
+reject links; the stock experiment ``.gitignore`` also ignores it as
+generated content. PsyNet no longer creates that link, so these exclusions now only
+leave an author's own ``static/assets`` folder untracked and undeployed
+without a warning.
+
+Idea
+++++
+
+Once few experiments still have the link, remove the exclusion from the
+``deploy.toml`` and ``.gitignore`` templates, and have debug and deploy
+commands remove a leftover link (or point to ``psynet scripts prune``) before
+they build the deployment plan.
