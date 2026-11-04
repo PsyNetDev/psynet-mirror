@@ -453,7 +453,7 @@ and once more after the last participant has finished:
 
 Run the command in the experiment directory the deployment came from. The
 export lands in ``exports/latest/``. The dashboard's Export tab downloads
-the same data as ``export.zip``. See :doc:`/data/exporting_data` for export
+the same data as ``<deployment ID>__export.zip``. See :doc:`/data/exporting_data` for export
 options.
 
 Once you destroy the app or the server, ``psynet export`` no longer works,

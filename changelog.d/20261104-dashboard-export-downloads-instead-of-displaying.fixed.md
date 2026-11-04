@@ -1,0 +1,1 @@
+The dashboard's Export button now downloads the export as `<deployment ID>__export.zip` (`Content-Type: application/zip`) instead of some browsers showing the zip as text. Artifact downloads from the dashboard are also sent as attachments.

@@ -550,13 +550,29 @@ def _redacted_asset_request_path(path: str) -> str:
     return path
 
 
-def _send_file_then_delete_dir(path: str, cleanup_dir: str, mimetype: str):
-    """Return a Flask file response and delete ``cleanup_dir`` after it is sent.
+def _send_file_then_delete_dir(
+    path: str, cleanup_dir: str, mimetype: str, download_name: Optional[str] = None
+):
+    """Return a Flask download response and delete ``cleanup_dir`` after it is sent.
 
-    Cleanup is registered on the response with ``call_on_close`` so the file
-    remains on disk until Flask finishes streaming it.
+    The file is sent as an attachment, so browsers save it rather than display
+    it. Cleanup is registered on the response with ``call_on_close`` so the
+    file remains on disk until Flask finishes streaming it.
+
+    Parameters
+    ----------
+    path : str
+        File to send.
+    cleanup_dir : str
+        Directory to delete once the response is closed.
+    mimetype : str
+        Content type of the file.
+    download_name : str, optional
+        File name the browser saves; defaults to the base name of ``path``.
     """
-    response = send_file(path, mimetype=mimetype)
+    response = send_file(
+        path, mimetype=mimetype, as_attachment=True, download_name=download_name
+    )
     response.call_on_close(lambda: shutil.rmtree(cleanup_dir, ignore_errors=True))
     return response
 
@@ -5677,7 +5693,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             # must not replace the deployment's stored artifact.
             if asset_bytes != "manifest":
                 store_latest_archive(zip_filepath)
-            return _send_file_then_delete_dir(zip_filepath, tempdir, mimetype="zip")
+            download_name = (
+                f"{exp.deployment_id}__export.zip" if exp.deployment_id else None
+            )
+            return _send_file_then_delete_dir(
+                zip_filepath,
+                tempdir,
+                mimetype="application/zip",
+                download_name=download_name,
+            )
         except Exception as exc:
             shutil.rmtree(tempdir, ignore_errors=True)
             # Without this the experimenter only sees a bare 500 and has to go
