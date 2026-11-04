@@ -1,0 +1,1 @@
+Fixed the Resources dashboard's time-range slider, which stopped working when Dallinger moved its dashboard to jQuery 4. It is now a pair of native "From" and "To" range inputs, and the chart opens on about the last two hours.

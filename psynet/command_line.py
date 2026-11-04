@@ -2096,7 +2096,7 @@ def run_pre_checks_deploy(local_, recruiter):
     if not local_:
         confirm_deploying_development_psynet()
         deployment_info.warn_about_uncommitted_deployment_changes(
-            confirm=user_confirms if _stdin_is_interactive() else None
+            confirm_or_cancel=_confirm_deployment if _stdin_is_interactive() else None
         )
 
     if local_ and not isinstance(recruiter, (GenericRecruiter, HotAirRecruiter)):
@@ -3127,6 +3127,11 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
                 "the selection with "
                 f"'dallinger deployment-files list'.\n\n{advice}"
             )
+        ignored_paths = [
+            path
+            for path in ignored_paths
+            if path not in deployment_info.DOWNLOADED_RESOURCE_PATHS
+        ]
         if ignored_paths:
             preview_limit = 10
             preview = "\n".join(f"  {path}" for path in ignored_paths[:preview_limit])
@@ -3196,27 +3201,20 @@ def run_pre_checks(
     try:
         with open("requirements.txt", "r") as f:
             for line in f.readlines():
-                if (
-                    "computational-audition-lab/psynet" in line.lower()
-                    and not user_confirms(
+                if "computational-audition-lab/psynet" in line.lower():
+                    _confirm_deployment(
                         "It looks like you're using an old version of PsyNet in requirements.txt "
                         "(computational-audition-lab/psynet); "
                         "the up-to-date version is located at PsyNetDev/PsyNet. Are you sure you want to continue?"
                     )
-                ):
-                    raise click.Abort
     except FileNotFoundError:
         raise click.ClickException(_missing_requirements_message())
 
-    if (
-        heroku
-        and docker
-        and not user_confirms(
+    if heroku and docker:
+        _confirm_deployment(
             "Heroku deployment with Docker hasn't been working well recently; experiments have been failing to launch "
             "and returning a psutil version error. Are you sure you want to continue?"
         )
-    ):
-        raise click.Abort
 
     if docker:
         check_dockerfile()
@@ -3235,22 +3233,20 @@ def run_pre_checks(
                 # too, but only after ``prepare`` has run.
                 image_base_name(config, None, pushed_by="Heroku with --docker")
             _expected_docker_volumes = "${HOME}/psynet-data/assets:/psynet-data/assets"
-            if _expected_docker_volumes not in config.get(
-                "docker_volumes", ""
-            ) and not user_confirms(
-                "For deploying PsyNet experiments with Docker, you should typically have the following line "
-                "in your config.txt: \n"
-                f"docker_volumes = {_expected_docker_volumes}\n"
-                "You are advised to change this line then retry launching the experiment. "
-                "However, if you're sure you want to continue, enter 'y' and press 'Enter'."
-            ):
-                raise click.Abort
-            if config.get("host") != "0.0.0.0" and not user_confirms(
-                "For deploying PsyNet experiments with Docker, you should typically have host = 0.0.0.0 in config.txt. "
-                "You are advised to change this line then retry launching the experiment. "
-                "However, if you're sure you want to continue, enter 'y' and press 'Enter'."
-            ):
-                raise click.Abort
+            if _expected_docker_volumes not in config.get("docker_volumes", ""):
+                _confirm_deployment(
+                    "For deploying PsyNet experiments with Docker, you should typically have the following line "
+                    "in your config.txt: \n"
+                    f"docker_volumes = {_expected_docker_volumes}\n"
+                    "You are advised to change this line then retry launching the experiment. "
+                    "However, if you're sure you want to continue, enter 'y' and press 'Enter'."
+                )
+            if config.get("host") != "0.0.0.0":
+                _confirm_deployment(
+                    "For deploying PsyNet experiments with Docker, you should typically have host = 0.0.0.0 in config.txt. "
+                    "You are advised to change this line then retry launching the experiment. "
+                    "However, if you're sure you want to continue, enter 'y' and press 'Enter'."
+                )
 
         config.set("id", exp.make_uuid(app))
 
@@ -4003,8 +3999,8 @@ def confirm_deploying_development_psynet():
 
     Raises
     ------
-    click.Abort
-        If the user declines to deploy a development version.
+    click.exceptions.Exit
+        With exit code 1 if the user declines to deploy a development version.
     """
     requirement = get_psynet_requirement()
     if requirement and is_release_version_specifier(specified_version(requirement)):
@@ -4019,11 +4015,10 @@ def confirm_deploying_development_psynet():
     if os.environ.get("SKIP_CHECK_PSYNET_VERSION_REQUIREMENT"):
         click.echo(f"Warning: {message}", err=True)
         return
-    if not user_confirms(
+    _confirm_deployment(
         f"{message}\nDeploy it anyway? (Set SKIP_CHECK_PSYNET_VERSION_REQUIREMENT=1 "
         "to skip this question.)"
-    ):
-        raise click.Abort
+    )
 
 
 def check_psynet_requirement_includes_experiment_extra():
@@ -5199,6 +5194,19 @@ def user_confirms(question, default=False):
     finally:
         if not _stdin_is_interactive():
             click.echo()
+
+
+def _confirm_deployment(question):
+    """Ask ``question`` before a deployment and cancel it if the user declines.
+
+    Raises
+    ------
+    click.exceptions.Exit
+        With exit code 1 if the user declines.
+    """
+    if not user_confirms(question):
+        click.echo("Deployment cancelled.", err=True)
+        raise click.exceptions.Exit(1)
 
 
 def _stdin_is_interactive():

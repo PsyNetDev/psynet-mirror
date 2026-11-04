@@ -461,6 +461,9 @@ def test_check_experiment_directory_migration_without_newly_deployed_files_is_si
         subprocess.run(["git", "init", "-q"], check=True)
         ensure_deployment_policy()
         assert _deployment_policy_needs_review()
+        # Ignored by the stock .gitignore but deployed on purpose.
+        Path("static/fonts").mkdir(parents=True)
+        Path("static/fonts/GoNotoKurrent-Bold.ttf").write_text("font")
 
         _check_experiment_directory("debug")
         assert not _deployment_policy_needs_review()

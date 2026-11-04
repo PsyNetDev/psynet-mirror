@@ -4912,16 +4912,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.css",
-                    "/static/css/jquery-ui.css",
-                ),
-                (
-                    resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.min.js",
-                    "/static/scripts/jquery-ui.min.js",
-                ),
-                (
-                    resources.files("psynet")
                     / "resources/libraries/international-keyboards",
                     "/static/international-keyboards",
                 ),

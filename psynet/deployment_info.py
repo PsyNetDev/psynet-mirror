@@ -32,6 +32,11 @@ path = ".deploy/deployment_info.json"
 # Enough for export to name the changed files without bloating experiment variables.
 _MAX_RECORDED_DIRTY_PATHS = 20
 
+# Files PsyNet downloads into the experiment, which the stock ``.gitignore``
+# ignores but deployments include. Keep in sync with VocabTest's default
+# ``font_url`` and the stock ``.gitignore``.
+DOWNLOADED_RESOURCE_PATHS = frozenset({"static/fonts/GoNotoKurrent-Bold.ttf"})
+
 # ``(cache_key, content)``, replaced in a single assignment so threads never
 # observe a partially updated cache.
 _cache = None
@@ -235,7 +240,7 @@ def uncommitted_deployment_paths():
         return None
 
     selected = plan.destinations
-    selected_untracked = selected - tracked - _ignored_scaffold_paths()
+    selected_untracked = selected - tracked - _ignored_generated_paths()
     selected_changed = selected & changed
     selected_deleted = {
         path for path in deleted if policy_selects_path(path, plan.policy)
@@ -243,20 +248,21 @@ def uncommitted_deployment_paths():
     return sorted(selected_untracked | selected_changed | selected_deleted)
 
 
-def _ignored_scaffold_paths():
-    """Return the Git-ignored deployment files that are scaffold boilerplate.
+def _ignored_generated_paths():
+    """Return the Git-ignored deployment files that PsyNet generates.
 
-    An experiment that leaves them out of Git, as PsyNet's bundled demos do,
-    gets them from the scaffold rather than from its commits, so they are
-    not uncommitted changes. See
-    :func:`psynet.experiment_scaffold.is_stock_scaffold_path`.
+    These are scaffold boilerplate (see
+    :func:`psynet.experiment_scaffold.is_stock_scaffold_path`) and files
+    PsyNet downloads. An experiment that leaves them out of Git, as PsyNet's
+    bundled demos do, gets them from PsyNet rather than from its commits, so
+    they are not uncommitted changes.
     """
     from .experiment_scaffold import is_stock_scaffold_path
 
     return {
         path
         for path in _git_ignored_deployment_paths() or ()
-        if is_stock_scaffold_path(path)
+        if is_stock_scaffold_path(path) or path in DOWNLOADED_RESOURCE_PATHS
     }
 
 
@@ -268,20 +274,15 @@ def format_path_list(paths, limit=10):
     return "\n".join(lines)
 
 
-def warn_about_uncommitted_deployment_changes(confirm):
+def warn_about_uncommitted_deployment_changes(confirm_or_cancel):
     """Warn before a deployment whose files have uncommitted changes.
 
     Parameters
     ----------
-    confirm : callable or None
-        Asks the user whether to continue and returns a boolean. ``None``
-        (non-interactive sessions) only warns, so scripted deployments keep
-        working.
-
-    Raises
-    ------
-    click.Abort
-        If the user declines to continue.
+    confirm_or_cancel : callable or None
+        Asks the user whether to deploy anyway and cancels the deployment if
+        they decline. ``None`` (non-interactive sessions) only warns, so
+        scripted deployments keep working.
     """
     import click
 
@@ -289,7 +290,7 @@ def warn_about_uncommitted_deployment_changes(confirm):
     if not paths:
         return
     click.secho(
-        "Warning: these deployed files have uncommitted changes:\n"
+        "Warning: these files have changes that aren't committed to Git:\n"
         f"{format_path_list(paths)}\n"
         "The deployment records the Git commit, so it will not match your "
         "files exactly, and 'psynet export' will ask you to confirm the "
@@ -297,8 +298,8 @@ def warn_about_uncommitted_deployment_changes(confirm):
         fg="yellow",
         err=True,
     )
-    if confirm is not None and not confirm("Deploy with uncommitted changes?"):
-        raise click.Abort
+    if confirm_or_cancel is not None:
+        confirm_or_cancel("Deploy anyway?")
 
 
 def init(
