@@ -34,12 +34,12 @@ export async function activate({root, vars, psynet}) {
     buttonContainer.addEventListener("click", selectRoom);
 
     const wsScheme = location.protocol === "https:" ? "wss://" : "ws://";
-    const occupancySocket = new ReconnectingWebSocket(
+    const occupancySocket = dallinger.stopReconnectingIfRefused(new ReconnectingWebSocket(
         wsScheme + location.host + "/chat?channel=" + globalChannel
         + "&participant_id=" + dallinger.identity.participantId
         // PsyNet refuses a socket that names a participant without their token.
         + "&scope=" + encodeURIComponent(psynetTemplateData.websocketScope)
-    );
+    ));
 
     occupancySocket.onopen = function () {
         occupancySocket.send(
