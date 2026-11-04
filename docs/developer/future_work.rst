@@ -835,6 +835,30 @@ Idea
 Request audio and video in one ``getUserMedia`` call when both are needed,
 and offer a retry button on the failure page before ending the experiment.
 
+Name every failed capability on the browser capability failure page
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``browser-capability-check.js`` stops at the first failing capability,
+in alphabetical order, so the failure page names only that one. In a
+manual test with ``browser_capabilities = {"microphone", "camera"}``
+and both devices denied, the page said only "We were unable to access
+your camera", so a participant might fix the camera and fail again on
+the microphone.
+
+Idea
+++++
+
+Run every check, collect all failures, and list each failed capability
+on the failure page.
+
 Browser-neutral incognito instructions for Chromium browsers
 ------------------------------------------------------------
 
