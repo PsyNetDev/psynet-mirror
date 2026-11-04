@@ -3258,6 +3258,7 @@ def while_loop(
     fix_time_credit=True,
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
+    extend_while: Optional[Callable] = None,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
@@ -3304,6 +3305,11 @@ def while_loop(
         Optional callable invoked when ``max_loop_time`` is exceeded.
         Called with ``participant=...``.
 
+    extend_while:
+        Optional callable accepting ``participant`` and/or ``experiment``,
+        checked on each iteration. While it returns ``True`` the loop cannot
+        time out, and ``max_loop_time`` restarts once it returns ``False``.
+
     Returns
     -------
 
@@ -3338,6 +3344,14 @@ def while_loop(
 
     def max_loop_time_condition(participant, experiment):
         """Check elapsed time against the budget saved on entry."""
+        if extend_while is not None and call_function_with_context(
+            extend_while, participant=participant, experiment=experiment
+        ):
+            participant.var.set(
+                _while_loop_state_key(label, "loop_start_time"),
+                serialise(datetime.now()),
+            )
+            return False
         limit = (
             participant.var.get(_while_loop_state_key(label, "loop_max_time"))
             if callable(max_loop_time)

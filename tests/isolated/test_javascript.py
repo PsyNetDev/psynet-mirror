@@ -639,13 +639,17 @@ def test_response_render_error_after_commit_reloads_timeline_when_transient(
         "psynet.experiment.success_response",
         lambda **kwargs: ("reload", kwargs),
     )
+    receipts = {"recording_uploads": [{"id": "7"}], "recording_upload_server_time": "t"}
     result = Experiment._handle_response_render_error(
         FakeExperiment(),
         participant_id=1,
         error=err,
+        recording_receipts=receipts,
     )
     assert result[0] == "reload"
     assert result[1]["page"]["attributes"]["requires_full_page_reload"] is True
+    # Committed recordings must still be uploaded before the reload.
+    assert result[1]["recording_uploads"] == receipts["recording_uploads"]
     assert "error" not in handled
     assert rolled_back == [True]
 

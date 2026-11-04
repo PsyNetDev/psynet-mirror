@@ -1614,7 +1614,8 @@ class ParticipantDriver:
         """Upload accepted recordings to ``/media-upload``, as a browser does.
 
         A 429 means another delivery of the same recording is still being
-        received; wait as the server asks and try again.
+        received; wait as the server asks and try again. Stalls and gateway
+        errors are retried too.
         """
         for upload in uploads:
             path = files[f"{upload['source']}Recording"]
@@ -1626,9 +1627,10 @@ class ParticipantDriver:
                     data=body,
                     headers={"Authorization": f"Bearer {upload['token']}"},
                 )
-                if http_response.status_code != 429:
+                if http_response.status_code not in {408, 429, 502, 503, 504}:
                     break
-                self._sleep(float(http_response.headers.get("Retry-After", 1)))
+                retry_after = http_response.headers.get("Retry-After", "1")
+                self._sleep(float(retry_after) if retry_after.isdigit() else 1.0)
             http_response.raise_for_status()
 
     def _report_stats(self, total_experiment_time: float):

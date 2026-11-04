@@ -350,10 +350,8 @@ Same-session pages
 Pages sharing a non-null ``session_id`` update ``psynet.page`` and dispatch
 ``pageUpdated`` without replacing the fragment. This supports persistent
 sessions such as Unity integrations. The submission UUID and page timer advance
-with the logical page even though its DOM stays in place. Background capture
-finishes before submission; after acceptance, the browser queues that clip,
-applies the next page's recording policy, and resolves its permission decision
-before dispatching ``pageUpdated``. Uploads keep their original page identity.
+with the logical page even though its DOM stays in place, and accepted
+recordings upload under their original page identity.
 
 Document-owning pages
 ~~~~~~~~~~~~~~~~~~~~~

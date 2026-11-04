@@ -3992,7 +3992,9 @@
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
-              } else if (Array.isArray(sources)) {
+              } else if (Array.isArray(sources) && [0, 502, 503, 504].includes(request.status)) {
+                // Only a transport failure leaves acceptance unknown; PsyNet's
+                // own error replies go to its error recovery as before.
                 offerRecordingResend(request);
               } else {
                 psynet.log.debug("Something went wrong.");

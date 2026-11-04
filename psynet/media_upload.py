@@ -131,11 +131,29 @@ def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=No
     budget afterwards for analysis and clock polling. This never changes a
     recording's own expiry or success requirements.
     """
-    from .trial.main import Trial
-
     if default_timeout is None:
         return None
-    query = (
+    query = _outstanding_recordings(participant_id)
+    if trial_id is not None:
+        query = query.filter(Recording.trial_id == trial_id)
+    now = _utcnow()
+    remaining = 0.0
+    for recording in query:
+        deadline = _recording_resolution_deadline(recording)
+        remaining = max(remaining, (deadline - now).total_seconds())
+    return default_timeout + remaining
+
+
+def _has_outstanding_recordings(participant_id):
+    """Return whether a required recording of a live trial is still unresolved."""
+    return _outstanding_recordings(participant_id).first() is not None
+
+
+def _outstanding_recordings(participant_id):
+    """Query required recordings of live trials that have not resolved yet."""
+    from .trial.main import Trial
+
+    return (
         db.session.query(
             Recording.upload_status,
             Recording.upload_deadline,
@@ -152,14 +170,6 @@ def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=No
             ),
         )
     )
-    if trial_id is not None:
-        query = query.filter(Recording.trial_id == trial_id)
-    now = _utcnow()
-    remaining = 0.0
-    for recording in query:
-        deadline = _recording_resolution_deadline(recording)
-        remaining = max(remaining, (deadline - now).total_seconds())
-    return default_timeout + remaining
 
 
 def _upload_directory():
@@ -298,9 +308,12 @@ def _renew_live_lease(recording):
 
 
 def _renew_pending_lease(recording_id):
-    """Renew a streaming upload's lease in its own short transaction."""
+    """Renew a streaming upload's lease in its own short transaction.
+
+    Returns whether the upload is still live.
+    """
     with Session(db.engine) as session, session.begin():
-        _renew_live_lease(
+        return _renew_live_lease(
             session.query(Recording)
             .filter_by(id=recording_id)
             .with_for_update()
@@ -477,7 +490,8 @@ def _receive_recording_body(
                 if (
                     progress["at"] - progress["renewed_at"]
                 ).total_seconds() >= _RECEIVER_RENEW_INTERVAL:
-                    _renew_pending_lease(recording_id)
+                    if not _renew_pending_lease(recording_id):
+                        raise Gone("The recording upload is no longer pending.")
                     progress["renewed_at"] = progress["at"]
                 total += len(chunk)
                 header += chunk[: max(0, 4 - len(header))]

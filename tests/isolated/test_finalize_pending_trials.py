@@ -118,6 +118,52 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_while_loop_timer_restarts_after_extend_while_clears(
+    db_session, participant, monkeypatch
+):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    extending = True
+    timeline = Timeline(
+        while_loop(
+            "extended_wait",
+            lambda: True,
+            WaitPage(wait_time=1),
+            expected_repetitions=0,
+            max_loop_time=10,
+            fail_on_timeout=False,
+            extend_while=lambda: extending,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+
+    def advance(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        return isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+
+    assert advance(0)
+    assert advance(30)
+    extending = False
+    assert advance(5)
+    assert not advance(6)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
 @pytest.mark.parametrize("upload_state", ["pending", "processing"])
 def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(

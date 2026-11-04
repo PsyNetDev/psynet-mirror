@@ -2585,7 +2585,7 @@ class TrialMaker(Module):
         )
 
     def _wait_for_trial(self):
-        from ..media_upload import _recording_wait_timeout
+        from ..media_upload import _has_outstanding_recordings
 
         def try_to_prepare_trial():
             if not self.sync_group_type:
@@ -2620,8 +2620,10 @@ class TrialMaker(Module):
                     try_to_prepare_trial(),
                 ),
                 expected_repetitions=0,
-                max_loop_time=lambda participant: _recording_wait_timeout(
-                    participant.id, self.max_time_waiting_for_trial
+                max_loop_time=self.max_time_waiting_for_trial,
+                # The next trial may depend on the participant's last answer.
+                extend_while=lambda participant: _has_outstanding_recordings(
+                    participant.id
                 ),
                 fix_time_credit=False,
             ),

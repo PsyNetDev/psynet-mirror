@@ -307,6 +307,15 @@ def error_response(*args, **kwargs):
         return dallinger_error_response(*args, **kwargs)
 
 
+def _recording_receipts(payload):
+    """Return the upload receipts an approved recording submission must deliver."""
+    return {
+        key: payload[key]
+        for key in ("recording_uploads", "recording_upload_server_time")
+        if key in payload
+    }
+
+
 _FORWARDING_HEADERS = ("X-Forwarded-For", "Forwarded", "X-Real-IP", "CF-Connecting-IP")
 
 
@@ -7750,7 +7759,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             clock.close_open("barriers", "render")
             if write_committed:
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(result.payload)
+                    )
                 )
             return finish(cls._handle_response_prepare_error(exp, participant_id, err))
 
@@ -7768,7 +7779,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 if os.getenv("PASSTHROUGH_ERRORS"):
                     raise
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(payload)
+                    )
                 )
             clock.close("render")
             if fragment is None:
@@ -7812,11 +7825,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return cls._handle_response_fatal_error(experiment, participant_id, error)
 
     @classmethod
-    def _approved_timeline_reload_response(cls, experiment, participant_id):
+    def _approved_timeline_reload_response(
+        cls, experiment, participant_id, recording_receipts=None
+    ):
         """Return an approved payload that forces GET /timeline.
 
         Used after the response write committed but a later relock or render
-        failed. The client must not retry the same POST (page_uuid advanced).
+        failed. The client must not retry the same POST (page_uuid advanced),
+        so the reply keeps any committed recording receipts for upload.
         """
         try:
             participant = cls._participant_request_query().get(participant_id)
@@ -7828,7 +7844,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             payload = experiment._approved_payload(participant, page)
             attributes = payload["page"].setdefault("attributes", {})
             attributes["requires_full_page_reload"] = True
-            return success_response(**payload)
+            return success_response(**payload, **(recording_receipts or {}))
         except Exception:
             logger.warning(
                 "Could not build a reload payload after post-commit contention "
@@ -7839,7 +7855,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return None
 
     @classmethod
-    def _handle_response_render_error(cls, experiment, participant_id, error):
+    def _handle_response_render_error(
+        cls, experiment, participant_id, error, recording_receipts=None
+    ):
         """Handle errors after the response write is committed.
 
         Never returns busy/503 here: the page_uuid has already advanced, so a
@@ -7865,7 +7883,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         db.session.rollback()
         if transient:
             reload_response = cls._approved_timeline_reload_response(
-                experiment, participant_id
+                experiment, participant_id, recording_receipts
             )
             if reload_response is not None:
                 return reload_response
