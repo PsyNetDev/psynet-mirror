@@ -66,7 +66,7 @@ experiment = [
     # #10287 (participant socket admission and scope check) is a security
     # requirement for directed timeline-hold wakes: never move this pin to a
     # Dallinger without it.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@039e385379e6d86b7f6a7b9c9bb44bd6e0f6d934",
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@f730df559b24b37806c705630b4896ea1109232e",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf

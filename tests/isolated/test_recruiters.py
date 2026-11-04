@@ -1410,9 +1410,23 @@ def test_error_page_presentation_rejects_a_stale_recruiter_override():
         RecruiterWithStaleOverride().error_page_presentation()
 
 
-def test_prolific_error_recovery_explains_payment_and_submits_directly():
+@pytest.mark.parametrize(
+    "query, sent_unique_id",
+    [
+        ("?unique_id=worker-1:assignment-1", {"unique_id": "worker-1:assignment-1"}),
+        ("?unique_id=wrong", {}),
+        ("", {}),
+    ],
+)
+def test_prolific_error_recovery_explains_payment_and_submits_directly(
+    query, sent_unique_id
+):
+    from flask import Flask
+
     recruiter = make_prolific_recruiter(make_config())
-    participant = SimpleNamespace(id=42, assignment_id="assignment-1")
+    participant = SimpleNamespace(
+        id=42, assignment_id="assignment-1", unique_id="worker-1:assignment-1"
+    )
     plan = ExitPlan.create(
         context=ExitContext.ERROR_RECOVERY,
         path=ExitPath.SCREEN_OUT,
@@ -1427,6 +1441,7 @@ def test_prolific_error_recovery_explains_payment_and_submits_directly():
     with (
         patched_early_exit_config(make_config()),
         patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        Flask(__name__).test_request_context(f"/timeline{query}"),
     ):
         presentation = recruiter.error_page_presentation(
             participant=participant, plan=plan
@@ -1437,6 +1452,7 @@ def test_prolific_error_recovery_explains_payment_and_submits_directly():
     assert presentation.action_post_data == {
         "assignmentId": "assignment-1",
         "participantId": "42",
+        **sent_unique_id,
     }
     assert presentation.destination_url is None
     assert presentation.failure_message == (

@@ -6664,37 +6664,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         text += "\n```" + formatted_traceback + "```"
         cls.notifier.notify(text)
 
-    class UniqueIdError(PermissionError):
-        def __init__(self, expected, provided, participant):
-            self.participant = participant
-
-            message = "".join(
-                [
-                    f"Mismatch between expected unique_id ({expected}) "
-                    f"and provided unique_id ({provided}) "
-                    f"for participant {participant.id}."
-                ]
-            )
-            super().__init__(message)
-
-        def http_response(self):
-            last_exception = sys.exc_info()
-            if last_exception[0]:
-                logger.error(
-                    "Failure for request: {!r}".format(dict(request.args)),
-                    exc_info=last_exception,
-                )
-
-            msg = (
-                "There was a problem authenticating your session, "
-                + "did you switch browsers? Unfortunately this is not currently "
-                + "supported by our system."
-            )
-            return Experiment.error_page(
-                participant=self.participant,
-                error_text=msg,
-            )
-
     @classmethod
     @log_time_taken
     def get_current_page(cls, experiment, participant):
@@ -7072,18 +7041,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "html": page.render(experiment, participant, partial_mode=True),
             "page_uuid": participant.page_uuid,
         }
-
-    @classmethod
-    def check_unique_id(cls, participant, unique_id):
-        valid = participant.unique_id == unique_id
-        if not valid:
-            raise cls.UniqueIdError(
-                expected=unique_id,
-                provided=participant.unique_id,
-                participant=participant,
-            )
-        else:
-            return True
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
     @classmethod
@@ -7540,10 +7497,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-        try:
-            cls.check_unique_id(participant, unique_id)
-        except cls.UniqueIdError as e:
-            return e.http_response()
 
         message = request.values["message"]
 
@@ -7583,8 +7536,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             participant = cls.get_participant_from_unique_id(unique_id)
         except sqlalchemy.orm.exc.NoResultFound:
             return cls._unknown_participant_response()
-
-        cls.check_unique_id(participant, unique_id)
 
         participant.var.opened_devtools = True
 
