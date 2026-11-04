@@ -524,6 +524,10 @@ def test_process_response_reraises_transient_lock_errors(monkeypatch):
         "_participant_request_query",
         classmethod(lambda cls: Query()),
     )
+    monkeypatch.setattr(
+        "psynet.media_upload._expire_participant_recordings",
+        lambda participant_id: None,
+    )
 
     with pytest.raises(sqlalchemy.exc.OperationalError):
         exp.process_response(

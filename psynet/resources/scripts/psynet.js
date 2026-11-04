@@ -3777,11 +3777,14 @@
         })]);
       } finally { clearTimeout(timer); }
     }
-    async function getRecordingQueue(maxBytes = 128 * 1024 * 1024) {
+    // One document-wide queue for all recording controls. Its fixed capacity
+    // (the queue default, two maximum-size recordings) must not depend on which
+    // control happens to create it first.
+    async function getRecordingQueue() {
       recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
-        recordingUploadQueue = new MediaUploadQueue({maxBytes:2 * maxBytes});
+        recordingUploadQueue = new MediaUploadQueue();
       }
       return recordingUploadQueue;
     }
@@ -3850,7 +3853,7 @@
       let capturedRecordings = {};
       const submittedPageUuid = psynet.submissionPageUuid;
       const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
-      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousVideoUploadSources);
+      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {
@@ -3892,8 +3895,8 @@
           }
           let unavailable;
           try {
-            const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
-            await getRecordingQueue(maxBytes);
+            const maxBytes = psynet.var.asynchronousUploadMaxBytes;
+            await getRecordingQueue();
             await waitForRecordingBacklog(capturedRecordings, maxBytes);
             const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
             capturedRecordings = prepared.recordings;

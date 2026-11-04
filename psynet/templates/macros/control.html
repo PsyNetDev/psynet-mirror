@@ -1420,7 +1420,7 @@
         // the recording as unavailable and fails the trial instead.
         let legacyCaptureFailed = false;
         psynet.page.control.reportLegacyCaptureFailure = async function (blob) {
-            if (legacyCaptureFailed || psynet.var.asynchronousVideoUploadSources || blob?.size > 0) return;
+            if (legacyCaptureFailed || psynet.var.asynchronousUploadSources || blob?.size > 0) return;
             legacyCaptureFailed = true;
             await psynet.handleTimelineTransitionFailure(
                 new Error("The recording could not be captured."),
@@ -1468,8 +1468,8 @@
                     const capture = await psynet.getRecordingCapture();
                     // Only asynchronous uploads are size-limited; legacy uploads never were.
                     videoRecorder = new capture.RecordingClip(cameraStream, {
-                        maxBytes: psynet.var.asynchronousVideoUploadSources
-                            ? psynet.var.asynchronousVideoUploadMaxBytes : Infinity,
+                        maxBytes: psynet.var.asynchronousUploadSources
+                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
                     });
                     videoRecorder.stream = cameraStream;
                 }
@@ -1580,7 +1580,7 @@
                     screenStream = await capture.devices.acquireAnswer(
                         "screen",
                         false,
-                        psynet.var.asynchronousVideoUploadSources
+                        psynet.var.asynchronousUploadSources
                             ? labels
                             : {...labels, answer: labels.answer_required, skip: null}
                     );
@@ -1593,8 +1593,8 @@
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
                     screenRecorder = new capture.RecordingClip(screenStream, {
-                        maxBytes: psynet.var.asynchronousVideoUploadSources
-                            ? psynet.var.asynchronousVideoUploadMaxBytes : Infinity,
+                        maxBytes: psynet.var.asynchronousUploadSources
+                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
                     });
                     screenRecorder.stream = screenStream;
                 }

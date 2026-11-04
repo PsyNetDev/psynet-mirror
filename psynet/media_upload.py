@@ -20,7 +20,7 @@ the lease with heartbeats while it holds the recording, and the receiver renews
 it while bytes keep arriving. A recording expires only after an idle timeout
 without renewal, or at an absolute lifetime cap from acceptance. A poller
 expires overdue recordings even when the browser has closed. In-place
-LocalStorage video controls use this transport.
+LocalStorage video and audio recording controls use this transport.
 Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
@@ -89,6 +89,18 @@ _RECEIVER_RENEW_INTERVAL = 30
 # WSGI body reads block until a whole chunk arrives, so an upload counts as
 # stalled if less than this many bytes arrive within the idle timeout.
 _READ_CHUNK_BYTES = 65536
+
+# Accepted formats: the number of leading bytes to inspect, a check on them,
+# and a name for error messages. This rejects obvious non-media input; it does
+# not decode the file.
+_MEDIA_FORMATS = {
+    "webm": (4, lambda header: header[:4] == b"\x1a\x45\xdf\xa3", "WebM/EBML"),
+    "wav": (
+        12,
+        lambda header: header[:4] == b"RIFF" and header[8:12] == b"WAVE",
+        "RIFF/WAVE",
+    ),
+}
 
 
 def _utcnow():
@@ -204,14 +216,20 @@ def _reserve_recording(
     max_bytes=128 * 1024 * 1024,
     role="answer",
     required_for_trial=True,
+    media_format="webm",
 ):
-    """Reserve a server-selected recording in the accepted answer transaction."""
+    """Reserve a server-selected recording in the accepted answer transaction.
+
+    ``media_format`` comes from the recording control, never from the client.
+    """
     if not response.successful_validation:
         raise ValueError("Only accepted responses can reserve recordings.")
     if not isinstance(storage, LocalStorage):
         raise ValueError("Asynchronous recordings currently require LocalStorage.")
-    if source not in {"camera", "screen"}:
+    if source not in {"camera", "screen", "audio"}:
         raise ValueError("A recording reservation must identify one capture source.")
+    if media_format not in _MEDIA_FORMATS:
+        raise ValueError(f"Unsupported recording format: {media_format!r}.")
     if any(
         type(value) is not int or value <= 0
         for value in (processing_timeout, max_bytes, idle_timeout, lifetime)
@@ -226,7 +244,7 @@ def _reserve_recording(
     asset = Recording(
         input_path=None,
         is_folder=False,
-        extension=".webm",
+        extension=f".{media_format}",
         local_key=local_key,
         parent=parent,
     )
@@ -253,6 +271,7 @@ def _reserve_recording(
         "page_label": response.question,
         "page_uuid": page_uuid,
         "source": source,
+        "format": media_format,
         "processing_timeout": processing_timeout,
         "idle_timeout": idle_timeout,
         "lifetime_deadline": lifetime_deadline.isoformat(),
@@ -422,6 +441,9 @@ def _receive_recording_body(
         max_bytes = recording.upload_max_bytes
         idle = timedelta(seconds=recording.upload_context["idle_timeout"])
         lifetime_deadline = _lifetime_deadline(recording)
+        header_length, header_matches, format_name = _MEDIA_FORMATS[
+            recording.upload_context.get("format", "webm")
+        ]
     if content_length is not None and content_length > max_bytes:
         raise RequestEntityTooLarge()
 
@@ -494,14 +516,14 @@ def _receive_recording_body(
                         raise Gone("The recording upload is no longer pending.")
                     progress["renewed_at"] = progress["at"]
                 total += len(chunk)
-                header += chunk[: max(0, 4 - len(header))]
+                header += chunk[: max(0, header_length - len(header))]
                 if total > max_bytes:
                     raise RequestEntityTooLarge()
                 target.write(chunk)
             if not total or (content_length is not None and total != content_length):
                 raise BadRequest("The recording body is empty or incomplete.")
-            if header != b"\x1a\x45\xdf\xa3":
-                raise BadRequest("The recording must have a WebM/EBML header.")
+            if not header_matches(header):
+                raise BadRequest(f"The recording must have a {format_name} header.")
             target.flush()
             os.fsync(target.fileno())
 
