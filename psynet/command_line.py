@@ -3127,6 +3127,11 @@ def _check_experiment_directory(mode, *, require_git_commit=False):
                 "the selection with "
                 f"'dallinger deployment-files list'.\n\n{advice}"
             )
+        ignored_paths = [
+            path
+            for path in ignored_paths
+            if path not in deployment_info.DOWNLOADED_RESOURCE_PATHS
+        ]
         if ignored_paths:
             preview_limit = 10
             preview = "\n".join(f"  {path}" for path in ignored_paths[:preview_limit])

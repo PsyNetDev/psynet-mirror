@@ -483,6 +483,8 @@ class VocabTest(StaticTrialMaker):
         false_key_label: str = "L",
         trial_class: Type[VocabTrial] = VocabTrial,
         present_as_image: bool = True,
+        # Its file name is also listed in the stock .gitignore and in
+        # psynet.deployment_info.DOWNLOADED_RESOURCE_PATHS.
         font_url: Optional[
             str
         ] = "https://psynet.s3.amazonaws.com/resources/fonts/GoNotoKurrent-Bold.ttf",
@@ -577,7 +579,8 @@ class VocabTest(StaticTrialMaker):
             sync_group_type=None,
         )
 
-    def get_font_path(self, font_url):
+    @staticmethod
+    def get_font_path(font_url):
         """Return a local copy of the font used to draw the word images, downloading it if needed.
 
         The font is saved in the experiment's ``static/fonts/`` folder so that

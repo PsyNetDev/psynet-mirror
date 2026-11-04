@@ -80,8 +80,8 @@ def test_vocab_font_is_downloaded_once_into_static_fonts(tmp_path, monkeypatch):
     monkeypatch.setattr("psynet.prescreen.vocabtest.requests.get", fake_get)
 
     url = "https://example.org/fonts/Font.ttf"
-    first = VocabTest.get_font_path(None, url)
-    second = VocabTest.get_font_path(None, url)
+    first = VocabTest.get_font_path(url)
+    second = VocabTest.get_font_path(url)
 
     assert first == second == str(tmp_path / "static" / "fonts" / "Font.ttf")
     assert Path(first).read_bytes() == b"font"
@@ -99,5 +99,5 @@ def test_vocab_font_download_failure_raises(tmp_path, monkeypatch):
     )
 
     with pytest.raises(requests.HTTPError):
-        VocabTest.get_font_path(None, "https://example.org/fonts/Font.ttf")
+        VocabTest.get_font_path("https://example.org/fonts/Font.ttf")
     assert not (tmp_path / "static" / "fonts" / "Font.ttf").exists()

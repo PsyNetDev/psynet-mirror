@@ -33,8 +33,9 @@ path = ".deploy/deployment_info.json"
 _MAX_RECORDED_DIRTY_PATHS = 20
 
 # Files PsyNet downloads into the experiment, which the stock ``.gitignore``
-# ignores but deployments include.
-_DOWNLOADED_RESOURCE_PATHS = frozenset({"static/fonts/GoNotoKurrent-Bold.ttf"})
+# ignores but deployments include. Keep in sync with VocabTest's default
+# ``font_url`` and the stock ``.gitignore``.
+DOWNLOADED_RESOURCE_PATHS = frozenset({"static/fonts/GoNotoKurrent-Bold.ttf"})
 
 # ``(cache_key, content)``, replaced in a single assignment so threads never
 # observe a partially updated cache.
@@ -261,7 +262,7 @@ def _ignored_generated_paths():
     return {
         path
         for path in _git_ignored_deployment_paths() or ()
-        if is_stock_scaffold_path(path) or path in _DOWNLOADED_RESOURCE_PATHS
+        if is_stock_scaffold_path(path) or path in DOWNLOADED_RESOURCE_PATHS
     }
 
 
