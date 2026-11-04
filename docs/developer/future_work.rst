@@ -786,3 +786,23 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+Browser test for the Resources dashboard
+----------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+No automated test loads ``/dashboard/resources``, so the time-range slider
+broke unnoticed when Dallinger's dashboard moved to jQuery 4.
+
+Idea
+++++
+
+Add a Playwright smoke test that opens the Resources tab, checks for
+console errors, and moves a range input to check that the labels change.
