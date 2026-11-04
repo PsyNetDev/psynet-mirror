@@ -205,8 +205,7 @@ through it yourself and send it to a few colleagues. Check:
 - that your analysis scripts work on the pilot data (export it as
   described in `Export`_).
 
-``psynet debug`` deployments do not register with the deployment monitor
-or send Slack notifications. Remove the pilot when you are done:
+``psynet debug`` deployments do not send Slack notifications. Remove the pilot when you are done:
 
 .. code:: bash
 
@@ -383,8 +382,7 @@ Check the experiment regularly while participants are taking part.
 **Dashboard.** The dashboard link printed at launch opens the same
 dashboard for every recruiter. It shows progress through the timeline,
 spending, errors, server resources and individual participants; see
-:ref:`experiment_dashboard` for each tab. When you run several studies,
-the Deployments tab (the deployment monitor) shows all of them at once.
+:ref:`experiment_dashboard` for each tab.
 
 **Logs.** On servers with classic ingress, Dozzle shows the live logs of
 every container on the server. Its URL is printed at launch
@@ -453,7 +451,7 @@ and once more after the last participant has finished:
 
 Run the command in the experiment directory the deployment came from. The
 export lands in ``exports/latest/``. The dashboard's Export tab downloads
-the same data as ``export.zip``. See :doc:`/data/exporting_data` for export
+the same data as ``<deployment ID>__export.zip``. See :doc:`/data/exporting_data` for export
 options.
 
 Once you destroy the app or the server, ``psynet export`` no longer works,

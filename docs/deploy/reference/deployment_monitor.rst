@@ -38,13 +38,19 @@ Key features:
   :doc:`/data/exporting_data` for the full export reference.
 - **Recruiter > Lucid:** CINT survey status and metrics, for CINT
   experiments; see :doc:`/deploy/recruiters/cint`.
-- **Deployments:** The deployment monitor described below.
 
 This single-experiment dashboard is different from the deployment
 monitor described below, which shows *all* of your deployments at once.
 
 The deployment monitor
 ----------------------
+
+.. note::
+
+    The dashboard currently hides the deployment monitor's tab, because on
+    servers set up with ``psynet deploy ssh`` it finds no deployments. The
+    page is still at ``/dashboard/deployments`` on your experiment's
+    dashboard.
 
 PsyNet allows you to monitor not only the progress of your own experiments, but also the status of other experiments.
 

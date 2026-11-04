@@ -3119,6 +3119,7 @@
 
       if (correctBrowser) {
         await new Promise((resolve) => setTimeout(resolve, 25));
+        await psynet.prepareBackgroundRecording();
         await psynet.trial.init();
       }
     };
@@ -3390,6 +3391,10 @@
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
+        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        await psynet.prepareBackgroundRecording();
+        psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
+        await psynet.releaseUnusedRecordingStreams();
         await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
         psynet.restoreSubmissionControlState();
@@ -3631,6 +3636,8 @@
         return await psynet.handleApprovedResponse(response);
       }
       if (response.submission === "rejected") {
+        // Keep recording for the corrected answer.
+        await backgroundRecorder?.resume();
         return await psynet.handleRejectedResponse(
           response,
           onRejection,
@@ -3727,9 +3734,10 @@
         psynet.log.warn(`Could not release recording streams: ${error.message}`);
       }
     };
-    // Ordinary transitions release unused streams while rebuilding the page.
-    // Holds keep the page, so they do it here.
+    // Ordinary transitions stop the page's background clips and release streams
+    // while rebuilding the page. Holds keep the page, so they do it here.
     psynet.endPageRecording = async function (captureSources) {
+      await backgroundRecorder?.discard();
       psynet.var.recordingCaptureSources = captureSources;
       await psynet.releaseUnusedRecordingStreams();
     };
@@ -3748,6 +3756,9 @@
         psynet.hideTimelineHoldIndicator();
       }
     };
+    let backgroundRecorder;
+    let backgroundUnavailable = false;
+
     // Backpressure: a participant may run at most one recording page ahead of
     // their uploads, and only if the queue has room for this page's
     // recordings. On a slow connection they wait here, as they would have for
@@ -3770,13 +3781,28 @@
     // (the queue default, two maximum-size recordings) must not depend on which
     // control happens to create it first.
     async function getRecordingQueue() {
-      recordingUploadMessage = psynet.var.recordingLabels?.uploading || recordingUploadMessage;
+      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
         recordingUploadQueue = new MediaUploadQueue();
       }
       return recordingUploadQueue;
     }
+    psynet.prepareBackgroundRecording = async function () {
+      await backgroundRecorder?.discard();
+      backgroundUnavailable = false;
+      const config = psynet.var.backgroundRecording;
+      if (!config) return;
+      try {
+        await getRecordingQueue();
+        const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
+        backgroundRecorder ||= new BackgroundRecorder((await psynet.getRecordingCapture()).devices);
+        await backgroundRecorder.begin(config);
+      } catch (error) {
+        psynet.log.warn(`Background recording unavailable: ${error.message}`);
+        backgroundUnavailable = true;
+      }
+    };
 
     // A recording submission whose acceptance is still unknown (the reply was
     // lost or unreadable). Until the server answers definitively, every resend
@@ -3799,7 +3825,7 @@
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
       psynet.alert(
-        psynet.var.recordingLabels?.unconfirmed ||
+        (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
           "We could not confirm that your answer was received. Please check your connection and press Next again.",
       );
       psynet.restoreSubmissionControlState();
@@ -3826,7 +3852,8 @@
 
       let capturedRecordings = {};
       const submittedPageUuid = psynet.submissionPageUuid;
-      const sources = options.timelineHoldResume ? null : psynet.var.asynchronousUploadSources;
+      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
+      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {
@@ -3835,27 +3862,53 @@
         json = resend.json;
         blobs = {};
       } else if (Array.isArray(sources)) {
-        const sizes = {};
-        for (const source of sources) {
-          const blob = blobs?.[`${source}Recording`];
-          capturedRecordings[source] = blob;
-          sizes[source] = blob instanceof Blob ? blob.size : 0;
+        if (background) {
+          let capture;
+          try {
+            if (backgroundUnavailable) throw new Error("Background capture could not initialize.");
+            capture = await backgroundRecorder.finish();
+          } catch (error) {
+            psynet.log.warn(`Background recording unavailable: ${error.message}`);
+            capture = {recordings:{},sizes:{},unavailable:Object.fromEntries(sources.map(source => [source,"capture_error"]))};
+          }
+          try {
+            await waitForRecordingBacklog(capture.recordings, background.max_bytes);
+            const prepared = recordingUploadQueue.prepare(capture.recordings, background.max_bytes);
+            capturedRecordings = prepared.recordings;
+            // More specific capture outcomes take precedence over an empty-blob result.
+            capture.unavailable = {...prepared.unavailable, ...capture.unavailable};
+          } catch (error) {
+            psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+            capturedRecordings = {};
+            capture.unavailable = {
+              ...Object.fromEntries(sources.map(source => [source, "transport_unavailable"])),
+              ...capture.unavailable,
+            };
+          }
+          metadata = {...metadata,background_recording:{sizes:capture.sizes,unavailable:capture.unavailable,outcomes:capture.outcomes}};
+        } else {
+          const sizes = {};
+          for (const source of sources) {
+            const blob = blobs?.[`${source}Recording`];
+            capturedRecordings[source] = blob;
+            sizes[source] = blob instanceof Blob ? blob.size : 0;
+          }
+          let unavailable;
+          try {
+            const maxBytes = psynet.var.asynchronousUploadMaxBytes;
+            await getRecordingQueue();
+            await waitForRecordingBacklog(capturedRecordings, maxBytes);
+            const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
+            capturedRecordings = prepared.recordings;
+            unavailable = prepared.unavailable;
+          } catch (error) {
+            psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+            capturedRecordings = {};
+            unavailable = Object.fromEntries(sources.map(source => [source, "transport_unavailable"]));
+          }
+          metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
+          blobs = {};
         }
-        let unavailable;
-        try {
-          const maxBytes = psynet.var.asynchronousUploadMaxBytes;
-          await getRecordingQueue();
-          await waitForRecordingBacklog(capturedRecordings, maxBytes);
-          const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
-          capturedRecordings = prepared.recordings;
-          unavailable = prepared.unavailable;
-        } catch (error) {
-          psynet.log.warn(`Recording transport unavailable: ${error.message}`);
-          capturedRecordings = {};
-          unavailable = Object.fromEntries(sources.map(source => [source, "transport_unavailable"]));
-        }
-        metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
-        blobs = {};
         const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), value => value.toString(16).padStart(2, "0")).join("");
         metadata = {...metadata, recording_recovery_secret:secret};
         json = prepareJsonSubmission(rawAnswer, metadata, options);

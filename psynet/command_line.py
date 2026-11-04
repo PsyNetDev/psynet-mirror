@@ -1540,32 +1540,37 @@ def _debug_docker(ctx, archive, no_browsers):
 _SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
 
 
-def launch_app_without_browsers(port, **kwargs):
+def launch_app_without_browsers(port, auth=None, **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
     :func:`_launch_app_and_report`). The server log leaves the dashboard
     password out. It must stay importable by module path because RQ workers
-    resolve it that way.
+    resolve it that way. ``auth`` is the ``(user, password)`` dashboard login
+    in the job; it defaults to the login in this worker's config.
     """
-    _launch_app_and_report(port)
+    _launch_app_and_report(port, auth=auth)
 
 
-def launch_app_and_open_browsers(port, **kwargs):
+def launch_app_and_open_browsers(port, auth=None, **kwargs):
     """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
     auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
     with the password embedded; this one prints the login once, in the
     ``Ready.`` block. It must stay importable by module path because RQ
-    workers resolve it that way.
+    workers resolve it that way. ``auth`` is as for
+    :func:`launch_app_without_browsers`.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
-    _launch_app_and_report(port)
+    _launch_app_and_report(port, auth=auth)
     config = get_config()
-    _open_browser_async(develop.dashboard_url(config, port))
+    login = (
+        {"dashboard_user": auth[0], "dashboard_password": auth[1]} if auth else config
+    )
+    _open_browser_async(develop.dashboard_url(login, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
     _open_browser_async(develop.ad_url(config, port))
 
@@ -1577,8 +1582,12 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port):
+def _launch_app_and_report(port, auth=None):
     """Launch the development app, then print the ``Ready.`` block.
+
+    ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
+    debug`` puts in the launch job; without it, the login comes from this
+    process's config.
 
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
@@ -1596,6 +1605,7 @@ def _launch_app_and_report(port):
         error=log,
         delay=1.0,
         context="local",
+        **({"auth": auth} if auth else {}),
     )
     message = launch_data.get("recruitment_msg")
     launch_message_rows = getattr(develop, "launch_message_rows", None)
@@ -1612,12 +1622,15 @@ def _launch_app_and_report(port):
     config = get_config()
     if not config.ready:
         config.load()
+    user, password = auth or (
+        config.get("dashboard_user"),
+        config.get("dashboard_password"),
+    )
     details.append(
         (
             "Dashboard",
-            f"{develop.BASE_URL.format(port)}dashboard (user "
-            f"{config.get('dashboard_user')}, password "
-            f"{config.get('dashboard_password')})",
+            f"{develop.BASE_URL.format(port)}dashboard (user {user}, "
+            f"password {password})",
         )
     )
     after = []
@@ -1894,6 +1907,11 @@ def patch_dallinger_develop():
 patch_dallinger_develop()
 
 
+# psutil on macOS can raise SystemError (not a psutil.Error) when a process
+# exits while it is being inspected.
+_UNREADABLE_PROCESS_ERRORS = (psutil.Error, OSError, SystemError)
+
+
 def safely_kill_process(p):
     try:
         p.kill()
@@ -1968,8 +1986,8 @@ def is_psynet_chrome_process(process):
                     return True
                 if "--user-data-dir=" in cmd and profile_prefix in cmd:
                     return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        pass
+    except _UNREADABLE_PROCESS_ERRORS as exc:
+        logger.debug("Skipping process that could not be inspected: %r", exc)
 
     return False
 
@@ -2032,7 +2050,8 @@ def is_chromedriver_process(process):
         return "chromedriver" in process.name().lower() and any(
             prefix in part for part in process.cmdline()
         )
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+    except _UNREADABLE_PROCESS_ERRORS as exc:
+        logger.debug("Skipping process that could not be inspected: %r", exc)
         return False
 
 
@@ -3196,6 +3215,7 @@ def run_pre_checks(
         except RuntimeError as e:
             # The message explains how to add a consent page.
             raise click.ClickException(str(e)) from e
+    exp._check_background_recording_pages()
     exp.check_python_dependencies()
 
     try:

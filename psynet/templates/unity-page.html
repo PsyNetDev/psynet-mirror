@@ -74,7 +74,18 @@
           alert(message);
         });
       };
-      document.body.appendChild(script);
+      if (psynetTemplateData.jsVars?.backgroundRecording) {
+        // Start the engine only after the participant has answered the capture
+        // permission dialog, so the task does not start behind it.
+        let unityStarted = false;
+        psynet.trial.onEvent("trialStart", () => {
+          if (unityStarted) return;
+          unityStarted = true;
+          document.body.appendChild(script);
+        });
+      } else {
+        document.body.appendChild(script);
+      }
     </script>
 {% endblock %}
 
