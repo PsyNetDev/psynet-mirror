@@ -1,0 +1,1 @@
+SSH commands such as `psynet export ssh` now suggest checking the SSH connection only when listing the server's apps fails because of the connection. An invalid configuration, such as an `Experiment.config` key that an older PsyNet accepted, is reported as a configuration problem that names the key, and other server-side failures are reported without the SSH hint.

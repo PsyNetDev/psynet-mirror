@@ -40,7 +40,7 @@ Check that the experiment folder has:
 - `config.txt`
 - `requirements.txt`
 - `constraints.txt`
-- `Dockerfile` and/or `Dockertag` when the template expects them
+- `Dockerfile`
 - `deploy.toml` with reviewed `[exclude]` rules. Run
   `dallinger deployment-files list` to inspect every file that PsyNet will copy.
   Git-ignored files are deployed unless `deploy.toml` excludes them. Confirm `audit/`

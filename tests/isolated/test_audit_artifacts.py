@@ -29,6 +29,28 @@ def test_write_hashed_artifact_redacts_py_credentials(tmp_path: Path) -> None:
     )
 
 
+def test_redaction_keeps_the_server_log_password_placeholder() -> None:
+    from psynet.audit.artifacts import redact_known_credentials
+    from psynet.notifier import LoggerNotifier
+
+    message = LoggerNotifier.format_credentials("Dashboard", "http://x", None, "pw")
+    assert redact_known_credentials(message) == message
+    assert redact_known_credentials("Password: `pw`") == "Password: `[REDACTED]`"
+    assert (
+        redact_known_credentials("Opening dashboard: http://admin:pw@127.0.0.1:5000/")
+        == "Opening dashboard: http://admin:[REDACTED]@127.0.0.1:5000/"
+    )
+    assert redact_known_credentials("redis://:pw@localhost:6379/0") == (
+        "redis://:[REDACTED]@localhost:6379/0"
+    )
+    npm_url = "https://registry.npmjs.org:443/@babel/core"
+    assert redact_known_credentials(npm_url) == npm_url
+    assert (
+        redact_known_credentials("Log in using this password pw and the username")
+        == "Log in using this password [REDACTED] and the username"
+    )
+
+
 def test_monitor_static_href_prefix_matches_blob_layout() -> None:
     from psynet.audit.artifacts import monitor_static_href_prefix
 
@@ -50,6 +72,7 @@ def test_write_hashed_artifact_redacts_text_and_normalizes_legacy_prefix(
     source = tmp_path / "psynet_debug.log"
     source.write_text(
         "Dashboard user: admin password: local-password\n"
+        "Dashboard: http://127.0.0.1:5000/dashboard (user admin, password pw)\n"
         "AWS_SECRET_ACCESS_KEY=secret\n",
         encoding="utf-8",
     )
@@ -66,7 +89,9 @@ def test_write_hashed_artifact_redacts_text_and_normalizes_legacy_prefix(
     exported = target_root / url.removeprefix(prefix)
     assert exported.exists()
     assert exported.read_text(encoding="utf-8") == (
-        "Dashboard user: admin password: [REDACTED]\nAWS_SECRET_ACCESS_KEY=[REDACTED]\n"
+        "Dashboard user: admin password: [REDACTED]\n"
+        "Dashboard: http://127.0.0.1:5000/dashboard (user admin, password [REDACTED])\n"
+        "AWS_SECRET_ACCESS_KEY=[REDACTED]\n"
     )
 
 

@@ -1,7 +1,7 @@
 ---
 name: implement-experiment
 description: A structured process for implementing PsyNet experiments, including planning, simulations, analysis, and reporting. Use when implementing a PsyNet experiment from a natural-language specification.
-compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, the Heroku CLI, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
+compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
 ---
 
 # Implement PsyNet experiments
@@ -124,7 +124,7 @@ and the experiment's `AGENTS.md`, which `psynet setup` writes.
 From the experiment directory:
 
 ```bash
-uv venv --python 3.13
+uv venv --python 3.14
 source .venv/bin/activate
 uv pip install psynet          # thin bootstrap only
 psynet setup                   # scaffolds files, pins, constraints, install
@@ -133,7 +133,10 @@ psynet setup                   # scaffolds files, pins, constraints, install
 `psynet setup` is the default path: it creates missing boilerplate (including
 `.cursor/skills/psynet/` when absent), pins PsyNet, ensures `constraints.txt`,
 installs the experiment runtime (`psynet[experiment]`), and initializes Git when
-needed. After setup, use `psynet debug local --docker`
+needed. Without a terminal, setup stops if the folder has no `experiment.py`
+and contains files that aren't part of a PsyNet experiment (`static/`,
+`audit/`, `uv init` files, licence files and caches are fine); if those files belong to this experiment, re-run
+with `psynet setup --yes`. After setup, use `psynet debug local --docker`
 when the experiment should run in Docker mode.
 
 When splitting logic out of `experiment.py`, follow
@@ -177,12 +180,10 @@ workers. Before `psynet debug local`, check that nothing else is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is
 running, ask the user to stop it rather than stopping it yourself, and record
 the wait in the audit timeline. Remote launches (`psynet deploy ssh`,
-`psynet deploy heroku`, `psynet debug ssh` and `psynet debug heroku`) also
-clear the local database and Redis, so don't run them while a local
-experiment is running, and don't pass `--yes` to skip their warning.
-`--update` leaves local data alone. If local data disappears unexpectedly,
-check `ps` for one of these commands in another session before debugging your
-code.
+`psynet deploy heroku`, `psynet debug ssh`, `psynet debug heroku` and
+`psynet performance-test ssh`) prepare in a scratch database and Redis of
+their own, so they leave local data alone, but they don't run at the same time
+as a local server or test session in the same directory.
 
 #### Coding
 

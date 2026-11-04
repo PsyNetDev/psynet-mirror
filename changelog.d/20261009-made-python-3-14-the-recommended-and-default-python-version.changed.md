@@ -1,0 +1,1 @@
+Made Python 3.14 the recommended Python version. `psynet setup` creates new virtual environments with Python 3.14, and the documented `uv venv` commands use 3.14. Python 3.11 to 3.13 remain supported.

@@ -27,6 +27,15 @@ from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
 
+@pytest.fixture(autouse=True)
+def _performance_logs_in_tmp_path(tmp_path_factory, monkeypatch):
+    """Keep the logs these tests write out of ``~/psynet-data``."""
+    directory = tmp_path_factory.mktemp("performance-logs")
+    monkeypatch.setattr(
+        "psynet.command_line._performance_log_directory", lambda: directory
+    )
+
+
 def _base_result(**overrides):
     """Return a minimal valid result for format_test_results."""
     fields = {
@@ -57,6 +66,13 @@ def _base_result(**overrides):
 
 def _join(lines):
     return "\n".join(lines)
+
+
+def test_perf_test_priorities_match_async_job_priorities():
+    from psynet import async_job
+    from psynet.perf_test import results
+
+    assert results.PRIORITIES == async_job.PRIORITIES
 
 
 def test_random_stagger_is_bounded_relative_to_configured_interval():
@@ -314,7 +330,8 @@ def test_status_is_printed_as_plain_lines_when_output_is_not_a_terminal(capsys):
 
     output = capsys.readouterr().out
     assert "Running: 0" in output
-    assert "Failed by experiment: 3" in output
+    assert "Failed by the experiment: 3" in output
+    assert "Avg: -" in output
     assert "\r" not in output
 
 
@@ -376,12 +393,12 @@ def test_a_failed_reset_stops_the_suite_but_keeps_the_completed_tests(caplog):
 
     assert [r.n_bots for r in results] == [10, 20]
     assert suite.reset_error == "disk full."
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: resetting the database before test 3 failed "
         "(disk full). The summary above covers the 2 tests that completed."
     ) in caplog.text
-    plain = [m for m in caplog.messages if "PERFORMANCE TEST" in m or "stopped" in m]
+    plain = [m for m in caplog.messages if "Performance test" in m or "stopped" in m]
     assert len(plain) == 3 and not any("\x1b[" in m for m in plain)
 
 
@@ -399,7 +416,7 @@ def test_a_test_that_raises_still_prints_the_summary_of_the_earlier_tests(caplog
     ):
         PerformanceSuite(tester).run([10, 20, 40])
 
-    assert "PERFORMANCE TEST SUMMARY" in caplog.text
+    assert "Performance test summary" in caplog.text
     assert (
         "The run stopped early: test 3 failed (exit code 1: OperationalError: "
         "server closed). The summary above covers the 2 tests that completed."
@@ -676,8 +693,28 @@ def test_suite_header_shows_the_estimate_and_warns_about_short_tests(
     ):
         PerformanceSuite(tester).run([2])
 
-    assert "Estimated session:    13.0 min" in caplog.text
-    assert ("sees mostly the start of the study" in caplog.text) == warns
+    text = caplog.text
+    assert "Estimated session:    13.0 min" in text
+    assert ("sees mostly the start of the study" in text) == warns
+    if warns:
+        # A note after the settings, which end with the bot processes.
+        assert text.index("Bot processes:") < text.index("sees mostly")
+        assert all(
+            r.message.strip() for r in caplog.records if r.levelname == "WARNING"
+        )
+
+
+def test_capacity_search_header_lists_the_limits_after_the_settings(caplog):
+    with caplog.at_level("INFO"):
+        _search(
+            _session_tester(),
+            lambda n, *_: _base_result(n_bots=n, p95_response_time=0.9 * (n > 15)),
+            confirm=False,
+        )
+
+    text = caplog.text
+    assert "Bots per test:        automatic, from 10\n" in text
+    assert text.index("Bot processes:") < text.index("Each search test must keep")
 
 
 def test_arrival_minutes_spreads_bot_slots_evenly_over_the_window():
@@ -1554,7 +1591,7 @@ def test_redis_pool_lets_every_bot_hold_a_connection(monkeypatch, blocking):
         _clear_realtime_status=Mock(),
         _calculate_and_report_results=Mock(),
     ):
-        tester.run_test("TEST 1/1", 5, None, duration_minutes=0)
+        tester.run_test("Test 1/1", 5, None, duration_minutes=0)
 
     connections = [pool.get_connection() for _ in range(105)]
     for connection in connections:
@@ -1995,25 +2032,40 @@ _ASYNC_JOB_STATS = [
             ["Bot error before joining"],
         ),
         (
-            dict(median_wait_page_time=1.5, n_wait_page_samples=10),
-            ["Median time on wait pages per bot (n=10)"],
-        ),
-        (
             dict(async_job_stats=_ASYNC_JOB_STATS),
             ["ASYNC JOB TIMES", "tm1", "create_trial", "Q Med"],
         ),
         (dict(async_job_stats=None), ["No completed async jobs"]),
     ],
-    ids=["basic", "no-responses", "bots-not-in-db", "wait-pages", "jobs", "no-jobs"],
+    ids=[
+        "basic",
+        "no-responses",
+        "bots-not-in-db",
+        "jobs",
+        "no-jobs",
+    ],
 )
 def test_format_test_results(overrides, expected):
     text = _join(format_test_results(_base_result(**overrides)))
     for line in [
-        "TEST RESULTS",
+        "Test results",
         "2 worker processes, up to 40 jobs at once",
         *expected,
     ]:
         assert line in text
+
+
+def test_wait_page_time_is_a_runtime_and_trials_need_a_successful_bot():
+    text = _join(
+        format_test_results(
+            _base_result(
+                bots_succeeded=0, median_wait_page_time=1.5, n_wait_page_samples=10
+            )
+        )
+    )
+    runtimes = text.split("BOT RUNTIMES")[1].split("REQUEST METRICS")[0]
+    assert "Median time on wait pages per bot (n=10)" in runtimes
+    assert "TRIALS PER BOT" not in text
 
 
 # --- format_performance_summary ---
@@ -2045,7 +2097,9 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
         ),
     ]
 
-    lines = format_performance_summary(results, label="rating", elapsed_s=3720)
+    lines = format_performance_summary(
+        results, label="rating", elapsed_s=3720, open_link=True
+    )
     text = _join(lines)
 
     assert "rating: 3 tests, 1 h 02 min" in text
@@ -2063,6 +2117,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     assert "shorter than one participant session (11 min)" in text
     assert (
         "Recommended: at most 416 participants at once.\n"
+        "  To enforce it, set max_concurrent_participants = 416 in "
+        "Experiment.variables.\n"
         "Largest passing test: 520 bots at once. At 560, 10 of 570 bots (1.8%) "
         "failed, over the 1% limit.\n"
         "  Errors at 560: 10 x OperationalError.\n"
@@ -2074,6 +2130,8 @@ def test_performance_summary_tabulates_the_tests_then_gives_the_verdict(monkeypa
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.delenv("NO_COLOR", raising=False)
     coloured = _join(format_performance_summary(results, terminal=True))
+    # Without an open-link recruiter, the cap can't be enforced, so it isn't suggested.
+    assert "max_concurrent_participants" not in coloured
     assert "m10 (1.8%)" in coloured and " 1 (" in coloured and "m1 (" not in coloured
 
 
@@ -2122,20 +2180,6 @@ def test_performance_summary_is_plain_text_off_a_terminal(monkeypatch):
     notes = narrow[narrow.index("Notes") :]
     assert len(notes) > 3 and max(map(len, notes)) <= 60
     assert "\x1b[" not in _join(narrow) and "\u2026" not in _join(narrow)
-
-
-def test_experiment_code_key_changes_with_config_txt(tmp_path, monkeypatch):
-    from psynet.perf_ssh import experiment_code_key
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "deploy.toml").write_text(
-        "version = 1\n[exclude]\npaths = []\nnames = []\nsuffixes = []\n"
-    )
-    (tmp_path / "experiment.py").write_text("")
-    (tmp_path / "config.txt").write_text("[Config]\n")
-    key = experiment_code_key()
-    (tmp_path / "config.txt").write_text("[Config]\n# A comment\n")
-    assert experiment_code_key() != key
 
 
 @pytest.mark.parametrize(
@@ -2584,7 +2628,12 @@ def test_a_remote_reset_refuses_when_the_free_disk_space_is_unknown():
         reset._check_disk_space("my-app")
 
 
-def test_a_suite_drives_remote_tests_through_their_json_results():
+@pytest.mark.parametrize(
+    "bot_processes, described", [("auto", "auto, chosen for each test"), (8, "4")]
+)
+def test_a_suite_drives_remote_tests_through_their_json_results(
+    caplog, bot_processes, described
+):
     import re
     from dataclasses import asdict
 
@@ -2602,16 +2651,37 @@ def test_a_suite_drives_remote_tests_through_their_json_results():
         duration_minutes=1,
         stagger_interval_s=0.1,
         time_factor=1.0,
-        bot_processes="auto",
+        bot_processes=bot_processes,
     )
     before_test = Mock()
 
-    results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
+    with caplog.at_level("INFO"):
+        results = PerformanceSuite(tester, before_test=before_test).run([2, 4])
 
+    assert f"Bot processes:        {described}\n" in caplog.text
     assert [r.n_bots for r in results] == [2, 4]
     assert before_test.call_count == 2
-    assert "--test-label 'TEST 2/2'" in remote.run_psynet.call_args.args[0]
+    assert "--test-label 'Test 2/2'" in remote.run_psynet.call_args.args[0]
     assert tester.remote_metadata == {"psynet_version": "remote"}
+
+
+def test_performance_summary_handles_no_completed_or_failed_bots():
+    result = _base_result(
+        total_bots_started=1,
+        bots_succeeded=1,
+        bots_failed=0,
+        bots_incomplete=0,
+        total_requests=0,
+        key_requests=0,
+        request_errors=0,
+        median_response_time=None,
+        p95_response_time=0.0,
+        max_response_time=None,
+        avg_bot_duration=None,
+        requests_per_sec=None,
+    )
+    lines = format_performance_summary([result])
+    assert isinstance(lines, list)
 
 
 def _remote_search(
@@ -2631,7 +2701,7 @@ def _remote_search(
     from psynet.command_line import _run_ssh_performance_test
 
     def run_psynet(args, bot_log):
-        if re.search(rf"--test-label 'TEST {interrupt_at_test}'", args):
+        if re.search(rf"--test-label 'Test {interrupt_at_test}'", args):
             raise KeyboardInterrupt
         n_bots = int(re.search(r"--n-bots (\d+)", args)[1])
         p95 = 0.9 if n_bots > 150 else 0.1

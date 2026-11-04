@@ -1,0 +1,1 @@
+The dashboard password no longer appears in server logs. `psynet debug local` now prints the dashboard address and login once in the launching terminal, whether or not it opens browsers, and local launches no longer log a second, redacted copy. For remote deployments the server log says `Password: not shown in logs (printed by the command that launched the experiment)`.

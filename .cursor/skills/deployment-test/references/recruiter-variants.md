@@ -2,7 +2,7 @@
 
 
 Every deployment-test experiment defaults to `devprolific`, which cannot start
-paid recruitment. Before starting the three staggered deploy commands above,
+paid recruitment. Before starting the three deploy commands above,
 swap in the paid variants.
 
 `auto_recruit_prolific` is an on-demand extra rather than part of a full
@@ -85,7 +85,7 @@ PY"
    the app, and redeploy from a worktree that passed the file diffs. Do
    not keep watching a mismatched app.
 
-3. Deploy from the worktrees (these are the second and third staggered
+3. Deploy from the worktrees (these are the second and third
    `psynet deploy ssh` commands shown above). Name the Lucid app
    `test-<base-name>-audio-gibbs-lucid`, appending `-2`, `-3`, ... for repeat
    deployments (e.g. `test-v13-3-0rc1-audio-gibbs-lucid-1`, or

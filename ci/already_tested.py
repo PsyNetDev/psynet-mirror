@@ -111,6 +111,7 @@ def find_already_passed(api, *, project_id, mr_iid, sha):
         except urllib.error.HTTPError as exc:
             # For example, a merge commit that Git has since garbage-collected.
             print(f"WARNING: could not read pipeline {pipeline['id']}'s files ({exc}).")
+            exc.close()
             continue
         if tree != current_tree:
             print(f"Pipeline {pipeline['id']} tested different files.")

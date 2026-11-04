@@ -1,6 +1,9 @@
 """SSH export uses the deployment's public origin."""
 
 import json
+import subprocess
+
+import pytest
 
 from psynet.command_line import _ssh_dashboard_endpoint
 
@@ -108,3 +111,88 @@ def test_ssh_export_keeps_the_app_server_name_for_classic_slots(tmp_path, monkey
     endpoint = _ssh_dashboard_endpoint("psynet-07", "musix.mus.cam.ac.uk", _config())
 
     assert endpoint.base_url == "https://psynet-07.musix.mus.cam.ac.uk"
+
+
+OLD_ROOT_CADDYFILE = (
+    "# Caddy\n{\n    grace_period 30s\n}\n\nmusix.example {\n    tls internal\n"
+    "    handle /logs* {\n        reverse_proxy dozzle:8080\n    }\n"
+    "    handle {\n        reverse_proxy dlgr-d8f9f2c4_web:5000\n    }\n}\n"
+)
+SERVER_CADDYFILE = (
+    "{\n    grace_period 30s\n}\n\nmusix.example {\n    respond /health-check 200\n"
+    "    tls internal\n    import root.d/*\n}\n\nlogs.musix.example {\n"
+    "    reverse_proxy dozzle:8080\n}\n\nimport caddy.d/*\n"
+)
+
+
+@pytest.mark.parametrize(
+    "files, origin",
+    [
+        # Released Dallinger routes the root domain in the Caddyfile itself.
+        ({"Caddyfile": OLD_ROOT_CADDYFILE}, "https://musix.example"),
+        # Newer Dallinger routes it with a root.d file.
+        (
+            {"Caddyfile": SERVER_CADDYFILE, "root.d/dlgr-d8f9f2c4": "reverse_proxy"},
+            "https://musix.example",
+        ),
+        (
+            {
+                "Caddyfile": SERVER_CADDYFILE,
+                "caddy.d/dlgr-d8f9f2c4": "lab.example.org {\n    tls internal\n"
+                "    reverse_proxy dlgr-d8f9f2c4_web:5000\n}",
+            },
+            "https://lab.example.org",
+        ),
+        # A leftover site isn't served by the old root Caddyfile.
+        (
+            {
+                "Caddyfile": OLD_ROOT_CADDYFILE,
+                "caddy.d/dlgr-d8f9f2c4": "old.example {\n}",
+            },
+            "https://musix.example",
+        ),
+        # Without a route for the app, the server's own site isn't its address.
+        ({"Caddyfile": SERVER_CADDYFILE}, "https://dlgr-d8f9f2c4.musix.example"),
+        (
+            {
+                "Caddyfile": OLD_ROOT_CADDYFILE,
+                "dlgr-d8f9f2c4/deployment.json": json.dumps(
+                    {"public_origin": "https://exp.example.org"}
+                ),
+            },
+            "https://exp.example.org",
+        ),
+    ],
+)
+def test_ssh_export_finds_classic_apps_from_the_servers_caddy_routes(
+    tmp_path, monkeypatch, files, origin
+):
+    """Without a launch note, the server's routes give the app's address."""
+    for name, text in files.items():
+        path = tmp_path / "dallinger" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    class Server:
+        """Runs the SSH commands locally, with the server's home in ``tmp_path``."""
+
+        def __init__(self, server):
+            self.executor = self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def run(self, cmd, raise_=True):
+            return subprocess.run(
+                cmd, shell=True, capture_output=True, text=True
+            ).stdout
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("psynet.export.client.SshSession", Server)
+
+    endpoint = _ssh_dashboard_endpoint("dlgr-d8f9f2c4", "musix.example", _config())
+
+    assert endpoint.base_url == origin

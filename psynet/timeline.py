@@ -399,9 +399,17 @@ class WebSocketElt(Elt):
     channel : str
         The Redis channel name this Elt subscribes to. If ``None``, no
         subscribers will be registered.
+    requires_checked_connection : bool
+        If ``True``, ``handle_message`` is called only for messages sent
+        through ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+        whose connection PsyNet has checked belongs to ``participant``, and runs
+        on the web process holding that socket. Messages on the channel from
+        ``/chat`` sockets are ignored, because they can name any participant.
+        Defaults to ``False``.
     """
 
     channel = None
+    requires_checked_connection = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -651,7 +659,7 @@ class AsyncCodeBlock(EltCollection):
                 if self.on_timeout is None
                 else self._call_on_timeout_unless_finished,
             ),
-            CodeBlock(lambda: logger.info("Finished waiting for async code block.")),
+            CodeBlock(lambda: logger.debug("Finished waiting for async code block.")),
         )
 
     def _call_on_timeout_unless_finished(self, participant):
@@ -2708,16 +2716,29 @@ class Timeline:
         )
         default_branches.update(branch_kwargs)
         self.terminal_branch_names = frozenset(default_branches)
+        self.experiment_class = None
+        """The experiment class that this timeline belongs to, set when that class is defined."""
 
         self.elts = OrderedDict()
         self.elts["main"] = join(*args, SuccessfulEndPage())
         for name, content in default_branches.items():
             self.elts[name] = join(content)
 
+        self._compile()
+
+    def _compile(self):
         self.modules, self.module_list = self.compile_modules()
         self.check_elts()
         self.add_elt_ids()
         self.estimated_time_credit = CreditEstimate(list(self.all_elts))
+
+    def insert_at_start(self, *elts):
+        """Insert elements at the start of the main branch and recompile the timeline."""
+        for elt in self.all_elts:
+            elt.id = None
+        self.elts["main"] = join(*elts, self.elts["main"])
+        self.__dict__.pop("trial_makers", None)
+        self._compile()
 
     @property
     def all_elts(self):
@@ -3296,7 +3317,7 @@ def while_loop(
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
-        logger.info(f"Evaluating while_loop ({label}) condition: result = {result}")
+        logger.debug(f"Evaluating while_loop ({label}) condition: result = {result}")
         return result
 
     def start_loop(participant, experiment):
