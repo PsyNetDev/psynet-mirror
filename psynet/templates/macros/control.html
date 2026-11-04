@@ -27,32 +27,19 @@
     <script>
         let nextButtonState = (psynet.page.control.nextButton = {
             disable: function() {
-            $("#next-button").attr("disabled", true)
-            $("#next-button-spinner").show()
-            $("#next-button-text").hide();
+                $("#next-button").attr("disabled", true);
             },
 
             enable: function() {
-            $("#next-button").attr("disabled", false)
-            $("#next-button-spinner").hide()
-            $("#next-button-text").show();
+                $("#next-button").attr("disabled", false);
             }
         });
 
         nextButtonState.handleClick = function() {
             psynet.captureSubmissionControlState();
-            let width = $("#next-button").width();
-            let height = $("#next-button").height();
-            $("#next-button").width(width); // Locks the button width to the current width
-            $("#next-button").height(height);
-
+            psynet.showSubmissionSpinner(document.getElementById("next-button"));
             nextButtonState.disable();
-
-            function onRejection() {
-                nextButtonState.enable();
-            }
-
-            psynet.submitResponse(onRejection);
+            psynet.submitResponse();
         };
 
         psynet.trial.onEvent("trialConstruct", function() {
@@ -67,8 +54,7 @@
     </script>
 
     <button type="button" id="next-button" class="btn btn-primary btn-lg submit" disabled="true">
-        <span id="next-button-spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none"></span>
-        <span id="next-button-text">{{ gettext("Next") }}</span>
+        {{ gettext("Next") }}
     </button>
 {% endmacro %}
 
