@@ -237,9 +237,7 @@ class SelectTrial(SelectTrialMixin, ImitationChainTrial):
             # Alternate colors
             color = "blue" if count % 2 == 0 else "red"
             stages.append(
-                ProgressStage(
-                    MAX_RECORDING_DURATION, Markup(f"Listen to {label}"), color
-                )
+                ProgressStage(MAX_RECORDING_DURATION, f"Listen to {label}", color)
             )
 
             key = "play_" + label

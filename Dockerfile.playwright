@@ -9,7 +9,7 @@
 ARG DOCKER_PLATFORM=linux/amd64
 ARG BASE_IMAGE=psynet-build
 
-FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.63.0-jammy AS playwright-browsers
+FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.64.1-jammy AS playwright-browsers
 
 FROM ${BASE_IMAGE}
 # The participant recording helper (record-participant-video skill) muxes

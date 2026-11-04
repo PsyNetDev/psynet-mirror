@@ -1,6 +1,6 @@
 import json
 
-from markupsafe import Markup, escape
+from markupsafe import Markup
 
 import psynet.experiment
 from psynet.modular_page import MediaSliderControl, ModularPage
@@ -12,10 +12,8 @@ N_VIDEO_LOCATIONS = 17
 
 
 def print_dict(x, **kwargs):
-    return (
-        "<pre style='overflow: scroll; max-height: 200px'>"
-        + json.dumps(x, indent=4)
-        + "</pre>"
+    return Markup("<pre style='overflow: scroll; max-height: 200px'>{}</pre>").format(
+        json.dumps(x, indent=4)
     )
 
 
@@ -49,9 +47,11 @@ def new_example(description, **kwargs):
         slider_media = media.video
     else:
         raise NotImplementedError(f"Modality {kwargs['modality']} not implemented")
-    prompt = f"{escape(description)} {print_dict(kwargs)}"
-    prompt += """
-    <p>
+    prompt = Markup(
+        """
+        {description}
+        {settings}
+        <p>
             Raw slider value is <strong id="slider-raw-value">NA</strong> <br>
             Output slider value is <strong id="slider-output-value">NA</strong>
             (phase = <strong id="phase">NA</strong>, random wrap = <strong id="random-wrap">NA</strong>)
@@ -60,7 +60,7 @@ def new_example(description, **kwargs):
             Just played <strong id="slider-audio">NA</strong>
         </p>
         """
-    prompt = Markup(prompt)
+    ).format(description=description, settings=print_dict(kwargs))
     time_estimate = kwargs.pop("time_estimate")
 
     return join(

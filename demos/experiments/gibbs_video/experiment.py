@@ -55,14 +55,14 @@ class CustomTrial(VideoGibbsTrial):
     def get_prompt(self, experiment, participant):
         return Markup(
             "<center>Adjust the slider so that the video is as "
-            f"<strong>{self.context['target']}</strong> "
+            "<strong>{}</strong> "
             "as possible.</center></br></br>"
             "In each trial of this experiment, you use the slider to choose between different video clips. "
             "In this case, every video contains an alternation between two colored squares. Each of the squares is "
             "presented twice. How long each of the colored squares is presented also varies."
             "The slider is disabled as long as a video is playing. The next button is activated the earliest after "
-            "three seconds and minimally three interactions with the slider are required.",
-        )
+            "three seconds and minimally three interactions with the slider are required."
+        ).format(self.context["target"])
 
 
 class CustomNode(VideoGibbsNode):

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from dominate import tags
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
@@ -477,3 +478,9 @@ def test_experiment_refuses_to_publish_reserved_direct_types(monkeypatch):
     experiment.publish_to_participants({"type": "message"}, [1], scope="s")
 
     assert sent == [({"type": "message"}, [1], "s")]
+
+
+def test_compose_hold_overlay_html_escapes_strings_and_keeps_dominate_tags():
+    html = compose_hold_overlay_html(tags.strong("Waiting"), "<b>1</b> of 3")
+    assert "<strong>Waiting</strong>" in html
+    assert "&lt;b&gt;1&lt;/b&gt; of 3" in html

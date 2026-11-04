@@ -96,7 +96,7 @@
 
         {% if participant is not none %}
             function copyURLForResumingSession() {
-                let url = "{{ get_timeline_url(participant) }}";
+                let url = {{ get_timeline_url(participant).unescape() | tojson }};
                 navigator.clipboard.writeText(url).then(function() {
                   console.log("Copied URL to cliboard.");
                 });
@@ -335,4 +335,4 @@
     {% endif %}
 {% endmacro %}
 
-{% macro get_timeline_url(p) %}{{ app_base_url }}/timeline?unique_id={{ p.unique_id }}{% endmacro %}
+{% macro get_timeline_url(p) %}{{ app_base_url }}/timeline?unique_id={{ p.unique_id | urlencode }}{% endmacro %}

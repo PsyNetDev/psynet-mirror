@@ -12,7 +12,7 @@
     </button>
     <script>
         psynet.trial.onEvent("trialConstruct", function() {
-            let button = document.getElementById("{{ params.id }}");
+            let button = document.getElementById({{ params.id | tojson }});
             if (!button) {
                 return;
             }
@@ -27,32 +27,19 @@
     <script>
         let nextButtonState = (psynet.page.control.nextButton = {
             disable: function() {
-            $("#next-button").attr("disabled", true)
-            $("#next-button-spinner").show()
-            $("#next-button-text").hide();
+                $("#next-button").attr("disabled", true);
             },
 
             enable: function() {
-            $("#next-button").attr("disabled", false)
-            $("#next-button-spinner").hide()
-            $("#next-button-text").show();
+                $("#next-button").attr("disabled", false);
             }
         });
 
         nextButtonState.handleClick = function() {
             psynet.captureSubmissionControlState();
-            let width = $("#next-button").width();
-            let height = $("#next-button").height();
-            $("#next-button").width(width); // Locks the button width to the current width
-            $("#next-button").height(height);
-
+            psynet.showSubmissionSpinner(document.getElementById("next-button"));
             nextButtonState.disable();
-
-            function onRejection() {
-                nextButtonState.enable();
-            }
-
-            psynet.submitResponse(onRejection);
+            psynet.submitResponse();
         };
 
         psynet.trial.onEvent("trialConstruct", function() {
@@ -67,8 +54,7 @@
     </script>
 
     <button type="button" id="next-button" class="btn btn-primary btn-lg submit" disabled="true">
-        <span id="next-button-spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none"></span>
-        <span id="next-button-text">{{ gettext("Next") }}</span>
+        {{ gettext("Next") }}
     </button>
 {% endmacro %}
 
@@ -129,9 +115,7 @@
             style="{{ params.style }}"
             disabled="true"
     >
-        {% autoescape off %}
         {{ params.label }}
-        {% endautoescape %}
     </button>
 {% endmacro %}
 
@@ -167,6 +151,7 @@
                 );
             {% else %}
                 psynet.captureSubmissionControlState();
+                psynet.showSubmissionSpinner(button);
                 psynet.response.disable();
                 psynet.submit.disable();
                 psynet.nextPage(id);
@@ -196,7 +181,7 @@
 {% macro keyboard_push_buttons(params) %}
     {{ push_buttons(params) }}
     <script>
-        const keyCodeIdx = JSON.parse(`{{ params.keys | tojson }}`);
+        const keyCodeIdx = {{ params.keys | tojson }};
         psynet.trial.onEvent("trialConstruct", function() {
             psynet.addPageEventListener(document, "keydown", function(event) {
                 let keyCode = event.code;
@@ -238,7 +223,7 @@
 
     <script>
         psynet.setRetrieveResponseHandler(function() {
-            let elements = document.getElementsByName('{{ params.name }}')
+            let elements = document.getElementsByName({{ params.name | tojson }})
             checkedValues = Array.from(elements).map(function(element, i) {
                 if (element.checked) {return element.id}
             }).filter(function (element) {
@@ -284,7 +269,7 @@
         {% endif %}
 
         psynet.setRetrieveResponseHandler(function() {
-            let element = document.querySelector('input[name="{{ params.name }}"]:checked')
+            let element = document.querySelector('input[name="' + CSS.escape({{ params.name | tojson }}) + '"]:checked')
             var rawAnswer = (element != null) ? element.id : null;
 
             {% if params.show_free_text_option %}
@@ -321,7 +306,7 @@
 
     <script>
         psynet.setRetrieveResponseHandler(function() {
-            let element = document.getElementById("{{ params.name }}");
+            let element = document.getElementById({{ params.name | tojson }});
             return {
                 rawAnswer: (element != null) ? element.value : null
             }
@@ -343,11 +328,9 @@
     {{ slider(params) }}
 
     <script>
-        {% autoescape off %}
-        var mediaLocations = {{ params.js_vars.media_locations }};
-        var autoplay = {{ params.js_vars.autoplay | lower }};
-        var disableWhilePlaying = {{ params.js_vars.disable_while_playing | lower }};
-        {% endautoescape %}
+        var mediaLocations = {{ params.js_vars.media_locations | tojson }};
+        var autoplay = {{ params.js_vars.autoplay | tojson }};
+        var disableWhilePlaying = {{ params.js_vars.disable_while_playing | tojson }};
 
         // Overwrites corresponding method in slider-page.html
         slider.updateLog = function() {
@@ -425,9 +408,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -472,9 +453,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -518,9 +497,7 @@
     {{ media_slider(params) }}
 
     <script>
-        {% autoescape off %}
         var disableDuration = {{ params.js_vars.disable_duration | float }};
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -538,7 +515,12 @@
             video.player.style.display = 'block'
             video.player.pause();
             video.player.currentTime = 0;
-            video.player.play();
+            video.player.play().catch(function (error) {
+                // Moving the slider again pauses this video before play() resolves.
+                if (error.name !== "AbortError") {
+                    throw error;
+                }
+            });
             if (disableDuration == 0) {
                 psynet.trial.setTimer(enableSlider, video.player.duration * 1000)
             } else {
@@ -759,17 +741,15 @@
     <p class="vspace"></p>
 
     <script>
-        {% autoescape off %}
         // ---- Slider configuration -------------------------------------------
-        var snapValues = {% if params.js_vars.snap_values is none %}null{% else %}{{ params.js_vars.snap_values }}{% endif %};
-        var minimalInteractions = {% if params.js_vars.minimal_interactions is none %}null{% else %}{{ params.js_vars.minimal_interactions }}{% endif %};
-        var continuousUpdates = {% if params.js_vars.continuous_updates is not defined or params.js_vars.continuous_updates is none %}null{% else %}{{ params.js_vars.continuous_updates | lower }}{% endif %};
+        var snapValues = {{ params.js_vars.snap_values | tojson }};
+        var minimalInteractions = {{ params.js_vars.minimal_interactions | tojson }};
+        var continuousUpdates = {{ params.js_vars.continuous_updates | default(none) | tojson }};
         var disableWhilePlaying = typeof disableWhilePlaying === "undefined" ? false : disableWhilePlaying;
-        var sliderId = '{{ params.slider_id }}';
+        var sliderId = {{ params.slider_id | tojson }};
         var randomWrap = {{ params.random_wrap | lower }}; // Decide whether to add to js_vars
         var minVal = {{ params.min_value }}; // Decide whether to add to js_vars
         var maxVal = {{ params.max_value }}; // Decide whether to add to js_vars
-        {% endautoescape %}
 
         psynet.page.control.slider = psynet.page.control.slider || {};
 
@@ -1050,7 +1030,7 @@
                 aria-valuemin="0"
                 aria-valuemax="100"
                 aria-valuenow="0"
-                aria-label="{{ pgettext('audio_meter', 'Microphone level') }}"
+                aria-label="{{ pgettext('audio_meter', 'Microphone level') | forceescape }}"
             >
                 <div class="audio-meter__fill"></div>
             </div>
@@ -1065,7 +1045,7 @@
 
     <script>
         {% include "macros/control/audio_meter.js" %}
-        psynet.page.control.audioMeter.init('{{ params.to_json() }}');
+        psynet.page.control.audioMeter.init({{ params.to_json() | tojson }});
 
     </script>
 {% endmacro %}
@@ -1486,7 +1466,11 @@
             psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
-                    videoRecorder = new capture.RecordingClip(cameraStream);
+                    // Only asynchronous uploads are size-limited; legacy uploads never were.
+                    videoRecorder = new capture.RecordingClip(cameraStream, {
+                        maxBytes: psynet.var.asynchronousUploadSources
+                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
+                    });
                     videoRecorder.stream = cameraStream;
                 }
             });
@@ -1591,7 +1575,15 @@
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
                     const capture = await psynet.getRecordingCapture();
-                    screenStream = await capture.devices.acquireAnswer("screen", false, psynet.var.recordingLabels);
+                    const labels = psynet.var.recordingLabels;
+                    // The legacy path cannot submit without the recording.
+                    screenStream = await capture.devices.acquireAnswer(
+                        "screen",
+                        false,
+                        psynet.var.asynchronousUploadSources
+                            ? labels
+                            : {...labels, answer: labels.answer_required, skip: null}
+                    );
                 } catch (error) {
                     psynet.log.warn(`Screen recording unavailable: ${error.message}`);
                 }
@@ -1600,7 +1592,10 @@
             psynet.trial.onEvent("trialPrepare", async () => {
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
-                    screenRecorder = new capture.RecordingClip(screenStream);
+                    screenRecorder = new capture.RecordingClip(screenStream, {
+                        maxBytes: psynet.var.asynchronousUploadSources
+                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
+                    });
                     screenRecorder.stream = screenStream;
                 }
             });
@@ -1956,9 +1951,7 @@
                 class="{{ item.class }}"
                 data-allowed="{{ item.allowed | tojson }}"
         >
-            {% autoescape off %}
             {{ item.label }}
-            {% endautoescape %}
         </button>
         {% endfor %}
     </div>
@@ -1968,7 +1961,7 @@
             if (allowed) {
                 psynet.nextPage(id);
             } else {
-                psynet.terminateParticipant("{{ params.label }}_" + id)
+                psynet.terminateParticipant({{ params.label | tojson }} + "_" + id)
             }
         };
 

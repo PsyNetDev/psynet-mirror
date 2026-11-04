@@ -76,9 +76,9 @@ class CustomTrial(AudioGibbsTrial):
     def get_prompt(self, experiment, participant):
         return Markup(
             "Adjust the slider so that the word sounds as "
-            f"<strong>{self.context['target']}</strong> "
+            "<strong>{}</strong> "
             "as possible."
-        )
+        ).format(self.context["target"])
 
 
 class CustomNode(AudioGibbsNode):
@@ -100,8 +100,8 @@ class CustomTrialMaker(AudioGibbsTrialMaker):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
         return InfoPage(
-            Markup(
-                f"Your consistency score was <strong>{score_to_display}&#37;</strong>."
+            Markup("Your consistency score was <strong>{}&#37;</strong>.").format(
+                score_to_display
             ),
             time_estimate=5,
         )

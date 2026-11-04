@@ -1,6 +1,8 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 
 from psynet.prescreen.vocabtest import VocabTest, VocabTrial
 
@@ -181,3 +183,45 @@ def test_vocab_test_rejects_sync_groups(tmp_path):
             present_as_image=False,
             sync_group_type="group",
         )
+
+
+def _fake_font_response(content=b"font", error=None):
+    def raise_for_status():
+        if error:
+            raise error
+
+    return SimpleNamespace(content=content, raise_for_status=raise_for_status)
+
+
+def test_vocab_font_is_downloaded_once_into_static_fonts(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    downloads = []
+
+    def fake_get(url, **kwargs):
+        downloads.append(url)
+        return _fake_font_response()
+
+    monkeypatch.setattr("psynet.prescreen.vocabtest.requests.get", fake_get)
+
+    url = "https://example.org/fonts/Font.ttf"
+    first = VocabTest.get_font_path(url)
+    second = VocabTest.get_font_path(url)
+
+    assert first == second == str(tmp_path / "static" / "fonts" / "Font.ttf")
+    assert Path(first).read_bytes() == b"font"
+    assert downloads == [url]
+    assert sorted(p.name for p in (tmp_path / "static" / "fonts").iterdir()) == [
+        "Font.ttf"
+    ]
+
+
+def test_vocab_font_download_failure_raises(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "psynet.prescreen.vocabtest.requests.get",
+        lambda url, **kwargs: _fake_font_response(error=requests.HTTPError("404")),
+    )
+
+    with pytest.raises(requests.HTTPError):
+        VocabTest.get_font_path("https://example.org/fonts/Font.ttf")
+    assert not (tmp_path / "static" / "fonts" / "Font.ttf").exists()

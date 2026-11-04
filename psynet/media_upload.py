@@ -12,9 +12,15 @@ transaction publishes success. The worker job has its own timeout, counted from
 when it starts; a separate bound from receipt covers queueing, so a busy queue
 cannot expire a recording that is merely waiting. The job is deliberately not
 linked to the asset or trial, because a timed-out job would otherwise fail the
-trial automatically, even for optional recordings. A poller expires overdue
-recordings even when the browser has closed. In-place LocalStorage video and
-audio recording controls use this transport.
+trial automatically, even for optional recordings.
+
+A pending upload holds a lease rather than a fixed deadline: slow uploads are
+not failed while the participant's browser is still there. The browser renews
+the lease with heartbeats while it holds the recording, and the receiver renews
+it while bytes keep arriving. A recording expires only after an idle timeout
+without renewal, or at an absolute lifetime cap from acceptance. A poller
+expires overdue recordings even when the browser has closed. In-place
+LocalStorage video and audio recording controls use this transport.
 Do not wrap the streaming route in a participant transaction or expose received
 files through the asset endpoint before successful deposit.
 """
@@ -24,7 +30,6 @@ import errno
 import fcntl
 import hashlib
 import hmac
-import math
 import os
 import secrets
 import socket
@@ -33,7 +38,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Timer
+from threading import Event, Thread
 from types import SimpleNamespace
 
 from dallinger import db
@@ -44,6 +49,7 @@ from werkzeug.exceptions import (
     Forbidden,
     Gone,
     RequestEntityTooLarge,
+    RequestTimeout,
     TooManyRequests,
 )
 
@@ -72,6 +78,17 @@ _RECEIPT_RETRY_AFTER = 5
 # Attempts at a recording's deposit callbacks before its trial fails. A second
 # attempt absorbs transient errors such as lock timeouts.
 _DEPOSIT_CALLBACK_ATTEMPTS = 2
+# Seconds without a heartbeat or upload progress before a pending recording is
+# treated as missing. Browsers send heartbeats well within this interval.
+_IDLE_TIMEOUT = 120
+# Seconds from acceptance after which a pending recording expires regardless of
+# renewal, so an open but stuck browser cannot hold its trial indefinitely.
+_MAX_UPLOAD_LIFETIME = 1800
+# Seconds between lease renewals while the receiver is streaming bytes.
+_RECEIVER_RENEW_INTERVAL = 30
+# WSGI body reads block until a whole chunk arrives, so an upload counts as
+# stalled if less than this many bytes arrive within the idle timeout.
+_READ_CHUNK_BYTES = 65536
 
 # Accepted formats: the number of leading bytes to inspect, a check on them,
 # and a name for error messages. This rejects obvious non-media input; it does
@@ -86,45 +103,69 @@ _MEDIA_FORMATS = {
 }
 
 
-def _upload_timeout(size_bytes):
-    """Allow a conservative 1 Mbit/s transfer, retry headroom, and queue overhead.
-
-    This is an engineering allowance, not a measured participant average:
-    30 seconds + twice the transfer time, bounded to 60–600 seconds. Compute
-    once on acceptance; neither queueing nor retransmission resets the clock.
-    """
-    if type(size_bytes) is not int or size_bytes <= 0:
-        raise ValueError("Recording size must be a positive integer.")
-    return min(600, max(60, 30 + math.ceil(2 * size_bytes * 8 / 1_000_000)))
-
-
 def _utcnow():
     """Return UTC without timezone information, matching existing DB dates."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _lifetime_deadline(recording):
+    """Return the absolute cap after which a pending upload cannot be renewed."""
+    return datetime.fromisoformat(recording.upload_context["lifetime_deadline"])
+
+
+def _renew_lease(recording):
+    """Extend a pending upload's lease by the idle timeout, up to its lifetime cap."""
+    recording.upload_deadline = min(
+        _lifetime_deadline(recording),
+        _utcnow() + timedelta(seconds=recording.upload_context["idle_timeout"]),
+    )
+
+
 def _recording_resolution_deadline(recording):
-    """Return the existing deadline including any remaining processing allowance."""
+    """Return the latest time a recording can resolve, including processing.
+
+    Leases can be renewed, so a pending recording is bounded only by its
+    lifetime cap; it usually resolves much earlier.
+    """
     if recording.upload_status == "pending":
-        return recording.upload_deadline + timedelta(
+        return _lifetime_deadline(recording) + timedelta(
             seconds=recording.upload_context["processing_timeout"]
         )
     return recording.upload_processing_deadline
 
 
 def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=None):
-    """Keep dependent waits alive through existing recording deadlines.
+    """Keep dependent waits alive until outstanding recordings can resolve.
 
-    Compute once on entering a wait. Pending uploads may receive their bytes at
-    the upload deadline and then use their processing allowance. Retain the
-    ordinary wait budget afterwards for analysis and clock polling. This never
-    extends a recording's own deadline or changes its success requirements.
+    Compute once on entering a wait. A pending upload can keep renewing its
+    lease until its lifetime cap and then use its processing allowance; waits
+    end as soon as the recording actually resolves. Retain the ordinary wait
+    budget afterwards for analysis and clock polling. This never changes a
+    recording's own expiry or success requirements.
     """
-    from .trial.main import Trial
-
     if default_timeout is None:
         return None
-    query = (
+    query = _outstanding_recordings(participant_id)
+    if trial_id is not None:
+        query = query.filter(Recording.trial_id == trial_id)
+    now = _utcnow()
+    remaining = 0.0
+    for recording in query:
+        deadline = _recording_resolution_deadline(recording)
+        remaining = max(remaining, (deadline - now).total_seconds())
+    return default_timeout + remaining
+
+
+def _has_outstanding_recordings(participant_id):
+    """Return whether a required recording of a live trial is still unresolved."""
+    return _outstanding_recordings(participant_id).first() is not None
+
+
+def _outstanding_recordings(participant_id):
+    """Query required recordings of live trials that have not resolved yet."""
+    from .trial.main import Trial
+
+    return (
         db.session.query(
             Recording.upload_status,
             Recording.upload_deadline,
@@ -141,14 +182,6 @@ def _recording_wait_timeout(participant_id, default_timeout=20.0, *, trial_id=No
             ),
         )
     )
-    if trial_id is not None:
-        query = query.filter(Recording.trial_id == trial_id)
-    now = _utcnow()
-    remaining = 0.0
-    for recording in query:
-        deadline = _recording_resolution_deadline(recording)
-        remaining = max(remaining, (deadline - now).total_seconds())
-    return default_timeout + remaining
 
 
 def _upload_directory():
@@ -176,7 +209,8 @@ def _reserve_recording(
     source,
     local_key,
     storage,
-    upload_timeout=None,
+    idle_timeout=_IDLE_TIMEOUT,
+    lifetime=_MAX_UPLOAD_LIFETIME,
     upload_size_bytes=None,
     processing_timeout=_PROCESSING_BOUND,
     max_bytes=128 * 1024 * 1024,
@@ -198,19 +232,13 @@ def _reserve_recording(
         raise ValueError(f"Unsupported recording format: {media_format!r}.")
     if any(
         type(value) is not int or value <= 0
-        for value in (processing_timeout, max_bytes)
+        for value in (processing_timeout, max_bytes, idle_timeout, lifetime)
     ):
         raise ValueError("Recording limits must be positive integers.")
     if upload_size_bytes is not None and (
         type(upload_size_bytes) is not int or not 0 < upload_size_bytes <= max_bytes
     ):
         raise ValueError("Recording size must be positive and within the upload limit.")
-    if upload_timeout is None:
-        upload_timeout = _upload_timeout(
-            max_bytes if upload_size_bytes is None else upload_size_bytes
-        )
-    if type(upload_timeout) is not int or upload_timeout <= 0:
-        raise ValueError("Recording limits must be positive integers.")
     if local_key in parent.assets:
         raise ValueError(f"This parent already has an asset named {local_key!r}.")
     asset = Recording(
@@ -236,8 +264,8 @@ def _reserve_recording(
     token = secrets.token_urlsafe(32)
     asset.upload_token_hash = hashlib.sha256(token.encode()).hexdigest()
     asset.upload_status = "pending"
-    asset.upload_deadline = _utcnow() + timedelta(seconds=upload_timeout)
     asset.upload_max_bytes = max_bytes
+    lifetime_deadline = _utcnow() + timedelta(seconds=lifetime)
     asset.upload_context = {
         "response_id": response.id,
         "page_label": response.question,
@@ -245,15 +273,21 @@ def _reserve_recording(
         "source": source,
         "format": media_format,
         "processing_timeout": processing_timeout,
+        "idle_timeout": idle_timeout,
+        "lifetime_deadline": lifetime_deadline.isoformat(),
         "upload_size_bytes": upload_size_bytes,
     }
+    _renew_lease(asset)
     db.session.add(asset)
     db.session.flush()
     return asset, {
         "id": str(asset.id),
         "url": f"/media-upload/{asset.id}",
         "token": token,
-        "expires_at": asset.upload_deadline.replace(tzinfo=timezone.utc).isoformat(),
+        # The browser keeps the bytes until this cap; leases expire earlier
+        # only if it stops sending heartbeats.
+        "expires_at": lifetime_deadline.replace(tzinfo=timezone.utc).isoformat(),
+        "renew_interval_ms": idle_timeout * 1000 // 4,
     }
 
 
@@ -275,6 +309,66 @@ def _check_receivable(recording):
     if recording.upload_status != "pending" or _utcnow() >= recording.upload_deadline:
         raise Gone("The recording upload is no longer pending.")
     return True
+
+
+def _renew_live_lease(recording):
+    """Renew a pending lease unless it has lapsed; return whether it was live.
+
+    A lapsed lease is final, even before the clock task marks it expired.
+    """
+    if (
+        recording is None
+        or recording.upload_status != "pending"
+        or _utcnow() >= recording.upload_deadline
+    ):
+        return False
+    _renew_lease(recording)
+    return True
+
+
+def _renew_pending_lease(recording_id):
+    """Renew a streaming upload's lease in its own short transaction.
+
+    Returns whether the upload is still live.
+    """
+    with Session(db.engine) as session, session.begin():
+        return _renew_live_lease(
+            session.query(Recording)
+            .filter_by(id=recording_id)
+            .with_for_update()
+            .one_or_none()
+        )
+
+
+def _renew_uploads(uploads):
+    """Renew leases for a browser that still holds these recordings.
+
+    Each upload is a ``{"id", "token"}`` pair; unauthorized entries are ignored.
+    Returns the IDs of recordings that can no longer be uploaded, including
+    ones whose lease has lapsed, so the browser can release their bytes.
+    Locks only authorized recording rows, one at a time.
+    """
+    unavailable = []
+    for upload in uploads[:64]:
+        try:
+            recording_id = int(upload["id"])
+            token = str(upload["token"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        with Session(db.engine) as session, session.begin():
+            recording = session.get(Recording, recording_id)
+            try:
+                _authorize(recording, token)
+            except Forbidden:
+                continue
+            session.refresh(recording, with_for_update=True)
+            if not _renew_live_lease(recording) and recording.upload_status in {
+                "pending",
+                "expired",
+                "failed",
+            }:
+                unavailable.append(str(recording_id))
+    return unavailable
 
 
 @contextmanager
@@ -323,6 +417,13 @@ def _receive_recording(
         )
 
 
+def _raise_stalled(lifetime_deadline):
+    """Ask the browser to retry a stalled connection unless the upload's time is up."""
+    if _utcnow() >= lifetime_deadline:
+        raise Gone("The recording upload is no longer pending.") from None
+    raise RequestTimeout("The recording upload stalled.") from None
+
+
 def _receive_recording_body(
     recording_id, token, stream, *, directory, content_length=None, connection=None
 ):
@@ -338,7 +439,8 @@ def _receive_recording_body(
         if not _check_receivable(recording):
             return
         max_bytes = recording.upload_max_bytes
-        deadline = recording.upload_deadline
+        idle = timedelta(seconds=recording.upload_context["idle_timeout"])
+        lifetime_deadline = _lifetime_deadline(recording)
         header_length, header_matches, format_name = _MEDIA_FORMATS[
             recording.upload_context.get("format", "webm")
         ]
@@ -352,27 +454,38 @@ def _receive_recording_body(
 
     path = None
     retained = False
-    timer = None
-    if connection is not None:
-        # A socket timeout alone is insufficient: a WSGI read can combine many
-        # successful short receives while a client trickles bytes indefinitely.
-        # Closing only the read half interrupts that read while allowing a 410
-        # response. Gunicorn and Werkzeug expose the owning request socket.
-        def _interrupt_read():
-            """Wake a blocked body reader without closing its response channel."""
-            try:
-                connection.shutdown(socket.SHUT_RD)
-            except OSError as error:
-                if error.errno not in {errno.EBADF, errno.ENOTCONN}:
-                    logger.warning(
-                        "Could not interrupt recording %s upload: %s",
-                        recording_id,
-                        error,
-                    )
+    progress = {"at": _utcnow(), "renewed_at": _utcnow(), "interrupted": False}
+    stop_watchdog = Event()
+    watchdog = None
 
-        timer = Timer(max(0, (deadline - _utcnow()).total_seconds()), _interrupt_read)
-        timer.daemon = True
-        timer.start()
+    def _stalled():
+        """Return true once no bytes arrived for the idle timeout, or at the cap."""
+        now = _utcnow()
+        return now - progress["at"] >= idle or now >= lifetime_deadline
+
+    if connection is not None:
+        # A blocked WSGI read cannot be timed out directly. Closing only the
+        # read half interrupts it while still allowing an error response.
+        # Gunicorn and Werkzeug expose the owning request socket.
+        def _watch():
+            """Wake a stalled body reader without closing its response channel."""
+            while not stop_watchdog.wait(0.5):
+                if not _stalled():
+                    continue
+                progress["interrupted"] = True
+                try:
+                    connection.shutdown(socket.SHUT_RD)
+                except OSError as error:
+                    if error.errno not in {errno.EBADF, errno.ENOTCONN}:
+                        logger.warning(
+                            "Could not interrupt recording %s upload: %s",
+                            recording_id,
+                            error,
+                        )
+                return
+
+        watchdog = Thread(target=_watch, daemon=True)
+        watchdog.start()
     try:
         with tempfile.NamedTemporaryFile(
             prefix=f"psynet-upload-{recording_id}-",
@@ -383,20 +496,25 @@ def _receive_recording_body(
             total = 0
             header = b""
             while True:
-                if _utcnow() >= deadline:
-                    raise Gone("The recording upload deadline has passed.")
                 try:
-                    chunk = stream.read(min(65536, max_bytes - total + 1))
+                    chunk = stream.read(min(_READ_CHUNK_BYTES, max_bytes - total + 1))
                 except (OSError, ClientDisconnected):
-                    if _utcnow() >= deadline:
-                        raise Gone(
-                            "The recording upload deadline has passed."
-                        ) from None
+                    if progress["interrupted"] or _stalled():
+                        _raise_stalled(lifetime_deadline)
                     raise
-                if _utcnow() >= deadline:
-                    raise Gone("The recording upload deadline has passed.")
+                if progress["interrupted"] or (
+                    chunk and _utcnow() >= lifetime_deadline
+                ):
+                    _raise_stalled(lifetime_deadline)
                 if not chunk:
                     break
+                progress["at"] = _utcnow()
+                if (
+                    progress["at"] - progress["renewed_at"]
+                ).total_seconds() >= _RECEIVER_RENEW_INTERVAL:
+                    if not _renew_pending_lease(recording_id):
+                        raise Gone("The recording upload is no longer pending.")
+                    progress["renewed_at"] = progress["at"]
                 total += len(chunk)
                 header += chunk[: max(0, header_length - len(header))]
                 if total > max_bytes:
@@ -428,9 +546,9 @@ def _receive_recording_body(
             recording.upload_status = "received"
         retained = True
     finally:
-        if timer is not None:
-            timer.cancel()
-            timer.join()
+        stop_watchdog.set()
+        if watchdog is not None:
+            watchdog.join()
         if path is not None and not retained:
             path.unlink(missing_ok=True)
 
@@ -812,7 +930,7 @@ def _refresh_recording_receipt(response_id, participant, payload):
     """Retain the final successor after barrier settlement and page preparation.
 
     Receipt capabilities were assigned atomically with answer acceptance. Only
-    navigation metadata changes here; upload deadlines and tokens stay fixed.
+    navigation metadata changes here; lifetime caps and tokens stay fixed.
     """
     from .timeline import Response
 
@@ -832,7 +950,8 @@ def _recover_recording_receipt(participant, page_uuid, secret):
 
     The caller holds the participant lock, so a retry waits for the original
     transaction. Replaying never reruns validation, completion, or navigation.
-    Original timestamps preserve the upload deadline across network retries.
+    The resend is participant activity, so it renews leases that have not yet
+    lapsed; the original lifetime cap is preserved across network retries.
     """
     from .timeline import Response
 
@@ -850,4 +969,5 @@ def _recover_recording_receipt(participant, page_uuid, secret):
     payload = copy.deepcopy(saved["payload"])
     for receipt in payload["recording_uploads"]:
         receipt["token"] = _recovery_upload_token(secret, receipt["id"])
+        _renew_live_lease(db.session.get(Recording, int(receipt["id"])))
     return payload

@@ -34,7 +34,7 @@ recording page with label ``recording``::
 
 The helper stops waiting when the recording is available, fails, or reaches its
 waiting limit. Always provide a fallback for an undeposited recording. Legacy
-recordings without upload deadlines have a 20-second waiting limit.
+recordings, which upload with the answer, have a 20-second waiting limit.
 
 Answer upload defaults
 ----------------------
@@ -51,8 +51,8 @@ recaptured; configured performance rules still apply.
 - If the browser already knows a recording is unavailable when the answer is
   submitted (for example, camera access was denied, or the recording was too
   large), the trial fails immediately.
-- Otherwise the trial fails if the recording has not arrived by its upload
-  deadline.
+- Otherwise the trial fails if the participant's browser stops uploading the
+  recording, for example because it was closed (see below).
 
 Custom :meth:`~psynet.timeline.Page.validate` implementations receive recording
 metadata with ``None`` ID/URL placeholders before acceptance. Final asset IDs and
@@ -61,27 +61,44 @@ bytes may still be uploading. Analyze recording bytes through the trial's
 post-trial processing after deposit; do not fetch them inside answer validation
 or ``on_complete``.
 
-Deadlines and retries
----------------------
+Slow connections, expiry and retries
+------------------------------------
 
-The upload deadline starts when the answer is accepted. The allowance is
-30 seconds plus twice the transfer time at 1 Mbit/s, bounded to 60–600 seconds.
-The browser retries a failed upload with increasing delays until that deadline.
+A slow upload is not failed for being slow. While the participant's browser
+still holds a recording, it renews the upload every 30 seconds, and the server
+renews it while bytes keep arriving. An upload connection that receives less
+than 64 KB in 2 minutes is closed and retried. The recording is treated as missing only
+if 2 minutes pass without either, for example because the browser was closed
+or lost its connection, or if it is still not uploaded 30 minutes after the
+answer was accepted. The browser retries a failed upload with increasing delays
+until the server reports it expired, or gives up after five internal server
+errors in a row, so a server fault cannot keep the participant waiting.
+
+To keep a slow connection from building up a backlog, a participant can be at
+most one recording page ahead of their uploads. When they submit a recording
+page while uploads from two earlier recording pages are still pending, they see
+an upload message until the older ones finish, as they would have waited for an
+upload inside the submission before. Participants with fast connections never
+wait.
+
+The browser keeps pending recordings in memory and holds at most 32 recordings,
+or twice the per-recording size limit (256 MiB by default), at once. A page
+whose recordings would not fit also waits until earlier uploads finish.
 
 Once received, a recording must be stored within 5 minutes. This includes any
 time spent waiting for a free worker; the storage step itself may run for up to
-2 minutes. Retries never extend either deadline. Waits that depend on a
-recording, such as feedback and :func:`~psynet.page.wait_for_recording`, last
-until these deadlines have passed.
+2 minutes. Waits that depend on a recording, such as feedback and
+:func:`~psynet.page.wait_for_recording`, end as soon as the recording is stored
+or has failed.
 
 If the reply to a recording submission is lost, the participant is asked to check
 their connection and press **Next** again. The same submission is sent again, so
 the server can return its original acceptance; the answer is not recorded twice.
 
 In-place experiments wait for pending uploads before full-page transitions and
-recruiter exit, displaying an upload message; failures and the original deadlines
-bound this wait. Deliberate early-exit and error redirects can abandon pending
-uploads without an additional browser warning.
+recruiter exit, displaying an upload message until each upload has been
+received or has failed. Deliberate early exit, Lucid termination and error redirects
+can abandon pending uploads without an additional browser warning.
 
 Bots upload their ``bot_response_media`` files through the same upload route
 after their answer is accepted, so automated runs and load tests exercise the

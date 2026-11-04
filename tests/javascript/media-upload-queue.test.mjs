@@ -18,7 +18,10 @@ afterEach(() => { globalThis.window = originalWindow; });
 // null: network error; numbers: HTTP status (429 replies carry Retry-After: 0).
 for (const [name, statuses, expected] of [
   ["temporary failure", [503, 204], {status:"received"}],
+  ["stalled connection (408)", [408, 204], {status:"received"}],
   ["permanent rejection", [403], {status:"failed", reason:"http_error", httpStatus:403}],
+  ["expired upload (410)", [410], {status:"failed", reason:"http_error", httpStatus:410}],
+  ["persistent server fault", [500, 500, 500, 500, 500], {status:"failed", reason:"http_error", httpStatus:500}],
   ["repeated network failures until delivery", [null, null, null, null, 204], {status:"received"}],
   ["active upload elsewhere (429) until delivery", [429, 429, 429, 429, 204], {status:"received"}],
 ]) {
@@ -80,6 +83,70 @@ test("cross-origin uploads never expose the capability or bytes", t => {
 test("preparation distinguishes missing and oversized captures", () => {
   assert.deepEqual(queue.prepare({camera:blob(0), screen:blob(60)}, 50).unavailable,
     {camera:"missing_recording", screen:"size_limit"});
+});
+
+// An upload request that stays in flight until the test delivers it or the queue aborts it.
+function holdUploads(t, heartbeat = () => ({unavailable: []})) {
+  const deliveries = new Map();
+  const heartbeats = [];
+  t.mock.method(globalThis, "fetch", (url, options) => {
+    if (url === "/media-upload/heartbeat") {
+      heartbeats.push(JSON.parse(options.body));
+      return Promise.resolve(Response.json(heartbeat()));
+    }
+    return new Promise((resolve, reject) => {
+      deliveries.set(url.split("/").pop(), () => resolve(new Response(null, {status:204})));
+      options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    });
+  });
+  return {deliveries, heartbeats};
+}
+
+test("backpressure waits only while two earlier pages are still uploading", async t => {
+  const {deliveries} = holdUploads(t);
+  const next = {camera: blob(14)};
+  const first = queue.enqueue({...upload("first"), group:"page-1"});
+  assert.equal(queue.hasRoom(next, 50), true);
+  const second = queue.enqueue({...upload("second"), group:"page-2"});
+  let released = false;
+  const waiting = queue.waitForRoom(next, 50).then(() => { released = true; });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(released, false);
+  deliveries.get("first")();
+  await first;
+  await waiting;
+  await new Promise(resolve => setTimeout(resolve, 5));
+  deliveries.get("second")();
+  assert.deepEqual(await second, {status:"received"});
+});
+
+test("backpressure also waits until the next page's recordings fit", async t => {
+  const {deliveries} = holdUploads(t);
+  // One dual-source page nearly fills the 100-byte queue.
+  const camera = queue.enqueue({...upload("camera", 45), group:"page-1"});
+  const screen = queue.enqueue({...upload("screen", 45), group:"page-1"});
+  const next = {camera: blob(45), screen: blob(45)};
+  assert.equal(queue.hasRoom(next, 50), false);
+  let released = false;
+  const waiting = queue.waitForRoom(next, 50).then(() => { released = true; });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(released, false);
+  deliveries.get("camera")();
+  await camera;
+  await new Promise(resolve => setTimeout(resolve, 5));
+  deliveries.get("screen")();
+  await screen;
+  await waiting;
+  assert.equal(released, true);
+});
+
+test("heartbeats renew outstanding uploads and release expired ones", async t => {
+  queue = new MediaUploadQueue({concurrency:1, maxBytes:100, retryDelay:1});
+  const {heartbeats} = holdUploads(t, () => ({unavailable: ["gone"]}));
+  const outcome = await queue.enqueue({...upload("gone"), renewInterval:5});
+  assert.deepEqual(outcome, {status:"failed", reason:"expired"});
+  assert.deepEqual(heartbeats[0], {uploads: [{id:"gone", token:"secret"}]});
+  assert.equal(queue.pendingBytes, 0);
 });
 
 test("default capacity admits two recordings up to the server source limit", () => {

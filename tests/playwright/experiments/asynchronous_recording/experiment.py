@@ -45,6 +45,11 @@ def _playback(source, dual):
     )
 
 
+class _RecordControl(VideoRecordControl):
+    # Missing uploads expire within seconds; open pages still renew held ones.
+    _async_upload_idle_timeout = 8
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Asynchronous recording test"
 
@@ -56,7 +61,7 @@ class Exp(psynet.experiment.Experiment):
         asset = db.session.get(Recording, recording_id)
         return jsonify(
             status=asset.upload_status,
-            deadline=asset.upload_deadline.isoformat(),
+            lifetime_deadline=asset.upload_context["lifetime_deadline"],
             received=asset.upload_received_at is not None,
             deposited=asset.deposited,
             participant_failed=asset.participant.failed,
@@ -69,7 +74,7 @@ class Exp(psynet.experiment.Experiment):
         ModularPage(
             "recording",
             "Record a short clip.",
-            VideoRecordControl(
+            _RecordControl(
                 duration=3,
                 record_audio=False,
                 controls=True,

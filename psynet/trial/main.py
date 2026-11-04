@@ -2095,8 +2095,8 @@ class TrialMaker(Module):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
         return InfoPage(
-            Markup(
-                f"Your performance score was <strong>{score_to_display}&#37;</strong>."
+            Markup("Your performance score was <strong>{}&#37;</strong>.").format(
+                score_to_display
             ),
             time_estimate=5,
         )
@@ -2417,6 +2417,8 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
+                        # A trial failed by a missing recording keeps its
+                        # pending flags, which would never clear.
                         ~Trial.failed,
                         Trial.async_post_trial_pending
                         | Trial.asset_deposit_pending
@@ -2585,7 +2587,7 @@ class TrialMaker(Module):
         )
 
     def _wait_for_trial(self):
-        from ..media_upload import _recording_wait_timeout
+        from ..media_upload import _has_outstanding_recordings
 
         def try_to_prepare_trial():
             if not self.sync_group_type:
@@ -2620,8 +2622,10 @@ class TrialMaker(Module):
                     try_to_prepare_trial(),
                 ),
                 expected_repetitions=0,
-                max_loop_time=lambda participant: _recording_wait_timeout(
-                    participant.id, self.max_time_waiting_for_trial
+                max_loop_time=self.max_time_waiting_for_trial,
+                # The next trial may depend on the participant's last answer.
+                extend_while=lambda participant: _has_outstanding_recordings(
+                    participant.id
                 ),
                 fix_time_credit=False,
             ),

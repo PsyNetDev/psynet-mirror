@@ -24,7 +24,7 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import timenow
-from markupsafe import Markup, escape
+from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
@@ -39,7 +39,12 @@ from sqlalchemy.orm import relationship
 from psynet.data import SQLBase, SQLMixin, register_table
 from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
-from psynet.utils import call_function_with_context, get_logger, get_translator
+from psynet.utils import (
+    call_function_with_context,
+    finalize_template_value,
+    get_logger,
+    get_translator,
+)
 
 _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
 
@@ -199,25 +204,20 @@ def default_group_barrier_arrival_message(
     )
 
 
-def _html_overlay_line(text):
-    """Escape overlay text unless the author passed trusted ``Markup``."""
-    if text is None:
-        return ""
-    if isinstance(text, Markup):
-        return str(text)
-    return str(escape(text))
+def compose_hold_overlay_html(title, progress_text=None):
+    """Join a hold title with an optional progress line as ``Markup``.
 
-
-def compose_hold_overlay_html(title_html, progress_text=None):
-    """Join a hold title with an optional progress line."""
-    title = f'<span class="psynet-timeline-hold-title">{title_html}</span>'
-    if not progress_text:
-        return title
-    return (
-        f"{title}"
-        f'<span class="psynet-timeline-hold-progress">'
-        f"{_html_overlay_line(progress_text)}</span>"
+    Plain strings are escaped; trusted ``Markup`` and dominate tags are kept as
+    HTML, as in page templates.
+    """
+    html = Markup('<span class="psynet-timeline-hold-title">{}</span>').format(
+        "" if title is None else finalize_template_value(title)
     )
+    if progress_text:
+        html += Markup('<span class="psynet-timeline-hold-progress">{}</span>').format(
+            finalize_template_value(progress_text)
+        )
+    return html
 
 
 def _copy_pending_wakes(wakes):
@@ -638,15 +638,8 @@ class _TimelineHoldPage(Page):
         """
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
-        content = self.translated_content()
-        if content is None:
-            title_html = ""
-        elif isinstance(content, Markup):
-            title_html = str(content)
-        else:
-            title_html = str(escape(content))
         return compose_hold_overlay_html(
-            title_html, self.hold_progress_text(participant)
+            self.translated_content(), self.hold_progress_text(participant)
         )
 
     def hold_progress_text(self, participant):

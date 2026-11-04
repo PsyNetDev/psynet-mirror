@@ -24,19 +24,23 @@ class FakeSocket {
   close() {}
 }
 
-function loadChannelModule() {
+function loadChannelModule({ refusals = [], warnings = [] } = {}) {
   const window = {};
   vm.runInNewContext(SOURCE, {
     window,
     location: { protocol: "http:", host: "localhost" },
-    dallinger: { identity: { participantId: "1" } },
+    dallinger: {
+      identity: { participantId: "1" },
+      stopReconnectingIfRefused: (socket, callback) =>
+        refusals.push({ socket, callback }),
+    },
     psynetTemplateData: { websocketScope: "scope" },
     ReconnectingWebSocket: FakeSocket,
     WebSocket: { OPEN: 1 },
     setInterval,
     clearInterval,
     setTimeout,
-    console,
+    console: { ...console, warn: (message) => warnings.push(message) },
   });
   return window.PsyNetWebSocketChannel;
 }
@@ -71,4 +75,17 @@ it("routes directed, channel and probe frames to the right callbacks", () => {
   connection.close();
   deliver('dallinger_direct:{"type":"after_close"}');
   assert.equal(calls.length, 4);
+});
+
+it("stops reconnecting and warns when the server refuses the channel", () => {
+  const refusals = [];
+  const warnings = [];
+  loadChannelModule({ refusals, warnings }).connect({ channel: "chat" });
+
+  assert.equal(refusals.length, 1);
+  assert.equal(refusals[0].socket, FakeSocket.last);
+  refusals[0].callback(1008, "refused by the experiment");
+  assert.deepEqual(warnings, [
+    'The server refused WebSocket channel "chat" (code 1008: refused by the experiment); not reconnecting.',
+  ]);
 });

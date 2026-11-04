@@ -85,9 +85,9 @@
       function submit() {
         showPending();
         const data = new URLSearchParams();
-        data.append("assignmentId", "{{ assignment_id }}");
-        data.append("participantId", "{{ participant_id }}");
-        data.append("unique_id", "{{ unique_id }}");
+        data.append("assignmentId", {{ assignment_id | tojson }});
+        data.append("participantId", {{ participant_id | tojson }});
+        data.append("unique_id", {{ unique_id | tojson }});
         fetch("/prolific-submission-listener", {method: "POST", body: data})
           .then((response) => {
             if (!response.ok) {

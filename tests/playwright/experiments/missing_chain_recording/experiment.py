@@ -16,6 +16,7 @@ from psynet.trial.video import (
 
 class AsyncControl(VideoRecordControl):
     _async_upload = True
+    _async_upload_idle_timeout = 5
 
 
 class VideoTrial(CameraImitationChainTrial):

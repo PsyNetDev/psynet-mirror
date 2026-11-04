@@ -56,8 +56,9 @@ Check the code and dependencies
   ``psynet export`` compares them with your checkout later, so commit
   everything before you deploy and push to your remote.
   ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
-  with uncommitted changes and, in a terminal, ask whether to continue (the
-  default is no). Without a terminal they only warn.
+  with uncommitted changes and, in a terminal, ask whether to deploy them
+  anyway (the default is no, which cancels the deployment). Without a
+  terminal they only warn.
 - The PsyNet and Dallinger versions you tested locally must match their
   pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
   commit or release tag) takes precedence; otherwise its pin in

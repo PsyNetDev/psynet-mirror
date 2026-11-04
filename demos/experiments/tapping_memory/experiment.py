@@ -131,13 +131,13 @@ class CustomTrial(CustomTrialAnalysis):
             AudioPrompt(
                 self.assets["stimulus"],
                 Markup(
-                    f"""
+                    """
                     <h3>Imitate the rhythm</h3>
                     Listen to the rhythm and imitate it as best as you can by tapping with your finger.
                     <br><br>
                     <i>Trial number {trial_number} out of {n_trials} trials.</i>
                     """
-                ),
+                ).format(trial_number=trial_number, n_trials=n_trials),
             ),
             AudioRecordControl(
                 duration=duration_rec_sec + 5,
@@ -228,10 +228,10 @@ class Exp(psynet.experiment.Experiment):
         REPPTappingCalibration(),  # calibrate tapping
         InfoPage(
             Markup(
-                f"""
+                """
             <h3>Instructions</h3>
             <hr>
-            You will take {NUM_TRIALS_PARTICIPANT} trials. In each trial, you will hear a metronome sound
+            You will take {n_trials} trials. In each trial, you will hear a metronome sound
             playing a rhythm.
             <br><br>
             <b><b>Your goal is to reproduce back the rhythm by tapping on the surface of your laptop</b></b>
@@ -240,7 +240,7 @@ class Exp(psynet.experiment.Experiment):
             <hr>
             Click <b>next</b> to start tapping in rhythm!
             """
-            ),
+            ).format(n_trials=NUM_TRIALS_PARTICIPANT),
             time_estimate=5,
         ),
         AudioImitationChainTrialMaker(

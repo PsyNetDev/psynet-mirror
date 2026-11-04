@@ -162,6 +162,7 @@ deployment-info_*
 source_code.zip
 .deploy
 **/static/assets
+**/static/fonts/GoNotoKurrent-Bold.ttf
 **/deploy_logs/
 dump.rdb
 

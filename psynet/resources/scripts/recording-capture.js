@@ -88,13 +88,16 @@ export class RecordingDevices {
         event.preventDefault();
         if (finish()) reject(new Error("Screen recording declined."));
       });
-      const skip = document.createElement("button");
-      skip.type = "button";
-      skip.textContent = labels.skip;
-      skip.onclick = () => {
-        if (finish()) reject(new Error("Screen recording declined."));
-      };
-      dialog.append(message, button, skip);
+      dialog.append(message, button);
+      if (labels.skip) {
+        const skip = document.createElement("button");
+        skip.type = "button";
+        skip.textContent = labels.skip;
+        skip.onclick = () => {
+          if (finish()) reject(new Error("Screen recording declined."));
+        };
+        dialog.append(skip);
+      }
       document.body.append(dialog);
       dialog.showModal();
     });

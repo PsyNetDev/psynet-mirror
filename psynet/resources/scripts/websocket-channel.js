@@ -66,6 +66,11 @@
       subscribers,
     };
 
+    dallinger.stopReconnectingIfRefused(socket, (code, reason) => {
+      console.warn(
+        `The server refused WebSocket channel "${channel}" (code ${code}: ${reason}); not reconnecting.`,
+      );
+    });
     socket.onopen = function (event) {
       entry.listening = false;
       if (entry.confirmListening) {
@@ -118,6 +123,9 @@
     };
     entry.socket.onmessage = function () {};
     entry.socket.onclose = function () {};
+    // ReconnectingWebSocket has no way to cancel a scheduled reconnect, which
+    // calls open() when it fires.
+    entry.socket.open = function () {};
     entry.socket.close();
   }
 
@@ -139,6 +147,9 @@
    * normally means directed sends reach it too; if Dallinger's listener is
    * slow to confirm, it proceeds anyway, and the hold's safety poll covers a
    * missed wake.
+   *
+   * If the server refuses the socket (close code 1008), the channel logs a
+   * warning and stops reconnecting. Other close codes reconnect as before.
    */
   function connect({
     channel,

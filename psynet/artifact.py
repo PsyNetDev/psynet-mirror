@@ -10,6 +10,7 @@ from typing import Optional
 
 from dallinger.config import get_config
 from dominate.tags import a, div, span
+from markupsafe import Markup
 
 from psynet import deployment_info
 from psynet.asset import (
@@ -497,7 +498,7 @@ class LocalArtifactStorage(ArtifactStorage):
             else:
                 span(f"located on the remote server (path: {self.root}).")
 
-        return html
+        return Markup(html.render())
 
     def list_subfolders(self, path: str) -> list:
         """
@@ -722,7 +723,7 @@ class S3ArtifactStorage(ArtifactStorage):
                 a(self.bucket_name, href=self.console_url, target="_blank"),
                 " Amazon S3 bucket.",
             )
-        return html
+        return Markup(html.render())
 
     def list_subfolders(self, path: str) -> list:
         """

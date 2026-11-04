@@ -37,7 +37,7 @@ class TestExp(object):
             # feature-branch build may contain either the previous translated
             # label or the current English fallback. The demo's own copy must
             # remain translated in both cases.
-            next_label = driver.find_element(By.ID, "next-button-text").text
+            next_label = driver.find_element(By.ID, "next-button").text
             assert next_label in {"Next", "Weiter"}
             assert_text(
                 driver,

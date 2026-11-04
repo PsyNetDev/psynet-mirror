@@ -28,7 +28,7 @@
             </div>
             <ul class="list-group list-group-flush">
                 {% for item in params.item_list %}
-                    <li class="list-group-item">{{ item | safe }}</li>
+                    <li class="list-group-item">{{ item }}</li>
                 {% endfor %}
             </ul>
         </div>
@@ -55,7 +55,10 @@
         <div class="card mb-2 {{ bg }}" style="width: 100%;">
             <div class="card-body">
                 <h5 class="card-title">{{ params.title }}</h5>
-                <p class="card-text">{{ params.body | safe }}</p>
+                <p class="card-text">{{ params.body }}</p>
+                {% if params.chart_id %}
+                    <div id="{{ params.chart_id }}"></div>
+                {% endif %}
             </div>
         </div>
     </div>

@@ -5,6 +5,7 @@ import secrets
 import tempfile
 import warnings
 from importlib import resources
+from pathlib import Path
 from typing import Optional, Type
 
 import arabic_reshaper
@@ -478,6 +479,8 @@ class VocabTest(StaticTrialMaker):
         false_key_label: str = "L",
         trial_class: Type[VocabTrial] = VocabTrial,
         present_as_image: bool = True,
+        # Its file name is also listed in the stock .gitignore and in
+        # psynet.deployment_info.DOWNLOADED_RESOURCE_PATHS.
         font_url: Optional[
             str
         ] = "https://psynet.s3.amazonaws.com/resources/fonts/GoNotoKurrent-Bold.ttf",
@@ -571,16 +574,32 @@ class VocabTest(StaticTrialMaker):
             sync_group_type=None,
         )
 
-    def get_font_path(self, font_url):
-        font_name = os.path.basename(font_url)
-        font_path = f"static/fonts/{font_name}"
+    @staticmethod
+    def get_font_path(font_url):
+        """Return a local copy of the font used to draw the word images, downloading it if needed.
+
+        The font is saved in the experiment's ``static/fonts/`` folder so that
+        deployments include it; the stock ``.gitignore`` ignores the default font.
+        """
+        font_dir = os.path.join("static", "fonts")
+        font_path = os.path.join(font_dir, os.path.basename(font_url))
         if not os.path.exists(font_path):
             with yaspin(text="Downloading font...", color="yellow") as spinner:
-                response = requests.get(font_url)
+                response = requests.get(font_url, timeout=60)
+                response.raise_for_status()
                 spinner.ok("✔")
-            os.makedirs(os.path.dirname(font_path), exist_ok=True)
-            with open(font_path, "wb") as f:
-                f.write(response.content)
+            os.makedirs(font_dir, exist_ok=True)
+            # Write then rename so that a parallel process never reads a partial file.
+            fd, temp_path = tempfile.mkstemp(dir=font_dir)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(response.content)
+                # mkstemp creates the file readable only by its owner.
+                os.chmod(temp_path, 0o644)
+                os.replace(temp_path, font_path)
+            except BaseException:
+                Path(temp_path).unlink(missing_ok=True)
+                raise
         return os.path.abspath(font_path)
 
     def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
@@ -858,7 +877,7 @@ class VocabTest(StaticTrialMaker):
 
     @classmethod
     def get_instructions_keyboard(cls):
-        prompt = (
+        prompt = Markup(
             _("To do the task quickly, you should use the keys on your keyboard.")
             + " "
             + _("You can use the following keys:")

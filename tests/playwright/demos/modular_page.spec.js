@@ -132,6 +132,46 @@ async function nudgeSlider(page, selector) {
   }
 }
 
+// Holds the next submission so the clicked button's spinner can be checked,
+// then rejects it: the button must keep its box and come back usable.
+async function expectRejectedSubmissionRestores(page, button) {
+  let releaseResponse;
+  const responseGate = new Promise((resolve) => {
+    releaseResponse = resolve;
+  });
+  await page.route(
+    "**/response",
+    async (route) => {
+      await responseGate;
+      await route.fulfill({
+        json: { submission: "rejected", message: "Held for the spinner check." }
+      });
+    },
+    { times: 1 }
+  );
+  await expect(button).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
+  const boxBefore = await button.boundingBox();
+  const spinner = button.locator(".psynet-button-spinner");
+  try {
+    await button.click();
+    await expect(spinner).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+    await expect(button).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await expect(button).toHaveAttribute("aria-busy", "true");
+    expect(await button.boundingBox()).toEqual(boxBefore);
+  } finally {
+    releaseResponse();
+  }
+  await expect(page.locator("#alert-message")).toContainText(
+    "Held for the spinner check.",
+    { timeout: STEP_TIMEOUT_MS }
+  );
+  await page.locator("#alert-button").click();
+  await expect(spinner).toHaveCount(0);
+  await expect(button).toBeEnabled();
+  await expect(button).not.toHaveClass(/psynet-button-pending/);
+  await expect(button).not.toHaveAttribute("aria-busy");
+}
+
 test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) => {
   const absDir = path.resolve("demos/features/modular_page");
   await withExperiment(page, context, absDir, async (experimentPage) => {
@@ -144,6 +184,10 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
         experimentPage,
         "simple text page",
         PROMPT_TIMEOUT_MS
+      );
+      await expectRejectedSubmissionRestores(
+        experimentPage,
+        experimentPage.locator("#next-button")
       );
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
 
@@ -188,7 +232,9 @@ test("modular_page feature demo", { tag: "@both" }, async ({ page, context }) =>
       await expect(experimentPage.locator(".push-button").first()).toBeVisible({
         timeout: PROMPT_TIMEOUT_MS
       });
-      await experimentPage.locator(".push-button").first().click();
+      const pushButton = experimentPage.locator(".push-button").first();
+      await expectRejectedSubmissionRestores(experimentPage, pushButton);
+      await pushButton.click();
       await expectMainBodyContains(experimentPage, "Page type", STEP_TIMEOUT_MS);
 
       await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);

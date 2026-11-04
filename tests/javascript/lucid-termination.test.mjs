@@ -15,8 +15,11 @@ const match = SOURCE.match(
 assert.ok(match, "could not extract psynet.initLucidTermination");
 
 function initLucidTermination(lucidRecruitment) {
-  const calls = { redirectedTo: null, errors: [] };
+  const calls = { redirectedTo: null, errors: [], uploadsAllowedToUnload: false };
   const psynet = {
+    allowRecordingUnload() {
+      calls.uploadsAllowedToUnload = true;
+    },
     clearLucidTermination() {},
     addBeforeUnloadEventListener() {},
     removeBeforeUnloadEventListener() {},
@@ -65,6 +68,7 @@ describe("initLucidTermination", () => {
       calls.redirectedTo,
       "/terminate_participant?unique_id=rid%3Arid&reason=screening_no"
     );
+    assert.ok(calls.uploadsAllowedToUnload);
   });
 
   it("logs instead of terminating without Lucid recruitment", () => {

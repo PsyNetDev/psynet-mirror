@@ -31,7 +31,7 @@ def _reserve_trial_recording(trial, directory, *, required=True):
         storage=LocalStorage(str(directory)),
         role="answer",
         required_for_trial=required,
-        upload_timeout=60,
+        idle_timeout=60,
     )
 
 
@@ -118,6 +118,52 @@ def test_while_loop_budget_is_fixed_and_a_cleared_condition_exits_normally(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
+def test_while_loop_timer_restarts_after_extend_while_clears(
+    db_session, participant, monkeypatch
+):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    import psynet.timeline as timeline_module
+    from psynet.page import InfoPage, WaitPage
+    from psynet.timeline import Timeline, while_loop
+
+    now = datetime.now()
+    monkeypatch.setattr(timeline_module, "datetime", SimpleNamespace(now=lambda: now))
+    extending = True
+    timeline = Timeline(
+        while_loop(
+            "extended_wait",
+            lambda: True,
+            WaitPage(wait_time=1),
+            expected_repetitions=0,
+            max_loop_time=10,
+            fail_on_timeout=False,
+            extend_while=lambda: extending,
+        ),
+        InfoPage("Continue", time_estimate=0),
+    )
+    exp = get_experiment()
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+
+    def advance(seconds):
+        nonlocal now
+        now += timedelta(seconds=seconds)
+        timeline.advance_page(exp, participant)
+        return isinstance(timeline.get_current_elt(exp, participant), WaitPage)
+
+    assert advance(0)
+    assert advance(30)
+    extending = False
+    assert advance(5)
+    assert not advance(6)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
 @pytest.mark.parametrize("expiry_source", ["clock", "poll", "late_poll"])
 @pytest.mark.parametrize("upload_state", ["pending", "processing"])
 def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
@@ -140,9 +186,10 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     trial = _add_complete_unfinalized_trial(network.head, participant)
     participant.current_trial = trial
     asset, _ = _reserve_trial_recording(trial, tmp_path)
-    # The ordinary 20 s, the 60 s upload allowance, then the processing bound.
+    # The ordinary 20 s, the lifetime cap a renewed lease could reach, then the
+    # processing bound; the wait itself ends as soon as the lease lapses.
     assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == (
-        20 + 60 + uploads._PROCESSING_BOUND
+        20 + uploads._MAX_UPLOAD_LIFETIME + uploads._PROCESSING_BOUND
     )
     assert uploads._recording_wait_timeout(participant.id + 100) == 20
     assert (

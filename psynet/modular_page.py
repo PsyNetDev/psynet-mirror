@@ -75,6 +75,13 @@ def _merge_js_var_sources(*sources):
     return merged
 
 
+def _dominate_label(label):
+    """Return a label for dominate, keeping ``Markup`` labels as HTML."""
+    if isinstance(label, Markup):
+        return raw(str(label))
+    return label
+
+
 class Blob:
     """
     Imitates the blob objects which are returned from the Flask front-end;
@@ -1051,6 +1058,7 @@ class CheckboxControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the checkboxes,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     arrange_vertically:
         Whether to arrange the checkboxes vertically. Default: ``True``.
@@ -1113,7 +1121,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1206,9 +1214,11 @@ class DropdownControl(OptionControl):
             ):
                 for choice, label in zip(self.choices, self.labels):
                     if answer == choice:
-                        tags.option(value=choice, selected=True).add(label)
+                        tags.option(value=choice, selected=True).add(
+                            _dominate_label(label)
+                        )
                     else:
-                        tags.option(value=choice).add(label)
+                        tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
     def validate(self, response, **kwargs):
@@ -1237,6 +1247,7 @@ class PushButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
@@ -1292,7 +1303,7 @@ class PushButtonControl(OptionControl):
                     id=choice,
                     _class=f"btn push-button {color} response {mode}",
                     style=self.style,
-                ).add(label)
+                ).add(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1370,6 +1381,7 @@ class TimedPushButtonControl(PushButtonControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     button_highlight_duration:
         How long to highlight the button for once it has been clicked (seconds).
@@ -1499,6 +1511,7 @@ class RadioButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the radiobuttons,
         which the participant will see instead of ``choices``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS style attributes to apply to the radiobuttons. Default: ``"cursor: pointer"``.
@@ -1554,14 +1567,14 @@ class RadioButtonControl(OptionControl):
             placeholder_text = (
                 ""
                 if self.placeholder_text_free_text is None
-                else f'placeholder="{self.placeholder_text_free_text}"'
+                else Markup('placeholder="{}"').format(self.placeholder_text_free_text)
             )
             self.radiobuttons.append(
                 RadioButton(
                     name=self.name,
                     id_="free_text",
-                    label=Markup(
-                        f"<input id='free_text_input' {placeholder_text} type='text'>"
+                    label=Markup("<input id='free_text_input' {} type='text'>").format(
+                        placeholder_text
                     ),
                     style=self.style,
                 )
@@ -1580,7 +1593,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1807,7 +1820,8 @@ class Button(BaseButton):
         When the button is pressed, an event is triggered with this exact ID.
 
     text :
-        Text to display on the button.
+        Text to display on the button. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style :
         Optional CSS styling for the button.
@@ -1826,7 +1840,7 @@ class Button(BaseButton):
     def __init__(
         self,
         id_: str,
-        text: Union[str, dom_tag],
+        text: Union[str, Markup, dom_tag],
         style: str = "",
         is_response_button=False,
         start_disabled=False,
@@ -2470,17 +2484,15 @@ class AudioMeterControl(Control):
     msg_duration = {"high": 0.25, "low": 0.25}
 
     def to_json(self):
-        return Markup(
-            json.dumps(
-                {
-                    "display_range": self.display_range,
-                    "decay": self.decay,
-                    "threshold": self.threshold,
-                    "grace": self.grace,
-                    "warn_on_clip": self.warn_on_clip,
-                    "msg_duration": self.msg_duration,
-                }
-            )
+        return json.dumps(
+            {
+                "display_range": self.display_range,
+                "decay": self.decay,
+                "threshold": self.threshold,
+                "grace": self.grace,
+                "warn_on_clip": self.warn_on_clip,
+                "msg_duration": self.msg_duration,
+            }
         )
 
     def update_events(self, events):
@@ -2758,7 +2770,7 @@ class MediaSliderControl(SliderControl):
             }
 
     modality:
-        Either ``"audio"``,  ``"image"`` or ``"video"``.
+        One of ``"audio"``, ``"image"``, ``"html"`` or ``"video"``.
 
     media_locations:
         Dictionary with IDs as keys and locations on the slider as values.
@@ -2952,7 +2964,10 @@ class MediaSliderControl(SliderControl):
             else 0
         )
 
-    macro = "media_slider"
+    @property
+    def macro(self):
+        """The template macro that plays this control's media modality."""
+        return f"{self.modality}_media_slider"
 
     @property
     def metadata(self):
@@ -3620,6 +3635,7 @@ class RecordControl(Control):
     # uploading with the answer.
     _async_upload = False
     _async_upload_max_bytes = 128 * 1024 * 1024
+    _async_upload_idle_timeout = None
     _upload_format = None
 
     def __init__(
@@ -3757,14 +3773,13 @@ class RecordControl(Control):
     def _accept_recordings(self, response, participant, page_uuid):
         """Install final read references and capabilities only after acceptance."""
         from .media_upload import (
+            _IDLE_TIMEOUT,
             _reserve_recording,
             _resolve_unavailable,
-            _upload_timeout,
         )
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        timeout = _upload_timeout(max(1, sum(sizes.values())))
         parent = participant.current_trial or participant
         summary = dict(response.answer)
         uploads = []
@@ -3777,9 +3792,9 @@ class RecordControl(Control):
                 source=source,
                 local_key=self._recording_local_key(source),
                 storage=Recording.default_storage,
-                upload_timeout=timeout,
                 upload_size_bytes=min(sizes[source], max_bytes) or None,
                 max_bytes=max_bytes,
+                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
                 media_format=self._upload_format,
             )
             reason = response._recording_unavailable.get(source)
@@ -3790,7 +3805,7 @@ class RecordControl(Control):
             }
             if reason:
                 # The browser already knows these bytes cannot be uploaded, so
-                # resolve now rather than waiting for the upload deadline.
+                # resolve now rather than waiting for the lease to expire.
                 _resolve_unavailable(asset, reason, participant.current_trial)
             id_key, url_key = self._answer_reference_keys(source)
             summary[id_key] = asset.id
@@ -4004,6 +4019,7 @@ def _recording_labels():
         "answer": _(
             "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
         ),
+        "answer_required": _("Share your screen to record this answer."),
         "screen": _("Share screen"),
         "skip": _("Continue without recording"),
         "uploading": _("Uploading your recording, please keep this page open."),
@@ -4024,7 +4040,8 @@ class VideoRecordControl(RecordControl):
     In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
     before uploading video, for bots too. A missing recording fails its parent
     trial, without recapturing: immediately if the browser reports it unavailable,
-    otherwise at the upload deadline. For playback outside a trial, use
+    otherwise once the participant's browser stops renewing the upload (for
+    example, because it was closed). For playback outside a trial, use
     :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
     Legacy navigation and other storage backends upload the recording with the
     answer.

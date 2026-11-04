@@ -1,8 +1,6 @@
 import json
 from typing import List
 
-from markupsafe import Markup
-
 from psynet.log import bold, red
 from psynet.lucid import get_lucid_service
 from psynet.modular_page import Control, ModularPage
@@ -312,7 +310,7 @@ class LucidScreeningQuestion(ModularPage):
         ]
         super().__init__(
             label=label,
-            prompt=Markup(question),
+            prompt=question,
             control=LucidTerminateControl(
                 choices=choices,
                 labels=labels,

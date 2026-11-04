@@ -105,12 +105,17 @@ function loadHoldFns(document) {
     },
   };
   const showSrc = extractFunction("showTimelineHoldIndicator");
+  const hideSrc = extractFunction("hideTimelineHoldIndicator");
   const stopSrc = extractFunction("stopTimelineHold");
   const show = new Function(
     "psynet",
     "document",
     `${showSrc}; return showTimelineHoldIndicator;`
   )(psynet, document);
+  psynet.hideTimelineHoldIndicator = new Function(
+    "document",
+    `${hideSrc}; return hideTimelineHoldIndicator;`
+  )(document);
   // CI Node has no browser CustomEvent global. Bind a constructor into the
   // eval and assert the dispatched event so a dummy CustomEvent cannot
   // make stop() look successful without actually firing timelineHoldEnded.

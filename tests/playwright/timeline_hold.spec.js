@@ -288,7 +288,7 @@ async function probeTimelineHoldClientBehavior(page) {
     psynet.nextPagePending = false;
     window.__holdClientNext = { done: false };
     // Do not await nextPage in this evaluate. submitGenericResponse waits
-    // 250ms between the busy 503 and the retry; Playwright's awaitPromise
+    // up to 250ms between the busy 503 and the retry; Playwright's awaitPromise
     // does not flush that timer while the evaluate is still open.
     Promise.resolve()
       .then(() =>
@@ -1136,15 +1136,12 @@ test("timeline hold preserves same-session page identity", { tag: "@both" }, asy
     await expect(
       experimentPage.locator("#intentionally-disabled-response")
     ).toBeDisabled();
-    await expect(experimentPage.locator("#next-button-spinner")).toBeHidden();
-    await expect(experimentPage.locator("#next-button-text")).toBeVisible();
-    const nextButtonInlineSize = await experimentPage
-      .locator("#next-button")
-      .evaluate((button) => ({
-        height: button.style.height,
-        width: button.style.width
-      }));
-    expect(nextButtonInlineSize).toEqual({ height: "", width: "" });
+    await expect(experimentPage.locator("#next-button")).not.toHaveClass(
+      /psynet-button-pending/
+    );
+    await expect(
+      experimentPage.locator("#next-button .psynet-button-spinner")
+    ).toHaveCount(0);
     await assertNoBackendError(experimentPage);
   });
 });

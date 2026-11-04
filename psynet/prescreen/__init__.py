@@ -83,16 +83,16 @@ class REPPVolumeCalibration(Module):
         return PageMaker(
             lambda assets: InfoPage(
                 Markup(
-                    f"""
+                    """
                       <h3>Attention</h3>
                       <hr>
                       Throughout the experiment, it is very important to <b>ONLY</b> use the laptop speakers and be in a silent environment.
                       <br><br>
                       <i>Please do not use headphones, earphones, external speakers, or wireless devices (unplug or deactivate them now)</i>
                       <hr>
-                      <img style="width:70%" src="{assets["rules_image"].url}" alt="rules_image">
+                      <img style="width:70%" src="{url}" alt="rules_image">
                       """
-                ),
+                ).format(url=assets["rules_image"].url),
             ),
             time_estimate=5,
         )
@@ -121,12 +121,12 @@ class REPPVolumeCalibration(Module):
     @property
     def calibration_instructions(self):
         return Markup(
-            f"""
+            """
             <h3>Volume test</h3>
             <hr>
             <h4>We will begin by calibrating your audio volume:</h4>
             <ol>
-                <li>{self.what_are_we_playing}</li>
+                <li>{what_are_we_playing}</li>
                 <li>Set the volume in your laptop to approximately 90% of the maximum.</li>
                 <li><b>The sound meter</b> below indicates whether the audio volume is at the right level.</li>
                 <li>If necessary, turn up the volume on your laptop until the sound meter consistently indicates that
@@ -134,7 +134,7 @@ class REPPVolumeCalibration(Module):
             </ol>
             <hr>
             """
-        )
+        ).format(what_are_we_playing=self.what_are_we_playing)
 
     @property
     def what_are_we_playing(self):
@@ -314,7 +314,7 @@ class REPPTappingCalibration(Module):
 
     def instructions_text(self, assets):
         return Markup(
-            f"""
+            """
             <h3>You will now practice how to tap on your laptop</h3>
             <b>Please always tap on the surface of your laptop using your index finger (see picture)</b>
             <ul>
@@ -322,9 +322,9 @@ class REPPTappingCalibration(Module):
                 <li><i style="color:red;">Do not tap on the keyboard or tracking pad, and do not tap using your nails or any object</i>.</li>
                 <li>If your tapping is <b style="color:red;">"too quiet!"</b>, try tapping louder or on a different location on your laptop.</li>
             </ul>
-            <img style="width:70%" src="{assets["tapping_instructions_image"].url}"  alt="image_rules">
+            <img style="width:70%" src="{url}"  alt="image_rules">
             """
-        )
+        ).format(url=assets["tapping_instructions_image"].url)
 
     class AudioMeter(AudioMeterControl):
         decay = {"display": 0.1, "high": 0.1, "low": 0}
@@ -419,7 +419,7 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
         if self.failed:
             return InfoPage(
                 Markup(
-                    f"""
+                    """
                     <h4>Your tapping was bad...</h4>
                     We detected {num_resp_onsets_detected} taps in the recording. This is not sufficient for this task.
                     Please try to do one or more of the following:
@@ -430,17 +430,17 @@ class FreeTappingRecordTrial(AudioRecordTrial, StaticTrial):
                     </ol>
                     <b><b>If we cannot detect your tapping signal in the recording, the experiment will terminate.</b></b>
                     """
-                ),
+                ).format(num_resp_onsets_detected=num_resp_onsets_detected),
                 time_estimate=5,
             )
         else:
             return InfoPage(
                 Markup(
-                    f"""
+                    """
                     <h4>Good!</h4>
                     We could detect {num_resp_onsets_detected} taps in the recording.
                     """
-                ),
+                ).format(num_resp_onsets_detected=num_resp_onsets_detected),
                 time_estimate=5,
             )
 
@@ -783,18 +783,18 @@ class REPPMarkersTest(StaticTrialMaker):
         return PageMaker(
             lambda assets: InfoPage(
                 Markup(
-                    f"""
+                    """
             <h3>Recording test</h3>
             <hr>
-            Now we will test the recording quality of your laptop. In {self.n_trials} trials, you will be
+            Now we will test the recording quality of your laptop. In {n_trials} trials, you will be
             asked to remain silent while we play and record a sound.
             <br><br>
-            <img style="width:50%" src="{assets["rules_image"].url}"  alt="rules_image">
+            <img style="width:50%" src="{url}"  alt="rules_image">
             <br><br>
             When ready, click <b>next</b> for the recording test and please wait in silence.
             <hr>
             """
-                ),
+                ).format(n_trials=self.n_trials, url=assets["rules_image"].url),
             ),
             time_estimate=5,
         )
@@ -897,7 +897,9 @@ class LanguageVocabularyTrial(StaticTrial):
             PushButtonControl(
                 choices=[str(position) for position in range(1, 5)],
                 labels=[
-                    f'<img src="{url}" alt="notworking" height="65px" width="65px"/>'
+                    Markup(
+                        '<img src="{}" alt="notworking" height="65px" width="65px"/>'
+                    ).format(url)
                     for url in image_urls
                 ],
                 style="min-width: 100px; margin: 10px; background: none; border-color: grey;",
@@ -1128,15 +1130,15 @@ class LexTaleTest(StaticTrialMaker):
     def introduction(self):
         return InfoPage(
             Markup(
-                f"""
+                """
                 <h3>Lexical decision task</h3>
                 <p>In each trial, you will be presented with either an existing word in English or a fake word that does not exist.</p>
                 <p>
                     <b>Your task is to decide whether the word exists not.</b>
-                    <br><br>Each word will disappear in {self.hide_after} seconds and you will see a total of {self.n_trials} words.
+                    <br><br>Each word will disappear in {hide_after} seconds and you will see a total of {n_trials} words.
                 </p>
                 """
-            ),
+            ).format(hide_after=self.hide_after, n_trials=self.n_trials),
             time_estimate=5,
         )
 
@@ -1243,7 +1245,7 @@ class AttentionTest(Module):
         self.elts = join(
             ModularPage(
                 label="attention_test_1",
-                prompt=Markup(f"""{self.prompt_1_text}"""),
+                prompt=Markup(self.prompt_1_text),
                 control=RadioButtonControl(
                     [1, 2, 3, 4, 5, 6, 7, 0],
                     [
@@ -1718,14 +1720,14 @@ class GeneralHeadphoneTest(StaticTrialMaker):
     def introduction(self):
         return InfoPage(
             Markup(
-                f"""
+                """
             <p>We will now perform a quick test to check that you are wearing headphones.</p>
             <p>
                 In each trial, you will hear three sounds separated by silences.
-                {self.task_description}
+                {}
             </p>
             """
-            ),
+            ).format(Markup(self.task_description)),
             time_estimate=10,
         )
 
@@ -1972,7 +1974,8 @@ class AudioForcedChoiceTest(StaticTrialMaker):
         List of answer options.
 
     instructions :
-        Text of initial instruction page.
+        Text of initial instruction page. It is shown as HTML, so it may
+        contain tags; do not build it from participant-provided text.
 
     question :
         Question asked at every trial of the test. If the table already contains a column `question` this value will be

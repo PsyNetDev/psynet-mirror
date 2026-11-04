@@ -71,6 +71,7 @@ from flask import (
 )
 from flask import g as flask_app_globals
 from flask_login import login_required
+from jinja2.utils import htmlsafe_json_dumps
 from markupsafe import escape
 from sqlalchemy import Column, Float, Integer, String, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
@@ -304,6 +305,15 @@ def error_response(*args, **kwargs):
 
     with disable_logger():
         return dallinger_error_response(*args, **kwargs)
+
+
+def _recording_receipts(payload):
+    """Return the upload receipts an approved recording submission must deliver."""
+    return {
+        key: payload[key]
+        for key in ("recording_uploads", "recording_upload_server_time")
+        if key in payload
+    }
 
 
 _FORWARDING_HEADERS = ("X-Forwarded-For", "Forwarded", "X-Real-IP", "CF-Connecting-IP")
@@ -4220,7 +4230,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 if recovered is not None:
                     from .media_upload import _utcnow
 
-                    # Upload deadlines stay as originally issued; the current
+                    # Lifetime caps stay as originally issued; the current
                     # server time lets the browser compute what remains of them.
                     recovered["recording_upload_server_time"] = (
                         _utcnow().isoformat() + "Z"
@@ -4662,6 +4672,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         (``psynet_exit_recruiter.html``), with the assignment ID as a reference.
         Otherwise, one can return a custom message in various ways.
         If you return a string, this will be escaped appropriately and presented as text.
+        To show HTML that you wrote yourself, return a ``markupsafe.Markup`` string.
         Alternatively, more complex HTML structures can be constructed using the
         Python package ``dominate``, see Examples for details.
 
@@ -4898,16 +4909,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/libraries/d3/d3-tip.css",
                     "/static/css/d3-tip.css",
-                ),
-                (
-                    resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.css",
-                    "/static/css/jquery-ui.css",
-                ),
-                (
-                    resources.files("psynet")
-                    / "resources/libraries/jqueryui/jquery-ui.min.js",
-                    "/static/scripts/jquery-ui.min.js",
                 ),
                 (
                     resources.files("psynet")
@@ -5285,7 +5286,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "dashboard_timeline.html",
             title="Timeline modules",
             panes=panes,
-            timeline_modules=json.dumps(module_info, default=serialise),
+            timeline_modules=htmlsafe_json_dumps(module_info, default=serialise),
             currency=get_config().currency,
         )
 
@@ -5911,6 +5912,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             connection=connection,
         )
         return "", 204
+
+    @experiment_route("/media-upload/heartbeat", methods=["POST"])
+    @staticmethod
+    def renew_media_uploads():
+        """Renew the leases of recordings the browser is still holding."""
+        from .media_upload import _renew_uploads
+
+        if flask.request.content_length is None:
+            flask.abort(411)
+        if flask.request.content_length > 16384:
+            flask.abort(413)
+        body = flask.request.get_json(silent=True)
+        uploads = body.get("uploads") if isinstance(body, dict) else None
+        if not isinstance(uploads, list):
+            flask.abort(400)
+        return flask.jsonify({"unavailable": _renew_uploads(uploads)})
 
     @experiment_route("/asset/<access_token>", methods=["GET"])
     @experiment_route("/asset/<access_token>/<path:subpath>", methods=["GET"])
@@ -7733,7 +7750,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             clock.close_open("barriers", "render")
             if write_committed:
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(result.payload)
+                    )
                 )
             return finish(cls._handle_response_prepare_error(exp, participant_id, err))
 
@@ -7751,7 +7770,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 if os.getenv("PASSTHROUGH_ERRORS"):
                     raise
                 return finish(
-                    cls._handle_response_render_error(exp, participant_id, err)
+                    cls._handle_response_render_error(
+                        exp, participant_id, err, _recording_receipts(payload)
+                    )
                 )
             clock.close("render")
             if fragment is None:
@@ -7795,11 +7816,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return cls._handle_response_fatal_error(experiment, participant_id, error)
 
     @classmethod
-    def _approved_timeline_reload_response(cls, experiment, participant_id):
+    def _approved_timeline_reload_response(
+        cls, experiment, participant_id, recording_receipts=None
+    ):
         """Return an approved payload that forces GET /timeline.
 
         Used after the response write committed but a later relock or render
-        failed. The client must not retry the same POST (page_uuid advanced).
+        failed. The client must not retry the same POST (page_uuid advanced),
+        so the reply keeps any committed recording receipts for upload.
         """
         try:
             participant = cls._participant_request_query().get(participant_id)
@@ -7811,7 +7835,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             payload = experiment._approved_payload(participant, page)
             attributes = payload["page"].setdefault("attributes", {})
             attributes["requires_full_page_reload"] = True
-            return success_response(**payload)
+            return success_response(**payload, **(recording_receipts or {}))
         except Exception:
             logger.warning(
                 "Could not build a reload payload after post-commit contention "
@@ -7822,7 +7846,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             return None
 
     @classmethod
-    def _handle_response_render_error(cls, experiment, participant_id, error):
+    def _handle_response_render_error(
+        cls, experiment, participant_id, error, recording_receipts=None
+    ):
         """Handle errors after the response write is committed.
 
         Never returns busy/503 here: the page_uuid has already advanced, so a
@@ -7848,7 +7874,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         db.session.rollback()
         if transient:
             reload_response = cls._approved_timeline_reload_response(
-                experiment, participant_id
+                experiment, participant_id, recording_receipts
             )
             if reload_response is not None:
                 return reload_response

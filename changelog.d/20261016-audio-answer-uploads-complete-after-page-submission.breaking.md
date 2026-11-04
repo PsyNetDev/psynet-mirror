@@ -10,4 +10,4 @@ PageMaker(
 ),
 ```
 
-A missing audio recording fails only its parent trial, without recapturing: immediately when the browser reports it unavailable, otherwise at the upload deadline. Trial analysis such as `analyze_recording` already waits for the recording. The built-in REPP tapping calibration prescreen now shows a message instead of playback when the practice recording is missing. Bots upload their `bot_response_media` through the same route as participants, so it must be a WAV file. Legacy navigation and other storage backends keep uploading audio with the answer.
+A missing audio recording fails only its parent trial, without recapturing: immediately when the browser reports it unavailable, otherwise when its upload expires. Trial analysis such as `analyze_recording` already waits for the recording. The built-in REPP tapping calibration prescreen now shows a message instead of playback when the practice recording is missing. Bots upload their `bot_response_media` through the same route as participants, so it must be a WAV file. Legacy navigation and other storage backends keep uploading audio with the answer.
