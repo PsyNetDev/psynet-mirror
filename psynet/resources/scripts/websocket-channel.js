@@ -123,6 +123,9 @@
     };
     entry.socket.onmessage = function () {};
     entry.socket.onclose = function () {};
+    // ReconnectingWebSocket has no way to cancel a scheduled reconnect, which
+    // calls open() when it fires.
+    entry.socket.open = function () {};
     entry.socket.close();
   }
 
