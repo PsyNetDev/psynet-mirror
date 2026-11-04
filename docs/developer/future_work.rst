@@ -879,3 +879,56 @@ Idea
 
 Rename the flag to ``isChromium`` and use browser-neutral wording when
 ``browser.name`` is not ``Chrome``.
+
+Re-host pre-screen stimuli under neutral names
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens serve their stimuli under opaque ``/asset/<token>``
+URLs, but the original files are still public under paths that name the
+answer, such as ``images/<word>/correct.png``. A scripted cheater can
+download them and match the bytes PsyNet serves. The server also fetches
+each file from S3 on every request, without caching. The ``/asset/<token>``
+route holds its database session while it downloads (with a 30-second
+timeout), so a slow S3 response keeps a database connection busy and many
+concurrent stimulus requests could exhaust the connection pool.
+
+Idea
+++++
+
+Re-host the files under neutral names in a location participants can't
+list, and serve them as ordinary assets (or cache the on-demand
+downloads) so that stimulus requests no longer wait on S3. Until then,
+the route could read what it needs from the database and release the
+session before downloading.
+
+Add a public way to proxy a remote stimulus
+-------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens hide answer-revealing stimulus URLs with the
+internal helper ``_opaque_media_asset``, which wraps a remote file in an
+:class:`~psynet.asset.OnDemandAsset` that the server downloads. Experiment
+authors with the same problem have no public equivalent, yet the
+pre-screening tutorial shows this helper.
+
+Idea
+++++
+
+Add a public constructor such as ``OnDemandAsset.from_url(url)`` that
+serves a remote file under an opaque ``/asset/<access_token>`` URL, use it
+in the built-in pre-screens and document it in the tutorial.

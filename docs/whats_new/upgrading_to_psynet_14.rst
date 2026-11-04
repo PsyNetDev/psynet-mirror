@@ -472,6 +472,12 @@ templates that changes the database.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are saved as given, so give them as numbers
   too: ``bot_response=3``, not ``bot_response="3"``.
+* ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than ``"correct"``. A custom subclass that compares an
+  answer with ``"correct"`` should compare it with
+  ``definition["correct_answer"]`` instead. A subclass that overrides
+  ``finalize_definition`` must call ``super()`` or set
+  ``definition["correct_answer"]`` (the 1-based position) itself.
 
 17. Groups and barriers
 -----------------------
@@ -498,7 +504,8 @@ See :doc:`/code/multiplayer/synchronization`.
 ----------------------
 
 Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
-``personal=``, ``cache=`` and ``compile_nodes_from_directory``.
+``personal=``, ``cache=``, ``compile_nodes_from_directory`` and
+``on-demand-asset``.
 
 * Rename ``ExperimentAsset`` and ``CachedAsset`` to ``FileAsset``, and
   ``CachedFunctionAsset`` to ``GeneratedAsset``. The old names still work
@@ -510,6 +517,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   pass ``self.definition["url"]`` to prompts.
 * Ready-made stimuli can live in ``static/`` and be referenced with
   ``psynet.media.static_url_for``; see :doc:`/code/using_stimuli`.
+* ``/on-demand-asset?id=…`` URLs no longer work. Use the asset's ``url``
+  attribute instead, which has the form ``/asset/<access_token>``.
 
 19. Async jobs
 --------------
@@ -570,6 +579,10 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
   ``ProgrammingError``.
+* ``LanguageVocabularyTest`` answers are now screen positions (``"1"`` to
+  ``"4"``) rather than image names. Find the asset key of the chosen image
+  with ``LanguageVocabularyTrial.image_keys[definition["order"][int(answer) - 1]]``;
+  the correct image is ``"image_correct"``.
 
 See :doc:`/data/what_an_export_contains`.
 
