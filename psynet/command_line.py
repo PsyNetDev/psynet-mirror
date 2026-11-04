@@ -1540,7 +1540,7 @@ def _debug_docker(ctx, archive, no_browsers):
 _SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
 
 
-def launch_app_without_browsers(port, **kwargs):
+def launch_app_without_browsers(port, auth=None, **kwargs):
     """Launch the development app without opening browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
@@ -1549,10 +1549,10 @@ def launch_app_without_browsers(port, **kwargs):
     password out. It must stay importable by module path because RQ workers
     resolve it that way.
     """
-    _launch_app_and_report(port)
+    _launch_app_and_report(port, auth=auth)
 
 
-def launch_app_and_open_browsers(port, **kwargs):
+def launch_app_and_open_browsers(port, auth=None, **kwargs):
     """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
@@ -1563,7 +1563,7 @@ def launch_app_and_open_browsers(port, **kwargs):
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
-    _launch_app_and_report(port)
+    _launch_app_and_report(port, auth=auth)
     config = get_config()
     _open_browser_async(develop.dashboard_url(config, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
@@ -1577,8 +1577,12 @@ def _open_browser_async(url):
     threading.Thread(target=develop.open_browser, args=(url,)).start()
 
 
-def _launch_app_and_report(port):
+def _launch_app_and_report(port, auth=None):
     """Launch the development app, then print the ``Ready.`` block.
+
+    ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
+    debug`` puts in the launch job; without it, the login comes from this
+    process's config.
 
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
@@ -1596,6 +1600,7 @@ def _launch_app_and_report(port):
         error=log,
         delay=1.0,
         context="local",
+        **({"auth": auth} if auth else {}),
     )
     message = launch_data.get("recruitment_msg")
     launch_message_rows = getattr(develop, "launch_message_rows", None)
@@ -1612,12 +1617,15 @@ def _launch_app_and_report(port):
     config = get_config()
     if not config.ready:
         config.load()
+    user, password = auth or (
+        config.get("dashboard_user"),
+        config.get("dashboard_password"),
+    )
     details.append(
         (
             "Dashboard",
-            f"{develop.BASE_URL.format(port)}dashboard (user "
-            f"{config.get('dashboard_user')}, password "
-            f"{config.get('dashboard_password')})",
+            f"{develop.BASE_URL.format(port)}dashboard (user {user}, "
+            f"password {password})",
         )
     )
     after = []

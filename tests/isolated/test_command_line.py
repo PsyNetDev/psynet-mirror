@@ -971,6 +971,23 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
+def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys):
+    """Another experiment's worker on the same Redis may run the launch job."""
+    from psynet.command_line import launch_app_without_browsers
+
+    config = Mock(ready=True)
+    config.get.side_effect = {"dashboard_password": "other-experiment"}.get
+    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    launches = []
+    monkeypatch.setattr(
+        "dallinger.deployment.handle_launch_data",
+        lambda url, **kwargs: launches.append(kwargs) or {},
+    )
+    launch_app_without_browsers(5001, auth=("admin", "enqueued"))
+    assert launches[0]["auth"] == ("admin", "enqueued")
+    assert "(user admin, password enqueued)" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("no_browsers", [True, False])
 def test_debug_auto_reload_prints_the_dashboard_login_once(
     monkeypatch, capsys, no_browsers
