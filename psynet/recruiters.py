@@ -75,6 +75,7 @@ from dallinger.recruiters import (
     handle_recruitment_error,
 )
 from dallinger.utils import get_base_url
+from markupsafe import Markup
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -3921,16 +3922,19 @@ class GenericRecruiter(
         elif message == "default_exit_message":
             return super().exit_response(experiment, participant)
 
+        elif isinstance(message, Markup):
+            html = message
+
         elif isinstance(message, str):
-            html = dominate.tags.p(message).render()
+            html = Markup(dominate.tags.p(message).render())
 
         elif isinstance(message, dominate.dom_tag.dom_tag):
-            html = message.render()
+            html = Markup(message.render())
 
         else:
             raise ValueError(
                 f"Invalid value of experiment.render_exit_message: {message}. "
-                "You should return either a string or an HTML specification created using dominate tags "
+                "You should return a string, a markupsafe.Markup string, or an HTML specification created using dominate tags "
                 "(see https://pypi.org/project/dominate/)."
             )
 
