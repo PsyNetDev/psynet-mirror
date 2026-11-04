@@ -218,8 +218,8 @@ no panel behind them, and the list grows with them in the same way as
 
 The Next and Reset buttons sit in ``.psynet-actions``.
 
-The selected state is styled with ``:has()``, which is why the default
-``min_browser_version`` is Chrome 105 (see :doc:`/reference/configuration`).
+The selected state is styled with ``:has()``, which is why PsyNet rejects
+browsers without ``:has()`` support (see :doc:`/reference/configuration`).
 
 Pages that scroll
 -----------------
