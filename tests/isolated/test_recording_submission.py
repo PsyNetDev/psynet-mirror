@@ -399,6 +399,55 @@ def test_default_video_transport_preserves_legacy_and_other_storage(
     assert control._uses_async_upload(exp) is asynchronous
 
 
+def test_post_commit_render_failure_reloads_with_upload_receipts(
+    submission, monkeypatch
+):
+    """Committed recordings still reach the browser when rendering then fails."""
+    import json
+
+    from flask import Flask
+
+    exp, participant, _, _ = submission
+    monkeypatch.delenv("PASSTHROUGH_ERRORS")
+
+    def contended(**kwargs):
+        raise RuntimeError("lock timeout")
+
+    monkeypatch.setattr(Experiment, "_render_page_read_only", contended)
+    monkeypatch.setattr(
+        Experiment,
+        "_is_transient_transaction_error",
+        classmethod(lambda cls, error: True),
+    )
+    payload = {
+        "participant_id": participant.id,
+        "page_uuid": participant.page_uuid,
+        "raw_answer": None,
+        "metadata": {
+            "time_taken": 5,
+            "recording_uploads": {"camera": 100, "screen": 100},
+            "recording_recovery_secret": "ab" * 32,
+        },
+        "include_timeline_fragment": True,
+    }
+    with Flask(__name__).test_request_context(
+        "/response",
+        method="POST",
+        data={"json": json.dumps(payload)},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    ):
+        reply = exp.route_response().get_json()
+    assert reply["submission"] == "approved"
+    assert reply["page"]["attributes"]["requires_full_page_reload"] is True
+    assert reply["recording_upload_server_time"]
+    assert {upload["source"] for upload in reply["recording_uploads"]} == {
+        "camera",
+        "screen",
+    }
+    for upload in reply["recording_uploads"]:
+        assert upload["token"] and upload["expires_at"] and upload["renew_interval_ms"]
+
+
 def test_recording_recovery_uses_prepared_successor(submission, monkeypatch):
     """HTTP retries retain upload slots while rendering the prepared next page."""
     import json

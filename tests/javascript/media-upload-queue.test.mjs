@@ -18,7 +18,9 @@ afterEach(() => { globalThis.window = originalWindow; });
 // null: network error; numbers: HTTP status (429 replies carry Retry-After: 0).
 for (const [name, statuses, expected] of [
   ["temporary failure", [503, 204], {status:"received"}],
+  ["stalled connection (408)", [408, 204], {status:"received"}],
   ["permanent rejection", [403], {status:"failed", reason:"http_error", httpStatus:403}],
+  ["expired upload (410)", [410], {status:"failed", reason:"http_error", httpStatus:410}],
   ["repeated network failures until delivery", [null, null, null, null, 204], {status:"received"}],
   ["active upload elsewhere (429) until delivery", [429, 429, 429, 429, 204], {status:"received"}],
 ]) {
