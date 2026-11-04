@@ -67,7 +67,7 @@ def submission(db_session, monkeypatch, tmp_path):
 
 
 def test_accepted_video_reserves_both_sources_before_advancing(submission):
-    from psynet.media_upload import _utcnow
+    from psynet.media_upload import _IDLE_TIMEOUT, _utcnow
 
     exp, participant, page, submit = submission
     original_page = participant.page_uuid
@@ -82,6 +82,9 @@ def test_accepted_video_reserves_both_sources_before_advancing(submission):
         "camera",
         "screen",
     }
+    # The browser must renew well within the idle timeout.
+    for item in result["recording_uploads"]:
+        assert item["renew_interval_ms"] == _IDLE_TIMEOUT * 1000 // 4
     for source in ("camera", "screen"):
         asset = db.session.get(Recording, response.answer[f"{source}_id"])
         assert asset.upload_context["page_uuid"] == original_page
@@ -89,8 +92,9 @@ def test_accepted_video_reserves_both_sources_before_advancing(submission):
         assert asset.participant_id == participant.id
         assert asset.upload_status == "pending" and not asset.deposited
         assert response.answer[f"{source}_url"] == asset.url
-        # Both sources share bandwidth: 10 MiB, not 5 MiB, determines the allowance.
-        assert 196 <= (asset.upload_deadline - before).total_seconds() <= 200
+        # The lease starts at the idle timeout, whatever the recording's size.
+        lease = (asset.upload_deadline - before).total_seconds()
+        assert _IDLE_TIMEOUT <= lease <= _IDLE_TIMEOUT + 2
 
 
 @pytest.mark.parametrize("unavailable", [{}, {"camera": "queue_full"}])
@@ -337,7 +341,7 @@ def test_lost_acceptance_replays_original_slots_without_advancing(
     replay_time = deadline + timedelta(seconds=1)
     monkeypatch.setattr(media_upload, "_utcnow", lambda: replay_time)
     replayed = submit()
-    # Deadlines stay as issued; the replay's server time lets the browser
+    # Lifetime caps stay as issued; the replay's server time lets the browser
     # compute how much of them remains.
     assert replayed.pop("recording_upload_server_time") == replay_time.isoformat() + "Z"
     accepted.pop("recording_upload_server_time")

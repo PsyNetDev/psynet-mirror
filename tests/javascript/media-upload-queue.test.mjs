@@ -82,6 +82,49 @@ test("preparation distinguishes missing and oversized captures", () => {
     {camera:"missing_recording", screen:"size_limit"});
 });
 
+// An upload request that stays in flight until the test delivers it or the queue aborts it.
+function holdUploads(t, heartbeat = () => ({unavailable: []})) {
+  const deliveries = new Map();
+  const heartbeats = [];
+  t.mock.method(globalThis, "fetch", (url, options) => {
+    if (url === "/media-upload/heartbeat") {
+      heartbeats.push(JSON.parse(options.body));
+      return Promise.resolve(Response.json(heartbeat()));
+    }
+    return new Promise((resolve, reject) => {
+      deliveries.set(url.split("/").pop(), () => resolve(new Response(null, {status:204})));
+      options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    });
+  });
+  return {deliveries, heartbeats};
+}
+
+test("backpressure waits only while two earlier pages are still uploading", async t => {
+  const {deliveries} = holdUploads(t);
+  const first = queue.enqueue({...upload("first"), group:"page-1"});
+  const second = queue.enqueue({...upload("second"), group:"page-2"});
+  let released = false;
+  const waiting = queue.waitForPendingGroups(1).then(() => { released = true; });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(released, false);
+  deliveries.get("first")();
+  await first;
+  await waiting;
+  assert.equal(queue.pendingGroups, 1);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  deliveries.get("second")();
+  assert.deepEqual(await second, {status:"received"});
+});
+
+test("heartbeats renew outstanding uploads and release expired ones", async t => {
+  queue = new MediaUploadQueue({concurrency:1, maxBytes:100, retryDelay:1});
+  const {heartbeats} = holdUploads(t, () => ({unavailable: ["gone"]}));
+  const outcome = await queue.enqueue({...upload("gone"), renewInterval:5});
+  assert.deepEqual(outcome, {status:"failed", reason:"expired"});
+  assert.deepEqual(heartbeats[0], {uploads: [{id:"gone", token:"secret"}]});
+  assert.equal(queue.pendingBytes, 0);
+});
+
 test("default capacity admits two recordings up to the server source limit", () => {
   const recording = blob(80 * 1024**2);
   assert.deepEqual(Object.keys(new MediaUploadQueue().prepare(

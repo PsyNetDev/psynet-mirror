@@ -3808,7 +3808,8 @@ class VideoRecordControl(RecordControl):
     In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
     before uploading video, for bots too. A missing recording fails its parent
     trial, without recapturing: immediately if the browser reports it unavailable,
-    otherwise at the upload deadline. For playback outside a trial, use
+    otherwise once the participant's browser stops renewing the upload (for
+    example, because it was closed). For playback outside a trial, use
     :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
     Legacy navigation and other storage backends upload the recording with the
     answer.
@@ -3852,6 +3853,7 @@ class VideoRecordControl(RecordControl):
     # Kept private for transport regression fixtures.
     _async_upload = True
     _async_upload_max_bytes = 128 * 1024 * 1024
+    _async_upload_idle_timeout = None
 
     def __init__(
         self,
@@ -4030,14 +4032,13 @@ class VideoRecordControl(RecordControl):
     def _accept_recordings(self, response, participant, page_uuid):
         """Install final read references and capabilities only after acceptance."""
         from .media_upload import (
+            _IDLE_TIMEOUT,
             _reserve_recording,
             _resolve_unavailable,
-            _upload_timeout,
         )
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        timeout = _upload_timeout(max(1, sum(sizes.values())))
         parent = participant.current_trial or participant
         summary = dict(response.answer)
         uploads = []
@@ -4052,10 +4053,10 @@ class VideoRecordControl(RecordControl):
                 source=source,
                 local_key=label,
                 storage=Recording.default_storage,
-                upload_timeout=timeout,
                 upload_size_bytes=min(sizes[source], self._async_upload_max_bytes)
                 or None,
                 max_bytes=self._async_upload_max_bytes,
+                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
             )
             reason = response._recording_unavailable.get(source)
             asset.upload_context = {
@@ -4065,7 +4066,7 @@ class VideoRecordControl(RecordControl):
             }
             if reason:
                 # The browser already knows these bytes cannot be uploaded, so
-                # resolve now rather than waiting for the upload deadline.
+                # resolve now rather than waiting for the lease to expire.
                 _resolve_unavailable(asset, reason, participant.current_trial)
             summary[f"{source}_id"] = asset.id
             summary[f"{source}_url"] = asset.url

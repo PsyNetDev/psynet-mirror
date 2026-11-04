@@ -1115,6 +1115,16 @@
         controller.connection.close();
       }
 
+      psynet.hideTimelineHoldIndicator();
+      psynet.timelineHold = null;
+      window.dispatchEvent(
+        new CustomEvent("timelineHoldEnded", {
+          detail: {holdId: controller.hold.hold_id},
+        }),
+      );
+    };
+
+    psynet.hideTimelineHoldIndicator = function () {
       let indicator = document.getElementById(
         "psynet-timeline-hold-indicator",
       );
@@ -1135,12 +1145,6 @@
         commentButton.disabled =
           indicator.dataset.commentButtonWasDisabled === "true";
       }
-      psynet.timelineHold = null;
-      window.dispatchEvent(
-        new CustomEvent("timelineHoldEnded", {
-          detail: {holdId: controller.hold.hold_id},
-        }),
-      );
     };
 
     psynet._connectTimelineHoldSocket = function (controller) {
@@ -3738,6 +3742,15 @@
       try { await recordingUploadQueue.drain(); }
       finally { psynet.setTimelineTransitionBusy(false); }
     };
+    // Backpressure: a participant may run at most one recording page ahead of
+    // their uploads. On a slow connection they wait here, as they would have
+    // for an upload inside the submission, instead of building a backlog.
+    async function waitForRecordingBacklog() {
+      if (recordingUploadQueue.pendingGroups <= 1) return;
+      psynet.showTimelineHoldIndicator(recordingUploadMessage);
+      try { await recordingUploadQueue.waitForPendingGroups(1); }
+      finally { psynet.hideTimelineHoldIndicator(); }
+    }
     async function recordingModule(path) {
       let timer;
       try {
@@ -3802,6 +3815,7 @@
       $(" .response, .submit ").prop("disabled", true);
 
       let capturedRecordings = {};
+      const submittedPageUuid = psynet.submissionPageUuid;
       const sources = options.timelineHoldResume ? null : psynet.var.asynchronousVideoUploadSources;
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
@@ -3821,6 +3835,7 @@
         try {
           const maxBytes = psynet.var.asynchronousVideoUploadMaxBytes;
           await getRecordingQueue(maxBytes);
+          await waitForRecordingBacklog();
           const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
           capturedRecordings = prepared.recordings;
           unavailable = prepared.unavailable;
@@ -3894,11 +3909,12 @@
                 if (accepted.submission === "approved" && Array.isArray(sources)) {
                   const serverTime = Date.parse(accepted.recording_upload_server_time);
                   for (const upload of accepted.recording_uploads || []) {
-                    // Bound retention by the original server deadline even on a replay.
+                    // Bound retention by the original lifetime cap even on a replay.
                     const deadline = submissionStarted + Date.parse(upload.expires_at) - serverTime;
                     try {
                       recordingUploadQueue.enqueue({
                         ...upload, deadline, blob: capturedRecordings[upload.source],
+                        group: submittedPageUuid, renewInterval: upload.renew_interval_ms,
                       }).then(outcome => {
                         if (outcome.status === "failed") {
                           psynet.log.warn(`Recording ${upload.id} upload failed: ${outcome.reason}`);

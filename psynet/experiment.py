@@ -4220,7 +4220,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 if recovered is not None:
                     from .media_upload import _utcnow
 
-                    # Upload deadlines stay as originally issued; the current
+                    # Lifetime caps stay as originally issued; the current
                     # server time lets the browser compute what remains of them.
                     recovered["recording_upload_server_time"] = (
                         _utcnow().isoformat() + "Z"
@@ -5911,6 +5911,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             connection=connection,
         )
         return "", 204
+
+    @experiment_route("/media-upload/heartbeat", methods=["POST"])
+    @staticmethod
+    def renew_media_uploads():
+        """Renew the leases of recordings the browser is still holding."""
+        from .media_upload import _renew_uploads
+
+        uploads = (flask.request.get_json(silent=True) or {}).get("uploads")
+        if not isinstance(uploads, list):
+            flask.abort(400)
+        return flask.jsonify({"unavailable": _renew_uploads(uploads)})
 
     @experiment_route("/asset/<access_token>", methods=["GET"])
     @experiment_route("/asset/<access_token>/<path:subpath>", methods=["GET"])

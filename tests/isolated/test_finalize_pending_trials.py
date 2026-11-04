@@ -31,7 +31,7 @@ def _reserve_trial_recording(trial, directory, *, required=True):
         storage=LocalStorage(str(directory)),
         role="answer",
         required_for_trial=required,
-        upload_timeout=60,
+        idle_timeout=60,
     )
 
 
@@ -140,9 +140,10 @@ def test_feedback_honors_recording_deadline_and_releases_a_resumed_tab(
     trial = _add_complete_unfinalized_trial(network.head, participant)
     participant.current_trial = trial
     asset, _ = _reserve_trial_recording(trial, tmp_path)
-    # The ordinary 20 s, the 60 s upload allowance, then the processing bound.
+    # The ordinary 20 s, the lifetime cap a renewed lease could reach, then the
+    # processing bound; the wait itself ends as soon as the lease lapses.
     assert uploads._recording_wait_timeout(participant.id, trial_id=trial.id) == (
-        20 + 60 + uploads._PROCESSING_BOUND
+        20 + uploads._MAX_UPLOAD_LIFETIME + uploads._PROCESSING_BOUND
     )
     assert uploads._recording_wait_timeout(participant.id + 100) == 20
     assert (

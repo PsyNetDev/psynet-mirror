@@ -20,7 +20,7 @@ test(`accepted video advances and plays deposited bytes (lost acceptance: ${lost
     });
   }
   let held;
-  await context.route("**/media-upload/*", route => { held = route; });
+  await context.route(/\/media-upload\/\d+$/, route => { held = route; });
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
     const {accepted} = await submitRecordingFixture(experimentPage);
     expect(lost).toBe(lostAcceptance);
@@ -64,7 +64,7 @@ test("manual resend after lost replies recovers the original upload slot @inplac
     return route.fulfill({response: reply});
   });
   let held;
-  await context.route("**/media-upload/*", route => { held = route; });
+  await context.route(/\/media-upload\/\d+$/, route => { held = route; });
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
     await prepareRecordingFixture(experimentPage);
     await experimentPage.locator("#next-button").click();
@@ -84,7 +84,7 @@ test("manual resend after lost replies recovers the original upload slot @inplac
 
 test("camera stream is kept on its recording page and released afterwards @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);
-  await context.route("**/media-upload/*", route => route.continue());
+  await context.route(/\/media-upload\/\d+$/, route => route.continue());
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async experimentPage => {
     await prepareRecordingFixture(experimentPage);
     // The recording page declares its camera, so a release pass keeps it.
@@ -108,7 +108,7 @@ test("camera stream is kept on its recording page and released afterwards @inpla
 test("camera is released while waiting for the recording @inplace-only", async ({ page, context }) => {
   test.setTimeout(120000);
   let held;
-  await context.route("**/media-upload/*", route => { held = route; });
+  await context.route(/\/media-upload\/\d+$/, route => { held = route; });
   const previous = process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT;
   process.env.PSYNET_TEST_RECORDING_DIRECT_WAIT = "1";
   try {
@@ -228,7 +228,7 @@ test("stalled upload module permits independent navigation @inplace-only", async
 
 test("missing non-trial recording shows fallback without failing participant @inplace-only", async ({page, context}) => {
   test.setTimeout(120000);
-  await context.route("**/media-upload/*", route => route.fulfill({status:403, body:"Upload unavailable"}));
+  await context.route(/\/media-upload\/\d+$/, route => route.fulfill({status:403, body:"Upload unavailable"}));
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {
     const {accepted} = await submitRecordingFixture(p);
     const id = accepted.recording_uploads[0].id;

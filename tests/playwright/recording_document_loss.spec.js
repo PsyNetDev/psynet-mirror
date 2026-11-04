@@ -10,7 +10,7 @@ for (const receiveBeforeClosing of [false, true]) {
     test.setTimeout(120000);
     let held;
     let received = false;
-    await context.route("**/media-upload/*", async route => {
+    await context.route(/\/media-upload\/\d+$/, async route => {
       held = route;
       if (receiveBeforeClosing) {
         const response = await route.fetch();
@@ -42,7 +42,7 @@ for (const receiveBeforeClosing of [false, true]) {
       await p.close();
       await expect.poll(async () => (await readState()).status, {timeout:90000, intervals:[500,1000,2000]}).toBe(receiveBeforeClosing ? "deposited" : "expired");
       const final = await readState();
-      expect(final.deadline).toBe(initial.deadline);
+      expect(final.lifetime_deadline).toBe(initial.lifetime_deadline);
       expect(final.deposited).toBe(receiveBeforeClosing);
       expect(final.participant_failed).toBe(false);
     });
@@ -52,7 +52,7 @@ for (const receiveBeforeClosing of [false, true]) {
 test("Finish drains recordings before recruiter exit @inplace-only", async ({page, context}) => {
   test.setTimeout(60000);
   let held;
-  await context.route("**/media-upload/*", route => { held = route; });
+  await context.route(/\/media-upload\/\d+$/, route => { held = route; });
   const previous = process.env.PSYNET_TEST_RECORDING_EXIT;
   process.env.PSYNET_TEST_RECORDING_EXIT = "1";
   try {
@@ -91,7 +91,7 @@ async function observeDrain(page) {
 test("full-document transition waits for received recording bytes @inplace-only", async ({page, context}) => {
   test.setTimeout(120000);
   let held;
-  await context.route("**/media-upload/*", route => { held = route; });
+  await context.route(/\/media-upload\/\d+$/, route => { held = route; });
   const previous = process.env.PSYNET_TEST_RECORDING_RELOAD;
   process.env.PSYNET_TEST_RECORDING_RELOAD = "1";
   try {
