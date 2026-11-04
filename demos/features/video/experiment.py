@@ -236,12 +236,12 @@ video_pages = join(
             VideoPrompt(
                 participant.assets["video_record_page_camera"],
                 Markup(
-                    f"""
+                    """
                         Here's the camera recording you just made.
                         <br>
-                        Click <a href="{participant.assets["video_record_page_screen"].url}">this link</a> to download the corresponding screen recording.
+                        Click <a href="{url}">this link</a> to download the corresponding screen recording.
                     """
-                ),
+                ).format(url=participant.assets["video_record_page_screen"].url),
                 mirrored=True,
                 width="400px",
             ),

@@ -397,7 +397,6 @@ def test_browser_warning_does_not_depend_on_page_logo_markup():
                 allow_mobile_devices=False,
                 force_google_chrome=True,
                 force_incognito_mode=False,
-                min_browser_version="80.0",
             ),
         )
 
@@ -800,10 +799,80 @@ def test_recruiter_handshake_replaces_history():
 
     assert "window.location.replace(url)" in ad
     assert "window.location = url" not in ad
-    assert "window.location.replace('/start?" in consent
+    assert 'window.location.replace("/start?"' in consent
     assert "window.location='/start" not in consent
     assert start.count('window.location.replace("/timeline?unique_id="') == 2
     assert 'window.location = "/timeline' not in start
+
+
+def _render_recruiter_page(name, lucid):
+    import dallinger
+    from flask import Flask, render_template
+    from jinja2 import ChoiceLoader
+
+    from psynet.graphics import PsyNetLogo
+
+    app = Flask(__name__)
+    app.jinja_loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            FileSystemLoader(
+                str(Path(dallinger.__file__).parent / "frontend/templates")
+            ),
+        ]
+    )
+    app.add_url_rule("/consent", "consent", lambda: "")
+    app.jinja_env.add_extension("jinja2.ext.i18n")
+    app.jinja_env.install_null_translations(newstyle=True)
+    app.jinja_env.globals.update(
+        pgettext=lambda context, message: message,
+        get_from_config=lambda key: False,
+        presence_settings=lambda: None,
+    )
+    experiment = SimpleNamespace(
+        psynet_logo=PsyNetLogo(),
+        with_lucid_recruitment=lambda: lucid,
+        start_experiment_in_popup_window=False,
+    )
+    config = SimpleNamespace(
+        allow_mobile_devices=False,
+        force_google_chrome=True,
+        force_incognito_mode=False,
+        min_browser_version="80.0",
+        window_width=1024,
+        window_height=768,
+    )
+    with app.test_request_context(f"/{name}"):
+        return render_template(
+            f"{name}.html",
+            experiment=experiment,
+            config=config,
+            mode="live",
+            app_id="app",
+            query_string="RID=abc",
+        )
+
+
+@pytest.mark.parametrize(
+    "name, advance",
+    [("ad", "proceedToConsentPage(null);"), ("consent", "start();")],
+)
+def test_lucid_pages_validate_the_browser_before_advancing(name, advance):
+    """/start creates the participant, after which a RID-only mobile termination
+    is refused, so Lucid pages must not advance before the mobile check."""
+    lucid = _render_recruiter_page(name, lucid=True)
+    script = lucid[lucid.rindex("<script>") :]
+    assert re.search(
+        r"if \(browser\.validate\(\)\) \{\s*" + re.escape(advance) + r"\s*\}", script
+    )
+    assert script.count("browser.validate()") == 1
+    assert "DOMContentLoaded" not in script
+
+    other = _render_recruiter_page(name, lucid=False)
+    script = other[other.rindex("<script>") :]
+    assert script.count("browser.validate()") == 1
+    assert 'addEventListener("DOMContentLoaded"' in script
+    assert advance not in script
 
 
 def test_exit_navigation_replaces_the_finished_timeline_in_history():
@@ -1017,6 +1086,129 @@ def test_error_page_automatically_executes_its_server_owned_exit_plan():
     assert 'id="error-identifiers"' not in error
     assert "error_page_presentation.researcher_contact_message" in error
     assert "experiment.error_page_content" not in error
+
+
+# ---------------------------------------------------------------------------
+# browser-detect.html entry-check bug guards
+# ---------------------------------------------------------------------------
+
+
+def _render_browser_detect(
+    *,
+    force_google_chrome=False,
+    allow_mobile_devices=True,
+    lucid=False,
+    force_incognito_mode=False,
+):
+    from flask import Flask, render_template_string
+
+    from psynet.graphics import PsyNetLogo
+
+    app = Flask(__name__, template_folder=str(resources.files("psynet") / "templates"))
+    app.jinja_env.add_extension("jinja2.ext.i18n")
+    app.jinja_env.install_null_translations(newstyle=True)
+    app.jinja_env.globals["pgettext"] = lambda context, message: message
+
+    with app.test_request_context("/"):
+        return render_template_string(
+            '{% import "macros/browser-detect.html" as bd with context %}'
+            "{{ bd.head() }}",
+            experiment=SimpleNamespace(
+                psynet_logo=PsyNetLogo(),
+                with_lucid_recruitment=lambda: lucid,
+            ),
+            config=SimpleNamespace(
+                allow_mobile_devices=allow_mobile_devices,
+                force_google_chrome=force_google_chrome,
+                force_incognito_mode=force_incognito_mode,
+            ),
+        )
+
+
+def test_browser_detect_handles_detectIncognito_rejection():
+    """detectIncognito() throws on modern Firefox; without .catch the promise
+    rejection is unhandled, browser.isValidated stays undefined, and Firefox
+    slips through force_google_chrome=True."""
+    html = _render_browser_detect()
+    after_then = html[html.index("detectIncognito().then(") :]
+    assert ".catch(" in after_then, (
+        "detectIncognito() promise has no .catch — an unhandled rejection leaves "
+        "browser.isValidated undefined and admits any browser silently."
+    )
+
+
+def test_browser_detect_accepts_chromium_based_browsers():
+    """force_google_chrome=True must admit Edge, Brave, and Opera (all Chromium-
+    based), not only the exact 'Chrome' string returned by detectIncognito."""
+    html = _render_browser_detect()
+    validate_start = html.index("browser.validate = function")
+    validate_fn = html[validate_start : html.index("return browser;")]
+    assert '"Edge"' in validate_fn, (
+        "isChrome only matches exact 'Chrome' from detectIncognito; "
+        "Chromium-based browsers (Edge, Brave, Opera) are incorrectly rejected."
+    )
+
+
+def test_browser_detect_identifies_ipad_os_as_mobile():
+    """iPadOS 13+ sends a macOS User-Agent, so the UA regex alone misses it.
+    The fix must add a touch-point check alongside the UA string."""
+    html = _render_browser_detect(allow_mobile_devices=False)
+    assert "maxTouchPoints" in html, (
+        "isMobile check uses only a UA regex; iPadOS 13+ reports macOS UA "
+        "and is not detected as mobile."
+    )
+
+
+def test_ad_and_consent_do_not_call_terminate_participant():
+    """terminateParticipant is defined in psynet.js, which is not loaded on
+    ad.html or consent.html. Calling it from those pages throws a ReferenceError."""
+    templates = resources.files("psynet") / "templates"
+    for name in ("ad.html", "consent.html"):
+        source = (templates / name).read_text(encoding="utf-8")
+        assert "terminateParticipant" not in source, (
+            f"{name} calls terminateParticipant, but psynet.js is not loaded "
+            "on this page — the call throws ReferenceError."
+        )
+
+
+def test_browser_detect_requires_css_has_unconditionally():
+    """PsyNet's own CSS uses :has() internally (participant.css, timeline-page.html).
+    The check must fire for all browsers regardless of force_google_chrome."""
+    html = _render_browser_detect(force_google_chrome=False)
+    assert "cssHasSupported" in html, (
+        "No cssHasSupported variable found — the :has() support check is missing."
+    )
+    assert 'CSS.supports("selector(:has(a))")' in html, (
+        "CSS.supports check for :has() not found in rendered JS."
+    )
+    validate_start = html.index("browser.validate = function")
+    validate_fn = html[validate_start : html.index("return browser;")]
+    assert "cssHasSupported" in validate_fn, (
+        "cssHasSupported is not checked inside browser.validate — "
+        "the :has() gate is not wired into the entry check."
+    )
+
+
+def test_browser_detect_incognito_failure_routes_through_run_browser_check():
+    """When detectIncognito rejects and force_incognito_mode=True, the .catch()
+    handler must call runBrowserCheck() — not renderBrowserWarning() directly —
+    so that the Lucid /terminate_participant redirect fires."""
+    html = _render_browser_detect(force_incognito_mode=True, lucid=True)
+    catch_start = html.index(".catch((err) =>")
+    catch_block = html[catch_start : catch_start + 400]
+    assert "runBrowserCheck()" in catch_block, (
+        ".catch() handler does not call runBrowserCheck(); "
+        "Lucid termination redirect will not fire when detectIncognito rejects."
+    )
+    # renderBrowserWarning must not be called directly inside the catch block
+    # (it is called indirectly by runBrowserCheck() when the check fails)
+    run_pos = catch_block.index("runBrowserCheck()")
+    assert "renderBrowserWarning()" not in catch_block[:run_pos], (
+        ".catch() calls renderBrowserWarning() before runBrowserCheck(); "
+        "this bypasses Lucid routing."
+    )
+    # Lucid termination URL must be present (rendered because lucid=True)
+    assert "terminate_participant" in html
 
 
 def test_layout_identity_carries_participant_ids_verbatim():

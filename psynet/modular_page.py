@@ -62,6 +62,13 @@ def _merge_js_var_sources(*sources):
     return merged
 
 
+def _dominate_label(label):
+    """Return a label for dominate, keeping ``Markup`` labels as HTML."""
+    if isinstance(label, Markup):
+        return raw(str(label))
+    return label
+
+
 class Blob:
     """
     Imitates the blob objects which are returned from the Flask front-end;
@@ -1038,6 +1045,7 @@ class CheckboxControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the checkboxes,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     arrange_vertically:
         Whether to arrange the checkboxes vertically. Default: ``True``.
@@ -1100,7 +1108,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1193,9 +1201,11 @@ class DropdownControl(OptionControl):
             ):
                 for choice, label in zip(self.choices, self.labels):
                     if answer == choice:
-                        tags.option(value=choice, selected=True).add(label)
+                        tags.option(value=choice, selected=True).add(
+                            _dominate_label(label)
+                        )
                     else:
-                        tags.option(value=choice).add(label)
+                        tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
     def validate(self, response, **kwargs):
@@ -1224,6 +1234,7 @@ class PushButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
@@ -1279,7 +1290,7 @@ class PushButtonControl(OptionControl):
                     id=choice,
                     _class=f"btn push-button {color} response {mode}",
                     style=self.style,
-                ).add(label)
+                ).add(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1357,6 +1368,7 @@ class TimedPushButtonControl(PushButtonControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     button_highlight_duration:
         How long to highlight the button for once it has been clicked (seconds).
@@ -1486,6 +1498,7 @@ class RadioButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the radiobuttons,
         which the participant will see instead of ``choices``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS style attributes to apply to the radiobuttons. Default: ``"cursor: pointer"``.
@@ -1541,14 +1554,14 @@ class RadioButtonControl(OptionControl):
             placeholder_text = (
                 ""
                 if self.placeholder_text_free_text is None
-                else f'placeholder="{self.placeholder_text_free_text}"'
+                else Markup('placeholder="{}"').format(self.placeholder_text_free_text)
             )
             self.radiobuttons.append(
                 RadioButton(
                     name=self.name,
                     id_="free_text",
-                    label=Markup(
-                        f"<input id='free_text_input' {placeholder_text} type='text'>"
+                    label=Markup("<input id='free_text_input' {} type='text'>").format(
+                        placeholder_text
                     ),
                     style=self.style,
                 )
@@ -1567,7 +1580,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1794,7 +1807,8 @@ class Button(BaseButton):
         When the button is pressed, an event is triggered with this exact ID.
 
     text :
-        Text to display on the button.
+        Text to display on the button. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style :
         Optional CSS styling for the button.
@@ -1813,7 +1827,7 @@ class Button(BaseButton):
     def __init__(
         self,
         id_: str,
-        text: Union[str, dom_tag],
+        text: Union[str, Markup, dom_tag],
         style: str = "",
         is_response_button=False,
         start_disabled=False,
@@ -2457,17 +2471,15 @@ class AudioMeterControl(Control):
     msg_duration = {"high": 0.25, "low": 0.25}
 
     def to_json(self):
-        return Markup(
-            json.dumps(
-                {
-                    "display_range": self.display_range,
-                    "decay": self.decay,
-                    "threshold": self.threshold,
-                    "grace": self.grace,
-                    "warn_on_clip": self.warn_on_clip,
-                    "msg_duration": self.msg_duration,
-                }
-            )
+        return json.dumps(
+            {
+                "display_range": self.display_range,
+                "decay": self.decay,
+                "threshold": self.threshold,
+                "grace": self.grace,
+                "warn_on_clip": self.warn_on_clip,
+                "msg_duration": self.msg_duration,
+            }
         )
 
     def update_events(self, events):

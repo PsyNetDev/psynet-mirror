@@ -1428,7 +1428,8 @@ PRUNE_INCLUDE_TRACKED_OPTION_HELP = (
 )
 PRUNE_COMMAND_HELP = (
     "Remove scaffold-managed boilerplate and generated leftovers "
-    "(static/assets, untracked constraints.txt).\n\n"
+    "(a static/assets link left by older PsyNet versions, untracked "
+    "constraints.txt).\n\n"
     "By default only unmodified, untracked scaffold paths are removed. "
     "--include-modified also removes divergent untracked scaffold paths. "
     "--include-tracked also removes git-tracked managed paths. "
@@ -1632,14 +1633,16 @@ def _git_tracked_paths(root: Path, *, required: bool = False) -> set[str]:
 
 
 def _remove_generated_static_assets(root: Path) -> bool:
-    """Remove generated ``static/assets`` and an empty ``static/`` directory."""
+    """Remove a legacy ``static/assets`` link and an empty ``static/`` directory.
+
+    Older PsyNet versions linked ``static/assets`` to local asset storage.
+    PsyNet no longer creates anything there, so a real file or directory at
+    that path belongs to the author and is kept.
+    """
     assets = root / "static" / "assets"
     removed = False
-    if assets.is_symlink() or assets.is_file():
+    if assets.is_symlink():
         assets.unlink()
-        removed = True
-    elif assets.is_dir():
-        shutil.rmtree(assets)
         removed = True
 
     static_directory = root / "static"

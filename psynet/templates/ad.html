@@ -62,17 +62,8 @@
 
 {% block scripts %}
     <script>
-        document.addEventListener("DOMContentLoaded", function (event) {
-            let isValidBrowser = browser.validate();
-            {% if experiment.with_lucid_recruitment() %}
-                if (!isValidBrowser) {
-                    terminateParticipant("invalid-browser");
-                }
-            {% endif %}
-        });
-
         function proceedToConsentPage(event) {
-          let url = "{{ url_for('consent') }}?{{ query_string | safe }}";
+          let url = {{ url_for('consent') | tojson }} + "?" + {{ query_string | tojson }};
           if ({{ experiment.start_experiment_in_popup_window | tojson }}) {
               popup = window.open(
             url,
@@ -87,8 +78,14 @@
           }
         }
         {% if experiment.with_lucid_recruitment() %}
-          proceedToConsentPage(null);
+          // validate() redirects a mobile respondent to termination and returns false.
+          if (browser.validate()) {
+            proceedToConsentPage(null);
+          }
         {% else %}
+          document.addEventListener("DOMContentLoaded", function (event) {
+              browser.validate();
+          });
           document.getElementById("begin-button").onclick = proceedToConsentPage;
         {% endif %}
     </script>

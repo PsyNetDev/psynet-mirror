@@ -50,21 +50,20 @@
 {% block scripts %}
     {{ super() }}
     <script>
-        document.addEventListener("DOMContentLoaded", function (event) {
-            let isValidBrowser = browser.validate();
-            {% if experiment.with_lucid_recruitment() %}
-                if (!isValidBrowser) {
-                    terminateParticipant("invalid-browser");
-                }
-            {% endif %}
-        });
-
         start = function() {
             // Replace so Back from the timeline does not return to this Next page.
-            window.location.replace('/start?{{query_string|safe}}');
+            window.location.replace("/start?" + {{ query_string | tojson }});
         }
         {% if experiment.with_lucid_recruitment() %}
-            start();
+            // /start creates the participant, after which the RID-only mobile
+            // termination is refused, so validate() must run first.
+            if (browser.validate()) {
+                start();
+            }
+        {% else %}
+            document.addEventListener("DOMContentLoaded", function (event) {
+                browser.validate();
+            });
         {% endif %}
     </script>
 {% endblock %}
