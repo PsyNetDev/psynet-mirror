@@ -22,7 +22,7 @@ logger = get_logger()
 def animal_prompt(text, img_url):
     return ImagePrompt(
         url=img_url,
-        text=Markup(text),
+        text=text,
         width="300px",
         height="300px",
     )
@@ -52,7 +52,9 @@ class SingleRateTrial(RateTrialMixin, ImitationChainTrial):
         return ModularPage(
             "rate_trial",
             animal_prompt(
-                text=f"How well does this description match the animal?<br><strong>{creation}</strong>",
+                text=Markup(
+                    "How well does this description match the animal?<br><strong>{}</strong>"
+                ).format(creation),
                 img_url=self.context["img_url"],
             ),
             PushButtonControl(

@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -9,7 +10,7 @@ from psynet.asset import Asset
 from psynet.bot import BotDriver
 from psynet.experiment import Request
 from psynet.modular_page import ModularPage
-from psynet.participant import ParticipantDriver
+from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
 
@@ -282,21 +283,19 @@ def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
     assert posted[0]["timeline_hold_resume"] is True
 
 
-def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch):
-    """Hold-resume POST can hit skip's NOWAIT; bots must not fail on the first 503."""
-    from psynet.participant import _BOT_TIMELINE_BUSY_ATTEMPTS
-
+def _driver_on_busy_hold(monkeypatch, busy_replies):
+    """Return a driver on a hold whose POSTs are busy ``busy_replies`` times."""
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.id = 7
     driver.experiment = SimpleNamespace(base_url="http://psynet.test")
     driver.response_files = {}
     driver.status = _driver_page_status("hold-a")
     driver.status["page"]["is_timeline_hold"] = True
-    calls = {"n": 0}
+    driver.posts = 0
 
     def fake_post(_url, data=None, files=None):
-        calls["n"] += 1
-        if calls["n"] < _BOT_TIMELINE_BUSY_ATTEMPTS:
+        driver.posts += 1
+        if driver.posts <= busy_replies:
             return SimpleNamespace(
                 status_code=503,
                 json=lambda: {"status": "busy", "submission": "busy"},
@@ -309,10 +308,26 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
     monkeypatch.setattr(driver, "_fetch_status", lambda: None)
     monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
     monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
+    return driver
+
+
+def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch):
+    """Hold-resume POST can hit skip's NOWAIT; bots must not fail on the first 503."""
+    driver = _driver_on_busy_hold(monkeypatch, busy_replies=4)
 
     driver._submit_response(driver.status, {})
 
-    assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
+    assert driver.posts == 5
+
+
+def test_stopping_a_driver_interrupts_its_busy_retries(monkeypatch):
+    driver = _driver_on_busy_hold(monkeypatch, busy_replies=4)
+    driver.stop_event = threading.Event()
+    driver.stop_event.set()
+
+    with pytest.raises(DriverStopped):
+        driver._submit_response(driver.status, {})
+    assert driver.posts == 1
 
 
 @pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])

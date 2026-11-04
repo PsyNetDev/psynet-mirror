@@ -799,7 +799,7 @@ def test_recruiter_handshake_replaces_history():
 
     assert "window.location.replace(url)" in ad
     assert "window.location = url" not in ad
-    assert "window.location.replace('/start?" in consent
+    assert 'window.location.replace("/start?"' in consent
     assert "window.location='/start" not in consent
     assert start.count('window.location.replace("/timeline?unique_id="') == 2
     assert 'window.location = "/timeline' not in start

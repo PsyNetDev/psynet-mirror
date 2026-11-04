@@ -1948,7 +1948,21 @@
               textStyle: nextButtonText?.getAttribute("style"),
             }
           : null,
+        pendingButtons: [],
       };
+    };
+
+    // Covers the clicked button's label with a spinner until the submission
+    // finishes; restoreSubmissionControlState removes it if the page stays.
+    psynet.showSubmissionSpinner = function (button) {
+      if (!button || psynet.submissionControlState === null) return;
+      let spinner = document.createElement("span");
+      spinner.className = "psynet-button-spinner spinner-border spinner-border-sm";
+      spinner.setAttribute("aria-hidden", "true");
+      button.appendChild(spinner);
+      button.classList.add("psynet-button-pending");
+      button.setAttribute("aria-busy", "true");
+      psynet.submissionControlState.pendingButtons.push({ button, spinner });
     };
 
     psynet.restoreSubmissionControlState = function () {
@@ -1959,6 +1973,11 @@
       }
       psynet.submissionControlState.controls.forEach(({ element, disabled }) => {
         if (element.isConnected) element.disabled = disabled;
+      });
+      psynet.submissionControlState.pendingButtons.forEach(({ button, spinner }) => {
+        spinner.remove();
+        button.classList.remove("psynet-button-pending");
+        button.removeAttribute("aria-busy");
       });
       let presentation = psynet.submissionControlState.nextButtonPresentation;
       if (presentation) {
@@ -3491,6 +3510,23 @@
 
     psynet.timelineHoldBusyRetryMs = 250;
 
+    // The server answers busy before writing anything, so a submission can be
+    // resent. Back off with growing gaps, because under load a partner's
+    // barrier check can hold the participant row for several seconds; up to
+    // 25% random shortening keeps clients from retrying in step. A busy reply
+    // may itself take up to the lock timeout, so no retry starts more than
+    // about 10 s after the first send (elapsedMs). Returns null once the
+    // retries are used up. A timeline hold resume retries once, because the
+    // hold has its own retry. Keep in step with _BUSY_RETRY_DELAYS_S and
+    // _BUSY_RETRY_WINDOW_S in psynet/participant.py.
+    psynet.busyRetryDelayMs = function (attempt, options = {}, elapsedMs = 0) {
+      const delays = [250, 500, 1000, 2000, 2000, 2000, 2000];
+      const limit = options.timelineHoldResume ? 1 : delays.length;
+      if (attempt >= limit) return null;
+      const delay = Math.round(delays[attempt] * (0.75 + 0.25 * Math.random()));
+      return elapsedMs + delay > 10000 ? null : delay;
+    };
+
     // How long a submission keeps retrying while a docker-ssh app wakes;
     // longer than the controller's slowest wake.
     psynet.hibernationRetryLimitMs = 5 * 60 * 1000;
@@ -3866,9 +3902,12 @@
       return new Promise((resolve) => {
         const submissionStarted = performance.now();
         let attempt = 0;
+        let busyRetries = 0;
+        let firstSentAt;
         let wakeRetry = {};
         let send = function (countAttempt = true) {
           if (countAttempt) attempt += 1;
+          firstSentAt ??= Date.now();
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
@@ -3876,12 +3915,17 @@
               send(false);
               return;
             }
-            if (psynet.isBusyResponse(request) && attempt === 1) {
+            const busyRetryMs = psynet.isBusyResponse(request)
+              ? psynet.busyRetryDelayMs(busyRetries, options, Date.now() - firstSentAt)
+              : null;
+            if (busyRetryMs !== null) {
+              busyRetries += 1;
               psynet.log.warn(
                 "The experiment was busy; retrying the submission.",
               );
-              await new Promise((retry) => setTimeout(retry, 250));
-              send();
+              await new Promise((retry) => setTimeout(retry, busyRetryMs));
+              // Busy retries have their own budget, separate from transport retries.
+              send(false);
               return;
             }
             let invalidJson = false;

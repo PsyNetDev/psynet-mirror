@@ -63,7 +63,7 @@
 {% block scripts %}
     <script>
         function proceedToConsentPage(event) {
-          let url = "{{ url_for('consent') }}?{{ query_string | safe }}";
+          let url = {{ url_for('consent') | tojson }} + "?" + {{ query_string | tojson }};
           if ({{ experiment.start_experiment_in_popup_window | tojson }}) {
               popup = window.open(
             url,
