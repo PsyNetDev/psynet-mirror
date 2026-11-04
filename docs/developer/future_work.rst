@@ -3,12 +3,12 @@
 Future work
 ===========
 
-This page records **unconfirmed** ideas for PsyNet maintainers. It is not a
-roadmap, not a commitment, and not a substitute for GitLab issues.
+This page records ideas and small follow-ups for PsyNet maintainers, such
+as limitations left by a merge request. It is not a roadmap or a commitment.
 
-Each idea is a section with Date, Problem, and Idea subsections. Delete
-the entry when it ships or is rejected. If it becomes a GitLab issue,
-link the issue and shorten the write-up.
+Do not add new entries here: record new follow-ups as GitLab issues
+instead. The entries below are being moved to issues; delete an entry
+when it ships, is rejected, or has its own issue.
 
 Payment event ledger
 --------------------
@@ -64,28 +64,6 @@ Idea
 Depend on ``psycopg2-binary`` (or ``psycopg[binary]``) in Dallinger so no
 local libpq is needed. The installation docs could then drop the libpq
 step entirely.
-
-Drop the Heroku CLI requirement
--------------------------------
-
-Date
-++++
-
-2026-09-24
-
-Problem
-+++++++
-
-``psynet test local`` uses the Heroku CLI only for its ``heroku local``
-process manager. Users have to install a non-Python tool for a platform
-they will not deploy to, and the docs have to explain why.
-
-Idea
-++++
-
-Replace ``heroku local`` in Dallinger with a Python process manager
-installed as a normal dependency, so the Python environment is the only
-requirement for local testing.
 
 Installation checker
 --------------------
@@ -604,41 +582,450 @@ it up automatically (``psynet.isolated_environment``). Two gaps remain. Every
 run still needs its own Redis server, because Redis pub/sub channels (PsyNet's
 timeline-hold wakes and Dallinger's chat channels) are shared by all database
 numbers on a server; prefixing channel names with the database identity in
-both packages would let runs share one server. And a single command that
-picks a free slot and sets these variables (for example
-``psynet services ensure --slot 2``) would save users from setting them by
-hand.
+both packages would let runs share one server. And ``psynet debug local
+--isolated`` picks a free slot for a debug server, but other commands, such as
+``psynet deploy local``, still need these variables set by hand.
 
-Remote launches have a similar problem. ``psynet deploy ssh``,
-``psynet debug ssh`` and their Heroku equivalents build the starting database
-on the local PostgreSQL and Redis: they clear every Redis key, drop the local
-tables and stop the local ``dallinger_heroku_*`` processes that use the same
-database. They ask first when a local server or another program is connected,
-but if the author agrees they still wipe the local experiment. Building the
-template in a temporary database, and clearing only PsyNet's own Redis keys,
-would avoid this.
-
-Cross-site request protection for dashboard actions
----------------------------------------------------
+SameSite dashboard login cookies and POST-only Dallinger actions
+----------------------------------------------------------------
 
 Date
 ++++
 
-2026-10-01
+2026-11-03
 
 Problem
 +++++++
 
-Several dashboard actions that change state are plain GET requests, for
-example archiving or restoring a deployment, updating recruitment status,
-triggering an export and changing the Lucid survey status. They require a
-login, but a logged-in operator who opens a malicious page could still
-trigger them through the browser's session cookie.
+PsyNet's dashboard actions are now POST-only, and
+``Experiment.before_request`` refuses cross-site POST, PUT, PATCH and DELETE
+requests to the dashboard or made with the dashboard login, using
+``Sec-Fetch-Site`` and then ``Origin``/``Referer``. This is the only layer of
+protection: the experiment server still sets the Flask session and
+Flask-Login "remember me" cookies without a ``SameSite`` attribute (Chrome
+treats that as ``Lax``; other browsers may not), and some Dallinger dashboard
+actions, such as ``/dashboard/logout``, still change state on GET.
 
 Idea
 ++++
 
-Move state-changing dashboard actions to POST and set
-``SESSION_COOKIE_SAMESITE`` (``"Lax"`` or ``"Strict"``) on the experiment
-server, so browsers don't send the session cookie with cross-site requests.
-Update the dashboard JavaScript and the Slack "Trigger export" link to match.
+In Dallinger, where the Flask app is configured, set
+``SESSION_COOKIE_SAMESITE`` and ``REMEMBER_COOKIE_SAMESITE`` to ``"Lax"``
+(``"Strict"`` would drop the login when a researcher follows a dashboard link
+from Slack or email) and move its remaining state-changing GET routes to POST.
+Participants don't rely on the Flask session, so this should not affect
+experiments embedded in recruiter iframes; check that before changing it.
+
+Use Dallinger's app addresses and app-name checks for SSH commands
+------------------------------------------------------------------
+
+Date
+++++
+
+2026-10-21
+
+Problem
++++++++
+
+PsyNet works out a docker-ssh app's address itself. ``_remote_public_origin``
+and ``_caddy_site_origin`` in ``psynet/command_line.py`` parse the server's
+Caddy files (released Dallinger's root ``Caddyfile``, ``root.d/<app>`` and
+``caddy.d/<app>``), about 70 lines that copy Dallinger's server layout into
+PsyNet. PsyNet also applies Dallinger's Heroku-era ``verify_id`` to
+``deploy ssh``, ``debug ssh`` and ``performance-test ssh``, so
+``deploy ssh --update`` and ``performance-test ssh`` can't target an app on
+the server's own host, whose name starts with ``dlgr-``.
+
+Idea
+++++
+
+Once PsyNet pins a Dallinger release that includes
+`Dallinger PR #10163 <https://github.com/Dallinger/Dallinger/pull/10163>`_:
+
+- Drop ``_remote_public_origin`` and ``_caddy_site_origin``.
+  ``_ssh_dashboard_endpoint`` can take the address from Dallinger, for example
+  ``next((a.public_origin for a in get_apps(server) if a.name == app), None)``.
+  Keep the local launch note first and the ``https://<app>.<server>`` guess
+  last. The layout cases in ``tests/isolated/test_ssh_export_origin.py`` can
+  go too, because Dallinger tests them.
+- Stop applying ``verify_id`` to the SSH commands, and use
+  ``_verify_existing_ssh_app`` as the single ``--app`` check for every SSH
+  command. Dallinger accepts ``--app dlgr-…``: a new name deploys to a
+  subdomain, and an existing app on the server's own host is refused without
+  ``--update`` and updated in place with it. Heroku commands keep
+  ``verify_id``.
+- PsyNet's own new-deploy check (``get_apps`` followed by "App with name …
+  already exists") runs before Dallinger's. It could add the same
+  ``--update --app <app>`` hint for an app on the server's own host, or leave
+  that case to Dallinger.
+- Keep ``_require_ssh_apps_exist``'s ``dlgr-<first 8 characters>`` suggestion
+  for a full experiment UUID; that is PsyNet's own help.
+
+Pin a Dallinger that checks Redis before clearing the database
+--------------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+PsyNet pins Dallinger master ``96e5cf8eb``. If Redis is down, that
+Dallinger's ``init_db(drop_all=True)`` drops the tables before it fails to
+clear the real-time sessions, so ``psynet prepare`` leaves the database
+without its tables.
+
+Idea
+++++
+
+Move the pin to a Dallinger that includes
+`Dallinger PR #10251 <https://github.com/Dallinger/Dallinger/pull/10251>`_,
+for example at the next Dallinger release.
+
+Reject reserved SSH app names before contacting the server
+----------------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``_pre_launch`` calls Dallinger's ``_check_app_name_not_reserved`` only after
+``_abort_if_app_exists`` has connected over SSH. With ``--app logs``, an SSH
+failure hides the reserved-name error.
+
+Idea
+++++
+
+Run the check as soon as an explicit ``--app`` is known, and again after
+``_default_ssh_app_name`` when ``--app`` was omitted.
+
+Show real-time runners in ``psynet services list``
+--------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``psynet/service_usage.py`` treats only ``dallinger_heroku_*`` processes as
+Dallinger servers, so a leftover ``dallinger_realtime`` runner isn't
+attached to its session. Cleanup already stops these runners.
+
+Idea
+++++
+
+Also match ``dallinger_realtime``, or reuse Dallinger's
+``local_worker_processes`` as the cleanup code does.
+
+Check for the Heroku CLI in every Heroku command
+------------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+Only ``psynet deploy heroku`` and ``psynet debug heroku`` stop early with
+install instructions when the Heroku CLI is missing. ``export heroku``,
+``destroy heroku``, ``db heroku`` and ``experiment-variables heroku`` still
+fail with Dallinger's "You are not logged into Heroku." or a
+``FileNotFoundError``.
+
+Idea
+++++
+
+Move the ``shutil.which("heroku")`` check into a helper that every Heroku
+code path calls before using ``HerokuApp``.
+
+Supported Node in the experiment ``Dockerfile``
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+The experiment ``Dockerfile`` template, which also defines development
+environments such as Codespaces, installs Debian trixie's ``nodejs``
+package, Node 20.19. Node 20 reached end of life in April 2026.
+
+Idea
+++++
+
+Copy ``node`` and ``npm`` from the official Node image that the root
+``Dockerfile`` copies from, so that both images use the Node release
+set by its ``NODE_VERSION`` build argument.
+
+Remove obsolete warning filters
+-------------------------------
+
+Date
+++++
+
+2026-11-02
+
+Problem
++++++++
+
+``tests/isolated/test_warnings.py`` still filters warnings from the Heroku
+CLI and Node, which local launches no longer produce now that they use
+honcho. Its broad ``DeprecationWarning:`` filter can hide real warnings.
+
+Idea
+++++
+
+Remove the Heroku and Node patterns, check the test still passes, and
+narrow the remaining filters.
+
+Incognito warning when detection is unavailable
+-----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``force_incognito_mode = true``, browsers where incognito detection
+fails (such as Firefox) are rejected with a message asking the
+participant to open an incognito window. Now that ``force_google_chrome``
+defaults to ``false``, Firefox participants are admitted otherwise, and
+following that instruction in a private Firefox window shows the same
+message again.
+
+Idea
+++++
+
+When ``browser.incognitoDetectionFailed`` is true, also suggest opening
+the experiment in an incognito window of a browser where detection works,
+such as Chrome.
+
+Single permission prompt and retry in the browser capability check
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+With ``browser_capabilities = {"microphone", "camera"}``, the capability
+check calls ``getUserMedia`` once per device, so the browser can ask twice
+although the intro page promises one request. A participant who dismisses
+a prompt by accident goes straight to the unsuccessful end page, and a
+participant who ignores the prompt waits on the spinner indefinitely.
+
+Idea
+++++
+
+Request audio and video in one ``getUserMedia`` call when both are needed,
+and offer a retry button on the failure page before ending the experiment.
+
+Name every failed capability on the browser capability failure page
+--------------------------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``browser-capability-check.js`` stops at the first failing capability,
+in alphabetical order, so the failure page names only that one. In a
+manual test with ``browser_capabilities = {"microphone", "camera"}``
+and both devices denied, the page said only "We were unable to access
+your camera", so a participant might fix the camera and fail again on
+the microphone.
+
+Idea
+++++
+
+Run every check, collect all failures, and list each failed capability
+on the failure page.
+
+Browser-neutral incognito instructions for Chromium browsers
+------------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+``browser.isChrome`` in ``browser-detect.html`` now covers every
+Chromium-based browser, so Edge, Brave and Opera users who must use
+incognito mode get instructions that name Chrome.
+
+Idea
+++++
+
+Rename the flag to ``isChromium`` and use browser-neutral wording when
+``browser.name`` is not ``Chrome``.
+
+Re-host pre-screen stimuli under neutral names
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens serve their stimuli under opaque ``/asset/<token>``
+URLs, but the original files are still public under paths that name the
+answer, such as ``images/<word>/correct.png``. A scripted cheater can
+download them and match the bytes PsyNet serves. The server also fetches
+each file from S3 on every request, without caching. The ``/asset/<token>``
+route holds its database session while it downloads (with a 30-second
+timeout), so a slow S3 response keeps a database connection busy and many
+concurrent stimulus requests could exhaust the connection pool.
+
+Idea
+++++
+
+Re-host the files under neutral names in a location participants can't
+list, and serve them as ordinary assets (or cache the on-demand
+downloads) so that stimulus requests no longer wait on S3. Until then,
+the route could read what it needs from the database and release the
+session before downloading.
+
+Add a public way to proxy a remote stimulus
+-------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The built-in pre-screens hide answer-revealing stimulus URLs with the
+internal helper ``_opaque_media_asset``, which wraps a remote file in an
+:class:`~psynet.asset.OnDemandAsset` that the server downloads. Experiment
+authors with the same problem have no public equivalent, yet the
+pre-screening tutorial shows this helper.
+
+Idea
+++++
+
+Add a public constructor such as ``OnDemandAsset.from_url(url)`` that
+serves a remote file under an opaque ``/asset/<access_token>`` URL, use it
+in the built-in pre-screens and document it in the tutorial.
+
+Give Lucid participants a secret ``unique_id``
+----------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The Lucid recruiter sets the worker, assignment and HIT ids all to the
+respondent's RID, so a Lucid participant's ``unique_id`` is ``RID:RID``.
+Anyone who knows the RID can open ``/timeline?unique_id=RID:RID`` and act
+as that participant, or terminate them through ``/terminate_participant``.
+
+Idea
+++++
+
+Generate the assignment id on the server when a Lucid participant is
+created, and update the Lucid callbacks that read ``assignment_id`` as the
+RID to use the stored RID instead.
+
+Stop excluding ``static/assets`` from deployments and Git
+---------------------------------------------------------
+
+Date
+++++
+
+2026-11-03
+
+Problem
++++++++
+
+The stock ``deploy.toml`` excludes ``static/assets`` because older PsyNet
+versions left a link to local asset storage there, and deployment plans
+reject links; the stock experiment ``.gitignore`` also ignores it as
+generated content. PsyNet no longer creates that link, so these exclusions now only
+leave an author's own ``static/assets`` folder untracked and undeployed
+without a warning.
+
+Idea
+++++
+
+Once few experiments still have the link, remove the exclusion from the
+``deploy.toml`` and ``.gitignore`` templates, and have debug and deploy
+commands remove a leftover link (or point to ``psynet scripts prune``) before
+they build the deployment plan.
+
+Tie chat ``leave_room`` to the page that sent it
+------------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``EnableChatrooms`` handles ``leave_room`` by deactivating every active
+membership the participant has in that room, whatever page sent it. If a
+second tab on the same page closes, the participant drops out of the room
+in the tab still open, and the widget silently loses the lines they send.
+
+Idea
+++++
+
+Send the page's ``page_uuid`` with ``join_room`` and ``leave_room`` and
+deactivate only the membership for that page. Optionally reply to a
+non-member's message so the widget can rejoin or keep the draft.
+
+Refuse non-object JSON bodies on ``/response``
+----------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+``/response`` returns a 400 for a ``page_uuid`` that isn't a string, but a
+JSON body that isn't an object, such as ``[]``, still fails with a server
+error because the route calls ``json_data.get``.
+
+Idea
+++++
+
+Return the same 400 when the decoded body isn't a ``dict``.

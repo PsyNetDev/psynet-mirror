@@ -454,3 +454,26 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+
+
+def test_experiment_refuses_to_publish_reserved_direct_types(monkeypatch):
+    """Experiment code cannot forge PsyNet's trusted directed messages."""
+    from dallinger.experiment_server import sockets
+
+    from psynet.experiment import Experiment
+
+    sent = []
+    monkeypatch.setattr(
+        sockets,
+        "publish_to_participants",
+        lambda payload, ids, scope=None: sent.append((payload, ids, scope)),
+    )
+    experiment = Experiment.__new__(Experiment)
+
+    with pytest.raises(ValueError, match="timeline_hold_wake"):
+        experiment.publish_to_participants(
+            {"type": "timeline_hold_wake", "targets": []}, [1]
+        )
+    experiment.publish_to_participants({"type": "message"}, [1], scope="s")
+
+    assert sent == [({"type": "message"}, [1], "s")]

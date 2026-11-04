@@ -21,6 +21,7 @@ module downloads the matching Dallinger snapshot, rewrites the provenance header
 and validates that Docker's constraints compile command still succeeds.
 """
 
+import json
 import re
 import subprocess
 import tempfile
@@ -97,13 +98,40 @@ def _strip_psynet_snapshot_header(content: str) -> str:
     return pattern.sub("", content, count=1)
 
 
+def _latest_cpython_patch(series: str) -> str:
+    """Return the newest CPython patch release in *series* that uv knows about.
+
+    ``uv pip compile --python-version 3.11`` resolves for Python 3.11.0, but the
+    ``python:3.11`` Docker image ships the latest 3.11 patch.
+    """
+    raw = subprocess.check_output(
+        ["uv", "python", "list", series, "--all-versions", "--output-format", "json"],
+        text=True,
+    )
+    release = re.compile(rf"{re.escape(series)}\.\d+")
+    versions = [
+        tuple(int(part) for part in row["version"].split("."))
+        for row in json.loads(raw)
+        if row.get("implementation") == "cpython"
+        and row.get("variant") in (None, "default")
+        and release.fullmatch(row.get("version") or "")
+    ]
+    if not versions:
+        raise ValueError(f"uv did not report a CPython {series} patch release.")
+    return ".".join(str(part) for part in max(versions))
+
+
 def _check_docker_constraints_compile(
     pyproject_path: Path,
     dallinger_constraints_path: Path,
     dockerfile_path: Path,
     python_versions=supported_python_major_minor_versions,
 ) -> None:
-    """Validate the vendored constraints for every supported Python version."""
+    """Validate the vendored constraints for every supported Python version.
+
+    Each version is checked at its latest patch release, as the Docker image
+    for that version ships it.
+    """
     default_python_version = _get_docker_python_version(dockerfile_path)
     if default_python_version not in python_versions:
         raise ValueError(
@@ -111,6 +139,7 @@ def _check_docker_constraints_compile(
         )
 
     for python_version in python_versions:
+        patch_version = _latest_cpython_patch(python_version)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "pyproject.toml").write_text(
@@ -126,8 +155,9 @@ def _check_docker_constraints_compile(
                     "uv",
                     "pip",
                     "compile",
+                    "--no-python-downloads",
                     "--python-version",
-                    python_version,
+                    patch_version,
                     "pyproject.toml",
                     "--extra",
                     "experiment",

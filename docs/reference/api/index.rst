@@ -59,6 +59,7 @@ They are generated from the source code and grouped like the
    demography
    recruiters
    lucid
+   capacity
 
 .. toctree::
    :caption: Groups

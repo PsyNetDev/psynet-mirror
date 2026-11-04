@@ -920,7 +920,7 @@
     };
 
     psynet.handleArrivalUpdateMessage = function (message) {
-      if (message.type !== "timeline_hold_wake") {
+      if (message?.type !== "timeline_hold_wake") {
         return;
       }
       (message.targets || []).forEach((target) => {
@@ -946,13 +946,13 @@
     };
 
     psynet.fetchArrivalNotice = function () {
-      if (psynet.participantId === undefined || typeof $ === "undefined") {
+      if (psynet.uniqueId === undefined || typeof $ === "undefined") {
         return;
       }
       $.ajax({
         url: "/timeline/arrival_notice",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
       }).done(function (data) {
         if (!psynet.arrivalUpdates) {
           return;
@@ -980,7 +980,7 @@
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
           confirmListening: true,
-          onMessage: psynet.handleArrivalUpdateMessage,
+          onDirect: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
@@ -1152,13 +1152,13 @@
             psynet.resumeTimelineHold("websocket connection");
           }
         },
-        onMessage(message) {
-          if (controller.stopped) return;
+        onDirect(message) {
+          if (controller.stopped || message?.type !== "timeline_hold_wake") {
+            return;
+          }
           psynet.handleArrivalUpdateMessage(message);
           let matchingTarget = (message.targets || []).find(
-            (target) =>
-              message.type === "timeline_hold_wake" &&
-              target.wake_token === controller.hold.wake_token,
+            (target) => target.wake_token === controller.hold.wake_token,
           );
           if (matchingTarget) {
             window.dispatchEvent(
@@ -1172,7 +1172,6 @@
             psynet.resumeTimelineHold("server notification");
           } else if (
             controller.resumeInFlight &&
-            message.type === "timeline_hold_wake" &&
             (message.targets || []).some((target) => target.wake_token)
           ) {
             // An in-flight resume can consume a later hold whose release is
@@ -2227,6 +2226,24 @@
       };
     };
 
+    class NullAudioContext {
+      get currentTime() { return Date.now() / 1000; }
+      get state() { return "unavailable"; }
+      static _unavailable() {
+        throw new Error(
+          "AudioContext is not available in this browser. " +
+          "If your experiment uses audio, add 'audio_playback' to " +
+          "Experiment.browser_capabilities so that PsyNet screens out " +
+          "browsers without it."
+        );
+      }
+      decodeAudioData() { NullAudioContext._unavailable(); }
+      createBufferSource() { NullAudioContext._unavailable(); }
+      createGain() { NullAudioContext._unavailable(); }
+      createMediaStreamSource() { NullAudioContext._unavailable(); }
+      get destination() { NullAudioContext._unavailable(); }
+    }
+
     psynet.media.initAudioContext = function () {
       if (
         psynet.media.audioContext &&
@@ -2242,9 +2259,12 @@
       if ("webkitAudioContext" in window) context = new webkitAudioContext();
       if ("AudioContext" in window) context = new AudioContext();
       if (!context) {
-        throw Error(
-          "ERROR: No AudioContext available. Try Chrome, Safari or Firefox Nightly.",
+        psynet.log.warn(
+          "No AudioContext available; audio playback is disabled. " +
+            "The browser_capabilities check should detect and route this participant out.",
         );
+        psynet.media.audioContext = new NullAudioContext();
+        return;
       }
       if (context.state == "suspended") {
         context.resume();
@@ -3307,9 +3327,12 @@
     psynet.finishAndGoToExit = async function () {
       await psynet.drainRecordingUploads();
       const participantId = dallinger.identity.participantId;
-      const exitRoute = "/recruiter-exit?participant_id=" + participantId;
+      const exitRoute = dallinger.recruiterExitRoute();
       return dallinger
-        .post("/worker_complete", { participant_id: participantId })
+        .post("/worker_complete", {
+          participant_id: participantId,
+          unique_id: dallinger.identity.uniqueId,
+        })
         .done(function () {
           dallinger.allowExit();
           let openedFromDashboard = false;
@@ -3442,6 +3465,21 @@
       try {
         let body = JSON.parse(request.response);
         return body.status === "busy" || body.submission === "busy";
+      } catch (error) {
+        return false;
+      }
+    };
+
+    // The server answers 404 with this status when the participant is no
+    // longer in its database, e.g. a tab left open across a restart.
+    psynet.isUnknownParticipantResponse = function (request) {
+      if (!request || request.status !== 404) return false;
+      try {
+        // An XMLHttpRequest has `response`; a jQuery jqXHR `responseText`.
+        let body =
+          request.responseJSON ||
+          JSON.parse(request.responseText || request.response || "");
+        return body.status === "unknown_participant";
       } catch (error) {
         return false;
       }
@@ -3881,6 +3919,11 @@
                   request,
                   options,
                 );
+              } else if (psynet.isUnknownParticipantResponse(request)) {
+                // Retrying (as a timeline hold would) can't bring the session
+                // back; the error page explains.
+                psynet.stopTimelineHold();
+                onErrorResponse(request);
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
@@ -4058,11 +4101,21 @@
   })();
 
   let updateProgressAndReward = function () {
-    if (psynet.participantId !== undefined) {
+    if (psynet.uniqueId !== undefined) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
+        error: function (request) {
+          if (psynet.isUnknownParticipantResponse(request)) {
+            clearInterval(psynet.progressAndRewardTimer);
+            psynet.stopTimelineHold();
+            psynetErrorPage.go({
+              uniqueId: psynet.uniqueId,
+              participantId: psynetTemplateData.participantId,
+            });
+          }
+        },
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
@@ -4085,7 +4138,7 @@
   psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
-    setInterval(updateProgressAndReward, 1000);
+    psynet.progressAndRewardTimer = setInterval(updateProgressAndReward, 1000);
   }
 
   function alertParticipantOpenedDevtools() {
@@ -4166,6 +4219,12 @@
 
   psynet.initLucidTermination = function () {
     psynet.clearLucidTermination();
+    psynet.terminateParticipant = function (reason) {
+      psynet.log.error(
+        `Not terminating the participant (reason: ${reason}): ` +
+          "the experiment does not recruit through Lucid.",
+      );
+    };
 
     if (!psynetTemplateData.flags.lucidRecruitment) {
       return;
@@ -4188,9 +4247,11 @@
       clearInterval(clockIntervalID);
       await psynet.drainRecordingUploads();
       return window.location.replace(
-        `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
+        "/terminate_participant?" +
+          new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
+    psynet.terminateParticipant = terminateParticipant;
 
     function checkTriedToLeave() {
       if (triedToLeave) {

@@ -1,0 +1,1 @@
+On SSH deployments, experiment code can no longer write files into ``static/`` at runtime, because the experiment image no longer makes ``/experiment/static`` writable for the account the experiment runs as. Write such files to a temporary directory (for example with Python's ``tempfile``) or store them as assets instead.

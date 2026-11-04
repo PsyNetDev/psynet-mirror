@@ -23,14 +23,14 @@ The tools in :doc:`/install` must be installed first.
 
 #. Copy the directory to a location outside your PsyNet checkout, for example
    ``~/psynet-experiments/chord_ratings``. The folder name follows the same
-   rules as in :doc:`/quickstart`: letters, digits and underscores only, not
-   starting with a digit, and not the name of an existing Python module.
+   rule as in :doc:`/quickstart`: it must not be the name of an existing
+   Python module such as ``code`` or ``test``.
 #. Open the directory in your IDE and a terminal in it.
 #. Install PsyNet into a fresh virtual environment and run ``psynet setup``:
 
    .. code-block:: bash
 
-      uv venv --python 3.13
+      uv venv --python 3.14
       source .venv/bin/activate
       uv pip install psynet
       psynet setup
@@ -38,7 +38,7 @@ The tools in :doc:`/install` must be installed first.
    The ``uv pip install`` line installs the PsyNet version that this
    documentation was built from. To install a different version, see
    :ref:`choosing_a_psynet_version`. PsyNet supports Python 3.11 through 3.14
-   and recommends Python 3.13.
+   and recommends Python 3.14.
 
 #. Start the local services and run the experiment:
 
@@ -83,7 +83,7 @@ install it in editable mode with the demos' dependencies:
 
    git clone https://gitlab.com/PsyNetDev/PsyNet.git
    cd PsyNet
-   uv venv --python 3.13
+   uv venv --python 3.14
    source .venv/bin/activate
    uv pip install -e '.[dev,demos]'
 

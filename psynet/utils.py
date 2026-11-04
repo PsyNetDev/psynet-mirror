@@ -14,6 +14,7 @@ import time
 from _hashlib import HASH as Hash
 from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from functools import reduce, wraps
 from os.path import exists
@@ -649,6 +650,9 @@ def require_exp_directory(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # On a group, this runs before Click reaches a subcommand's --help.
+        if "--help" in sys.argv[1:]:
+            return f(*args, **kwargs)
         try:
             ensure_experiment_directory_name_does_not_conflict()
             if not experiment_available():
@@ -1414,7 +1418,10 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 @contextlib.contextmanager
 def time_logger(label, threshold=0.1):
-    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds.
+
+    The line is at INFO if the block took at least a second, otherwise at DEBUG.
+    """
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1424,7 +1431,8 @@ def time_logger(label, threshold=0.1):
     log["time_finished"] = time.monotonic()
     log["time_taken"] = log["time_finished"] - log["time_started"]
     if log["time_taken"] > threshold:
-        logger.info(
+        logger.log(
+            logging.INFO if log["time_taken"] >= 1 else logging.DEBUG,
             "Task '%s' took %.3f s",
             label,
             log["time_taken"],
@@ -1505,13 +1513,10 @@ def list_isolated_tests():
 
 
 # Check TODOs
+@dataclass(frozen=True)
 class PatternDir:
-    def __init__(self, pattern, glob_dir):
-        self.pattern = pattern
-        self.glob_dir = glob_dir
-
-    def __dict__(self):
-        return {"pattern": self.pattern, "glob_dir": self.glob_dir}
+    pattern: str
+    glob_dir: str
 
 
 def _should_skip_todo_path(path: Path) -> bool:
@@ -1540,7 +1545,9 @@ def _check_todos(pattern, glob_dir):
 def _aggregate_todos(pattern_dirs: List[PatternDir]):
     todo_count = {}
     for pattern_dir in pattern_dirs:
-        todo_count.update(_check_todos(**pattern_dir.__dict__()))
+        todo_count.update(
+            _check_todos(pattern=pattern_dir.pattern, glob_dir=pattern_dir.glob_dir)
+        )
     return todo_count
 
 
@@ -1607,18 +1614,31 @@ def in_python_package():
     Returns
     -------
     bool
-        True if the current directory contains either pyproject.toml or setup.py,
-        indicating it is likely a Python package root directory.
+        See :func:`is_a_package`.
     """
     return is_a_package(".")
 
 
 def is_a_package(path):
+    """
+    Test whether a directory is the root of a Python package rather than an experiment.
+
+    Parameters
+    ----------
+    path : str or Path
+        Directory to inspect.
+
+    Returns
+    -------
+    bool
+        True if the directory contains ``pyproject.toml`` or ``setup.py`` and no
+        ``experiment.py``. Experiment directories may carry their own
+        ``pyproject.toml`` (for example from ``uv init``).
+    """
     path = Path(path)
-    files_to_check = ["pyproject.toml", "setup.py"]
-    for file in files_to_check:
-        if path.joinpath(file).exists():
-            return True
+    if (path / "experiment.py").exists():
+        return False
+    return any((path / file).exists() for file in ["pyproject.toml", "setup.py"])
 
 
 def get_package_name(path="."):

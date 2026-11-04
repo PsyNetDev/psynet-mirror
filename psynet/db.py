@@ -26,7 +26,9 @@ there.
 
 import copy
 import logging
+import os
 import threading
+import weakref
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -45,12 +47,19 @@ _OTHER_DATABASE_CLIENTS_WHERE = (
     "AND usename = current_user"
 )
 OTHER_DATABASE_CLIENTS_SQL = text(
-    "SELECT pid, usename, application_name, state FROM pg_stat_activity "
-    f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+    "SELECT pid, usename, application_name, state, client_addr, client_port, "
+    f"backend_start FROM pg_stat_activity WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
 )
 TERMINATE_OTHER_DATABASE_CLIENTS_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
     f"WHERE {_OTHER_DATABASE_CLIENTS_WHERE}"
+)
+# 16384 is Postgres's FirstNormalObjectId: relations at or above it are user
+# objects, so a backend locking one could block dropping the tables.
+_USER_RELATION_LOCK_PIDS_SQL = text(
+    "SELECT DISTINCT pid FROM pg_locks WHERE locktype = 'relation' "
+    "AND relation >= 16384 AND database = "
+    "(SELECT oid FROM pg_database WHERE datname = current_database())"
 )
 
 
@@ -132,6 +141,56 @@ def _install_gevent_wait_callback_on_connect(dbapi_connection, connection_record
     install_gevent_wait_callback()
 
 
+# (backend pid, backend_start) of the engine's DBAPI connections, keyed
+# weakly by connection and stamped with the OS pid that opened them, so a
+# forked child doesn't claim its parent's backends. backend_start tells a
+# backend that reused one of our pids from ours, because a connection that
+# Postgres terminated still looks open until it is next used. Connections
+# checked out when the pool is disposed are closed later without pool events,
+# so ``_own_backends`` checks whether each connection is still open.
+_backends = weakref.WeakKeyDictionary()
+_backends_lock = threading.Lock()
+
+
+@event.listens_for(dallinger.db.engine, "connect")
+def _record_backend(dbapi_connection, connection_record):
+    """Record the new connection's backend, or nothing if it can't be read.
+
+    An unrecorded connection counts as another client, so the local data
+    reset check fails closed.
+    """
+    # Autocommit, so neither success nor failure leaves a transaction open.
+    autocommit = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pid, backend_start FROM pg_stat_activity "
+                "WHERE pid = pg_backend_pid()"
+            )
+            backend = cursor.fetchone()
+    except psycopg2.Error as error:
+        logger.debug("Couldn't record this connection's backend: %s", error)
+        return
+    finally:
+        dbapi_connection.autocommit = autocommit
+    if backend is None or backend[1] is None:
+        return
+    with _backends_lock:
+        _backends[dbapi_connection] = (os.getpid(), tuple(backend))
+
+
+def _own_backends():
+    """Return ``(pid, backend_start)`` of this process's open engine connections."""
+    with _backends_lock:
+        entries = list(_backends.items())
+    return {
+        backend
+        for conn, (os_pid, backend) in entries
+        if os_pid == os.getpid() and not conn.closed
+    }
+
+
 # Also covers pooled connections opened before this module was imported,
 # since the callback is process-wide.
 install_gevent_wait_callback()
@@ -183,17 +242,30 @@ def release_local_database_connections():
 def list_other_database_clients(*, release_local=True):
     """Return other same-role backends connected to this database.
 
+    Backends of connections that this process's engine still holds, which
+    disposing the pool doesn't close, are not reported as other clients,
+    unless they lock a user table and so could block dropping it. This
+    assumes a direct connection: behind a transaction-pooling proxy such as
+    pgbouncer, other clients' sessions are invisible anyway.
+
     Parameters
     ----------
     release_local : bool
-        If True (default), close this process's pooled connections first so
-        they are not counted as another client. This disposes the SQLAlchemy
-        engine pool and should only be used from destructive load/reset paths.
+        If True (default), close this process's pooled connections first.
+        This disposes the SQLAlchemy engine pool and should only be used from
+        destructive load/reset paths.
     """
     if release_local:
         release_local_database_connections()
     with dallinger.db.engine.connect() as con:
-        return list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
+        rows = list(con.execute(OTHER_DATABASE_CLIENTS_SQL))
+        locking = {pid for (pid,) in con.execute(_USER_RELATION_LOCK_PIDS_SQL)}
+    own = _own_backends()
+    return [
+        row
+        for row in rows
+        if (row.pid, row.backend_start) not in own or row.pid in locking
+    ]
 
 
 _transaction_depth = ContextVar("psynet_transaction_depth", default=0)

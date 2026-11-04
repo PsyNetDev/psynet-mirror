@@ -36,8 +36,8 @@ Server logs
 ===========
 
 The dashboard logger shows the experiment's own log output. For the logs
-of all containers on the server, use Dozzle or ``docker compose logs``;
-see :ref:`lab-deployment-dashboard`.
+of all containers on the server, use ``docker compose logs`` or, on servers
+with classic ingress, Dozzle; see :ref:`lab-deployment-dashboard`.
 
 Slack notifications
 ===================

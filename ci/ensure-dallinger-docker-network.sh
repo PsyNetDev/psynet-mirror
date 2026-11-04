@@ -50,7 +50,7 @@ then
   -e POSTGRES_PASSWORD=dallinger \
   -e POSTGRES_DB=dallinger \
   -v dallinger_postgres:/var/lib/postgresql/data \
-  postgres:12
+  postgres:12 postgres -c jit=off
 else
   echo "...yes."
 fi

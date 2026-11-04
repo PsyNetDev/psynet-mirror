@@ -83,7 +83,7 @@ class Bot(Participant):
         from .experiment import is_experiment_launched
 
         def f():
-            logger.info("Waiting for experiment launch to complete....")
+            logger.info("Waiting for experiment launch to complete...")
             return is_experiment_launched()
 
         wait_until(

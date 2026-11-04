@@ -86,7 +86,11 @@ Flag:
 
 ## 6) Report format
 
-Present findings first, ordered by severity.
+Present findings first, ordered by severity. Tag each finding, missing test
+and refactoring item high, medium or low: high for serious correctness,
+data-loss or security problems; medium for other likely bugs, misleading
+behavior or docs, and missing tests for changed behavior; low for wording,
+style and optional refactors.
 
 Use this structure:
 
@@ -105,6 +109,8 @@ branch diff. Do this even if the current title or description looks close.
 - Find the MR: `glab mr view` or
   `glab api projects/PsyNetDev%2FPsyNet/merge_requests/<iid>`
   (find the IID with `glab mr list --source-branch <branch>` if needed).
+- For findings left for later, first apply "Recording follow-ups" in
+  `AGENTS.md`, so the description can link the new issues.
 - Title: a concise, accurate summary of the committed change.
 - Description: follow `.gitlab/merge_request_templates/Default.md` and keep
   every section current (Motivation, Summary of changes, Behavior changes,

@@ -1,0 +1,1 @@
+The "Sliders" and "Documentation" tabs of `AudioMeterControl(calibrate=True)` now switch. The control now loads Bootstrap's JavaScript, which the tabs rely on but participant pages did not load, so the documentation tab could not be opened.

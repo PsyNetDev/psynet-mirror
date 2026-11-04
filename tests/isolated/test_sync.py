@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from dallinger import db
+from dallinger.experiment_server import sockets
 from dallinger.models import timenow
 from flask import Flask
 from sqlalchemy import Column, String, text
@@ -895,6 +896,72 @@ def test_partner_leaving_sends_participant_to_unsuccessful_end(
             assert Response.query.filter_by(participant_id=stayer.id).count() == 0
         else:
             assert _json_timeline(exp, stayer).status_code == 200
+        assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_queued_redirect_still_checks_the_page_uuid(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        PageMaker(
+            lambda participant: InfoPage(f"Group {participant.sync_group.id}"),
+            time_estimate=1,
+        ),
+    )
+    try:
+        (stayer, leaver), _ = _pair_sync_group(exp, db_session)
+        assert _json_timeline(exp, stayer).status_code == 200
+        leaver.fail("returned the study")
+        stayer.client_ip_address = "203.0.113.9"
+        db_session.commit()
+
+        result = _process_response(exp, stayer, "not-the-open-page")
+        assert result.payload["submission"] == "rejected"
+        assert stayer.unique_id not in json.dumps(result.payload)
+        assert stayer.client_ip_address == "203.0.113.9"
+        assert stayer.pending_redirect == "unsuccessful_end"
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_queued_redirect_accepts_a_catch_up_from_the_participants_hold(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = _stacked_partner_timeline(f"redirect_{uuid.uuid4().hex[:8]}")
+    try:
+        stayer, leaver = _working_participants(exp, 2)
+        _json_timeline(exp, stayer)
+        _json_timeline(exp, leaver)
+        db.session.expire_all()
+        stayer = Participant.query.get(stayer.id)
+        _json_timeline(exp, stayer)
+        db.session.expire_all()
+        stayer = Participant.query.get(stayer.id)
+        assert type(exp.timeline.get_current_elt(exp, stayer)).__name__ == (
+            "_BarrierHoldPage"
+        )
+        hold_uuid = stayer.page_uuid
+        _catch_up_until_action(exp, [stayer.id, leaver.id])
+        db.session.expire_all()
+        Participant.query.get(leaver.id).fail("returned the study")
+        db_session.commit()
+        stayer = Participant.query.get(stayer.id)
+        assert Experiment._pending_redirect_replaces_open_page(stayer)
+
+        result = _process_response(exp, stayer, hold_uuid)
+        assert result.payload["submission"] == "approved"
         assert exp.timeline.get_participant_branch(stayer) == "unsuccessful_end"
     finally:
         exp.timeline = original_timeline
@@ -3592,11 +3659,10 @@ def test_check_barriers_spreads_idle_visits_over_sweeps(
 
 def _arrival_hold_messages(publications, participant_id):
     """Return arrival-update overlay HTML published to one participant."""
-    channel = _timeline_hold_channel(participant_id)
     return [
         target.get("hold_message")
-        for published_channel, payload in publications
-        if published_channel == channel
+        for published_id, payload in publications
+        if published_id == participant_id
         for target in payload.get("targets", [])
         if target.get("reason") == "arrival_update"
     ]
@@ -4409,26 +4475,34 @@ def test_failing_a_held_participant_wakes_their_overlay(
         wait_while(lambda: True, expected_wait=1, max_wait_time=60),
         InfoPage("done", time_estimate=1),
     )
-    publications = []
     try:
         (first,) = _working_participants(exp, 1)
         assert _json_timeline(exp, first).status_code == 200
         first = Participant.query.get(first.id)
         wake_token = first.timeline_holds[0].wake_token
-        monkeypatch.setattr(
-            db.redis_conn,
-            "publish",
-            lambda channel, data: publications.append((channel, json.loads(data))),
-        )
+        publications = _hold_wake_publications(monkeypatch)
+        redis_channels = []
+        original_publish = db.redis_conn.publish
+
+        def recording_publish(channel, message):
+            redis_channels.append(channel)
+            return original_publish(channel, message)
+
+        monkeypatch.setattr(db.redis_conn, "publish", recording_publish)
 
         first.fail("manual")
         db_session.commit()
     finally:
         exp.timeline = original_timeline
 
+    assert not [
+        channel
+        for channel in redis_channels
+        if str(channel).startswith("psynet_timeline_hold")
+    ]
     assert publications == [
         (
-            _timeline_hold_channel(first.id),
+            first.id,
             {
                 "type": "timeline_hold_wake",
                 "targets": [{"wake_token": wake_token, "reason": "participant_failed"}],
@@ -5402,14 +5476,7 @@ def test_last_group_arrival_releases_without_poller(
         group_type="main",
         on_release=_count_group_release,
     )
-    publications = []
-    monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda channel_name, data: publications.append(
-            (channel_name, json.loads(data))
-        ),
-    )
+    publications = _hold_wake_publications(monkeypatch)
 
     _arrive_at_group_barrier(exp, barrier, first)
     first_wake = first.timeline_holds[0].wake_token
@@ -5604,14 +5671,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
         group_type="main",
         content="Waiting for your partner",
     )
-    publications = []
-    monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda channel_name, data: publications.append(
-            (channel_name, json.loads(data))
-        ),
-    )
+    publications = _hold_wake_publications(monkeypatch)
 
     _arrive_at_group_barrier(exp, barrier, first)
     db_session.commit()
@@ -5632,7 +5692,9 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
         for message in hold_messages
     )
     assert pending_arrival_notice_for(last) == "Your partner is ready."
-    assert arrival_notice_payload(last.id) == {"notice": "Your partner is ready."}
+    assert arrival_notice_payload(last.unique_id) == {
+        "notice": "Your partner is ready."
+    }
     assert arrival_notice_payload(None) == {"notice": None}
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "Waiting for your partner" in overlay
@@ -5818,7 +5880,7 @@ def test_check_barriers_publishes_release_after_commit(
 
     publications = []
 
-    def publish(channel_name, data):
+    def publish(payload, participant_ids, scope=None):
         with db.engine.connect() as connection:
             released, released_at = connection.execute(
                 text(
@@ -5840,9 +5902,9 @@ def test_check_barriers_publishes_release_after_commit(
             ).one()
         assert released
         assert released_at is not None
-        publications.append((json.loads(data), channel_name))
+        publications.append((payload, participant_ids))
 
-    monkeypatch.setattr(db.redis_conn, "publish", publish)
+    monkeypatch.setattr(sockets, "publish_to_participants", publish)
 
     check_barriers()
 
@@ -5857,7 +5919,7 @@ def test_check_barriers_publishes_release_after_commit(
                     }
                 ],
             },
-            _timeline_hold_channel(participant_id),
+            [participant_id],
         )
     ]
     assert not db_session().in_transaction()
@@ -5882,12 +5944,7 @@ def test_timeline_hold_wake_is_discarded_on_rollback(
     )
     db_session.add(hold)
     db_session.flush()
-    publications = []
-    monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda *args, **kwargs: publications.append((args, kwargs)),
-    )
+    publications = _hold_wake_publications(monkeypatch)
 
     _enqueue_timeline_hold_wake(participant.id, page_uuid="rolled-back")
     db_session.rollback()
@@ -5918,7 +5975,7 @@ def test_deferred_hold_wakes_publish_only_on_context_exit(
         assert publications == []
 
     assert _released_wake_count(publications) == 1
-    assert publications[0][0] == _timeline_hold_channel(participant.id)
+    assert publications[0][0] == participant.id
     assert publications[0][1]["targets"][0]["wake_token"] == hold.wake_token
 
 
@@ -6147,12 +6204,7 @@ def test_shared_barrier_id_preserves_each_visit_waiting_mode(
     for participant in [held_participant, page_participant]:
         participant.status = "working"
 
-    publications = []
-    monkeypatch.setattr(
-        db.redis_conn,
-        "publish",
-        lambda channel_name, data: publications.append(json.loads(data)),
-    )
+    publications = _hold_wake_publications(monkeypatch)
 
     held_barrier = WaitForTwoBarrier(id_="shared")
     held_barrier.receive_participant(held_participant)
@@ -6164,7 +6216,7 @@ def test_shared_barrier_id_preserves_each_visit_waiting_mode(
 
     release_targets = [
         target
-        for payload in publications
+        for _, payload in publications
         for target in payload["targets"]
         if target.get("reason") == "barrier_released"
     ]
@@ -6174,7 +6226,7 @@ def test_shared_barrier_id_preserves_each_visit_waiting_mode(
     check_barriers()
     assert [
         target["wake_token"]
-        for payload in publications
+        for _, payload in publications
         for target in payload["targets"]
         if target.get("reason") == "barrier_released"
     ] == [held_wake_token]

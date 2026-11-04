@@ -179,7 +179,7 @@ part_4 = join(
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Static experiment demo"
+    label = "Accumulate answers demo"
 
     timeline = Timeline(
         part_1,

@@ -381,3 +381,19 @@ def test_identifier_tables_without_id_are_rejected(db_session, tmp_path):
         copy_database_to_csv_dir(
             str(tmp_path), ["export_noid_ident"], pseudonymize=True
         )
+
+
+@in_consents_experiment
+def test_export_leaves_out_the_cached_lucid_api_payloads(db_session, tmp_path):
+    from psynet.lucid import LucidSubmissions
+
+    db_session.add(
+        LucidSubmissions(response=[{"respondent_id": "rid-1", "panelist_id": "p-1"}])
+    )
+    db_session.commit()
+
+    tables = copy_database_to_csv_dir(str(tmp_path))
+
+    assert "participant" in tables
+    assert "lucid_submissions" not in tables
+    assert not any("rid-1" in path.read_text() for path in tmp_path.iterdir())

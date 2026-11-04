@@ -24,8 +24,10 @@ from psynet.export.identity import (
     ProjectIdentity,
     ProjectMismatch,
     confirm_project_identity,
+    describe_identity_problems,
     identity_changed,
 )
+from psynet.utils import working_directory
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -105,6 +107,18 @@ def test_fetch_preflight_rejects_a_deployment_without_the_endpoint(monkeypatch):
     endpoint = DashboardEndpoint("https://example.test", ("admin", "secret"))
 
     with pytest.raises(TransferError, match="earlier version of PsyNet"):
+        fetch_preflight(endpoint)
+
+
+def test_fetch_preflight_reports_a_refused_login(monkeypatch):
+    class _LoginPage:
+        status_code = 200
+        url = "https://example.test/dashboard/login?next=%2Fdashboard%2Fexport"
+
+    monkeypatch.setattr("requests.get", lambda *args, **kwargs: _LoginPage())
+    endpoint = DashboardEndpoint("https://example.test", ("admin", "wrong"))
+
+    with pytest.raises(TransferError, match="did not accept the login"):
         fetch_preflight(endpoint)
 
 
@@ -408,7 +422,7 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
     confirm_project_identity(
         local, remote, confirm=lambda message: True, emit=warnings.append
     )
-    assert any("was launched from Git commit" in message for message in warnings)
+    assert any("runs code from Git commit" in message for message in warnings)
 
     with pytest.raises(ProjectMismatch, match="cancelled"):
         confirm_project_identity(
@@ -416,6 +430,62 @@ def test_out_of_sync_code_can_be_confirmed_or_overridden():
         )
 
     confirm_project_identity(local, remote, allow_mismatch=True, emit=warnings.append)
+
+
+def test_commits_that_leave_the_directory_unchanged_are_not_a_mismatch(tmp_path):
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=T", "-c", "user.email=t@x", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    (tmp_path / "experiment").mkdir()
+    with working_directory(tmp_path):
+        git("init", "--quiet")
+        Path("experiment/experiment.py").write_text("v1")
+        git("add", ".")
+        git("commit", "--quiet", "-m", "deployed")
+        deployed = git("rev-parse", "HEAD")
+        Path("elsewhere.txt").write_text("unrelated")
+        git("add", ".")
+        git("commit", "--quiet", "-m", "elsewhere")
+    with working_directory(tmp_path / "experiment"):
+        local = ProjectIdentity(
+            experiment_label="d", git_commit_sha=git("rev-parse", "HEAD")
+        )
+        remote = ProjectIdentity(experiment_label="d", git_commit_sha=deployed)
+        assert describe_identity_problems(local, remote) == ([], [], [])
+
+        Path("experiment.py").write_text("v2")
+        git("commit", "--quiet", "-am", "changed")
+        local = ProjectIdentity(
+            experiment_label="d", git_commit_sha=git("rev-parse", "HEAD")
+        )
+        _, warnings, _ = describe_identity_problems(local, remote)
+        assert "runs code from Git commit" in warnings[0]
+
+
+def test_dirty_state_warnings_name_the_files():
+    local = ProjectIdentity(
+        experiment_label="d", git_dirty=True, git_dirty_paths=("experiment.py",)
+    )
+    remote = ProjectIdentity.from_dict(
+        {
+            "experiment_label": "d",
+            "git_dirty": True,
+            "git_dirty_paths": ["config.txt"],
+            "export_format_version": 1,
+        }
+    )
+
+    warnings = []
+    confirm_project_identity(
+        local, remote, confirm=lambda message: True, emit=warnings.append
+    )
+    assert any("uncommitted changes in:\n  config.txt" in m for m in warnings)
+    assert any("uncommitted changes in:\n  experiment.py" in m for m in warnings)
 
 
 def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
@@ -427,6 +497,19 @@ def test_out_of_sync_code_fails_without_a_terminal(monkeypatch):
 
     with pytest.raises(ProjectMismatch, match="allow-project-mismatch"):
         confirm_project_identity(local, remote, emit=lambda message: None)
+
+
+def test_out_of_sync_code_asks_in_a_terminal(monkeypatch):
+    local = ProjectIdentity(experiment_label="d", git_dirty=True)
+    remote = ProjectIdentity(experiment_label="d", export_format_version=1)
+    monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
+    questions = []
+    monkeypatch.setattr(
+        "psynet.command_line.user_confirms", lambda q: questions.append(q) or True
+    )
+
+    confirm_project_identity(local, remote, emit=lambda message: None)
+    assert questions and "Export anyway?" in questions[0]
 
 
 def test_matching_identity_requires_no_confirmation():

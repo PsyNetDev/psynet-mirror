@@ -1,0 +1,1 @@
+`psynet deploy ssh`, `psynet debug ssh` and `psynet performance-test ssh` no longer need `docker_image_base_name` in `config.txt` or `~/.dallingerconfig`. These commands build the image on the server without pushing it, and name it after the app when the setting is unset. Heroku deploys with `--docker` push the image, so they still require the setting.

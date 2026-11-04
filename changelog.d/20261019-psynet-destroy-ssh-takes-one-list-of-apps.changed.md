@@ -1,0 +1,1 @@
+`psynet destroy ssh` treats app names given as arguments and with `--app` as one list, so the two forms can be combined, and no longer suggests the batch syntax when you use `--app`. A single app given as an argument is now confirmed like one given with `--app`, including the prompt to destroy it despite pending async jobs.

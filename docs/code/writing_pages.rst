@@ -92,6 +92,14 @@ response is a row of the ``response`` table: ``question`` holds the page's
 label, alongside ``answer``, ``metadata`` (including ``time_taken``), and
 ``successful_validation``.
 
+Choice controls save the element of ``choices`` that the participant picked,
+keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
+:class:`~psynet.modular_page.CheckboxControl` saves a list of choices.
+:class:`~psynet.modular_page.TimedPushButtonControl` is the exception; it saves
+the timing of each button press. The browser submits choices as text, so a
+control whose choices share the same text, such as ``1`` and ``"1"``, raises
+``ValueError``.
+
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the
 participant to reject it. This control from ``demos/features/validate``
