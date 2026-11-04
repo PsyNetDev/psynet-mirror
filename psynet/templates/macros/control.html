@@ -538,7 +538,12 @@
             video.player.style.display = 'block'
             video.player.pause();
             video.player.currentTime = 0;
-            video.player.play();
+            video.player.play().catch(function (error) {
+                // Moving the slider again pauses this video before play() resolves.
+                if (error.name !== "AbortError") {
+                    throw error;
+                }
+            });
             if (disableDuration == 0) {
                 psynet.trial.setTimer(enableSlider, video.player.duration * 1000)
             } else {

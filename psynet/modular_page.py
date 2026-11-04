@@ -2939,7 +2939,10 @@ class MediaSliderControl(SliderControl):
             else 0
         )
 
-    macro = "media_slider"
+    @property
+    def macro(self):
+        """The template macro that plays this control's media modality."""
+        return f"{self.modality}_media_slider"
 
     @property
     def metadata(self):
