@@ -126,3 +126,22 @@ describe("waitIfAppIsWaking", () => {
     assert.deepEqual(harness.notices, []);
   });
 });
+
+describe("busyRetryDelayMs", () => {
+  const busyRetryDelayMs = new Function(`return ${extract("busyRetryDelayMs")}`)();
+
+  it("retries a busy submission for about 10 seconds", () => {
+    let total = 0;
+    let attempt = 0;
+    for (let delay; (delay = busyRetryDelayMs(attempt)) !== null; attempt++) {
+      total += delay;
+    }
+    assert.ok(total >= 7000 && total <= 10000, `total ${total} ms`);
+  });
+
+  it("retries a timeline hold resume once, leaving the rest to the hold", () => {
+    const options = { timelineHoldResume: true };
+    assert.notEqual(busyRetryDelayMs(0, options), null);
+    assert.equal(busyRetryDelayMs(1, options), null);
+  });
+});

@@ -3473,6 +3473,20 @@
 
     psynet.timelineHoldBusyRetryMs = 250;
 
+    // The server answers busy before writing anything, so a submission can be
+    // resent. Back off over about 10 s, because under load a partner's barrier
+    // check can hold the participant row for several seconds; up to 25%
+    // random shortening keeps clients from retrying in step. Returns null once
+    // the retries are used up. A timeline hold resume retries once, because
+    // the hold has its own retry. Keep in step with _BUSY_RETRY_DELAYS_S in
+    // psynet/participant.py.
+    psynet.busyRetryDelayMs = function (attempt, options = {}) {
+      const delays = [250, 500, 1000, 2000, 2000, 2000, 2000];
+      const limit = options.timelineHoldResume ? 1 : delays.length;
+      if (attempt >= limit) return null;
+      return Math.round(delays[attempt] * (0.75 + 0.25 * Math.random()));
+    };
+
     // How long a submission keeps retrying while a docker-ssh app wakes;
     // longer than the controller's slowest wake.
     psynet.hibernationRetryLimitMs = 5 * 60 * 1000;
@@ -3720,12 +3734,15 @@
               send();
               return;
             }
-            if (psynet.isBusyResponse(request) && attempt === 0) {
+            const busyRetryMs = psynet.isBusyResponse(request)
+              ? psynet.busyRetryDelayMs(attempt, options)
+              : null;
+            if (busyRetryMs !== null) {
               attempt += 1;
               psynet.log.warn(
                 "The experiment was busy; retrying the submission.",
               );
-              await new Promise((retry) => setTimeout(retry, 250));
+              await new Promise((retry) => setTimeout(retry, busyRetryMs));
               send();
               return;
             }

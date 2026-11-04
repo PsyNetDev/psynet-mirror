@@ -131,7 +131,10 @@ Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
 HTTP 503 with a JSON ``busy`` payload so the browser and automated drivers can
-retry. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
+retry. Ordinary browser submissions and automated drivers retry with growing
+gaps for about 10 seconds, because under load a partner's barrier check can
+hold the participant row for several seconds; only then does the browser ask
+the participant to try again. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
 automatically. Hold-resume submissions retry a busy 503 once in the same
 POST. If that retry is also busy, the browser schedules one delayed queued
 hold wake. A further busy response reschedules the hold safety poll instead of

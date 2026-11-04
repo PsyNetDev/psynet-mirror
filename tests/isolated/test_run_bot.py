@@ -273,8 +273,6 @@ def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
 
 def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch):
     """Hold-resume POST can hit skip's NOWAIT; bots must not fail on the first 503."""
-    from psynet.participant import _BOT_TIMELINE_BUSY_ATTEMPTS
-
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.id = 7
     driver.experiment = SimpleNamespace(base_url="http://psynet.test")
@@ -285,7 +283,7 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
 
     def fake_post(_url, data=None, files=None):
         calls["n"] += 1
-        if calls["n"] < _BOT_TIMELINE_BUSY_ATTEMPTS:
+        if calls["n"] < 5:
             return SimpleNamespace(
                 status_code=503,
                 json=lambda: {"status": "busy", "submission": "busy"},
@@ -301,7 +299,7 @@ def test_submit_response_retries_structured_busy_like_timeline_gets(monkeypatch)
 
     driver._submit_response(driver.status, {})
 
-    assert calls["n"] == _BOT_TIMELINE_BUSY_ATTEMPTS
+    assert calls["n"] == 5
 
 
 @pytest.mark.parametrize("time_factor, poll", [(0, 0.1), (1, 0.5)])

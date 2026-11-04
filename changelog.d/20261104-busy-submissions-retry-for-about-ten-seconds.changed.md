@@ -1,0 +1,1 @@
+When the server is briefly busy, participants' submissions and bots now retry with growing gaps for about 10 seconds before giving up. Previously the browser retried once after 250 ms and then asked the participant to try again, and bots failed after about a second.

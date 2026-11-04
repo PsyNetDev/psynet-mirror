@@ -125,21 +125,32 @@ def _http_response(status_code, body=None, text=""):
     return response
 
 
-def test_retry_busy_http_retries_once_on_structured_busy_503():
-    responses = [
-        _http_response(503, {"status": "busy", "submission": "busy"}),
-        _http_response(200),
-    ]
-    calls = {"n": 0}
+@pytest.fixture
+def slept(monkeypatch):
+    """Record ``_retry_busy_http``'s sleeps instead of sleeping."""
+    sleeps = []
+    monkeypatch.setattr("psynet.participant.time.sleep", sleeps.append)
+    return sleeps
 
-    def send():
-        calls["n"] += 1
-        return responses[calls["n"] - 1]
 
-    result = _retry_busy_http(send, delay_s=0)
+def _busy():
+    return _http_response(503, {"status": "busy", "submission": "busy"})
+
+
+def test_retry_busy_http_retries_structured_busy_503_until_success(slept):
+    responses = [_busy(), _busy(), _busy(), _http_response(200)]
+
+    result = _retry_busy_http(lambda: responses.pop(0))
 
     assert result.status_code == 200
-    assert calls["n"] == 2
+    assert responses == []
+
+
+def test_retry_busy_http_gives_up_after_about_ten_seconds(slept):
+    result = _retry_busy_http(_busy)
+
+    assert result.status_code == 503
+    assert 7 <= sum(slept) <= 10
 
 
 def test_retry_busy_http_does_not_retry_generic_503():
@@ -149,7 +160,7 @@ def test_retry_busy_http_does_not_retry_generic_503():
         calls["n"] += 1
         return _http_response(503, text="gateway timeout")
 
-    result = _retry_busy_http(send, delay_s=0)
+    result = _retry_busy_http(send)
 
     assert result.status_code == 503
     assert calls["n"] == 1
@@ -162,7 +173,7 @@ def test_retry_busy_http_does_not_retry_malformed_503():
         calls["n"] += 1
         return _http_response(503, text="{not-json")
 
-    result = _retry_busy_http(send, delay_s=0)
+    result = _retry_busy_http(send)
 
     assert result.status_code == 503
     assert calls["n"] == 1
@@ -175,31 +186,13 @@ def test_retry_busy_http_does_not_retry_success():
         calls["n"] += 1
         return _http_response(200)
 
-    result = _retry_busy_http(send, delay_s=0)
+    result = _retry_busy_http(send)
 
     assert result.status_code == 200
     assert calls["n"] == 1
 
 
-def test_retry_busy_http_honors_extra_attempts():
-    responses = [
-        _http_response(503, {"status": "busy", "submission": "busy"}),
-        _http_response(503, {"status": "busy", "submission": "busy"}),
-        _http_response(200),
-    ]
-    calls = {"n": 0}
-
-    def send():
-        calls["n"] += 1
-        return responses[calls["n"] - 1]
-
-    result = _retry_busy_http(send, delay_s=0, attempts=3)
-
-    assert result.status_code == 200
-    assert calls["n"] == 3
-
-
-def test_retry_busy_http_retries_stale_timeline_409():
+def test_retry_busy_http_retries_stale_timeline_409(slept):
     responses = [
         _http_response(409, {"status": "stale", "message": "advanced"}),
         _http_response(200),
@@ -210,7 +203,7 @@ def test_retry_busy_http_retries_stale_timeline_409():
         calls["n"] += 1
         return responses[calls["n"] - 1]
 
-    result = _retry_busy_http(send, delay_s=0)
+    result = _retry_busy_http(send)
 
     assert result.status_code == 200
     assert calls["n"] == 2
@@ -229,7 +222,7 @@ def test_retry_busy_http_does_not_retry_stale_early_exit_409():
             },
         )
 
-    result = _retry_busy_http(send, delay_s=0)
+    result = _retry_busy_http(send)
 
     assert result.status_code == 409
     assert calls["n"] == 1
