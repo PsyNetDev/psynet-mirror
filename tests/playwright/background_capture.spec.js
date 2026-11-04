@@ -17,8 +17,7 @@ test.describe("Optional background capture lifecycle @both", () => {
     await page.goto("https://capture.test/");
     await page.evaluate(async labels => {
       const {BackgroundRecorder} = await import("/background-recording.js");
-      const {MediaUploadQueue} = await import("/media-upload.js");
-      window.capture = new BackgroundRecorder(new MediaUploadQueue());
+      window.capture = new BackgroundRecorder();
       window.config = {sources:["camera"],audio:false,max_duration:1,max_bytes:1024*1024,labels};
     }, captureLabels);
   });
@@ -195,8 +194,7 @@ test.describe("Shared recording capture @both", () => {
     test(`background and answer clips share ${source} tracks and play independently`, async ({page}) => {
       await page.evaluate(async source => {
         const {BackgroundRecorder} = await import("/background-recording.js");
-        const {MediaUploadQueue} = await import("/media-upload.js");
-        window.capture = new BackgroundRecorder(new MediaUploadQueue());
+        window.capture = new BackgroundRecorder();
         window.started = capture.begin({sources:[source],audio:false,max_duration:1,max_bytes:1024*1024,labels:captureLabels});
       }, source);
       await page.getByRole("button", {name:source === "camera" ? "Enable camera" : "Share screen",exact:true}).click();

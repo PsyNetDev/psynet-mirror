@@ -1,11 +1,10 @@
 import {RecordingDevices, RecordingClip} from "./recording-capture.js";
 
 /** Document-owned optional capture. Tracks survive ordinary SPA page cleanup;
- * each page owns its recorder/chunks. Uploads use the existing media queue.
+ * each page owns its recorder/chunks. Submission hands clips to the media upload queue.
  */
 export class BackgroundRecorder {
-  constructor(queue, devices = new RecordingDevices()) {
-    this.queue = queue;
+  constructor(devices = new RecordingDevices()) {
     this.devices = devices;
     this.streams = devices.streams;
     this.decisions = new Map();
@@ -24,10 +23,6 @@ export class BackgroundRecorder {
     this.indicator = null;
     if (!window.MediaRecorder || !MediaRecorder.isTypeSupported("video/webm")) {
       for (const source of config.sources) this.unavailable[source] = "unsupported";
-      return;
-    }
-    if (this.queue.availableBytes <= 0 || this.queue.availableSlots <= 0) {
-      for (const source of config.sources) this.unavailable[source] = "queue_full";
       return;
     }
     const needed = [];
@@ -50,21 +45,14 @@ export class BackgroundRecorder {
       needed.push(source);
     }
     if (needed.length) await this.askPermission(needed);
-    // Divide remaining queue space across sources before recording starts. This
-    // bounds capture in addition to retained uploads; chunks arrive each second.
-    let remaining = this.queue.availableBytes;
-    let slots = this.queue.availableSlots;
-    let sourcesLeft = config.sources.length;
+    // Capture is bounded by the page's own limits only. Clips stay outside the
+    // upload queue until submission, which waits for room like answer uploads.
     for (const source of config.sources) {
       if (!this.devices.reusable(source, config.audio)) {
         this.unavailable[source] = this.decisions.get(source) || "source_ended";
         continue;
       }
-      const limit = Math.min(config.max_bytes, Math.floor(remaining / sourcesLeft--));
-      if (limit <= 0 || slots <= 0) { this.unavailable[source] = "queue_full"; continue; }
-      remaining -= limit;
-      slots -= 1;
-      this.limits[source] = limit;
+      this.limits[source] = config.max_bytes;
       await this.startClip(source);
     }
     // Show the status chip only when something is actually being recorded.
@@ -174,14 +162,7 @@ export class BackgroundRecorder {
       recordings[source] = this.unavailable[source] ? new Blob([]) : clip.getBlob();
     }
     const sizes = Object.fromEntries(this.config.sources.map(source => [source,recordings[source]?.size || 0]));
-    const prepared = this.queue.prepare(recordings,this.config.max_bytes);
-    // More specific capture outcomes take precedence over an empty-blob result.
-    return {
-      recordings:prepared.recordings,
-      sizes,
-      unavailable:{...prepared.unavailable,...this.unavailable},
-      outcomes:{...this.outcomes},
-    };
+    return {recordings, sizes, unavailable:{...this.unavailable}, outcomes:{...this.outcomes}};
   }
 
   /** Restart clips that a rejected submission's snapshot had to stop.

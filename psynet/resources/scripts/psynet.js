@@ -3791,9 +3791,9 @@
       const config = psynet.var.backgroundRecording;
       if (!config) return;
       try {
-        const queue = await getRecordingQueue();
+        await getRecordingQueue();
         const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
-        backgroundRecorder ||= new BackgroundRecorder(queue, (await psynet.getRecordingCapture()).devices);
+        backgroundRecorder ||= new BackgroundRecorder((await psynet.getRecordingCapture()).devices);
         await backgroundRecorder.begin(config);
       } catch (error) {
         psynet.log.warn(`Background recording unavailable: ${error.message}`);
@@ -3864,12 +3864,24 @@
           try {
             if (backgroundUnavailable) throw new Error("Background capture could not initialize.");
             capture = await backgroundRecorder.finish();
-            await waitForRecordingBacklog(capture.recordings, background.max_bytes);
           } catch (error) {
             psynet.log.warn(`Background recording unavailable: ${error.message}`);
             capture = {recordings:{},sizes:{},unavailable:Object.fromEntries(sources.map(source => [source,"capture_error"]))};
           }
-          capturedRecordings = capture.recordings;
+          try {
+            await waitForRecordingBacklog(capture.recordings, background.max_bytes);
+            const prepared = recordingUploadQueue.prepare(capture.recordings, background.max_bytes);
+            capturedRecordings = prepared.recordings;
+            // More specific capture outcomes take precedence over an empty-blob result.
+            capture.unavailable = {...prepared.unavailable, ...capture.unavailable};
+          } catch (error) {
+            psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+            capturedRecordings = {};
+            capture.unavailable = {
+              ...Object.fromEntries(sources.map(source => [source, "transport_unavailable"])),
+              ...capture.unavailable,
+            };
+          }
           metadata = {...metadata,background_recording:{sizes:capture.sizes,unavailable:capture.unavailable,outcomes:capture.outcomes}};
         } else {
           const sizes = {};
