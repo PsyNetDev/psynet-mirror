@@ -21,6 +21,8 @@ class VideoRecordConfig:
     apply per source; capture stops when either limit is reached. Capture starts
     after the permission decision, before the page task (including jsPsych and
     Unity), and starts a new clip for each logical page in a persistent session.
+    A later page of a persistent Unity session asks for permission over the
+    running task, so request background recording on the session's first page.
     """
 
     source: str = "camera"

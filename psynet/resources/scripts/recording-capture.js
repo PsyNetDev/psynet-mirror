@@ -41,9 +41,12 @@ export class RecordingDevices {
       // capture asks for the track's original settings again.
       const constraints = lowResolution
         ? {width:{ideal:640,max:640},height:{ideal:480,max:480},frameRate:{ideal:15,max:15}}
-        : Object.fromEntries(Object.entries(stream._psynetNative ?? {})
-          .filter(([, value]) => value).map(([key, value]) => [key, {ideal:value}]));
+        : stream._psynetDownscaled
+          ? Object.fromEntries(Object.entries(stream._psynetNative ?? {})
+            .filter(([, value]) => value).map(([key, value]) => [key, {ideal:value}]))
+          : {};
       await Promise.all(stream.getVideoTracks().map(track => track.applyConstraints(constraints)));
+      stream._psynetDownscaled = lowResolution;
     } catch (error) {
       console.warn("Could not apply recording resolution", source, error);
       this.release(source);
