@@ -1,0 +1,1 @@
+PsyNet's page websocket channels, used by timeline holds and arrival updates, now stop reconnecting and log a console warning when the server refuses the connection (close code 1008, for example a wrong scope token), instead of retrying forever. Other close codes still reconnect.

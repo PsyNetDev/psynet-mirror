@@ -7,7 +7,7 @@ TEST = ROOT / "tests" / "javascript" / "websocket-channel.test.mjs"
 
 
 def test_websocket_channel_routes_frames():
-    """Directed sends, channel messages and listening probes reach the right callbacks."""
+    """Frames reach the right callbacks, and a refused channel stops reconnecting."""
     node = shutil.which("node")
     assert node, "node is required to run the websocket-channel tests"
     result = subprocess.run(
