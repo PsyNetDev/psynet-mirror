@@ -1412,7 +1412,9 @@ def test_error_page_presentation_rejects_a_stale_recruiter_override():
 
 def test_prolific_error_recovery_explains_payment_and_submits_directly():
     recruiter = make_prolific_recruiter(make_config())
-    participant = SimpleNamespace(id=42, assignment_id="assignment-1")
+    participant = SimpleNamespace(
+        id=42, assignment_id="assignment-1", unique_id="worker-1:assignment-1"
+    )
     plan = ExitPlan.create(
         context=ExitContext.ERROR_RECOVERY,
         path=ExitPath.SCREEN_OUT,
@@ -1437,6 +1439,7 @@ def test_prolific_error_recovery_explains_payment_and_submits_directly():
     assert presentation.action_post_data == {
         "assignmentId": "assignment-1",
         "participantId": "42",
+        "unique_id": "worker-1:assignment-1",
     }
     assert presentation.destination_url is None
     assert presentation.failure_message == (

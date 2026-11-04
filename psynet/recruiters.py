@@ -1231,6 +1231,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 action_post_data={
                     "assignmentId": participant.assignment_id,
                     "participantId": str(participant.id),
+                    "unique_id": participant.unique_id,
                 },
             )
 
