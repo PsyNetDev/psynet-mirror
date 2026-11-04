@@ -132,10 +132,11 @@ unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
 HTTP 503 with a JSON ``busy`` payload so the browser and automated drivers can
 retry. Ordinary browser submissions and automated drivers retry with growing
-gaps for about 10 seconds, because under load a partner's barrier check can
-hold the participant row for several seconds; only then does the browser ask
-the participant to try again. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
-automatically. Hold-resume submissions retry a busy 503 once in the same
+gaps, starting no retry more than about 10 seconds after the first attempt,
+because under load a partner's barrier check can hold the participant row for
+several seconds; only then does the browser ask the participant to try again.
+Each attempt may also wait up to the lock timeout on the server. Browser HTML ``GET /timeline`` returns an HTML 503 page that refreshes
+automatically. Browser hold-resume submissions retry a busy 503 once in the same
 POST. If that retry is also busy, the browser schedules one delayed queued
 hold wake. A further busy response reschedules the hold safety poll instead of
 retrying immediately, so the browser cannot livelock on contention. Whole timeline requests are not retried

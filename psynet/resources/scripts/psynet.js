@@ -3473,17 +3473,20 @@
     psynet.timelineHoldBusyRetryMs = 250;
 
     // The server answers busy before writing anything, so a submission can be
-    // resent. Back off over about 10 s, because under load a partner's barrier
-    // check can hold the participant row for several seconds; up to 25%
-    // random shortening keeps clients from retrying in step. Returns null once
-    // the retries are used up. A timeline hold resume retries once, because
-    // the hold has its own retry. Keep in step with _BUSY_RETRY_DELAYS_S in
-    // psynet/participant.py.
-    psynet.busyRetryDelayMs = function (attempt, options = {}) {
+    // resent. Back off with growing gaps, because under load a partner's
+    // barrier check can hold the participant row for several seconds; up to
+    // 25% random shortening keeps clients from retrying in step. A busy reply
+    // may itself take up to the lock timeout, so no retry starts more than
+    // about 10 s after the first send (elapsedMs). Returns null once the
+    // retries are used up. A timeline hold resume retries once, because the
+    // hold has its own retry. Keep in step with _BUSY_RETRY_DELAYS_S and
+    // _BUSY_RETRY_WINDOW_S in psynet/participant.py.
+    psynet.busyRetryDelayMs = function (attempt, options = {}, elapsedMs = 0) {
       const delays = [250, 500, 1000, 2000, 2000, 2000, 2000];
       const limit = options.timelineHoldResume ? 1 : delays.length;
       if (attempt >= limit) return null;
-      return Math.round(delays[attempt] * (0.75 + 0.25 * Math.random()));
+      const delay = Math.round(delays[attempt] * (0.75 + 0.25 * Math.random()));
+      return elapsedMs + delay > 10000 ? null : delay;
     };
 
     // How long a submission keeps retrying while a docker-ssh app wakes;
@@ -3724,8 +3727,10 @@
 
       return new Promise((resolve) => {
         let attempt = 0;
+        let firstSentAt;
         let wakeRetry = {};
         let send = function () {
+          if (attempt === 0) firstSentAt = Date.now();
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
@@ -3734,7 +3739,7 @@
               return;
             }
             const busyRetryMs = psynet.isBusyResponse(request)
-              ? psynet.busyRetryDelayMs(attempt, options)
+              ? psynet.busyRetryDelayMs(attempt, options, Date.now() - firstSentAt)
               : null;
             if (busyRetryMs !== null) {
               attempt += 1;

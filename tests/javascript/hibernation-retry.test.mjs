@@ -139,6 +139,11 @@ describe("busyRetryDelayMs", () => {
     assert.ok(total >= 7000 && total <= 10000, `total ${total} ms`);
   });
 
+  it("starts no retry more than 10 seconds after the first send", () => {
+    assert.notEqual(busyRetryDelayMs(1, {}, 0), null);
+    assert.equal(busyRetryDelayMs(1, {}, 9900), null);
+  });
+
   it("retries a timeline hold resume once, leaving the rest to the hold", () => {
     const options = { timelineHoldResume: true };
     assert.notEqual(busyRetryDelayMs(0, options), null);

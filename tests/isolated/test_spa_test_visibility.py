@@ -2,12 +2,14 @@
 
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 import requests
 
+import psynet
 from psynet.experiment import Experiment
 from psynet.modular_page import Control, ModularPage, Prompt
 from psynet.participant import (
@@ -125,32 +127,56 @@ def _http_response(status_code, body=None, text=""):
     return response
 
 
-@pytest.fixture
-def slept(monkeypatch):
-    """Record ``_retry_busy_http``'s sleeps instead of sleeping."""
-    sleeps = []
-    monkeypatch.setattr("psynet.participant.time.sleep", sleeps.append)
-    return sleeps
-
-
 def _busy():
     return _http_response(503, {"status": "busy", "submission": "busy"})
 
 
-def test_retry_busy_http_retries_structured_busy_503_until_success(slept):
+def test_retry_busy_http_retries_structured_busy_503_until_success():
     responses = [_busy(), _busy(), _busy(), _http_response(200)]
 
-    result = _retry_busy_http(lambda: responses.pop(0))
+    result = _retry_busy_http(lambda: responses.pop(0), sleep=lambda s: None)
 
     assert result.status_code == 200
     assert responses == []
 
 
-def test_retry_busy_http_gives_up_after_about_ten_seconds(slept):
-    result = _retry_busy_http(_busy)
+def test_retry_busy_http_gives_up_after_about_ten_seconds():
+    slept = []
+
+    result = _retry_busy_http(_busy, sleep=slept.append)
 
     assert result.status_code == 503
     assert 7 <= sum(slept) <= 10
+
+
+def test_bot_and_browser_busy_retry_schedules_match():
+    from psynet.participant import _BUSY_RETRY_DELAYS_S, _BUSY_RETRY_WINDOW_S
+
+    js = (Path(psynet.__file__).parent / "resources/scripts/psynet.js").read_text()
+    source = re.search(
+        r"psynet\.busyRetryDelayMs = function[\s\S]*?\n    \};", js
+    ).group(0)
+    delays = re.search(r"const delays = \[([^\]]*)\]", source).group(1)
+    window = re.search(r"elapsedMs \+ delay > (\d+)", source).group(1)
+
+    assert [int(d) / 1000 for d in delays.split(",")] == list(_BUSY_RETRY_DELAYS_S)
+    assert int(window) / 1000 == _BUSY_RETRY_WINDOW_S
+
+
+def test_retry_busy_http_counts_slow_busy_replies_towards_the_window(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("psynet.participant.time.monotonic", lambda: clock[0])
+
+    def slow_busy():
+        clock[0] += 5
+        return _busy()
+
+    def sleep(seconds):
+        clock[0] += seconds
+
+    _retry_busy_http(slow_busy, sleep=sleep)
+
+    assert clock[0] < 15
 
 
 def test_retry_busy_http_does_not_retry_generic_503():
@@ -192,7 +218,7 @@ def test_retry_busy_http_does_not_retry_success():
     assert calls["n"] == 1
 
 
-def test_retry_busy_http_retries_stale_timeline_409(slept):
+def test_retry_busy_http_retries_stale_timeline_409():
     responses = [
         _http_response(409, {"status": "stale", "message": "advanced"}),
         _http_response(200),
@@ -203,7 +229,7 @@ def test_retry_busy_http_retries_stale_timeline_409(slept):
         calls["n"] += 1
         return responses[calls["n"] - 1]
 
-    result = _retry_busy_http(send)
+    result = _retry_busy_http(send, sleep=lambda s: None)
 
     assert result.status_code == 200
     assert calls["n"] == 2
