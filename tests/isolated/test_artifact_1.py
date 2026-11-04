@@ -165,6 +165,9 @@ class TestAPI:
         response = session.get(artifact_url)
         assert response.status_code == 200
         assert response.text == comment_text
+        assert response.headers["Content-Disposition"] == (
+            "attachment; filename=comment.txt"
+        )
 
     def check_export(self, base_url, deployment_id):
         # Request a data export (in psynet mode, without assets)
