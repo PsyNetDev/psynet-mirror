@@ -45,7 +45,7 @@ Answer upload defaults
 :class:`~psynet.modular_page.AudioRecordControl` submit answers independently of
 their recordings' uploads when using :class:`~psynet.asset.LocalStorage` and in-place timeline
 transitions (the default). Trial-dependent analysis and finalization wait for
-deposit. Non-trial playback should use the fallback pattern above.
+deposit. Playback on other later pages should use the fallback pattern above.
 
 A missing recording fails only its trial, never the participant, and is never
 recaptured; configured performance rules still apply.

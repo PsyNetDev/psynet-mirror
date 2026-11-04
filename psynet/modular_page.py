@@ -3629,11 +3629,11 @@ class RecordControl(Control):
     # Asynchronous upload: in-place LocalStorage experiments accept the answer
     # first and receive its recordings afterwards (see psynet.media_upload).
     # Legacy navigation and other storage keep uploading with the answer.
-    # Subclasses opt in and describe their recordings through
-    # recording_sources, _upload_format, _answer_metadata and
-    # _answer_reference_keys. Other subclasses keep uploading with the answer,
-    # as do authors' subclasses that override format_answer or the macro of a
-    # control that opted in (see _async_upload_enabled).
+    # Subclasses opt in by setting _async_upload and describe their recordings
+    # through recording_sources, _upload_format, _answer_metadata and
+    # _answer_reference_keys; their synchronous path is _format_sync_answer.
+    # Subclasses of an opted-in control that override format_answer or macro
+    # keep uploading with the answer (see _async_upload_enabled).
     _async_upload = False
     _async_upload_max_bytes = 128 * 1024 * 1024
     _async_upload_idle_timeout = None
@@ -3710,12 +3710,14 @@ class RecordControl(Control):
         """
         if "_async_upload" in self.__dict__:
             return self._async_upload
-        owner = next(c for c in type(self).__mro__ if "_async_upload" in c.__dict__)
-        return (
-            owner._async_upload
-            and type(self).format_answer is owner.format_answer
-            and self.macro == owner.macro
-        )
+        # The most specific class that sets _async_upload or overrides one of
+        # these decides; setting _async_upload alongside an override re-opts in.
+        for cls in type(self).__mro__:
+            if "_async_upload" in cls.__dict__:
+                return cls._async_upload
+            if "format_answer" in cls.__dict__ or "macro" in cls.__dict__:
+                return False
+        return False
 
     def _uses_async_upload(self, experiment):
         """Use independent delivery for the supported shared LocalStorage backend."""
@@ -3726,6 +3728,15 @@ class RecordControl(Control):
             and isinstance(experiment.asset_storage, LocalStorage)
             and get_config().get("inplace_timeline_transitions")
         )
+
+    def format_answer(self, raw_answer, **kwargs):
+        if self._uses_async_upload(kwargs["experiment"]):
+            return self._format_async_answer(**kwargs)
+        return self._format_sync_answer(raw_answer, **kwargs)
+
+    def _format_sync_answer(self, raw_answer, **kwargs):
+        """Format an answer whose recordings were uploaded with it."""
+        return super().format_answer(raw_answer, **kwargs)
 
     def _format_async_answer(self, **kwargs):
         """Validate the browser's size manifest; recordings arrive after acceptance."""
@@ -3960,10 +3971,7 @@ class AudioRecordControl(RecordControl):
         )
         return min(self._async_upload_max_bytes, wav_bytes)
 
-    def format_answer(self, raw_answer, **kwargs):
-        if self._uses_async_upload(kwargs["experiment"]):
-            return self._format_async_answer(**kwargs)
-
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         audio = blobs["audioRecording"]
         trial = kwargs["trial"]
@@ -4065,8 +4073,9 @@ class VideoRecordControl(RecordControl):
     before uploading video, for bots too. A missing recording fails its parent
     trial, without recapturing: immediately if the browser reports it unavailable,
     otherwise once the participant's browser stops renewing the upload (for
-    example, because it was closed). For playback outside a trial, use
-    :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
+    example, because it was closed). For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback.
     Legacy navigation and other storage backends upload the recording with the
     answer.
 
@@ -4146,10 +4155,7 @@ class VideoRecordControl(RecordControl):
             self.recording_source
         ]
 
-    def format_answer(self, raw_answer, **kwargs):
-        if self._uses_async_upload(kwargs["experiment"]):
-            return self._format_async_answer(**kwargs)
-
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         trial = kwargs["trial"]
         participant = kwargs["participant"]

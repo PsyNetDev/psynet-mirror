@@ -312,10 +312,45 @@ def test_subclasses_that_read_the_answer_bytes_keep_uploading_with_it(submission
     class LongerIdle(AudioRecordControl):
         _async_upload_idle_timeout = 300
 
+    class Settings:
+        _async_upload = True
+
+    class FromMixin(Settings, AudioRecordControl):
+        pass
+
     exp, _, _, _ = submission
     assert not ReadsBytes(duration=1)._uses_async_upload(exp)
     assert not OwnTemplate(duration=1)._uses_async_upload(exp)
     assert LongerIdle(duration=1)._uses_async_upload(exp)
+    assert FromMixin(duration=1)._uses_async_upload(exp)
+
+
+def test_record_controls_opting_in_defer_their_recordings(submission):
+    """A ``RecordControl`` that opts in needs no ``format_answer`` of its own."""
+    from types import SimpleNamespace
+
+    from psynet.modular_page import RecordControl
+
+    class WavRecordControl(RecordControl):
+        macro = "audio_record"
+        _async_upload = True
+        _upload_format = "wav"
+        recording_sources = ["audio"]
+
+        def _answer_metadata(self):
+            return {}
+
+    exp, _, _, _ = submission
+    response = SimpleNamespace()
+    WavRecordControl(duration=1).format_answer(
+        None,
+        experiment=exp,
+        response=response,
+        blobs={},
+        metadata={"recording_uploads": {"audio": 10}},
+    )
+    assert response._deferred_recording_answer
+    assert response._recording_sizes == {"audio": 10}
 
 
 @pytest.mark.parametrize("size, uploads", [(1000, 1), (8 * 1024**2, 0)])
