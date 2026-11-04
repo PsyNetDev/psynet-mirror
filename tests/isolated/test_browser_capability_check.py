@@ -141,14 +141,46 @@ def test_experiment_classes_cannot_share_a_timeline():
             timeline = Exp.timeline
 
 
-def test_timeline_from_mixin_must_be_redefined_to_add_capabilities():
+def test_classes_without_checks_may_share_a_timeline():
+    class Exp(Experiment):
+        timeline = _make_timeline()
+
+    class Other(Experiment):
+        timeline = Exp.timeline
+
+    assert not Other.timeline.module_list
+
+
+def test_subclass_may_redeclare_parent_timeline():
+    class Base(Experiment):
+        browser_capabilities = {"camera"}
+        timeline = _make_timeline()
+
+    class Sub(Base):
+        timeline = Base.timeline
+
+    assert len(Sub.timeline.module_list) == 1
+
+
+@pytest.mark.parametrize("caps_on_class", [True, False])
+def test_timeline_from_mixin_gets_check(caps_on_class):
     class Mixin:
         timeline = _make_timeline()
 
-    with pytest.raises(ValueError, match="Define timeline on Exp"):
+    class CapBase(Experiment):
+        browser_capabilities = {"camera"}
+
+    if caps_on_class:
 
         class Exp(Mixin, Experiment):
             browser_capabilities = {"camera"}
+
+    else:
+
+        class Exp(Mixin, CapBase):
+            pass
+
+    assert Exp.timeline.module_list[0].capabilities == {"camera"}
 
 
 def test_permission_intro_counts_towards_time_estimate():

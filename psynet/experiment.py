@@ -397,41 +397,51 @@ def __init__(self, session=None):
             cls.browser_capabilities = validate_browser_capabilities(
                 cls.browser_capabilities
             )
-        if "timeline" in dct:
-            _insert_browser_capability_check(cls)
-        elif "browser_capabilities" in dct or "get_browser_capability_check" in dct:
-            _reject_inherited_browser_capability_check(cls)
+        _process_browser_capability_check(cls, dct)
 
 
-def _reject_inherited_browser_capability_check(cls):
-    """Reject a class whose browser check would differ from its inherited timeline's.
+def _process_browser_capability_check(cls, dct):
+    """Give ``cls.timeline`` its browser check, once per Timeline object.
 
-    Only the placeholder timeline of :class:`Experiment` may be inherited this way,
-    so that base classes can declare capabilities for subclasses that define
-    ``timeline``.
+    The first class to see a Timeline claims it and inserts its check, whether
+    the timeline was defined on the class, a mixin or a base class. Subclasses
+    reuse their ancestor's timeline and check, so they may not change the
+    check without defining their own timeline. Only ``Experiment``'s placeholder
+    timeline is never claimed, so that base classes can declare capabilities.
     """
-    if cls.timeline is not Experiment.timeline:
+    timeline = cls.timeline
+    base = globals().get("Experiment")
+    if not isinstance(timeline, Timeline) or (
+        base is not None and timeline is base.timeline
+    ):
+        return
+
+    owner = timeline.experiment_class
+    if owner is None:
+        timeline.experiment_class = cls
+        _insert_browser_capability_check(cls)
+    elif issubclass(cls, owner):
+        if "browser_capabilities" in dct or "get_browser_capability_check" in dct:
+            raise ValueError(
+                f"{cls.__name__} changes browser_capabilities or "
+                f"get_browser_capability_check but inherits its timeline from "
+                f"{owner.__name__}, whose browser check is already inserted. "
+                f"Define timeline on {cls.__name__} as well."
+            )
+    elif (
+        cls.get_browser_capability_check() is not None
+        or owner.get_browser_capability_check() is not None
+    ):
         raise ValueError(
-            f"{cls.__name__} changes browser_capabilities or "
-            "get_browser_capability_check but inherits its timeline, whose "
-            "browser check has already been decided. "
-            f"Define timeline on {cls.__name__} as well."
+            f"{cls.__name__} uses the same Timeline object as {owner.__name__}, "
+            "so PsyNet can't give each class its own browser check. Give each "
+            "experiment class its own Timeline."
         )
 
 
 def _insert_browser_capability_check(cls):
     """Insert ``cls.get_browser_capability_check()`` at the start of ``cls.timeline``."""
-    owner = cls.timeline.experiment_class
-    if owner is None:
-        cls.timeline.experiment_class = cls
-
     check = cls.get_browser_capability_check()
-    if check is not None and owner is not None:
-        raise ValueError(
-            f"{cls.__name__} uses the same Timeline object as {owner.__name__}, "
-            "so PsyNet can't insert its browser check. Give each experiment "
-            "class its own Timeline."
-        )
     if check is None and not cls.browser_capabilities:
         return
 
@@ -2824,8 +2834,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ``None`` to place :class:`~psynet.prescreen.BrowserCapabilityCheck`
         in the timeline yourself.
 
-        The insertion happens on the class that defines ``timeline``. A subclass
-        that changes :attr:`browser_capabilities` or this method must therefore
+        The insertion happens once per timeline, on the first experiment class
+        that uses it, even if the timeline comes from a mixin. A subclass that
+        changes :attr:`browser_capabilities` or this method must therefore
         define its own ``timeline``.
 
         Returns
