@@ -57,3 +57,26 @@ def test_vocab_test_rejects_sync_groups(tmp_path):
             present_as_image=False,
             sync_group_type="group",
         )
+
+
+def test_vocab_font_is_cached_outside_the_experiment(tmp_path, monkeypatch):
+    experiment_dir = tmp_path / "experiment"
+    experiment_dir.mkdir()
+    monkeypatch.chdir(experiment_dir)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "tmp"))
+    downloads = []
+
+    def fake_get(url, timeout):
+        downloads.append(url)
+        return SimpleNamespace(content=b"font", raise_for_status=lambda: None)
+
+    monkeypatch.setattr("psynet.prescreen.vocabtest.requests.get", fake_get)
+
+    url = "https://example.org/fonts/Font.ttf"
+    first = VocabTest.get_font_path(None, url)
+    second = VocabTest.get_font_path(None, url)
+
+    assert first == second == str(tmp_path / "tmp" / "psynet-fonts" / "Font.ttf")
+    assert open(first, "rb").read() == b"font"
+    assert downloads == [url]
+    assert list(experiment_dir.iterdir()) == []

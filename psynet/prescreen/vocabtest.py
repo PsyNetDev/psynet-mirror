@@ -577,16 +577,24 @@ class VocabTest(StaticTrialMaker):
         )
 
     def get_font_path(self, font_url):
-        font_name = os.path.basename(font_url)
-        font_path = f"static/fonts/{font_name}"
+        """Return a local copy of the font used to draw the word images, downloading it if needed.
+
+        The font is only read on the server, so it is cached in the system's
+        temporary directory rather than in the experiment's ``static/`` folder.
+        """
+        font_dir = os.path.join(tempfile.gettempdir(), "psynet-fonts")
+        font_path = os.path.join(font_dir, os.path.basename(font_url))
         if not os.path.exists(font_path):
             with yaspin(text="Downloading font...", color="yellow") as spinner:
-                response = requests.get(font_url)
+                response = requests.get(font_url, timeout=60)
+                response.raise_for_status()
                 spinner.ok("✔")
-            os.makedirs(os.path.dirname(font_path), exist_ok=True)
-            with open(font_path, "wb") as f:
+            os.makedirs(font_dir, exist_ok=True)
+            # Write then rename so that a parallel process never reads a partial file.
+            with tempfile.NamedTemporaryFile(dir=font_dir, delete=False) as f:
                 f.write(response.content)
-        return os.path.abspath(font_path)
+            os.replace(f.name, font_path)
+        return font_path
 
     def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
         arabic_regex = r"[^0-9\u0600-\u06ff\u0750-\u077f\ufb50-\ufbc1\ufbd3-\ufd3f\ufd50-\ufd8f\ufd50-\ufd8f\ufe70-\ufefc\uFDF0-\uFDFD]+"
