@@ -2603,8 +2603,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         Handlers with ``requires_checked_connection`` run here, on the web
         process holding the socket, with the participant the connection was
-        checked for. Messages on other channels go to ``receive_message`` as
-        Dallinger's default does.
+        checked for. If a channel has any such handler, its other handlers
+        don't receive ``/experiment-socket`` messages. Messages on other
+        channels go to ``receive_message`` as Dallinger's default does.
         """
         handlers = [
             handler
