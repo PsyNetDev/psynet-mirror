@@ -1922,9 +1922,6 @@
 
     psynet.captureSubmissionControlState = function () {
       if (psynet.submissionControlState !== null) return;
-      let nextButton = document.getElementById("next-button");
-      let nextButtonSpinner = document.getElementById("next-button-spinner");
-      let nextButtonText = document.getElementById("next-button-text");
       psynet.submissionControlState = {
         controls: Array.from(
           document.querySelectorAll(
@@ -1932,13 +1929,6 @@
           ),
           (element) => ({ element, disabled: element.disabled }),
         ),
-        nextButtonPresentation: nextButton
-          ? {
-              buttonStyle: nextButton.getAttribute("style"),
-              spinnerStyle: nextButtonSpinner?.getAttribute("style"),
-              textStyle: nextButtonText?.getAttribute("style"),
-            }
-          : null,
         pendingButtons: [],
       };
     };
@@ -1970,29 +1960,6 @@
         button.classList.remove("psynet-button-pending");
         button.removeAttribute("aria-busy");
       });
-      let presentation = psynet.submissionControlState.nextButtonPresentation;
-      if (presentation) {
-        let restoreStyle = function (element, style) {
-          if (!element) return;
-          if (style === null) {
-            element.removeAttribute("style");
-          } else {
-            element.setAttribute("style", style);
-          }
-        };
-        restoreStyle(
-          document.getElementById("next-button"),
-          presentation.buttonStyle,
-        );
-        restoreStyle(
-          document.getElementById("next-button-spinner"),
-          presentation.spinnerStyle,
-        );
-        restoreStyle(
-          document.getElementById("next-button-text"),
-          presentation.textStyle,
-        );
-      }
       psynet.submissionControlState = null;
     };
 

@@ -1136,15 +1136,12 @@ test("timeline hold preserves same-session page identity", { tag: "@both" }, asy
     await expect(
       experimentPage.locator("#intentionally-disabled-response")
     ).toBeDisabled();
-    await expect(experimentPage.locator("#next-button-spinner")).toBeHidden();
-    await expect(experimentPage.locator("#next-button-text")).toBeVisible();
-    const nextButtonInlineSize = await experimentPage
-      .locator("#next-button")
-      .evaluate((button) => ({
-        height: button.style.height,
-        width: button.style.width
-      }));
-    expect(nextButtonInlineSize).toEqual({ height: "", width: "" });
+    await expect(experimentPage.locator("#next-button")).not.toHaveClass(
+      /psynet-button-pending/
+    );
+    await expect(
+      experimentPage.locator("#next-button .psynet-button-spinner")
+    ).toHaveCount(0);
     await assertNoBackendError(experimentPage);
   });
 });
