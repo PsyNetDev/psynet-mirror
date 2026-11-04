@@ -1,1 +1,1 @@
-Fixed `MediaSliderControl` never playing its audio or video when the slider moved or on autoplay; it now uses the slider for its `modality`. This also fixes the `simple_multimedia_slider` demo.
+Fixed `MediaSliderControl` never playing or showing its media (audio, video, images or HTML) when the slider moved or on autoplay; it now uses the slider for its `modality`. This also fixes `MediaGibbsTrial`'s default slider and the `simple_multimedia_slider` demo.
