@@ -15,6 +15,14 @@ from .utils import format_bytes, format_timedelta, get_config, get_logger
 logger = get_logger()
 
 
+def _rss(proc: psutil.Process) -> int:
+    """Resident memory of a process, or 0 if it has exited or can't be read."""
+    try:
+        return proc.memory_info().rss
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0
+
+
 def _alert_researcher(message: str):
     """Log ``message`` as an error now and notify the researcher once the transaction commits.
 
@@ -227,7 +235,7 @@ class Notifier:
         workers = self._get_worker_processes()
         if not workers:
             return "\n* No workers found"
-        workers = sorted(workers, key=lambda w: w[1].memory_info().rss, reverse=True)
+        workers = sorted(workers, key=lambda w: _rss(w[1]), reverse=True)
         return "".join(
             self._format_worker_message(proc, pid, resource_type)
             for pid, proc in workers

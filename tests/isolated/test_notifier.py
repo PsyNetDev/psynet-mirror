@@ -80,3 +80,25 @@ def test_logs_message_follows_the_app_ingress(
 
     assert expected in message
     assert ("Dozzle" in message) is expected.startswith("https://")
+
+
+def test_worker_message_skips_workers_that_exit_while_listed(monkeypatch):
+    import psutil
+
+    live = Mock()
+    live.memory_info.return_value.rss = 50 * 1024**2
+    live.create_time.return_value = 0
+    live.name.return_value = "gunicorn"
+    zombie = Mock()
+    zombie.memory_info.side_effect = psutil.ZombieProcess(2)
+    zombie.create_time.side_effect = psutil.ZombieProcess(2)
+    monkeypatch.setattr(
+        Notifier,
+        "_get_worker_processes",
+        staticmethod(lambda: [(2, zombie), (1, live)]),
+    )
+
+    message = Notifier()._get_worker_processes_message("ram")
+
+    assert "gunicorn (1)" in message
+    assert "(2)" not in message
