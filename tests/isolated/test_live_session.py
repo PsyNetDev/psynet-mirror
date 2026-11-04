@@ -1,18 +1,23 @@
 import datetime
 import enum
 import importlib.util
+import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from dallinger import db
 from dallinger.db import redis_conn
-from dallinger.models import RealtimeSession
-from dallinger.realtime import RealtimeGame, Reject, Sent
+from dallinger.models import RealtimeSession, timenow
+from dallinger.realtime import RealtimeGame, Reject, Sent, store
 from dallinger.realtime.game import queued_effects
+from dallinger.realtime.runner import Runner
 from dallinger.realtime.store import RUNNING
 from flask import Flask
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+from rq import Queue, SimpleWorker
 
 from psynet import live_session
 from psynet.experiment import Experiment, get_experiment
@@ -221,6 +226,215 @@ def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
 
     assert _problems(rejected.value.reason) == _problems(reason)
     assert state == {"picks": {"1": None, "2": None}}
+
+
+def _pair_session(pair):
+    members, initializer = pair
+    for member in members:
+        _arrive(initializer, member)
+    return live_session_id(members[0], initializer.id)
+
+
+def _play_to_the_end(session_id, messages):
+    """Play the session, sending each ``(player_id, number, payload)`` as a
+    page would, a little apart, until it ends, and write its record."""
+    runner = Runner(store.experiment_games(), name="test-runner")
+    playing = threading.Thread(target=runner.run)
+    playing.start()
+    try:
+        # Messages that arrive before the runner starts the session's clock
+        # all get session time 0.
+        deadline = time.monotonic() + 5
+        while session_id not in runner.sessions and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert session_id in runner.sessions
+        for player_id, number, payload in messages:
+            time.sleep(0.05)
+            envelope = {"number": number, "browser_time": 1.8e9, "view_time": 0.0}
+            store.add_entry(
+                session_id,
+                {
+                    "type": "message",
+                    "participant": player_id,
+                    "scope": "page",
+                    "data": json.dumps({"envelope": envelope, "payload": payload}),
+                },
+            )
+        deadline = time.monotonic() + 5
+        while store.running_sessions() and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        runner.stop()
+        playing.join(5)
+    assert not playing.is_alive()
+    assert store.running_sessions() == []
+    queues = [Queue(name, connection=redis_conn) for name in ("high", "default")]
+    SimpleWorker(queues, connection=redis_conn).work(burst=True)
+
+
+@pytest.fixture
+def played(pair):
+    """A pair's session, played to the end, with the pair's player ids and
+    the times before and after it was played."""
+    session_id = _pair_session(pair)
+    first, second = (str(member.id) for member in pair[0])
+    # Redis's entry IDs, which give receive times, are in whole milliseconds.
+    before = timenow().replace(microsecond=0)
+    _play_to_the_end(
+        session_id,
+        [
+            (first, 1, {"type": "pick", "message": {"number": "7"}}),
+            (second, 1, {"type": "guess", "message": {}}),
+            (first, 2, {"type": "pick", "message": {"number": 3}}),
+            (second, 2, {"type": "pick", "message": {"number": 5}}),
+        ],
+    )
+    return session_id, first, second, before, timenow()
+
+
+def test_a_played_session_s_messages_read_back_in_order_with_their_status(played):
+    session_id, first, second, before, after = played
+
+    saved = live_session._live_session_types["pick_numbers"].saved_messages(session_id)
+
+    assert [
+        (
+            message.player_id,
+            message.number,
+            message.status,
+            message.reason,
+            message.message and message.message.number,
+        )
+        for message in saved
+    ] == [
+        (
+            first,
+            1,
+            "rejected",
+            "Invalid 'pick' message: number: Input should be a valid integer.",
+            None,
+        ),
+        (second, 1, "rejected", "Unknown message type 'guess'.", None),
+        (first, 2, "accepted", None, 3),
+        (second, 2, "accepted", None, 5),
+    ]
+    assert saved[1].payload == {"type": "guess", "message": {}}
+    times = [message.session_time for message in saved]
+    assert times == sorted(set(times))
+    assert times[-1] < (after - before).total_seconds()
+    for message in saved:
+        assert before <= message.receive_time <= after
+        assert (message.browser_time, message.view_time) == (1.8e9, 0.0)
+
+
+def test_a_message_type_reads_back_only_its_own_messages(played):
+    session_id, first, second, _, _ = played
+    pick = live_session._live_session_types["pick_numbers"]._message_types["pick"]
+    # As when Dallinger's test fixtures run experiment.py again, so the
+    # caller's class isn't the one the game lists.
+    pick_again = type(
+        "Pick",
+        (LiveMessage,),
+        {
+            "__module__": pick.__module__,
+            "__qualname__": pick.__qualname__,
+            "__annotations__": {"number": int},
+            "type": "pick",
+            "apply": pick.apply,
+        },
+    )
+
+    saved = pick_again.saved_messages(session_id)
+
+    assert [(message.player_id, message.number) for message in saved] == [
+        (first, 1),
+        (first, 2),
+        (second, 2),
+    ]
+    assert saved[0].message is None
+    assert all(isinstance(message.message, pick_again) for message in saved[1:])
+
+
+def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
+    played, monkeypatch, caplog
+):
+    session_id, first, second, _, _ = played
+    game_type = live_session._live_session_types["pick_numbers"]
+
+    class Pick(LiveMessage):
+        type = "pick"
+        number: int
+
+        @field_validator("number")
+        @classmethod
+        def refuse(cls, number):
+            raise TypeError("not any more")
+
+        def apply(self, game, state, player_id, now):
+            pass
+
+    monkeypatch.setattr(game_type, "_message_types", {"pick": Pick})
+
+    with caplog.at_level("WARNING", logger="psynet"):
+        saved = game_type.saved_messages(session_id)
+
+    assert [(message.number, message.status, message.message) for message in saved] == [
+        (1, "rejected", None),
+        (1, "rejected", None),
+        (2, "accepted", None),
+        (2, "accepted", None),
+    ]
+    assert saved[2].payload == {"type": "pick", "message": {"number": 3}}
+    # The two picks that pass the field checks reach the validator. The
+    # others fail a check, as a page's message can, which isn't logged.
+    (record,) = caplog.records
+    assert record.getMessage().startswith(
+        f"2 of session {session_id}'s saved messages came back with message None"
+    )
+    assert "not any more" in caplog.text
+
+
+def test_a_message_type_can_t_read_a_game_that_isn_t_defined(pair, monkeypatch):
+    session_id = _pair_session(pair)
+    pick = live_session._live_session_types["pick_numbers"]._message_types["pick"]
+    monkeypatch.setattr(live_session, "_live_session_types", {})
+
+    with pytest.raises(ValueError, match="no LiveSession with that channel"):
+        pick.saved_messages(session_id)
+
+
+def test_a_game_reads_back_only_its_own_sessions(pair, monkeypatch):
+    session_id = _pair_session(pair)
+    monkeypatch.setattr(live_session, "_live_session_types", {})
+
+    class Elsewhere(LiveSession):
+        channel = "elsewhere"
+
+    with pytest.raises(ValueError, match="of 'pick_numbers', not 'elsewhere'"):
+        Elsewhere.saved_messages(session_id)
+    with pytest.raises(KeyError):
+        Elsewhere.saved_messages(session_id + 1)
+
+
+class OtherPick(LiveMessage):
+    type = "pick"
+    number: int
+
+    def apply(self, game, state, player_id, now):
+        pass
+
+
+@pytest.mark.parametrize("message_type", ["OtherPick", "Move"])
+def test_a_message_type_reads_back_only_sessions_of_games_that_list_it(
+    pair, message_type
+):
+    session_id = _pair_session(pair)
+    reader = globals()[message_type]
+
+    with pytest.raises(ValueError, match=f"doesn't list {message_type} "):
+        reader.saved_messages(session_id)
+    with pytest.raises(KeyError):
+        reader.saved_messages(session_id + 1)
 
 
 class Move(LiveMessage):

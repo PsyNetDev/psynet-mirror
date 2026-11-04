@@ -186,3 +186,56 @@ Reloading and dropped connections
 Another tab
     The same page left open in another tab can go on playing until its
     connection drops, or the session ends: then it can't connect again.
+
+Saved messages
+--------------
+
+Each session's record is saved with the experiment's data, in Dallinger's
+``realtime_session`` and ``realtime_event`` tables: the session's outcome and
+final state, and each message a page sent, with whether the game accepted it.
+To read a session's messages in Python, call ``saved_messages`` on the game,
+for all of them, or on a message type, for that type's. On a later page:
+
+.. code-block:: python
+
+    session_id = live_session_id(participant, "rock_paper_scissors")
+    if session_id is not None:
+        for saved in Choose.saved_messages(session_id):
+            if saved.message is not None:
+                print(saved.player_id, saved.message.action, saved.session_time)
+
+``live_session_id`` returns ``None`` if the participant's group didn't start a
+session, and only finds the session from the participant's latest visit to the
+initializer. In an analysis, ``realtime_sessions_for(participant, game_type)``
+from ``dallinger.realtime`` returns all of a participant's sessions of a game,
+oldest first, and each one's ``id`` is its session id.
+
+Each message is a :class:`~psynet.live_session.SavedMessage`, in the order the
+game applied them, with its ``status``: ``accepted``, ``rejected`` or
+``failed``. Its ``message`` is ``None`` if what the page sent can't be read as
+one of the game's message types, as for a message rejected for its fields, or
+one saved before its message type changed, and its ``payload`` holds what the
+page sent. The record is written a few seconds behind the game, and is saved
+in full by the time the game page's ``onResultSaved`` runs, unless saving it
+failed: :meth:`~psynet.live_session.LiveSession.saved_messages` says how to
+tell.
+
+A game saves every message by default. A game whose pages send many messages,
+such as a move on every key press, can leave some out by defining
+``save_message``, which returns ``True`` to save a message or ``False`` to
+leave it out. It runs after the game has accepted or rejected the message, and
+``rejection`` is the :class:`~dallinger.realtime.Reject` the game raised, or
+``None``:
+
+.. code-block:: python
+
+    class Maze(LiveSession):
+        ...
+
+        def save_message(self, state, player_id, message, rejection):
+            # Leave out moves into a wall, which apply rejects.
+            return rejection is None or rejection.reason != "That's a wall."
+
+A message left out isn't in ``saved_messages`` or the exported data, so leave
+out only what the analysis won't need. Dallinger's
+:meth:`~dallinger.realtime.RealtimeGame.save_message` has the details.

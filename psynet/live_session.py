@@ -79,12 +79,14 @@ adds it to the experiment's ``realtime_games``, so you don't list it there.
 """
 
 import contextvars
+import dataclasses
+import datetime
 import functools
 import json
 from typing import ClassVar
 
 from dallinger import db
-from dallinger.models import RealtimeSession
+from dallinger.models import RealtimeEvent, RealtimeSession
 from dallinger.realtime import RealtimeGame, Reject, create_realtime_session
 from pydantic import (
     BaseModel,
@@ -93,10 +95,13 @@ from pydantic import (
     ValidationError,
 )
 from pydantic_core import to_jsonable_python
+from sqlalchemy import String, cast
 
 from .modular_page import NullControl
 from .sync import GroupBarrier
-from .utils import NoArgumentProvided
+from .utils import NoArgumentProvided, get_logger
+
+logger = get_logger()
 
 
 class LiveMessage(BaseModel):
@@ -177,6 +182,51 @@ class LiveMessage(BaseModel):
             When the message arrived, in seconds since the session started.
         """
         raise NotImplementedError
+
+    @classmethod
+    def saved_messages(cls, session_id):
+        """Return the messages of this type saved for a session, in the order
+        the game applied them, as :class:`SavedMessage` objects.
+
+        A message sent with this :attr:`type` whose fields can't be read,
+        such as one the game rejected for them, is included with ``message``
+        ``None``. :meth:`LiveSession.saved_messages` returns all of a
+        session's messages, and says when a session's record is complete.
+
+        Parameters
+        ----------
+
+        session_id
+            The session's id, as :func:`live_session_id` returns it.
+
+        Raises
+        ------
+
+        KeyError
+            If there is no session ``session_id``.
+
+        ValueError
+            If the session's game doesn't list this message type in its
+            :attr:`~LiveSession.messages`, or the game isn't defined because
+            the module that defines it hasn't been imported.
+        """
+        channel = _session_channel(session_id)
+        game_type = _live_session_types.get(channel)
+        if game_type is None:
+            raise ValueError(
+                f"Session {session_id} is a session of {channel!r}, and no "
+                "LiveSession with that channel is defined. Import the module "
+                "that defines the game first."
+            )
+        listed = game_type._message_types.get(cls.type)
+        # By name: Dallinger's tests run experiment.py again, which defines
+        # the message type again.
+        if not listed or _name(listed) != _name(cls):
+            raise ValueError(
+                f"Session {session_id} is a session of {channel!r}, which "
+                f"doesn't list {cls.__name__} in its messages."
+            )
+        return _saved_messages(session_id, {cls.type: cls}, only_type=cls.type)
 
 
 # The game methods that can change the state, which is converted after each.
@@ -339,6 +389,12 @@ class LiveSession(RealtimeGame):
     def read_message(self, message):
         """Check a page's message and return it as a :class:`LiveMessage`.
 
+        Avoid overriding this method, since :meth:`saved_messages` doesn't
+        call it. A game that reads messages its own way, such as to accept an
+        older shape of a message, plays by its own reading, but a message
+        only that reading accepts comes back from :meth:`saved_messages` with
+        ``message`` ``None``.
+
         Parameters
         ----------
 
@@ -353,25 +409,178 @@ class LiveSession(RealtimeGame):
             If the ``type`` isn't one of :attr:`messages`, or the fields don't
             match it.
         """
-        if (
-            not isinstance(message, dict)
-            or not isinstance(message.get("type"), str)
-            or not set(message) <= {"type", "message"}
-        ):
-            raise Reject('A message is an object with a "type" and a "message".')
-        message_type = self._message_types.get(message["type"])
-        if message_type is None:
-            raise Reject(f"Unknown message type {message['type'][:50]!r}.")
-        # JSON mode, as for what pages send: a list is accepted for a tuple.
-        # Given here, strict and extra also reach fields that are models.
-        try:
-            return message_type.model_validate_json(
-                json.dumps(message.get("message", {})), strict=True, extra="forbid"
+        return _parse_message(self._message_types, message)
+
+    @classmethod
+    def saved_messages(cls, session_id):
+        """Return the messages saved for a session of this game, in the order
+        the game applied them, as :class:`SavedMessage` objects.
+
+        The session's record is written a few seconds behind the game, so for
+        a session that's still being played, this returns the messages
+        written so far. The record is complete once the session's ending is
+        saved, as it is on any page the participant reaches after the game
+        page's ``onResultSaved``. The session's ``status`` in Dallinger's
+        ``realtime_session`` table is then ``ended`` or ``failed``. A session
+        can also fail because its record couldn't be saved. It then keeps
+        only the messages saved before that, and its ``error`` says why. A
+        game can leave some messages out of the record with
+        :meth:`~dallinger.realtime.RealtimeGame.save_message`.
+
+        Parameters
+        ----------
+
+        session_id
+            The session's id, as :func:`live_session_id` returns it.
+
+        Raises
+        ------
+
+        KeyError
+            If there is no session ``session_id``.
+
+        ValueError
+            If the session is of another game.
+        """
+        channel = _session_channel(session_id)
+        if channel != cls.channel:
+            raise ValueError(
+                f"Session {session_id} is a session of {channel!r}, "
+                f"not {cls.channel!r}."
             )
-        except ValidationError as error:
-            raise Reject(
-                f"Invalid {message_type.type!r} message: {_problems(error)}."
-            ) from None
+        return _saved_messages(session_id, cls._message_types)
+
+
+def _parse_message(message_types, message):
+    if (
+        not isinstance(message, dict)
+        or not isinstance(message.get("type"), str)
+        or not set(message) <= {"type", "message"}
+    ):
+        raise Reject('A message is an object with a "type" and a "message".')
+    message_type = message_types.get(message["type"])
+    if message_type is None:
+        raise Reject(f"Unknown message type {message['type'][:50]!r}.")
+    # JSON mode, as for what pages send: a list is accepted for a tuple.
+    # Given here, strict and extra also reach fields that are models.
+    try:
+        return message_type.model_validate_json(
+            json.dumps(message.get("message", {})), strict=True, extra="forbid"
+        )
+    except ValidationError as error:
+        raise Reject(
+            f"Invalid {message_type.type!r} message: {_problems(error)}."
+        ) from None
+
+
+@dataclasses.dataclass(frozen=True)
+class SavedMessage:
+    """A message that a player's page sent in a live session, as the
+    session's record saved it. :meth:`LiveSession.saved_messages` and
+    :meth:`LiveMessage.saved_messages` return them.
+    """
+
+    #: The message, as an instance of its :class:`LiveMessage` subclass, or
+    #: ``None`` if what the page sent doesn't match any of the game's message
+    #: types, as for a message rejected for its fields, or one saved before
+    #: its message type changed. It's also ``None`` if the message type's own
+    #: code, such as a validator, raises an error reading it, and PsyNet then
+    #: logs a warning.
+    message: LiveMessage | None
+
+    #: What the page sent, such as
+    #: ``{"type": "choose", "message": {"action": "rock"}}``.
+    payload: object
+
+    #: The sender's player id, which is their participant id as a string, as
+    #: the game's methods receive it.
+    player_id: str
+
+    #: ``"accepted"``, ``"rejected"`` if the game raised
+    #: :class:`~dallinger.realtime.Reject`, or ``"failed"`` if the game's code
+    #: raised an error while handling it, or a message handled at the same
+    #: time, which made the session fail.
+    status: str
+
+    #: The reason the game rejected the message, or ``None``.
+    reason: object
+
+    #: When the message arrived, in seconds since the session started. It's
+    #: the ``now`` that :meth:`LiveMessage.apply` received.
+    session_time: float
+
+    #: When the message arrived, as a date and time in the server's local
+    #: time, like a participant's ``creation_time``.
+    receive_time: datetime.datetime
+
+    #: The number the page gave the message. A page counts its messages up
+    #: by one, from 1 when it loads.
+    number: int | None
+
+    #: The browser's clock when the page sent the message, in seconds since
+    #: 1970.
+    browser_time: float | None
+
+    #: The session time of the view the page was showing when it sent the
+    #: message.
+    view_time: float | None
+
+
+def _game_channel(session_id):
+    # game_type isn't nullable, so None means there's no such row.
+    return db.session.query(RealtimeSession.game_type).filter_by(id=session_id).scalar()
+
+
+def _session_channel(session_id):
+    channel = _game_channel(session_id)
+    if channel is None:
+        raise KeyError(session_id)
+    return channel
+
+
+# Labelled as SavedMessage's fields.
+_SAVED_MESSAGE_COLUMNS = [
+    RealtimeEvent.payload,
+    cast(RealtimeEvent.participant_id, String).label("player_id"),
+    RealtimeEvent.status,
+    RealtimeEvent.reason,
+    RealtimeEvent.session_time,
+    RealtimeEvent.receive_time,
+    RealtimeEvent.number,
+    RealtimeEvent.browser_time,
+    RealtimeEvent.view_time,
+]
+
+
+def _saved_messages(session_id, message_types, only_type=None):
+    query = db.session.query(*_SAVED_MESSAGE_COLUMNS).filter_by(
+        session_id=session_id, event_type="message"
+    )
+    if only_type is not None:
+        query = query.filter(RealtimeEvent.payload["type"].astext == only_type)
+    saved = []
+    errors = []
+    for row in query.order_by(RealtimeEvent.sequence):
+        try:
+            message = _parse_message(message_types, row.payload)
+        except Reject:
+            message = None
+        # Pydantic passes on a validator's errors other than ValueError and
+        # AssertionError. One would stop the whole read, so it's logged.
+        except Exception as error:
+            message = None
+            errors.append(error)
+        saved.append(SavedMessage(message=message, **row._asdict()))
+    if errors:
+        logger.warning(
+            "%d of session %s's saved messages came back with message None, "
+            "because their message type raised an error reading them. The "
+            "first error:",
+            len(errors),
+            session_id,
+            exc_info=errors[0],
+        )
+    return saved
 
 
 _MAX_PROBLEMS = 5
@@ -588,18 +797,13 @@ class LiveSessionControl(NullControl):
 
     def get_render_js_vars(self, experiment, participant):
         session_id = live_session_id(participant, self.initializer_id)
-        game_channel = None
-        if session_id is not None:
-            game_channel = (
-                db.session.query(RealtimeSession.game_type)
-                .filter_by(id=session_id)
-                .scalar()
-            )
         return {
             "liveSession": {
                 "initializerId": self.initializer_id,
                 "sessionId": session_id,
-                "gameChannel": game_channel,
+                "gameChannel": (
+                    None if session_id is None else _game_channel(session_id)
+                ),
             }
         }
 
