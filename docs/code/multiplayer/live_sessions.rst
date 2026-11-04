@@ -28,6 +28,7 @@ A game of rock, paper, scissors:
 
 .. code-block:: python
 
+    import random
     from typing import Literal
 
     from psynet.live_session import LiveMessage, LiveSession
@@ -54,13 +55,92 @@ A game of rock, paper, scissors:
         def is_over(self, state):
             return None not in state["choices"].values()
 
+        def bot(self, view, player_id, now):
+            if view["chosen"]:
+                return None
+            return Choose(action=random.choice(["rock", "paper", "scissors"]))
+
+``initial_state`` sets up the state for the session's players, ``view`` says
+what a player's page shows, ``is_over`` says when the game ends, and ``bot``
+plays for bots (see `Bots`_). A game can also have a time limit, a clock that
+ticks, an outcome and more, which come from Dallinger's
+:class:`~dallinger.realtime.RealtimeGame`.
+
 Define each game, or import it, before the experiment class. PsyNet then adds
 it to the experiment's ``realtime_games``, so you don't list it there.
-:class:`~psynet.live_session.LiveSession` and
-:class:`~psynet.live_session.LiveMessage` describe the rest: how messages are
-checked, what the state can hold, and the game's time limit, clock and
-outcome, which come from Dallinger's
-:class:`~dallinger.realtime.RealtimeGame`.
+
+Messages and the state
+----------------------
+
+PsyNet checks each message before its ``apply`` runs, and rejects one with a
+field missing, an extra field, or a field of the wrong type. The sender's page
+gets the reason. The check is strict: ``"1"`` isn't accepted as a number, nor
+``1`` as text, and no number in the message can be ``NaN`` or infinite.
+
+A field can have any type Pydantic reads from JSON, such as a ``tuple``, an
+``Enum``, a ``datetime`` or another Pydantic model, and in ``apply`` it holds
+a value of that type. The state holds only plain data: what JSON can hold,
+which is dicts with string keys, lists, strings, numbers, booleans and
+``None``. PsyNet converts anything else when ``initial_state`` returns, and
+after a message's ``apply`` or the game's ``tick``, ``on_join`` or
+``on_leave`` runs:
+
+- a tuple becomes a list, and a set a list in no fixed order, so store
+  ``sorted(...)`` where the order matters
+- an enum member becomes its value
+- a date, time or datetime becomes a string such as
+  ``"2026-11-02T09:30:00"``, and a timedelta one such as ``"PT1M30S"``
+- a Pydantic model becomes a dict
+- a ``Decimal`` or ``bytes`` value becomes a string
+- a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}`` and
+  ``{(1, 2): "a"}`` becomes ``{"1,2": "a"}``. Player ids are already strings.
+
+A value PsyNet can't convert, such as an object of a class of your own, makes
+the session fail. So does ``math.inf`` or ``NaN``, which JSON can't hold:
+store ``None`` instead.
+
+A field stored in the state is converted, so compare like with like:
+
+.. code-block:: python
+
+    from dallinger.realtime import Reject
+
+
+    class Move(LiveMessage):
+        type = "move"
+        to: tuple[int, int]
+
+        def apply(self, game, state, player_id, now):
+            # The state holds a list, and a list never equals a tuple.
+            if state["positions"][player_id] == list(self.to):
+                raise Reject("You're already there.")
+            state["positions"][player_id] = self.to
+
+In the same way, compare an enum field's ``.value`` with the state, and turn
+a stored date back into a datetime with
+``datetime.fromisoformat(state["deadline"])``. Until ``apply`` returns, a
+value it has just stored is unchanged.
+
+The conversion takes time in proportion to the size of the whole state. A game
+with a very large state, such as a big grid, can turn it off with
+``convert_state_to_json = False``. It then stores only plain data itself, such
+as ``list(...)`` of a tuple field and an enum field's ``.value``. Anything
+else changes only when Dallinger next saves the state or rejects a message,
+which restores the state from plain data: a tuple then becomes a list and
+``{1: "a"}`` becomes ``{"1": "a"}``.
+
+To test a message, pass it to the game as a page would, with ``Sent`` from
+``dallinger.realtime``:
+
+.. code-block:: python
+
+    from dallinger.realtime import Sent
+
+    game = RockPaperScissors()
+    state = game.initial_state(["1", "2"])
+    message = {"type": "choose", "message": {"action": "rock"}}
+    game.apply(state, "1", message, 0, Sent())
+    assert state["choices"]["1"] == "rock"
 
 Starting sessions and the game page
 -----------------------------------
@@ -127,10 +207,28 @@ function, which PsyNet runs each time the page opens
         }
     }
 
-:class:`~psynet.live_session.LiveSessionControl` lists everything
-``psynet.liveSession`` offers. The page leaves the session when the
-participant moves on, so ``activate`` doesn't need to return a cleanup
-function for it.
+``psynet.liveSession`` offers:
+
+- ``send(type, message)`` sends the game the message with that ``type``, and
+  returns its number, or ``undefined`` once the page's connection is closed or
+  refused.
+- ``onView(callback)`` calls ``callback`` with each new view, what the game's
+  ``view`` returns for this player.
+- ``onRejected(callback)`` calls ``callback`` with the number of each message
+  the game rejected and the reason.
+- ``onEnded(callback)`` calls ``callback`` once the session ends, with why it
+  ended and the player's final view.
+- ``onResultSaved(callback)`` calls ``callback`` once the session's result has
+  been saved.
+- ``onRefused(callback)`` calls ``callback`` with the close code and reason if
+  the server refuses the page's connection.
+- ``hasSession`` says whether the group started a session at the initializer.
+  Without one, the other methods throw an error.
+- ``socket`` is the page's Dallinger socket, for anything else, such as
+  ``serverTime``.
+
+The page leaves the session when the participant moves on, so ``activate``
+doesn't need to return a cleanup function for it.
 
 Cases a game page should allow for
 ----------------------------------
@@ -215,10 +313,16 @@ game applied them, with its ``status``: ``accepted``, ``rejected`` or
 ``failed``. Its ``message`` is ``None`` if what the page sent can't be read as
 one of the game's message types, as for a message rejected for its fields, or
 one saved before its message type changed, and its ``payload`` holds what the
-page sent. The record is written a few seconds behind the game, and is saved
-in full by the time the game page's ``onResultSaved`` runs, unless saving it
-failed: :meth:`~psynet.live_session.LiveSession.saved_messages` says how to
-tell.
+page sent.
+
+The record is written a few seconds behind the game, so for a session that's
+still being played, ``saved_messages`` returns the messages written so far.
+The record is complete once the session's ending is saved, as it is on any
+page the participant reaches after the game page's ``onResultSaved``. The
+session's ``status`` in Dallinger's ``realtime_session`` table is then
+``ended`` or ``failed``. A session can also fail because its record couldn't
+be saved. It then keeps only the messages saved before that, and its
+``error`` says why.
 
 A game saves every message by default. A game whose pages send many messages,
 such as a move on every key press, can leave some out by defining
@@ -245,22 +349,11 @@ Bots
 
 ``psynet test`` runs an experiment with bots, which don't run a page's
 JavaScript. When a group's members include bots, the game plays for them
-through its ``bot`` method. It gets the bot's view, the bot's player id and
-the session time, and returns the bot's next message, or ``None`` to send
-nothing:
-
-.. code-block:: python
-
-    import random
-
-
-    class RockPaperScissors(LiveSession):
-        ...
-
-        def bot(self, view, player_id, now):
-            if view["chosen"]:
-                return None
-            return Choose(action=random.choice(["rock", "paper", "scissors"]))
+through its ``bot`` method, as in ``RockPaperScissors`` above. It gets the
+bot's view, the bot's player id and the session time, and returns the bot's
+next message, or ``None`` to send nothing. A
+:class:`~psynet.live_session.LiveSessionInitializer` refuses a game without
+``bot``, since its bots would never move.
 
 The game applies and saves a bot's message as it would a page's. If ``bot``
 returns a :class:`~psynet.live_session.LiveMessage` the game can't read, such

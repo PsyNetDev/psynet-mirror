@@ -94,13 +94,11 @@ describe("psynet.websocket", () => {
     assert.deepEqual(moves, []);
   });
 
-  it("sends typed messages on the psynet channel, with the message context", () => {
-    pageSocket.setMessageContext({ round: 2 });
-    pageSocket.setMessageContext({ trial: 3 });
+  it("sends typed messages on the psynet channel", () => {
     pageSocket.send("move", { x: 1 });
     pageSocket.send("ready");
     assert.deepEqual(JSON.parse(JSON.stringify(sockets[0].sent)), [
-      ["psynet", { type: "move", message: { round: 2, trial: 3, x: 1 } }],
+      ["psynet", { type: "move", message: { x: 1 } }],
       ["psynet", { type: "ready" }],
     ]);
   });
@@ -212,9 +210,8 @@ describe("psynet.websocket", () => {
     assert.deepEqual(moves, []);
   });
 
-  it("discards the page's handlers and context on a reset, even if the token stays the same", () => {
+  it("discards the page's handlers on a reset, even if the token stays the same", () => {
     const moves = [];
-    pageSocket.setMessageContext({ round: 1 });
     pageSocket.handle("move", (message) => moves.push(message));
     pageSocket.resetPageState();
 
@@ -226,14 +223,12 @@ describe("psynet.websocket", () => {
     ]);
   });
 
-  it("discards an earlier page's handlers, callbacks and context when the token changes", () => {
+  it("discards an earlier page's handlers and callbacks when the token changes", () => {
     const received = [];
-    pageSocket.setMessageContext({ round: 1 });
     pageSocket.handle("move", () => received.push("old handler"));
     pageSocket.onConnect(() => received.push("old onConnect"));
 
     token = "token-2";
-    pageSocket.setMessageContext({ trial: 2 });
     pageSocket.send("move", { x: 1 });
     sockets[1].fire("direct", { type: "move", message: {} });
     sockets[1].fire("open", { isReconnect: false });
@@ -241,7 +236,7 @@ describe("psynet.websocket", () => {
     assert.equal(sockets[0].closed, true);
     assert.deepEqual(received, []);
     assert.deepEqual(JSON.parse(JSON.stringify(sockets[1].sent)), [
-      ["psynet", { type: "move", message: { trial: 2, x: 1 } }],
+      ["psynet", { type: "move", message: { x: 1 } }],
     ]);
   });
 });

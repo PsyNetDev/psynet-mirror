@@ -156,6 +156,13 @@ def test_a_live_session_page_gets_its_session_when_it_renders(pair, monkeypatch)
     }
 
 
+def test_a_live_session_control_takes_any_control_parameter():
+    control = LiveSessionControl("game", show_next_button=False, bot_response=3)
+
+    assert control.show_next_button is False
+    assert control._bot_response == 3
+
+
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
     members, initializer = pair
     page = ModularPage(
@@ -790,19 +797,25 @@ def test_an_annotated_type_is_refused():
             messages = [Annotated]
 
 
-def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel(
+def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel_and_a_bot(
     registry,
 ):
     class Plain(RealtimeGame):
         channel = "plain"
 
     class Unnamed(LiveSession):
-        pass
+        def bot(self, view, player_id, now):
+            return None
+
+    class Botless(LiveSession):
+        channel = "botless"
 
     with pytest.raises(TypeError, match="game_type must be a LiveSession subclass"):
         LiveSessionInitializer(id_="plain", group_type="pair", game_type=Plain)
     with pytest.raises(TypeError, match="Unnamed has no channel"):
         LiveSessionInitializer(id_="unnamed", group_type="pair", game_type=Unnamed)
+    with pytest.raises(TypeError, match="Botless has no bot method"):
+        LiveSessionInitializer(id_="botless", group_type="pair", game_type=Botless)
 
 
 @pytest.mark.parametrize(

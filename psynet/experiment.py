@@ -323,13 +323,11 @@ class ExperimentMeta(type):
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
 
-        from .live_session import _live_session_types
+        from .live_session import live_session_game_types
 
         listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
         cls._listed_realtime_games = list(listed)
-        cls.realtime_games = list(
-            dict.fromkeys([*listed, *_live_session_types.values()])
-        )
+        cls.realtime_games = list(dict.fromkeys([*listed, *live_session_game_types()]))
 
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
@@ -2967,13 +2965,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Check that each live session game is defined or imported before
         the experiment class, since PsyNet adds only those to
         ``realtime_games``."""
-        from .live_session import _live_session_types
+        from .live_session import live_session_game_types
 
         listed = {game_type.channel for game_type in cls.realtime_games}
         missing = [
             game_type.__name__
-            for channel, game_type in _live_session_types.items()
-            if channel not in listed
+            for game_type in live_session_game_types()
+            if game_type.channel not in listed
         ]
         if missing:
             raise RuntimeError(

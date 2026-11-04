@@ -1,81 +1,11 @@
 """Live sessions: games that a group of participants play together in real
 time, such as a negotiation, a coordination game or a game on a shared board.
 
-You write a game as a subclass of :class:`LiveSession`. The game keeps a
-*state*, everything it needs to remember, such as each player's choice. The
-server holds one state for the whole group, so every player sees the same
-game. Each kind of message a player's page can send, such as a choice or a
-move, is a subclass of :class:`LiveMessage`, which lists what the message
-holds and says how it changes the state. Each session, with its messages, is
-saved with the experiment's data.
-
-A game of rock, paper, scissors:
-
-::
-
-    from typing import Literal
-
-    from psynet.live_session import LiveMessage, LiveSession
-
-
-    class Choose(LiveMessage):
-        type = "choose"
-        action: Literal["rock", "paper", "scissors"]
-
-        def apply(self, game, state, player_id, now):
-            state["choices"][player_id] = self.action
-
-
-    class RockPaperScissors(LiveSession):
-        channel = "rock_paper_scissors"
-        messages = [Choose]
-
-        def initial_state(self, players):
-            return {"choices": {player: None for player in players}}
-
-        def view(self, state, player_id):
-            return {"chosen": state["choices"][player_id] is not None}
-
-        def is_over(self, state):
-            return None not in state["choices"].values()
-
-``initial_state`` sets up the state for the session's players, ``view`` says
-what a player's page shows, and ``is_over`` says when the game ends. A game
-can also have a time limit, a clock that ticks, an outcome and more:
-:class:`LiveSession` is a Dallinger :class:`~dallinger.realtime.RealtimeGame`,
-and Dallinger's "Real-Time Games" documentation explains them.
-
-To have groups play the game, put a :class:`LiveSessionInitializer` in the
-timeline after the :class:`~psynet.sync.Grouper` that forms the groups. When
-all of a group's members reach it, it starts a session, and the group moves
-on together. The page where they play is a
-:class:`~psynet.modular_page.ModularPage` with a :class:`LiveSessionControl`,
-and its JavaScript plays the game through ``psynet.liveSession``.
-
-::
-
-    timeline = Timeline(
-        SimpleGrouper(group_type="pair", initial_group_size=2),
-        LiveSessionInitializer(
-            id_="rock_paper_scissors",
-            group_type="pair",
-            game_type=RockPaperScissors,
-        ),
-        ModularPage(
-            "rock_paper_scissors",
-            "Choose rock, paper or scissors.",
-            LiveSessionControl("rock_paper_scissors"),
-            js_page_modules=["/static/rock_paper_scissors.js"],
-            time_estimate=30,
-        ),
-        ...
-    )
-
-:doc:`/code/multiplayer/live_sessions` walks through a whole game, its
-page's JavaScript, and the cases a game page should allow for.
-
-Define each game, or import it, before the experiment class. PsyNet then
-adds it to the experiment's ``realtime_games``, so you don't list it there.
+A game is a :class:`LiveSession` subclass, with a :class:`LiveMessage`
+subclass for each kind of message its pages send. A
+:class:`LiveSessionInitializer` in the timeline starts a session for each
+group that reaches it, and a page with a :class:`LiveSessionControl` plays
+it. :doc:`/code/multiplayer/live_sessions` walks through a whole game.
 """
 
 import contextvars
@@ -83,7 +13,7 @@ import dataclasses
 import datetime
 import functools
 import json
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from dallinger import db
 from dallinger.models import RealtimeEvent, RealtimeSession
@@ -100,7 +30,7 @@ from sqlalchemy import String, cast
 from .bot import Bot
 from .modular_page import NullControl
 from .sync import GroupBarrier
-from .utils import NoArgumentProvided, get_logger
+from .utils import get_logger
 
 logger = get_logger()
 
@@ -113,43 +43,11 @@ class LiveMessage(BaseModel):
     define :meth:`apply` to change the state. A page sends the message as
     ``{"type": "choose", "message": {"action": "rock"}}``.
 
-    PsyNet checks each message before :meth:`apply` runs, and rejects one
-    with a field missing, an extra field, or a field of the wrong type. The
-    sender's page gets the reason. The check is strict: ``"1"`` isn't
-    accepted as a number, nor ``1`` as text, and no number in the message
-    can be ``NaN`` or infinite.
-
-    A field can have any type Pydantic reads from JSON, such as a ``tuple``,
-    an ``Enum``, a ``datetime`` or another Pydantic model, and in
-    :meth:`apply` it holds a value of that type. The state holds only plain
-    data, so a field stored there is converted when :meth:`apply` returns
-    (:class:`LiveSession` lists the conversions), and a comparison with the
-    state compares like with like:
-
-    ::
-
-        from dallinger.realtime import Reject
-
-
-        class Move(LiveMessage):
-            type = "move"
-            to: tuple[int, int]
-
-            def apply(self, game, state, player_id, now):
-                # The state holds a list, and a list never equals a tuple.
-                if state["positions"][player_id] == list(self.to):
-                    raise Reject("You're already there.")
-                state["positions"][player_id] = self.to
-
-    In the same way, compare an enum field's ``.value`` with the state, and
-    turn a stored date back into a datetime with
-    ``datetime.fromisoformat(state["deadline"])``. Until :meth:`apply`
-    returns, a value it has just stored is unchanged.
-
-    To test a message, pass it to the game as a page would, with ``Sent``
-    from ``dallinger.realtime``, as in
-    ``game.apply(state, "1", {"type": "choose", "message": {"action": "rock"}},
-    0, Sent())``.
+    PsyNet checks each message strictly before :meth:`apply` runs, and
+    rejects one whose fields don't match. A field can have any type Pydantic
+    reads from JSON, such as a tuple, an enum or a datetime.
+    :doc:`/code/multiplayer/live_sessions` shows how to compare a field with
+    the state, which holds only plain data, and how to test a message.
     """
 
     model_config = ConfigDict(allow_inf_nan=False)
@@ -191,8 +89,7 @@ class LiveMessage(BaseModel):
 
         A message sent with this :attr:`type` whose fields can't be read,
         such as one the game rejected for them, is included with ``message``
-        ``None``. :meth:`LiveSession.saved_messages` returns all of a
-        session's messages, and says when a session's record is complete.
+        ``None``.
 
         Parameters
         ----------
@@ -220,9 +117,7 @@ class LiveMessage(BaseModel):
                 "that defines the game first."
             )
         listed = game_type._message_types.get(cls.type)
-        # By name: Dallinger's tests run experiment.py again, which defines
-        # the message type again.
-        if not listed or _name(listed) != _name(cls):
+        if not listed or not _same_definition(listed, cls):
             raise ValueError(
                 f"Session {session_id} is a session of {channel!r}, which "
                 f"doesn't list {cls.__name__} in its messages."
@@ -240,25 +135,33 @@ _STATE_METHODS = ("apply", "tick", "on_join", "on_leave")
 _changing_state = contextvars.ContextVar("_changing_state", default=False)
 
 
-def _run_outermost(method, *args, **kwargs):
-    # In a copy of the context, so nothing has to unset the flag, even when
-    # Dallinger's time limit interrupts the call.
-    def run():
-        _changing_state.set(True)
-        return method(*args, **kwargs)
+def _converts_outermost_call(method, convert):
+    """Wrap a state method so that ``convert(self, result, args)`` runs after
+    the outermost call only."""
 
-    return contextvars.copy_context().run(run)
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if _changing_state.get():
+            return method(self, *args, **kwargs)
+
+        # In a copy of the context, so nothing has to unset the flag, even
+        # when Dallinger's time limit interrupts the call.
+        def run():
+            _changing_state.set(True)
+            return method(self, *args, **kwargs)
+
+        result = contextvars.copy_context().run(run)
+        if not self.convert_state_to_json:
+            return result
+        return convert(self, result, args)
+
+    wrapper._psynet_wrapper = True
+    return wrapper
 
 
 def _stores_json(method):
-    @functools.wraps(method)
-    def convert_state(self, state, *args, **kwargs):
-        if _changing_state.get():
-            method(self, state, *args, **kwargs)
-            return
-        _run_outermost(method, self, state, *args, **kwargs)
-        if not self.convert_state_to_json:
-            return
+    def convert_in_place(self, result, args):
+        state = args[0]
         converted = _to_json(state, f"{type(self).__name__}.{method.__name__}")
         # Changed in place, since Dallinger keeps the state object.
         if isinstance(state, dict):
@@ -267,22 +170,14 @@ def _stores_json(method):
         elif isinstance(state, list):
             state[:] = converted
 
-    convert_state.wrapped_by_psynet = True
-    return convert_state
+    return _converts_outermost_call(method, convert_in_place)
 
 
 def _returns_json(method):
-    @functools.wraps(method)
-    def convert_state(self, *args, **kwargs):
-        if _changing_state.get():
-            return method(self, *args, **kwargs)
-        state = _run_outermost(method, self, *args, **kwargs)
-        if not self.convert_state_to_json:
-            return state
+    def convert_returned(self, state, args):
         return _to_json(state, f"{type(self).__name__}.{method.__name__}")
 
-    convert_state.wrapped_by_psynet = True
-    return convert_state
+    return _converts_outermost_call(method, convert_returned)
 
 
 def _sends_message(method):
@@ -297,9 +192,8 @@ def _sends_message(method):
             "type": message.type,
             "message": message.model_dump(mode="json", by_alias=True),
         }
-        # A message the game can't read, such as one of a type it doesn't list
-        # or with a computed field, would otherwise be rejected each time the
-        # bot sent it.
+        # No page sees a bot's rejections, so a message the game can't read
+        # fails the session here.
         try:
             read = self.read_message(sent)
         except Reject as rejection:
@@ -314,7 +208,7 @@ def _sends_message(method):
             "sends, as a dict."
         )
 
-    send.wrapped_by_psynet = True
+    send._psynet_wrapper = True
     return send
 
 
@@ -332,35 +226,17 @@ class LiveSession(RealtimeGame):
     """A game that a group plays in a live session.
 
     Set ``channel`` to a name for the game, list its message types in
-    :attr:`messages`, and define ``initial_state`` and ``view``. Other
-    methods, such as ``is_over`` and ``tick``, are optional, and Dallinger's
-    :class:`~dallinger.realtime.RealtimeGame` documents them. A subclass of a
-    game needs a ``channel`` of its own. For bots, such as those of
-    ``psynet test``, define ``bot``, which can return a :class:`LiveMessage`
-    instance, as :doc:`/code/multiplayer/live_sessions` shows.
+    :attr:`messages`, and define ``initial_state``, ``view`` and ``bot``,
+    which plays for bots, as in ``psynet test``. Dallinger's
+    :class:`~dallinger.realtime.RealtimeGame` documents these and the
+    optional methods, such as ``is_over`` and ``tick``. A subclass of a game
+    needs a ``channel`` of its own.
 
-    **The state holds plain data**: what JSON can hold, which is dicts with
-    string keys, lists, strings, numbers, booleans and ``None``. PsyNet
-    converts anything else when ``initial_state`` returns, and after a
-    message's :meth:`~LiveMessage.apply` or the game's ``tick``, ``on_join``
-    or ``on_leave`` runs:
-
-    - a tuple becomes a list, and a set a list in no fixed order, so store
-      ``sorted(...)`` where the order matters
-    - an enum member becomes its value
-    - a date, time or datetime becomes a string such as
-      ``"2026-11-02T09:30:00"``, and a timedelta one such as ``"PT1M30S"``
-    - a Pydantic model becomes a dict
-    - a ``Decimal`` or ``bytes`` value becomes a string
-    - a dict key becomes a string, so ``{1: "a"}`` becomes ``{"1": "a"}`` and
-      ``{(1, 2): "a"}`` becomes ``{"1,2": "a"}``. Player ids are already
-      strings.
-
-    A value PsyNet can't convert, such as an object of a class of your own,
-    makes the session fail. So does ``math.inf`` or ``NaN``, which JSON can't
-    hold: store ``None`` instead. :class:`LiveMessage` shows how to compare a
-    message's fields with the converted state. A game with a very large
-    state can turn the conversion off with :attr:`convert_state_to_json`.
+    The state holds only plain data, what JSON can hold. PsyNet converts
+    anything else, such as a tuple or an enum member, after each method that
+    changes the state, and a value it can't convert, or ``NaN``, makes the
+    session fail. :doc:`/code/multiplayer/live_sessions` lists the
+    conversions.
     """
 
     #: The game's message types, each a :class:`LiveMessage` subclass with
@@ -368,13 +244,9 @@ class LiveSession(RealtimeGame):
     messages = []
 
     #: Whether PsyNet converts the state to plain data after each method that
-    #: changes it. The conversion takes time in proportion to the size of the
-    #: whole state, so a game with a very large state, such as a big grid,
-    #: can set this to ``False``. It then stores only plain data itself, such
-    #: as ``list(...)`` of a message's tuple field and an enum field's
-    #: ``.value``. Anything else changes only when Dallinger next saves the
-    #: state or rejects a message, which restores the state from plain data:
-    #: a tuple then becomes a list and ``{1: "a"}`` becomes ``{"1": "a"}``.
+    #: changes it. A game with a very large state can set it to ``False`` to
+    #: save the time the conversion takes. It then has to store only plain
+    #: data itself.
     convert_state_to_json = True
 
     def __init_subclass__(cls, **kwargs):
@@ -387,7 +259,7 @@ class LiveSession(RealtimeGame):
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name) and not getattr(
-                method, "wrapped_by_psynet", False
+                method, "_psynet_wrapper", False
             ):
                 setattr(cls, name, wrap(method))
         cls._message_types = _index_message_types(cls)
@@ -453,16 +325,10 @@ class LiveSession(RealtimeGame):
         """Return the messages saved for a session of this game, in the order
         the game applied them, as :class:`SavedMessage` objects.
 
-        The session's record is written a few seconds behind the game, so for
-        a session that's still being played, this returns the messages
-        written so far. The record is complete once the session's ending is
-        saved, as it is on any page the participant reaches after the game
-        page's ``onResultSaved``. The session's ``status`` in Dallinger's
-        ``realtime_session`` table is then ``ended`` or ``failed``. A session
-        can also fail because its record couldn't be saved. It then keeps
-        only the messages saved before that, and its ``error`` says why. A
-        game can leave some messages out of the record with
-        :meth:`~dallinger.realtime.RealtimeGame.save_message`.
+        The record is written a few seconds behind the game, so for a
+        session that's still being played, this returns the messages written
+        so far. :doc:`/code/multiplayer/live_sessions` says when the record
+        is complete.
 
         Parameters
         ----------
@@ -537,7 +403,7 @@ class SavedMessage:
     #: :class:`~dallinger.realtime.Reject`, or ``"failed"`` if the game's code
     #: raised an error while handling it, or a message handled at the same
     #: time, which made the session fail.
-    status: str
+    status: Literal["accepted", "rejected", "failed"]
 
     #: The reason the game rejected the message, or ``None``.
     reason: object
@@ -674,12 +540,16 @@ def _index_message_types(game_type):
 _live_session_types = {}
 
 
+def live_session_game_types():
+    """Return every :class:`LiveSession` subclass that has a ``channel``,
+    which PsyNet adds to the experiment's ``realtime_games``."""
+    return list(_live_session_types.values())
+
+
 def _register_live_session(game_type):
     channel = game_type.channel
     existing = _live_session_types.get(channel)
-    # Dallinger's tests run experiment.py again, and its verification imports
-    # a copy of it under the same module name.
-    if existing is not None and _name(existing) != _name(game_type):
+    if existing is not None and not _same_definition(existing, game_type):
         if existing.__qualname__ == game_type.__qualname__:
             raise ValueError(
                 f"{game_type.__qualname__} is defined in both {existing.__module__} "
@@ -693,8 +563,13 @@ def _register_live_session(game_type):
     _live_session_types[channel] = game_type
 
 
-def _name(game_type):
-    return game_type.__module__, game_type.__qualname__
+def _same_definition(first, second):
+    # Dallinger's tests run experiment.py again, and its verification imports
+    # a copy of it under the same module name, defining its classes again.
+    return (first.__module__, first.__qualname__) == (
+        second.__module__,
+        second.__qualname__,
+    )
 
 
 class LiveSessionInitializer(GroupBarrier):
@@ -719,9 +594,9 @@ class LiveSessionInitializer(GroupBarrier):
         play the game.
 
     game_type
-        The game the group plays, a :class:`LiveSession` subclass. Define it
-        at the top level of a file, such as ``experiment.py``, not inside a
-        function or another class.
+        The game the group plays, a :class:`LiveSession` subclass with a
+        ``bot`` method. Define it at the top level of a file, such as
+        ``experiment.py``, not inside a function or another class.
 
     **kwargs
         Any other parameter of :class:`~psynet.sync.GroupBarrier`, such as
@@ -739,26 +614,39 @@ class LiveSessionInitializer(GroupBarrier):
                 f"{game_type.__name__} has no channel, so it can't be played. "
                 "Set its channel to a name for the game."
             )
+        if game_type.bot is RealtimeGame.bot:
+            raise TypeError(
+                f"{game_type.__name__} has no bot method, so its bots, such as "
+                "those of psynet test, would never move. Define bot to return "
+                "a bot's next message."
+            )
         super().__init__(
-            id_=id_, group_type=group_type, on_release=_start_live_session, **kwargs
+            id_=id_,
+            group_type=group_type,
+            on_release=LiveSessionInitializer._release,
+            **kwargs,
         )
         self.game_type = game_type
 
     def receive_participant(self, participant):
         # So that a group that dissolves here leaves no earlier visit's session.
-        if participant.live_sessions:
-            participant.live_sessions.pop(self.id, None)
+        _set_live_session_id(participant, self.id, None)
         super().receive_participant(participant)
 
+    # on_release has to be importable by name, and gets the barrier rebuilt
+    # from its saved settings.
+    @staticmethod
+    def _release(participants, barrier):
+        barrier._start_session(participants)
 
-def _start_live_session(participants, barrier):
-    session_id = create_realtime_session(
-        barrier.game_type,
-        [member.id for member in participants],
-        bots=[member.id for member in participants if isinstance(member, Bot)],
-    )
-    for member in participants:
-        member.live_sessions = {**(member.live_sessions or {}), barrier.id: session_id}
+    def _start_session(self, participants):
+        session_id = create_realtime_session(
+            self.game_type,
+            [member.id for member in participants],
+            bots=[member.id for member in participants if isinstance(member, Bot)],
+        )
+        for member in participants:
+            _set_live_session_id(member, self.id, session_id)
 
 
 class LiveSessionControl(NullControl):
@@ -778,29 +666,9 @@ class LiveSessionControl(NullControl):
             time_estimate=30,
         )
 
-    The JavaScript plays through ``psynet.liveSession``:
-
-    - ``send(type, message)`` sends the game the :class:`LiveMessage` with
-      that ``type``, and returns its number, or ``undefined`` once the
-      page's connection is closed or refused.
-    - ``onView(callback)`` calls ``callback`` with each new view, what the
-      game's ``view`` returns for this player.
-    - ``onRejected(callback)`` calls ``callback`` with the number of each
-      message the game rejected and the reason.
-    - ``onEnded(callback)`` calls ``callback`` once the session ends, with
-      why it ended and the player's final view.
-    - ``onResultSaved(callback)`` calls ``callback`` once the session's
-      result has been saved.
-    - ``onRefused(callback)`` calls ``callback`` with the close code and
-      reason if the server refuses the page's connection.
-    - ``hasSession`` says whether the group started a session at the
-      initializer. Without one, the other methods throw an error.
-    - ``socket`` is the page's Dallinger socket, for anything else, such as
-      ``serverTime``.
-
-    :doc:`/code/multiplayer/live_sessions` has a full example, and the cases
-    a game page should allow for, such as a participant with no session or
-    a reload.
+    The JavaScript plays through ``psynet.liveSession``, which
+    :doc:`/code/multiplayer/live_sessions` describes, with the cases a game
+    page should allow for.
 
     Parameters
     ----------
@@ -809,29 +677,13 @@ class LiveSessionControl(NullControl):
         The ``id_`` of the :class:`LiveSessionInitializer` that started the
         session.
 
-    bot_response
-        What a bot answers on the page, as for any control.
-
-    buttons
-        Any extra buttons, as for any control.
-
-    show_next_button
-        Whether the page has a Next button.
+    **kwargs
+        Any other parameter of :class:`~psynet.modular_page.Control`, such as
+        ``show_next_button``.
     """
 
-    def __init__(
-        self,
-        initializer_id,
-        *,
-        bot_response=NoArgumentProvided,
-        buttons=None,
-        show_next_button=True,
-    ):
-        super().__init__(
-            bot_response=bot_response,
-            buttons=buttons,
-            show_next_button=show_next_button,
-        )
+    def __init__(self, initializer_id, **kwargs):
+        super().__init__(**kwargs)
         self.initializer_id = initializer_id
 
     def get_render_js_vars(self, experiment, participant):
@@ -855,4 +707,19 @@ def live_session_id(participant, initializer_id):
     participant last arrived, for example because the group broke up while
     it waited.
     """
-    return (participant.live_sessions or {}).get(initializer_id)
+    return _live_session_ids(participant).get(initializer_id)
+
+
+def _live_session_ids(participant):
+    return participant.live_sessions or {}
+
+
+def _set_live_session_id(participant, initializer_id, session_id):
+    session_ids = {
+        key: value
+        for key, value in _live_session_ids(participant).items()
+        if key != initializer_id
+    }
+    if session_id is not None:
+        session_ids[initializer_id] = session_id
+    participant.live_sessions = session_ids

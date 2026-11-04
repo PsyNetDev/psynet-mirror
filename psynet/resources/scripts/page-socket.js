@@ -106,7 +106,6 @@
         openEvent: null,
         handlers: new Map(),
         connectHandlers: [],
-        context: {},
       }),
       open: openSocket,
     });
@@ -143,10 +142,6 @@
       return socket;
     }
 
-    function connect() {
-      return pages.socket();
-    }
-
     /**
      * Send the experiment a message. The experiment's
      * ``handle_websocket_message`` receives it with ``channel_name``
@@ -161,20 +156,11 @@
      *   ``JSON.stringify`` accepts
      */
     function send(type, message) {
-      let context = pages.current().context;
-      if (
-        message &&
-        typeof message === "object" &&
-        !Array.isArray(message) &&
-        Object.keys(context).length > 0
-      ) {
-        message = Object.assign({}, context, message);
-      }
       let data = { type: type };
       if (message !== undefined) {
         data.message = message;
       }
-      connect().send(CHANNEL, data);
+      pages.socket().send(CHANNEL, data);
     }
 
     /**
@@ -196,7 +182,7 @@
      * @returns {function} Call it to stop handling these messages
      */
     function handle(type, callback) {
-      connect();
+      pages.socket();
       let handlers = pages.current().handlers;
       if (!handlers.has(type)) handlers.set(type, []);
       handlers.get(type).push(callback);
@@ -218,7 +204,7 @@
      * @returns {function} Call it to stop running the callback
      */
     function onConnect(callback) {
-      let socket = connect();
+      let socket = pages.socket();
       let state = pages.current();
       state.connectHandlers.push(callback);
       if (socket.raw.readyState === WebSocket.OPEN) {
@@ -231,27 +217,14 @@
       };
     }
 
-    /**
-     * Add ``context``'s fields to every object message the page sends after
-     * this, such as the id of the trial the page shows. A field the message
-     * has itself takes precedence.
-     *
-     * @param {Object} context - The fields to add
-     */
-    function setMessageContext(context) {
-      let state = pages.current();
-      state.context = Object.assign({}, state.context, context || {});
-    }
-
     return {
-      connect: connect,
+      connect: pages.socket,
       /** Close the page's connection. Sending or handling opens a new one. */
       close: pages.close,
       handle: handle,
       onConnect: onConnect,
       resetPageState: pages.reset,
       send: send,
-      setMessageContext: setMessageContext,
     };
   }
 

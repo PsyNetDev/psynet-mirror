@@ -81,14 +81,20 @@ test("a live session page joins its session beside the page socket and shows a r
     });
     await clickNextAndWait(first);
     await expect(first.locator("#main-body")).toContainText("The page after the game.");
-    // Without in-place transitions, the next page is a new window.
-    expect(
-      await first.evaluate(() =>
-        window.gameSockets === undefined
-          ? "new window"
-          : window.gameSockets.map((socket) => socket.raw.readyState >= WebSocket.CLOSING)
-      )
-    ).toEqual(isInplaceTimelineModeEnabled() ? [true, true] : "new window");
+    if (isInplaceTimelineModeEnabled()) {
+      await expect
+        .poll(
+          () =>
+            first.evaluate(() =>
+              window.gameSockets.map((socket) => socket.raw.readyState >= WebSocket.CLOSING)
+            ),
+          { timeout: STEP_TIMEOUT_MS }
+        )
+        .toEqual([true, true]);
+    } else {
+      // The next page is a new window, which closed the old one's sockets.
+      expect(await first.evaluate(() => window.gameSockets)).toBeUndefined();
+    }
     for (const participant of participants) {
       await assertNoBackendError(participant);
     }

@@ -52,20 +52,14 @@
       noTokenError:
         "This page has no page token, so it can't join its live session. " +
         "The server needs a FLASK_SECRET_KEY.",
-      open: (state) => {
-        let current = session();
-        return dallinger.openExperimentSocket({
-          session: current.sessionId,
-          gameChannel: current.gameChannel,
+      newPage: () => ({ session: session() }),
+      open: (state) =>
+        dallinger.openExperimentSocket({
+          session: state.session.sessionId,
+          gameChannel: state.session.gameChannel,
           scope: state.token + "." + dallinger.pageScope,
-        });
-      },
+        }),
     });
-
-    function socket() {
-      session();
-      return pages.socket();
-    }
 
     /**
      * Send the game a message, which it reads as the ``LiveMessage`` with
@@ -82,13 +76,13 @@
      *   once the connection is closed or refused
      */
     function send(type, message) {
-      let gameSocket = socket();
+      let gameSocket = pages.socket();
       return gameSocket.send(gameSocket.gameChannel, { type: type, message: message });
     }
 
     function passOn(name) {
       return function (callback) {
-        socket()[name](callback);
+        pages.socket()[name](callback);
         return api;
       };
     }
@@ -164,7 +158,7 @@
      * @member {dallinger.Socket} socket
      */
     // Not enumerable, since reading it joins the session.
-    Object.defineProperty(api, "socket", { get: socket });
+    Object.defineProperty(api, "socket", { get: pages.socket });
     // For psynet.resetPageState, not for pages.
     Object.defineProperty(api, "resetPageState", { value: pages.reset });
     return api;

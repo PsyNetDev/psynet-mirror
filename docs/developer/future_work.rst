@@ -785,3 +785,70 @@ Idea
 
 Remove the Heroku and Node patterns, check the test still passes, and
 narrow the remaining filters.
+
+A live session page open in two tabs
+------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+The same live session page open in a second tab can go on playing until its
+connection drops or the session ends. Both tabs have the current page's token,
+so ``accept_websocket_connection`` accepts both, and the ``psynet_page_ended``
+notice only closes pages the participant has moved on from.
+
+Idea
+++++
+
+When a page load joins a session, close the participant's other page loads'
+connections to it, so the newest tab plays. Each connection's scope already
+names its page load (``dallinger.pageScope``).
+
+A live session reloaded long after it ended
+-------------------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+Dallinger forgets an ended session's live state an hour after it ends
+(``ENDED_SESSION_TTL``). A game page reloaded after that gets its connection
+refused, not the session's ending, so every game page has to move on in
+``onRefused``.
+
+Idea
+++++
+
+Have ``LiveSessionControl`` read the session's row when the page renders, and
+give a page whose session has ended its status, so ``psynet.liveSession`` can
+report the ending without connecting.
+
+A reload that ends a live session
+---------------------------------
+
+Date
+++++
+
+2026-11-04
+
+Problem
++++++++
+
+A reload usually runs a game's ``on_leave`` and then ``on_join``, but runs
+neither if the new page joins before the old one has left. A game whose
+``on_leave`` ends the session also ends it when a player reloads.
+
+Idea
+++++
+
+Give ``on_leave`` a short grace period in Dallinger's runner, cancelled if the
+player joins again within it, so a reload runs neither method.
