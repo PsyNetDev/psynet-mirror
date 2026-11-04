@@ -1153,7 +1153,9 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
         if not has_request_context():
             return {}
         unique_id = request.values.get("unique_id")
-        if unique_id and hmac.compare_digest(unique_id, participant.unique_id):
+        if unique_id and hmac.compare_digest(
+            unique_id.encode(), participant.unique_id.encode()
+        ):
             return {"unique_id": unique_id}
         return {}
 

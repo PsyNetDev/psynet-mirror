@@ -30,8 +30,10 @@ Reading input and checking the participant
 Routes are publicly accessible, so check the participant's ``unique_id``
 before returning or changing their data. This route from
 ``demos/features/websocket_chatroom`` reads URL parameters with Flask's
-``request.args`` and returns a chat room's history only to a participant in
-that room:
+``request.args`` and returns a chat room's history only to a participant the
+demo has recorded as a member of that room. The demo records membership from
+websocket frames whose sender nobody checks, so any participant can join any
+room; real experiments should use :class:`~psynet.chatroom.ChatRoom` instead:
 
 .. literalinclude:: ../../../demos/features/websocket_chatroom/experiment.py
    :pyobject: Exp.chatroom_history
