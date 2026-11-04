@@ -50,9 +50,3 @@ experiments.
    :maxdepth: 1
 
    package_static_resources
-
-.. toctree::
-   :caption: Ideas
-   :maxdepth: 1
-
-   future_work

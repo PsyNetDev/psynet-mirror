@@ -59,24 +59,23 @@ Options:
 
 Provisioning runs these steps and prints each one to the terminal:
 
-1. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
+1. Checks that ``dashboard_user`` and ``dashboard_password`` are set, so
+   that a missing setting stops provisioning before an instance is running.
+2. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
    last two parts (for example ``cool-psychology.org``). If records for the
    name already exist, Dallinger asks before overwriting them, because they
    may belong to another running server. It also removes the name's entries
    from ``~/.ssh/known_hosts``.
-2. Creates the security group if it does not exist in the region, allowing
+3. Creates the security group if it does not exist in the region, allowing
    incoming traffic from anywhere on ports 22, 80, 443 and 5000.
-3. Imports the key pair named by ``ec2_default_pem`` from
+4. Imports the key pair named by ``ec2_default_pem`` from
    ``~/.ssh/<ec2_default_pem>.pem`` if it does not exist in the region.
-4. Boots the instance, attaches the security group and grows the disk to
+5. Boots the instance, attaches the security group and grows the disk to
    ``--storage``.
-5. Checks that ``dashboard_user`` and ``dashboard_password`` are set, then
-   installs Docker on the instance. If this check fails, the instance is
-   already running; set the credentials, tear the instance down and
-   provision again.
-6. Creates CNAME records for the ``--dns-host`` name and its wildcard
+6. Installs Docker on the instance.
+7. Creates CNAME records for the ``--dns-host`` name and its wildcard
    (``*.<dns-host>``), pointing at the instance's AWS hostname.
-7. Registers the server with Dallinger under both its AWS hostname and the
+8. Registers the server with Dallinger under both its AWS hostname and the
    ``--dns-host`` name.
 
 At the end, you should see something like this:
