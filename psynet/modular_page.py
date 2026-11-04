@@ -3803,6 +3803,7 @@ def _recording_labels():
         "answer": _(
             "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
         ),
+        "answer_required": _("Share your screen to record this answer."),
         "screen": _("Share screen"),
         "skip": _("Continue without recording"),
         "uploading": _("Uploading your recording, please keep this page open."),

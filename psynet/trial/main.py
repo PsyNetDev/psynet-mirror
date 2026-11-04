@@ -2417,6 +2417,8 @@ class TrialMaker(Module):
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
+                        # A trial failed by a missing recording keeps its
+                        # pending flags, which would never clear.
                         ~Trial.failed,
                         Trial.async_post_trial_pending
                         | Trial.asset_deposit_pending

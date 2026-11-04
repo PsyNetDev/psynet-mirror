@@ -1624,15 +1624,18 @@ class ParticipantDriver:
             with open(path, "rb") as file:
                 body = file.read()
             for _ in range(_BOT_RECORDING_UPLOAD_ATTEMPTS):
-                self.http_session.post(
-                    f"{self.experiment.base_url}/media-upload/heartbeat",
-                    json={
-                        "uploads": [
-                            {"id": pending["id"], "token": pending["token"]}
-                            for pending in uploads[index:]
-                        ]
-                    },
-                )
+                try:
+                    self.http_session.post(
+                        f"{self.experiment.base_url}/media-upload/heartbeat",
+                        json={
+                            "uploads": [
+                                {"id": pending["id"], "token": pending["token"]}
+                                for pending in uploads[index:]
+                            ]
+                        },
+                    )
+                except requests.RequestException as error:
+                    logger.warning(f"Could not renew recording uploads: {error}")
                 http_response = self.http_session.post(
                     f"{self.experiment.base_url}{upload['url']}",
                     data=body,

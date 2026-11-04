@@ -1575,7 +1575,15 @@
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
                     const capture = await psynet.getRecordingCapture();
-                    screenStream = await capture.devices.acquireAnswer("screen", false, psynet.var.recordingLabels);
+                    const labels = psynet.var.recordingLabels;
+                    // The legacy path cannot submit without the recording.
+                    screenStream = await capture.devices.acquireAnswer(
+                        "screen",
+                        false,
+                        psynet.var.asynchronousVideoUploadSources
+                            ? labels
+                            : {...labels, answer: labels.answer_required, skip: null}
+                    );
                 } catch (error) {
                     psynet.log.warn(`Screen recording unavailable: ${error.message}`);
                 }
