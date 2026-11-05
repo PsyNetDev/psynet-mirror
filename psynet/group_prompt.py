@@ -154,10 +154,13 @@ class GroupPrompt(Prompt):
             else Markup("")
         )
         label = _p("group prompt", "Your group")
+        classes = f"psynet-group-prompt psynet-group-prompt--{layout}"
+        if self.answers is not None:
+            classes += " psynet-group-prompt--answers"
         return Markup(
-            '<div class="psynet-group-prompt psynet-group-prompt--{}">'
+            '<div class="{}">'
             '<ul class="psynet-group-members" aria-label="{}">{}</ul>{}</div>'
-        ).format(layout, label, items, note)
+        ).format(classes, label, items, note)
 
     def _members(self):
         """Return the active members, starting with the viewer and then by seat."""
