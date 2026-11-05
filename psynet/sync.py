@@ -1197,8 +1197,8 @@ class GroupBarrier(Barrier):
 
     timeout_between_barriers_time
         The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
-        the group collectively passed the previous barrier. If ``None`` (default), no between-barrier timeout is applied.
-        Only applies from the second barrier onward (time since previous barrier pass).
+        the group was formed by its :class:`~psynet.sync.Grouper` or last passed a ``GroupBarrier``, whichever
+        is later. If ``None`` (default), no between-barrier timeout is applied.
 
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
@@ -1684,6 +1684,7 @@ class Grouper(Barrier):
 
             for _group in groups:
                 db.session.add(_group)
+                _group.last_barrier_pass_time = timenow()
                 for _participant in _group.participants:
                     participants_to_release.append(_participant)
 
@@ -2097,9 +2098,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
-        if self.n_active_participants == 0 and not getattr(
-            self, "accepts_top_ups", False
-        ):
+        if self.n_active_participants == 0:
             self.close()
         else:
             self.check_leader()
@@ -3044,7 +3043,11 @@ def _remember_poller_check(instance_id, fingerprint):
 
 
 def check_sync_groups():
-    """Recount active membership, skipping groups locked by another request.
+    """Recount active membership and close groups with no active members left.
+
+    Members who finish or return the experiment stay linked to their groups,
+    so this is what closes a group once all of them are gone. Groups locked
+    by another request are skipped until the next tick.
 
     Dedicated sessions keep these maintenance commits separate from any
     transaction owned by the caller. Each group's recount runs in its own
@@ -3077,6 +3080,8 @@ def check_sync_groups():
                 if group is None:
                     continue
                 group.check_numbers()
+                if group.n_active_participants == 0 and not group.dissolving:
+                    group.close()
                 session.commit()
         except Exception as err:
             if is_transient_transaction_error(err):

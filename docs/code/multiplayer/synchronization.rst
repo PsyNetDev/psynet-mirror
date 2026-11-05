@@ -218,9 +218,9 @@ Timeouts
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
-    passed its previous barrier. A member who has not reached this barrier in
-    time is handled by ``timeout_between_barriers_action``, ``"fail"``
-    (default) or ``"kick"``. It has no effect at a group's first barrier.
+    passed its previous barrier, or since it was formed if this is its first
+    barrier. A member who has not reached this barrier in time is handled by
+    ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),

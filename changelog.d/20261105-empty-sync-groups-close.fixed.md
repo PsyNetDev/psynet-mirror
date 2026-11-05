@@ -1,0 +1,1 @@
+Fixed sync groups staying active after all their members had left. Groups that accept top-ups now close when their last member is removed, like other groups, and the periodic sync-group check closes any group whose members have all finished or returned the experiment. Closed groups show `active=False` and an `end_time` in exports and on the sync group dashboard.

@@ -735,11 +735,12 @@ def test_grouper_leftover_waiter_joins_an_open_group(
 def test_grouper_does_not_join_a_group_without_active_members(
     in_experiment_directory, db_session, accepts_top_ups
 ):
-    """A group whose members all left stays open (top-ups) or closes; neither is joined."""
+    """A group whose members all left closes, with or without top-ups, and is not joined."""
     exp = get_experiment()
     (member,), group = _sync_group_of(exp, db_session, 1, group_type="quorum")
     group.accepts_top_ups = accepts_top_ups
     member.fail("left")
+    assert not group.active
     (newcomer,) = _working_participants(exp, 1)
     grouper = SimpleGrouper(
         group_type="quorum",
@@ -1152,8 +1153,8 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     assert not kicked_participant.failed
     assert group.active_participants == []
     assert group.n_active_participants == 0
-    assert group.leader is None
-    assert group.active
+    assert not group.active
+    assert group.end_time is not None
 
 
 @pytest.mark.parametrize(
@@ -5792,6 +5793,27 @@ def test_check_sync_groups_does_not_commit_callers_transaction(
     assert DummyModel.query.get("unrelated-write") is None
 
 
+@pytest.mark.parametrize("accepts_top_ups", [True, False])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_check_sync_groups_closes_group_once_members_finish(
+    in_experiment_directory, db_session, accepts_top_ups
+):
+    exp = get_experiment()
+    participants, group = _sync_group_of(exp, db_session, 2)
+    group.accepts_top_ups = accepts_top_ups
+    for participant in participants:
+        participant.status = "approved"
+    db_session.commit()
+
+    Experiment.check_sync_groups()
+
+    db_session.refresh(group)
+    assert not group.active
+    assert group.end_time is not None
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -6418,6 +6440,36 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     assert missing_participant not in group.active_participants
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_timeout_between_barriers_counts_from_group_formation(
+    in_experiment_directory, db_session
+):
+    """The first GroupBarrier after a grouper kicks members who are late from grouping."""
+    exp = get_experiment()
+    grouper = SimpleGrouper("main", initial_group_size=3, min_group_size=2)
+    participants = _working_participants(exp, 3)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    group = participants[0].sync_group
+    group.last_barrier_pass_time -= timedelta(seconds=10)
+    barrier = GroupBarrier(
+        id_="first_after_grouper",
+        group_type="main",
+        timeout_between_barriers_time=5,
+        timeout_between_barriers_action="kick",
+    )
+    waiting, late = participants[:2], participants[2]
+
+    barrier.check_waiting_participants(waiting)
+    released = barrier.choose_who_to_release(waiting)
+
+    assert late not in group.active_participants
+    assert set(released) == set(waiting)
 
 
 @pytest.mark.parametrize(

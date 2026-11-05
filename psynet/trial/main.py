@@ -2262,7 +2262,10 @@ class TrialMaker(Module):
             logger.info(
                 f"participant = {participant.id}, sync_group id = {sync_group.id}"
             )
-            participant_group = sync_group.leader.module_state.participant_group
+            # The leader may already be in a later module, so read their state
+            # for this trial maker rather than their current module state.
+            leader_state = sync_group.leader.module_states[self.id][-1]
+            participant_group = leader_state.participant_group
         else:
             if self.choose_participant_group is None:
                 participant_group = "default"

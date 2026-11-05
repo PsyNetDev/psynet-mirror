@@ -296,6 +296,23 @@ def test_sync_trial_maker_requires_active_group_for_synced_participant():
     assert participant.branch_log == []
 
 
+def test_follower_copies_leader_group_after_leader_moved_on():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    leader = SimpleNamespace(
+        module_state=None,
+        module_states={trial_maker.id: [SimpleNamespace(participant_group="B")]},
+    )
+    follower = SimpleNamespace(
+        id=2,
+        module_state=SimpleNamespace(participant_group=None),
+        active_sync_groups={"main": SimpleNamespace(id=1, leader=leader)},
+    )
+
+    trial_maker.init_participant_group(experiment=None, participant=follower)
+
+    assert follower.module_state.participant_group == "B"
+
+
 def test_trial_sync_group_returns_none_after_kick():
     trial = SimpleNamespace(
         trial_maker=SimpleNamespace(sync_group_type="main"),

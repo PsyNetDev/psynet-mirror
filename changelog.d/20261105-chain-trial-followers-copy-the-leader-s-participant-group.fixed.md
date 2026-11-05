@@ -1,0 +1,1 @@
+Fixed a synchronized trial maker crashing with `AttributeError` (or giving a follower the wrong participant group) when the group's leader had already moved on to another module, for example when a participant joined a group that was already playing.
