@@ -1,1 +1,1 @@
-Fixed a `psutil.ZombieProcess` traceback from the RAM and CPU usage warnings when a worker process exits while they list workers, for example when stopping `psynet debug local` with Ctrl+C.
+Fixed the worker list in RAM and CPU usage warnings: it no longer crashes with a `psutil.ZombieProcess` traceback when a worker exits while it is being built (for example when stopping `psynet debug local` with Ctrl+C), and CPU warnings now show each worker's measured CPU use, busiest first, instead of always 0.0%.

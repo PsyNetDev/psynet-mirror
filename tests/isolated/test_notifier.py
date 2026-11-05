@@ -102,3 +102,24 @@ def test_worker_message_skips_workers_that_exit_while_listed(monkeypatch):
 
     assert "gunicorn (1)" in message
     assert "(2)" not in message
+
+
+def test_cpu_warning_lists_measured_worker_usage_busiest_first(monkeypatch):
+    def worker(name, percent):
+        proc = Mock()
+        proc.create_time.return_value = 0
+        proc.name.return_value = name
+        proc.cpu_percent.side_effect = [0.0, percent]
+        return proc
+
+    monkeypatch.setattr("psynet.notifier._CPU_SAMPLE_SECONDS", 0)
+    monkeypatch.setattr(
+        Notifier,
+        "_get_worker_processes",
+        staticmethod(lambda: [(1, worker("idle", 2.0)), (2, worker("busy", 80.0))]),
+    )
+
+    message = Notifier()._get_worker_processes_message("cpu")
+
+    assert "busy (2) running for" in message and "80.0% CPU" in message
+    assert message.index("busy") < message.index("idle")
