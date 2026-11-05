@@ -37,7 +37,7 @@ def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
     blue_fox = scheme.make("blue", "fox")
     assert (blue_fox.name, blue_fox.emoji) == ("Blue fox", "🦊")
     assert "--psynet-pseudonym-color: #0072B2" in blue_fox.icon_html
-    assert "pseudonym-animals/fox.svg" in blue_fox.sticker_html
+    assert "pseudonym-animals/fox-lines.svg" in blue_fox.sticker_html
     assert "sticker--dark" in scheme.make("black", "fox").sticker_html
 
 

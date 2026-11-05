@@ -1,5 +1,6 @@
 Animal artwork from Microsoft Fluent Emoji (https://github.com/microsoft/fluentui-emoji):
-the Flat style, unmodified.
+"<animal>.svg" is the Flat style, used only as a mask for the shape, and
+"<animal>-lines.svg" the High Contrast style, both unmodified.
 
 MIT License
 

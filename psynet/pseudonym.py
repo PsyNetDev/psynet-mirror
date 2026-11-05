@@ -74,7 +74,7 @@ class Pseudonym:
     icon_html
         HTML for the participant's icon: the animal on a coloured disc.
     sticker_html
-        HTML for a larger picture of the animal tinted in the participant's colour,
+        HTML for a larger picture of the animal in the participant's colour,
         as in :class:`~psynet.group_prompt.GroupPrompt`.
     """
 
@@ -209,43 +209,49 @@ class PseudonymScheme:
             ' style="--psynet-pseudonym-color: {}">{}</span>'
         ).format(name, css_color, emoji)
 
-    def artwork(self, animal: str, emoji: str) -> Optional[str]:
-        """Return the URL of an animal's picture, or ``None`` to use its emoji.
+    def artwork(self, animal: str, emoji: str) -> Optional[Tuple[str, str]]:
+        """Return URLs of an animal's ``(shape, lines)`` SVGs, or ``None`` to use its emoji.
 
-        The built-in animals use Microsoft Fluent Emoji artwork (MIT licence);
-        animals added by an override, or given a different emoji, get
-        ``None``.
+        :meth:`sticker_html` fills the shape's outline with the participant's
+        colour and draws the lines on top. The built-in animals use Microsoft
+        Fluent Emoji artwork (MIT licence); animals added by an override, or
+        given a different emoji, get ``None``.
         """
         if _ANIMALS.get(animal) != emoji:
             return None
-        return package_static_url("psynet", f"images/pseudonym-animals/{animal}.svg")
+        folder = "images/pseudonym-animals"
+        return (
+            package_static_url("psynet", f"{folder}/{animal}.svg"),
+            package_static_url("psynet", f"{folder}/{animal}-lines.svg"),
+        )
 
     def sticker_html(
         self, css_color: str, animal: str, emoji: str, name: str
     ) -> Markup:
-        """Return HTML for the animal tinted in the participant's colour.
+        """Return HTML for the animal drawn in the participant's colour.
 
-        The picture from :meth:`artwork`, or else the emoji, is filled with
-        the colour, keeping its shading. Like :meth:`icon_html`, it is hidden
-        from screen readers and an override must return
+        Uses :meth:`artwork` when there is some, and otherwise tints the
+        emoji. Lines turn light on dark colours. Like :meth:`icon_html`, it
+        is hidden from screen readers and an override must return
         :class:`~markupsafe.Markup`.
         """
         classes = "psynet-pseudonym-sticker"
         if _is_dark(css_color):
             classes += " psynet-pseudonym-sticker--dark"
-        url = self.artwork(animal, emoji)
-        if url is None:
+        artwork = self.artwork(animal, emoji)
+        if artwork is None:
             return Markup(
                 '<span class="{} psynet-pseudonym-sticker--emoji" aria-hidden="true"'
                 ' title="{}" style="--psynet-pseudonym-color: {}">'
                 '<span class="psynet-pseudonym-sticker-shape">{}</span>'
                 '<span class="psynet-pseudonym-sticker-detail">{}</span></span>'
             ).format(classes, name, css_color, emoji, emoji)
+        shape, lines = artwork
         return Markup(
             '<span class="{}" aria-hidden="true" title="{}"'
             ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
             '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
-        ).format(classes, name, css_color, Markup(url), url)
+        ).format(classes, name, css_color, Markup(shape), lines)
 
     def replacement(self, taken) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
@@ -300,7 +306,7 @@ class PseudonymScheme:
 
 
 def _is_dark(css_color: str) -> bool:
-    """Return whether a ``#rrggbb`` colour is too dark to show shading by darkening."""
+    """Return whether a ``#rrggbb`` colour is too dark for dark lines on it."""
     if len(css_color) != 7 or not css_color.startswith("#"):
         return False
     r, g, b = (int(css_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
