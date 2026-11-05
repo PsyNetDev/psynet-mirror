@@ -15,8 +15,9 @@ Design constraints:
   any 88 consecutive participants get different pseudonyms, and neighbours
   differ in both colour and animal, which helps colour-blind participants.
   Participants whose IDs differ by a multiple of 88 share a pseudonym.
-- Only keys are stored when an experiment overrides a pseudonym
-  (``participant.var.psynet_pseudonym``); labels are translated when shown.
+- Only keys are stored when an experiment overrides a pseudonym, in the
+  participant's ``pseudonym_color`` and ``pseudonym_animal`` columns; labels
+  are translated when shown.
 - Experiments customize pseudonyms by subclassing :class:`PseudonymScheme`
   and setting :attr:`psynet.experiment.Experiment.pseudonym_scheme`.
 """
@@ -226,11 +227,10 @@ class PseudonymScheme:
 
     def pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""
-        stored = participant.var.get("psynet_pseudonym", None)
-        if stored is None:
+        if participant.pseudonym_color is None:
             color, animal = self.assign(participant)
         else:
-            color, animal = stored["color"], stored["animal"]
+            color, animal = participant.pseudonym_color, participant.pseudonym_animal
         return self.make(color, animal)
 
     def make(self, color: str, animal: str) -> Pseudonym:

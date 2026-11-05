@@ -478,6 +478,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     complete = Column(Boolean)
     pending_redirect = Column(String)
     group_removal_notice = Column(PythonDict)
+    # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
+    # rather than derived from the participant ID; see ``Participant.pseudonym``.
+    pseudonym_color = Column(String)
+    pseudonym_animal = Column(String)
     answer = Column(PythonObject)
     answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
@@ -623,7 +627,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         from .experiment import get_experiment
 
         get_experiment().pseudonym_scheme.make(color, animal)
-        self.var.psynet_pseudonym = {"color": color, "animal": animal}
+        self.pseudonym_color = color
+        self.pseudonym_animal = animal
 
     def to_dict(self):
         """Return the participant's dashboard fields, including the name others see them by."""

@@ -130,7 +130,6 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
-    undefer,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -2295,7 +2294,6 @@ class SimpleGrouper(Grouper):
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )
-        _load_vars(participants)
         for participant in participants:
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
@@ -2676,24 +2674,10 @@ class Regrouper(Grouper):
             active=True,
         )
         db.session.add(group)
-        _load_vars(participants)
         for participant in participants:
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
         return group
-
-
-def _load_vars(participants):
-    """Load the deferred ``vars`` of these participants in one query.
-
-    Adding members to a group reads their pseudonyms, which are stored there.
-    """
-    ids = [p.id for p in participants if "vars" in sa_inspect(p).unloaded]
-    if ids:
-        # Fills in only the unloaded column, so pending changes are kept.
-        Participant.query.filter(Participant.id.in_(ids)).options(
-            undefer(Participant.vars)
-        ).all()
 
 
 def group_seats(group) -> Dict[int, int]:
@@ -2779,7 +2763,6 @@ class SyncGroup(SQLBase, SQLMixin):
             taken = cached[1]
         else:
             others = [p for p in self.active_participants if p.id != participant.id]
-            _load_vars(others + [participant])
             taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
             self.__dict__["_pseudonym_keys"] = (transaction, taken)
         pseudonym = participant.pseudonym
