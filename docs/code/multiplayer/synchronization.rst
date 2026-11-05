@@ -209,7 +209,7 @@ on their own.
     ``release_left_over=True``, sits that round out.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
-20 seconds. A player who doesn't choose in time is removed from their room by
+10 seconds. A player who doesn't choose in time is removed from their room by
 a :class:`~psynet.sync.GroupBarrier` with
 ``timeout_between_barriers_action="kick"``, so the rest of the room carries
 on, and they join the next round:

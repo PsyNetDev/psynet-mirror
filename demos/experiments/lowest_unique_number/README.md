@@ -1,6 +1,6 @@
 # README
 
-A round-based multiplayer game. Every 20 seconds, everyone who is ready is
+A round-based multiplayer game. Every 10 seconds, everyone who is ready is
 put into rooms of up to eight players, and each player picks a number. The
 lowest number that nobody else in the room picked wins.
 

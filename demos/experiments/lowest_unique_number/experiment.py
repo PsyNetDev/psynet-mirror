@@ -33,7 +33,7 @@ from psynet.participant import Participant
 from psynet.sync import Clock, GroupBarrier, Regrouper
 from psynet.timeline import PageMaker, Timeline, for_loop, join
 
-ROUND_SECONDS = 20
+ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2

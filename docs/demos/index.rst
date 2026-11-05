@@ -402,7 +402,7 @@ Groups
     A two-player game with scored rounds and a chat after each round.
 
 `experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
-    ``Regrouper`` with a ``Clock``: rooms of up to eight form every 20
+    ``Regrouper`` with a ``Clock``: rooms of up to eight form every 10
     seconds, and players who are too slow sit out a round instead of being
     failed. A ``GroupPrompt`` shows who has chosen and then everyone's
     number. :doc:`/code/multiplayer/synchronization`.
