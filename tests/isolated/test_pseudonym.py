@@ -13,8 +13,8 @@ from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
 def _participant(id_, stored=None):
-    var = SimpleNamespace(get=lambda key, default: stored or default)
-    return SimpleNamespace(id=id_, var=var)
+    color, animal = stored or (None, None)
+    return SimpleNamespace(id=id_, pseudonym_color=color, pseudonym_animal=animal)
 
 
 class _SeededScheme(PseudonymScheme):
@@ -48,7 +48,7 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
             return f"{animal_label.title()} ({color_label})"
 
     scheme = Teams("deployment-a")
-    stored = scheme.pseudonym(_participant(1, {"color": "red", "animal": "bear"}))
+    stored = scheme.pseudonym(_participant(1, ("red", "bear")))
 
     assert stored.name == "Bear (red)"
     assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
