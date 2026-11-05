@@ -4,6 +4,9 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from dallinger import db
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from psynet import page_activity
 from psynet.experiment import get_experiment
@@ -278,3 +281,25 @@ def test_group_barrier_can_let_ungrouped_participants_through(
         assert exp.timeline.get_current_elt(exp, participant).label == "after"
     finally:
         exp.timeline = original
+
+
+@in_consents_experiment
+def test_a_busy_player_does_not_hold_up_other_teams(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team_grouper = SimpleGrouper("team", initial_group_size=2)
+    team_a, team_b = _working_participants(exp, 2), _working_participants(exp, 2)
+    _arrive(exp, team_grouper, team_a)
+    _arrive(exp, team_grouper, team_b)
+    pairs = Regrouper("pair", within="team", group_size=2, deadline=30)
+    _arrive(exp, pairs, team_a[:1])
+
+    with Session(bind=db.engine) as busy_request:
+        busy_request.execute(
+            text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+            {"id": team_a[0].id},
+        )
+        _arrive(exp, pairs, team_b)
+
+    assert _waiting(pairs, team_b) == []
