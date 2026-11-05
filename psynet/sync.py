@@ -98,6 +98,7 @@ import random
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import timedelta
 from math import ceil, floor
 from typing import Callable, List, Literal, Optional, Union
 
@@ -114,6 +115,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    or_,
     select,
     text,
 )
@@ -910,16 +912,30 @@ class Barrier(EltCollection):
 
         barrier_instance = BarrierInstance.for_arrival(self, participant)
 
+        now = timenow()
         link = ParticipantLinkBarrier(
             participant=participant,
             barrier_id=self.id,
             barrier_instance=barrier_instance,
-            arrival_time=timenow(),
+            arrival_time=now,
         )
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
+            max_wait_time = self._max_wait_time_for(participant)
+            if max_wait_time is not None:
+                link.deadline_at = now + timedelta(seconds=max_wait_time)
             self._queue_check_on_arrival(barrier_instance)
             self._notify_arrivals(participant)
+
+    def _max_wait_time_for(self, participant):
+        """Return ``max_wait_time`` in seconds for this participant, calling it if it is a function."""
+        if not callable(self.max_wait_time):
+            return self.max_wait_time
+        from .experiment import get_experiment
+
+        return call_function_with_context(
+            self.max_wait_time, participant=participant, experiment=get_experiment()
+        )
 
     def _queue_check_on_arrival(self, barrier_instance):
         """Schedule the fast release check for immediately after commit."""
@@ -2997,6 +3013,9 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     arrival_time = Column(DateTime)
     departure_time = Column(DateTime)
     released = Column(Boolean, default=False)
+    # With explicit waiting_logic there is no hold record, so the link keeps
+    # the max_wait_time deadline for the poller.
+    deadline_at = Column(DateTime)
     timeline_hold_id = Column(Integer, ForeignKey("timeline_hold.id"), index=True)
     timeline_hold = relationship("TimelineHoldRecord", backref="barrier_links")
 
@@ -3085,13 +3104,17 @@ def _waiting_barrier_instance_ids():
 
 
 def _overdue_waiter_ids():
-    """Return working waiters whose current barrier hold deadline has passed."""
+    """Return working waiters whose current barrier hold, or waiting-page deadline, has passed."""
+    now = timenow()
+    deadline = func.coalesce(
+        TimelineHoldRecord.deadline_at, ParticipantLinkBarrier.deadline_at
+    )
     with Session(bind=db.engine) as session:
         return [
             participant_id
             for (participant_id,) in (
                 session.query(ParticipantLinkBarrier.participant_id)
-                .join(
+                .outerjoin(
                     TimelineHoldRecord,
                     TimelineHoldRecord.id == ParticipantLinkBarrier.timeline_hold_id,
                 )
@@ -3102,15 +3125,16 @@ def _overdue_waiter_ids():
                     ~ParticipantLinkBarrier.released,
                     ~Participant.failed,
                     Participant.status == "working",
-                    TimelineHoldRecord.page_uuid == Participant.page_uuid,
-                    TimelineHoldRecord.released_at.is_(None),
-                    TimelineHoldRecord.deadline_at <= timenow(),
+                    or_(
+                        (TimelineHoldRecord.page_uuid == Participant.page_uuid)
+                        & TimelineHoldRecord.released_at.is_(None)
+                        & (TimelineHoldRecord.deadline_at <= now),
+                        ParticipantLinkBarrier.timeline_hold_id.is_(None)
+                        & (ParticipantLinkBarrier.deadline_at <= now),
+                    ),
                 )
                 .group_by(ParticipantLinkBarrier.participant_id)
-                .order_by(
-                    func.min(TimelineHoldRecord.deadline_at),
-                    ParticipantLinkBarrier.participant_id,
-                )
+                .order_by(func.min(deadline), ParticipantLinkBarrier.participant_id)
             )
         ]
 
@@ -3119,14 +3143,20 @@ def _time_out_overdue_links(participant):
     """Apply the barrier's max-wait timeout to the waiter's current overdue hold.
 
     Like the request path, only the hold on the participant's current page
-    times out.
+    times out. Waiters on explicit ``waiting_logic`` pages have no hold, and
+    time out by their link's deadline, whichever page they are on.
     """
     now = timenow()
     for link in list(participant.active_barriers.values()):
         record = link.timeline_hold
+        if record is None:
+            if link.deadline_at is not None and link.deadline_at <= now:
+                _BarrierHoldPage(link.get_barrier()).apply_timeout(participant)
+                if not link.released:
+                    link.release()
+            continue
         if (
-            record is None
-            or record.page_uuid != participant.page_uuid
+            record.page_uuid != participant.page_uuid
             or record.released_at is not None
             or record.deadline_at is None
             or record.deadline_at > now

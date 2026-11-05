@@ -45,6 +45,7 @@ from psynet.sync import (
     BarrierDefinition,
     BarrierInstance,
     GroupBarrier,
+    ParticipantLinkBarrier,
     SimpleGrouper,
     SimpleSyncGroup,
     SyncGroup,
@@ -3493,24 +3494,32 @@ def test_check_barriers_recovers_inactive_grouped_instance_with_waiters(
     assert _barrier_link_released(first_id, barrier_id) is False
 
 
+@pytest.mark.parametrize("waiting_page", [False, True])
 @pytest.mark.parametrize("action", ["fail", "kick"])
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_check_barriers_times_out_waiters_past_their_deadline(
-    in_experiment_directory, db_session, action
+    in_experiment_directory, db_session, action, waiting_page
 ):
     """A waiter who left is timed out at their deadline, with the usual knock-on."""
     exp = get_experiment()
     overdue, partner = _pair_sync_group(exp, db_session)[0]
     patient, _ = _pair_sync_group(exp, db_session)[0]
     barrier = GroupBarrier(
-        id_="abandoned", group_type="main", max_wait_time=300, max_wait_action=action
+        id_="abandoned",
+        group_type="main",
+        max_wait_time=300,
+        max_wait_action=action,
+        waiting_logic=InfoPage("Filler", time_estimate=5) if waiting_page else None,
     )
     for participant in (overdue, patient):
         _arrive_at_group_barrier(exp, barrier, participant)
     db.session.commit()
-    TimelineHoldRecord.query.filter_by(participant_id=overdue.id).update(
+    deadline_rows = (
+        ParticipantLinkBarrier.query if waiting_page else TimelineHoldRecord.query
+    )
+    deadline_rows.filter_by(participant_id=overdue.id).update(
         {"deadline_at": timenow() - timedelta(seconds=1)}
     )
     db.session.commit()

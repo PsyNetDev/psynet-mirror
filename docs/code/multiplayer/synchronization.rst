@@ -71,12 +71,10 @@ current page, under a waiting indicator, until their group is formed.
     switched to another tab or closed it keeps waiting, instead of starting
     a group that then waits for them. The waiting screen checks in about every
     2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
-    good value. A minimized window counts as hidden. On the default waiting
-    screen, a participant who stays away is still failed after
-    ``max_wait_time``. With explicit ``waiting_logic``, participants only
-    check in, and ``max_wait_time`` is only checked, when they submit a
-    waiting page, so allow for the longest such page. Bots
-    always count as active.
+    good value. A minimized window counts as hidden. A participant who stays
+    away is still failed, or kicked, after ``max_wait_time``. With explicit
+    ``waiting_logic``, participants only check in when they submit a waiting
+    page, so allow for the longest such page. Bots always count as active.
 
 ``content``
     The message on the waiting indicator. If omitted, participants see
@@ -333,10 +331,10 @@ Timeouts
     default. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
-    from the group so that they continue alone. With the default wait
-    indicator (no ``waiting_logic``), this also applies to a participant who
-    closed the page while waiting: the server applies the timeout shortly
-    after the deadline.
+    from the group so that they continue alone. This also applies to a
+    participant who closed the page while waiting, including on
+    ``waiting_logic`` pages: the server applies the timeout shortly after
+    the deadline.
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
