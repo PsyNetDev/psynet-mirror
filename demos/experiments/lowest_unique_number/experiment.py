@@ -76,7 +76,7 @@ def choose_number(participant):
     return ModularPage(
         "choose",
         prompt,
-        PushButtonControl(choices=NUMBERS),
+        PushButtonControl(choices=NUMBERS, arrange_vertically=False),
         save_answer="choice",
         time_estimate=5,
     )

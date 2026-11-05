@@ -20,6 +20,7 @@ Design constraints:
 """
 
 import math
+from itertools import combinations
 from typing import Callable, Dict, Optional, Union
 
 from markupsafe import Markup
@@ -30,14 +31,29 @@ from .utils import get_translator
 
 MAX_DRAWN_MEMBERS = 12
 _MAX_ROW_MEMBERS = 4
+_MAX_CIRCLE_MEMBERS = 6
+
+# Sizes in em of a member's box in the circle, which group-prompt.css matches.
+# The circle is drawn as an ellipse just large enough that no two boxes
+# overlap; where it is wider than the page, members wrap in rows instead.
+# Members at the sides of a table stack vertically, so tables of more than six
+# need more height than a laptop window has to spare; they get rows.
+_MEMBER_WIDTH = 9.0
+_MEMBER_HEIGHT = 4.8
+_BUBBLE_HEIGHT = 2.4
+_MAX_CIRCLE_WIDTH = 44.0
 
 
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
-    Members appear as their pseudonym icons, in a row for up to four people
-    and in a circle for up to 12; larger groups are listed as text. The
-    participant viewing the page is labelled "You".
+    Members appear as their pseudonym icons: in a row for up to four people,
+    around a table (an ellipse) for five or six, in wrapped rows for up to
+    12, and as a list for larger groups. Where the table does not fit the
+    page, as on a phone, its members wrap in rows too. The participant
+    viewing the page is labelled "You". On a phone, the answers of more
+    than about nine members can push the controls below the window; pass
+    ``expect_scrolling=True`` to such a page.
 
     Parameters
     ----------
@@ -111,11 +127,29 @@ class GroupPrompt(Prompt):
         """Page-local CSS for the group display."""
         from importlib import resources
 
-        return [
+        css = [
             resources.files("psynet")
             .joinpath("resources/css/group-prompt.css")
             .read_text(encoding="utf-8")
         ]
+        if self._layout() == "circle":
+            width, _ = self._circle()[2:]
+            # Where the circle does not fit, members wrap in rows as for a row.
+            css.append(
+                f"@container (max-width: {width:.1f}em) {{"
+                f" .psynet-group-prompt--circle[data-circle-width='{width:.1f}']"
+                " .psynet-group-members { position: static; display: flex;"
+                " flex-wrap: wrap; justify-content: center; gap: 1em 0.5em;"
+                " width: auto !important; height: auto !important; }"
+                f" .psynet-group-prompt--circle[data-circle-width='{width:.1f}']"
+                " .psynet-group-member { position: relative; left: auto; top: auto;"
+                " transform: none; }"
+                f" .psynet-group-prompt--circle[data-circle-width='{width:.1f}']"
+                " .psynet-group-note { position: static; transform: none;"
+                " max-width: none; margin-top: 0.8em; }"
+                " }"
+            )
+        return css
 
     def get_js_vars(self):
         """Configuration for live ticks."""
@@ -138,14 +172,21 @@ class GroupPrompt(Prompt):
         _p = get_translator(context=True)
         members = self._members()
         seats = _group_seats(self.group)
-        if len(members) > MAX_DRAWN_MEMBERS:
-            layout = "list"
-        elif len(members) > _MAX_ROW_MEMBERS:
-            layout = "circle"
-        else:
-            layout = "row"
+        layout = self._layout()
+        positions = [""] * len(members)
+        attributes = Markup("")
+        if layout == "circle":
+            rx, ry, width, height = self._circle()
+            positions = [
+                f"--dx: {dx:.2f}em; --dy: {dy:.2f}em;"
+                for dx, dy in _ellipse_offsets(len(members), rx, ry)
+            ]
+            attributes = Markup(
+                ' data-circle-width="{:.1f}" style="--width: {:.1f}em;'
+                ' --height: {:.1f}em; --note-width: {:.1f}em;"'
+            ).format(width, width, height, max(2 * rx - _MEMBER_WIDTH, 6))
         items = Markup("").join(
-            self._member_html(member, seats[member.id], index, len(members), layout)
+            self._member_html(member, seats[member.id], index, positions[index])
             for index, member in enumerate(members)
         )
         note = (
@@ -158,9 +199,28 @@ class GroupPrompt(Prompt):
         if self.answers is not None:
             classes += " psynet-group-prompt--answers"
         return Markup(
-            '<div class="{}">'
+            '<div class="{}"{}>'
             '<ul class="psynet-group-members" aria-label="{}">{}</ul>{}</div>'
-        ).format(classes, label, items, note)
+        ).format(classes, attributes, label, items, note)
+
+    def _layout(self):
+        n = len(self.group.active_participants)
+        if n > MAX_DRAWN_MEMBERS:
+            return "list"
+        if _MAX_ROW_MEMBERS < n <= _MAX_CIRCLE_MEMBERS:
+            return "circle"
+        return "row"
+
+    def _circle(self):
+        """Return the radii and size in em of the ellipse the members sit on."""
+        height = _MEMBER_HEIGHT + (_BUBBLE_HEIGHT if self.answers is not None else 0)
+        rx, ry = _ellipse_radii(
+            len(self.group.active_participants),
+            _MEMBER_WIDTH,
+            height,
+            min_ry=height / 2 + 1.5 if self.note else 0,
+        )
+        return rx, ry, 2 * rx + _MEMBER_WIDTH, 2 * ry + height
 
     def _members(self):
         """Return the active members, starting with the viewer and then by seat."""
@@ -168,7 +228,7 @@ class GroupPrompt(Prompt):
         me = [m for m in members if m.id == self.participant.id]
         return me + [m for m in members if m.id != self.participant.id]
 
-    def _member_html(self, member, seat, index, n, layout):
+    def _member_html(self, member, seat, index, position):
         _p = get_translator(context=True)
         pseudonym = member.pseudonym
         is_me = member.id == self.participant.id
@@ -181,18 +241,16 @@ class GroupPrompt(Prompt):
         answered = self.show_progress and self.answered(member)
         if answered:
             classes.append("psynet-group-member--answered")
-        position = ""
-        if layout == "circle":
-            # The viewer sits at the bottom; the others follow clockwise.
-            angle = math.pi / 2 + 2 * math.pi * index / n
-            x, y = 50 + 40 * math.cos(angle), 50 + 40 * math.sin(angle)
-            position = f"--x: {x:.1f}%; --y: {y:.1f}%;"
-            if y < 50:
-                classes.append("psynet-group-member--top")
         bubble = Markup("")
         if self.answers is not None and member.id in self.answers:
             bubble = Markup('<span class="psynet-group-bubble">{}</span>').format(
                 self.answers[member.id]
+            )
+        elif self.answers is not None:
+            # Keeps the icons of members without an answer in line.
+            bubble = Markup(
+                '<span class="psynet-group-bubble psynet-group-bubble--none"'
+                ' aria-hidden="true">&nbsp;</span>'
             )
         status = Markup("")
         if self.show_progress:
@@ -203,7 +261,8 @@ class GroupPrompt(Prompt):
         name = _p("group prompt", "You") if is_me else pseudonym.name
         return Markup(
             '<li class="{}" data-seat="{}" style="{}--i: {};">'
-            '{}{}<span class="psynet-group-name">{}</span>{}</li>'
+            '{}<span class="psynet-group-avatar">{}{}</span>'
+            '<span class="psynet-group-name">{}</span></li>'
         ).format(
             " ".join(classes),
             seat,
@@ -211,9 +270,42 @@ class GroupPrompt(Prompt):
             index,
             bubble,
             pseudonym.icon_html,
-            name,
             status,
+            name,
         )
+
+
+def _angles(n):
+    """Return the angles of ``n`` seats: the viewer at the bottom, then clockwise."""
+    return [math.pi / 2 + 2 * math.pi * k / n for k in range(n)]
+
+
+def _ellipse_offsets(n, rx, ry):
+    return [(rx * math.cos(a), ry * math.sin(a)) for a in _angles(n)]
+
+
+def _ellipse_radii(n, width, height, min_ry=0.0):
+    """Return the flattest ellipse on which ``n`` boxes of this size do not overlap.
+
+    Two boxes are clear of each other if their centres are at least a box
+    width apart horizontally or a box height apart vertically. The ellipse is
+    kept as low as the page width allows, so the controls below stay visible.
+    """
+    pairs = [
+        (abs(math.cos(a) - math.cos(b)), abs(math.sin(a) - math.sin(b)))
+        for a, b in combinations(_angles(n), 2)
+    ]
+    ry = min_ry
+    while True:
+        needed = [
+            width / dx if dx > 1e-9 else math.inf
+            for dx, dy in pairs
+            if ry * dy < height
+        ]
+        rx = max(needed, default=width / 2)
+        if 2 * rx + width <= _MAX_CIRCLE_WIDTH:
+            return rx, ry
+        ry += 0.25
 
 
 def _group_seats(group):

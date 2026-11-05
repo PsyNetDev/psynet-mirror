@@ -306,8 +306,9 @@ Showing the group
 
 :class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
 by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
-page labelled "You". Members sit in a row for up to four people and in a
-circle for up to 12; larger groups are listed. Joining a group gives a
+page labelled "You". Members sit in a row for up to four people, around a
+table for five or six (in rows where the table does not fit, as on a
+phone), in wrapped rows for up to 12, and in a list for larger groups. Joining a group gives a
 newcomer a different pseudonym if another active member already has theirs.
 
 On a decision page, members who have answered get a tick. A member has

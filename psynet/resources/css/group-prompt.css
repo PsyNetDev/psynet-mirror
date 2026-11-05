@@ -1,11 +1,14 @@
+/* Member boxes are 9em wide and at most 4.8em tall, plus 2.4em with a
+   one-line bubble; group_prompt.py sizes the table's ellipse from these. */
+
 .psynet-group-prompt {
+    container-type: inline-size;
     margin: 1em auto;
-    max-width: 32em;
 }
 
 .psynet-group-members {
     list-style: none;
-    margin: 0;
+    margin: 0 auto;
     padding: 0;
 }
 
@@ -13,49 +16,51 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 1.5em;
+    gap: 1em 0.5em;
+    max-width: 48em;
 }
 
-.psynet-group-prompt--row.psynet-group-prompt--answers .psynet-group-members {
-    padding-top: 2.5em;
+.psynet-group-prompt--circle {
+    position: relative;
 }
 
 .psynet-group-prompt--circle .psynet-group-members {
     position: relative;
-    width: min(100%, 26em);
-    aspect-ratio: 1;
-    margin: 0 auto;
-}
-
-.psynet-group-prompt--circle.psynet-group-prompt--answers {
-    padding: 2.5em 0;
+    width: var(--width);
+    height: var(--height);
 }
 
 .psynet-group-prompt--circle .psynet-group-member {
     position: absolute;
-    left: var(--x);
-    top: var(--y);
+    left: calc(50% + var(--dx));
+    top: calc(50% + var(--dy));
     transform: translate(-50%, -50%);
 }
 
 .psynet-group-prompt--list .psynet-group-members {
-    columns: 3 10em;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12em, 1fr));
+    gap: 0.3em 1em;
 }
 
 .psynet-group-member {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-width: 5em;
+    width: 9em;
     text-align: center;
 }
 
 .psynet-group-prompt--list .psynet-group-member {
     flex-direction: row;
     gap: 0.4em;
-    min-width: 0;
+    width: auto;
     text-align: start;
+}
+
+.psynet-group-avatar {
+    position: relative;
+    display: inline-flex;
 }
 
 .psynet-group-member .psynet-pseudonym-icon {
@@ -72,7 +77,10 @@
 }
 
 .psynet-group-name {
-    font-size: 0.85em;
+    max-width: 100%;
+    font-size: 0.9em;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
 }
 
 .psynet-group-member--me .psynet-group-name {
@@ -83,7 +91,7 @@
     visibility: hidden;
     position: absolute;
     top: -0.3em;
-    right: 0.6em;
+    right: -0.4em;
     width: 1.3em;
     height: 1.3em;
     border-radius: 50%;
@@ -91,10 +99,7 @@
     color: white;
     font-size: 0.8em;
     line-height: 1.3em;
-}
-
-.psynet-group-prompt--list .psynet-group-tick {
-    position: static;
+    text-align: center;
 }
 
 .psynet-group-member--answered .psynet-group-tick {
@@ -102,16 +107,16 @@
 }
 
 .psynet-group-bubble {
-    position: absolute;
-    bottom: calc(100% + 0.4em);
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 0.2em 0.6em;
-    border: 1px solid rgb(128 128 128 / 0.6);
+    position: relative;
+    max-width: 100%;
+    margin-bottom: 0.5em;
+    padding: 0.15em 0.6em;
+    border: 1px solid rgb(108 117 125 / 0.7);
     border-radius: 0.8em;
     background: var(--bs-body-bg, white);
     font-weight: bold;
-    white-space: nowrap;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
     animation: psynet-group-bubble-in 0.3s ease-out both;
     animation-delay: calc(var(--i) * 0.25s);
 }
@@ -122,25 +127,17 @@
     top: 100%;
     left: 50%;
     transform: translateX(-50%);
-    border: 0.4em solid transparent;
-    border-top-color: rgb(128 128 128 / 0.6);
+    border: 0.35em solid transparent;
+    border-top-color: rgb(108 117 125 / 0.7);
 }
 
-.psynet-group-prompt--circle .psynet-group-member:not(.psynet-group-member--top) .psynet-group-bubble {
-    bottom: auto;
-    top: calc(100% + 0.4em);
-}
-
-.psynet-group-prompt--circle .psynet-group-member:not(.psynet-group-member--top) .psynet-group-bubble::after {
-    top: auto;
-    bottom: 100%;
-    border-top-color: transparent;
-    border-bottom-color: rgb(128 128 128 / 0.6);
+.psynet-group-bubble--none {
+    visibility: hidden;
 }
 
 .psynet-group-prompt--list .psynet-group-bubble {
-    position: static;
-    transform: none;
+    order: 1;
+    margin: 0;
 }
 
 .psynet-group-prompt--list .psynet-group-bubble::after {
@@ -148,21 +145,21 @@
 }
 
 .psynet-group-member--winner .psynet-pseudonym-icon {
-    outline: 0.2em solid #198754;
-    outline-offset: 0.15em;
+    outline: 0.15em solid #198754;
+    outline-offset: 0.1em;
 }
 
 .psynet-group-member--winner .psynet-group-bubble {
     border-color: #198754;
-    color: #198754;
+    color: #146c43;
 }
 
 .psynet-group-member--winner .psynet-group-bubble::before {
-    content: "★ ";
+    content: "★\00a0";
 }
 
 .psynet-group-member--duplicate .psynet-group-bubble {
-    color: rgb(128 128 128);
+    color: #5c636a;
     text-decoration: line-through;
 }
 
@@ -172,15 +169,33 @@
 }
 
 .psynet-group-prompt--circle .psynet-group-note {
-    margin-top: -55%;
-    margin-bottom: 45%;
-    position: relative;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: var(--note-width);
+    margin: 0;
+    transform: translate(-50%, -50%);
+}
+
+/* Three members to a row on a phone; their names wrap. */
+@container (max-width: 30em) {
+    .psynet-group-member {
+        width: calc((100cqi - 1em) / 3);
+    }
+
+    .psynet-group-member .psynet-pseudonym-icon {
+        font-size: 1.1em;
+    }
+
+    .psynet-group-bubble {
+        font-size: 0.9em;
+    }
 }
 
 @keyframes psynet-group-bubble-in {
     from {
         opacity: 0;
-        transform: translateX(-50%) scale(0.6);
+        transform: scale(0.6);
     }
 }
 

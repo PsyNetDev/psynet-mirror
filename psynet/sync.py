@@ -130,6 +130,7 @@ from sqlalchemy.orm import (
     object_session,
     relationship,
     selectinload,
+    undefer,
 )
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -2686,13 +2687,12 @@ def _load_vars(participants):
 
     Adding members to a group reads their pseudonyms, which are stored there.
     """
-    unloaded = {p.id: p for p in participants if "vars" in sa_inspect(p).unloaded}
-    if unloaded:
-        rows = db.session.query(Participant.id, Participant.vars).filter(
-            Participant.id.in_(list(unloaded))
-        )
-        for participant_id, vars_ in rows:
-            set_committed_value(unloaded[participant_id], "vars", vars_)
+    ids = [p.id for p in participants if "vars" in sa_inspect(p).unloaded]
+    if ids:
+        # Fills in only the unloaded column, so pending changes are kept.
+        Participant.query.filter(Participant.id.in_(ids)).options(
+            undefer(Participant.vars)
+        ).all()
 
 
 def group_seats(group) -> Dict[int, int]:
