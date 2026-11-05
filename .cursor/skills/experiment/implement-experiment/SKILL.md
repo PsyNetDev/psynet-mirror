@@ -103,7 +103,7 @@ Prefer **`psynet setup`** as the general-purpose route for creating and
 refreshing experiment files and the constrained environment. Do not hand-write
 boilerplate (`Dockerfile`, `test.py`, `.gitignore`, `deploy.toml`, managed
 skills) when setup/scaffold can produce it. Experiment-local `docker/` helper
-scripts are obsolete; use `psynet debug local --docker`.
+scripts are obsolete; use `psynet debug local --docker --no-browsers`.
 
 Canonical setup guidance: `code/project/agentic_programming` (see Read first)
 and the experiment's `AGENTS.md`, which `psynet setup` writes.
@@ -136,8 +136,8 @@ installs the experiment runtime (`psynet[experiment]`), and initializes Git when
 needed. Without a terminal, setup stops if the folder has no `experiment.py`
 and contains files that aren't part of a PsyNet experiment (`static/`,
 `audit/`, `uv init` files, licence files and caches are fine); if those files belong to this experiment, re-run
-with `psynet setup --yes`. After setup, use `psynet debug local --docker`
-when the experiment should run in Docker mode.
+with `psynet setup --yes`. After setup, use
+`psynet debug local --docker --no-browsers` when the experiment should run in Docker mode.
 
 When splitting logic out of `experiment.py`, follow
 `develop-experiment-back-end/SKILL.md`: import sibling modules with

@@ -58,9 +58,9 @@ From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read
 `code/project/running_and_debugging`. Start the server with
-`psynet debug local --no-browsers` (also with `--isolated` or `--docker`), and
-tell subagents to do the same; otherwise each server opens browser windows on
-the user's screen. The log prints an ad page URL such as
+`psynet debug local --no-browsers`, including when you add `--isolated` or
+`--docker`, and tell subagents to do the same; otherwise each server opens
+browser windows on the user's screen. The log prints an ad page URL such as
 `http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer it to
 the user to walk through the experiment, and look at pages yourself with
 headless Playwright. From a non-interactive background shell, keep stdin open

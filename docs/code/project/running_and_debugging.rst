@@ -30,8 +30,8 @@ Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 When a script or a coding agent starts ``psynet debug local`` in a
 background shell without a terminal, keep its standard input open and skip
-the browsers, for example ``tail -f /dev/null | psynet debug local
---no-browsers``. Otherwise the server can stop without a log message when
+the browsers, for example
+``tail -f /dev/null | psynet debug local --no-browsers``. Otherwise the server can stop without a log message when
 standard input closes.
 
 Most code changes, such as editing a page, adding timeline elements or

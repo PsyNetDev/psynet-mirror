@@ -38,8 +38,8 @@ stops working when the script stops.
 
 ## Preview a running experiment
 
-1. Start the experiment with `psynet debug local --no-browsers` and wait until it serves
-   port `5000`.
+1. Start the experiment with `psynet debug local --no-browsers` and wait
+   until it serves port `5000`.
 2. Open a tunnel to port `5000` as above.
 3. Give the user two links built from the public origin:
    - Participant link: the local participant URL printed by
