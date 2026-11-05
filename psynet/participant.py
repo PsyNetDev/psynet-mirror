@@ -594,6 +594,28 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             self.unique_id.encode(), b"psynet-websocket", hashlib.sha256
         ).hexdigest()
 
+    @property
+    def pseudonym(self):
+        """Return the name, colour and icon that other participants see, for example "Blue fox".
+
+        See :class:`~psynet.pseudonym.PseudonymScheme`.
+        """
+        from .experiment import get_experiment
+
+        return get_experiment().pseudonym_scheme.pseudonym(self)
+
+    def set_pseudonym(self, color: str, animal: str):
+        """Give this participant a particular pseudonym, by colour and animal key.
+
+        The keys must exist in the experiment's
+        :class:`~psynet.pseudonym.PseudonymScheme`. PsyNet does not check
+        that other participants have a different pseudonym.
+        """
+        from .experiment import get_experiment
+
+        get_experiment().pseudonym_scheme.make(color, animal)
+        self.var.pseudonym = {"color": color, "animal": animal}
+
     # all_trials = relationship("psynet.trial.main.Trial")
 
     @property

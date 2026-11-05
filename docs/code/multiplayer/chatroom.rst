@@ -46,11 +46,61 @@ Options
 :class:`~psynet.chatroom.ChatRoom` has two optional flags:
 
 ``show_participants`` (default ``False``)
-    Show a sidebar with the IDs of the participants currently in the room.
+    Show a sidebar with the participants currently in the room.
 
 ``show_history`` (default ``False``)
     Show the messages sent in the room before the participant opened the
     page. The chatroom is enabled once the earlier messages have loaded.
+
+Pseudonyms
+----------
+
+Participants see each other by pseudonym, such as "Blue fox", with an icon
+of the animal on a disc of that colour; their own messages are labelled
+"You". Pseudonyms are fixed for the whole experiment, so a participant keeps
+the same name in every room. They follow the participant ID, so
+participants who arrive one after another differ in both colour and animal,
+and any 88 participants in a row all have different pseudonyms.
+
+Use ``participant.pseudonym`` to show the same names elsewhere, for example
+on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
+``icon_html``:
+
+.. code-block:: python
+
+    def show_partner(participant):
+        pair = participant.active_sync_groups["pair"]
+        (partner,) = [p for p in pair.participants if p != participant]
+        return InfoPage(
+            Markup("Your partner is {} {}.").format(
+                partner.pseudonym.icon_html, partner.pseudonym.name
+            ),
+        )
+
+To give a participant a particular pseudonym, call
+``participant.set_pseudonym("red", "whale")`` from a code block. To change
+the colours, animals or how names are formed, subclass
+:class:`~psynet.pseudonym.PseudonymScheme` and set it on the experiment:
+
+.. code-block:: python
+
+    from psynet.pseudonym import PseudonymScheme
+
+    class TeamScheme(PseudonymScheme):
+        def animals(self):
+            return {"lion": (_("lion"), "🦁"), "bear": (_("bear"), "🐻")}
+
+    class Exp(psynet.experiment.Experiment):
+        pseudonym_scheme = TeamScheme()
+
+The colour and animal lists should have lengths with no common factor (the
+default has 8 colours and 11 animals); otherwise some neighbouring
+participants share an animal. :meth:`~psynet.pseudonym.PseudonymScheme.assign`
+chooses each participant's pseudonym and
+:meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the icon; override
+them for full control. Messages, history and occupancy updates carry each
+sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom
+chatroom widget can show it too.
 
 Stored data
 -----------

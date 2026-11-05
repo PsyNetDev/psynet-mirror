@@ -137,6 +137,9 @@ class TestHandleMessage:
         payload = _published_payloads(exp)[0]
         assert payload["type"] == "occupancy_update"
         assert payload["room_id"] == room
+        assert payload["pseudonyms"] == {
+            str(participant.id): participant.pseudonym.to_dict()
+        }
         assert _recipients(exp) == [{str(participant.id)}]
 
     def test_rejoin_room_rebroadcasts(self, in_experiment_directory, db_session):
@@ -382,6 +385,7 @@ class TestHandleMessage:
                 "room_id": room,
                 "content": "hi",
                 "sender": str(sender.id),
+                "sender_pseudonym": sender.pseudonym.to_dict(),
             }
         ]
         assert _recipients(exp) == [{str(sender.id), str(member.id)}]
@@ -480,6 +484,9 @@ class TestHandleMessage:
         assert _recipients(exp) == [{str(participant.id)}]
         assert len(history["messages"]) == 1
         assert history["messages"][0]["content"] == "prior message"
+        assert history["messages"][0]["sender_pseudonym"]["name"] == (
+            participant.pseudonym.name
+        )
 
     def test_request_state_empty_history(self, in_experiment_directory, db_session):
         handler, exp = self._handler_and_exp()
