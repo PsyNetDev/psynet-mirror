@@ -5,9 +5,11 @@ from pathlib import Path
 import pytest
 
 from psynet.experiment import get_experiment
+from psynet.modular_page import ModularPage
 from psynet.page_activity import record_page_activity
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import Clock, Regrouper, SimpleGrouper
+from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper
+from psynet.timeline import Timeline
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -16,7 +18,7 @@ from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
     _commit_barrier_arrivals,
 )
-from timeline_hold_helpers import _working_participants  # noqa: E402
+from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -75,6 +77,7 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
     team_group = team[0].active_sync_groups["team"]
     key = pairs._state_key
     team_group.var.set(key, team_group.var.get(key) - 31)
+    _backdate_arrivals(pairs, present, 31)
 
     released = pairs.choose_who_to_release(present)
 
@@ -148,3 +151,57 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
 def test_simple_grouper_start_short_after_needs_a_smaller_min_group_size():
     with pytest.raises(ValueError, match="start_short_after"):
         SimpleGrouper("lobby", initial_group_size=4, start_short_after=10)
+
+
+def _count_releases(**kwargs):
+    _count_releases.calls += 1
+
+
+@in_consents_experiment
+def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    pairs = Regrouper(
+        "pair",
+        within="team",
+        group_size=2,
+        deadline=15,
+        release_left_over=True,
+        on_release=_count_releases,
+    )
+    team = _working_participants(exp, 3)
+    _arrive(exp, team_grouper, team)
+    _count_releases.calls = 0
+    _arrive(exp, pairs, team)
+    assert _count_releases.calls == 1
+
+    # The round took longer than the deadline; the first player back waits.
+    team_group = team[0].active_sync_groups["team"]
+    team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 40)
+    _arrive(exp, pairs, team[:1])
+    assert _waiting(pairs, team[:1]) == team[:1]
+
+    # Alone at the deadline, they sit out without that counting as a split.
+    _backdate_arrivals(pairs, team[:1], 16)
+    assert pairs.choose_who_to_release(team[:1]) == team[:1]
+    assert _count_releases.calls == 1
+
+
+@in_consents_experiment
+def test_group_barrier_can_let_ungrouped_participants_through(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier("round_end", group_type="pair", skip_if_not_in_group=True),
+        ModularPage("after", "Round over", time_estimate=1),
+    )
+    try:
+        (participant,) = _working_participants(exp, 1)
+        _json_timeline(exp, participant)
+        assert exp.timeline.get_current_elt(exp, participant).label == "after"
+    finally:
+        exp.timeline = original
