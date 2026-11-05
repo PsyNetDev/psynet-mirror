@@ -5706,7 +5706,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
 
     # The browser shows the notice for the number of ready members.
     notices = [
-        (target.get("group_ready") or {}).get("notices", [None])[0]
+        (target.get("group_ready") or [{}])[-1].get("notices", [None])[0]
         for _, payload in publications
         for target in payload["targets"]
     ]
@@ -5728,6 +5728,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
                 "group_id": first.active_sync_groups["main"].id,
                 "barrier_id": "notify_arrivals",
                 "seats": [0],
+                "members": [0, 1],
             }
         ],
     }

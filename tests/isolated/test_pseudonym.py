@@ -34,6 +34,10 @@ def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
         assert a.color != b.color and a.animal != b.animal
     other = [_SeededScheme("deployment-b").pseudonym(_participant(i)) for i in (1, 2)]
     assert [p.name for p in other] != [p.name for p in pseudonyms[:2]]
+    # Participants renamed in different groups get different replacements.
+    taken = {("blue", "fox")}
+    replacements = {scheme.replacement(taken, _participant(i)) for i in range(5)}
+    assert len(replacements) > 1 and not replacements & taken
     blue_fox = scheme.make("blue", "fox")
     assert (blue_fox.name, blue_fox.emoji) == ("Blue fox", "🦊")
     assert "--psynet-pseudonym-color: #0072B2" in blue_fox.icon_html

@@ -82,7 +82,8 @@ class GroupPrompt(Prompt):
         If ``True``, show each member's pseudonym below their animal.
     anonymous
         If ``True``, show every member as the same neutral figure, labelled
-        "Your partner" in a pair and "Another player" otherwise, so that
+        "Your partner" in the viewer's pair (or two-member subgroup) and
+        "Another player" otherwise, so that
         nobody can recognise a member they met in an earlier group.
     text_align
         CSS alignment of the text.
@@ -201,8 +202,10 @@ class GroupPrompt(Prompt):
         # Balanced rows: 8 members as 4 + 4 rather than 7 + 1.
         rows = max(1, math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS))
         columns = math.ceil(len(members) / rows)
+        with_viewer = any(m.id == self.participant.id for m in members)
+        partner_label = with_viewer and len(members) == 2
         items = Markup("").join(
-            self._member_html(member, seats[member.id], index)
+            self._member_html(member, seats[member.id], index, partner_label)
             for index, member in enumerate(members)
         )
         return Markup(
@@ -212,7 +215,10 @@ class GroupPrompt(Prompt):
 
     def _members(self):
         """Return the active members, starting with the viewer and then by seat."""
-        members = sorted(self.group.active_participants, key=lambda p: p.id)
+        seats = _group_seats(self.group)
+        members = sorted(
+            self.group.active_participants, key=lambda p: seats.get(p.id, len(seats))
+        )
         me = [m for m in members if m.id == self.participant.id]
         return me + [m for m in members if m.id != self.participant.id]
 
@@ -233,14 +239,14 @@ class GroupPrompt(Prompt):
         subgroup = member.active_sync_groups.get(self.subgroups)
         return None if subgroup is None else subgroup.id
 
-    def _member_html(self, member, seat, index):
+    def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
         is_me = member.id == self.participant.id
         if is_me:
             label = _p("group prompt", "You")
         elif not self.anonymous:
             label = member.pseudonym.name
-        elif len(self.group.active_participants) == 2:
+        elif partner_label:
             label = _p("group prompt", "Your partner")
         else:
             label = _p("group prompt", "Another player")
@@ -307,13 +313,10 @@ def _group_seats(group):
 def _waiting_in_group(group):
     """Return a check of whether a member is waiting at a barrier of ``group``."""
 
+    from .sync import waiting_barrier_ids
+
     def waiting(participant):
-        return any(
-            link.barrier_instance is not None
-            and link.barrier_instance.group_id == group.id
-            for link in participant.active_barriers.values()
-            if not link.released
-        )
+        return bool(waiting_barrier_ids(participant, group))
 
     return waiting
 

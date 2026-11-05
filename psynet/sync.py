@@ -1531,6 +1531,7 @@ class GroupBarrier(Barrier):
             "group_id": group.id,
             "barrier_id": self.id,
             "seats": sorted(seats[m.id] for m in waiting),
+            "members": sorted(seats[m.id] for m in members),
         }
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
@@ -1551,7 +1552,8 @@ class GroupBarrier(Barrier):
                 )
                 continue
             # Arrivals in concurrent requests do not see each other, so the
-            # browser counts the union of the seats it has been sent. The
+            # browser counts the union of the seats it has been sent, less
+            # those no longer in ``members``. The
             # update carries the text for each count that union can reach:
             # from this request's count up to everyone but the recipient.
             counts = range(
@@ -2795,7 +2797,7 @@ class SyncGroup(SQLBase, SQLMixin):
         # Cached for this transaction, so forming a large group stays linear.
         transaction = db.session().get_transaction()
         cached = self.__dict__.get("_pseudonym_keys")
-        if cached is not None and cached[0] is transaction:
+        if cached is not None and transaction is not None and cached[0] is transaction:
             taken = cached[1]
         else:
             others = [p for p in self.active_participants if p.id != participant.id]
@@ -2809,7 +2811,9 @@ class SyncGroup(SQLBase, SQLMixin):
         if keys in taken and first_group:
             from .experiment import get_experiment
 
-            replacement = get_experiment().pseudonym_scheme.replacement(taken)
+            replacement = get_experiment().pseudonym_scheme.replacement(
+                taken, participant
+            )
             if replacement is not None:
                 participant.set_pseudonym(*replacement)
                 keys = replacement
@@ -3443,18 +3447,32 @@ def _ready_seats_for(participant):
     ready = []
     for group in participant.active_sync_groups.values():
         seats = group_seats(group)
+        members = group.active_participants
         by_barrier = {}
-        for member in group.active_participants:
-            for barrier_id, link in member.active_barriers.items():
-                instance = link.barrier_instance
-                if link.released or instance is None or instance.group_id != group.id:
-                    continue
+        for member in members:
+            for barrier_id in waiting_barrier_ids(member, group):
                 by_barrier.setdefault(barrier_id, []).append(seats[member.id])
         ready += [
-            {"group_id": group.id, "barrier_id": barrier_id, "seats": sorted(ids)}
+            {
+                "group_id": group.id,
+                "barrier_id": barrier_id,
+                "seats": sorted(ids),
+                "members": sorted(seats[m.id] for m in members),
+            }
             for barrier_id, ids in by_barrier.items()
         ]
     return ready
+
+
+def waiting_barrier_ids(participant, group):
+    """Return the IDs of the barriers of ``group`` that ``participant`` is waiting at."""
+    return [
+        barrier_id
+        for barrier_id, link in participant.active_barriers.items()
+        if not link.released
+        and link.barrier_instance is not None
+        and link.barrier_instance.group_id == group.id
+    ]
 
 
 def _interruptible_waiting_barrier(page, participant):

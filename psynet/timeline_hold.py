@@ -172,12 +172,14 @@ def _queue_arrival_update(
 
     The browser shows ``notice``, or hides its notice if ``notice`` is
     ``None``; pass ``_KEEP_NOTICE`` to leave it as it is. ``group_ready``
-    lists the seats (see :func:`psynet.sync.group_seats`) of the group
-    members now waiting at a barrier, for
-    :class:`~psynet.group_prompt.GroupPrompt`.
+    has the seats (see :func:`psynet.sync.group_seats`) of the group
+    members now waiting at one barrier, for
+    :class:`~psynet.group_prompt.GroupPrompt`. The update sent lists one
+    ``group_ready`` entry per group and barrier queued in this transaction.
     """
     try:
         key = f"arrival:{participant_id}"
+        previous = _pending_wakes.get().get(key, {})
         update = {
             "participant_id": participant_id,
             "reason": "arrival_update",
@@ -185,10 +187,18 @@ def _queue_arrival_update(
         }
         if notice is not _KEEP_NOTICE:
             update["notice"] = notice
-        elif "notice" in _pending_wakes.get().get(key, {}):
-            update["notice"] = _pending_wakes.get()[key]["notice"]
+        elif "notice" in previous:
+            update["notice"] = previous["notice"]
+        ready = previous.get("group_ready", [])
         if group_ready is not None:
-            update["group_ready"] = group_ready
+            ready = [
+                entry
+                for entry in ready
+                if (entry["group_id"], entry["barrier_id"])
+                != (group_ready["group_id"], group_ready["barrier_id"])
+            ] + [group_ready]
+        if ready:
+            update["group_ready"] = ready
         _pending_wakes.get()[key] = update
     except Exception:
         logger.warning(

@@ -1091,23 +1091,24 @@
         ) {
           psynet.updateTimelineHoldMessage(target.hold_message);
         }
+        const readyEntries = target.group_ready || [];
         if (
           Object.prototype.hasOwnProperty.call(target, "notice") &&
-          !target.group_ready?.notices
+          !readyEntries.some((ready) => ready.notices)
         ) {
           psynet.applyArrivalNotice(target.notice);
         }
         if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
-        if (target.group_ready) {
-          const seats = psynet.applyGroupReady(target.group_ready);
-          const notices = target.group_ready.notices;
-          const index = seats.length - (target.group_ready.notices_from ?? 1);
+        readyEntries.forEach((ready) => {
+          const seats = psynet.applyGroupReady(ready);
+          const notices = ready.notices;
+          const index = seats.length - (ready.notices_from ?? 1);
           if (notices && index >= 0 && index < notices.length) {
             psynet.applyArrivalNotice(notices[index]);
           }
-        }
+        });
       });
     };
 
@@ -1142,6 +1143,11 @@
       const key = `${ready.group_id}:${ready.barrier_id}`;
       const seats = (psynet.readySeats.byBarrier[key] ??= new Set());
       (ready.seats || []).forEach((seat) => seats.add(seat));
+      // Members who have left the group no longer count as ready.
+      if (ready.members) {
+        const members = new Set(ready.members);
+        [...seats].forEach((seat) => members.has(seat) || seats.delete(seat));
+      }
       return [...seats].sort((a, b) => a - b);
     };
 

@@ -47,20 +47,20 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     seats = group_seats(group)
     both = sorted([seats[first.id], seats[second.id]])
     (*_, update) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"]["seats"] == both
+    assert update["group_ready"][-1]["seats"] == both
     # Without notice text, the update leaves the browser's notice alone.
-    assert "notice" not in update and "notices" not in update["group_ready"]
+    assert "notice" not in update and "notices" not in update["group_ready"][-1]
     # Members already waiting get the ticks too.
     (*_, update) = [t for t in published if t["participant_id"] == first.id]
-    assert update["group_ready"]["seats"] == both
+    assert update["group_ready"][-1]["seats"] == both
 
     # Otherwise it carries the notice for each count the browser can reach,
     # so that it can count arrivals that concurrent requests reported apart.
     published.clear()
     _arrive(exp, GroupBarrier("next", group_type="room"), [first])
     (update,) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"]["notices_from"] == 1
-    assert update["group_ready"]["notices"] == [
+    assert update["group_ready"][-1]["notices_from"] == 1
+    assert update["group_ready"][-1]["notices"] == [
         "1/3 of your group are ready.",
         "2/3 of your group are ready.",
     ]
@@ -70,6 +70,7 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
         "group_id": group.id,
         "barrier_id": "next",
         "seats": [seats[first.id]],
+        "members": [0, 1, 2],
     } in snapshot
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
@@ -128,3 +129,10 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     group.add_participant(early)
     db_session.flush()
     assert group_seats(group) == {late.id: 0, early.id: 1}
+
+    # Members are shown in seat order, and an anonymous partner is labelled as such.
+    third = _working_participants(exp, 1)[0]
+    html = GroupPrompt(group=group, participant=third, anonymous=True).group_html
+    assert html.index('data-seat="0"') < html.index('data-seat="1"')
+    html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
+    assert ">Your partner<" in html

@@ -52,7 +52,7 @@ const describeCase = (c) =>
 
 function renderCases(cases) {
   const result = spawnSync(
-    process.env.PYTHON || "python",
+    process.env.PYTHON || "python3",
     ["tests/playwright/render_group_prompt.py"],
     { input: JSON.stringify(cases), encoding: "utf8" }
   );

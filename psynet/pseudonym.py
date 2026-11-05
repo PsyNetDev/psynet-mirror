@@ -249,12 +249,14 @@ class PseudonymScheme:
             ).format(classes, name, css_color, emoji, emoji)
         return _artwork_sticker(classes, css_color, *artwork, name)
 
-    def replacement(self, taken) -> Optional[Tuple[str, str]]:
+    def replacement(self, taken, participant) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
 
         Used to give a new group member a pseudonym that differs from the
         others'. ``taken`` is a collection of ``(color, animal)`` pairs. The
-        default prefers a pair whose colour and animal are both unused.
+        default prefers a pair whose colour and animal are both unused, and
+        picks among those using :meth:`seed` and the participant's ID, so
+        that participants renamed in different groups get different names.
         """
         taken = set(taken)
         used_colors = {color for color, _ in taken}
@@ -270,7 +272,10 @@ class PseudonymScheme:
             for pair in free
             if pair[0] not in used_colors and pair[1] not in used_animals
         ]
-        return (distinct or free or [None])[0]
+        candidates = distinct or free
+        if not candidates:
+            return None
+        return random.Random(f"{self.seed()}:{participant.id}").choice(candidates)
 
     def pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""
@@ -324,7 +329,7 @@ def _artwork_sticker(classes, css_color, shape, lines, name) -> Markup:
         '<span class="{}" aria-hidden="true" title="{}"'
         ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
         "{}</span>"
-    ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), detail)
+    ).format(classes, name, css_color, quote(shape, safe="/:._-~%?=&#"), detail)
 
 
 def _is_dark(css_color: str) -> bool:
