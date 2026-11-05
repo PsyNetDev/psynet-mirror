@@ -65,6 +65,11 @@ non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
 log line.
 
+Pass `--no-browsers` whenever you start `psynet debug local` yourself, and
+tell subagents to do the same; otherwise each server opens browser windows on
+the user's screen. To look at pages, use headless Playwright, or give the user
+the URL.
+
 The `demos/index` page describes each PsyNet demo. `psynet docs demos` prints
 the folder holding their code for the installed version (without media).
 

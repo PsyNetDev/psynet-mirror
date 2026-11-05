@@ -1,0 +1,1 @@
+Updated the agent instructions shipped with experiments, and the Playwright testing skill, so that agents start `psynet debug local` with `--no-browsers` and tell their subagents to do the same, instead of opening browser windows on the user's screen. Run `psynet scripts update` to refresh an experiment's copy.
