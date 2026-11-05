@@ -907,7 +907,9 @@
             0,
             Math.ceil((Number(element.dataset.releaseAt) - now) / 1000),
           );
-          element.textContent = String(seconds);
+          if (element.textContent !== String(seconds)) {
+            element.textContent = String(seconds);
+          }
           // Check straight away at the release time rather than at the next
           // safety poll; the short margin lets the server's clock catch up.
           let releaseAt = Number(element.dataset.releaseAt);

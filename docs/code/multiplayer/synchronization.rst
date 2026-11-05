@@ -60,7 +60,8 @@ current page, under a waiting indicator, until their group is formed.
     Seconds after which a smaller group may start. Once the longest-waiting
     participant has waited this long and at least ``min_group_size`` are
     waiting, those waiting form a group even if there are fewer than
-    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``.
+    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
+    a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up.
 
