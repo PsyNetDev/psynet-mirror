@@ -4176,16 +4176,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         answer=NoArgumentProvided,
         *,
         timeline_hold_resume=False,
-        page_visible=True,
     ):
         """Advance the participant after one ``/response`` write.
 
         Parameters
         ----------
-        page_visible : bool
-            Whether the browser tab was visible when it sent this request,
-            recorded for :func:`~psynet.page_activity.away_participants`.
-            Keyword-only.
         timeline_hold_resume : bool
             If True, a still-waiting overlay check does not take ``FOR UPDATE``
             so last-arrival can still lock waiters with ``NOWAIT``. A resume
@@ -4220,9 +4215,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
-        if page_uuid == participant.page_uuid and not isinstance(participant, Bot):
-            record_page_activity(participant.id, page_visible)
-
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
                 "Only bots are permitted to submit formatted answers directly "
@@ -7727,10 +7719,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        page_visible = (
-            get_arg_from_dict(json_data, "page_visible", use_default=True, default=True)
-            is not False
-        )
+        # Before any SQL, so that a busy database can't make a visible waiter
+        # look as if they had left (see psynet.page_activity).
+        if (
+            json_data.get("page_visible", True) is not False
+            and str(participant_id).isdigit()
+        ):
+            record_page_activity(int(participant_id), visible=True)
         client_ip_address = cls.get_client_ip_address()
 
         try:
@@ -7743,7 +7738,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 client_ip_address,
                 answer,
                 timeline_hold_resume=timeline_hold_resume,
-                page_visible=page_visible,
             )
         except Exception as error:
             clock.close_open("process", "barriers", "render")

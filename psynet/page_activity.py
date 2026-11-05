@@ -2,8 +2,9 @@
 
 Barriers with ``fail_if_hidden_for`` use this to fail participants who leave
 the waiting screen: minimise the window, switch to another tab, or close it.
-Each ``POST /response`` for the participant's current page sent from a
-visible tab records the time. The waiting screen polls about every two
+Each ``POST /response`` sent from a visible tab records the time, before the
+request touches the database, so a busy database can't make a visible
+waiter look away. The waiting screen polls about every two
 seconds, so a visible waiting participant's record stays fresh, while a hidden
 or closed tab stops updating it. One timestamp covers both cases.
 
