@@ -514,6 +514,35 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
       holdLayout.headerBottom
     );
 
+    // Narrow pages start right under the progress bar; the chip must still
+    // leave the page's first line of text readable.
+    const viewport = experimentPage.viewportSize();
+    await experimentPage.setViewportSize({ width: 640, height: 420 });
+    const narrowLayout = await experimentPage.evaluate(() => {
+      const range = document.createRange();
+      const isVisibleText = (node) => {
+        if (!node.textContent.trim()) return false;
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect().height > 0;
+      };
+      const walker = document.createTreeWalker(
+        document.getElementById("main-body"),
+        NodeFilter.SHOW_TEXT,
+        { acceptNode: (node) => (isVisibleText(node) ? 1 : 3) }
+      );
+      range.selectNodeContents(walker.nextNode());
+      return {
+        firstTextTop: range.getBoundingClientRect().top,
+        indicatorBottom: document
+          .getElementById("psynet-timeline-hold-indicator")
+          .getBoundingClientRect().bottom
+      };
+    });
+    expect(narrowLayout.indicatorBottom).toBeLessThanOrEqual(
+      narrowLayout.firstTextTop
+    );
+    await experimentPage.setViewportSize(viewport);
+
     await expect(experimentPage.locator("#main-body")).toContainText(
       "Background feedback processing finished.",
       { timeout: STEP_TIMEOUT_MS }
