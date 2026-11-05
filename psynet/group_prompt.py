@@ -104,7 +104,9 @@ class GroupPrompt(Prompt):
         self.group = group
         self.participant = participant
         self.answers = (
-            None if answers is None else {int(k): v for k, v in answers.items()}
+            None
+            if answers is None
+            else {int(k): v for k, v in answers.items() if v is not None}
         )
         self.highlight = {int(k): v for k, v in (highlight or {}).items()}
         self.note = note
@@ -153,14 +155,20 @@ class GroupPrompt(Prompt):
         _p = get_translator(context=True)
         seats = _group_seats(self.group)
         clusters = self._clusters()
+        viewer_present = any(
+            m.id == self.participant.id for cluster in clusters[:1] for m in cluster
+        )
         if self.subgroups is None:
-            body = self._members_html(
-                clusters[0], seats, _p("group prompt", "Your group")
+            label = (
+                _p("group prompt", "Your group")
+                if viewer_present
+                else _p("group prompt", "Group")
             )
+            body = self._members_html(clusters[0], seats, label)
         else:
-            labels = [_p("group prompt", "Your subgroup")] + [
-                _p("group prompt", "Another subgroup")
-            ] * (len(clusters) - 1)
+            labels = [_p("group prompt", "Another subgroup")] * len(clusters)
+            if viewer_present:
+                labels[0] = _p("group prompt", "Your subgroup")
             body = Markup('<ul class="psynet-group-clusters">{}</ul>').format(
                 Markup("").join(
                     Markup('<li class="psynet-group-cluster">{}</li>').format(
@@ -184,7 +192,7 @@ class GroupPrompt(Prompt):
     def _members_html(self, members, seats, label):
         layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "zigzag"
         # Balanced rows: 8 members as 4 + 4 rather than 7 + 1.
-        rows = math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS)
+        rows = max(1, math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS))
         columns = math.ceil(len(members) / rows)
         items = Markup("").join(
             self._member_html(member, seats[member.id], index)

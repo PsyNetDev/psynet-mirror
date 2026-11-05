@@ -58,7 +58,9 @@ function renderCases(cases) {
   return JSON.parse(result.stdout);
 }
 
-const RENDERED = renderCases(CASES);
+// Rendered on first use, so that listing tests does not need Python.
+let rendered;
+const renderedCase = (index) => (rendered ??= renderCases(CASES))[index];
 
 async function renderPage(page, viewport, { text, group_html, css }, answers) {
   await page.setViewportSize(viewport);
@@ -247,7 +249,7 @@ for (const viewport of VIEWPORTS) {
       `GroupPrompt with ${label} is readable on a ${viewport.label}`,
       { tag: "@both" },
       async ({ page }) => {
-        await renderPage(page, viewport, RENDERED[index], groupCase.answers);
+        await renderPage(page, viewport, renderedCase(index), groupCase.answers);
         await page.locator(".psynet-group-member").first().waitFor();
         expect(await page.locator(".psynet-group-member").count()).toBe(groupCase.size);
         expect(await page.evaluate(groupLayoutProblems), label).toEqual([]);

@@ -185,6 +185,15 @@
     text-align: center;
 }
 
+[data-bs-theme="dark"] .psynet-group-member--winner .psynet-group-bubble {
+    border-color: #75b798;
+    color: #75b798;
+}
+
+[data-bs-theme="dark"] .psynet-group-member--duplicate .psynet-group-bubble {
+    color: #adb5bd;
+}
+
 /* Phones: denser cells, smaller animals, a smaller drop. */
 @container (max-width: 30em) {
     .psynet-group-members--zigzag {

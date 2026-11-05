@@ -5722,9 +5722,16 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     )
     assert pending_arrival_notice_for(last) == "Your partner is ready."
     assert arrival_notice_payload(last.unique_id) == {
-        "notice": "Your partner is ready."
+        "notice": "Your partner is ready.",
+        "group_ready": [
+            {
+                "group_id": first.active_sync_groups["main"].id,
+                "barrier_id": "notify_arrivals",
+                "seats": [0],
+            }
+        ],
     }
-    assert arrival_notice_payload(None) == {"notice": None}
+    assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "Waiting for your partner" in overlay
     assert "psynet-timeline-hold-progress" not in overlay

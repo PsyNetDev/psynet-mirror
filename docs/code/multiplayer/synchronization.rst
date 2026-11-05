@@ -282,7 +282,10 @@ the waiting indicator also says how many members are not ready yet. Set
 ``notify_arrivals=False`` to turn both off, or pass ``on_arrival_message`` to
 change the text. It receives ``kind`` (``"hold"`` for the waiting indicator,
 ``"notice"`` for the progress bar), ``waiting_count`` and ``group_size``, and
-returns the text or ``None`` to hide it. Notices must fit on one line:
+returns the text or ``None`` to hide it. For a notice it is called once for
+each count the browser may need, because the browser combines arrivals that
+the server handled at the same time, so it should depend only on its
+arguments and have no side effects. Notices must fit on one line:
 
 .. code-block:: python
 

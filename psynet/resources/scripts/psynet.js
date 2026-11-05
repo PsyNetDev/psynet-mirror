@@ -1101,18 +1101,35 @@
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
         if (target.group_ready) {
-          const seats = psynet.addReadySeats(target.group_ready);
+          const seats = psynet.applyGroupReady(target.group_ready);
           const notices = target.group_ready.notices;
-          if (notices) {
-            psynet.applyArrivalNotice(notices[seats.length - 1] ?? null);
+          const index = seats.length - (target.group_ready.notices_from ?? 1);
+          if (notices && index >= 0 && index < notices.length) {
+            psynet.applyArrivalNotice(notices[index]);
           }
-          window.dispatchEvent(
-            new CustomEvent("psynetGroupReady", {
-              detail: { groupId: target.group_ready.group_id, seats },
-            }),
-          );
         }
       });
+    };
+
+    // Adds the seats to this page's union and tells GroupPrompt about them.
+    psynet.applyGroupReady = function (ready) {
+      const seats = psynet.addReadySeats(ready);
+      window.dispatchEvent(
+        new CustomEvent("psynetGroupReady", {
+          detail: { groupId: ready.group_id, seats },
+        }),
+      );
+      return seats;
+    };
+
+    // The union of ready seats this page has been sent for a group, at any barrier.
+    psynet.readySeatsFor = function (groupId) {
+      if (psynet.readySeats?.pageUuid !== window.pageUuid) return [];
+      const seats = new Set();
+      Object.entries(psynet.readySeats.byBarrier).forEach(([key, ids]) => {
+        if (key.startsWith(`${groupId}:`)) ids.forEach((seat) => seats.add(seat));
+      });
+      return [...seats];
     };
 
     // Arrivals in concurrent requests each report only the waiting members
@@ -1149,6 +1166,7 @@
           return;
         }
         psynet.applyArrivalNotice(data && data.notice);
+        (data?.group_ready || []).forEach(psynet.applyGroupReady);
       });
     };
 

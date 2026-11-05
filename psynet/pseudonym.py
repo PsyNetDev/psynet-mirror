@@ -25,6 +25,7 @@ Design constraints:
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
+from urllib.parse import quote
 
 from markupsafe import Markup
 
@@ -251,7 +252,7 @@ class PseudonymScheme:
             '<span class="{}" aria-hidden="true" title="{}"'
             ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
             '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
-        ).format(classes, name, css_color, Markup(shape), lines)
+        ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), lines)
 
     def replacement(self, taken) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
@@ -306,8 +307,15 @@ class PseudonymScheme:
 
 
 def _is_dark(css_color: str) -> bool:
-    """Return whether a ``#rrggbb`` colour is too dark for dark lines on it."""
-    if len(css_color) != 7 or not css_color.startswith("#"):
+    """Return whether a ``#rgb`` or ``#rrggbb`` colour is too dark for dark lines on it.
+
+    Other colour formats count as light.
+    """
+    digits = css_color[1:] if css_color.startswith("#") else ""
+    if len(digits) == 3:
+        digits = "".join(c * 2 for c in digits)
+    try:
+        r, g, b = (int(digits[i : i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
         return False
-    r, g, b = (int(css_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
     return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.2

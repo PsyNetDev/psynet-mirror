@@ -44,7 +44,9 @@ def _render(case):
     group = SimpleNamespace(
         id=1,
         active_participants=members,
-        participant_links=[SimpleNamespace(participant_id=m.id) for m in members],
+        participant_links=[
+            SimpleNamespace(id=m.id, participant_id=m.id) for m in members
+        ],
     )
     answers = highlight = None
     if case["answers"]:

@@ -8,7 +8,13 @@ from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.group_prompt import GroupPrompt
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import GroupBarrier, SimpleGrouper, group_seats
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    SimpleSyncGroup,
+    arrival_notice_payload,
+    group_seats,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_regrouper import _arrive  # noqa: E402
@@ -39,20 +45,32 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     barrier = GroupBarrier("decided", group_type="room", on_arrival_message=_no_notice)
     _arrive(exp, barrier, [first, second])
     seats = group_seats(group)
+    both = sorted([seats[first.id], seats[second.id]])
     (*_, update) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"]["seats"] == sorted([seats[first.id], seats[second.id]])
+    assert update["group_ready"]["seats"] == both
     # Without notice text, the update leaves the browser's notice alone.
     assert "notice" not in update and "notices" not in update["group_ready"]
+    # Members already waiting get the ticks too.
+    (*_, update) = [t for t in published if t["participant_id"] == first.id]
+    assert update["group_ready"]["seats"] == both
 
-    # Otherwise it carries the notice for each count, so that the browser can
-    # count arrivals that concurrent requests reported separately.
+    # Otherwise it carries the notice for each count the browser can reach,
+    # so that it can count arrivals that concurrent requests reported apart.
     published.clear()
     _arrive(exp, GroupBarrier("next", group_type="room"), [first])
     (update,) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"]["notices"][:2] == [
+    assert update["group_ready"]["notices_from"] == 1
+    assert update["group_ready"]["notices"] == [
         "1/3 of your group are ready.",
         "2/3 of your group are ready.",
     ]
+    # A page that connects later gets the ready seats from the snapshot.
+    snapshot = arrival_notice_payload(third.unique_id)["group_ready"]
+    assert {
+        "group_id": group.id,
+        "barrier_id": "next",
+        "seats": [seats[first.id]],
+    } in snapshot
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
     assert html.index("You") < html.index(first.pseudonym.name)
@@ -76,3 +94,28 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert len(clusters) == 2
     assert "You" in clusters[0] and third.pseudonym.name in clusters[0]
     assert second.pseudonym.name in clusters[1]
+
+    # Members without an answer get no bubble.
+    html = GroupPrompt(
+        group=group, participant=first, answers={second.id: None}
+    ).group_html
+    assert "psynet-group-bubble--none" in html and ">None<" not in html
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
+    exp = get_experiment()
+    early, late = _working_participants(exp, 2)
+    group = SimpleSyncGroup(group_type="room", initial_group_size=2)
+    db_session.add(group)
+    db_session.flush()
+    assert (
+        'aria-label="Group"' in GroupPrompt(group=group, participant=early).group_html
+    )
+
+    group.add_participant(late)
+    group.add_participant(early)
+    db_session.flush()
+    assert group_seats(group) == {late.id: 0, early.id: 1}

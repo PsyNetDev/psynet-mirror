@@ -40,6 +40,14 @@ def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
     assert "pseudonym-animals/fox-lines.svg" in blue_fox.sticker_html
     assert "sticker--dark" in scheme.make("black", "fox").sticker_html
 
+    class Shorthand(_SeededScheme):
+        def colors(self):
+            return {"navy": ("navy", "#003"), "named": ("named", "rebeccapurple")}
+
+    shorthand = Shorthand("deployment-a")
+    assert "sticker--dark" in shorthand.make("navy", "fox").sticker_html
+    assert "sticker--dark" not in shorthand.make("named", "fox").sticker_html
+
 
 def test_schemes_and_stored_pseudonyms_can_be_customized():
     class Teams(_SeededScheme):
