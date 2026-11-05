@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from psynet.experiment import get_experiment
+from psynet.page_activity import record_page_activity
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import Clock, Regrouper, SimpleGrouper
 
@@ -82,6 +83,26 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
         released[0].active_sync_groups["pair"]
         is (released[1].active_sync_groups["pair"])
     )
+
+
+@in_consents_experiment
+def test_regrouper_leaves_out_players_whose_tab_is_hidden(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    pairs = Regrouper(
+        "pair", within="team", group_size=2, deadline=30, active_within=10
+    )
+    team = _working_participants(exp, 3)
+    _arrive(exp, team_grouper, team)
+    record_page_activity(team[0].id, visible=True)
+    record_page_activity(team[2].id, visible=False)
+
+    _arrive(exp, pairs, team)
+
+    assert _waiting(pairs, team) == [team[2]]
+    assert set(team[0].active_sync_groups["pair"].participants) == set(team[:2])
 
 
 @in_consents_experiment

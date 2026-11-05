@@ -919,6 +919,12 @@
     };
     setInterval(psynet.tickTimelineHoldCountdowns, 250);
 
+    // Groupers can leave out participants whose tab is hidden, so tell the
+    // server at once when a waiting participant's tab is hidden or shown.
+    document.addEventListener("visibilitychange", () => {
+      psynet.resumeTimelineHold("visibility change");
+    });
+
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
     };
@@ -3735,6 +3741,7 @@
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
+        page_visible: document.visibilityState !== "hidden",
       });
     };
 

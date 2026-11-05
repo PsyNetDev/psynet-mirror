@@ -145,6 +145,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
+from psynet.page_activity import active_participants
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
@@ -1654,6 +1655,15 @@ class Grouper(Barrier):
         are failed. If ``False``, they are removed from the group without being failed and continue
         alone. A member whose own request is in progress is handled within about a second by the
         barrier poller instead.
+
+    active_within
+        If set, only participants whose browser tab is visible and was last
+        seen this many seconds ago or less are grouped; the others keep waiting
+        until they come back or ``max_wait_time`` runs out. The default waiting
+        screen checks in about every 2 seconds, so 10 seconds is a good value.
+        With explicit ``waiting_logic``, a participant is only seen when they
+        submit a waiting page, so allow for the longest such page. Bots always
+        count as active. Default: ``None`` (no activity check).
     """
 
     def __init__(
@@ -1667,6 +1677,7 @@ class Grouper(Barrier):
         expected_wait=None,
         fix_time_credit=False,
         content=None,
+        active_within: Optional[float] = None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1681,6 +1692,13 @@ class Grouper(Barrier):
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
+        self.active_within = active_within
+
+    def _active(self, participants: List[Participant]) -> List[Participant]:
+        """Return the participants who count as active under ``active_within``."""
+        if self.active_within is None:
+            return list(participants)
+        return active_participants(participants, within=self.active_within)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         """
@@ -1729,6 +1747,7 @@ class Grouper(Barrier):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         participants_to_release = []
+        waiting_participants = self._active(waiting_participants)
 
         if self.ready_to_group(waiting_participants):
             groups = self.group(waiting_participants)
@@ -1748,7 +1767,7 @@ class Grouper(Barrier):
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this grouper would form groups, without creating them."""
-        return bool(self.ready_to_group(waiting_participants))
+        return bool(self.ready_to_group(self._active(waiting_participants)))
 
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
@@ -2000,7 +2019,7 @@ class SimpleGrouper(Grouper):
         if not self.join_existing_groups:
             return super().choose_who_to_release(waiting_participants)
         joined, still_waiting = [], []
-        for participant in waiting_participants:
+        for participant in self._active(waiting_participants):
             self._join_existing_groups(participant)
             if self.group_type in participant.active_sync_groups:
                 joined.append(participant)
@@ -2015,9 +2034,8 @@ class SimpleGrouper(Grouper):
         if not self.join_existing_groups:
             return False
         # Without a join_criterion, every waiter would join the same group.
-        candidates = (
-            waiting_participants if self.join_criterion else waiting_participants[:1]
-        )
+        active = self._active(waiting_participants)
+        candidates = active if self.join_criterion else active[:1]
         return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
@@ -2185,6 +2203,11 @@ class Regrouper(Grouper):
         Longest a participant waits at the regrouper before being failed.
         Default: 300 seconds.
 
+    active_within
+        If set, participants whose tab is in the background or closed are not
+        put into groups; see :class:`Grouper`. They still count as present for
+        a ``within`` group, so the round starts without them.
+
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
         countdown to the pool's deadline, for example
@@ -2262,11 +2285,11 @@ class Regrouper(Grouper):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
-        for within_group, members in self._pools(waiting_participants):
+        for within_group, waiting, members in self._pools(waiting_participants):
             if self.within is not None and within_group is None:
-                released += members
+                released += waiting
                 continue
-            if not self._pool_is_ready(within_group, members):
+            if not self._pool_is_ready(within_group, members, waiting):
                 continue
             released += self._split(within_group, members)
         return released
@@ -2274,8 +2297,8 @@ class Regrouper(Grouper):
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
             (self.within is not None and within_group is None)
-            or self._pool_is_ready(within_group, members)
-            for within_group, members in self._pools(waiting_participants)
+            or self._pool_is_ready(within_group, members, waiting)
+            for within_group, waiting, members in self._pools(waiting_participants)
         )
 
     def _within_group(self, participant):
@@ -2284,19 +2307,34 @@ class Regrouper(Grouper):
         return participant.active_sync_groups.get(self.within)
 
     def _pools(self, waiting_participants):
-        """Yield ``(within_group, members)`` for each pool of waiting participants."""
+        """Return ``(within_group, waiting, members)`` for each pool.
+
+        ``members`` are the waiting participants who count as active under
+        ``active_within``; only they are put into groups.
+        """
+        active_ids = {p.id for p in self._active(waiting_participants)}
         pools = {}
         for participant in waiting_participants:
             group = self._within_group(participant)
             key = None if group is None else group.id
             pools.setdefault(key, (group, []))[1].append(participant)
-        return list(pools.values())
+        return [
+            (group, waiting, [p for p in waiting if p.id in active_ids])
+            for group, waiting in pools.values()
+        ]
 
-    def _pool_is_ready(self, within_group, members) -> bool:
+    def _pool_is_ready(self, within_group, members, waiting) -> bool:
+        """Return whether to split now: everyone is waiting, or the deadline passed.
+
+        A member whose tab is in the background counts as present, so the
+        round isn't held up for them, but is not put into a group.
+        """
+        if not members:
+            return False
         if len(members) < self.min_group_size and not self.release_left_over:
             return False
         if self.clock_period is None and within_group is not None:
-            waiting_ids = {participant.id for participant in members}
+            waiting_ids = {participant.id for participant in waiting}
             if all(p.id in waiting_ids for p in within_group.active_participants):
                 return True
         return self._deadline_passed(within_group, members)

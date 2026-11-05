@@ -64,6 +64,16 @@ current page, under a waiting indicator, until their group is formed.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up.
 
+``active_within`` (default: ``None``)
+    Seconds. If set, only participants whose browser tab is visible and
+    checked in within this many seconds are grouped. A participant who
+    switched to another tab or closed it keeps waiting, instead of starting
+    a group that then waits for them. The waiting screen checks in about every
+    2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
+    good value. With explicit ``waiting_logic``, participants only check in
+    when they submit a waiting page, so allow for the longest such page. Bots
+    always count as active.
+
 ``content``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
@@ -179,6 +189,12 @@ on their own.
 
 ``max_wait_time`` (default: 300 seconds)
     The longest a participant waits at the regrouper before being failed.
+
+``active_within`` (default: ``None``)
+    As for :class:`~psynet.sync.SimpleGrouper`: participants whose tab is in
+    the background or closed are not grouped. They still count as ready for
+    their ``within`` group, so the round starts without them, and they join
+    the first round after they come back.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by

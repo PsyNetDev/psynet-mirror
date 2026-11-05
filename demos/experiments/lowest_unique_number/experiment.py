@@ -100,6 +100,8 @@ def play_round():
             group_size=ROOM_SIZE,
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
+            # Players who switched to another tab sit the round out.
+            active_within=10,
             content="The next round starts in {SECONDS} s.",
         ),
         PageMaker(choose_number, time_estimate=5),

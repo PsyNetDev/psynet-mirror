@@ -87,6 +87,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.
+- Pass `active_within=10` to these groupers so participants who switched to
+  another tab or left are not grouped and don't hold up a new group.
 - Use `join_existing_groups=True` only with a task-specific `join_criterion`
   that rejects stale, completed, or unsuitable groups.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with

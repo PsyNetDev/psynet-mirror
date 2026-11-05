@@ -133,6 +133,8 @@ def play_round():
             form_groups=pair_new_partners,
             release_left_over=True,
             on_release=start_round,
+            # Players who switched to another tab sit the round out.
+            active_within=10,
             content="The next round starts in at most {SECONDS} s.",
         ),
         conditional(
@@ -172,6 +174,7 @@ class Exp(psynet.experiment.Experiment):
             join_existing_groups=True,
             join_criterion=team_accepts_newcomers,
             fail_participants_below_min_size=False,
+            active_within=10,
             content="Waiting for your team to form…",
             max_wait_time=300,
         ),
