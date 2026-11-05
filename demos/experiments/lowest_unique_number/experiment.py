@@ -11,7 +11,10 @@ instead. Nobody is failed for missing a round.
 To keep the same people together across rounds, for example in teams, form
 the teams first and regroup within them::
 
-    SimpleGrouper("team", initial_group_size=8, min_group_size=2, start_short_after=60),
+    SimpleGrouper(
+        "team", initial_group_size=8, min_group_size=2,
+        start_short_after=60, max_wait_time=300,
+    ),
     ...
     Regrouper("room", within="team", group_size=4, deadline=30),
 

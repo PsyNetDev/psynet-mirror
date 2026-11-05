@@ -735,11 +735,18 @@ def test_grouper_leftover_waiter_joins_an_open_group(
 def test_grouper_does_not_join_a_group_without_active_members(
     in_experiment_directory, db_session, accepts_top_ups
 ):
-    """A group whose members all left closes, with or without top-ups, and is not joined."""
+    """A group whose members all left closes, with or without top-ups, and is not joined.
+
+    The barrier poller closes a group that accepts top-ups, under its row lock.
+    """
     exp = get_experiment()
     (member,), group = _sync_group_of(exp, db_session, 1, group_type="quorum")
     group.accepts_top_ups = accepts_top_ups
     member.fail("left")
+    assert group.active == accepts_top_ups
+    db_session.commit()
+    check_sync_groups()
+    db_session.refresh(group)
     assert not group.active
     (newcomer,) = _working_participants(exp, 1)
     grouper = SimpleGrouper(
@@ -1153,6 +1160,9 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     assert not kicked_participant.failed
     assert group.active_participants == []
     assert group.n_active_participants == 0
+    db_session.commit()
+    check_sync_groups()
+    db_session.refresh(group)
     assert not group.active
     assert group.end_time is not None
 
@@ -6464,7 +6474,9 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     group = participants[0].sync_group
-    _backdate_group(group, seconds=10)
+    assert group.last_barrier_pass_time is None
+    for link in group.participant_links:
+        link.arrival_time -= timedelta(seconds=10)
     (newcomer,) = _working_participants(exp, 1)
     group.add_participant(newcomer)
     barrier = GroupBarrier(

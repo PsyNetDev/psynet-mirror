@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from psynet import notifier
 from psynet.notifier import LoggerNotifier, Notifier
 
 
@@ -80,3 +81,53 @@ def test_logs_message_follows_the_app_ingress(
 
     assert expected in message
     assert ("Dozzle" in message) is expected.startswith("https://")
+
+
+def test_worker_message_skips_workers_that_exit_while_listed(monkeypatch):
+    import psutil
+
+    live = Mock()
+    live.memory_info.return_value.rss = 50 * 1024**2
+    live.create_time.return_value = 0
+    live.name.return_value = "gunicorn"
+    zombie = Mock()
+    zombie.memory_info.side_effect = psutil.ZombieProcess(2)
+    zombie.create_time.side_effect = psutil.ZombieProcess(2)
+    monkeypatch.setattr(
+        Notifier,
+        "_get_worker_processes",
+        staticmethod(lambda: [(2, zombie), (1, live)]),
+    )
+
+    message = Notifier()._get_worker_processes_message("ram")
+
+    assert "gunicorn (1)" in message
+    assert "(2)" not in message
+
+
+def test_cpu_warning_reports_measured_usage_busiest_worker_first(monkeypatch):
+    def worker(name, percent):
+        proc = Mock()
+        proc.create_time.return_value = 0
+        proc.name.return_value = name
+        proc.cpu_percent.side_effect = [0.0, percent]
+        return proc
+
+    sleeps = []
+    messages = []
+    monkeypatch.setattr("psynet.notifier.time.sleep", sleeps.append)
+    monkeypatch.setattr("psynet.notifier.redis_vars", Mock(get=lambda *a, **k: None))
+    monkeypatch.setattr(
+        Notifier,
+        "_get_worker_processes",
+        staticmethod(lambda: [(1, worker("idle", 2.0)), (2, worker("busy", 80.0))]),
+    )
+    monkeypatch.setattr(Notifier, "notify", lambda self, msg: messages.append(msg))
+
+    Notifier().resource_usage_notification("cpu", 1, usage_pct=93.5)
+
+    [message] = messages
+    assert "CPU usage high: 93.5%" in message
+    assert sleeps == [notifier._CPU_SAMPLE_SECONDS]
+    assert "busy (2) running for" in message and "80.0% CPU" in message
+    assert message.index("busy") < message.index("idle")
