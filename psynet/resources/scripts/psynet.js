@@ -941,8 +941,8 @@
       psynet.tickTimelineHoldCountdowns();
     };
 
-    // Groupers can leave out participants whose tab is hidden, so tell the
-    // server at once when a waiting participant's tab is hidden or shown.
+    // Barriers can fail participants whose tab stays hidden, so tell the
+    // server at once when a waiting participant's tab is shown again.
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
       if (psynet.waiting.config && !psynet.waiting.released) {
@@ -953,11 +953,13 @@
     /**
      * Barrier waiting pages (explicit ``waiting_logic``).
      *
-     * While such a page is open, the browser asks the server about every
-     * 2 seconds whether the barrier has released the participant; each check
-     * also counts as activity for groupers' ``active_within``. On release,
-     * ``psynetWaitingRelease`` is dispatched on ``window`` and the page ends
-     * after the barrier's ``release_grace``, unless it is submitted first.
+     * While a page of a barrier's ``waiting_logic`` is open, the browser asks
+     * the server about every 2 seconds whether the barrier has released the
+     * participant. These checks also tell ``fail_if_hidden_for`` that the tab
+     * is open. On release, ``psynetWaitingRelease`` is dispatched on
+     * ``window`` and the page ends after the barrier's ``release_grace``,
+     * unless it is submitted first. Pages that a release may not end (inside
+     * trials, or with ``release_grace=None``) run to their end.
      * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
      */
     psynet.waiting = {
@@ -1025,6 +1027,10 @@
 
       onRelease() {
         let config = psynet.waiting.config;
+        if (config.release_grace_ms === null) {
+          psynet.waiting.stop();
+          return;
+        }
         psynet.waiting.released = true;
         window.dispatchEvent(
           new CustomEvent("psynetWaitingRelease", {

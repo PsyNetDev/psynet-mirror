@@ -4185,7 +4185,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         answer=NoArgumentProvided,
         *,
         timeline_hold_resume=False,
-        page_visible=True,
         interrupted=False,
     ):
         """Advance the participant after one ``/response`` write.
@@ -4199,10 +4198,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             its answer is not saved. If the participant has not been released,
             the submission is rejected without a message, so the page keeps
             waiting. Keyword-only.
-        page_visible : bool
-            Whether the browser tab was visible when it sent this request,
-            recorded for :func:`~psynet.page_activity.active_participants`.
-            Keyword-only.
         timeline_hold_resume : bool
             If True, a still-waiting overlay check does not take ``FOR UPDATE``
             so last-arrival can still lock waiters with ``NOWAIT``. A resume
@@ -4237,9 +4232,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
-        if page_uuid == participant.page_uuid and not isinstance(participant, Bot):
-            record_page_activity(participant.id, page_visible)
-
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
                 "Only bots are permitted to submit formatted answers directly "
@@ -7827,19 +7819,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        page_visible = (
-            get_arg_from_dict(json_data, "page_visible", use_default=True, default=True)
-            is not False
-        )
         interrupted = bool(
             get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
         )
+        # Before any SQL, so that a busy database can't make a visible waiter
+        # look as if they had left (see psynet.page_activity).
+        if (
+            json_data.get("page_visible", True) is not False
+            and str(participant_id).isdigit()
+        ):
+            record_page_activity(int(participant_id), visible=True)
         client_ip_address = cls.get_client_ip_address()
         # Only non-default flags are passed, so process_response overrides
         # written before these keywords existed keep working.
         flags = {}
-        if not page_visible:
-            flags["page_visible"] = False
         if interrupted:
             flags["interrupted"] = True
 

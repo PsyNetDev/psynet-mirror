@@ -1,6 +1,7 @@
 import json
 import sys
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,10 @@ from flask import Flask
 
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
+from psynet.page_activity import record_page_activity
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import SimpleGrouper, waiting_status_payload
+from psynet.sync import SimpleGrouper, check_barriers, waiting_status_payload
 from psynet.timeline import Response, Timeline, join
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -42,11 +44,11 @@ def _filler(label):
     return ModularPage(label, "A filler question", time_estimate=5)
 
 
-def _use_timeline(exp, waiting_logic, **kwargs):
+def _use_timeline(exp, waiting_logic, initial_group_size=2, **kwargs):
     exp.timeline = Timeline(
         SimpleGrouper(
             f"pair_{uuid.uuid4().hex[:8]}",
-            initial_group_size=2,
+            initial_group_size=initial_group_size,
             waiting_logic=waiting_logic,
             **kwargs,
         ),
@@ -100,13 +102,33 @@ def test_release_interrupts_a_waiting_page(
 
 
 @in_consents_experiment
-def test_release_grace_none_lets_waiting_pages_run(in_experiment_directory, db_session):
+def test_waiting_pages_that_run_to_their_end_still_fail_hidden_participants(
+    in_experiment_directory, db_session
+):
     exp = get_experiment()
     original = exp.timeline
-    _use_timeline(exp, _filler("filler"), release_grace=None)
+    _use_timeline(
+        exp,
+        _filler("filler"),
+        initial_group_size=3,
+        release_grace=None,
+        fail_if_hidden_for=15,
+    )
     try:
-        (participant,) = _working_participants(exp, 1)
-        page = _json_timeline(exp, participant).get_json()
-        assert "waiting" not in page["attributes"]
+        visible, hidden = _working_participants(exp, 2)
+        for participant in (visible, hidden):
+            page = _json_timeline(exp, participant).get_json()
+            assert page["attributes"]["waiting"]["release_grace_ms"] is None
+            participant.active_barriers[
+                page["attributes"]["waiting"]["barrier_id"]
+            ].arrival_time -= timedelta(seconds=20)
+        db.session.commit()
+        record_page_activity(visible.id, visible=True)
+
+        check_barriers()
+
+        db.session.expire_all()
+        assert not visible.failed
+        assert hidden.failed and "hidden_while_waiting" in hidden.failure_tags
     finally:
         exp.timeline = original

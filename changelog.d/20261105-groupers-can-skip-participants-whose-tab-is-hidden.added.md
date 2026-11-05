@@ -1,1 +1,0 @@
-Added `active_within` to `SimpleGrouper`, `Regrouper` and other groupers: participants whose browser tab is hidden or closed are left out of new groups until they come back, so they don't hold up the group they would have joined. Browsers now report whether their tab is visible with each page response.
