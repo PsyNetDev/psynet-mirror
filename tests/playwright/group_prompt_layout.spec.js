@@ -156,6 +156,16 @@ function groupLayoutProblems() {
         }
       }
     }
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (const match of node.textContent.matchAll(/\S+/g)) {
+        const word = document.createRange();
+        word.setStart(node, match.index);
+        word.setEnd(node, match.index + match[0].length);
+        const lines = new Set([...word.getClientRects()].map((r) => Math.round(r.top)));
+        if (lines.size > 1) problems.push(`${describe(el)} breaks "${match[0]}" across lines`);
+      }
+    }
     if (parseFloat(style.fontSize) < 12) {
       problems.push(`${describe(el)} has ${style.fontSize} text`);
     }

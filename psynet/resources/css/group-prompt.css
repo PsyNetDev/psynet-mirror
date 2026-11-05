@@ -155,7 +155,7 @@
 }
 
 .psynet-group-member--winner .psynet-group-bubble::before {
-    content: "★\00a0";
+    content: "★ ";
 }
 
 .psynet-group-member--duplicate .psynet-group-bubble {
