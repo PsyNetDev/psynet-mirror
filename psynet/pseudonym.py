@@ -54,7 +54,7 @@ _ANIMALS = {
     "penguin": "🐧",
     "rabbit": "🐰",
     "whale": "🐳",
-    "turtle": "🐢",
+    "cat": "🐱",
 }
 
 
@@ -152,7 +152,7 @@ class PseudonymScheme:
             "penguin": _p("pseudonym animal", "penguin"),
             "rabbit": _p("pseudonym animal", "rabbit"),
             "whale": _p("pseudonym animal", "whale"),
-            "turtle": _p("pseudonym animal", "turtle"),
+            "cat": _p("pseudonym animal", "cat"),
         }
         return {key: (labels[key], emoji) for key, emoji in _ANIMALS.items()}
 
