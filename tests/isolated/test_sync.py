@@ -6468,6 +6468,12 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     assert missing_participant not in group.active_participants
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
+    assert (
+        pending_arrival_notice_for(missing_participant)
+        == "Your group went on without you."
+    )
+    missing_participant.page_uuid = "next-page"
+    assert pending_arrival_notice_for(missing_participant) is None
 
 
 @pytest.mark.parametrize(

@@ -191,6 +191,8 @@ _POLLER_SWEEP_BUDGET_SECONDS = 0.2
 # How much sooner a new or changed visit is re-checked than an unchanged one.
 _POLLER_CHANGE_HEAD_START_SECONDS = 5.0
 
+_REMOVED_NOTICE_KEY = "psynet_removed_from_group_notice"
+
 # Poller-process memory: instance id -> (fingerprint, monotonic check time).
 _poller_checked_visits = {}
 
@@ -1297,11 +1299,16 @@ class GroupBarrier(Barrier):
 
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
-        ``kind`` (``"hold"`` or ``"notice"``), ``waiting_count``,
+        ``kind`` (``"hold"``, ``"notice"`` or ``"removed"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``recipient``,
         ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
         surface. Same serialization rules as ``on_release``. The default pair
         notice is "Your partner is ready."; pair holds omit a second line.
+        ``"removed"`` is the progress-bar notice for someone kicked by
+        ``timeout_between_barriers_action="kick"``, shown until they leave
+        their page; it defaults to "Your partner went on without you." or
+        "Your group went on without you.", and ``group_size`` counts the
+        members left.
         Groups of three or more default to ``"{REMAINING} of {TOTAL} not ready yet"``
         on the hold and ``"{ARRIVED}/{TOTAL} of your group are ready."`` on the
         pill. Notice copy stays on one line (overflow ellipsizes) and sits
@@ -1626,6 +1633,7 @@ class GroupBarrier(Barrier):
                     group.id,
                 )
                 group.remove_participant(participant)
+                self._tell_removed_participant(participant, group)
             else:
                 logger.info(
                     "GroupBarrier '%s': failing participant %s (timeout between barriers)",
@@ -1633,6 +1641,30 @@ class GroupBarrier(Barrier):
                     participant.id,
                 )
                 participant.fail("timeout between barriers")
+
+    def _tell_removed_participant(self, participant, group):
+        """Show a kicked participant a notice that their group went on without them.
+
+        The notice lasts until they leave their current page. It is stored
+        only if their row is free, because their own request may be writing it.
+        """
+        if not self.notify_arrivals:
+            return
+        text = self._call_arrival_message(
+            kind="removed",
+            waiting_count=0,
+            group_size=len(group.active_participants),
+            recipient=participant,
+            group=group,
+        )
+        if not text:
+            return
+        text = str(text)
+        if _lock_free_participants([participant]):
+            participant.var.set(
+                _REMOVED_NOTICE_KEY, {"page_uuid": participant.page_uuid, "text": text}
+            )
+        _queue_arrival_update(participant.id, notice=text)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
@@ -2101,11 +2133,43 @@ class SimpleGrouper(Grouper):
 
     def _can_start_short(self, participants: List[Participant]) -> bool:
         """Return whether enough people have waited long enough for a short start."""
+        start_time = self._short_start_time(participants)
+        return start_time is not None and time.time() >= start_time
+
+    def _short_start_time(self, participants) -> Optional[float]:
+        """Return when these waiters can start short, in epoch seconds, if they ever can."""
         if self.start_short_after is None or len(participants) < self.min_group_size:
-            return False
+            return None
         first_arrival = min(_arrival_time(self, p) for p in participants)
-        waited = (timenow() - first_arrival).total_seconds()
-        return waited >= self.start_short_after
+        return first_arrival.timestamp() + self.start_short_after
+
+    def expected_release_time(self, participant) -> Optional[float]:
+        """Return when the waiting participants will start short, in epoch seconds.
+
+        ``None`` until ``min_group_size`` participants are waiting, or without
+        ``start_short_after``.
+        """
+        if self.start_short_after is None or not self._participant_is_waiting(
+            participant
+        ):
+            return None
+        return self._short_start_time(self.get_waiting_participants(participant))
+
+    def _notify_arrivals(self, arriving_participant):
+        """Start the other waiters' countdowns once enough of them are waiting."""
+        if self.start_short_after is None or not self._uses_timeline_hold:
+            return
+        waiting = self.get_waiting_participants(arriving_participant)
+        if len(waiting) != self.min_group_size:
+            return
+        _prime_timeline_hold_records(waiting, self.id)
+        for member in waiting:
+            if member.id == arriving_participant.id or member.failed:
+                continue
+            if not self.waiting_logic._is_silent_for(member):
+                _queue_arrival_update(
+                    member.id, hold_message=self.waiting_logic.overlay_html(member)
+                )
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
         if len(participants) < self.initial_group_size:
@@ -3184,6 +3248,16 @@ def _reconstructed_arrival_barrier(link, reconstructed):
     return barrier
 
 
+def _removed_from_group_notice(participant) -> Optional[str]:
+    """Return the notice for a participant removed from a group on their current page."""
+    if participant is None:
+        return None
+    stored = participant.var.get(_REMOVED_NOTICE_KEY, None)
+    if stored is None or stored["page_uuid"] != participant.page_uuid:
+        return None
+    return stored["text"]
+
+
 def pending_arrival_notice_for(participant):
     """Return a partner-ready notice if this participant is behind a waiter.
 
@@ -3192,6 +3266,9 @@ def pending_arrival_notice_for(participant):
     """
     if participant is None or getattr(participant, "failed", False):
         return None
+    removed_notice = _removed_from_group_notice(participant)
+    if removed_notice is not None:
+        return removed_notice
     groups = getattr(participant, "active_sync_groups", None) or {}
     reconstructed = {}
     notice = None
