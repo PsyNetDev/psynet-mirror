@@ -762,7 +762,7 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             elif docker:
                 _debug_docker(ctx, archive=None, no_browsers=no_browsers)
             else:
-                _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
+                _debug_auto_reload(archive=None, no_browsers=no_browsers)
         finally:
             kill_psynet_worker_processes()
             _cleanup_exp_directory()
@@ -1535,85 +1535,6 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-def launch_app_without_browsers(port, auth=None, **kwargs):
-    """Launch the development app without opening browsers.
-
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
-    :func:`_launch_app_and_report`). The server log leaves the dashboard
-    password out. It must stay importable by module path because RQ workers
-    resolve it that way. ``auth`` is the ``(user, password)`` dashboard login
-    in the job; it defaults to the login in this worker's config.
-    """
-    _launch_app_and_report(port, auth=auth)
-
-
-def launch_app_and_open_browsers(port, auth=None, **kwargs):
-    """Launch the development app, print the ``Ready.`` block, then open the browsers.
-
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload runs that open browsers, so that its ``Ready.`` block has
-    PsyNet's rows too. It must stay importable by module path because RQ
-    workers resolve it that way. ``auth`` is as for
-    :func:`launch_app_without_browsers`.
-    """
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    user, password = _launch_app_and_report(port, auth=auth)
-    login = {"dashboard_user": user, "dashboard_password": password}
-    _open_browser_async(develop.dashboard_url(login, port))
-    time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    _open_browser_async(develop.ad_url(login, port))
-
-
-def _open_browser_async(url):
-    """Open ``url`` in a thread, because opening a browser can be slow."""
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    threading.Thread(target=develop.open_browser, args=(url,)).start()
-
-
-def _launch_app_and_report(port, auth=None):
-    """Launch the development app, print the ``Ready.`` block and return the login used.
-
-    ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
-    debug`` puts in the launch job; without it, Dallinger's ``launch_auth``
-    reads it from this process's config.
-
-    The block has the participant link (see Dallinger's
-    ``launch_message_rows``), the dashboard login, the location of the full
-    log and, in an isolated session, the ``export`` line that lets other
-    terminals use the session's database and Redis.
-    """
-    from dallinger.deployment import handle_launch_data, launch_auth
-
-    from .isolated_environment import READY_ENV_VAR
-
-    develop = importlib.import_module("dallinger.command_line.develop")
-    auth = tuple(auth or launch_auth())
-    launch_data = handle_launch_data(
-        develop.BASE_URL.format(port) + "launch",
-        error=log,
-        delay=1.0,
-        context="local",
-        auth=auth,
-    )
-    details = develop.launch_message_rows(launch_data.get("recruitment_msg"))
-    user, password = auth
-    details.append(
-        (
-            "Dashboard",
-            f"{develop.BASE_URL.format(port)}dashboard (user {user}, "
-            f"password {password})",
-        )
-    )
-    after = []
-    if os.environ.get(READY_ENV_VAR):
-        after.append(("Other terminals", _isolated_session_export_line(os.environ)))
-    develop.echo_ready(details, after=after)
-    return auth
-
-
 def _isolated_session_export_line(env):
     """Return the ``export`` command that points another terminal at an isolated session."""
     return "export " + " ".join(
@@ -1781,12 +1702,12 @@ def _exit_on_termination_signal():
             signal.signal(sig, previous_handler)
 
 
-def _debug_auto_reload(ctx, archive, no_browsers):
-    from dallinger.command_line.develop import debug as dallinger_debug
+def _debug_auto_reload(archive, no_browsers):
     from dallinger.deployment import DevelopmentDeployment
 
+    from .isolated_environment import READY_ENV_VAR
+
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    launch_job = develop_module.launch_app_and_open_browser
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
@@ -1797,27 +1718,27 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
         _reloader_exclude_patterns()
     )
-    debug_kwargs = {"skip_flask": False, "port": port}
-    develop_module.launch_app_and_open_browser = (
-        launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    )
+    ready_rows = []
+    if os.environ.get(READY_ENV_VAR):
+        ready_rows.append(
+            ("Other terminals", _isolated_session_export_line(os.environ))
+        )
+
+    run_pre_auto_reload_checks()
+
+    DevelopmentDeployment.archive = archive
+    patch_dallinger_develop()
+
+    develop_module.header = ""
 
     try:
-        run_pre_auto_reload_checks()
-
-        DevelopmentDeployment.archive = archive
-        patch_dallinger_develop()
-
-        develop_module.header = ""
-
-        try:
-            with _stop_child_processes_on_signal():
-                ctx.invoke(dallinger_debug, **debug_kwargs)
-        finally:
-            db.session.commit()
-            reset_console()
+        with _stop_child_processes_on_signal():
+            develop_module.run_debug(
+                port=port, no_browsers=no_browsers, ready_rows=ready_rows
+            )
     finally:
-        develop_module.launch_app_and_open_browser = launch_job
+        db.session.commit()
+        reset_console()
 
 
 def patch_dallinger_develop():
