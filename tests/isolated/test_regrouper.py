@@ -8,6 +8,7 @@ from dallinger import db
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -144,9 +145,11 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
 
 @in_consents_experiment
 def test_simple_grouper_starts_a_short_group_after_waiting(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
+    published = []
+    monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
     grouper = SimpleGrouper(
         "lobby",
         initial_group_size=4,
@@ -162,8 +165,9 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     assert grouper.expected_release_time(participants[0]) == pytest.approx(
         time.time() + 10, abs=2
     )
-    countdown = grouper.waiting_logic.overlay_html(participants[0])
-    assert "psynet-timeline-hold-countdown" in countdown
+    assert "data-release-in-ms" in grouper.waiting_logic.overlay_html(participants[0])
+    countdowns = [w for w in published if w["reason"] == "countdown"]
+    assert {w["participant_id"] for w in countdowns} == {p.id for p in participants}
 
     _backdate_arrivals(grouper, participants, 11)
     released = grouper.choose_who_to_release(participants)
