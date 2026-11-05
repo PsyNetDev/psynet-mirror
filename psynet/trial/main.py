@@ -491,6 +491,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             super().fail(reason=reason)
 
     @property
+    def _recording_failed(self):
+        """Identify unavailable media separately from author-defined trial failures."""
+        return self.failed and (self.failed_reason or "").startswith("recording_")
+
+    @property
     def ready_for_feedback(self):
         """
         Whether the trial is ready to give feedback to the participant.
@@ -501,7 +506,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """
         msg = f"Participant {self.participant.id}: Checking if the trial is ready for feedback... "
 
-        if not self.complete:
+        if self._recording_failed:
+            msg += "no, because a required recording failed."
+            outcome = False
+
+        elif not self.complete:
             msg += "no, because the trial is not complete."
             outcome = False
 
@@ -521,7 +530,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             msg += "no, because the trial is not finalized yet."
             outcome = False
 
-        logger.info(msg)
+        logger.debug(msg)
         return outcome
 
     def __init__(
@@ -651,7 +660,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.participant.inc_performance_reward(reward)
 
     def _log_performance_reward(self, reward):
-        logger.info(
+        logger.debug(
             "Allocating a performance reward of $%.2f to participant %i for trial %i.",
             reward,
             self.participant.id,
@@ -849,6 +858,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         return raw_answer
 
     def call_async_post_trial(self):
+        if self._recording_failed:
+            logger.info("Skipping analysis for failed trial %s.", self.id)
+            return
         try:
             self.async_post_trial()
         except Exception:
@@ -1088,6 +1100,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     def check_if_can_run_async_post_trial(self):
         msg = f"Checking if we should run async_post_trial for trial {self.id}... "
+        if self._recording_failed:
+            logger.debug("%sno, because the trial failed.", msg)
+            return
         if self.async_post_trial_requested:
             logger.debug("%sno need, async_post_trial has already been requested.", msg)
             return
@@ -1100,8 +1115,19 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             logger.debug("%sno need, as no async_post_trial method is defined.", msg)
             return
 
-        if self.asset_deposit_pending:
+        if self._analysis_deposit_pending:
             logger.debug("%sawaiting an asset deposit, so we have to wait.", msg)
+            return
+
+        # A recording worker may have deposited the last asset and queued
+        # async_post_trial since this trial was loaded. Re-read the flag under
+        # the trial's row lock, which the worker holds until it commits, so
+        # the job is queued only once.
+        db.session.refresh(
+            self, attribute_names=["async_post_trial_requested"], with_for_update=True
+        )
+        if self.async_post_trial_requested:
+            logger.debug("%sno need, async_post_trial was requested meanwhile.", msg)
             return
 
         logger.debug("%sconditions satisfied, queueing async_post_trial.", msg)
@@ -1317,7 +1343,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def _finalize_trial(cls, trial_maker=None):
         def f(participant, experiment):
-            logger.info("Calling _finalize_trial.")
+            logger.debug("Calling _finalize_trial.")
 
             trial = participant.current_trial
             if participant.failed:
@@ -1353,6 +1379,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     @classmethod
     def _construct_feedback_logic(cls, trial_maker):
+        from ..media_upload import _recording_wait_timeout
+
         if trial_maker:
             label = trial_maker.with_namespace("feedback")
         else:
@@ -1361,33 +1389,63 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         return conditional(
             label=label,
             condition=lambda experiment, participant: (
-                participant.current_trial.gives_feedback(experiment, participant)
+                not participant.current_trial._recording_failed
+                and participant.current_trial.gives_feedback(experiment, participant)
             ),
             logic_if_true=join(
                 wait_while(
                     lambda participant: (
-                        not participant.current_trial.ready_for_feedback
+                        not participant.current_trial._recording_failed
+                        and not participant.current_trial.ready_for_feedback
                     ),
                     expected_wait=0,
+                    max_wait_time=lambda participant: _recording_wait_timeout(
+                        participant.id, trial_id=participant.current_trial.id
+                    ),
                     log_message="Waiting for feedback to be ready.",
                     check_interval=1.0,
                 ),
-                PageMaker(
-                    lambda experiment, participant: (
-                        participant.current_trial.show_feedback(
-                            experiment=experiment, participant=participant
-                        )
+                conditional(
+                    label=f"{label}__still_valid",
+                    condition=lambda participant: (
+                        not participant.current_trial._recording_failed
                     ),
-                    time_estimate=0,
+                    logic_if_true=PageMaker(
+                        lambda experiment, participant: (
+                            participant.current_trial.show_feedback(
+                                experiment=experiment, participant=participant
+                            )
+                        ),
+                        time_estimate=0,
+                    ),
+                    fix_time_credit=False,
+                    log_chosen_branch=False,
                 ),
             ),
             fix_time_credit=False,
             log_chosen_branch=False,
         )
 
+    @property
+    def _analysis_deposit_pending(self):
+        """Whether an asset that analysis depends on is still being deposited.
+
+        Background clips never feed analysis, so only finalization waits for
+        required ones (see ``asset_deposit_pending``).
+        """
+        return any(
+            not asset.deposited
+            and asset.required_for_trial is not False
+            and getattr(asset, "recording_role", None) != "background"
+            for asset in self.assets.values()
+        )
+
     @hybrid_property
     def asset_deposit_pending(self):
-        return any(not asset.deposited for asset in self.assets.values())
+        return any(
+            not asset.deposited and asset.required_for_trial is not False
+            for asset in self.assets.values()
+        )
 
     @asset_deposit_pending.expression
     def asset_deposit_pending(cls):
@@ -1396,6 +1454,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             .where(
                 Asset.trial_id == Trial.id,
                 ~Asset.deposited,
+                Asset.required_for_trial,
             )
             .exists()
         )
@@ -1996,11 +2055,11 @@ class TrialMaker(Module):
         return call_function(function, self=self, experiment=experiment)
 
     def null_criterion(self, experiment):
-        logger.info("Recruitment is disabled for this module.")
+        logger.debug("Recruitment is disabled for this module.")
         return False
 
     def n_participants_criterion(self, experiment):
-        logger.info(
+        logger.debug(
             "Target number of participants = %i, completion counted at %s, number of completed participants = %i, number of working participants = %i.",
             self.target_n_participants,
             self.n_participants_completion,
@@ -2050,8 +2109,8 @@ class TrialMaker(Module):
         score_to_display = "NA" if score is None else f"{(100 * score):.0f}"
 
         return InfoPage(
-            Markup(
-                f"Your performance score was <strong>{score_to_display}&#37;</strong>."
+            Markup("Your performance score was <strong>{}&#37;</strong>.").format(
+                score_to_display
             ),
             time_estimate=5,
         )
@@ -2365,12 +2424,16 @@ class TrialMaker(Module):
         )
 
         if type == "end" and self.end_performance_check_waits:
+            from ..media_upload import _recording_wait_timeout
 
             def any_trials_awaiting_processing(participant):
                 return (
                     db.session.query(func.count(Trial.id))
                     .filter(
                         Trial.participant_id == participant.id,
+                        # A trial failed by a missing recording keeps its
+                        # pending flags, which would never clear.
+                        ~Trial.failed,
                         Trial.async_post_trial_pending
                         | Trial.asset_deposit_pending
                         # Scores are set on finalization, which can lag behind
@@ -2384,6 +2447,9 @@ class TrialMaker(Module):
                 wait_while(
                     lambda participant: any_trials_awaiting_processing(participant),
                     expected_wait=5,
+                    max_wait_time=lambda participant: _recording_wait_timeout(
+                        participant.id
+                    ),
                     log_message="Waiting for remaining trials that are awaiting further processing.",
                 ),
                 logic,
@@ -2507,7 +2573,7 @@ class TrialMaker(Module):
                 condition=lambda participant: participant.trial_status != "exit",
                 logic_if_true=self.trial_class.trial_logic(trial_maker=self),
                 logic_if_false=CodeBlock(
-                    lambda: logger.info("No trial found, skipping")
+                    lambda: logger.debug("No trial found, skipping")
                 ),
                 fix_time_credit=False,
                 log_chosen_branch=False,
@@ -2535,6 +2601,8 @@ class TrialMaker(Module):
         )
 
     def _wait_for_trial(self):
+        from ..media_upload import _has_outstanding_recordings
+
         def try_to_prepare_trial():
             if not self.sync_group_type:
                 return CodeBlock(self._try_to_prepare_trial_solo)
@@ -2560,13 +2628,19 @@ class TrialMaker(Module):
                 "Waiting for trial",
                 lambda participant: participant.trial_status == "wait",
                 logic=join(
-                    try_to_prepare_trial(),
-                    # This remains an explicit page-based wait because each
-                    # iteration must rerun the preparation timeline logic.
+                    # Keep an explicit page wait so each iteration reruns
+                    # the preparation timeline logic.
                     WaitPage(wait_time=2.0),
+                    # Refresh availability before the loop checks its timeout
+                    # when the participant returns from this wait page.
+                    try_to_prepare_trial(),
                 ),
                 expected_repetitions=0,
                 max_loop_time=self.max_time_waiting_for_trial,
+                # The next trial may depend on the participant's last answer.
+                extend_while=lambda participant: _has_outstanding_recordings(
+                    participant.id
+                ),
                 fix_time_credit=False,
             ),
         )
@@ -2961,7 +3035,7 @@ class NetworkTrialMaker(TrialMaker):
 
     @log_time_taken
     def prepare_trial(self, experiment, participant: Participant):
-        logger.info("Preparing trial for participant %i.", participant.id)
+        logger.debug("Preparing trial for participant %i.", participant.id)
 
         full_node_ids = set()
         while True:
@@ -2971,7 +3045,7 @@ class NetworkTrialMaker(TrialMaker):
                     raise ValueError(
                         "_select_trial_node must return Selection, 'wait', or 'exit'"
                     )
-                logger.info("Outcome of trial selection: %s", selection)
+                logger.debug("Outcome of trial selection: %s", selection)
                 return None, selection
             if not isinstance(selection, Selection):
                 raise TypeError(
@@ -2986,13 +3060,13 @@ class NetworkTrialMaker(TrialMaker):
                     "nodes without remaining trial capacity."
                 )
             full_node_ids.add(selection.value.id)
-            logger.info(
+            logger.debug(
                 "Node %i filled up during selection; selecting again.",
                 selection.value.id,
             )
 
         node = selection.value
-        logger.info(
+        logger.debug(
             "Selected node %i from network %i to give to participant %i.",
             node.id,
             node.network_id,

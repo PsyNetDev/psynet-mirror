@@ -1,0 +1,1 @@
+`psynet debug local` now stops with one `Error:` line, instead of a traceback, when the `dallinger_develop_directory` setting can't be used, for example because its folder name isn't a valid Python identifier or its path contains a period.

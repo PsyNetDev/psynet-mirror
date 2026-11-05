@@ -3,6 +3,7 @@ import json
 import re
 import uuid
 from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import pytest
 import sqlalchemy
@@ -287,8 +288,8 @@ def test_response_handler_skips_unused_participant_relationships(
     db.session.remove()
 
     with _response_request(payload):
-        # One extra statement is the memoized arrival-websocket membership EXISTS.
-        with assert_query_count(max_queries=13) as profiler:
+        # Includes arrival-websocket membership and expired-recording checks.
+        with assert_query_count(max_queries=14) as profiler:
             result = experiment.route_response()
     assert result.status_code == 200
     body = json.loads(result.get_data())
@@ -370,9 +371,9 @@ def test_timeline_redirects_finished_participants_to_the_exit_page(
         response = experiment.route_timeline()
 
     assert response.status_code in (301, 302)
-    assert (
-        f"/recruiter-exit?participant_id={participant_id}"
-        in response.headers["Location"]
+    assert response.headers["Location"].endswith(
+        "/recruiter-exit?"
+        + urlencode({"participant_id": participant_id, "unique_id": unique_id})
     )
 
 

@@ -1,7 +1,7 @@
 ---
 name: implement-experiment
 description: A structured process for implementing PsyNet experiments, including planning, simulations, analysis, and reporting. Use when implementing a PsyNet experiment from a natural-language specification.
-compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, the Heroku CLI, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
+compatibility: Requires PsyNet installed in the experiment's .venv (from PyPI via psynet setup, or optionally an editable PsyNet checkout), PostgreSQL, Redis, and Jupyter tooling listed in requirements.txt for executed analysis notebooks.
 ---
 
 # Implement PsyNet experiments
@@ -180,12 +180,10 @@ workers. Before `psynet debug local`, check that nothing else is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is
 running, ask the user to stop it rather than stopping it yourself, and record
 the wait in the audit timeline. Remote launches (`psynet deploy ssh`,
-`psynet deploy heroku`, `psynet debug ssh` and `psynet debug heroku`) also
-clear the local database and Redis, so don't run them while a local
-experiment is running, and don't pass `--yes` to skip their warning.
-`--update` leaves local data alone. If local data disappears unexpectedly,
-check `ps` for one of these commands in another session before debugging your
-code.
+`psynet deploy heroku`, `psynet debug ssh`, `psynet debug heroku` and
+`psynet performance-test ssh`) prepare in a scratch database and Redis of
+their own, so they leave local data alone, but they don't run at the same time
+as a local server or test session in the same directory.
 
 #### Coding
 

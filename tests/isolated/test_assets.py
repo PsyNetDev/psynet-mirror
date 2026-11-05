@@ -649,3 +649,21 @@ def test_renamed_asset_classes_are_deprecated_aliases():
         assert psynet.asset.CachedAsset is FileAsset
     with pytest.warns(DeprecationWarning, match="renamed to GeneratedAsset"):
         assert psynet.asset.CachedFunctionAsset is GeneratedAsset
+
+
+def test_ssh_sftp_connection_reopens_after_its_ssh_connection_closes(monkeypatch):
+    import importlib
+    from unittest import mock
+
+    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
+    old, new = mock.Mock(), mock.Mock()
+    old.get_channel.return_value.closed = False
+    get_sftp = mock.Mock(side_effect=[old, new])
+    monkeypatch.setattr(docker_ssh, "get_sftp", get_sftp)
+    monkeypatch.setattr(LocalStorage, "_sftp_clients", {})
+
+    assert LocalStorage.sftp_connection("example.com", "ubuntu") is old
+    assert LocalStorage.sftp_connection("example.com", "ubuntu") is old
+    old.get_channel.return_value.closed = True
+    assert LocalStorage.sftp_connection("example.com", "ubuntu") is new
+    assert get_sftp.call_count == 2

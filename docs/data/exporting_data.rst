@@ -6,7 +6,7 @@ Exporting data
 From the dashboard
 ------------------
 
-The dashboard's **Export** tab downloads ``export.zip``, with or without the
+The dashboard's **Export** tab downloads ``<deployment ID>__export.zip``, with or without the
 assets created during the run. If the experiment has artifact storage, the
 server also keeps the most recent dashboard download as the deployment's
 latest export; each download replaces the previous one. The default
@@ -29,6 +29,10 @@ The export is written to ``exports/latest/`` in the experiment directory.
 Useful options:
 
 - ``--server`` picks the server when more than one is registered.
+- ``--app`` names the app as ``psynet apps ssh`` lists it. An app deployed
+  without ``--app`` by an older PsyNet version has a name like
+  ``dlgr-d8f9f2c4``. You can leave out
+  ``--app`` when only one app is running on the server.
 - ``--path`` writes the export somewhere else, for example
   ``--path ~/Documents/my-experiment-data``.
 - ``--assets none`` skips asset files, which makes exports of experiments

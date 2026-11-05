@@ -41,8 +41,11 @@ class Exp(psynet.experiment.Experiment):
             lambda participant: InfoPage(
                 Markup(
                     "Background feedback processing finished."
-                    f"<span id='hold-credit'>{participant.var.hold_credit}</span>"
-                    f"<span id='hold-metric'>{participant.total_wait_page_time}</span>"
+                    "<span id='hold-credit'>{hold_credit}</span>"
+                    "<span id='hold-metric'>{total_wait_page_time}</span>"
+                ).format(
+                    hold_credit=participant.var.hold_credit,
+                    total_wait_page_time=participant.total_wait_page_time,
                 ),
                 time_estimate=1,
             ),

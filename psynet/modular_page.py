@@ -1,4 +1,17 @@
+"""Compose experiment pages from prompts, response controls, and layouts.
+
+Components declare their media, events, JavaScript variables, and rendering;
+ModularPage combines these declarations and delegates answer formatting and
+validation to its control unless the author supplies page-level validation.
+
+The asynchronous recording path stages metadata during formatting and reserves
+recordings only after validation succeeds. Final references must be saved before
+completion hooks or navigation run; rejected answers must not create upload slots.
+"""
+
 import json
+import math
+import os
 import random
 import shutil
 import tempfile
@@ -6,6 +19,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
+import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
@@ -13,6 +27,7 @@ from flask import current_app
 from markupsafe import Markup
 
 from .asset import _PERSONAL_ARG_REMOVED, Asset, LocalStorage, _reject_personal_arg
+from .background_recording import VideoRecordConfig  # noqa: F401
 from .bot import BotResponse
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
@@ -59,6 +74,13 @@ def _merge_js_var_sources(*sources):
             owners[key] = source_name
 
     return merged
+
+
+def _dominate_label(label):
+    """Return a label for dominate, keeping ``Markup`` labels as HTML."""
+    if isinstance(label, Markup):
+        return raw(str(label))
+    return label
 
 
 class Blob:
@@ -917,6 +939,10 @@ class OptionControl(Control):
     """
     The OptionControl class provides four kinds of controls for the participant in its subclasses
     ``CheckboxControl``, ``DropdownControl``, ``PushButtonControl``, and ``RadioButtonControl``.
+
+    The saved answer is the element of ``choices`` that the participant picked,
+    with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
+    NumPy scalars in ``choices`` become the equivalent Python values.
     """
 
     def __init__(
@@ -928,12 +954,40 @@ class OptionControl(Control):
         **kwargs,
     ):
         super().__init__(bot_response=bot_response, **kwargs)
-        self.choices = choices
-        self.labels = choices if labels is None else labels
+        self.choices = [_as_python_value(choice) for choice in choices]
+        self.labels = self.choices if labels is None else labels
         self.style = style
 
         assert isinstance(self.labels, list)
         assert len(self.choices) == len(self.labels)
+        self._check_choices_have_distinct_text()
+
+    def _check_choices_have_distinct_text(self):
+        # The browser submits a choice as the text of its HTML id or value,
+        # so choices with the same text could not be told apart.
+        seen = {}
+        for choice in self.choices:
+            other = seen.setdefault(str(choice), choice)
+            if other != choice:
+                raise ValueError(
+                    f"Choices {other!r} and {choice!r} have the same text, "
+                    "so their answers cannot be told apart."
+                )
+
+    def _choice_for_text(self, text):
+        if isinstance(text, str):
+            for choice in self.choices:
+                if str(choice) == text:
+                    return choice
+        return text
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the choice named by the browser's string answer.
+
+        Answers that name no choice, such as an empty selection or free text,
+        are returned unchanged.
+        """
+        return self._choice_for_text(raw_answer)
 
     def validate_name(self, name):
         if not isinstance(name, str):
@@ -955,8 +1009,11 @@ class OptionControl(Control):
         }
 
     def get_bot_response(self, experiment, bot, page, prompt):
+        """Answer with a random choice, as a string like the browser submits."""
+        # Browsers submit the choice from its HTML id or value attribute,
+        # so the raw answer is a string even when ``choices`` are numbers.
         return BotResponse(
-            raw_answer=random.choice(self.choices),
+            raw_answer=str(random.choice(self.choices)),
             metadata=self.metadata,
         )
 
@@ -978,6 +1035,14 @@ def _is_html_markup(x):
     return isinstance(x, Markup) or isinstance(x, tags.html_tag)
 
 
+def _as_python_value(x):
+    """Convert a NumPy scalar to the equivalent Python value, so it is stored as plain JSON."""
+    if isinstance(x, np.floating):
+        # Keeps the printed digits: np.float32(0.1).item() is 0.10000000149011612.
+        return float(str(x))
+    return x.item() if isinstance(x, np.generic) else x
+
+
 class CheckboxControl(OptionControl):
     """
     This control interface solicits a multiple-choice response from the participant using checkboxes.
@@ -994,6 +1059,7 @@ class CheckboxControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the checkboxes,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     arrange_vertically:
         Whether to arrange the checkboxes vertically. Default: ``True``.
@@ -1056,7 +1122,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1067,6 +1133,19 @@ class CheckboxControl(OptionControl):
                 _p("validation", "You need to check at least one answer!")
             )
         return None
+
+    def format_answer(self, raw_answer, **kwargs):
+        """Return the ticked choices named by the browser's list of ids."""
+        if not isinstance(raw_answer, list):
+            return raw_answer
+        return [self._choice_for_text(text) for text in raw_answer]
+
+    def get_bot_response(self, experiment, bot, page, prompt):
+        """Tick one random checkbox, submitting the list of ids the browser sends."""
+        return BotResponse(
+            raw_answer=[str(random.choice(self.choices))],
+            metadata=self.metadata,
+        )
 
 
 class Checkbox:
@@ -1136,9 +1215,11 @@ class DropdownControl(OptionControl):
             ):
                 for choice, label in zip(self.choices, self.labels):
                     if answer == choice:
-                        tags.option(value=choice, selected=True).add(label)
+                        tags.option(value=choice, selected=True).add(
+                            _dominate_label(label)
+                        )
                     else:
-                        tags.option(value=choice).add(label)
+                        tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
     def validate(self, response, **kwargs):
@@ -1167,6 +1248,7 @@ class PushButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS styles to apply to the buttons. Default: ``"min-width: 100px"``.
@@ -1208,22 +1290,21 @@ class PushButtonControl(OptionControl):
         return {"choices": self.choices, "labels": self.labels}
 
     def visualize_response(self, answer, response, trial):
+        return self._visualize_buttons(lambda choice: choice == answer)
+
+    def _visualize_buttons(self, is_highlighted):
+        """Render the buttons, highlighting those whose choice passes ``is_highlighted``."""
+        mode = "timed" if self.timed else "submit"
         html = tags.div()
         with html:
             for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response submit"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
+                color = "btn-success" if is_highlighted(choice) else "btn-primary"
                 tags.button(
                     type="button",
                     id=choice,
-                    _class=_class,
+                    _class=f"btn push-button {color} response {mode}",
                     style=self.style,
-                ).add(label)
+                ).add(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1301,6 +1382,7 @@ class TimedPushButtonControl(PushButtonControl):
     labels:
         An optional list of textual labels to apply to the buttons,
         which the participant will see instead of ``choices``. Default: ``None``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     button_highlight_duration:
         How long to highlight the button for once it has been clicked (seconds).
@@ -1334,24 +1416,18 @@ class TimedPushButtonControl(PushButtonControl):
         return {**kwargs}["metadata"]["event_log"]
 
     def visualize_response(self, answer, response, trial):
-        html = tags.div()
-        with html:
-            for choice, label in zip(self.choices, self.labels):
-                response_string = response.response.replace('"', "")
-                _class = "btn push-button btn-primary response timed"
-                _class = (
-                    _class.replace("btn-primary", "btn-success")
-                    if response_string == choice
-                    else _class
-                )
-                tags.button(
-                    type="button",
-                    id=choice,
-                    _class=_class,
-                    style=self.style,
-                ).add(label)
-                tags.br()
-        return html.render()
+        """Highlight every button that the response's event log records as pressed."""
+        # Subclasses may reformat the answer, so read the presses from the
+        # browser's event log instead.
+        event_log = []
+        if response is not None and response.metadata:
+            event_log = response.metadata.get("event_log") or []
+        pressed = {
+            event["info"]["buttonId"]
+            for event in event_log
+            if event["eventType"] == "pushButtonClicked"
+        }
+        return self._visualize_buttons(lambda choice: str(choice) in pressed)
 
     def get_bot_response(self, experiment, bot, page, prompt):
         event_log = [
@@ -1436,6 +1512,7 @@ class RadioButtonControl(OptionControl):
     labels:
         An optional list of textual labels to apply to the radiobuttons,
         which the participant will see instead of ``choices``.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style:
         CSS style attributes to apply to the radiobuttons. Default: ``"cursor: pointer"``.
@@ -1491,14 +1568,14 @@ class RadioButtonControl(OptionControl):
             placeholder_text = (
                 ""
                 if self.placeholder_text_free_text is None
-                else f'placeholder="{self.placeholder_text_free_text}"'
+                else Markup('placeholder="{}"').format(self.placeholder_text_free_text)
             )
             self.radiobuttons.append(
                 RadioButton(
                     name=self.name,
                     id_="free_text",
-                    label=Markup(
-                        f"<input id='free_text_input' {placeholder_text} type='text'>"
+                    label=Markup("<input id='free_text_input' {} type='text'>").format(
+                        placeholder_text
                     ),
                     style=self.style,
                 )
@@ -1517,7 +1594,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
-                tags.span(label)
+                tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
 
@@ -1744,7 +1821,8 @@ class Button(BaseButton):
         When the button is pressed, an event is triggered with this exact ID.
 
     text :
-        Text to display on the button.
+        Text to display on the button. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
 
     style :
         Optional CSS styling for the button.
@@ -1763,7 +1841,7 @@ class Button(BaseButton):
     def __init__(
         self,
         id_: str,
-        text: Union[str, dom_tag],
+        text: Union[str, Markup, dom_tag],
         style: str = "",
         is_response_button=False,
         start_disabled=False,
@@ -2407,17 +2485,15 @@ class AudioMeterControl(Control):
     msg_duration = {"high": 0.25, "low": 0.25}
 
     def to_json(self):
-        return Markup(
-            json.dumps(
-                {
-                    "display_range": self.display_range,
-                    "decay": self.decay,
-                    "threshold": self.threshold,
-                    "grace": self.grace,
-                    "warn_on_clip": self.warn_on_clip,
-                    "msg_duration": self.msg_duration,
-                }
-            )
+        return json.dumps(
+            {
+                "display_range": self.display_range,
+                "decay": self.decay,
+                "threshold": self.threshold,
+                "grace": self.grace,
+                "warn_on_clip": self.warn_on_clip,
+                "msg_duration": self.msg_duration,
+            }
         )
 
     def update_events(self, events):
@@ -2695,7 +2771,7 @@ class MediaSliderControl(SliderControl):
             }
 
     modality:
-        Either ``"audio"``,  ``"image"`` or ``"video"``.
+        One of ``"audio"``, ``"image"``, ``"html"`` or ``"video"``.
 
     media_locations:
         Dictionary with IDs as keys and locations on the slider as values.
@@ -2889,7 +2965,10 @@ class MediaSliderControl(SliderControl):
             else 0
         )
 
-    macro = "media_slider"
+    @property
+    def macro(self):
+        """The template macro that plays this control's media modality."""
+        return f"{self.modality}_media_slider"
 
     @property
     def metadata(self):
@@ -3548,6 +3627,18 @@ class RecordControl(Control):
     """
 
     file_extension = None
+    # Asynchronous upload: in-place LocalStorage experiments accept the answer
+    # first and receive its recordings afterwards (see psynet.media_upload).
+    # Legacy navigation and other storage keep uploading with the answer.
+    # Subclasses opt in by setting _async_upload and describe their recordings
+    # through recording_sources, _upload_format, _answer_metadata and
+    # _answer_reference_keys; their synchronous path is _format_sync_answer.
+    # Subclasses of an opted-in control that override format_answer or macro
+    # keep uploading with the answer (see _async_upload_enabled).
+    _async_upload = False
+    _async_upload_max_bytes = 128 * 1024 * 1024
+    _async_upload_idle_timeout = None
+    _upload_format = None
 
     def __init__(
         self,
@@ -3588,6 +3679,217 @@ class RecordControl(Control):
             events["autoSubmit"] = Event(is_triggered_by="submitEnable")
         # events["uploadEnd"] = Event(is_triggered_by=[])
 
+    @property
+    def recording_sources(self):
+        """The recording sources this control captures, e.g. ``["camera"]``."""
+        raise NotImplementedError
+
+    def _answer_metadata(self):
+        """Answer fields shared by the synchronous and asynchronous paths."""
+        raise NotImplementedError
+
+    def _answer_reference_keys(self, source):
+        """Answer fields that hold a recording's asset ID and URL."""
+        return f"{source}_id", f"{source}_url"
+
+    def _recording_local_key(self, source):
+        """Asset key of a recording; multi-source controls add the source."""
+        label = self.page.label
+        if len(self.recording_sources) > 1:
+            label += "_" + source
+        return label
+
+    def _recording_max_bytes(self):
+        """Largest recording the server accepts for one source."""
+        return self._async_upload_max_bytes
+
+    def _async_upload_enabled(self):
+        """Whether this control's answer and template support asynchronous upload.
+
+        A subclass or instance that overrides ``format_answer`` or ``macro`` may
+        read the recording bytes from the answer, so it keeps uploading with the
+        answer.
+        """
+        if "_async_upload" in self.__dict__:
+            return self._async_upload
+        if "macro" in self.__dict__:
+            return False
+        # The most specific class that sets _async_upload or overrides one of
+        # these decides; setting _async_upload alongside an override re-opts in.
+        for cls in type(self).__mro__:
+            if "_async_upload" in cls.__dict__:
+                return cls._async_upload
+            if "format_answer" in cls.__dict__ or "macro" in cls.__dict__:
+                return False
+        return False
+
+    def _uses_async_upload(self, experiment):
+        """Use independent delivery for the supported shared LocalStorage backend."""
+        from .utils import get_config
+
+        return (
+            self._async_upload_enabled()
+            and isinstance(experiment.asset_storage, LocalStorage)
+            and get_config().get("inplace_timeline_transitions")
+        )
+
+    def format_answer(self, raw_answer, **kwargs):
+        if self._uses_async_upload(kwargs["experiment"]):
+            return self._format_async_answer(**kwargs)
+        return self._format_sync_answer(raw_answer, **kwargs)
+
+    def _format_sync_answer(self, raw_answer, **kwargs):
+        """Format an answer whose recordings were uploaded with it."""
+        return super().format_answer(raw_answer, **kwargs)
+
+    def _format_async_answer(self, **kwargs):
+        """Validate the browser's size manifest; recordings arrive after acceptance."""
+        sizes = kwargs["metadata"].get("recording_uploads")
+        if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
+            raise ValueError(
+                "Upload sizes must identify every expected recording source."
+            )
+        if any(
+            type(size) is not int or not 0 <= size <= 2**53 - 1
+            for size in sizes.values()
+        ):
+            raise ValueError("Recording sizes must be nonnegative safe integers.")
+        if kwargs["blobs"]:
+            raise ValueError(
+                "Asynchronous recording answers must not include recording bytes."
+            )
+        unavailable = kwargs["metadata"].get("recording_upload_unavailable", {})
+        if (
+            not isinstance(unavailable, dict)
+            or not set(unavailable).issubset(sizes)
+            or any(
+                not isinstance(reason, str)
+                or reason
+                not in {
+                    "missing_recording",
+                    "size_limit",
+                    "queue_full",
+                    "transport_unavailable",
+                }
+                for reason in unavailable.values()
+            )
+        ):
+            raise ValueError("Invalid recording unavailability manifest.")
+        unavailable = dict(unavailable)
+        for source, size in sizes.items():
+            if size == 0:
+                unavailable[source] = "missing_recording"
+            elif size > self._recording_max_bytes():
+                unavailable[source] = "size_limit"
+        response = kwargs["response"]
+        response._recording_unavailable = unavailable
+        response._deferred_recording_answer = True
+        response._recording_sizes = dict(sizes)
+        summary = self._answer_metadata()
+        for source in self.recording_sources:
+            for key in self._answer_reference_keys(source):
+                summary[key] = None
+        return summary
+
+    def get_js_vars(self):
+        """Provide defaults; rendering resolves the experiment storage backend."""
+        return {
+            "recordingLabels": _recording_labels(),
+            "asynchronousUploadSources": self.recording_sources
+            if self._async_upload_enabled()
+            else None,
+            "asynchronousUploadMaxBytes": self._recording_max_bytes(),
+        }
+
+    def _accept_recordings(self, response, participant, page_uuid):
+        """Install final read references and capabilities only after acceptance."""
+        from .media_upload import (
+            _IDLE_TIMEOUT,
+            _reserve_recording,
+            _resolve_unavailable,
+        )
+        from .trial.record import Recording
+
+        sizes = response._recording_sizes
+        parent = participant.current_trial or participant
+        summary = dict(response.answer)
+        uploads = []
+        max_bytes = self._recording_max_bytes()
+        for source in self.recording_sources:
+            asset, receipt = _reserve_recording(
+                response=response,
+                parent=parent,
+                page_uuid=page_uuid,
+                source=source,
+                local_key=self._recording_local_key(source),
+                storage=Recording.default_storage,
+                upload_size_bytes=min(sizes[source], max_bytes) or None,
+                max_bytes=max_bytes,
+                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
+                media_format=self._upload_format,
+            )
+            reason = response._recording_unavailable.get(source)
+            asset.upload_context = {
+                **asset.upload_context,
+                "captured_size_bytes": sizes[source],
+                "unavailable_reason": reason,
+            }
+            if reason:
+                # The browser already knows these bytes cannot be uploaded, so
+                # resolve now rather than waiting for the lease to expire.
+                _resolve_unavailable(asset, reason, participant.current_trial)
+            id_key, url_key = self._answer_reference_keys(source)
+            summary[id_key] = asset.id
+            summary[url_key] = asset.url
+            if not reason:
+                uploads.append({**receipt, "source": source})
+        response.answer = summary
+        return uploads
+
+    def _recording_bot_response(self, experiment, files):
+        """Respond like a browser: on the asynchronous path, declare sizes now.
+
+        ``files`` maps each source to the file the bot should return. The bot
+        driver uploads each file to ``/media-upload`` after the answer is
+        accepted, so load tests exercise the same routes as participants.
+        """
+        from .bot import BotResponse
+
+        blobs = {
+            f"{source}Recording": Blob(files[source])
+            for source in self.recording_sources
+        }
+        if not self._uses_async_upload(experiment):
+            return BotResponse(raw_answer=None, blobs=blobs)
+        from .media_upload import _MEDIA_FORMATS
+
+        header_size, valid_header, format_name = _MEDIA_FORMATS[self._upload_format]
+        for source in self.recording_sources:
+            with open(files[source], "rb") as file:
+                if not valid_header(file.read(header_size)):
+                    raise ValueError(
+                        f"Bot recording {files[source]} must be a {format_name} "
+                        f"file for {type(self).__name__}."
+                    )
+        sizes = {
+            source: os.path.getsize(files[source]) for source in self.recording_sources
+        }
+        for source, size in sizes.items():
+            if size > self._recording_max_bytes():
+                logger.warning(
+                    f"Bot recording {files[source]} ({size} bytes) exceeds the "
+                    f"{self._recording_max_bytes()}-byte limit for this control, "
+                    "so its trial will fail with size_limit."
+                )
+        return BotResponse(
+            raw_answer=None,
+            blobs=blobs,
+            metadata={
+                "recording_uploads": sizes,
+                "recording_upload_unavailable": {},
+            },
+        )
+
     def get_bot_response_files(self, experiment, bot, page, prompt):
         if self.bot_response_media is None:
             self.raise_bot_response_not_provided_error()
@@ -3610,6 +3912,17 @@ class AudioRecordControl(RecordControl):
     """
     Records audio from a participant.
 
+    In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
+    before uploading the recording, as a WAV file. A missing recording fails its
+    parent trial, without recapturing. For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback. Legacy navigation, other storage
+    backends and subclasses that override ``format_answer`` or ``macro``
+    upload the recording with the answer. Uploaded recordings are limited to
+    about one and a half times ``duration`` plus 5 seconds, so a page that ends
+    recording on its own event should set ``duration`` to the longest expected
+    recording.
+
     Parameters
     ----------
 
@@ -3629,6 +3942,11 @@ class AudioRecordControl(RecordControl):
 
     macro = "audio_record"
     file_extension = ".wav"
+    _async_upload = True
+    _upload_format = "wav"
+    # recorder.js writes 16-bit PCM at the browser's sample rate, which some
+    # audio interfaces set as high as 192 kHz.
+    _max_sample_rate = 192_000
 
     def __init__(
         self,
@@ -3648,7 +3966,29 @@ class AudioRecordControl(RecordControl):
         self.num_channels = num_channels
         self.bot_response_media = bot_response_media
 
-    def format_answer(self, raw_answer, **kwargs):
+    @property
+    def recording_sources(self):
+        return ["audio"]
+
+    def _answer_reference_keys(self, source):
+        return "asset_id", "url"
+
+    def _answer_metadata(self):
+        return {
+            "origin": "AudioRecordControl",
+            "supports_record_trial": True,
+            "duration_sec": self.duration,  # TODO - base this on the actual audio file?
+        }
+
+    def _recording_max_bytes(self):
+        """Bound an uncompressed WAV of this duration, with timing headroom."""
+        seconds = 1.5 * self.duration + 5
+        wav_bytes = 44 + math.ceil(seconds * self._max_sample_rate) * 2 * max(
+            1, self.num_channels
+        )
+        return min(self._async_upload_max_bytes, wav_bytes)
+
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         audio = blobs["audioRecording"]
         trial = kwargs["trial"]
@@ -3679,36 +4019,38 @@ class AudioRecordControl(RecordControl):
             asset.deposit(async_=async_, delete_input=True)
 
         return {
-            "origin": "AudioRecordControl",
-            "supports_record_trial": True,
+            **self._answer_metadata(),
             "asset_id": asset.id,
             "url": asset.url,
-            "duration_sec": self.duration,  # TODO - base this on the actual audio file?
         }
 
     def visualize_response(self, answer, response, trial):
+        """Show the recording, or its outcome while it is unavailable."""
+        from .trial.record import Recording
+
         if answer is None:
             return tags.p("No audio recorded yet.").render()
-        else:
-            return tags.audio(
-                tags.source(src=answer["url"]),
-                id="visualize-audio-response",
-                controls=True,
-            ).render()
+        recording = Recording.query.filter_by(id=answer.get("asset_id")).one_or_none()
+        if recording is None or not recording.deposited:
+            status = (
+                recording.recording_summary["recording_status"]
+                if recording
+                else "unavailable"
+            )
+            return tags.p(f"Recording {status}.").render()
+        return tags.audio(
+            tags.source(src=recording.url),
+            id="visualize-audio-response",
+            controls=True,
+        ).render()
 
     def update_events(self, events):
         super().update_events(events)
         events["trialFinish"].add_trigger("recordEnd")
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        from .bot import BotResponse
-
         file = self.get_bot_response_files(experiment, bot, page, prompt)
-
-        return BotResponse(
-            raw_answer=None,
-            blobs={"audioRecording": Blob(file)},
-        )
+        return self._recording_bot_response(experiment, {"audio": file})
 
     def raise_bot_response_not_provided_error(self):
         raise NotImplementedError(
@@ -3719,10 +4061,40 @@ class AudioRecordControl(RecordControl):
         )
 
 
+def _recording_labels():
+    """Translate answer capture and upload UI in the participant's language."""
+    _ = get_translator()
+    return {
+        "answer": _(
+            "Share your screen to record this answer. Continuing without recording may make this trial unsuccessful."
+        ),
+        "answer_required": _("Share your screen to record this answer."),
+        "screen": _("Share screen"),
+        "skip": _("Continue without recording"),
+        "uploading": _("Uploading your recording, please keep this page open."),
+        "capture_failed": _(
+            "Your recording could not be captured. Please make sure your browser can access your camera or screen, then reload the page."
+        ),
+        "unconfirmed": _(
+            "We could not confirm that your answer was received. Please check your connection and press Next again."
+        ),
+    }
+
+
 class VideoRecordControl(RecordControl):
     """
     Records a video either by using the camera or by capturing from the screen. Output format
     for both screen and camera recording is ``.webm``.
+
+    In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
+    before uploading video, for bots too. A missing recording fails its parent
+    trial, without recapturing: immediately if the browser reports it unavailable,
+    otherwise once the participant's browser stops renewing the upload (for
+    example, because it was closed). For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback.
+    Legacy navigation and other storage backends upload the recording with the
+    answer.
 
     Parameters
     ----------
@@ -3758,6 +4130,8 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
+    _async_upload = True
+    _upload_format = "webm"
 
     def __init__(
         self,
@@ -3798,7 +4172,7 @@ class VideoRecordControl(RecordControl):
             self.recording_source
         ]
 
-    def format_answer(self, raw_answer, **kwargs):
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         trial = kwargs["trial"]
         participant = kwargs["participant"]
@@ -3812,10 +4186,17 @@ class VideoRecordControl(RecordControl):
 
         for source in self.recording_sources:
             blob_id = source + "Recording"
-            blob = blobs[blob_id]
+            blob = blobs.get(blob_id)
+            if blob is None:
+                raise ValueError(f"No {source} recording was received.")
 
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 blob.save(tmp_file.name)
+                # A failed capture uploads an empty file; never store it as
+                # if it were a valid recording.
+                if os.path.getsize(tmp_file.name) == 0:
+                    os.unlink(tmp_file.name)
+                    raise ValueError(f"The {source} recording is empty.")
 
                 from .trial.record import Recording
 
@@ -3844,57 +4225,57 @@ class VideoRecordControl(RecordControl):
                 summary[source + "_id"] = asset.id
                 summary[source + "_url"] = asset.url
 
-        summary.update(
-            {
-                "duration_sec": self.duration,
-                "origin": "VideoRecordControl",
-                "supports_record_trial": True,
-                "recording_source": self.recording_source,
-                "record_audio": self.record_audio,
-                "mirrored": self.mirrored,
-            }
-        )
-
+        summary.update(self._answer_metadata())
         return summary
 
+    def _answer_metadata(self):
+        """Keep the answer shape common to synchronous and deferred uploads."""
+        return {
+            "duration_sec": self.duration,
+            "origin": "VideoRecordControl",
+            "supports_record_trial": True,
+            "recording_source": self.recording_source,
+            "record_audio": self.record_audio,
+            "mirrored": self.mirrored,
+        }
+
     def visualize_response(self, answer, response, trial):
+        """Show available clips and explicit outcomes instead of broken players."""
+        from .trial.record import Recording
+
         if answer is None:
             return tags.p("No video recorded yet.").render()
-        else:
-            html = tags.div()
-            if answer["camera_url"]:
-                html += tags.h5("Camera recording")
+        html = tags.div()
+        for source in ("camera", "screen"):
+            if f"{source}_id" not in answer:
+                continue
+            html += tags.h5(f"{source.capitalize()} recording")
+            recording = Recording.query.filter_by(
+                id=answer[f"{source}_id"]
+            ).one_or_none()
+            if recording is None or not recording.deposited:
+                status = (
+                    recording.recording_summary["recording_status"]
+                    if recording
+                    else "unavailable"
+                )
+                html += tags.p(f"Recording {status}.")
+            else:
                 html += tags.video(
-                    tags.source(src=answer["camera_url"]),
-                    id="visualize-camera-video-response",
+                    tags.source(src=recording.url),
+                    id=f"visualize-{source}-video-response",
                     controls=True,
                     style="max-width: 640px;",
                 )
-            if answer["screen_url"]:
-                html += tags.h5("Screen recording")
-                html += tags.video(
-                    tags.source(src=answer["screen_url"]),
-                    id="visualize-screen-video-response",
-                    controls=True,
-                    style="max-width: 640px;",
-                )
-            return html.render()
+        return html.render()
 
     def update_events(self, events):
         super().update_events(events)
         events["trialFinish"].add_trigger("recordEnd")
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        from .bot import BotResponse
-
         files = self.get_bot_response_files(experiment, bot, page, prompt)
-
-        return BotResponse(
-            raw_answer=None,
-            blobs={
-                f"{key}Recording": Blob(files[key]) for key in self.recording_sources
-            },
-        )
+        return self._recording_bot_response(experiment, files)
 
     def get_bot_response_files(self, experiment, bot, page, prompt):
         files = super().get_bot_response_files(experiment, bot, page, prompt)

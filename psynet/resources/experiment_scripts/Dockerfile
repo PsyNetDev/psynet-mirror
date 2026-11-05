@@ -3,15 +3,12 @@
 
 # Must match .python-version, which constraints.txt is compiled for.
 # `psynet scripts update` sets both to the active Python version.
-FROM python:{python_major_minor}-bookworm
+FROM python:{python_major_minor}-trixie
 
 RUN pip install uv
 
-
-# This is necessary for installing Heroku CLI. Remove it once we remove Heroku.
-# Heroku CLI is currently needed to run `psynet test local`, this should change soon
+# Node and npm are for development tooling.
 RUN apt-get update && apt-get install -y nodejs npm
-RUN curl https://cli-assets.heroku.com/install.sh | sh
 
 RUN mkdir /experiment
 WORKDIR /experiment
@@ -39,23 +36,27 @@ COPY . /experiment
 
 # ``psynet debug ssh --use-local-psynet`` stages a wheel of the local PsyNet
 # checkout, which replaces the requirements.txt version.
+# ``uv pip check`` fails the build if a local wheel conflicts with the other
+# installed packages.
 RUN set -- /experiment/psynet-*.whl; \
     if [ -f "$1" ]; then \
-        uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1"; \
+        uv pip install --system --reinstall-package psynet "psynet[experiment] @ file://$1" \
+        && uv pip check --system; \
     fi
 
 # A local Dallinger wheel staged by ``DALLINGER_SOURCE`` / editable install
 # must win over the Git pin installed from requirements/constraints above.
+# Its dependencies are resolved too, keeping the pinned versions that satisfy them.
 RUN set -- /experiment/dallinger-*.whl; \
     if [ -f "$1" ]; then \
-        uv pip install --system --force-reinstall --no-deps "$1"; \
+        uv pip install --system --reinstall-package dallinger "dallinger[docker] @ file://$1" \
+        && uv pip check --system; \
     fi
 
-# The SSH account is chosen when the container starts. These directories must
-# be writable so that account can create server.log and the static/assets link.
+# The SSH account is chosen when the container starts. /experiment must be
+# writable so that account can create server.log.
 # Shipped source files stay owned by root.
-RUN mkdir -p /experiment/static \
- && chmod a+rwx /experiment /experiment/static
+RUN chmod a+rwx /experiment
 
 ENV PORT=5000
 

@@ -1085,7 +1085,9 @@ def test_fetch_prolific_submission_delegates_to_dallinger():
 
 def test_exit_response_stays_on_psynet_confirmation_page():
     recruiter = make_prolific_recruiter(make_config())
-    participant = MagicMock(assignment_id="assignment-1", id=7, status="working")
+    participant = MagicMock(
+        assignment_id="assignment-1", id=7, unique_id="w:assignment-1", status="working"
+    )
     experiment = MagicMock()
     with (
         patch("psynet.recruiters.get_translator", return_value=_identity_translator),
@@ -1099,6 +1101,7 @@ def test_exit_response_stays_on_psynet_confirmation_page():
         "exit_recruiter_prolific_submitted.html",
         assignment_id="assignment-1",
         participant_id=7,
+        unique_id="w:assignment-1",
         submission_recorded=False,
         confirmation_heading="Your submission has been sent to Prolific.",
         confirmation_body="You may close this page.",
@@ -1238,7 +1241,12 @@ def _early_exit_test_plan(
 
 def test_exit_response_renders_recorded_submission_confirmation():
     recruiter = make_prolific_recruiter(make_config())
-    participant = MagicMock(assignment_id="assignment-1", id=7, status="submitted")
+    participant = MagicMock(
+        assignment_id="assignment-1",
+        id=7,
+        unique_id="w:assignment-1",
+        status="submitted",
+    )
     experiment = MagicMock()
     with (
         patch("psynet.recruiters.get_translator", return_value=_identity_translator),
@@ -1251,6 +1259,7 @@ def test_exit_response_renders_recorded_submission_confirmation():
         "exit_recruiter_prolific_submitted.html",
         assignment_id="assignment-1",
         participant_id=7,
+        unique_id="w:assignment-1",
         submission_recorded=True,
         confirmation_heading="Your submission has been sent to Prolific.",
         confirmation_body="You may close this page.",
@@ -1401,9 +1410,23 @@ def test_error_page_presentation_rejects_a_stale_recruiter_override():
         RecruiterWithStaleOverride().error_page_presentation()
 
 
-def test_prolific_error_recovery_explains_payment_and_submits_directly():
+@pytest.mark.parametrize(
+    "query, sent_unique_id",
+    [
+        ("?unique_id=worker-1:assignment-1", {"unique_id": "worker-1:assignment-1"}),
+        ("?unique_id=wrong", {}),
+        ("", {}),
+    ],
+)
+def test_prolific_error_recovery_explains_payment_and_submits_directly(
+    query, sent_unique_id
+):
+    from flask import Flask
+
     recruiter = make_prolific_recruiter(make_config())
-    participant = SimpleNamespace(id=42, assignment_id="assignment-1")
+    participant = SimpleNamespace(
+        id=42, assignment_id="assignment-1", unique_id="worker-1:assignment-1"
+    )
     plan = ExitPlan.create(
         context=ExitContext.ERROR_RECOVERY,
         path=ExitPath.SCREEN_OUT,
@@ -1418,6 +1441,7 @@ def test_prolific_error_recovery_explains_payment_and_submits_directly():
     with (
         patched_early_exit_config(make_config()),
         patch("psynet.recruiters.get_translator", return_value=_identity_translator),
+        Flask(__name__).test_request_context(f"/timeline{query}"),
     ):
         presentation = recruiter.error_page_presentation(
             participant=participant, plan=plan
@@ -1428,6 +1452,7 @@ def test_prolific_error_recovery_explains_payment_and_submits_directly():
     assert presentation.action_post_data == {
         "assignmentId": "assignment-1",
         "participantId": "42",
+        **sent_unique_id,
     }
     assert presentation.destination_url is None
     assert presentation.failure_message == (
@@ -2106,19 +2131,25 @@ def test_early_exit_route_reports_an_unknown_assignment():
     assert error.call_args.kwargs["status"] == 404
 
 
-def test_early_exit_route_is_idempotent_after_execution():
+@pytest.mark.parametrize("matching_plan_id", [True, False])
+def test_early_exit_route_releases_an_exited_participant_only_for_their_plan(
+    matching_plan_id,
+):
     from flask import Flask
 
     from psynet.experiment import Experiment
 
-    participant = MagicMock(early_exited=True)
+    plan = _early_exit_test_plan(ExitPath.SCREEN_OUT)
+    participant = MagicMock(
+        early_exited=True, unique_id="unique-1", exit_plan=plan.to_dict()
+    )
     experiment = MagicMock()
 
     with (
         Flask(__name__).test_request_context(
             "/execute_early_exit_plan/assign-1",
             method="POST",
-            json={"plan_id": "already-executed"},
+            json={"plan_id": plan.plan_id if matching_plan_id else "guess"},
         ),
         patch.object(
             Experiment,
@@ -2126,10 +2157,13 @@ def test_early_exit_route_is_idempotent_after_execution():
             return_value=participant,
         ),
         patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch("psynet.experiment.success_response", return_value="ok"),
+        patch("psynet.experiment.success_response", return_value="ok") as success,
+        patch("psynet.experiment.error_response", return_value="stale"),
     ):
-        assert Experiment.route_execute_early_exit_plan("assign-1") == "ok"
+        result = Experiment.route_execute_early_exit_plan("assign-1")
 
+    assert result == ("ok" if matching_plan_id else "stale")
+    assert success.called == matching_plan_id
     experiment.recruiter.execute_early_exit_plan.assert_not_called()
 
 
@@ -4305,6 +4339,7 @@ def test_prolific_exit_page_renders_with_psynet_layout():
             config=SimpleNamespace(color_mode="light"),
             assignment_id="assignment-123",
             participant_id=7,
+            unique_id="worker-789:assignment-123",
             submission_recorded=False,
             confirmation_heading="Your submission has been sent to Prolific.",
             confirmation_body="You may close this page.",
@@ -4314,6 +4349,7 @@ def test_prolific_exit_page_renders_with_psynet_layout():
             ),
         )
 
+    assert 'data.append("unique_id", "worker-789:assignment-123")' in html
     assert '<meta name="viewport"' in html
     assert "css/participant.css" in html
     assert "scripts/psynet.layout.js" in html
@@ -4383,6 +4419,7 @@ def test_prolific_exit_page_reloads_confirmation_after_submit():
             config=SimpleNamespace(color_mode="light"),
             assignment_id="assignment-123",
             participant_id=7,
+            unique_id="worker-789:assignment-123",
             submission_recorded=True,
             confirmation_heading="Your submission has been sent to Prolific.",
             confirmation_body="You may close this page.",

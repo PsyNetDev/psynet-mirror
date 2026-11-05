@@ -31,9 +31,7 @@ async function delayChatSocketOpen(context) {
   }));
 
   await context.routeWebSocket(
-    (url) =>
-      url.pathname === "/chat" &&
-      url.searchParams.get("channel") === "modular_page_chat",
+    (url) => url.pathname === "/experiment-socket",
     async (socket) => {
       const attempt = socketCount;
       socketCount += 1;

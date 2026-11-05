@@ -46,7 +46,7 @@ def test_worker_complete_is_posted_without_a_page_load(bot, requests_calls):
         (
             "POST",
             "http://localhost:5000/worker_complete",
-            {"participant_id": "1"},
+            {"participant_id": "1", "unique_id": "JF2UYZ:HQ3PYE"},
             pytest_psynet.WORKER_STATUS_TIMEOUT_SEC,
         )
     ]

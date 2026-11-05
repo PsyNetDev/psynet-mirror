@@ -70,9 +70,10 @@ this module. That loop:
 
 Each default barrier visit links to a durable ``TimelineHoldRecord``. Releasing
 the link accounts waiting through the release time and queues a targeted browser
-wake. Each participant's hold channel (`psynet_timeline_hold_<id>`) publishes
-that wake only after the database transaction commits; the browser then
-rechecks the authoritative link state.
+wake. After the database transaction commits, PsyNet sends that wake with
+``publish_to_participants`` to the participant's checked connections; the
+browser then rechecks the authoritative link state. See "Timeline holds" in
+:doc:`/developer/page_lifecycle`.
 
 ``Barrier`` also queues those hooks when a participant arrives. After the
 arrival transaction commits, the response route evaluates the barrier in a
@@ -745,7 +746,8 @@ class Barrier(EltCollection):
     content
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
-        "Waiting for other participants…".
+        "Waiting for other participants…". Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a dominate tag for HTML.
     """
 
     def __init__(
@@ -1221,9 +1223,10 @@ class GroupBarrier(Barrier):
     content
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
-        "Waiting for other participants…". Independent of a preceding
-        :class:`~psynet.sync.Grouper`'s ``content`` and of trial-maker
-        ``sync_group_wait_content``.
+        "Waiting for other participants…". Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a dominate tag for HTML. Independent of
+        a preceding :class:`~psynet.sync.Grouper`'s ``content`` and of
+        trial-maker ``sync_group_wait_content``.
 
     notify_arrivals
         If ``True`` (default), group members who have not reached this barrier
@@ -1578,9 +1581,11 @@ class Grouper(Barrier):
 
     content
         Message displayed by the default timeline hold overlay. Only used when
-        ``waiting_logic`` is omitted. This Grouper's overlay is independent of
-        trial-maker ``sync_group_wait_content``; pass ``content`` here and on
-        later :class:`~psynet.sync.GroupBarrier` waits if they should match.
+        ``waiting_logic`` is omitted. Plain strings are shown as text; pass
+        ``markupsafe.Markup`` or a dominate tag for HTML. This Grouper's
+        overlay is independent of trial-maker ``sync_group_wait_content``;
+        pass ``content`` here and on later :class:`~psynet.sync.GroupBarrier`
+        waits if they should match.
 
     fix_time_credit
         If ``True``, award fixed ``expected_wait`` credit instead of actual
@@ -2635,7 +2640,7 @@ def _time_out_overdue_waiters(sweep_ends):
             logger.exception("Failed to time out overdue waiter %s.", participant_id)
 
 
-def arrival_notice_payload(participant_id):
+def arrival_notice_payload(unique_id):
     """Return the partner-ready notice snapshot for one participant.
 
     Redis arrival wakes are fire-and-forget. The browser fetches this when
@@ -2644,9 +2649,9 @@ def arrival_notice_payload(participant_id):
     """
     from psynet.participant import Participant
 
-    if participant_id is None or participant_id == "":
+    if not unique_id:
         return {"notice": None}
-    participant = Participant.query.get(participant_id)
+    participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
         return {"notice": None}
     return {"notice": pending_arrival_notice_for(participant)}

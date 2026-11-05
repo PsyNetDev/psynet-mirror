@@ -181,7 +181,7 @@ hour, also run a long test of the recommended number by hand with
 The summary at the end tabulates the tests and gives the verdict. For
 example, from a static rating study on an SSH server (some rows left out)::
 
-    PERFORMANCE TEST SUMMARY
+    Performance test summary
     dog-rating on rr-pc02.student.mus.private.cam.ac.uk: 11 tests, 59 min
     Limits checked: p95 response time under 500 ms, at most 0.1% of requests failing, at most 1% of bots failing.
 
@@ -339,9 +339,8 @@ Performance tests fill the database with bots and may reset it, so they
 only run on apps that ``performance-test ssh`` deployed for them. If the
 server has no app named ``--app``, the command first deploys the experiment
 under that name in debug mode, taking the same ``--server``, ``--dns-host``,
-``--ingress``, ``--use-local-psynet``, ``--use-local-dallinger`` and
-``--yes`` options as ``psynet debug ssh``. Like ``psynet debug ssh``, that
-first deploy resets your local debug database. Bundled demos don't pin
+``--ingress``, ``--use-local-psynet`` and ``--use-local-dallinger`` options
+as ``psynet debug ssh``. Bundled demos don't pin
 PsyNet, so test them with ``--use-local-psynet`` (see
 :doc:`/code/project/using_local_psynet_and_dallinger`). Only bots take part,
 so the experiment needn't have a consent page.

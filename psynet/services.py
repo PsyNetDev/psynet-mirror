@@ -97,13 +97,30 @@ def check_postgres() -> ServiceCheck:
         conn = psycopg2.connect(dsn, connect_timeout=3)
         conn.close()
     except Exception as exc:
+        # libpq repeats its error and a hint for every address it tried.
+        lines = str(exc).strip().splitlines()
         return ServiceCheck(
             "PostgreSQL",
             False,
-            str(exc).strip()
-            or "Failed to connect to PostgreSQL. Is it running on port 5432?",
+            (lines[0] if lines else "Failed to connect to PostgreSQL.")
+            + f" Is PostgreSQL running on {_service_address(dsn, 5432)}?",
         )
     return ServiceCheck("PostgreSQL", True, "reachable")
+
+
+def _service_address(url: str, default_port: int) -> str:
+    """Return where a service URL points (``host:port`` or a socket), without credentials."""
+    try:
+        parsed = urlparse(url)
+        port = parsed.port or default_port
+    except ValueError:
+        return "the configured address"
+    if parsed.scheme == "unix":
+        return parsed.path
+    host = parsed.hostname or parse_qs(parsed.query).get("host", ["localhost"])[0]
+    if host.startswith("/"):
+        return host
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
 
 
 def _check_postgres_without_psycopg2(dsn: str) -> ServiceCheck:
@@ -120,7 +137,9 @@ def _check_postgres_without_psycopg2(dsn: str) -> ServiceCheck:
             text=True,
             check=False,
         )
-        detail = (result.stdout or result.stderr or "").strip() or dsn
+        detail = (result.stdout or result.stderr or "").strip() or _service_address(
+            dsn, 5432
+        )
         if result.returncode == 0:
             return ServiceCheck("PostgreSQL", True, f"pg_isready: {detail}")
         return ServiceCheck(
@@ -142,8 +161,8 @@ def _check_postgres_without_psycopg2(dsn: str) -> ServiceCheck:
         return ServiceCheck(
             "PostgreSQL",
             False,
-            str(exc).strip()
-            or "Failed to connect to PostgreSQL. Is it running on port 5432?",
+            (str(exc).strip() or "Failed to connect to PostgreSQL.")
+            + f" Is PostgreSQL running on {_service_address(dsn, 5432)}?",
         )
     return ServiceCheck("PostgreSQL", True, "PostgreSQL protocol responded")
 
@@ -279,7 +298,8 @@ def check_redis() -> ServiceCheck:
         return ServiceCheck(
             "Redis",
             False,
-            f"Failed to connect to Redis ({exc}). Is Redis running on port 6379?",
+            f"Failed to connect to Redis ({exc}). Is Redis running on "
+            f"{_service_address(url, 6379)}?",
         )
     return ServiceCheck("Redis", True, "responded to PING")
 
@@ -488,6 +508,9 @@ def ensure_local_services(
 ) -> bool:
     """Check local services and optionally start them with Docker.
 
+    Prints one line if both services are running, and each service's status
+    otherwise.
+
     Parameters
     ----------
     assume_yes :
@@ -503,17 +526,17 @@ def ensure_local_services(
     # Only within an isolated session, so a stray export can't hide stopped services.
     if os.environ.get(SERVICES_CHECKED_ENV_VAR) and os.environ.get(READY_ENV_VAR):
         return True
-    if remote_launch:
-        click.echo(
-            "Checking PostgreSQL and Redis on this computer "
-            "(needed to prepare the remote launch)..."
-        )
-    else:
-        click.echo("Checking local PostgreSQL and Redis...")
+    label = (
+        "PostgreSQL and Redis on this computer (needed to prepare the remote launch)"
+        if remote_launch
+        else "Local PostgreSQL and Redis"
+    )
     checks = check_local_services()
-    all_ok = report_service_checks(checks)
-    if all_ok:
+    if all(check.ok for check in checks):
+        click.echo(f"{label}: OK.")
         return True
+    click.echo(f"{label}:")
+    report_service_checks(checks)
 
     if not assume_yes:
         if not _is_interactive():

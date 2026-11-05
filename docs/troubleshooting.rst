@@ -72,11 +72,12 @@ its own database, Redis server and port as described in
 its own, so it can run alongside.
 
 Remote launches (``psynet deploy ssh``, ``psynet deploy heroku``,
-``psynet debug ssh`` and ``psynet debug heroku``) also use the local database
-and Redis while they prepare the experiment, so they wipe a local experiment
-that is running at the same time. They ask before doing so if the local data
-looks in use, that is, a local server or another program is connected to the
-database or Redis. ``--update`` launches leave local data alone.
+``psynet debug ssh``, ``psynet debug heroku`` and
+``psynet performance-test ssh``) prepare the experiment in a
+scratch database and Redis of their own, so they leave a running local
+experiment alone. Because they replace the experiment directory's generated
+files, they don't run at the same time as a local server or test session in
+the same directory: whichever starts second refuses to.
 
 Database connection refused
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -209,50 +210,10 @@ Finally you can reinstall Postgres:
    brew install postgresql@14
    brew services start postgresql@14
 
-Heroku CLI not responding (local tests)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Local server processes (local tests)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``psynet test local`` and ``psynet performance-test local`` start the
-experiment with the Heroku CLI's ``heroku local`` command, so a broken Heroku
-CLI installation can stop local tests from starting.
-
-
-If the Heroku CLI doesn't respond, uninstall and reinstall it, then turn on its
-debug output to see what goes wrong.
-
-.. code-block:: bash
-
-    brew uninstall heroku
-    rm -rf ~/.local/share/heroku ~/Library/Caches/heroku
-
-.. code-block:: bash
-
-    brew install heroku/brew/heroku
-
-After uninstalling and reinstalling the CLI, try running your tests again.
-
-If the issue persists, open your terminal and set the following environment variables to enable debugging:
-
-.. code-block:: bash
-
-    export HEROKU_DEBUG=1
-    export HEROKU_DEBUG_HEADERS=1
-    export DEBUG=*
-
-- **HEROKU_DEBUG=1**: Enables debug logging for the Heroku CLI.
-- **HEROKU_DEBUG_HEADERS=1**: Enables debug logging for HTTP headers, useful for troubleshooting authentication or networking issues.
-- **DEBUG=***: Enables debug logging for all modules used by the Heroku CLI.
-
-
-To verify your CLI installation, use the ``heroku --version`` command:
-
-.. code-block:: bash
-
-    heroku --version
-
-If the CLI is installed correctly, you should see output similar to:
-
-.. code-block:: text
-
-    heroku/7.0.0 (darwin-x64) node-v8.0.0
-
+experiment's Procfile processes (web server, worker and clock) with
+`honcho <https://github.com/nickstenning/honcho>`_, which is installed with
+Dallinger. They don't use the Heroku CLI.

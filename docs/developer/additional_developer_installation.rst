@@ -86,7 +86,7 @@ Clone PsyNet and Dallinger
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Follow :doc:`/install` for the system tools (uv, Git, Docker, Chrome and
-the Heroku CLI), then clone both repositories next to each other:
+libpq), then clone both repositories next to each other:
 
 .. code-block:: bash
 

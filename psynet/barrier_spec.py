@@ -26,6 +26,7 @@ from psynet.serialize import (
     callable_to_path,
     serialize_callable,
 )
+from psynet.utils import finalize_template_value
 
 SPEC_VERSION = 1
 
@@ -163,6 +164,7 @@ def behavior_hash_from_json(serialized):
 
 
 def _encode_value(value, *, context):
+    value = finalize_template_value(value)
     if isinstance(value, Markup):
         return {"__type__": "markup", "html": str(value)}
     if value is None or isinstance(value, (bool, int, float, str)):

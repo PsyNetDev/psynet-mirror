@@ -65,6 +65,7 @@ from rich.text import Text
 
 from psynet.perf_test import PerformanceTester, PerformanceTestResult
 from psynet.perf_test.report import format_text, warning
+from psynet.perf_test.runtime import _choose_bot_processes
 from psynet.server_logs import where_to_read_logs
 
 logger = logging.getLogger(__name__)
@@ -291,7 +292,7 @@ class RemoteApp:
                 f"on {self.server}, so its database can't be reset; see its logs "
                 f"{where_to_read_logs(self.server, self.app)}."
             )
-        print(f"▶ Stopping {self.app}'s server processes...")
+        print(f"Stopping {self.app}'s server processes...")
         self._stopped = list(dict.fromkeys(self._stopped + services))
         self.compose("stop", *services)
 
@@ -308,7 +309,7 @@ class RemoteApp:
             message names the worker containers that didn't register and
             how to restart them.
         """
-        print(f"▶ Starting {self.app}'s server processes...")
+        print(f"Starting {self.app}'s server processes...")
         services = self._stopped
         if services:
             self.compose("start", *services)
@@ -414,7 +415,7 @@ class RemoteApp:
         except BaseException as e:
             reason = (str(e) or type(e).__name__).rstrip(".")
             stopped = Text(
-                f"✗ {self.app} may be stopped: its server processes could not be "
+                f"{self.app} may be stopped: its server processes could not be "
                 f"started again ({reason}). Start them on {self.server} with:",
                 style="bright_red",
             )
@@ -907,6 +908,12 @@ class RemotePerformanceTester:
         """Note when the suite starts: each remote test starts and stops its own bot processes."""
         self._suite_started = time.monotonic()
         yield
+
+    def describe_bot_processes(self, max_bots):
+        """Describe the bot processes for up to ``max_bots`` bots; the server chooses them for each test."""
+        if self.bot_processes == "auto":
+            return "auto, chosen for each test"
+        return str(_choose_bot_processes(self.bot_processes, max_bots))
 
     def pause_between_tests(self):
         """Make the next remote test pause first, as a local suite pauses between tests."""

@@ -1,11 +1,11 @@
 import os
 import random
 import re
+import secrets
 import tempfile
 import warnings
-from datetime import time
-from hashlib import sha256
 from importlib import resources
+from pathlib import Path
 from typing import Optional, Type
 
 import arabic_reshaper
@@ -22,6 +22,7 @@ from psynet.utils import (
     get_fitting_font_size,
     get_language_dict,
     get_locale,
+    get_logger,
     get_translator,
     text_to_image,
 )
@@ -370,12 +371,8 @@ class VocabTrial(StaticTrial):
         return self.trial_maker.score_trial(self)
 
 
-def date_hash(x):
-    now = time()
-    return sha256((str(now) + x).encode()).hexdigest()
-
-
 _ = get_translator()
+logger = get_logger()
 
 default_test_config = {
     "image_width": 500,
@@ -482,6 +479,8 @@ class VocabTest(StaticTrialMaker):
         false_key_label: str = "L",
         trial_class: Type[VocabTrial] = VocabTrial,
         present_as_image: bool = True,
+        # Its file name is also listed in the stock .gitignore and in
+        # psynet.deployment_info.DOWNLOADED_RESOURCE_PATHS.
         font_url: Optional[
             str
         ] = "https://psynet.s3.amazonaws.com/resources/fonts/GoNotoKurrent-Bold.ttf",
@@ -522,10 +521,9 @@ class VocabTest(StaticTrialMaker):
                     {
                         "stimulus": stimulus,
                         "correct_answer": correct_answer,
-                        # We give each stimulus a unique, hard to guess hash to easily identify which stimuli have been
-                        # visited already and for easily accessing assets from the psynet JS front-end
-                        # Fixme: In the near future, we want to simplify this behaviour
-                        "hash": date_hash(stimulus),
+                        # The browser sees this ID, so it must not be derivable from the
+                        # (public) word list, which also lists the correct answers.
+                        "hash": secrets.token_hex(16),
                     }
                 )
 
@@ -576,16 +574,32 @@ class VocabTest(StaticTrialMaker):
             sync_group_type=None,
         )
 
-    def get_font_path(self, font_url):
-        font_name = os.path.basename(font_url)
-        font_path = f"static/fonts/{font_name}"
+    @staticmethod
+    def get_font_path(font_url):
+        """Return a local copy of the font used to draw the word images, downloading it if needed.
+
+        The font is saved in the experiment's ``static/fonts/`` folder so that
+        deployments include it; the stock ``.gitignore`` ignores the default font.
+        """
+        font_dir = os.path.join("static", "fonts")
+        font_path = os.path.join(font_dir, os.path.basename(font_url))
         if not os.path.exists(font_path):
             with yaspin(text="Downloading font...", color="yellow") as spinner:
-                response = requests.get(font_url)
+                response = requests.get(font_url, timeout=60)
+                response.raise_for_status()
                 spinner.ok("✔")
-            os.makedirs(os.path.dirname(font_path), exist_ok=True)
-            with open(font_path, "wb") as f:
-                f.write(response.content)
+            os.makedirs(font_dir, exist_ok=True)
+            # Write then rename so that a parallel process never reads a partial file.
+            fd, temp_path = tempfile.mkstemp(dir=font_dir)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(response.content)
+                # mkstemp creates the file readable only by its owner.
+                os.chmod(temp_path, 0o644)
+                os.replace(temp_path, font_path)
+            except BaseException:
+                Path(temp_path).unlink(missing_ok=True)
+                raise
         return os.path.abspath(font_path)
 
     def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
@@ -741,14 +755,46 @@ class VocabTest(StaticTrialMaker):
                 n_correct += 1
         return n_correct / len(items)
 
+    @staticmethod
+    def _answer_matches_items(answer, hashes):
+        """
+        Check that a submitted answer covers exactly the trial's items.
+
+        Parameters
+        ----------
+        answer :
+            The answer submitted by the browser, a list of ``{"hash", "answer"}`` dicts.
+        hashes : list[str]
+            The item hashes stored in the trial definition, in presentation order.
+
+        Returns
+        -------
+        bool
+            ``True`` if the answer lists the trial's items in order, each answered
+            with ``"real"`` or ``"fake"``.
+        """
+        return (
+            isinstance(answer, list)
+            and all(isinstance(item, dict) for item in answer)
+            and [item.get("hash") for item in answer] == list(hashes)
+            and all(item.get("answer") in ("real", "fake") for item in answer)
+        )
+
     def score_trial(self, trial):
+        hashes = trial.definition["hashes"]
+        items = trial.answer
+        if not self._answer_matches_items(items, hashes):
+            logger.warning(
+                "Scoring vocabulary trial %s as 0 because the answer does not "
+                "match the trial's items.",
+                trial.id,
+            )
+            return 0
+
         definition = {
-            item["hash"]: item
-            for item in trial.node.seed
-            if item["hash"] in trial.definition["hashes"]
+            item["hash"]: item for item in trial.node.seed if item["hash"] in hashes
         }
 
-        items = trial.answer
         repeat_items = []
         if self.n_repeat_items > 0:
             repeat_items = items[-self.n_repeat_items :]
@@ -764,7 +810,7 @@ class VocabTest(StaticTrialMaker):
             )
 
     def performance_check(self, experiment, participant, participant_trials):
-        score = self.score_trial(participant_trials[0])
+        score = self.score_trial(participant_trials[-1])
         passed = (
             True
             if self.performance_threshold_per_trial is None
@@ -831,7 +877,7 @@ class VocabTest(StaticTrialMaker):
 
     @classmethod
     def get_instructions_keyboard(cls):
-        prompt = (
+        prompt = Markup(
             _("To do the task quickly, you should use the keys on your keyboard.")
             + " "
             + _("You can use the following keys:")

@@ -72,6 +72,7 @@ def test_write_hashed_artifact_redacts_text_and_normalizes_legacy_prefix(
     source = tmp_path / "psynet_debug.log"
     source.write_text(
         "Dashboard user: admin password: local-password\n"
+        "Dashboard: http://127.0.0.1:5000/dashboard (user admin, password pw)\n"
         "AWS_SECRET_ACCESS_KEY=secret\n",
         encoding="utf-8",
     )
@@ -88,7 +89,9 @@ def test_write_hashed_artifact_redacts_text_and_normalizes_legacy_prefix(
     exported = target_root / url.removeprefix(prefix)
     assert exported.exists()
     assert exported.read_text(encoding="utf-8") == (
-        "Dashboard user: admin password: [REDACTED]\nAWS_SECRET_ACCESS_KEY=[REDACTED]\n"
+        "Dashboard user: admin password: [REDACTED]\n"
+        "Dashboard: http://127.0.0.1:5000/dashboard (user admin, password [REDACTED])\n"
+        "AWS_SECRET_ACCESS_KEY=[REDACTED]\n"
     )
 
 

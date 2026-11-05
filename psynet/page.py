@@ -1,3 +1,4 @@
+import sys
 import warnings
 from importlib import resources
 from math import ceil
@@ -25,10 +26,18 @@ from .timeline import (
     join,
     while_loop,
 )
-from .utils import call_function_with_context, get_logger, get_translator
+from .utils import call_function, call_function_with_context, get_logger, get_translator
 
 logger = get_logger()
-warnings.simplefilter("always", DeprecationWarning)
+# Other packages' deprecation warnings are for their maintainers; PsyNet's,
+# Dallinger's and the experiment's are shown. -W and PYTHONWARNINGS win.
+if not sys.warnoptions:
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings(
+        "always",
+        category=DeprecationWarning,
+        module=r"(psynet|dallinger|dallinger_experiment)(\.|$)",
+    )
 
 
 class InfoPage(ModularPage):
@@ -142,6 +151,10 @@ class UnityPage(Page):
         debug: bool = False,
         **kwargs,
     ):
+        if debug and kwargs.get("background_recording") is not None:
+            raise ValueError(
+                "Background recording requires browser-hosted Unity, not Unity IDE debug mode."
+            )
         self.title = title
         self.resources = resources
         self.contents = contents
@@ -190,6 +203,8 @@ class WaitPage(Page):
 
     content:
         Message to display to the participant while they wait.
+        Plain strings are shown as text; pass ``markupsafe.Markup`` or a
+        ``dominate`` tag for HTML.
         Default: "Please wait, the experiment should continue shortly..."
 
     **kwargs:
@@ -239,12 +254,12 @@ def wait_while(
     condition,
     expected_wait: float,
     check_interval: float = 2.0,
-    max_wait_time: float = 20.0,
+    max_wait_time: Optional[Union[float, Callable]] = 20.0,
     wait_page=None,
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Optional[str] = None,
+    content: Union[str, Markup, dom_tag, None] = None,
     on_timeout: Optional[Callable] = None,
 ):
     """
@@ -274,6 +289,9 @@ def wait_while(
 
     max_wait_time
         The participant's maximum waiting time in seconds. Default: 20.0.
+        May be None for an unlimited wait, or a callable accepting ``participant``
+        and/or ``experiment``. A callable is evaluated once when waiting starts,
+        as in :func:`~psynet.timeline.while_loop`; polling does not reset the limit.
 
     wait_page
         The wait page that should be displayed to the participant;
@@ -295,7 +313,8 @@ def wait_while(
 
     content
         Message displayed by the timeline hold. Only used when ``wait_page`` is
-        omitted.
+        omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
+        or a dominate tag for HTML.
 
     on_timeout
         Optional function called with ``participant=...`` when
@@ -329,7 +348,7 @@ def wait_while(
                 participant=participant,
                 experiment=experiment,
             )
-            logger.info(
+            logger.debug(
                 "Evaluating timeline hold (%s) condition: result = %s",
                 label,
                 result,
@@ -378,6 +397,57 @@ def wait_while(
             on_timeout=on_timeout,
             fix_time_credit=fix_time_credit,
         ),
+    )
+
+
+def wait_for_recording(recording, expected_wait=0, check_interval=2.0):
+    """Wait for a recording to deposit or become unavailable without failing the participant.
+
+    ``recording`` is a :class:`~psynet.trial.record.Recording` or a callable
+    accepting ``participant`` and/or ``experiment`` that returns one. The
+    callable is evaluated at each poll and should resolve the same recording.
+    Check its ``deposited`` property afterwards and provide a fallback page
+    when False; finishing this wait does not guarantee playable media.
+
+    The wait budget is fixed on entry using the recording's upload and
+    processing deadlines plus 20 seconds for polling. Legacy recordings
+    without these deadlines have a 20-second limit. If processing stalls,
+    the participant can still proceed after this limit. This helper does not
+    alter recording deadlines, trial failure rules, or performance checks.
+
+    ``expected_wait`` and ``check_interval`` are in seconds, as in
+    :func:`~psynet.page.wait_while`.
+    """
+    from .media_upload import _recording_resolution_deadline, _utcnow
+    from .trial.record import Recording
+
+    def resolve(participant, experiment):
+        asset = (
+            call_function(recording, participant=participant, experiment=experiment)
+            if callable(recording)
+            else recording
+        )
+        if not isinstance(asset, Recording):
+            raise TypeError("wait_for_recording requires a Recording.")
+        return asset
+
+    def pending(participant, experiment):
+        asset = resolve(participant, experiment)
+        return not asset.deposited and asset.upload_status not in {"failed", "expired"}
+
+    def budget(participant, experiment):
+        asset = resolve(participant, experiment)
+        deadline = _recording_resolution_deadline(asset)
+        if deadline is None:
+            return 20.0
+        return 20.0 + max(0.0, (deadline - _utcnow()).total_seconds())
+
+    return wait_while(
+        pending,
+        expected_wait=expected_wait,
+        check_interval=check_interval,
+        max_wait_time=budget,
+        fail_on_timeout=False,
     )
 
 

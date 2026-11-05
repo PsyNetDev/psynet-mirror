@@ -205,13 +205,14 @@ def test_non_editable_mismatch_hint_names_the_pin_file(tmp_path):
 
 
 # PsyNet tests
-def test_skip_version_check_key_error():
+def test_skip_version_check_key_error(capsys):
     with pytest.raises(KeyError, match="'SKIP_VERSION_CHECK'"):
         del os.environ["SKIP_VERSION_CHECK"]
 
     os.environ["SKIP_VERSION_CHECK"] = "1"
     check_core_dependency_versions_match_requirements()
     del os.environ["SKIP_VERSION_CHECK"]
+    assert "PsyNet and Dallinger" in capsys.readouterr().out
 
 
 @patch("psynet.__version__", "10.0.0")

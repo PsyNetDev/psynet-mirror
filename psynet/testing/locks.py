@@ -10,9 +10,11 @@ each holds an exclusive lock on the directory for as long as it uses it.
 Test sessions that may run in parallel (CI slots, or several coding agents on
 one machine) wait for each other. A server holds the lock until it is
 stopped, so waiting for one would hang: tests refuse to start instead, and so
-does a server that finds the lock held. The holder writes its PID and kind
-(:data:`TEST_SESSION` or :data:`SERVER`) into the lock file so that waiting
-and refusal messages can say what holds it.
+does a server that finds the lock held. Remote launches, which build the
+files they ship to the server in the directory, are treated like servers. The
+holder writes its PID and kind (:data:`TEST_SESSION`, :data:`SERVER` or
+:data:`REMOTE_LAUNCH`) into the lock file so that waiting and refusal messages
+can say what holds it.
 
 A parent process that already holds the lock (for example the CI runner,
 which scaffolds a demo before starting pytest on it) passes it down by setting
@@ -33,6 +35,8 @@ logger = logging.getLogger(__name__)
 HELD_LOCK_ENV_VAR = "PSYNET_HELD_EXPERIMENT_DIRECTORY_LOCK"
 TEST_SESSION = "test session"
 SERVER = "server"
+#: A remote launch, which is refused and refuses others like a server.
+REMOTE_LAUNCH = "remote launch"
 
 
 class DirectoryInUseError(RuntimeError):
@@ -109,14 +113,15 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
         ``False`` and set the variable in each child's environment instead.
     kind : str
         :data:`TEST_SESSION` waits for other test sessions, logging how long
-        the wait took. :data:`SERVER` never waits.
+        the wait took. :data:`SERVER` and :data:`REMOTE_LAUNCH` never wait.
 
     Raises
     ------
     DirectoryInUseError
-        If a server, or a holder that hasn't recorded itself (such as one
-        whose lock file this user can't write), holds the lock, or ``kind`` is
-        :data:`SERVER` and anything holds it.
+        If anything other than a test session, such as a server or a holder
+        that hasn't recorded itself (for example one whose lock file this user
+        can't write), holds the lock, or ``kind`` isn't :data:`TEST_SESSION`
+        and anything holds it.
     OSError
         If the lock file can't be opened.
     """
@@ -130,7 +135,7 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
         if holder is not None:
             pid, held_by = holder
             # An unknown holder may be a server, which would never release it.
-            if kind == SERVER or held_by != TEST_SESSION:
+            if kind != TEST_SESSION or held_by != TEST_SESSION:
                 raise _in_use_error(directory, pid, held_by)
             logger.info(
                 "Waiting for %s to release %s...", _describe(pid, held_by), directory

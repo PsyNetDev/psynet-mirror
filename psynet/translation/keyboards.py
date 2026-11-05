@@ -3,8 +3,8 @@ from importlib import resources
 from typing import Union
 
 from dominate.dom_tag import dom_tag
+from markupsafe import Markup
 
-from psynet.modular_page import Prompt
 from psynet.timeline import Page, get_template
 
 ALL_KEYS = [
@@ -66,9 +66,19 @@ with open(overview_path, "r") as f:
 
 
 class KeyboardPage(Page):
+    """
+    Shows a prompt next to an on-screen keyboard that lights up the keys the participant presses.
+
+    Parameters
+    ----------
+    prompt :
+        Content shown beside the keyboard. Plain strings are shown as text;
+        pass ``markupsafe.Markup`` or a ``dominate`` tag for HTML.
+    """
+
     def __init__(
         self,
-        prompt=Union[str, dom_tag, Prompt],
+        prompt: Union[str, Markup, dom_tag],
         highlight_keys=None,
         show_keys=None,
         press_keys=None,

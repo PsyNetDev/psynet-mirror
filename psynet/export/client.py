@@ -44,7 +44,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from psynet.utils import get_logger
 
@@ -92,6 +92,20 @@ _OLD_DEPLOYMENT_PREFLIGHT_MESSAGE = (
 )
 
 
+def _check_login_accepted(response) -> None:
+    """Raise ``TransferError`` if the dashboard refused the request's login.
+
+    Debug servers answer 401; deployed servers redirect to the login page,
+    which ``requests`` follows to a 200 response.
+    """
+    final_path = urlsplit(getattr(response, "url", None) or "").path
+    if response.status_code == 401 or final_path.endswith("/dashboard/login"):
+        raise TransferError(
+            "The dashboard did not accept the login. Check dashboard_user and "
+            "dashboard_password in your config."
+        )
+
+
 def fetch_preflight(endpoint: DashboardEndpoint, *, timeout=60) -> dict:
     """Ask the deployment to describe itself.
 
@@ -115,6 +129,7 @@ def fetch_preflight(endpoint: DashboardEndpoint, *, timeout=60) -> dict:
             f"Could not reach the export preflight endpoint: {exc}"
         ) from exc
 
+    _check_login_accepted(response)
     if response.status_code == 404:
         raise TransferError(_OLD_DEPLOYMENT_PREFLIGHT_MESSAGE)
     if response.status_code != 200:
@@ -201,6 +216,7 @@ def download_archive(
         "dashboard/export/download", assets=assets, asset_bytes=asset_bytes
     )
     with requests.get(url, auth=endpoint.auth, stream=True) as response:
+        _check_login_accepted(response)
         if response.status_code != 200:
             raise TransferError(_describe_failed_response(response))
         os.makedirs(os.path.dirname(os.path.abspath(destination_file)), exist_ok=True)
@@ -392,6 +408,13 @@ class AssetTransferPlan:
         return not self.ineligible
 
 
+def _recording_bytes_unavailable(row):
+    """Keep unavailable recordings in the manifest without requesting their bytes."""
+    return (
+        bool(row.get("recording_role")) and row.get("recording_status") != "deposited"
+    )
+
+
 def plan_asset_transfer(staging_dir: str) -> AssetTransferPlan:
     """Read ``assets/manifest.csv`` and decide whether rsync can supply the bytes."""
     manifest_path = Path(staging_dir) / "assets" / "manifest.csv"
@@ -407,6 +430,8 @@ def plan_asset_transfer(staging_dir: str) -> AssetTransferPlan:
     ineligible: list[dict] = []
     seen = set()
     for row in rows:
+        if _recording_bytes_unavailable(row):
+            continue
         if row.get("storage") != "LocalStorage":
             ineligible.append(row)
             continue
@@ -452,6 +477,8 @@ def hydrate_assets(
     # transfer itself cannot run (for example when rsync is unavailable).
     safe_export_paths = {}
     for row in plan.rows:
+        if _recording_bytes_unavailable(row):
+            continue
         export_path = row.get("export_path")
         if not row.get("sha256_contents") or not export_path:
             continue
@@ -493,6 +520,8 @@ def hydrate_assets(
     assets_root = Path(staging_dir) / "assets"
     materialized = 0
     for row in plan.rows:
+        if _recording_bytes_unavailable(row):
+            continue
         digest = row.get("sha256_contents")
         export_path = row.get("export_path")
         if not digest or not export_path:

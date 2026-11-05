@@ -3,12 +3,14 @@
 // This script is activated for each hosting page through ChatRoom's
 // get_js_page_modules() hook. Per-page state stays inside activate(), and the
 // returned cleanup function owns all listeners and the WebSocket it creates.
+// The socket is a checked /experiment-socket connection, and the server sends
+// room traffic to members only, as directed messages.
 import { leftoverLiveAfterHistory } from "./chatroom-history-merge.mjs";
 
 export async function activate({root, vars}) {
     var CONFIG       = vars["chatroom_config"] || {};
     var ROOM_ID      = CONFIG.room_id;
-    var GLOBAL_CH    = CONFIG.channel;
+    var CHANNEL      = CONFIG.channel;
     var SHOW_PARTS   = CONFIG.show_participants;
     var SHOW_HISTORY = CONFIG.show_history;
     var MY_ID        = String(dallinger.identity.participantId);
@@ -28,17 +30,7 @@ export async function activate({root, vars}) {
         leftChat = true;
         if (sendButton) sendButton.disabled = true;
         if (!chatConnection) return;
-        if (chatConnection.isOpen()) {
-            try {
-                chatConnection.send({
-                    type: "leave_room",
-                    room_id: ROOM_ID,
-                    sender: MY_ID,
-                });
-            } catch (error) {
-                console.warn("Could not notify the chatroom before leaving.", error);
-            }
-        }
+        chatConnection.send(CHANNEL, {type: "leave_room", room_id: ROOM_ID});
         try {
             chatConnection.close();
         } catch (error) {
@@ -53,18 +45,12 @@ export async function activate({root, vars}) {
     function sendMessage() {
         var text  = input.value.trim();
         if (!text) return;
-        try {
-            chatConnection.send({
-                type: "message",
-                room_id: ROOM_ID,
-                content: text,
-                sender: MY_ID,
-            });
-        } catch (error) {
+        if (chatConnection.raw.readyState !== WebSocket.OPEN) {
+            // dallinger.Socket would queue the line; keep it as a draft instead.
             sendButton.disabled = true;
-            console.warn("Chat message was not sent; the draft was retained.", error);
             return;
         }
+        chatConnection.send(CHANNEL, {type: "message", room_id: ROOM_ID, content: text});
         input.value = "";
         input.focus();
     }
@@ -103,13 +89,6 @@ export async function activate({root, vars}) {
         feed.scrollTop = feed.scrollHeight;
     }
 
-    function historyIsForMe(msg) {
-        if (msg.target_participant_id == null || msg.target_participant_id === "") {
-            return true;
-        }
-        return String(msg.target_participant_id) === MY_ID;
-    }
-
     function enableChat() {
         if (leftChat || !sendButton) return;
         sendButton.disabled = false;
@@ -120,17 +99,7 @@ export async function activate({root, vars}) {
     }
 
     function finishHistoryLoad(messages) {
-        messages = messages || [];
-        if (historyReady) {
-            // After the first snapshot, history is only catch-up for an
-            // empty feed (a persist republish after the partner missed live).
-            var feed = root.querySelector("#chatroom-messages");
-            if (!messages.length || feed.childElementCount > 0) {
-                return;
-            }
-            applyHistorySnapshot(messages);
-            return;
-        }
+        if (historyReady) return;
         applyHistorySnapshot(messages);
         leftoverLiveAfterHistory(messages, pendingLive).forEach(renderMessage);
         pendingLive = [];
@@ -158,51 +127,42 @@ export async function activate({root, vars}) {
         }
         sendButton.disabled = true;
 
-        chatConnection = PsyNetWebSocketChannel.connect({
-            channel: GLOBAL_CH,
-            onOpen: function () {
-                if (leftChat) return;
-                try {
-                    chatConnection.send({
-                        type: "join_room",
-                        room_id: ROOM_ID,
-                        sender: MY_ID,
-                    });
-                    if (SHOW_HISTORY && !historyReady) {
-                        chatConnection.send({
-                            type: "request_state",
-                            room_id: ROOM_ID,
-                            sender: MY_ID,
-                        });
-                        return;
-                    }
-                    enableChat();
-                } catch (error) {
-                    sendButton.disabled = true;
-                    console.warn("Chatroom connection closed while joining.", error);
-                }
-            },
-            onClose: function () {
-                if (!leftChat) sendButton.disabled = true;
-            },
-            onMessage: function (msg) {
-                if (leftChat) return;
-                if (String(msg.room_id) !== String(ROOM_ID)) return;
+        chatConnection = dallinger.openExperimentSocket({
+            scope: psynetTemplateData.websocketScope,
+        });
+        chatConnection.onOpen(function () {
+            if (leftChat) return;
+            // Sent again on every reconnect, since the server may have
+            // marked this participant as having left the room.
+            chatConnection.send(CHANNEL, {type: "join_room", room_id: ROOM_ID});
+            if (SHOW_HISTORY && !historyReady) {
+                chatConnection.send(CHANNEL, {type: "request_state", room_id: ROOM_ID});
+                return;
+            }
+            enableChat();
+        });
+        chatConnection.raw.addEventListener("close", function () {
+            if (!leftChat) sendButton.disabled = true;
+        });
+        chatConnection.onRefused(function (code, reason) {
+            sendButton.disabled = true;
+            console.warn("The server refused the chatroom connection: " + reason);
+        });
+        chatConnection.onDirect(function (msg) {
+            if (leftChat) return;
+            if (!msg || String(msg.room_id) !== String(ROOM_ID)) return;
 
-                if (msg.type === "message") {
-                    if (!historyReady) {
-                        pendingLive.push(msg);
-                        return;
-                    }
-                    renderMessage(msg);
-                } else if (msg.type === "occupancy_update") {
-                    if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
-                } else if (msg.type === "history") {
-                    if (SHOW_HISTORY && historyIsForMe(msg)) {
-                        finishHistoryLoad(msg.messages || []);
-                    }
+            if (msg.type === "message") {
+                if (!historyReady) {
+                    pendingLive.push(msg);
+                    return;
                 }
-            },
+                renderMessage(msg);
+            } else if (msg.type === "occupancy_update") {
+                if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
+            } else if (msg.type === "history") {
+                if (SHOW_HISTORY) finishHistoryLoad(msg.messages || []);
+            }
         });
 
         window.addEventListener("beforeunload", handleBeforeUnload);

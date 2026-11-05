@@ -8,7 +8,7 @@ from psynet.modular_page import (
     VideoPrompt,
     VideoRecordControl,
 )
-from psynet.page import wait_while
+from psynet.page import InfoPage, wait_for_recording
 from psynet.timeline import (
     Event,
     MediaSpec,
@@ -22,6 +22,39 @@ from psynet.timeline import (
 from psynet.utils import get_logger
 
 logger = get_logger()
+
+
+def _recording_playback(participant):
+    """Retain each available clip and let participants continue if either is missing."""
+    camera = participant.assets["video_record_page_camera"]
+    screen = participant.assets["video_record_page_screen"]
+    screen_link = (
+        Markup(
+            'Click <a href="{}">this link</a> to download the corresponding screen recording.'
+        ).format(screen.url)
+        if screen.deposited
+        else "The screen recording is unavailable."
+    )
+    if not camera.deposited:
+        return InfoPage(
+            Markup("The camera recording is unavailable. {} Please continue.").format(
+                screen_link
+            ),
+            time_estimate=5,
+        )
+    return ModularPage(
+        "video_playback",
+        VideoPrompt(
+            camera,
+            Markup("Here's the camera recording you just made.<br>{}").format(
+                screen_link
+            ),
+            mirrored=True,
+            width="400px",
+        ),
+        time_estimate=5,
+    )
+
 
 # def make_js_fade_string(fade_duration):
 #     return "{fade_in: %s, fade_out: %s}" % (fade_duration, fade_duration)
@@ -220,32 +253,15 @@ video_pages = join(
         time_estimate=5,
         progress_display=ProgressDisplay([ProgressStage(time=5.0)]),
     ),
-    wait_while(
-        lambda participant: (
-            not (
-                participant.assets["video_record_page_camera"].deposited
-                and participant.assets["video_record_page_screen"].deposited
-            )
-        ),
-        expected_wait=5.0,
-        log_message="Waiting for video recordings to be deposited",
+    wait_for_recording(
+        lambda participant: participant.assets["video_record_page_camera"],
+        expected_wait=5,
+    ),
+    wait_for_recording(
+        lambda participant: participant.assets["video_record_page_screen"],
     ),
     PageMaker(
-        lambda participant: ModularPage(
-            "video_playback",
-            VideoPrompt(
-                participant.assets["video_record_page_camera"],
-                Markup(
-                    f"""
-                        Here's the camera recording you just made.
-                        <br>
-                        Click <a href="{participant.assets["video_record_page_screen"].url}">this link</a> to download the corresponding screen recording.
-                    """
-                ),
-                mirrored=True,
-                width="400px",
-            ),
-        ),
+        lambda participant: _recording_playback(participant),
         time_estimate=5,
     ),
 )

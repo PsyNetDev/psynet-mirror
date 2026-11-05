@@ -89,7 +89,8 @@ To deploy with a Dallinger branch, push it and add a pin to
     dallinger@git+https://github.com/<your-username>/Dallinger@<branch-name>#egg=dallinger
 
 For a debug deployment, ``psynet debug ssh --use-local-dallinger`` builds the
-editable checkout into the image instead.
+editable checkout into the image instead, together with any new dependencies
+it needs. See :doc:`/deploy/reference/ssh_server` for details.
 
 Contribute a change
 -------------------

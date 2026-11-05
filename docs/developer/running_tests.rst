@@ -148,7 +148,7 @@ by default each local test session gets its own environment and leaves a
 running ``psynet debug local`` alone. The session prints where it runs, for
 example::
 
-    Using database dallinger_test_5100, Redis at 127.0.0.1:6479/0, and port 5100.
+    Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
 
 It claims a free web port 100 or more above your ``base_port`` (so from 5100
 by default), uses the database ``<database>_test_<port>`` next to

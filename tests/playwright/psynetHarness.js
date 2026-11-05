@@ -47,7 +47,11 @@ function extractRecruitmentUrlFromLine(line) {
       if (parsed.pathname !== "/ad") {
         continue;
       }
-      const requiredParams = ["recruiter", "assignmentId", "hitId", "workerId"];
+      // The console shows a single link that creates a participant on each
+      // visit; later recruitments and --legacy debug log one link per participant.
+      const requiredParams = parsed.searchParams.has("generate_tokens")
+        ? ["recruiter"]
+        : ["recruiter", "assignmentId", "hitId", "workerId"];
       if (!requiredParams.every((param) => parsed.searchParams.has(param))) {
         continue;
       }
@@ -609,6 +613,14 @@ async function waitForAudioRecordingReady(page, timeoutMs = 45000) {
       { timeout: timeoutMs }
     )
     .toBe(true);
+}
+
+// Call at a known first screen-recording page, before waiting for trial startup.
+async function acceptAnswerScreenPermission(page) {
+  const dialog = page.locator("#answer-recording-permission");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", {name:"Share screen", exact:true}).click();
+  await expect(dialog).toHaveCount(0);
 }
 
 async function waitForVideoRecordingReady(
@@ -1653,7 +1665,52 @@ async function advanceUntilFinish(page, options = {}) {
   throw new Error("Experiment did not finish within expected steps.");
 }
 
+async function prepareRecordingFixture(page, {screen = false} = {}) {
+  await completeInitialGateway(page);
+  await expect(page.locator("#main-body")).toContainText("Record a short clip.");
+  if (screen) await acceptAnswerScreenPermission(page);
+  await waitForVideoRecordingReady(page, {timeoutMs:45000, requireScreen:screen});
+  await waitForNextEnabled(page, 30000);
+}
+
+async function submitRecordingFixture(page, options) {
+  await prepareRecordingFixture(page, options);
+  const acceptance = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/response" &&
+    response.request().method() === "POST", {timeout:20000}
+  );
+  await page.locator("#next-button").click();
+  const response = await acceptance;
+  const accepted = await response.json();
+  expect(accepted.submission).toBe("approved");
+  expect(response.request().postData()).not.toContain('name="cameraRecording"');
+  await expect(page.locator("#main-body")).toContainText("Independent page reached.");
+  return {accepted, response};
+}
+
+/**
+ * Decode a captured Blob stored in window[name] and check that it plays.
+ * A nonempty Blob or a valid header does not show that a truncated recording
+ * is usable, so recordings cut short are checked this way.
+ */
+async function expectBlobPlays(page, name) {
+  await page.evaluate(name => {
+    const video = document.createElement("video");
+    video.id = name;
+    video.muted = true;
+    video.src = URL.createObjectURL(window[name]);
+    document.body.append(video);
+  }, name);
+  const video = page.locator(`video#${name}`);
+  await expect.poll(() => video.evaluate(element => element.readyState >= 2 && element.videoWidth > 0)).toBe(true);
+  await video.evaluate(element => element.play());
+  await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(0);
+}
+
 module.exports = {
+  expectBlobPlays,
+  prepareRecordingFixture,
+  submitRecordingFixture,
   advanceUntilFinish,
   advanceUntilPromptContains,
   assertNoBackendError,
@@ -1689,6 +1746,7 @@ module.exports = {
   waitForTrialEvents,
   waitForAudioRecordingReady,
   waitForVideoRecordingReady,
+  acceptAnswerScreenPermission,
   waitForTimelinePageReady,
   readTimelinePageFromHtml,
   startParticipantRequestTracker,

@@ -16,7 +16,7 @@ since fixed. Pass the export to the usual deploy command with ``--archive``:
     # or: --archive path/to/database
 
 ``psynet export`` writes the export to ``exports/latest/`` in the experiment
-directory, and the dashboard's Export tab downloads it as ``export.zip``.
+directory, and the dashboard's Export tab downloads it as ``<deployment ID>__export.zip``.
 ``--archive`` also accepts the ``database/`` directory itself.
 
 Only the table CSVs under ``database/`` are sent to the server. PsyNet re-packs

@@ -88,6 +88,35 @@ server's DNS name. Participants see the app name in the address. PsyNet
 refuses to deploy an app whose name is already in use on the server, so a
 redeployment needs a new name or the old app destroyed first.
 
+.. _deployment_security_headers:
+
+Security headers
+----------------
+
+Every response from the experiment server, including error pages, sends:
+
+- ``Referrer-Policy: strict-origin-when-cross-origin``, so other sites see
+  only the experiment's address, never a participant URL with its
+  ``unique_id``;
+- ``X-Content-Type-Options: nosniff``, so browsers refuse a script or
+  stylesheet served with the wrong content type; give such files standard
+  extensions such as ``.js`` and ``.css``;
+- ``X-Frame-Options: SAMEORIGIN``, so other sites cannot show the experiment
+  in a frame.
+
+An experiment that must be framed by another site can remove the header in
+its own ``after_request``. Dallinger calls this method on the experiment
+class, so define it as a class method:
+
+.. code-block:: python
+
+    class Exp(psynet.experiment.Experiment):
+        @classmethod
+        def after_request(cls, request, response):
+            response = super().after_request(request, response)
+            response.headers.pop("X-Frame-Options", None)
+            return response
+
 Recruiters
 ----------
 

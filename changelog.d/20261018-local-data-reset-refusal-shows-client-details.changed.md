@@ -1,1 +1,1 @@
-When `psynet load` or a remote launch finds other clients of the local database, the message now shows each client's address (or `local socket`) and connection time, for example `Postgres backend pid 123 (gunicorn, idle, 127.0.0.1:54321, since 09:12)`.
+When `psynet load` finds other clients of the local database, the message now shows each client's address (or `local socket`) and connection time, for example `Postgres backend pid 123 (gunicorn, idle, 127.0.0.1:54321, since 09:12)`.

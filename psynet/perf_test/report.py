@@ -116,8 +116,8 @@ def format_test_results(result):
     """Format detailed results after a single test completes. Returns list[str]."""
     return [
         "",
-        success("\u2713 Test completed"),
-        bold(f"TEST RESULTS (n={result.n_bots:,} bots)"),
+        success("Test completed."),
+        bold(f"Test results (n={result.n_bots:,} bots)"),
         "",
         *_bot_outcome_lines(result),
         *_runtime_lines(result),
@@ -272,7 +272,7 @@ def _bot_outcome_lines(result):
 
 
 def _runtime_lines(result):
-    """Return the BOT RUNTIMES section: test length, bot runtimes and bot process load."""
+    """Return the BOT RUNTIMES section: test length, bot runtimes, wait-page time and bot process load."""
     rows = []
     if result.actual_duration is not None:
         rows.append(["Test duration", f"{result.actual_duration:.1f}s"])
@@ -282,6 +282,13 @@ def _runtime_lines(result):
     ]:
         if value is not None:
             rows.append([label, f"{value:.1f}s"])
+    if result.median_wait_page_time is not None:
+        rows.append(
+            [
+                f"Median time on wait pages per bot (n={result.n_wait_page_samples})",
+                f"{result.median_wait_page_time:.1f}s",
+            ]
+        )
     if result.tester_lag_p95_s is not None:
         lag = f"{result.tester_lag_p95_s * 1000:.0f} ms"
         rows.append(
@@ -294,7 +301,7 @@ def _runtime_lines(result):
 
 
 def _request_lines(result):
-    """Return the request, response time, wait page and trials-per-bot sections."""
+    """Return the request, response time and trials-per-bot sections."""
     request_rows = [
         ["Total requests", result.total_requests],
         # Requests that fail before the server can log them appear only
@@ -319,19 +326,10 @@ def _request_lines(result):
     )
     lines.append("")
 
-    if result.median_wait_page_time is not None:
-        n_wait = result.n_wait_page_samples
-        lines += _label_table(
-            [
-                [
-                    f"Median time on wait pages per bot (n={n_wait})",
-                    f"{result.median_wait_page_time:.1f}s",
-                ]
-            ]
-        )
-        lines.append("")
-
     n_succeeded = result.bots_succeeded
+    if not n_succeeded:
+        # BOT OUTCOMES and START-UP VS STEADY STATE already say so.
+        return lines
     bot_word = "bot" if n_succeeded == 1 else "bots"
     lines += _section(
         f"TRIALS PER BOT (n={n_succeeded} {bot_word} that completed successfully)"
@@ -818,7 +816,7 @@ def format_performance_summary(
     outcome = capacity_outcome(measured, limits) if measured else None
     head = [
         None,
-        Text("PERFORMANCE TEST SUMMARY", style="bold"),
+        Text("Performance test summary", style="bold"),
         Text(subtitle, style=_QUIET),
         Text(_checked_limits(results, limits), style=_QUIET),
     ]

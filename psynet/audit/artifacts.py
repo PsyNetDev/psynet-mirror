@@ -26,6 +26,7 @@ CREDENTIAL_REDACTIONS = (
     (re.compile(r"(?i)(dashboard_password=)[^&\"'\s<)]+"), r"\1[REDACTED]"),
     (re.compile(r"(?i)(dashboard_user=)[^&\"'\s<)]+"), r"\1[REDACTED]"),
     (re.compile(r"(?i)(Dashboard user:\s*\S+\s+password:\s*)\S+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(Dashboard: \S+ \(user \S+, password )[^)\s]+"), r"\1[REDACTED]"),
     (re.compile(r"(?i)(://[^:/\s@]*:)[^@\s/?#]+@"), r"\1[REDACTED]@"),
     (re.compile(r"(?i)(using this password\s+)\S+"), r"\1[REDACTED]"),
     (re.compile(r"(?i)(Username:\s*`?)[^`\s]+(`?)"), r"\1[REDACTED]\2"),

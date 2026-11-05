@@ -31,7 +31,29 @@ tags, which build longer structured content without writing HTML strings:
 
 Use one approach per piece of content. ``dominate`` escapes strings placed
 inside its tags, including ``Markup`` strings, so their HTML is shown as text.
-Only put trusted text in ``Markup``, never participant-provided data.
+Only put trusted text in ``Markup``, never participant-provided data. To show
+participant text inside your own HTML, let ``Markup.format`` escape it rather
+than using an f-string:
+
+.. code-block:: python
+
+    Markup("Another participant wrote: <strong>{}</strong>").format(answer)
+
+``Markup.format`` escapes a ``dominate`` tag too, so pass
+``Markup(tag.render())`` to insert one.
+
+The same rule applies to control labels, such as the ``labels`` of
+:class:`~psynet.modular_page.PushButtonControl`, to
+:class:`~psynet.modular_page.Button` text and to
+:class:`~psynet.page.WaitPage` content: a plain string is shown as text, and
+HTML needs ``Markup`` or a ``dominate`` tag:
+
+.. code-block:: python
+
+    PushButtonControl(
+        choices=["cat", "dog"],
+        labels=[Markup('<img src="/static/cat.png" alt="Cat">'), "Dog"],
+    )
 
 A :class:`~psynet.modular_page.ModularPage` takes a label, a prompt (plain text
 or a prompt object), and optionally a control. The
@@ -91,6 +113,14 @@ The most recent answer is also available as ``participant.answer``. Every
 response is a row of the ``response`` table: ``question`` holds the page's
 label, alongside ``answer``, ``metadata`` (including ``time_taken``), and
 ``successful_validation``.
+
+Choice controls save the element of ``choices`` that the participant picked,
+keeping its type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``, and
+:class:`~psynet.modular_page.CheckboxControl` saves a list of choices.
+:class:`~psynet.modular_page.TimedPushButtonControl` is the exception; it saves
+the timing of each button press. The browser submits choices as text, so a
+control whose choices share the same text, such as ``1`` and ``"1"``, raises
+``ValueError``.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

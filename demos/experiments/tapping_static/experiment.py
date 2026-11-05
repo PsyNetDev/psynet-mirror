@@ -153,10 +153,12 @@ class TapTrial(TapTrialAnalysis):
             AudioPrompt(
                 self.assets["stimulus"].url + "/audio.wav",
                 Markup(
-                    f"""
-                    <br><h3>Tap in time with the metronome.</h3>
-                    Trial number {trial_number} out of {NUM_TRIALS_PER_PARTICIPANT}  trials.
                     """
+                    <br><h3>Tap in time with the metronome.</h3>
+                    Trial number {trial_number} out of {n_trials}  trials.
+                    """
+                ).format(
+                    trial_number=trial_number, n_trials=NUM_TRIALS_PER_PARTICIPANT
                 ),
             ),
             AudioRecordControl(

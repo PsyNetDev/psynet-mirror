@@ -43,9 +43,7 @@ def prepare_media_events(
         color_idx = count % len(stage_colors)
         color = stage_colors[color_idx]
         label = f"{base_label} {idx + 1}"
-        stages.append(
-            ProgressStage(media_duration, Markup(f"""Listen to {label}"""), color)
-        )
+        stages.append(ProgressStage(media_duration, f"Listen to {label}", color))
 
         media_key = media_keys[idx]
         key = "play_" + media_key

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import stat
@@ -171,6 +172,21 @@ def scaffold_managed_paths() -> frozenset[str]:
     paths.update(_MANAGED_DIRECTORIES)
     paths.update(_GENERATED_FILES)
     return frozenset(paths)
+
+
+def is_stock_scaffold_path(relative_path: str) -> bool:
+    """Return whether a path is scaffold boilerplate rather than the author's own file.
+
+    That is, a scaffold-managed path, or a file under a managed directory,
+    except that files authors customize (such as ``config.txt``) only count
+    while they still match their template.
+    """
+    managed = scaffold_managed_paths()
+    if relative_path in _PRESERVE_EXISTING_TEMPLATE_FILES:
+        return _template_file_matches(relative_path)
+    return relative_path in managed or any(
+        relative_path.startswith(f"{path}/") for path in managed
+    )
 
 
 def scaffold_paths_required_for_local_run() -> frozenset[str]:
@@ -817,8 +833,7 @@ def _report_scaffold_result(written, *, overwrite):
 
     if overwrite:
         if summary:
-            click.echo(f"Updated experiment scripts in {directory_name}")
-            click.echo(f"  updated: {summary}")
+            click.echo(f"Updated experiment scripts in {directory_name}: {summary}.")
         else:
             click.echo(
                 f"Experiment scripts in {directory_name} are already up to date."
@@ -826,11 +841,7 @@ def _report_scaffold_result(written, *, overwrite):
         return
 
     if summary:
-        click.echo(f"Scaffolded experiment in {directory_name}")
-        click.echo(f"  created: {summary}")
-        return
-
-    click.echo("Nothing to scaffold; experiment boilerplate is already present.")
+        click.echo(f"Scaffolded experiment in {directory_name}: created {summary}.")
 
 
 def _copy_template_file(relative_path, overwrite, *, previous_gitignore=None):
@@ -1264,7 +1275,7 @@ def _update_experiment_skills(*, overwrite: bool = False) -> bool:
         ):
             return False
 
-        click.echo(f"...updating {target} directory.")
+        click.echo(f"Updating {target}.")
         if target.exists():
             shutil.rmtree(target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1389,13 +1400,23 @@ def scaffold_missing_files():
     dict
         The result returned by :func:`scaffold_experiment_directory`.
     """
+    directory = os.getcwd()
     original_paths, original_modes = _snapshot_scaffold_context_paths()
     try:
         with _without_deployment_policy_review():
             yield scaffold_experiment_directory()
     finally:
-        _remove_new_scaffold_context_paths(original_paths)
-        _restore_scaffold_context_modes(original_modes)
+        # The cleanup removes relative paths, so it must not run elsewhere,
+        # e.g. in the repository root when an interrupted pytest session
+        # closes this context during interpreter shutdown.
+        if os.path.isdir(directory):
+            cwd = os.getcwd()
+            os.chdir(directory)
+            try:
+                _remove_new_scaffold_context_paths(original_paths)
+                _restore_scaffold_context_modes(original_modes)
+            finally:
+                os.chdir(cwd)
 
 
 # Shared Click help for the prune command (bootstrap + full CLI).
@@ -1407,7 +1428,8 @@ PRUNE_INCLUDE_TRACKED_OPTION_HELP = (
 )
 PRUNE_COMMAND_HELP = (
     "Remove scaffold-managed boilerplate and generated leftovers "
-    "(static/assets, untracked constraints.txt).\n\n"
+    "(a static/assets link left by older PsyNet versions, untracked "
+    "constraints.txt).\n\n"
     "By default only unmodified, untracked scaffold paths are removed. "
     "--include-modified also removes divergent untracked scaffold paths. "
     "--include-tracked also removes git-tracked managed paths. "
@@ -1611,14 +1633,16 @@ def _git_tracked_paths(root: Path, *, required: bool = False) -> set[str]:
 
 
 def _remove_generated_static_assets(root: Path) -> bool:
-    """Remove generated ``static/assets`` and an empty ``static/`` directory."""
+    """Remove a legacy ``static/assets`` link and an empty ``static/`` directory.
+
+    Older PsyNet versions linked ``static/assets`` to local asset storage.
+    PsyNet no longer creates anything there, so a real file or directory at
+    that path belongs to the author and is kept.
+    """
     assets = root / "static" / "assets"
     removed = False
-    if assets.is_symlink() or assets.is_file():
+    if assets.is_symlink():
         assets.unlink()
-        removed = True
-    elif assets.is_dir():
-        shutil.rmtree(assets)
         removed = True
 
     static_directory = root / "static"

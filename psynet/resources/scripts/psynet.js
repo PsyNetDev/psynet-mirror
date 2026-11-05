@@ -370,6 +370,7 @@
 
     psynet.setPageReady = function (isReady) {
       psynet.pageReady = isReady;
+      if (isReady) psynet.pageFailureShown = false;
       psynet.updatePageReadyMarker();
       if (isReady) {
         window.dispatchEvent(new CustomEvent("timelinePageReady"));
@@ -919,7 +920,7 @@
     };
 
     psynet.handleArrivalUpdateMessage = function (message) {
-      if (message.type !== "timeline_hold_wake") {
+      if (message?.type !== "timeline_hold_wake") {
         return;
       }
       (message.targets || []).forEach((target) => {
@@ -945,13 +946,13 @@
     };
 
     psynet.fetchArrivalNotice = function () {
-      if (psynet.participantId === undefined || typeof $ === "undefined") {
+      if (psynet.uniqueId === undefined || typeof $ === "undefined") {
         return;
       }
       $.ajax({
         url: "/timeline/arrival_notice",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
       }).done(function (data) {
         if (!psynet.arrivalUpdates) {
           return;
@@ -979,7 +980,7 @@
         connection: PsyNetWebSocketChannel.connect({
           channel: config.channel,
           confirmListening: true,
-          onMessage: psynet.handleArrivalUpdateMessage,
+          onDirect: psynet.handleArrivalUpdateMessage,
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
@@ -1114,6 +1115,16 @@
         controller.connection.close();
       }
 
+      psynet.hideTimelineHoldIndicator();
+      psynet.timelineHold = null;
+      window.dispatchEvent(
+        new CustomEvent("timelineHoldEnded", {
+          detail: {holdId: controller.hold.hold_id},
+        }),
+      );
+    };
+
+    psynet.hideTimelineHoldIndicator = function () {
       let indicator = document.getElementById(
         "psynet-timeline-hold-indicator",
       );
@@ -1134,12 +1145,6 @@
         commentButton.disabled =
           indicator.dataset.commentButtonWasDisabled === "true";
       }
-      psynet.timelineHold = null;
-      window.dispatchEvent(
-        new CustomEvent("timelineHoldEnded", {
-          detail: {holdId: controller.hold.hold_id},
-        }),
-      );
     };
 
     psynet._connectTimelineHoldSocket = function (controller) {
@@ -1151,13 +1156,13 @@
             psynet.resumeTimelineHold("websocket connection");
           }
         },
-        onMessage(message) {
-          if (controller.stopped) return;
+        onDirect(message) {
+          if (controller.stopped || message?.type !== "timeline_hold_wake") {
+            return;
+          }
           psynet.handleArrivalUpdateMessage(message);
           let matchingTarget = (message.targets || []).find(
-            (target) =>
-              message.type === "timeline_hold_wake" &&
-              target.wake_token === controller.hold.wake_token,
+            (target) => target.wake_token === controller.hold.wake_token,
           );
           if (matchingTarget) {
             window.dispatchEvent(
@@ -1171,7 +1176,6 @@
             psynet.resumeTimelineHold("server notification");
           } else if (
             controller.resumeInFlight &&
-            message.type === "timeline_hold_wake" &&
             (message.targets || []).some((target) => target.wake_token)
           ) {
             // An in-flight resume can consume a later hold whose release is
@@ -1371,6 +1375,7 @@
       // page state automatically. In inplace mode we must recreate that
       // lifecycle explicitly before we can mark the new page as ready.
       psynet.refreshTemplateData();
+      await psynet.releaseUnusedRecordingStreams();
       await psynet.rebuildTrial();
       await psynet.activateManagedPageJavascript();
       psynet.trialProgress = createTrialProgress();
@@ -1417,6 +1422,9 @@
     psynet.handleTimelineTransitionFailure = async function (error, message) {
       psynet.stopTimelineHold();
       psynet.setPageReady(false);
+      // The participant is told to reload; nextPage must not then tell them
+      // to wait for the page to load (for example after an automatic submit).
+      psynet.pageFailureShown = true;
       psynet.nextPagePending = false;
       psynet.setTimelineTransitionBusy(false);
       psynet.response.disable();
@@ -1923,9 +1931,6 @@
 
     psynet.captureSubmissionControlState = function () {
       if (psynet.submissionControlState !== null) return;
-      let nextButton = document.getElementById("next-button");
-      let nextButtonSpinner = document.getElementById("next-button-spinner");
-      let nextButtonText = document.getElementById("next-button-text");
       psynet.submissionControlState = {
         controls: Array.from(
           document.querySelectorAll(
@@ -1933,14 +1938,21 @@
           ),
           (element) => ({ element, disabled: element.disabled }),
         ),
-        nextButtonPresentation: nextButton
-          ? {
-              buttonStyle: nextButton.getAttribute("style"),
-              spinnerStyle: nextButtonSpinner?.getAttribute("style"),
-              textStyle: nextButtonText?.getAttribute("style"),
-            }
-          : null,
+        pendingButtons: [],
       };
+    };
+
+    // Covers the clicked button's label with a spinner until the submission
+    // finishes; restoreSubmissionControlState removes it if the page stays.
+    psynet.showSubmissionSpinner = function (button) {
+      if (!button || psynet.submissionControlState === null) return;
+      let spinner = document.createElement("span");
+      spinner.className = "psynet-button-spinner spinner-border spinner-border-sm";
+      spinner.setAttribute("aria-hidden", "true");
+      button.appendChild(spinner);
+      button.classList.add("psynet-button-pending");
+      button.setAttribute("aria-busy", "true");
+      psynet.submissionControlState.pendingButtons.push({ button, spinner });
     };
 
     psynet.restoreSubmissionControlState = function () {
@@ -1952,29 +1964,11 @@
       psynet.submissionControlState.controls.forEach(({ element, disabled }) => {
         if (element.isConnected) element.disabled = disabled;
       });
-      let presentation = psynet.submissionControlState.nextButtonPresentation;
-      if (presentation) {
-        let restoreStyle = function (element, style) {
-          if (!element) return;
-          if (style === null) {
-            element.removeAttribute("style");
-          } else {
-            element.setAttribute("style", style);
-          }
-        };
-        restoreStyle(
-          document.getElementById("next-button"),
-          presentation.buttonStyle,
-        );
-        restoreStyle(
-          document.getElementById("next-button-spinner"),
-          presentation.spinnerStyle,
-        );
-        restoreStyle(
-          document.getElementById("next-button-text"),
-          presentation.textStyle,
-        );
-      }
+      psynet.submissionControlState.pendingButtons.forEach(({ button, spinner }) => {
+        spinner.remove();
+        button.classList.remove("psynet-button-pending");
+        button.removeAttribute("aria-busy");
+      });
       psynet.submissionControlState = null;
     };
 
@@ -2222,6 +2216,24 @@
       };
     };
 
+    class NullAudioContext {
+      get currentTime() { return Date.now() / 1000; }
+      get state() { return "unavailable"; }
+      static _unavailable() {
+        throw new Error(
+          "AudioContext is not available in this browser. " +
+          "If your experiment uses audio, add 'audio_playback' to " +
+          "Experiment.browser_capabilities so that PsyNet screens out " +
+          "browsers without it."
+        );
+      }
+      decodeAudioData() { NullAudioContext._unavailable(); }
+      createBufferSource() { NullAudioContext._unavailable(); }
+      createGain() { NullAudioContext._unavailable(); }
+      createMediaStreamSource() { NullAudioContext._unavailable(); }
+      get destination() { NullAudioContext._unavailable(); }
+    }
+
     psynet.media.initAudioContext = function () {
       if (
         psynet.media.audioContext &&
@@ -2237,9 +2249,12 @@
       if ("webkitAudioContext" in window) context = new webkitAudioContext();
       if ("AudioContext" in window) context = new AudioContext();
       if (!context) {
-        throw Error(
-          "ERROR: No AudioContext available. Try Chrome, Safari or Firefox Nightly.",
+        psynet.log.warn(
+          "No AudioContext available; audio playback is disabled. " +
+            "The browser_capabilities check should detect and route this participant out.",
         );
+        psynet.media.audioContext = new NullAudioContext();
+        return;
       }
       if (context.state == "suspended") {
         context.resume();
@@ -3104,6 +3119,7 @@
 
       if (correctBrowser) {
         await new Promise((resolve) => setTimeout(resolve, 25));
+        await psynet.prepareBackgroundRecording();
         await psynet.trial.init();
       }
     };
@@ -3183,7 +3199,9 @@
     ) {
       if (!psynet.pageReady) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
-        psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (!psynet.pageFailureShown) {
+          psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        }
         return false;
       }
       if (psynet.timelineHold && !options.timelineHoldResume) {
@@ -3284,7 +3302,8 @@
       );
     };
 
-    psynet.loadNextTimelinePageWithReload = function () {
+    psynet.loadNextTimelinePageWithReload = async function () {
+      await psynet.drainRecordingUploads();
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.removeBeforeUnloadEventListener();
       }
@@ -3296,11 +3315,15 @@
     // Dallinger's window.location assignment) means Back from exit cannot
     // revive a finished session; the server also redirects finished
     // /timeline visits as a backstop.
-    psynet.finishAndGoToExit = function () {
+    psynet.finishAndGoToExit = async function () {
+      await psynet.drainRecordingUploads();
       const participantId = dallinger.identity.participantId;
-      const exitRoute = "/recruiter-exit?participant_id=" + participantId;
+      const exitRoute = dallinger.recruiterExitRoute();
       return dallinger
-        .post("/worker_complete", { participant_id: participantId })
+        .post("/worker_complete", {
+          participant_id: participantId,
+          unique_id: dallinger.identity.uniqueId,
+        })
         .done(function () {
           dallinger.allowExit();
           let openedFromDashboard = false;
@@ -3329,8 +3352,9 @@
     // If the browser restores a timeline page from the back/forward cache
     // (for example after Back from exit), force a reload so the server can
     // redirect finished participants.
-    window.addEventListener("pageshow", function (event) {
+    window.addEventListener("pageshow", async function (event) {
       if (event.persisted) {
+        await psynet.drainRecordingUploads();
         window.location.reload();
       }
     });
@@ -3338,14 +3362,16 @@
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
 
-      if (response.page?.attributes?.requires_full_page_reload) {
+      if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
       let hold = response.page?.attributes?.timeline_hold;
       if (hold) {
+        // Nothing records while the participant waits.
+        await psynet.endPageRecording([]);
         psynet.updatePageForTimelineHold(response.page);
         psynet.nextPagePending = false;
         psynet.beginTimelineHold(hold);
@@ -3362,7 +3388,14 @@
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
-        psynet.trial.registerEvent("pageUpdated");
+        psynet.var.pageUuid = response.page.attributes.page_uuid;
+        window.pageUuid = psynet.var.pageUuid;
+        psynet.pageLoadTime = new Date();
+        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        await psynet.prepareBackgroundRecording();
+        psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
+        await psynet.releaseUnusedRecordingStreams();
+        await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
         psynet.restoreSubmissionControlState();
         if (psynetTemplateData.flags.lucidRecruitment) {
@@ -3373,7 +3406,7 @@
 
       psynet.clearSubmissionControlState();
       if (psynet.requiresFullPageReloadTransition(response)) {
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
         return true;
       }
 
@@ -3388,10 +3421,10 @@
           // The response write has already committed, so the preserved page
           // cannot safely resume. Reload the authoritative server page instead.
           psynet.log.error(error.stack || String(error));
-          psynet.loadNextTimelinePageWithReload();
+          await psynet.loadNextTimelinePageWithReload();
         }
       } else {
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
       }
 
       return true;
@@ -3411,7 +3444,7 @@
         // reload the authoritative timeline instead of polling the overlay
         // with a rejected page_uuid.
         psynet.stopTimelineHold();
-        psynet.loadNextTimelinePageWithReload();
+        await psynet.loadNextTimelinePageWithReload();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
@@ -3432,7 +3465,39 @@
       }
     };
 
+    // The server answers 404 with this status when the participant is no
+    // longer in its database, e.g. a tab left open across a restart.
+    psynet.isUnknownParticipantResponse = function (request) {
+      if (!request || request.status !== 404) return false;
+      try {
+        // An XMLHttpRequest has `response`; a jQuery jqXHR `responseText`.
+        let body =
+          request.responseJSON ||
+          JSON.parse(request.responseText || request.response || "");
+        return body.status === "unknown_participant";
+      } catch (error) {
+        return false;
+      }
+    };
+
     psynet.timelineHoldBusyRetryMs = 250;
+
+    // The server answers busy before writing anything, so a submission can be
+    // resent. Back off with growing gaps, because under load a partner's
+    // barrier check can hold the participant row for several seconds; up to
+    // 25% random shortening keeps clients from retrying in step. A busy reply
+    // may itself take up to the lock timeout, so no retry starts more than
+    // about 10 s after the first send (elapsedMs). Returns null once the
+    // retries are used up. A timeline hold resume retries once, because the
+    // hold has its own retry. Keep in step with _BUSY_RETRY_DELAYS_S and
+    // _BUSY_RETRY_WINDOW_S in psynet/participant.py.
+    psynet.busyRetryDelayMs = function (attempt, options = {}, elapsedMs = 0) {
+      const delays = [250, 500, 1000, 2000, 2000, 2000, 2000];
+      const limit = options.timelineHoldResume ? 1 : delays.length;
+      if (attempt >= limit) return null;
+      const delay = Math.round(delays[attempt] * (0.75 + 0.25 * Math.random()));
+      return elapsedMs + delay > 10000 ? null : delay;
+    };
 
     // How long a submission keeps retrying while a docker-ssh app wakes;
     // longer than the controller's slowest wake.
@@ -3571,6 +3636,8 @@
         return await psynet.handleApprovedResponse(response);
       }
       if (response.submission === "rejected") {
+        // Keep recording for the corrected answer.
+        await backgroundRecorder?.resume();
         return await psynet.handleRejectedResponse(
           response,
           onRejection,
@@ -3581,6 +3648,7 @@
     };
 
     let onPageUpdated = function (event) {
+      if (typeof unityInstance === "undefined") return;
       console.log(
         "Dispatched 'onPageUpdated' event. Sending data to Unity:\nattributes:" +
           psynet.page.attributes +
@@ -3642,7 +3710,128 @@
       });
     };
 
-    let submitGenericResponse = function (
+    // Document ownership preserves uploads across in-place page cleanup.
+    let recordingCapture;
+    psynet.getRecordingCapture = function () {
+      recordingCapture ||= recordingModule("/static/scripts/recording-capture.js").then(module => ({
+        devices: new module.RecordingDevices(),
+        RecordingClip: module.RecordingClip,
+      })).catch(error => { recordingCapture = null; throw error; });
+      return recordingCapture;
+    };
+    // Streams belong to the document so that consecutive recording pages reuse
+    // them without asking again. Release any the new page does not capture, so
+    // the camera light and screen-sharing banner turn off between recordings.
+    psynet.releaseUnusedRecordingStreams = async function () {
+      if (!recordingCapture) return;
+      const captured = new Set(psynet.var.recordingCaptureSources || []);
+      try {
+        const {devices} = await recordingCapture;
+        for (const source of [...devices.streams.keys()]) {
+          if (!captured.has(source)) devices.release(source);
+        }
+      } catch (error) {
+        psynet.log.warn(`Could not release recording streams: ${error.message}`);
+      }
+    };
+    // Ordinary transitions stop the page's background clips and release streams
+    // while rebuilding the page. Holds keep the page, so they do it here.
+    psynet.endPageRecording = async function (captureSources) {
+      await backgroundRecorder?.discard();
+      psynet.var.recordingCaptureSources = captureSources;
+      await psynet.releaseUnusedRecordingStreams();
+    };
+    let recordingUploadQueue;
+    let recordingUploadMessage;
+    psynet.allowRecordingUnload = function () {
+      recordingUploadQueue?.allowUnload();
+    };
+    psynet.drainRecordingUploads = async function () {
+      if (!recordingUploadQueue?.pendingBytes) return;
+      psynet.setTimelineTransitionBusy(true);
+      psynet.showTimelineHoldIndicator(recordingUploadMessage);
+      try { await recordingUploadQueue.drain(); }
+      finally {
+        psynet.setTimelineTransitionBusy(false);
+        psynet.hideTimelineHoldIndicator();
+      }
+    };
+    let backgroundRecorder;
+    let backgroundUnavailable = false;
+
+    // Backpressure: a participant may run at most one recording page ahead of
+    // their uploads, and only if the queue has room for this page's
+    // recordings. On a slow connection they wait here, as they would have for
+    // an upload inside the submission, instead of building a backlog.
+    async function waitForRecordingBacklog(recordings, maxBytes) {
+      if (recordingUploadQueue.hasRoom(recordings, maxBytes)) return;
+      psynet.showTimelineHoldIndicator(recordingUploadMessage);
+      try { await recordingUploadQueue.waitForRoom(recordings, maxBytes); }
+      finally { psynet.hideTimelineHoldIndicator(); }
+    }
+    async function recordingModule(path) {
+      let timer;
+      try {
+        return await Promise.race([import(path),new Promise((_,reject) => {
+          timer = setTimeout(() => reject(new Error("Recording transport initialization timed out.")),5000);
+        })]);
+      } finally { clearTimeout(timer); }
+    }
+    // One document-wide queue for all recording controls. Its fixed capacity
+    // (the queue default, two maximum-size recordings) must not depend on which
+    // control happens to create it first.
+    async function getRecordingQueue() {
+      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
+      if (!recordingUploadQueue) {
+        const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
+        recordingUploadQueue = new MediaUploadQueue();
+      }
+      return recordingUploadQueue;
+    }
+    psynet.prepareBackgroundRecording = async function () {
+      await backgroundRecorder?.discard();
+      backgroundUnavailable = false;
+      const config = psynet.var.backgroundRecording;
+      if (!config) return;
+      try {
+        await getRecordingQueue();
+        const {BackgroundRecorder} = await recordingModule("/static/scripts/background-recording.js");
+        backgroundRecorder ||= new BackgroundRecorder((await psynet.getRecordingCapture()).devices);
+        await backgroundRecorder.begin(config);
+      } catch (error) {
+        psynet.log.warn(`Background recording unavailable: ${error.message}`);
+        backgroundUnavailable = true;
+      }
+    };
+
+    // A recording submission whose acceptance is still unknown (the reply was
+    // lost or unreadable). Until the server answers definitively, every resend
+    // on the same page uses this exact submission: the same JSON, recordings and
+    // recovery secret. The server can then replay its original acceptance, and
+    // the uploaded bytes match the reservation it issued.
+    let unconfirmedRecordingSubmission = null;
+    let recordingSubmissionToResend = function () {
+      if (unconfirmedRecordingSubmission?.pageUuid !== psynet.submissionPageUuid) {
+        unconfirmedRecordingSubmission = null;
+      }
+      return unconfirmedRecordingSubmission;
+    };
+
+    // The server may have accepted the answer, and an error page would lose its
+    // recordings. Let the participant resend the same submission instead, so the
+    // server can recover its original reply.
+    let offerRecordingResend = function (request) {
+      psynet.log.warn(
+        `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
+      );
+      psynet.alert(
+        (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
+          "We could not confirm that your answer was received. Please check your connection and press Next again.",
+      );
+      psynet.restoreSubmissionControlState();
+    };
+
+    let submitGenericResponse = async function (
       rawAnswer,
       metadata,
       blobs,
@@ -3661,7 +3850,74 @@
       }
       $(" .response, .submit ").prop("disabled", true);
 
-      const json = prepareJsonSubmission(rawAnswer, metadata, options);
+      let capturedRecordings = {};
+      const submittedPageUuid = psynet.submissionPageUuid;
+      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
+      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
+      const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
+      let json;
+      if (resend) {
+        psynet.log.info("Resending a recording submission whose acceptance is unconfirmed.");
+        capturedRecordings = resend.recordings;
+        json = resend.json;
+        blobs = {};
+      } else if (Array.isArray(sources)) {
+        if (background) {
+          let capture;
+          try {
+            if (backgroundUnavailable) throw new Error("Background capture could not initialize.");
+            capture = await backgroundRecorder.finish();
+          } catch (error) {
+            psynet.log.warn(`Background recording unavailable: ${error.message}`);
+            capture = {recordings:{},sizes:{},unavailable:Object.fromEntries(sources.map(source => [source,"capture_error"]))};
+          }
+          try {
+            await waitForRecordingBacklog(capture.recordings, background.max_bytes);
+            const prepared = recordingUploadQueue.prepare(capture.recordings, background.max_bytes);
+            capturedRecordings = prepared.recordings;
+            // More specific capture outcomes take precedence over an empty-blob result.
+            capture.unavailable = {...prepared.unavailable, ...capture.unavailable};
+          } catch (error) {
+            psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+            capturedRecordings = {};
+            capture.unavailable = {
+              ...Object.fromEntries(sources.map(source => [source, "transport_unavailable"])),
+              ...capture.unavailable,
+            };
+          }
+          metadata = {...metadata,background_recording:{sizes:capture.sizes,unavailable:capture.unavailable,outcomes:capture.outcomes}};
+        } else {
+          const sizes = {};
+          for (const source of sources) {
+            const blob = blobs?.[`${source}Recording`];
+            capturedRecordings[source] = blob;
+            sizes[source] = blob instanceof Blob ? blob.size : 0;
+          }
+          let unavailable;
+          try {
+            const maxBytes = psynet.var.asynchronousUploadMaxBytes;
+            await getRecordingQueue();
+            await waitForRecordingBacklog(capturedRecordings, maxBytes);
+            const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
+            capturedRecordings = prepared.recordings;
+            unavailable = prepared.unavailable;
+          } catch (error) {
+            psynet.log.warn(`Recording transport unavailable: ${error.message}`);
+            capturedRecordings = {};
+            unavailable = Object.fromEntries(sources.map(source => [source, "transport_unavailable"]));
+          }
+          metadata = { ...metadata, recording_uploads: sizes, recording_upload_unavailable: unavailable };
+          blobs = {};
+        }
+        const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)), value => value.toString(16).padStart(2, "0")).join("");
+        metadata = {...metadata, recording_recovery_secret:secret};
+        json = prepareJsonSubmission(rawAnswer, metadata, options);
+        unconfirmedRecordingSubmission = {
+          pageUuid: psynet.submissionPageUuid, json, recordings: capturedRecordings,
+        };
+      } else {
+        json = prepareJsonSubmission(rawAnswer, metadata, options);
+      }
 
       var formData = new FormData();
       formData.append("json", json);
@@ -3671,22 +3927,43 @@
       }
 
       return new Promise((resolve) => {
+        const submissionStarted = performance.now();
         let attempt = 0;
+        let busyRetries = 0;
+        let firstSentAt;
         let wakeRetry = {};
-        let send = function () {
+        let send = function (countAttempt = true) {
+          if (countAttempt) attempt += 1;
+          // The busy window starts once the app is awake, not at the first send.
+          if (busyRetries === 0) firstSentAt = Date.now();
           let request = new XMLHttpRequest();
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
             if (await psynet.waitIfAppIsWaking(request, wakeRetry, options)) {
-              send();
+              send(false);
               return;
             }
-            if (psynet.isBusyResponse(request) && attempt === 0) {
-              attempt += 1;
+            const busyRetryMs = psynet.isBusyResponse(request)
+              ? psynet.busyRetryDelayMs(busyRetries, options, Date.now() - firstSentAt)
+              : null;
+            if (busyRetryMs !== null) {
+              busyRetries += 1;
               psynet.log.warn(
                 "The experiment was busy; retrying the submission.",
               );
-              await new Promise((retry) => setTimeout(retry, 250));
+              await new Promise((retry) => setTimeout(retry, busyRetryMs));
+              // Busy retries have their own budget, separate from transport retries.
+              send(false);
+              return;
+            }
+            let invalidJson = false;
+            if (request.status === 200) {
+              try { JSON.parse(request.response); } catch (_) { invalidJson = true; }
+            }
+            if (Array.isArray(sources) && attempt < 3 &&
+                !psynet.isBusyResponse(request) &&
+                ([0, 502, 503, 504].includes(request.status) || invalidJson)) {
+              await new Promise(retry => setTimeout(retry, 500));
               send();
               return;
             }
@@ -3694,6 +3971,32 @@
             try {
               if (request.status === 200) {
                 psynet.log.debug("Response was successfully received.");
+                const accepted = JSON.parse(request.response);
+                if (Array.isArray(sources)) {
+                  // The server answered definitively: an approval enqueues this
+                  // submission's recordings below, and a rejection lets the next
+                  // attempt send a corrected answer with a new snapshot.
+                  unconfirmedRecordingSubmission = null;
+                }
+                if (accepted.submission === "approved" && Array.isArray(sources)) {
+                  const serverTime = Date.parse(accepted.recording_upload_server_time);
+                  for (const upload of accepted.recording_uploads || []) {
+                    // Bound retention by the original lifetime cap even on a replay.
+                    const deadline = submissionStarted + Date.parse(upload.expires_at) - serverTime;
+                    try {
+                      recordingUploadQueue.enqueue({
+                        ...upload, deadline, blob: capturedRecordings[upload.source],
+                        group: submittedPageUuid, renewInterval: upload.renew_interval_ms,
+                      }).then(outcome => {
+                        if (outcome.status === "failed") {
+                          psynet.log.warn(`Recording ${upload.id} upload failed: ${outcome.reason}`);
+                        }
+                      });
+                    } catch (error) {
+                      psynet.log.warn(`Could not queue recording ${upload.id}: ${error.message}`);
+                    }
+                  }
+                }
                 passedValidation = await onSuccessResponse(
                   request,
                   onRejection,
@@ -3704,9 +4007,18 @@
                   request,
                   options,
                 );
+              } else if (psynet.isUnknownParticipantResponse(request)) {
+                // Retrying (as a timeline hold would) can't bring the session
+                // back; the error page explains.
+                psynet.stopTimelineHold();
+                onErrorResponse(request);
               } else if (options.timelineHoldResume) {
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
+              } else if (Array.isArray(sources) && [0, 502, 503, 504].includes(request.status)) {
+                // Only a transport failure leaves acceptance unknown; PsyNet's
+                // own error replies go to its error recovery as before.
+                offerRecordingResend(request);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
@@ -3716,6 +4028,10 @@
                 psynet.log.warn(error.stack || String(error));
                 passedValidation =
                   await psynet.handleHoldResumeTransportFailure(request);
+              } else if (Array.isArray(sources) && unconfirmedRecordingSubmission) {
+                // The reply could not be read, so acceptance is still unknown.
+                psynet.log.warn(error.stack || String(error));
+                offerRecordingResend(request);
               } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {
@@ -3727,7 +4043,8 @@
             }
           };
           request.open("POST", "/response");
-          if (options.timelineHoldResume) {
+          // Long enough for lock waits and barrier checks under load.
+          if (options.timelineHoldResume || Array.isArray(sources)) {
             request.timeout = psynet.timelineHoldResumeTimeoutMs;
           }
           request.send(formData);
@@ -3873,11 +4190,21 @@
   })();
 
   let updateProgressAndReward = function () {
-    if (psynet.participantId !== undefined) {
+    if (psynet.uniqueId !== undefined) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
-        data: { participantId: psynet.participantId },
+        data: { uniqueId: psynet.uniqueId },
+        error: function (request) {
+          if (psynet.isUnknownParticipantResponse(request)) {
+            clearInterval(psynet.progressAndRewardTimer);
+            psynet.stopTimelineHold();
+            psynetErrorPage.go({
+              uniqueId: psynet.uniqueId,
+              participantId: psynetTemplateData.participantId,
+            });
+          }
+        },
       }).done(function (data) {
         let progressPercentage = data["progressPercentage"];
         let progressPercentageStr = progressPercentage + "%";
@@ -3900,7 +4227,7 @@
   psynet.updateProgressAndReward = updateProgressAndReward;
 
   if (psynetTemplateData.flags.dynamicallyUpdateProgressBarAndReward) {
-    setInterval(updateProgressAndReward, 1000);
+    psynet.progressAndRewardTimer = setInterval(updateProgressAndReward, 1000);
   }
 
   function alertParticipantOpenedDevtools() {
@@ -3981,6 +4308,12 @@
 
   psynet.initLucidTermination = function () {
     psynet.clearLucidTermination();
+    psynet.terminateParticipant = function (reason) {
+      psynet.log.error(
+        `Not terminating the participant (reason: ${reason}): ` +
+          "the experiment does not recruit through Lucid.",
+      );
+    };
 
     if (!psynetTemplateData.flags.lucidRecruitment) {
       return;
@@ -4001,10 +4334,15 @@
       psynet.removeBeforeUnloadEventListener();
       clearInterval(checkTriedToLeaveIntervalID);
       clearInterval(clockIntervalID);
+      // Termination ends the session like early exit, so it abandons pending
+      // uploads instead of holding the participant until their deadlines.
+      psynet.allowRecordingUnload();
       return window.location.replace(
-        `/terminate_participant?participant_id=${psynetTemplateData.participantId}&reason=${reason}`,
+        "/terminate_participant?" +
+          new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
       );
     }
+    psynet.terminateParticipant = terminateParticipant;
 
     function checkTriedToLeave() {
       if (triedToLeave) {

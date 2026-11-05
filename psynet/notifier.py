@@ -1,18 +1,47 @@
 import logging
 import secrets
+import time
 from datetime import datetime, timedelta
 from functools import partial
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import psutil
 from dallinger.utils import classproperty
 
 from . import deployment_info
 from .redis import redis_vars
-from .server_logs import dozzle_url
+from .server_logs import recorded_dozzle_url
 from .utils import format_bytes, format_timedelta, get_config, get_logger
 
 logger = get_logger()
+
+
+# psutil needs two readings to measure a process's CPU use.
+_CPU_SAMPLE_SECONDS = 0.5
+
+
+def _rss(proc: psutil.Process) -> Optional[int]:
+    """Resident memory of a process, or ``None`` if it has exited or can't be read."""
+    try:
+        return proc.memory_info().rss
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+
+
+def _cpu_percent(proc: psutil.Process) -> Optional[float]:
+    """CPU use since the previous call, or ``None`` if the process has exited or can't be read."""
+    try:
+        return proc.cpu_percent()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+
+
+def _sample_cpu_percents(workers):
+    """Measure each worker's CPU use over one short shared interval."""
+    for _, proc in workers:
+        _cpu_percent(proc)
+    time.sleep(_CPU_SAMPLE_SECONDS)
+    return {pid: _cpu_percent(proc) for pid, proc in workers}
 
 
 def _alert_researcher(message: str):
@@ -96,7 +125,7 @@ class Notifier:
             msg = f"@{username} launched experiment "
         else:
             msg = "Launched experiment "
-        msg += f'"{self.exp.label}" (`{self.deployment_information["secret"]}`)'
+        msg += f'"{self.exp.label}"'
         if self.deployment_information["is_local_deployment"]:
             msg = f"{msg} locally"
         elif self.deployment_information["is_ssh_deployment"]:
@@ -122,7 +151,7 @@ class Notifier:
     @property
     def logs_message(self):
         info = self.deployment_information
-        logs_url = dozzle_url(info["server"], info.get("ingress"))
+        logs_url = recorded_dozzle_url(info)
         if logs_url is None:
             command = info.get("logs_command")
             if command is None:
@@ -180,15 +209,24 @@ class Notifier:
         return workers
 
     def resource_usage_notification(
-        self, resource_type, mute_same_warning_for_n_hours, level="warning"
+        self,
+        resource_type,
+        mute_same_warning_for_n_hours,
+        level="warning",
+        usage_pct=None,
     ):
+        """Notify about high resource use, unless the same warning is muted.
+
+        ``usage_pct`` is the CPU reading that triggered the warning; reading
+        CPU again here would cover only the moments since that reading.
+        """
         msg = self._build_initial_message(level, mute_same_warning_for_n_hours)
         if not self._should_send_notification(
             resource_type, level, mute_same_warning_for_n_hours
         ):
             return
         redis_vars.set(f"last_{resource_type}_{level}", datetime.now())
-        msg += self._get_resource_message(resource_type)
+        msg += self._get_resource_message(resource_type, usage_pct)
         if resource_type in ["ram", "cpu"]:
             msg += self._get_worker_processes_message(resource_type)
         self.notify(msg)
@@ -211,7 +249,7 @@ class Notifier:
             > datetime.now() - timedelta(hours=mute_same_warning_for_n_hours)
         )
 
-    def _get_resource_message(self, resource_type):
+    def _get_resource_message(self, resource_type, usage_pct=None):
         if resource_type == "ram":
             mem = psutil.virtual_memory()
             return f"Free RAM low: {format_bytes(mem.available)} ({mem.percent}%)"
@@ -219,7 +257,9 @@ class Notifier:
             disk = psutil.disk_usage("/")
             return f"Free disk space low: {format_bytes(disk.free)} ({disk.percent}%)"
         elif resource_type == "cpu":
-            return f"CPU usage high: {psutil.cpu_percent()}%"
+            if usage_pct is None:
+                usage_pct = psutil.cpu_percent()
+            return f"CPU usage high: {usage_pct}%"
         else:
             raise ValueError(f"Unknown resource type: {resource_type}")
 
@@ -227,27 +267,29 @@ class Notifier:
         workers = self._get_worker_processes()
         if not workers:
             return "\n* No workers found"
-        workers = sorted(workers, key=lambda w: w[1].memory_info().rss, reverse=True)
+        if resource_type == "cpu":
+            usage = _sample_cpu_percents(workers)
+        else:
+            usage = {pid: _rss(proc) for pid, proc in workers}
+        workers = [(pid, proc) for pid, proc in workers if usage[pid] is not None]
+        workers.sort(key=lambda w: usage[w[0]], reverse=True)
         return "".join(
-            self._format_worker_message(proc, pid, resource_type)
+            self._format_worker_message(proc, pid, resource_type, usage[pid])
             for pid, proc in workers
         )
 
-    def _format_worker_message(self, proc, pid, resource_type):
+    def _format_worker_message(self, proc, pid, resource_type, usage):
         try:
             running_since = datetime.now() - datetime.fromtimestamp(proc.create_time())
             process_name = (
                 f"{proc.name()} ({pid}) running for {format_timedelta(running_since)}"
             )
-            if resource_type == "ram":
-                mem_pct = proc.memory_info().rss / psutil.virtual_memory().total * 100
-                mem_mb = format_bytes(proc.memory_info().rss)
-                return f"\n- {process_name} is using {mem_mb} ({mem_pct:.1f}%)"
-            elif resource_type == "cpu":
-                cpu_pct = proc.cpu_percent()
-                return f"\n- {process_name} is using {cpu_pct:.1f}% CPU"
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return ""
+        if resource_type == "ram":
+            mem_pct = usage / psutil.virtual_memory().total * 100
+            return f"\n- {process_name} is using {format_bytes(usage)} ({mem_pct:.1f}%)"
+        return f"\n- {process_name} is using {usage:.1f}% CPU"
 
 
 class NullNotifier(Notifier):
@@ -284,9 +326,13 @@ class LoggerNotifier(Notifier):
         return msg
 
     def on_launch(self):
-        """Log the launch, leaving local dashboard details to the launch banner."""
+        """Log the launch, leaving local dashboard details to the launch banner.
+
+        A local launch is logged at DEBUG: the server prints "Experiment
+        launch complete!" straight afterwards.
+        """
         if self.deployment_information["is_local_deployment"]:
-            self.notify(self.launch_message)
+            self.notify(self.launch_message, level="debug")
         else:
             super().on_launch()
 

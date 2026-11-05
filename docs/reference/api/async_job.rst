@@ -105,7 +105,7 @@ example, ``psynet destroy ssh`` prints:
 
 .. code-block:: text
 
-    ❯❯ WARNING: my-study: 12 async jobs are still pending (12 low priority);
+    WARNING: my-study: 12 async jobs are still pending (12 low priority);
     the oldest was enqueued 25 minutes ago. Destroying the app now loses their
     results. Wait for them to finish, then run `psynet export ssh` again
     before destroying the app.

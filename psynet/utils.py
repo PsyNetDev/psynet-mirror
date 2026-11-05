@@ -33,8 +33,10 @@ from bs4 import BeautifulSoup
 from dallinger.config import experiment_available
 from dallinger.heroku.tools import HerokuApp
 from dallinger.recruiters import _descendent_classes
+from dominate.dom_tag import dom_tag
 from flask.globals import current_app
 from flask.templating import Environment, _render
+from markupsafe import Markup
 from sqlalchemy import or_
 from urllib3.util import Retry
 
@@ -650,6 +652,9 @@ def require_exp_directory(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # On a group, this runs before Click reaches a subcommand's --help.
+        if "--help" in sys.argv[1:]:
+            return f(*args, **kwargs)
         try:
             ensure_experiment_directory_name_does_not_conflict()
             if not experiment_available():
@@ -682,10 +687,36 @@ _PSYNET_JINJA_LOCALES_KEY = "psynet_jinja_locale_envs"
 _PSYNET_STRING_TEMPLATE_CACHE_SIZE = 256
 
 
+def finalize_template_value(value):
+    """Mark dominate tags as safe HTML before Jinja autoescapes template output.
+
+    Dominate escapes the text it is given, so a rendered tag is trusted HTML.
+    Plain strings are still escaped; wrap trusted HTML in ``markupsafe.Markup``.
+    """
+    if isinstance(value, dom_tag):
+        return Markup(value.render())
+    return value
+
+
+def _mark_translation_safe(translate):
+    """Wrap a translator so templates treat its catalog text as trusted HTML.
+
+    Template message ids may contain markup such as ``<strong>``. This matches
+    Jinja's own i18n extension, which marks translations safe under autoescape.
+    """
+
+    @wraps(translate)
+    def wrapper(*args, **kwargs):
+        return Markup(translate(*args, **kwargs))
+
+    return wrapper
+
+
 def _translation_environment(app, locale):
     """Return a locale-specific Jinja environment, cached on the Flask app.
 
-    A new Environment on every page render recompiled Dallinger's layout for
+    Autoescaping follows Flask's rules (on for HTML templates and template
+    strings). A new Environment on every page render recompiled Dallinger's layout for
     each ``/response``. Hold-resume ``render`` times of several hundred
     milliseconds were that compile, not BeautifulSoup. Environments are per
     locale so gettext catalogs do not race across concurrent requests.
@@ -701,13 +732,17 @@ def _translation_environment(app, locale):
 
     jinja_functions = {
         **app.jinja_env.globals,
-        "gettext": gettext,
-        "pgettext": pgettext,
+        "gettext": _mark_translation_safe(gettext),
+        "pgettext": _mark_translation_safe(pgettext),
         "url_for": versioned_url_for,
     }
     translation = Translations.load("translations", [locale])
     environment = Environment(
-        loader=app.jinja_env.loader, extensions=["jinja2.ext.i18n"], app=app
+        loader=app.jinja_env.loader,
+        extensions=["jinja2.ext.i18n"],
+        app=app,
+        autoescape=app.select_jinja_autoescape,
+        finalize=finalize_template_value,
     )
     environment.install_gettext_translations(translation)
     environment.globals.update(**jinja_functions)
@@ -1415,7 +1450,10 @@ def is_method_overridden(obj, ancestor: Type, method: str):
 
 @contextlib.contextmanager
 def time_logger(label, threshold=0.1):
-    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds."""
+    """Log the time taken by the enclosed block if it exceeds ``threshold`` seconds.
+
+    The line is at INFO if the block took at least a second, otherwise at DEBUG.
+    """
     log = {
         "time_started": time.monotonic(),
         "time_finished": None,
@@ -1425,7 +1463,8 @@ def time_logger(label, threshold=0.1):
     log["time_finished"] = time.monotonic()
     log["time_taken"] = log["time_finished"] - log["time_started"]
     if log["time_taken"] > threshold:
-        logger.info(
+        logger.log(
+            logging.INFO if log["time_taken"] >= 1 else logging.DEBUG,
             "Task '%s' took %.3f s",
             label,
             log["time_taken"],

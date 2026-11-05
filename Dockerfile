@@ -3,17 +3,20 @@
 # Can be overridden with: docker build --build-arg DOCKER_PLATFORM=linux/arm64
 ARG DOCKER_PLATFORM=linux/amd64
 ARG PYTHON_VERSION=3.14
-# Debian bookworm ships Node 18, but Playwright needs Node 20 or later.
-ARG NODE_VERSION=20
-FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-bookworm-slim AS node
+# Playwright needs Node 20 or later, and Node 20 reached end of life in April
+# 2026. Copy the pinned Node release from the official image, built on the
+# same Debian release as the Python image, instead of Debian's nodejs package.
+ARG NODE_VERSION=22
+FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-trixie-slim AS node
 
-FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-bookworm
+FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-trixie
 ARG PYTHON_VERSION
 ARG CHROME_VERSION=149.0.7827.54
 
-RUN pip install uv
 # Every CI job builds this image, so a brief PyPI outage fails them all at
-# once; uv's default 3 retries give up within seconds.
+# once; uv's default 3 retries give up within seconds, and pip's defaults
+# (15 s, 5 retries) still fail on longer blips.
+RUN pip install --timeout 60 --retries 15 uv
 ENV UV_HTTP_RETRIES=8
 
 # TODO: delete some of these if we can
@@ -29,12 +32,6 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
     node --version && npm --version
 
-# Heroku CLI is currently needed to run `psynet test local`, this should change soon
-RUN curl --fail --location --show-error --retry 5 --retry-connrefused --retry-delay 2 \
-        --output /tmp/heroku-install.sh https://cli-assets.heroku.com/install.sh && \
-    sh /tmp/heroku-install.sh && \
-    rm /tmp/heroku-install.sh && \
-    heroku --version
 RUN service redis-server start
 ENV HEADLESS=TRUE
 
@@ -57,7 +54,8 @@ COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
 # Generate PsyNet constraints.txt (experiment runtime + demos extras) and install it.
 # Use a vendored Dallinger dev-requirements snapshot so parallel CI Docker
 # builds do not depend on raw.githubusercontent.com availability.
-RUN uv pip compile --python-version ${PYTHON_VERSION} pyproject.toml \
+# Compile for the image's full Python version: uv reads 3.11 as 3.11.0.
+RUN uv pip compile --python-version "$(python -c 'import platform; print(platform.python_version())')" pyproject.toml \
         --extra experiment --extra demos \
         --constraint dallinger-dev-requirements.txt \
         --output-file constraints.txt

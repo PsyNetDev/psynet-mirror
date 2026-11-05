@@ -138,7 +138,7 @@ class _BaseExperiment:
                 try:
                     with open(json_path) as fh:
                         output = json.load(fh)
-                    result = output["results"][0]
+                    result = {**output["results"][0], "export": output.get("export")}
                 except (OSError, json.JSONDecodeError, KeyError, IndexError) as exc:
                     raise RuntimeError(
                         f"failed to read psynet performance-test output for "
@@ -164,6 +164,17 @@ class _BaseExperiment:
 
     track_median_response_time_ms.unit = "ms"
     track_median_response_time_ms.pretty_name = "Median request time"
+
+    def track_export_time_s(self, data, *param_values):
+        export = self._result_for(data, *param_values)["export"]
+        if export is None:
+            raise RuntimeError("performance test recorded no export; was --no-export passed?")
+        if export["error"]:
+            raise RuntimeError(f"export failed: {export['error']}")
+        return export["duration_s"]
+
+    track_export_time_s.unit = "s"
+    track_export_time_s.pretty_name = "Export time"
 
 
 class Timeline(_BaseExperiment):
