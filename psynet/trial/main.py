@@ -1689,7 +1689,7 @@ class TrialMaker(Module):
         of the experiment; ``"kick"`` removes them from the group and lets them continue. Defaults to ``"fail"``.
 
     sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass) after which a participant
+        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
         is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
 
     sync_group_timeout_between_barriers_action
@@ -2825,7 +2825,7 @@ class NetworkTrialMaker(TrialMaker):
         of the experiment; ``"kick"`` removes them from the group and lets them continue. Defaults to ``"fail"``.
 
     sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass) after which a participant
+        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
         is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
 
     sync_group_timeout_between_barriers_action

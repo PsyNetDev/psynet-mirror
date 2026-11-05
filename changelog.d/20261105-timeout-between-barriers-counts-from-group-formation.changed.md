@@ -1,1 +1,0 @@
-`GroupBarrier(timeout_between_barriers_time=...)` now also applies at the first `GroupBarrier` after a `Grouper`, counting from when the group was formed. Previously it only applied from the second barrier onward, so a member who never reached the first barrier was not kicked or failed by this timeout.

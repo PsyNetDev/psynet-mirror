@@ -1232,8 +1232,8 @@ class GroupBarrier(Barrier):
 
     timeout_between_barriers_time
         The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
-        the group was formed by its :class:`~psynet.sync.Grouper` or last passed a ``GroupBarrier``, whichever
-        is later. If ``None`` (default), no between-barrier timeout is applied.
+        the group last passed a ``GroupBarrier`` or the participant joined the group, whichever is later. If
+        ``None`` (default), no between-barrier timeout is applied.
 
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
@@ -1586,16 +1586,32 @@ class GroupBarrier(Barrier):
                 participant.fail("timeout between barriers")
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
-        """Return active members past the between-barrier timeout who are not waiting."""
-        if (
-            self.timeout_between_barriers_time is None
-            or group.last_barrier_pass_time is None
-        ):
+        """Return active members past the between-barrier timeout who are not waiting.
+
+        Each member is timed from the group's last barrier pass or from when
+        they joined the group, whichever is later, so newcomers to an open
+        group are not late as soon as they join.
+        """
+        if self.timeout_between_barriers_time is None:
             return []
-        elapsed_seconds = (timenow() - group.last_barrier_pass_time).total_seconds()
-        if elapsed_seconds <= self.timeout_between_barriers_time:
-            return []
-        return [p for p in group.active_participants if p.id not in waiting_ids]
+        now = timenow()
+        active_ids = {p.id for p in group.active_participants}
+        late = []
+        for link in group.participant_links:
+            participant = link.participant
+            if (
+                not link.active
+                or participant.id not in active_ids
+                or participant.id in waiting_ids
+            ):
+                continue
+            starts = [t for t in (group.last_barrier_pass_time, link.arrival_time) if t]
+            if not starts:
+                continue
+            elapsed = (now - max(starts)).total_seconds()
+            if elapsed > self.timeout_between_barriers_time:
+                late.append(participant)
+        return late
 
 
 class Grouper(Barrier):
@@ -1740,7 +1756,6 @@ class Grouper(Barrier):
 
             for _group in groups:
                 db.session.add(_group)
-                _group.last_barrier_pass_time = timenow()
                 for _participant in _group.participants:
                     participants_to_release.append(_participant)
 
@@ -2435,7 +2450,12 @@ class SyncGroup(SQLBase, SQLMixin):
         _forget_active_sync_group(participant)
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
-        ParticipantLinkSyncGroup(participant=participant, sync_group=self, active=True)
+        ParticipantLinkSyncGroup(
+            participant=participant,
+            sync_group=self,
+            active=True,
+            arrival_time=timenow(),
+        )
 
     @property
     def active_participants(self) -> List[Participant]:

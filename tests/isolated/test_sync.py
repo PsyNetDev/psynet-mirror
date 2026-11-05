@@ -1875,6 +1875,14 @@ def _pair_sync_group(exp, db_session, group_type="main"):
     return _sync_group_of(exp, db_session, 2, group_type)
 
 
+def _backdate_group(group, seconds):
+    """Pretend the group passed its last barrier, and its members joined, ``seconds`` ago."""
+    past = timenow() - timedelta(seconds=seconds)
+    group.last_barrier_pass_time = past
+    for link in group.participant_links:
+        link.arrival_time = past
+
+
 def _arrive_at_group_barrier(exp, barrier, participant):
     barrier.receive_participant(participant)
     if barrier._uses_timeline_hold:
@@ -6428,10 +6436,10 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         accepts_top_ups=False,
         fail_participants_below_min_size=True,
     )
-    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
+    _backdate_group(group, seconds=10)
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
@@ -6445,10 +6453,10 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_timeout_between_barriers_counts_from_group_formation(
+def test_timeout_between_barriers_counts_from_joining_the_group(
     in_experiment_directory, db_session
 ):
-    """The first GroupBarrier after a grouper kicks members who are late from grouping."""
+    """The first GroupBarrier kicks members late since grouping, but not a newcomer."""
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=3, min_group_size=2)
     participants = _working_participants(exp, 3)
@@ -6456,7 +6464,9 @@ def test_timeout_between_barriers_counts_from_group_formation(
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     group = participants[0].sync_group
-    group.last_barrier_pass_time -= timedelta(seconds=10)
+    _backdate_group(group, seconds=10)
+    (newcomer,) = _working_participants(exp, 1)
+    group.add_participant(newcomer)
     barrier = GroupBarrier(
         id_="first_after_grouper",
         group_type="main",
@@ -6469,7 +6479,8 @@ def test_timeout_between_barriers_counts_from_group_formation(
     released = barrier.choose_who_to_release(waiting)
 
     assert late not in group.active_participants
-    assert set(released) == set(waiting)
+    assert newcomer in group.active_participants
+    assert released == []
 
 
 @pytest.mark.parametrize(
@@ -6501,10 +6512,10 @@ def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_diss
         accepts_top_ups=False,
         fail_participants_below_min_size=False,
     )
-    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
+    _backdate_group(group, seconds=10)
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
@@ -6545,10 +6556,10 @@ def test_group_barrier_would_release_predicts_timeout_between_barriers(
         accepts_top_ups=accepts_top_ups,
         fail_participants_below_min_size=False,
     )
-    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
+    _backdate_group(group, seconds=10)
     db_session.commit()
     # A group that accepts top-ups waits below its minimum instead of dissolving.
     expected = (
@@ -6592,10 +6603,10 @@ def test_group_barrier_timeout_between_barriers_fail_missing_participants(
         accepts_top_ups=False,
         fail_participants_below_min_size=True,
     )
-    group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     db_session.add(group)
     for p in participants:
         group.add_participant(p)
+    _backdate_group(group, seconds=10)
     db_session.commit()
 
     barrier.check_waiting_participants(waiting_participants)
