@@ -68,10 +68,11 @@ current page, under a waiting indicator, until their group is formed.
     Seconds. If set, only participants whose browser tab is visible and
     checked in within this many seconds are grouped. A participant who
     switched to another tab or closed it keeps waiting, instead of starting
-    a group that then waits for them. The waiting screen checks in about every
-    2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
-    good value. With explicit ``waiting_logic``, participants only check in
-    when they submit a waiting page, so allow for the longest such page. Bots
+    a group that then waits for them. The waiting screen and ``waiting_logic``
+    pages check in about every 2 seconds and as soon as the tab is hidden or
+    shown again, so ``10`` is a good value. Pages inside trials, and barriers
+    with ``release_grace=None``, don't check in, so participants there are
+    only seen when they submit a page; allow for the longest such page. Bots
     always count as active.
 
 ``content``
@@ -390,6 +391,26 @@ trials from another trial maker:
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
    :start-at: waiting_logic = PageMaker(
    :end-before: class Exp
+
+When the barrier releases a participant who is on a waiting page, the page
+ends ``release_grace`` seconds later (default 3) unless they submit it first.
+The page's answer is then not saved; its response is stored with
+``"interrupted": True`` in ``metadata``. Pass ``release_grace=None`` to let
+every waiting page run to its end. Pages inside a trial, as in
+``sync_quorum``, always run to their end, so that the trial is not left
+without an answer.
+
+A waiting page's JavaScript can react to the release: ``window`` receives a
+``psynetWaitingRelease`` event, with the grace period in ``detail.graceMs``,
+and a ``psynetWaitingStatus`` event about every 2 seconds, with the time to
+the expected release (or ``null``) in ``detail.releaseInMs``:
+
+.. code-block:: javascript
+
+   window.addEventListener("psynetWaitingRelease", (event) => {
+     document.getElementById("note").textContent =
+       "Your group is ready! Finish this question to continue.";
+   });
 
 Time credit
 ~~~~~~~~~~~

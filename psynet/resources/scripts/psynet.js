@@ -923,7 +923,105 @@
     // server at once when a waiting participant's tab is hidden or shown.
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
+      if (psynet.waiting.config && !psynet.waiting.released) {
+        psynet.waiting.poll();
+      }
     });
+
+    /**
+     * Barrier waiting pages (explicit ``waiting_logic``).
+     *
+     * While such a page is open, the browser asks the server about every
+     * 2 seconds whether the barrier has released the participant; each check
+     * also counts as activity for groupers' ``active_within``. On release,
+     * ``psynetWaitingRelease`` is dispatched on ``window`` and the page ends
+     * after the barrier's ``release_grace``, unless it is submitted first.
+     * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
+     */
+    psynet.waiting = {
+      config: null,
+      released: false,
+      pollingConfig: null,
+      pollTimer: null,
+      graceTimer: null,
+      pollIntervalMs: 2000,
+
+      start(config) {
+        psynet.waiting.stop();
+        if (!config) return;
+        psynet.waiting.config = config;
+        psynet.waiting.poll();
+      },
+
+      stop() {
+        clearTimeout(psynet.waiting.pollTimer);
+        clearTimeout(psynet.waiting.graceTimer);
+        psynet.waiting.config = null;
+        psynet.waiting.pollingConfig = null;
+        psynet.waiting.released = false;
+      },
+
+      async poll() {
+        let config = psynet.waiting.config;
+        if (!config || psynet.waiting.pollingConfig === config) return;
+        psynet.waiting.pollingConfig = config;
+        clearTimeout(psynet.waiting.pollTimer);
+        let params = new URLSearchParams({
+          uniqueId: psynet.uniqueId,
+          barrierId: config.barrier_id,
+          visible: String(document.visibilityState !== "hidden"),
+        });
+        let status = null;
+        try {
+          let response = await fetch(`/timeline/waiting_status?${params}`, {
+            cache: "no-store",
+          });
+          if (response.ok) status = await response.json();
+        } catch (error) {
+          psynet.log.warn("Waiting status check failed.", error);
+        }
+        if (psynet.waiting.pollingConfig === config) {
+          psynet.waiting.pollingConfig = null;
+        }
+        if (psynet.waiting.config !== config) return;
+        if (status) {
+          window.dispatchEvent(
+            new CustomEvent("psynetWaitingStatus", {
+              detail: { releaseInMs: status.release_in_ms },
+            }),
+          );
+          if (status.released) {
+            psynet.waiting.onRelease();
+            return;
+          }
+        }
+        psynet.waiting.pollTimer = setTimeout(
+          psynet.waiting.poll,
+          psynet.waiting.pollIntervalMs,
+        );
+      },
+
+      onRelease() {
+        let config = psynet.waiting.config;
+        psynet.waiting.released = true;
+        window.dispatchEvent(
+          new CustomEvent("psynetWaitingRelease", {
+            detail: { graceMs: config.release_grace_ms },
+          }),
+        );
+        psynet.waiting.graceTimer = setTimeout(
+          psynet.waiting.interrupt,
+          config.release_grace_ms,
+        );
+      },
+
+      interrupt() {
+        if (!psynet.waiting.config || psynet.nextPagePending) return;
+        psynet.nextPage(null, { interrupted: true }, {}, undefined, {
+          interrupted: true,
+        });
+      },
+    };
 
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
@@ -1285,6 +1383,7 @@
         psynet.beginTimelineHold(hold);
       }
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
+      psynet.waiting.start(psynet.page.attributes?.waiting);
     };
 
     psynet.prepareTimelineFragment = function (payload) {
@@ -3422,6 +3521,7 @@
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
+        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
@@ -3742,6 +3842,7 @@
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
         page_visible: document.visibilityState !== "hidden",
+        interrupted: Boolean(options.interrupted),
       });
     };
 

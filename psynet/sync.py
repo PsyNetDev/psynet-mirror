@@ -145,7 +145,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.page_activity import active_participants
+from psynet.page_activity import active_participants, record_page_activity
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
@@ -776,6 +776,13 @@ class Barrier(EltCollection):
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
         pass ``markupsafe.Markup`` or a dominate tag for HTML.
+
+    release_grace
+        Seconds a participant on a ``waiting_logic`` page has to finish it
+        once they are released; the page then ends without an answer,
+        recorded with ``"interrupted": True`` in its response metadata.
+        ``None`` lets each waiting page run to its end. Pages inside trials
+        always run to their end. Default: 3 seconds.
     """
 
     def __init__(
@@ -787,6 +794,7 @@ class Barrier(EltCollection):
         fix_time_credit=False,
         expected_wait=None,
         content=None,
+        release_grace: Optional[float] = 3,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
@@ -807,6 +815,9 @@ class Barrier(EltCollection):
         )
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
+        if release_grace is not None and release_grace < 0:
+            raise ValueError("release_grace must be non-negative or None.")
+        self.release_grace = None if waiting_logic is None else release_grace
         if waiting_logic is None:
             waiting_logic = _BarrierHoldPage(self)
 
@@ -1277,6 +1288,9 @@ class GroupBarrier(Barrier):
         a round-based design. If ``False`` (default), they get an error, which
         usually means a grouper is missing from the timeline.
 
+    release_grace
+        See :class:`Barrier`. Default: 3 seconds.
+
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
         ``kind`` (``"hold"`` or ``"notice"``), ``waiting_count``,
@@ -1323,6 +1337,7 @@ class GroupBarrier(Barrier):
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: bool = False,
+        release_grace: Optional[float] = 3,
     ):
         self._validate_max_wait_action(max_wait_action)
         super().__init__(
@@ -1333,6 +1348,7 @@ class GroupBarrier(Barrier):
             fix_time_credit=fix_time_credit,
             expected_wait=expected_wait,
             content=content,
+            release_grace=release_grace,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
@@ -1660,10 +1676,14 @@ class Grouper(Barrier):
         If set, only participants whose browser tab is visible and was last
         seen this many seconds ago or less are grouped; the others keep waiting
         until they come back or ``max_wait_time`` runs out. The default waiting
-        screen checks in about every 2 seconds, so 10 seconds is a good value.
-        With explicit ``waiting_logic``, a participant is only seen when they
-        submit a waiting page, so allow for the longest such page. Bots always
-        count as active. Default: ``None`` (no activity check).
+        screen and ``waiting_logic`` pages check in about every 2 seconds, so
+        10 seconds is a good value. Pages inside trials and barriers with
+        ``release_grace=None`` don't check in, so there a participant is only
+        seen when they submit a page; allow for the longest such page. Bots
+        always count as active. Default: ``None`` (no activity check).
+
+    release_grace
+        See :class:`Barrier`. Default: 3 seconds.
     """
 
     def __init__(
@@ -1678,6 +1698,7 @@ class Grouper(Barrier):
         fix_time_credit=False,
         content=None,
         active_within: Optional[float] = None,
+        release_grace: Optional[float] = 3,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1689,6 +1710,7 @@ class Grouper(Barrier):
             expected_wait=expected_wait,
             fix_time_credit=fix_time_credit,
             content=content,
+            release_grace=release_grace,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
@@ -3086,6 +3108,60 @@ def arrival_notice_payload(unique_id):
     if participant is None:
         return {"notice": None}
     return {"notice": pending_arrival_notice_for(participant)}
+
+
+def _interruptible_waiting_barrier(page, participant):
+    """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
+
+    Pages inside a trial are left to run to their end, so that the trial
+    is not finalized without an answer.
+    """
+    barrier = getattr(page, "links", {}).get("barrier")
+    if not isinstance(barrier, Barrier) or barrier.release_grace is None:
+        return None
+    trial = participant.current_trial
+    if trial is not None and not trial.finalized:
+        return None
+    return barrier
+
+
+def waiting_page_config(page, participant):
+    """Return the browser config for a waiting page that a release may end, or ``None``."""
+    barrier = _interruptible_waiting_barrier(page, participant)
+    if barrier is None or not barrier._participant_is_waiting(participant):
+        return None
+    return {
+        "barrier_id": barrier.id,
+        "release_grace_ms": round(barrier.release_grace * 1000),
+    }
+
+
+def waiting_status_payload(unique_id, barrier_id, *, visible=True):
+    """Return whether a participant on a waiting page has been released, and record activity.
+
+    Waiting pages fetch this about every 2 seconds. ``release_in_ms`` is the
+    time left until :meth:`Barrier.expected_release_time`, or ``None``.
+    """
+    from psynet.participant import Participant
+
+    participant = (
+        Participant.query.filter_by(unique_id=unique_id).one_or_none()
+        if unique_id
+        else None
+    )
+    if participant is None:
+        return {"released": False, "release_in_ms": None}
+    record_page_activity(participant.id, visible)
+    link = participant.active_barriers.get(barrier_id)
+    if link is None or link.released:
+        return {"released": True, "release_in_ms": None}
+    release_in_ms = None
+    barrier = _reconstructed_arrival_barrier(link, {})
+    if barrier is not None:
+        release_time = barrier.expected_release_time(participant)
+        if release_time is not None:
+            release_in_ms = max(0, round((release_time - time.time()) * 1000))
+    return {"released": False, "release_in_ms": release_in_ms}
 
 
 def _reconstructed_arrival_barrier(link, reconstructed):

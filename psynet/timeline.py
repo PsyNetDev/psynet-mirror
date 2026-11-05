@@ -1818,6 +1818,12 @@ class Page(Elt):
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
+        if "barrier" in self.links:
+            from psynet.sync import waiting_page_config
+
+            waiting = waiting_page_config(self, participant)
+            if waiting is not None:
+                attributes["waiting"] = waiting
         return attributes
 
     @property

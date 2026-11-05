@@ -212,6 +212,7 @@ else:
         "/asset/",
         "/log/",
         "/timeline/arrival_notice",
+        "/timeline/waiting_status",
         "/timeline/progress_and_reward",
         "/dashboard/module/progress_info",
         "/dashboard/module/tooltip",
@@ -4171,11 +4172,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         *,
         timeline_hold_resume=False,
         page_visible=True,
+        interrupted=False,
     ):
         """Advance the participant after one ``/response`` write.
 
         Parameters
         ----------
+        interrupted : bool
+            Set by a barrier's waiting page that ends because the participant
+            was released (see ``release_grace`` on
+            :class:`~psynet.sync.Barrier`). The page is then not validated and
+            its answer is not saved. Ignored unless the participant has been
+            released. Keyword-only.
         page_visible : bool
             Whether the browser tab was visible when it sent this request,
             recorded for :func:`~psynet.page_activity.active_participants`.
@@ -4325,6 +4333,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
+            if interrupted and Experiment._waiting_page_was_released(
+                event, participant
+            ):
+                Experiment._record_interrupted_response(event, participant, metadata)
+                participant.inc_time_credit(event.time_estimate)
+                participant.inc_progress(event.time_estimate)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page), page=page
+                )
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
@@ -4411,6 +4432,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     self, err, participant
                 ),
             )
+
+    @staticmethod
+    def _waiting_page_was_released(page, participant):
+        """Return whether this is a barrier's waiting page and the barrier released the participant."""
+        from .sync import _interruptible_waiting_barrier
+
+        barrier = _interruptible_waiting_barrier(page, participant)
+        return barrier is not None and barrier.can_participant_exit(participant)
+
+    @staticmethod
+    def _record_interrupted_response(page, participant, metadata):
+        """Store an empty response for a waiting page that a release ended."""
+        response = Response(
+            participant=participant,
+            label=page.label,
+            page_type=type(page).__name__,
+        )
+        response.answer = None
+        response.metadata = {**metadata, "interrupted": True}
+        response.successful_validation = True
+        db.session.add(response)
 
     @staticmethod
     def _pending_redirect_replaces_open_page(participant):
@@ -7529,6 +7571,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return arrival_notice_payload(request.args.get("uniqueId"))
 
+    @experiment_route("/timeline/waiting_status", methods=["GET"])
+    @classmethod
+    @with_transaction
+    def get_waiting_status(cls):
+        """Tell a waiting page whether its barrier has released the participant."""
+        from .sync import waiting_status_payload
+
+        return waiting_status_payload(
+            request.args.get("uniqueId"),
+            request.args.get("barrierId"),
+            visible=request.args.get("visible") != "false",
+        )
+
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])
     @classmethod
     @with_transaction
@@ -7724,6 +7779,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         page_visible = bool(
             get_arg_from_dict(json_data, "page_visible", use_default=True, default=True)
         )
+        interrupted = bool(
+            get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
+        )
         client_ip_address = cls.get_client_ip_address()
 
         try:
@@ -7737,6 +7795,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 answer,
                 timeline_hold_resume=timeline_hold_resume,
                 page_visible=page_visible,
+                interrupted=interrupted,
             )
         except Exception as error:
             clock.close_open("process", "barriers", "render")
