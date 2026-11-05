@@ -162,24 +162,34 @@ def _queue_timeline_hold_wake(
         )
 
 
+_KEEP_NOTICE = object()
+
+
 def _queue_arrival_update(
     participant_id, *, hold_message=None, notice=None, group_ready=None
 ):
     """Queue an arrival-progress or partner-ready update after the next commit.
 
-    ``group_ready`` lists the seats (see :func:`psynet.sync.group_seats`) of
-    the group members now waiting at a barrier, for :class:`~psynet.group_prompt.GroupPrompt`.
+    The browser shows ``notice``, or hides its notice if ``notice`` is
+    ``None``; pass ``_KEEP_NOTICE`` to leave it as it is. ``group_ready``
+    lists the seats (see :func:`psynet.sync.group_seats`) of the group
+    members now waiting at a barrier, for
+    :class:`~psynet.group_prompt.GroupPrompt`.
     """
     try:
+        key = f"arrival:{participant_id}"
         update = {
             "participant_id": participant_id,
             "reason": "arrival_update",
             "hold_message": hold_message,
-            "notice": notice,
         }
+        if notice is not _KEEP_NOTICE:
+            update["notice"] = notice
+        elif "notice" in _pending_wakes.get().get(key, {}):
+            update["notice"] = _pending_wakes.get()[key]["notice"]
         if group_ready is not None:
             update["group_ready"] = group_ready
-        _pending_wakes.get()[f"arrival:{participant_id}"] = update
+        _pending_wakes.get()[key] = update
     except Exception:
         logger.warning(
             "Failed to queue an arrival update for participant %s.",

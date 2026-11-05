@@ -256,7 +256,7 @@ class GroupPrompt(Prompt):
         if self.show_progress:
             status = Markup(
                 '<span class="psynet-group-tick" aria-hidden="true">✓</span>'
-                '<span class="psynet-group-status visually-hidden">{}</span>'
+                '<span class="psynet-group-status visually-hidden" aria-live="polite">{}</span>'
             ).format(_p("group prompt", "has answered") if answered else "")
         name = _p("group prompt", "You") if is_me else pseudonym.name
         return Markup(

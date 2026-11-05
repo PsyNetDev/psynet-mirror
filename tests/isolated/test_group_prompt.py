@@ -15,6 +15,10 @@ from test_regrouper import _arrive  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
+def _no_notice(**kwargs):
+    return None
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -32,13 +36,16 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert len({p.pseudonym.name for p in (first, second, third)}) == 3
 
     published.clear()
-    _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
+    barrier = GroupBarrier("decided", group_type="room", on_arrival_message=_no_notice)
+    _arrive(exp, barrier, [first, second])
     seats = group_seats(group)
-    ready = [t["group_ready"] for t in published if t["participant_id"] == third.id]
-    assert ready[-1] == {
+    (*_, update) = [t for t in published if t["participant_id"] == third.id]
+    assert update["group_ready"] == {
         "group_id": group.id,
         "seats": sorted([seats[first.id], seats[second.id]]),
     }
+    # Without notice text, the update leaves the browser's notice alone.
+    assert "notice" not in update
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
     assert html.index("You") < html.index(first.pseudonym.name)

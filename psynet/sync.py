@@ -153,6 +153,7 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
+    _KEEP_NOTICE,
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
@@ -1551,7 +1552,7 @@ class GroupBarrier(Barrier):
             if text:
                 _queue_arrival_update(member.id, notice=str(text), group_ready=ready)
             else:
-                _queue_arrival_update(member.id, group_ready=ready)
+                _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=ready)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -2771,14 +2772,16 @@ class SyncGroup(SQLBase, SQLMixin):
 
     def _give_distinct_pseudonym(self, participant):
         """Store a free pseudonym for ``participant`` if an active member has theirs."""
-        taken = self.__dict__.get("_pseudonym_keys")
-        if taken is None:
+        # Cached for this transaction, so forming a large group stays linear.
+        transaction = db.session().get_transaction()
+        cached = self.__dict__.get("_pseudonym_keys")
+        if cached is not None and cached[0] is transaction:
+            taken = cached[1]
+        else:
             others = [p for p in self.active_participants if p.id != participant.id]
             _load_vars(others + [participant])
             taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
-            # Cached on the instance so forming a large group stays linear; a
-            # member who left since only makes a rename slightly more likely.
-            self.__dict__["_pseudonym_keys"] = taken
+            self.__dict__["_pseudonym_keys"] = (transaction, taken)
         pseudonym = participant.pseudonym
         keys = (pseudonym.color, pseudonym.animal)
         if keys in taken:
