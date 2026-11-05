@@ -162,7 +162,8 @@ the computer uses one of them. Then log in once with ``ssh`` to check the
 connection, and register the server with ``dallinger docker-ssh servers add``.
 Pass the same ``--host``, ``--user`` and, if the original registration had
 them, ``--dns-host`` and ``--default-ingress``, because each computer keeps
-its own server record. On a server that is already set up, this leaves the
-shared services alone. That computer needs a Dallinger version with ``servers upgrade``, because older
-versions can't deploy to an upgraded server (see
-:ref:`upgrading_an_existing_server`).
+its own server record. Pass ``--contact-email`` too, unless that computer's
+``~/.dallingerconfig`` sets a real ``contact_email_on_error``. On a server
+that is already set up, this leaves the shared services alone. That computer
+needs a Dallinger version with ``servers upgrade``, because older versions
+can't deploy to an upgraded server (see :ref:`upgrading_an_existing_server`).

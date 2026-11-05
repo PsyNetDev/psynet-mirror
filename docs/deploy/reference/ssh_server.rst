@@ -46,16 +46,22 @@ served at ``https://<app>.<server DNS name>``. Pass it:
   unavailable because of rate limits.
 
 Before deploying, Dallinger checks that the experiment's address
-(``<app>.<dns-host>``, or ``<dns-host>`` without ``--app``) resolves to the
-server's IP address and stops with a ``DNS resolution error`` otherwise. A
-wildcard record (``*.my-server.example.org``) covers every app name; with a
-fixed list of records, ``--app`` must be one of them.
+(``<app>.<dns-host>``) resolves to the server's IP address and stops with a
+``DNS resolution error`` otherwise. A wildcard record
+(``*.my-server.example.org``) covers every app name; with a fixed list of
+records, ``--app`` must be one of them.
 
 ``--app`` may contain only lowercase letters, digits and hyphens, and must not
-already be in use on the server. Without ``--app``, the experiment is served at
-the ``--dns-host`` name itself rather than a subdomain. If that is the
-server's own DNS name, the deployment needs a server with no other apps:
-Dallinger offers to destroy any it finds first.
+already be in use on the server. The names ``logs``, ``caddy.d``, ``root.d``
+and ``dallinger`` are refused, in any case, because the server uses them
+itself. A classic deployment to an address that another app or one of the
+server's own sites already serves stops before the image build and names
+that app or site.
+
+Older PsyNet versions deployed an experiment without ``--app`` at the server's
+own DNS name, under a name like ``dlgr-d8f9f2c4``. To update such an app, pass
+that name: ``--update --app dlgr-d8f9f2c4``. The app stays at the server's
+own DNS name, so ``dlgr-d8f9f2c4.<server DNS name>`` need not resolve.
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS
@@ -148,9 +154,9 @@ What a deployment does
 1. PsyNet runs its pre-deployment checks and prepares the experiment files
    from ``deploy.toml``.
 2. With classic ingress, Dallinger checks that the experiment's address
-   resolves to the server and that the server's shared services are set up
-   (see :ref:`ssh_server_shared_services`). If not, it stops and names the
-   command to run.
+   resolves to the server, that no other site on the server serves it, and
+   that the server's shared services are set up (see
+   :ref:`ssh_server_shared_services`). If not, it stops and says what to do.
 3. Dallinger adds ``server_pem`` to your SSH agent and builds the Docker image
    with the server's Docker daemon, over SSH. The image stays on the server.
 4. It creates the app's database and database user, writes
@@ -250,7 +256,10 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. Give it one or more app names, as
+uses it. An app that an older Dallinger deployed at the server's own DNS name
+has its route in the shared ``Caddyfile`` instead, which destroy leaves
+alone: it warns that the server's own name still points to the app, and
+``servers upgrade`` removes that route. Give it one or more app names, as
 arguments or with ``--app`` (the two are equivalent and can be combined):
 
 .. code-block:: bash
@@ -333,9 +342,12 @@ commands do:
   It lists the files it will replace and asks first (``--yes`` skips the
   question). It keeps a ``<file>.<timestamp>.bak`` copy of each replaced file
   and keeps the log viewer's password. A root-domain app deployed by an older
-  Dallinger keeps its address. Shared services whose configuration changed are
-  recreated, which briefly interrupts every classic app on the server, so
-  upgrade when no classic experiment is live.
+  Dallinger keeps its address. A server with an app called ``root.d``, a name
+  older Dallinger allowed, is refused before anything changes: destroy that
+  app first, because its directory is where the new routes go. Shared
+  services whose configuration changed are recreated, which briefly
+  interrupts every classic app on the server, so upgrade when no classic
+  experiment is live.
 
 These commands write the server's ``Caddyfile`` for its own DNS name (see
 :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
@@ -369,10 +381,13 @@ rewrite these files on every classic deployment, so on such a server their
 deployments fail with ``PermissionError: [Errno 13] Permission denied``,
 after building the image but before changing anything shared. Everyone who
 deploys to the server must therefore use a Dallinger version with ``servers
-upgrade``. If an older version rewrote the files anyway (for example when it
-ran as ``root``, or after the files were made writable), deployments stop
-before the build and ask you to run ``servers upgrade`` again, which restores
-them.
+upgrade``. Read-only files don't stop an SSH user that is ``root``, and
+``servers add`` doesn't change the mode of files a server already has, so
+files that were writable stay writable until ``servers upgrade``. If an older
+version rewrote the files anyway, deployments stop before the build and ask
+you to run ``servers upgrade`` again, which restores them.
+
+.. _ssh_server_updating:
 
 Updating a running app
 ----------------------

@@ -96,9 +96,10 @@ Provisioning runs these steps and prints each one to the terminal:
    log viewer's password once. With ``--dns-host``, it also registers the
    server under that name.
 
-You can deploy straight away with ``--server <AWS hostname>``, and with
-``--server <dns-host>`` once your computer resolves the new DNS record (up to
-about five minutes, or 15 if you looked the name up before it existed).
+A classic deployment checks that the experiment's address resolves to the
+server, whichever ``--server`` you use. With ``--dns-host``, you can deploy
+once your computer resolves the new DNS records (up to about five minutes, or
+15 if you looked a name up before it existed); without it, straight away.
 
 If anything fails once the instance is launched, including Ctrl-C, the
 instance keeps running and costs money. Provisioning then prints the
@@ -133,15 +134,23 @@ Stopping, starting and restarting an instance
 
 .. code:: bash
 
-   dallinger ec2 stop --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
-   dallinger ec2 start --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
+   dallinger ec2 stop --name <server_name> --region <region>
+   dallinger ec2 start --name <server_name> --region <region>
 
-``stop`` removes the DNS records for ``--dns-host`` and stops the instance,
-keeping the server registrations. AWS continues to charge for the instance's
-storage while it is stopped. ``start`` waits until the instance has stopped,
-starts it and recreates the DNS records, pointing them at the instance's new
-AWS hostname. Pass ``--name`` to ``start``; it cannot find the instance by
-``--dns``. Docker restarts the experiments with the instance.
+``stop`` removes the instance's DNS records and stops the instance, keeping
+the server registrations. AWS continues to charge for the instance's storage
+while it is stopped. ``start`` waits until the instance has stopped, starts it
+and points the DNS records at the instance's new AWS hostname. Pass
+``--name`` to ``start``: a stopped instance usually loses its AWS hostname,
+so ``--dns`` rarely finds it. Docker restarts the experiments with the
+instance.
+
+Both commands use the DNS name saved when the instance was provisioned with
+``--dns-host``. For an instance provisioned by an older Dallinger, or for
+records you made by hand, pass ``--dns-host <subdomain>.<your-domain>``.
+``stop`` deletes only records that point at the instance. If Route 53 can't
+update the records, both commands warn and carry on; ``start`` then says
+which records to point at the instance by hand.
 
 ``restart`` reboots a running instance without changing its hostname or DNS
 records:
@@ -171,11 +180,14 @@ Terminating an instance
 
 .. code:: bash
 
-   dallinger ec2 teardown --name <server_name> --region <region> --dns-host <subdomain>.<your-domain>
+   dallinger ec2 teardown --name <server_name> --region <region>
 
-``teardown`` terminates the instance, which deletes its disk with every
-experiment database on it. It then removes the DNS records for ``--dns-host``
-and both server registrations. Without ``--dns-host``, the DNS records and the
-``--dns-host`` registration stay behind. Export all data first. Teardown only
-finds a running instance: start a stopped one first, or terminate it in the
-AWS console and remove its DNS records by hand.
+``teardown`` removes the instance's DNS records, terminates the instance,
+which deletes its disk with every experiment database on it, and removes its
+server registrations. Like ``stop``, it uses the saved DNS name; for an
+instance provisioned by an older Dallinger, pass ``--dns-host
+<subdomain>.<your-domain>``, or the DNS records and the ``--dns-host``
+registration stay behind. If Route 53 fails, it warns and still terminates
+the instance. Export all data first. Teardown only finds a running instance:
+start a stopped one first, or terminate it in the AWS console and remove its
+DNS records by hand.

@@ -393,15 +393,15 @@ Registering the server
       Provisioning takes a few minutes. It also starts the shared services
       that experiments use (see :ref:`ssh_server_shared_services`) and prints
       the log viewer's password once; note it. The server is registered
-      twice, under its AWS hostname and under the ``--dns-host`` name. You
-      can deploy straight away with ``--server`` set to the AWS hostname, and
-      with the ``--dns-host`` name (here ``memory-lab.cool-psychology.org``)
-      once your computer resolves it, which can take up to about five
-      minutes. Experiments are served at
-      ``https://<app>.memory-lab.cool-psychology.org``. If anything fails
-      after the instance is launched, it keeps running and costs money:
-      provisioning prints the ``dallinger ec2 teardown`` command that removes
-      it and, if the setup had started, the commands that finish it instead.
+      twice, under its AWS hostname and under the ``--dns-host`` name (here
+      ``memory-lab.cool-psychology.org``); pass the ``--dns-host`` name as
+      ``--server``. You can deploy once your computer resolves the new DNS
+      records, which can take up to about five minutes. Experiments are
+      served at ``https://<app>.memory-lab.cool-psychology.org``. If
+      anything fails after the instance is launched, it keeps running and
+      costs money: provisioning prints the ``dallinger ec2 teardown`` command
+      that removes it and, if the setup had started, the commands that finish
+      it instead.
       For the other ``ec2`` commands and what provisioning does, see
       :doc:`/deploy/reference/aws_automatic_provisioning`.
 
@@ -446,13 +446,12 @@ Upgrading an existing server
 On a server set up by a Dallinger version without ``dallinger docker-ssh
 servers upgrade``, run that command once, after you update Dallinger (for an
 experiment, by updating its PsyNet pin; see :ref:`dependencies_updating_psynet`).
-Deployments with ``--app`` usually keep working without it (see
+Deployments usually keep working without it (see
 :ref:`deploy_troubleshooting_not_set_up` for when they don't), but the upgrade
-makes the server's HTTPS certificates persist, applies current database
-settings, and lets an experiment be served at the server's own DNS name. It
-also protects the server from older Dallinger versions. Run it when no
-classic experiment on the server is live, because it briefly restarts the
-shared services:
+makes the server's HTTPS certificates persist and applies current database
+settings. It also protects the server from older Dallinger versions. Run it
+when no classic experiment on the server is live, because it briefly restarts
+the shared services:
 
 .. code-block:: bash
 
@@ -504,25 +503,25 @@ Stopping and removing the server
 
       .. code-block:: bash
 
-          dallinger ec2 stop --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
-          dallinger ec2 start --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
+          dallinger ec2 stop --name memory-lab --region us-east-1
+          dallinger ec2 start --name memory-lab --region us-east-1
 
-      Stopping removes the DNS records and starting recreates them. The AWS
-      hostname changes when the instance restarts, so keep using the
-      ``--dns-host`` name as ``--server``. The experiments restart with the
+      Stopping removes the DNS records and starting recreates them, for the
+      ``--dns-host`` name saved at provisioning. The AWS hostname changes
+      when the instance restarts, so keep using the ``--dns-host`` name as
+      ``--server``. The experiments restart with the
       instance; check that they work before recruiting again.
 
       When the study is over, export all data, then terminate the instance:
 
       .. code-block:: bash
 
-          dallinger ec2 teardown --name memory-lab --region us-east-1 \
-              --dns-host memory-lab.cool-psychology.org
+          dallinger ec2 teardown --name memory-lab --region us-east-1
 
       Teardown deletes the instance with every database on it, removes the
-      DNS records and removes both server registrations. Data you have not
-      exported is lost. Teardown only finds a running instance, so start a
+      DNS records and removes both server registrations. For an instance
+      provisioned by an older Dallinger, add ``--dns-host`` with its name to
+      ``stop``, ``start`` and ``teardown``. Data you have not exported is
+      lost. Teardown only finds a running instance, so start a
       stopped server first with ``dallinger ec2 start``. ``dallinger ec2 list
       instances --running`` shows the instances that are still running.

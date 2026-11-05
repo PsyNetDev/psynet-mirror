@@ -31,8 +31,9 @@ Deployments don't set up the server's shared services, so Dallinger stops
 before building the image if the deployment needs something they lack. This
 happens on a server that an older Dallinger registered or provisioned but
 never deployed to. It also happens on a server set up by an older Dallinger
-when the experiment is served at the server's own DNS name (no ``--app``), or
-when the older Dallinger's last deployment there was such a root-domain one.
+when you update an app served at the server's own DNS name (see
+:ref:`ssh_server_addresses`), or when the older Dallinger's last deployment
+there was such a root-domain one.
 Run the command that the message names, when no classic experiment on the
 server is live, then deploy again:
 
@@ -79,6 +80,12 @@ files writable. Instead, update the experiment's PsyNet pin, which brings a
 newer Dallinger (see :ref:`dependencies_updating_psynet`), and deploy again.
 An older Dallinger may first offer to destroy the server's other experiments;
 decline.
+
+With such an older Dallinger, redeploying an app that is still running,
+without ``--update``, fails earlier, because Docker won't remove a Redis
+volume that a running container uses. The app stays up, so don't stop it to
+retry; update the PsyNet pin and use ``--update`` (see
+:ref:`ssh_server_updating`).
 
 .. _deploy_troubleshooting_host_key:
 
