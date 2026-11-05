@@ -826,9 +826,9 @@ class Barrier(EltCollection):
     fail_if_hidden_for
         Seconds. If set, a participant on the waiting screen whose tab is
         hidden (for example minimised or behind another tab) or closed for
-        this long is failed and sent to the end of the experiment. The
-        waiting screen tells them so. Bots are never failed for this. Only
-        applies when ``waiting_logic`` is omitted. Default: ``None``.
+        this long is failed and sent to the end of the experiment. This
+        covers the default waiting screen, which tells them so, and every page
+        of ``waiting_logic``. Bots are never failed for this. Default: ``None``.
     """
 
     def __init__(
@@ -845,10 +845,6 @@ class Barrier(EltCollection):
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
-        if waiting_logic is not None and fail_if_hidden_for is not None:
-            raise ValueError(
-                "fail_if_hidden_for only applies when waiting_logic is omitted."
-            )
         self.fail_if_hidden_for = fail_if_hidden_for
         self.fix_time_credit = fix_time_credit
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
@@ -3300,7 +3296,7 @@ def _away_waiter_ids():
                 ParticipantLinkBarrier,
                 ParticipantLinkBarrier.participant_id == Participant.id,
             )
-            .join(
+            .outerjoin(
                 TimelineHoldRecord,
                 TimelineHoldRecord.id == ParticipantLinkBarrier.timeline_hold_id,
             )
@@ -3308,8 +3304,11 @@ def _away_waiter_ids():
                 ~ParticipantLinkBarrier.released,
                 ~Participant.failed,
                 Participant.status == "working",
-                TimelineHoldRecord.page_uuid == Participant.page_uuid,
-                TimelineHoldRecord.released_at.is_(None),
+                or_(
+                    (TimelineHoldRecord.page_uuid == Participant.page_uuid)
+                    & TimelineHoldRecord.released_at.is_(None),
+                    ParticipantLinkBarrier.timeline_hold_id.is_(None),
+                ),
             )
             .all()
         )
@@ -3331,11 +3330,12 @@ def _fail_away_waiter(participant):
     """Fail the participant if their tab was away for their barrier's ``fail_if_hidden_for``."""
     for link in list(participant.active_barriers.values()):
         record = link.timeline_hold
-        if (
-            link.released
-            or record is None
-            or record.page_uuid != participant.page_uuid
-            or record.released_at is not None
+        if link.released or (
+            record is not None
+            and (
+                record.page_uuid != participant.page_uuid
+                or record.released_at is not None
+            )
         ):
             continue
         barrier = link.get_barrier()
@@ -3451,19 +3451,33 @@ def released_waiting_barrier(page, participant):
     return None
 
 
-def waiting_page_config(page, participant):
-    """Return the browser config for a waiting page that a release may end, or ``None``.
+def _waiting_page_barrier_id(participant):
+    """Return the ID of the barrier whose ``waiting_logic`` the participant is in, or ``None``."""
+    for barrier_id, link in participant.active_barriers.items():
+        if not link.released and link.timeline_hold_id is None:
+            return barrier_id
+    return None
 
-    The participant may already have been released while this page was being
-    built; the page's first status check then ends it.
+
+def waiting_page_config(page, participant):
+    """Return the browser config for a page shown while waiting at a barrier, or ``None``.
+
+    Every page shown during ``waiting_logic`` checks in, including pages that
+    trial makers generate there, so ``fail_if_hidden_for`` sees participants
+    on them. ``release_grace_ms`` is ``None`` unless a release may end the
+    page. The participant may already have been released while this page was
+    being built; the page's first status check then ends it.
     """
     barrier = _interruptible_waiting_barrier(page, participant)
-    if barrier is None:
+    if barrier is not None:
+        return {
+            "barrier_id": barrier.id,
+            "release_grace_ms": round(barrier.release_grace * 1000),
+        }
+    barrier_id = None if participant.failed else _waiting_page_barrier_id(participant)
+    if barrier_id is None:
         return None
-    return {
-        "barrier_id": barrier.id,
-        "release_grace_ms": round(barrier.release_grace * 1000),
-    }
+    return {"barrier_id": barrier_id, "release_grace_ms": None}
 
 
 def waiting_status_payload(unique_id, barrier_id, *, visible=True):

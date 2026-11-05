@@ -321,16 +321,16 @@ Timeouts
     the deadline.
 
 ``fail_if_hidden_for`` (default: ``None``)
-    Seconds, on any grouper or barrier. A participant on the waiting screen
+    Seconds, on any grouper or barrier. A participant who is waiting there,
+    on the built-in waiting screen or on any page of ``waiting_logic``, and
     whose tab is hidden or closed for this long is failed. Minimising the
     window, switching to another tab and locking a phone's screen all hide
-    the tab. The waiting screen warns participants, for example "Keep this
-    tab open. If you leave it for 15 seconds, you will be removed from the
-    experiment.", and checks in about every 2 seconds, so ``15`` is a good
-    value. Bots are never failed for this. Only the built-in waiting screen
-    checks in, so the option can't be combined with ``waiting_logic``. In
-    multiplayer games, this stops a player who left from being put into a
-    group that then waits for them. Consider ``prolific_pay_unsuccessful``
+    the tab. Waiting pages check in about every 2 seconds, so ``15`` is a
+    good value. The built-in waiting screen warns participants, for example
+    "Keep this tab open. If you leave it for 15 seconds, you will be removed
+    from the experiment."; ``waiting_logic`` pages should say so themselves.
+    Bots are never failed for this. In multiplayer games, this stops a
+    player who left from being put into a group that then waits for them. Consider ``prolific_pay_unsuccessful``
     or similar, so that participants failed this way are still paid for
     their time.
 
