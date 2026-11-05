@@ -18,9 +18,69 @@ DNS resolution error
 Before deploying, Dallinger checks that ``<app>.<dns-host>`` resolves to the
 server's IP address. If it doesn't, check that the wildcard record
 ``*.<dns-host>`` exists and points at the server, and that ``--server`` and
-``--dns-host`` are correct. After ``dallinger ec2 provision``, or after
-reusing a name for a new server, wait about five minutes for DNS to update and
-try again.
+``--dns-host`` are correct. After ``dallinger ec2 provision --dns-host``, or
+after reusing a name for a new server, wait about five minutes for DNS to
+update (up to 15 if you looked the name up before it existed) and try again.
+
+.. _deploy_troubleshooting_not_set_up:
+
+Server is not set up for this classic-ingress deploy
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Deployments don't set up the server's shared services, so Dallinger stops
+before building the image if the deployment needs something they lack. This
+happens on a server that an older Dallinger registered or provisioned but
+never deployed to. It also happens on a server set up by an older Dallinger
+whose last deployment there was at the server's own DNS name, for example an
+older PsyNet deployment without ``--app`` (see :ref:`ssh_server_addresses`).
+Run the command that the message names, then deploy again. This is usually
+``servers upgrade``, which briefly restarts the shared services, so run it
+when no classic experiment on the server is live:
+
+.. code:: bash
+
+    dallinger docker-ssh servers upgrade --host my-server.example.org
+
+The same applies if the message says that an older Dallinger version has
+rewritten the shared files. See :ref:`ssh_server_shared_services`.
+
+If the message says that the server's ``Caddyfile`` does not serve the
+expected name, the server may already serve another DNS name, for example a
+server registered by IP address whose earlier deployments used ``--dns-host
+nip.io``. Save that name, which restarts nothing, and deploy again:
+
+.. code:: bash
+
+    dallinger docker-ssh servers add --host 121.101.152.23 --dns-host nip.io
+
+No Let's Encrypt contact email
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A deployment or server command stops with ``No Let's Encrypt contact email
+for <server>`` when no email is saved with the server and
+``contact_email_on_error`` is missing or a placeholder, such as the
+``XXX@gmail.com`` in PsyNet's experiment template. This often happens on a
+server registered by an older Dallinger. Set a real ``contact_email_on_error``
+in ``~/.dallingerconfig`` (see :doc:`/deploy/setting_up_a_server`), or save an
+email with the server, which restarts nothing, and deploy again:
+
+.. code:: bash
+
+    dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
+
+Deployment fails with ``PermissionError``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If the traceback ends with ``PermissionError: [Errno 13] Permission denied``
+at ``sftp.putfo(..., "dallinger/docker-compose.yml")``, the server was set up
+or upgraded by a newer Dallinger, which left its shared files read-only (see
+:ref:`upgrading_an_existing_server`), and your Dallinger is too old to deploy
+there. The deployment stopped before changing anything shared. Don't make the
+files writable. Instead, update the experiment's PsyNet pin, which brings a
+newer Dallinger (see :ref:`dependencies_updating_psynet`), and deploy again.
+An older Dallinger deploying without ``--app`` may first offer to destroy the
+server's other experiments.
+Decline: accepting destroys them, and the deployment still fails.
 
 .. _deploy_troubleshooting_host_key:
 

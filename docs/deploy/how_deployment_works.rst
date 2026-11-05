@@ -63,10 +63,14 @@ instance that Dallinger provisions for you, a virtual machine from another
 cloud provider, or a machine run by you or your institution. You register it
 with Dallinger once; after that, deployment, export and destroy commands
 select it with ``--server``. Registration installs Docker if needed. With
-classic ingress, the first deployment starts services that all experiments on
-the server share: a PostgreSQL database server, a Caddy web server that routes
-each experiment's address to it and obtains HTTPS certificates, and a Dozzle
-log viewer. With Cloudflare ingress, each experiment instead has its own
+classic ingress, the server also runs services that all experiments on it
+share: a PostgreSQL database server, a Caddy web server that routes each
+experiment's address to it and obtains HTTPS certificates, and a Dozzle log
+viewer. ``dallinger docker-ssh servers add`` and ``dallinger ec2 provision``
+start them when they set up a new server. Deployments only add their own
+address to Caddy, so they don't interrupt the other experiments (see
+:ref:`ssh_server_shared_services`).
+With Cloudflare ingress, each experiment instead has its own
 database and tunnel, and there is no Dozzle (see :ref:`ssh_server_cloudflare`).
 One server can host several experiments at once.
 
@@ -81,8 +85,10 @@ Each deployed experiment is an **app**, named with ``--app``. An app has its
 own Docker containers, its own database on the server's PostgreSQL instance,
 and its own address, ``https://<app>.<domain>``, where ``<domain>`` is the
 server's DNS name. Participants see the app name in the address. PsyNet
-refuses to deploy an app whose name is already in use on the server, so a
-redeployment needs a new name or the old app destroyed first.
+refuses to deploy a new app whose name is already in use on the server. To
+ship a fix to a running app, update it in place with ``--update`` (see
+:ref:`ssh_server_updating`); otherwise use a new name or destroy the old app
+first.
 
 .. _deployment_security_headers:
 
@@ -136,9 +142,9 @@ Each app has a **dashboard** at ``https://<app>.<domain>/dashboard`` for
 following participants' progress, reading logs, browsing the database and
 exporting data (see :ref:`experiment_dashboard`). It uses the
 ``dashboard_user`` and ``dashboard_password`` from your configuration; if no
-password is set, a random one is generated for each deployment. The deployment
-command prints the dashboard address and credentials and saves them under
-``~/psynet-data/launch-data``.
+password is set, a random one is generated for each deployment. ``psynet
+deploy ssh`` prints the dashboard address and user, and saves them with the
+password under ``~/psynet-data/launch-data`` (see :ref:`ssh_server_launch_info`).
 
 Debug and live deployments
 --------------------------
