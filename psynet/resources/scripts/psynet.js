@@ -1103,7 +1103,15 @@
     psynet.applyArrivalTarget = function (target) {
       let shown = false;
       (target.group_ready || []).forEach((ready) => {
-        const { seats, notice } = psynet.addReadySeats(ready);
+        let seats, notice;
+        if (ready.barrier_id === null) {
+          // A member left. Notice texts for the old group size are wrong
+          // now, so the notice waits for the next arrival.
+          if (psynet.dropDepartedSeats(ready)) notice = null;
+          seats = psynet.readySeatsFor(ready.group_id);
+        } else {
+          ({ seats, notice } = psynet.addReadySeats(ready));
+        }
         window.dispatchEvent(
           new CustomEvent("psynetGroupReady", {
             detail: { groupId: ready.group_id, seats, members: ready.members },
@@ -1145,18 +1153,7 @@
         groupSize: null,
       });
       (ready.seats || []).forEach((seat) => state.seats.add(seat));
-      if (ready.members) {
-        // Members who have left no longer count. Seats from n_seats on
-        // belong to members who joined after this list was read.
-        const members = new Set(ready.members);
-        [...state.seats].forEach((seat) => {
-          if (seat < ready.n_seats && !members.has(seat)) state.seats.delete(seat);
-        });
-        if (state.groupSize !== ready.members.length) {
-          state.groupSize = ready.members.length;
-          state.texts = {};
-        }
-      }
+      psynet.pruneReadySeats(state, ready);
       (ready.notices || []).forEach((text, index) => {
         state.texts[ready.notices_from + index] = text;
       });
@@ -1164,6 +1161,35 @@
       // Entries for a member who is waiting have no notices.
       const notice = ready.notices ? state.texts[seats.length] : undefined;
       return { seats, notice };
+    };
+
+    // Drops the seats of members who have left from one barrier's state,
+    // and forgets its notice texts if the group size changed. Seats from
+    // n_seats on belong to members who joined after this list was read.
+    // Returns whether the size changed.
+    psynet.pruneReadySeats = function (state, ready) {
+      if (!ready.members) return false;
+      const members = new Set(ready.members);
+      [...state.seats].forEach((seat) => {
+        if (seat < ready.n_seats && !members.has(seat)) state.seats.delete(seat);
+      });
+      if (state.groupSize === ready.members.length) return false;
+      const changed = state.groupSize !== null;
+      state.groupSize = ready.members.length;
+      state.texts = {};
+      return changed;
+    };
+
+    // Applies a departure entry to every barrier of its group on this page.
+    psynet.dropDepartedSeats = function (ready) {
+      if (psynet.readySeats?.pageUuid !== window.pageUuid) return false;
+      let changed = false;
+      Object.entries(psynet.readySeats.byBarrier).forEach(([key, state]) => {
+        if (key.startsWith(`${ready.group_id}:`)) {
+          changed = psynet.pruneReadySeats(state, ready) || changed;
+        }
+      });
+      return changed;
     };
 
     psynet.stopArrivalUpdates = function () {

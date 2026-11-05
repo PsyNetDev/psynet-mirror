@@ -2711,7 +2711,7 @@ class Regrouper(Grouper):
         return group
 
 
-# How many arrivals beyond its own count an arrival update has notice texts for.
+# How many counts, starting at its own, an arrival update has notice texts for.
 _MAX_COUNTED_NOTICES = 12
 
 
@@ -3458,45 +3458,48 @@ def _ready_seats_for(participant):
     ready = []
     reconstructed = {}
     for group in participant.active_sync_groups.values():
-        ready += _group_ready_entries(group, [participant], reconstructed).get(
-            participant.id, []
-        )
+        members = group.active_participants
+        barriers = {}
+        for member in members:
+            for link in member.active_barriers.values():
+                instance = link.barrier_instance
+                if link.released or instance is None or instance.group_id != group.id:
+                    continue
+                barrier = _reconstructed_arrival_barrier(link, reconstructed)
+                if isinstance(barrier, GroupBarrier) and barrier.notify_arrivals:
+                    barriers.setdefault(barrier.id, barrier)
+        if not barriers:
+            continue
+        seats = group_seats(group)
+        for barrier in barriers.values():
+            waiting = [m for m in members if barrier._participant_is_waiting(m)]
+            ready.append(
+                barrier._group_ready_entry(group, seats, members, waiting, participant)
+            )
     return ready
 
 
-def _group_ready_entries(group, recipients, reconstructed):
-    """Return ``{recipient_id: entries}`` for the arrival barriers members of ``group`` wait at."""
-    members = group.active_participants
-    barriers = {}
-    for member in members:
-        for link in member.active_barriers.values():
-            instance = link.barrier_instance
-            if link.released or instance is None or instance.group_id != group.id:
-                continue
-            barrier = _reconstructed_arrival_barrier(link, reconstructed)
-            if isinstance(barrier, GroupBarrier) and barrier.notify_arrivals:
-                barriers.setdefault(barrier.id, barrier)
-    if not barriers:
-        return {}
-    seats = group_seats(group)
-    entries = {recipient.id: [] for recipient in recipients}
-    for barrier in barriers.values():
-        waiting = [m for m in members if barrier._participant_is_waiting(m)]
-        for recipient in recipients:
-            entries[recipient.id].append(
-                barrier._group_ready_entry(group, seats, members, waiting, recipient)
-            )
-    return entries
-
-
 def _notify_departure(group):
-    """Tell the remaining members of ``group`` who is still in it and waiting."""
+    """Tell the remaining members of ``group`` who is still in it.
+
+    The entry has no barrier, so the browser drops the seats of members who
+    left at every barrier of the group without asking the barrier for texts.
+    """
+    if getattr(group, "_dissolving_below_min_size", False):
+        return
     remaining = group.active_participants
-    for participant_id, entries in _group_ready_entries(group, remaining, {}).items():
-        for entry in entries:
-            _queue_arrival_update(
-                participant_id, notice=_KEEP_NOTICE, group_ready=entry
-            )
+    if not remaining:
+        return
+    seats = group_seats(group)
+    entry = {
+        "group_id": group.id,
+        "barrier_id": None,
+        "seats": [],
+        "members": sorted(seats[m.id] for m in remaining),
+        "n_seats": len(seats),
+    }
+    for member in remaining:
+        _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=entry)
 
 
 def waiting_barrier_ids(participant, group):

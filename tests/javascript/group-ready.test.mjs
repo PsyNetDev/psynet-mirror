@@ -27,7 +27,9 @@ function load() {
     "psynet",
     "window",
     "CustomEvent",
-    `${extract("applyArrivalTarget")}\n${extract("addReadySeats")}`
+    ["applyArrivalTarget", "readySeatsFor", "addReadySeats", "pruneReadySeats", "dropDepartedSeats"]
+      .map(extract)
+      .join("\n")
   )(psynet, window, CustomEvent);
   return psynet;
 }
@@ -68,4 +70,16 @@ it("leaves the notice alone for an entry without notice texts", () => {
   delete waiting.notices;
   psynet.applyArrivalTarget({ notice: null, group_ready: [waiting] });
   assert.deepEqual(psynet.notices, ["3/6 ready", null]);
+});
+
+it("drops a member who left at every barrier, and hides the stale notice", () => {
+  const psynet = load();
+  psynet.applyArrivalTarget({ group_ready: [entry([5], [0, 1, 2, 3, 4, 5], 1)] });
+  psynet.applyArrivalTarget({
+    group_ready: [
+      { group_id: 1, barrier_id: null, seats: [], members: [0, 1, 2, 3, 4], n_seats: 6 },
+    ],
+  });
+  assert.deepEqual(psynet.readySeatsFor(1), []);
+  assert.deepEqual(psynet.notices, ["1/6 ready", null]);
 });
