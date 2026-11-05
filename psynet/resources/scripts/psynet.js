@@ -1145,7 +1145,8 @@
         cache: false,
         data: { uniqueId: psynet.uniqueId },
       }).done(function (data) {
-        if (!psynet.arrivalUpdates) {
+        // Waiting screens get arrival updates on their own channel.
+        if (!psynet.arrivalUpdates && !psynet.timelineHold) {
           return;
         }
         psynet.applyArrivalSnapshot(data || {}, request);
