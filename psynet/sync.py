@@ -2317,11 +2317,11 @@ class Regrouper(Grouper):
             return None
         pool = next(
             (
-                members
-                for _, members in self._pools(
+                members or [participant]
+                for _, waiting, members in self._pools(
                     self.get_waiting_participants(participant)
                 )
-                if participant in members
+                if participant in waiting
             ),
             [participant],
         )

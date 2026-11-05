@@ -71,10 +71,11 @@ current page, under a waiting indicator, until their group is formed.
     switched to another tab or closed it keeps waiting, instead of starting
     a group that then waits for them. The waiting screen checks in about every
     2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
-    good value. A minimized window counts as hidden, and a participant who
-    stays away is still failed after ``max_wait_time``. With explicit
-    ``waiting_logic``, participants only check in when they submit a waiting
-    page, so allow for the longest such page. Bots
+    good value. A minimized window counts as hidden. On the default waiting
+    screen, a participant who stays away is still failed after
+    ``max_wait_time``. With explicit ``waiting_logic``, participants only
+    check in, and ``max_wait_time`` is only checked, when they submit a
+    waiting page, so allow for the longest such page. Bots
     always count as active.
 
 ``content``
