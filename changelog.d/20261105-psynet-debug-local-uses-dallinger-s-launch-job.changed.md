@@ -1,1 +1,0 @@
-`psynet debug local` now starts the experiment with Dallinger's own launch job, adding PsyNet's `Other terminals` line through Dallinger's `run_debug`. The `Ready.` block's dashboard link now points to `/dashboard/develop`, the page the browser opens.
