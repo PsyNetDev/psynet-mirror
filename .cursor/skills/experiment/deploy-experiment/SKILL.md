@@ -179,9 +179,7 @@ was provisioned with, or its DNS records stay behind.
 - A deploy fails with `PermissionError: [Errno 13] Permission denied` on
   `dallinger/docker-compose.yml`: the installed Dallinger predates
   `servers upgrade`, and the server's shared files are read-only. Update the
-  PsyNet pin; never `chmod` the shared files. Redeploying a running app
-  without `--update` fails earlier there, on a Redis volume that is in use;
-  the app stays up, so don't stop it to retry.
+  PsyNet pin; never `chmod` the shared files.
 - Export exists for one app but teardown is being planned for another.
 - SSL/TLS errors during first launch can be transient cold-start issues; retry
   after a short wait before changing code.

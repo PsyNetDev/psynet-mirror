@@ -348,8 +348,8 @@ Registering the server
       **Domain.** Register a domain in Route 53, or host an existing domain's
       DNS there, and wait until the registration is complete. Each server
       gets a subdomain of it, such as ``memory-lab.cool-psychology.org``.
-      Dallinger looks up the hosted zone from the last two parts of the name,
-      so the domain must have the form ``cool-psychology.org``.
+      Dallinger uses the hosted zone that the name ends with, choosing the
+      longest match.
 
       **Key pair.** In the EC2 console, create a key pair and download its PEM
       file to ``~/.ssh`` (for example ``~/.ssh/cool-psychology.pem``). Set
@@ -460,7 +460,8 @@ the shared services:
 
 The upgrade writes the Let's Encrypt contact email into the server's
 ``Caddyfile``: the one you pass with ``--contact-email``, else the one saved
-with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``.
+with the server, else ``contact_email_on_error`` from ``~/.dallingerconfig``
+or the environment.
 A server registered by an older Dallinger has no saved email, so a deployment
 there stops if the only ``contact_email_on_error`` it finds is a placeholder
 such as ``XXX@gmail.com``. To save an email without restarting anything,

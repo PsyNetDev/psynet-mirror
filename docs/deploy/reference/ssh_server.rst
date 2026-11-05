@@ -336,8 +336,8 @@ commands do:
   interrupts every classic app on the server, so upgrade when no classic
   experiment is live.
 
-These commands write the server's ``Caddyfile`` for its own DNS name (see
-:ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
+When these commands write the server's ``Caddyfile``, they write it for the
+server's own DNS name (see :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
 saved with the server. ``servers add`` and ``servers upgrade`` save, in this
 order, the one passed with ``--contact-email``, a valid one already saved, or
 ``contact_email_on_error`` from ``~/.dallingerconfig`` or the environment

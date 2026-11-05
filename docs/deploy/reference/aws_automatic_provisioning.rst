@@ -57,7 +57,9 @@ Options:
 ``--dns-host``
    Name to create in Route 53, for example ``memory-lab.cool-psychology.org``.
    Without it, the server's DNS name is ``<public ip>.nip.io``, because Let's
-   Encrypt does not issue certificates for AWS hostnames.
+   Encrypt does not issue certificates for AWS hostnames. The public IP
+   changes when the instance is stopped and started, and nothing updates
+   that name, so use ``--dns-host`` for a server you might stop.
 
 Provisioning runs these steps and prints each one to the terminal:
 
@@ -73,8 +75,9 @@ Provisioning runs these steps and prints each one to the terminal:
      real email address in ``~/.dallingerconfig`` or the environment, not a
      placeholder such as ``XXX@gmail.com``.
 
-2. If ``--dns-host`` is given, checks that Route 53 has a hosted zone for its
-   last two parts (for example ``cool-psychology.org``). If records for the
+2. If ``--dns-host`` is given, checks that Route 53 has a hosted zone that
+   the name ends with (for example ``cool-psychology.org``), using the
+   longest match. If records for the
    name already exist, Dallinger asks before overwriting them, because they
    may belong to another running server. It also removes the name's entries
    from ``~/.ssh/known_hosts``.
@@ -147,7 +150,10 @@ instance.
 
 Both commands use the DNS name saved when the instance was provisioned with
 ``--dns-host``. For an instance provisioned by an older Dallinger, or for
-records you made by hand, pass ``--dns-host <subdomain>.<your-domain>``.
+records you made by hand, pass ``--dns-host <subdomain>.<your-domain>``. An
+instance provisioned without ``--dns-host`` has no records to update, and
+its ``<public ip>.nip.io`` name stops working once the instance restarts
+with a new IP.
 ``stop`` deletes only records that point at the instance. If Route 53 can't
 update the records, both commands warn and carry on; ``start`` then says
 which records to point at the instance by hand.

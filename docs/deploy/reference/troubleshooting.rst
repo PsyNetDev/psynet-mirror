@@ -18,9 +18,9 @@ DNS resolution error
 Before deploying, Dallinger checks that ``<app>.<dns-host>`` resolves to the
 server's IP address. If it doesn't, check that the wildcard record
 ``*.<dns-host>`` exists and points at the server, and that ``--server`` and
-``--dns-host`` are correct. After ``dallinger ec2 provision``, or after
-reusing a name for a new server, wait about five minutes for DNS to update and
-try again.
+``--dns-host`` are correct. After ``dallinger ec2 provision --dns-host``, or
+after reusing a name for a new server, wait about five minutes for DNS to
+update (up to 15 if you looked the name up before it existed) and try again.
 
 .. _deploy_troubleshooting_not_set_up:
 
@@ -33,8 +33,9 @@ happens on a server that an older Dallinger registered or provisioned but
 never deployed to. It also happens on a server set up by an older Dallinger
 whose last deployment there was at the server's own DNS name, for example an
 older PsyNet deployment without ``--app`` (see :ref:`ssh_server_addresses`).
-Run the command that the message names, when no classic experiment on the
-server is live, then deploy again:
+Run the command that the message names, then deploy again. This is usually
+``servers upgrade``, which briefly restarts the shared services, so run it
+when no classic experiment on the server is live:
 
 .. code:: bash
 
@@ -79,13 +80,6 @@ files writable. Instead, update the experiment's PsyNet pin, which brings a
 newer Dallinger (see :ref:`dependencies_updating_psynet`), and deploy again.
 An older Dallinger may first offer to destroy the server's other experiments;
 decline.
-
-With such an older Dallinger, redeploying an app that is still running,
-without ``--update``, fails earlier, because Docker won't remove a Redis
-volume that a running container uses. The app stays up, so don't stop it to
-retry; update the PsyNet pin and use ``--update`` (see
-:ref:`ssh_server_updating`).
-
 .. _deploy_troubleshooting_host_key:
 
 Remote host identification has changed
