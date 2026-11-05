@@ -70,14 +70,15 @@ class GroupPrompt(Prompt):
     answered
         Optional ``answered(participant) -> bool`` deciding who has answered
         when the page is drawn. By default, a member has answered while they
-        wait at a barrier of this group. Live ticks still come from barrier
-        arrivals.
+        wait at a barrier of this group, and ticks then also appear live as
+        members arrive at the group's barriers. With a custom ``answered``,
+        ticks are only drawn when the page loads.
     subgroups
         Optional way to cluster the members: a sync group type, such as
         ``"pair"`` for pairs formed within the group, or a function
         ``subgroups(participant)`` returning a key, members with equal keys
         forming a cluster. The viewer's cluster comes first. Members without a
-        subgroup (``None``) form a cluster of their own.
+        subgroup (``None``) are shown together in one cluster.
     show_names
         If ``True``, show each member's pseudonym below their animal.
     anonymous
@@ -119,6 +120,7 @@ class GroupPrompt(Prompt):
         self.note = note
         self.show_progress = show_progress and answers is None
         self.answered = answered or _waiting_in_group(group)
+        self.live_ticks = self.show_progress and answered is None
         self.subgroups = subgroups
         self.show_names = show_names
         self.anonymous = anonymous
@@ -148,7 +150,7 @@ class GroupPrompt(Prompt):
         return {
             "group_prompt": {
                 "group_id": self.group.id,
-                "show_progress": self.show_progress,
+                "live_ticks": self.live_ticks,
                 "answered_label": _p("group prompt", "has answered"),
             }
         }
@@ -195,7 +197,18 @@ class GroupPrompt(Prompt):
             classes += " psynet-group-prompt--answers"
         if self.show_names:
             classes += " psynet-group-prompt--names"
-        return Markup('<div class="{}">{}{}</div>').format(classes, body, note)
+        if viewer_present:
+            classes += " psynet-group-prompt--with-viewer"
+        announcer = (
+            Markup(
+                '<p class="psynet-group-announcer visually-hidden" aria-live="polite"></p>'
+            )
+            if self.live_ticks
+            else Markup("")
+        )
+        return Markup('<div class="{}">{}{}{}</div>').format(
+            classes, body, note, announcer
+        )
 
     def _members_html(self, members, seats, label):
         layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "zigzag"
@@ -283,7 +296,7 @@ class GroupPrompt(Prompt):
         if self.show_progress:
             status = Markup(
                 '<span class="psynet-group-tick" aria-hidden="true">✓</span>'
-                '<span class="psynet-group-status visually-hidden" aria-live="polite">{}</span>'
+                '<span class="psynet-group-status visually-hidden">{}</span>'
             ).format(_p("group prompt", "has answered") if answered else "")
         name = Markup('<span class="psynet-group-name{}">{}</span>').format(
             " psynet-group-you" if is_me else "", label

@@ -1084,6 +1084,12 @@ textarea:focus-visible,
     background: var(--psynet-pseudonym-color);
     -webkit-mask: var(--psynet-pseudonym-shape) center / contain no-repeat;
     mask: var(--psynet-pseudonym-shape) center / contain no-repeat;
+    mask-mode: alpha;
+}
+
+/* Black and other very dark animals would vanish on a dark page. */
+[data-bs-theme="dark"] .psynet-pseudonym-sticker--dark::before {
+    background: #6c757d;
 }
 
 .psynet-pseudonym-sticker--dark img.psynet-pseudonym-sticker-detail {

@@ -61,7 +61,7 @@
     flex: 1 1 16em;
 }
 
-.psynet-group-cluster:first-child {
+.psynet-group-prompt--with-viewer .psynet-group-cluster:first-child {
     background: rgb(13 110 253 / 0.08);
 }
 

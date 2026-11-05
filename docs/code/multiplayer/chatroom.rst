@@ -63,9 +63,11 @@ animals differently and then assigns them in order of participant ID, so
 participants who arrive one after another differ in both colour and animal,
 and any 88 participants in a row all have different pseudonyms. Participants
 whose IDs differ by a multiple of 88 share a pseudonym; when such a
-participant joins a :class:`~psynet.sync.SyncGroup` in which an active member
-has the same pseudonym, PsyNet gives them a free one
-(:meth:`~psynet.pseudonym.PseudonymScheme.replacement` chooses it). The dashboard shows
+participant joins their first :class:`~psynet.sync.SyncGroup` and an active
+member there has the same pseudonym, PsyNet gives them a free one
+(:meth:`~psynet.pseudonym.PseudonymScheme.replacement` chooses it). Later
+groups never rename anyone, so names stay the same once others have seen
+them; in a later group, two members can therefore share a pseudonym. The dashboard shows
 each participant's pseudonym. Exports keep the deployment ID, so after
 loading an export, ``participant.pseudonym`` gives the names that
 participants saw, for example to read chat messages that mention them.

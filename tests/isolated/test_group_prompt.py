@@ -74,7 +74,7 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     } in snapshot
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
-    assert html.index("You") < html.index(first.pseudonym.name)
+    assert html.index(">You<") < html.index(first.pseudonym.name)
     assert html.count("psynet-group-member--answered") == 2
 
     html = GroupPrompt(

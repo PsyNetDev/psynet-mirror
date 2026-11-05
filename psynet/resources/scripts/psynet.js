@@ -1117,7 +1117,7 @@
       const seats = psynet.addReadySeats(ready);
       window.dispatchEvent(
         new CustomEvent("psynetGroupReady", {
-          detail: { groupId: ready.group_id, seats },
+          detail: { groupId: ready.group_id, seats, members: ready.members },
         }),
       );
       return seats;
@@ -1171,8 +1171,15 @@
         if (!psynet.arrivalUpdates) {
           return;
         }
-        psynet.applyArrivalNotice(data && data.notice);
+        // Live updates that arrived first count more arrivals than this
+        // snapshot may, so its notice is only used if there were none.
+        const hadLiveSeats =
+          psynet.readySeats?.pageUuid === window.pageUuid &&
+          Object.keys(psynet.readySeats.byBarrier).length > 0;
         (data?.group_ready || []).forEach(psynet.applyGroupReady);
+        if (!hadLiveSeats) {
+          psynet.applyArrivalNotice(data && data.notice);
+        }
       });
     };
 

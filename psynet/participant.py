@@ -620,9 +620,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         The keys must exist in the experiment's
         :class:`~psynet.pseudonym.PseudonymScheme`. PsyNet does not check
-        that other participants have a different pseudonym here; joining a
-        :class:`~psynet.sync.SyncGroup` does, renaming a newcomer whose
-        pseudonym an active member already has.
+        that other participants have a different pseudonym here; joining
+        their first :class:`~psynet.sync.SyncGroup` does, renaming a newcomer
+        whose pseudonym an active member already has. Later groups never
+        rename anyone.
         """
         from .experiment import get_experiment
 
