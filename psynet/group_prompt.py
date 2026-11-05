@@ -152,6 +152,7 @@ class GroupPrompt(Prompt):
                 "group_id": self.group.id,
                 "live_ticks": self.live_ticks,
                 "answered_label": _p("group prompt", "has answered"),
+                "answered_announcement": _p("group prompt", "{NAME} has answered."),
             }
         }
 
@@ -282,6 +283,9 @@ class GroupPrompt(Prompt):
         if self.answers is not None:
             # Tapping a member brings their bubble to the front.
             focusable = Markup(' tabindex="0"')
+            answer = self.answers.get(member.id)
+            if answer is not None and not isinstance(answer, Markup):
+                focusable += Markup(' aria-label="{}: {}"').format(label, answer)
             if member.id in self.answers:
                 bubble = Markup('<span class="psynet-group-bubble">{}</span>').format(
                     self.answers[member.id]

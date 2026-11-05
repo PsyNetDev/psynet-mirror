@@ -1091,64 +1091,78 @@
         ) {
           psynet.updateTimelineHoldMessage(target.hold_message);
         }
-        const readyEntries = target.group_ready || [];
-        if (
-          Object.prototype.hasOwnProperty.call(target, "notice") &&
-          !readyEntries.some((ready) => ready.notices)
-        ) {
-          psynet.applyArrivalNotice(target.notice);
-        }
         if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
-        readyEntries.forEach((ready) => {
-          const seats = psynet.applyGroupReady(ready);
-          const notices = ready.notices;
-          const index = seats.length - (ready.notices_from ?? 1);
-          if (notices && index >= 0 && index < notices.length) {
-            psynet.applyArrivalNotice(notices[index]);
-          }
-        });
+        psynet.applyArrivalTarget(target);
       });
     };
 
-    // Adds the seats to this page's union and tells GroupPrompt about them.
-    psynet.applyGroupReady = function (ready) {
-      const seats = psynet.addReadySeats(ready);
-      window.dispatchEvent(
-        new CustomEvent("psynetGroupReady", {
-          detail: { groupId: ready.group_id, seats, members: ready.members },
-        }),
-      );
-      return seats;
+    // Shows the ready seats and notice of an arrival update, or of the
+    // snapshot fetched on connecting, which has the same shape.
+    psynet.applyArrivalTarget = function (target) {
+      let shown = false;
+      (target.group_ready || []).forEach((ready) => {
+        const { seats, notice } = psynet.addReadySeats(ready);
+        window.dispatchEvent(
+          new CustomEvent("psynetGroupReady", {
+            detail: { groupId: ready.group_id, seats, members: ready.members },
+          }),
+        );
+        if (notice !== undefined) {
+          psynet.applyArrivalNotice(notice);
+          shown = true;
+        }
+      });
+      if (!shown && Object.prototype.hasOwnProperty.call(target, "notice")) {
+        psynet.applyArrivalNotice(target.notice);
+      }
     };
 
     // The union of ready seats this page has been sent for a group, at any barrier.
     psynet.readySeatsFor = function (groupId) {
       if (psynet.readySeats?.pageUuid !== window.pageUuid) return [];
       const seats = new Set();
-      Object.entries(psynet.readySeats.byBarrier).forEach(([key, ids]) => {
-        if (key.startsWith(`${groupId}:`)) ids.forEach((seat) => seats.add(seat));
+      Object.entries(psynet.readySeats.byBarrier).forEach(([key, state]) => {
+        if (key.startsWith(`${groupId}:`)) state.seats.forEach((seat) => seats.add(seat));
       });
       return [...seats];
     };
 
     // Arrivals in concurrent requests each report only the waiting members
     // they can see, and their updates can arrive in any order. The union of
-    // the seats sent for this page is the best count.
+    // the seats sent for this page is the best count, and each update has
+    // the notice text for the counts it can reach. Returns the union and
+    // the text for it (undefined if no update had one).
     psynet.addReadySeats = function (ready) {
       if (psynet.readySeats?.pageUuid !== window.pageUuid) {
         psynet.readySeats = { pageUuid: window.pageUuid, byBarrier: {} };
       }
       const key = `${ready.group_id}:${ready.barrier_id}`;
-      const seats = (psynet.readySeats.byBarrier[key] ??= new Set());
-      (ready.seats || []).forEach((seat) => seats.add(seat));
-      // Members who have left the group no longer count as ready.
-      if (ready.members) {
+      const state = (psynet.readySeats.byBarrier[key] ??= {
+        seats: new Set(),
+        texts: {},
+        groupSize: null,
+      });
+      (ready.seats || []).forEach((seat) => state.seats.add(seat));
+      if (ready.members?.length) {
+        // Members who have left no longer count. A member list from an
+        // older update lacks only later joiners, who have higher seats.
         const members = new Set(ready.members);
-        [...seats].forEach((seat) => members.has(seat) || seats.delete(seat));
+        const top = Math.max(...ready.members);
+        [...state.seats].forEach((seat) => {
+          if (seat <= top && !members.has(seat)) state.seats.delete(seat);
+        });
+        if (state.groupSize !== ready.members.length) {
+          state.groupSize = ready.members.length;
+          state.texts = {};
+        }
       }
-      return [...seats].sort((a, b) => a - b);
+      (ready.notices || []).forEach((text, index) => {
+        state.texts[ready.notices_from + index] = text;
+      });
+      const seats = [...state.seats].sort((a, b) => a - b);
+      return { seats, notice: state.texts[seats.length] };
     };
 
     psynet.stopArrivalUpdates = function () {
@@ -1171,15 +1185,7 @@
         if (!psynet.arrivalUpdates) {
           return;
         }
-        // Live updates that arrived first count more arrivals than this
-        // snapshot may, so its notice is only used if there were none.
-        const hadLiveSeats =
-          psynet.readySeats?.pageUuid === window.pageUuid &&
-          Object.keys(psynet.readySeats.byBarrier).length > 0;
-        (data?.group_ready || []).forEach(psynet.applyGroupReady);
-        if (!hadLiveSeats) {
-          psynet.applyArrivalNotice(data && data.notice);
-        }
+        psynet.applyArrivalTarget(data || {});
       });
     };
 
@@ -1191,9 +1197,7 @@
       }
       if (psynet.arrivalUpdates?.channel === config.channel) {
         psynet.applyArrivalNotice(config.notice);
-        if (!config.notice) {
-          psynet.fetchArrivalNotice();
-        }
+        psynet.fetchArrivalNotice();
         return;
       }
       psynet.stopArrivalUpdates();

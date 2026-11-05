@@ -183,7 +183,7 @@ def _queue_arrival_update(
         update = {
             "participant_id": participant_id,
             "reason": "arrival_update",
-            "hold_message": hold_message,
+            "hold_message": hold_message or previous.get("hold_message"),
         }
         if notice is not _KEEP_NOTICE:
             update["notice"] = notice

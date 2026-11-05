@@ -634,7 +634,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def to_dict(self):
         """Return the participant's dashboard fields, including the name others see them by."""
         x = super().to_dict()
-        x["pseudonym"] = self.pseudonym.name
+        try:
+            x["pseudonym"] = self.pseudonym.name
+        except ValueError:
+            # Stored keys the current pseudonym scheme no longer has.
+            logger.warning(
+                "Participant %s has an unknown pseudonym.", self.id, exc_info=True
+            )
+            x["pseudonym"] = None
         return x
 
     # all_trials = relationship("psynet.trial.main.Trial")

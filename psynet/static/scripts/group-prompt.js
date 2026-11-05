@@ -28,7 +28,11 @@ export async function activate({root, vars}) {
             }
         });
         if (announcer && names.length) {
-            announcer.textContent = names.join(", ") + " " + (config.answered_label || "");
+            announcer.textContent = names
+                .map(function (name) {
+                    return (config.answered_announcement || "").replace("{NAME}", name);
+                })
+                .join(" ");
         }
     }
 

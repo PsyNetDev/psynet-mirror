@@ -64,14 +64,9 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
         "1/3 of your group are ready.",
         "2/3 of your group are ready.",
     ]
-    # A page that connects later gets the ready seats from the snapshot.
+    # A page that connects later gets the same entry from the snapshot.
     snapshot = arrival_notice_payload(third.unique_id)["group_ready"]
-    assert {
-        "group_id": group.id,
-        "barrier_id": "next",
-        "seats": [seats[first.id]],
-        "members": [0, 1, 2],
-    } in snapshot
+    assert update["group_ready"][-1] in snapshot
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
     assert html.index(">You<") < html.index(first.pseudonym.name)
