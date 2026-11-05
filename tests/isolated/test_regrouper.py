@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
+from dallinger.models import timenow
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,8 +15,9 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page_activity import record_page_activity
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper, check_barriers
 from psynet.timeline import Timeline
+from psynet.timeline_hold import TimelineHoldRecord
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -24,7 +26,11 @@ from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
     _commit_barrier_arrivals,
 )
-from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
+from timeline_hold_helpers import (  # noqa: E402
+    _barrier_link_released,
+    _json_timeline,
+    _working_participants,
+)
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -279,6 +285,28 @@ def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
     _backdate_arrivals(pairs, team[:1], 16)
     assert pairs.choose_who_to_release(team[:1]) == team[:1]
     assert _count_releases.calls == 1
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@in_consents_experiment
+def test_a_regrouper_waiter_past_max_wait_is_failed_or_continues_alone(
+    in_experiment_directory, db_session, action
+):
+    exp = get_experiment()
+    pairs = Regrouper("pair", group_size=2, deadline=30, max_wait_action=action)
+    (waiter,) = _working_participants(exp, 1)
+    _arrive(exp, pairs, [waiter])
+    TimelineHoldRecord.query.filter_by(participant_id=waiter.id).update(
+        {"deadline_at": timenow() - timedelta(seconds=1)}
+    )
+    db.session.commit()
+
+    check_barriers()
+
+    db.session.expire_all()
+    assert waiter.failed == (action == "fail")
+    assert "pair" not in waiter.active_sync_groups
+    assert _barrier_link_released(waiter.id, pairs.id)
 
 
 @in_consents_experiment

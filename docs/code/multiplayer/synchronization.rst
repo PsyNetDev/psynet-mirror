@@ -196,8 +196,11 @@ on their own.
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
     the deadline, for example ``"The next round starts in {SECONDS} s."``.
 
-``max_wait_time`` (default: 300 seconds)
-    The longest a participant waits at the regrouper before being failed.
+``max_wait_time`` (default: 300 seconds) and ``max_wait_action``
+    The longest a participant waits at the regrouper, for example with their
+    tab hidden, before being failed. With ``max_wait_action="kick"`` they
+    continue without a group instead, like a participant left over with
+    ``release_left_over=True``, so the experiment can treat it as a sit-out.
 
 ``active_within`` (default: ``None``)
     As for :class:`~psynet.sync.SimpleGrouper`: participants whose tab is in
