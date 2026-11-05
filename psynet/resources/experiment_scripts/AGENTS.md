@@ -63,7 +63,9 @@ running, debugging and inspecting the database, read
 browser windows on the user's screen. The log prints an ad page URL such as
 `http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer it to
 the user to walk through the experiment, and look at pages yourself with
-headless Playwright (see `playwright-testing/SKILL.md`). From a non-interactive background shell, keep stdin open
+headless Playwright (see `playwright-testing/SKILL.md`); a
+`POST /load-participant 403` in the console when a participant enters is
+expected. From a non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local --no-browsers`); otherwise the server
 can stop without a log line.
 

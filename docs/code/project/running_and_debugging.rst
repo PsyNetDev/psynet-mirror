@@ -161,6 +161,12 @@ If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the
 smallest version that still fails when you ask for help.
 
+When a new participant opens the experiment, the browser console shows
+``POST /load-participant 403 (Forbidden)``. This is expected: the start page
+first asks whether the participant already exists, Dallinger answers 403
+with ``participant_not_found`` for someone new, and PsyNet then creates the
+participant.
+
 See PsyNet's detailed log messages
 ----------------------------------
 
