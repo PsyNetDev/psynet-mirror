@@ -1,10 +1,12 @@
 /**
- * GroupPrompt layout: at the edges of each layout (row, table, wrapped rows,
- * list), on a laptop and a phone, with and without answer bubbles, members
- * must be readable and visible. Their icons, names and bubbles stay inside
- * the window, do not overlap each other or the rest of the page, are not
- * clipped, and have enough contrast. The HTML comes from GroupPrompt itself
- * (render_group_prompt.py), with the longest pseudonyms.
+ * GroupPrompt layout: for rows and scatters, subgroups and shown names, on a
+ * laptop and a phone, with and without answer bubbles, members must be
+ * readable and visible. Animals, labels and bubbles stay inside the window
+ * and off the rest of the page; animals and labels never overlap each
+ * other; a bubble may overlap a neighbour, but hovering over its member
+ * brings it to the front. Text is not clipped and has enough contrast. The
+ * HTML comes from GroupPrompt itself (render_group_prompt.py), with the
+ * longest pseudonyms.
  */
 const fs = require("fs");
 const path = require("path");
@@ -16,15 +18,33 @@ const BOOTSTRAP_CSS = read("psynet/resources/libraries/bootstrap/bootstrap.min.c
 const THEME_CSS = read("psynet/resources/css/participant.css");
 const LAYOUT_JS = read("psynet/resources/scripts/psynet.layout.js");
 
-const SIZES = [2, 4, 5, 6, 7, 12, 13];
 const VIEWPORTS = [
   { label: "laptop", width: 1280, height: 720 },
   { label: "phone", width: 375, height: 780 },
 ];
-const CASES = SIZES.flatMap((size) => [
-  { size, answers: false },
-  { size, answers: true, note: "1 was picked twice" },
+const SHAPES = [
+  { size: 2 },
+  { size: 4 },
+  { size: 5 },
+  { size: 8 },
+  { size: 12 },
+  { size: 8, subgroup_size: 2 },
+  { size: 12, subgroup_size: 6 },
+  { size: 6, show_names: true },
+];
+const CASES = SHAPES.flatMap((shape) => [
+  { ...shape, answers: false },
+  { ...shape, answers: true, note: "1 was picked twice" },
 ]);
+const describeCase = (c) =>
+  [
+    `${c.size} members`,
+    c.subgroup_size && `in subgroups of ${c.subgroup_size}`,
+    c.show_names && "with names",
+    c.answers && "with answers",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
 function renderCases(cases) {
   const result = spawnSync(
@@ -70,7 +90,7 @@ function groupLayoutProblems() {
   const visible = (el) => {
     const style = getComputedStyle(el);
     const rect = el.getBoundingClientRect();
-    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0;
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 1;
   };
   const describe = (el) => {
     const member = el.closest(".psynet-group-member");
@@ -87,6 +107,8 @@ function groupLayoutProblems() {
       if (visible(part)) boxes.push({ el: part, member });
     }
   }
+  // Bubbles may overlap other members (hovering brings them to the front).
+  const isBubble = (el) => el.classList.contains("psynet-group-bubble");
   const page = ["#prompt-text", "#control", ".psynet-group-note"]
     .map((selector) => document.querySelector(selector))
     .filter((el) => el && visible(el));
@@ -109,6 +131,7 @@ function groupLayoutProblems() {
   for (let i = 0; i < boxes.length; i++) {
     const a = boxes[i].el.getBoundingClientRect();
     for (let j = i + 1; j < boxes.length; j++) {
+      if (isBubble(boxes[i].el) || isBubble(boxes[j].el)) continue;
       if (overlap(a, boxes[j].el.getBoundingClientRect())) {
         problems.push(`${describe(boxes[i].el)} overlaps ${describe(boxes[j].el)}`);
       }
@@ -178,9 +201,34 @@ function groupLayoutProblems() {
   return problems;
 }
 
+/** Return the seats whose bubble is not on top while their member is hovered. */
+async function hiddenBubbles(page) {
+  const hidden = [];
+  for (const member of await page.locator(".psynet-group-member").all()) {
+    const bubble = member.locator(".psynet-group-bubble:not(.psynet-group-bubble--none)");
+    if ((await bubble.count()) === 0) continue;
+    await member.hover();
+    const onTop = await bubble.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const [x, y] = [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
+      // Edge midpoints, as hit testing follows the rounded corners.
+      const points = [
+        [r.left + 3, y],
+        [r.right - 3, y],
+        [x, r.top + 3],
+        [x, r.bottom - 3],
+      ];
+      return points.every(([x, y]) => el.contains(document.elementFromPoint(x, y)));
+    });
+    if (!onTop) hidden.push(await member.getAttribute("data-seat"));
+  }
+  await page.mouse.move(0, 0);
+  return hidden;
+}
+
 for (const viewport of VIEWPORTS) {
   CASES.forEach((groupCase, index) => {
-    const label = `${groupCase.size} members${groupCase.answers ? " with answers" : ""}`;
+    const label = describeCase(groupCase);
     test(
       `GroupPrompt with ${label} is readable on a ${viewport.label}`,
       { tag: "@both" },
@@ -189,9 +237,7 @@ for (const viewport of VIEWPORTS) {
         await page.locator(".psynet-group-member").first().waitFor();
         expect(await page.locator(".psynet-group-member").count()).toBe(groupCase.size);
         expect(await page.evaluate(groupLayoutProblems), label).toEqual([]);
-        // A results page for a full group may scroll to its Next button on a
-        // phone (see GroupPrompt); the group itself must still be visible.
-        if (viewport.label === "phone" && groupCase.size > 9 && groupCase.answers) return;
+        expect(await hiddenBubbles(page), `${label}: bubbles behind others on hover`).toEqual([]);
         expect(await page.evaluate(() => window.psynetLayout.check()), label).toEqual([]);
       }
     );

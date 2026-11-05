@@ -1540,18 +1540,32 @@ class GroupBarrier(Barrier):
                     hold_html = hold_page.overlay_html(member)
                 _queue_arrival_update(member.id, hold_message=hold_html)
                 continue
-            text = self._call_arrival_message(
-                kind="notice",
-                waiting_count=waiting_count,
-                group_size=group_size,
-                recipient=member,
-                group=group,
-            )
-            ready = {"group_id": group.id, "seats": ready_seats}
-            if text:
-                _queue_arrival_update(member.id, notice=str(text), group_ready=ready)
-            else:
-                _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=ready)
+            ready = {"group_id": group.id, "barrier_id": self.id, "seats": ready_seats}
+            # Arrivals in concurrent requests do not see each other, so each
+            # update carries the text for every count; the browser counts the
+            # union of the seats it has been sent and shows that text.
+            counts = range(1, group_size + 1)
+            if group_size > _MAX_COUNTED_NOTICES:
+                counts = [waiting_count]
+            texts = {
+                count: self._call_arrival_message(
+                    kind="notice",
+                    waiting_count=count,
+                    group_size=group_size,
+                    recipient=member,
+                    group=group,
+                )
+                for count in counts
+            }
+            if group_size > _MAX_COUNTED_NOTICES:
+                text = texts[waiting_count]
+                _queue_arrival_update(
+                    member.id, notice=str(text) if text else None, group_ready=ready
+                )
+                continue
+            if any(texts.values()):
+                ready["notices"] = [str(texts[c]) if texts[c] else None for c in counts]
+            _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=ready)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -2678,6 +2692,10 @@ class Regrouper(Grouper):
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
         return group
+
+
+# Larger groups get only the notice for the count this request sees.
+_MAX_COUNTED_NOTICES = 12
 
 
 def group_seats(group) -> Dict[int, int]:

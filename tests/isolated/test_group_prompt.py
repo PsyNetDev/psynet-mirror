@@ -40,12 +40,19 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     _arrive(exp, barrier, [first, second])
     seats = group_seats(group)
     (*_, update) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"] == {
-        "group_id": group.id,
-        "seats": sorted([seats[first.id], seats[second.id]]),
-    }
+    assert update["group_ready"]["seats"] == sorted([seats[first.id], seats[second.id]])
     # Without notice text, the update leaves the browser's notice alone.
-    assert "notice" not in update
+    assert "notice" not in update and "notices" not in update["group_ready"]
+
+    # Otherwise it carries the notice for each count, so that the browser can
+    # count arrivals that concurrent requests reported separately.
+    published.clear()
+    _arrive(exp, GroupBarrier("next", group_type="room"), [first])
+    (update,) = [t for t in published if t["participant_id"] == third.id]
+    assert update["group_ready"]["notices"][:2] == [
+        "1/3 of your group are ready.",
+        "2/3 of your group are ready.",
+    ]
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
     assert html.index("You") < html.index(first.pseudonym.name)
@@ -61,3 +68,11 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert "&lt;b&gt;3&lt;/b&gt;" in html and "<img alt='3'>" in html
     assert "psynet-group-member--winner" in html
     assert "psynet-group-member--answered" not in html
+
+    html = GroupPrompt(
+        group=group, participant=first, subgroups=lambda p: p.id == second.id
+    ).group_html
+    clusters = html.split('class="psynet-group-cluster"')[1:]
+    assert len(clusters) == 2
+    assert "You" in clusters[0] and third.pseudonym.name in clusters[0]
+    assert second.pseudonym.name in clusters[1]

@@ -1,6 +1,7 @@
 """Print GroupPrompt HTML for group_prompt_layout.spec.js, as JSON.
 
-Reads a JSON list of cases from stdin, each ``{"size", "answers", "note"}``,
+Reads a JSON list of cases from stdin, each with ``size``, ``answers`` and
+optionally ``note``, ``subgroup_size`` and ``show_names``,
 and prints a list of ``{"text", "group_html", "css"}``. Members get the longest
 pseudonyms, and answers the longest answer text a demo might use, so the
 layout is tested at its worst.
@@ -49,6 +50,7 @@ def _render(case):
     if case["answers"]:
         answers = {m.id: LONG_ANSWER if m.id % 2 else str(m.id) for m in members}
         highlight = {members[0].id: "winner", members[-1].id: "duplicate"}
+    subgroup_size = case.get("subgroup_size")
     prompt = GroupPrompt(
         "The room picked their numbers. The winning number was 3.",
         group=group,
@@ -57,6 +59,8 @@ def _render(case):
         highlight=highlight,
         note=case.get("note"),
         answered=lambda member: member.id % 2 == 0,
+        subgroups=(lambda m: (m.id - 1) // subgroup_size) if subgroup_size else None,
+        show_names=case.get("show_names", False),
     )
     return {
         "text": str(prompt.text_html),

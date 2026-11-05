@@ -306,10 +306,21 @@ Showing the group
 
 :class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
 by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
-page labelled "You". Members sit in a row for up to four people, around a
-table for five or six (in rows where the table does not fit, as on a
-phone), in wrapped rows for up to 12, and in a list for larger groups. Joining a group gives a
-newcomer a different pseudonym if another active member already has theirs.
+page labelled "You". Each member appears as a silhouette of their pseudonym
+animal in their colour; the other members' names are read out by screen
+readers and shown on hover, or below the animals with ``show_names=True``.
+Members sit in a row for up to four people and are scattered over the width
+of the page for more, so the display adapts to any screen. Joining a group
+gives a newcomer a different pseudonym if another active member already has
+theirs.
+
+``subgroups`` clusters the members, for example pairs formed within a
+room. Pass a sync group type, or a function returning a key per participant;
+the viewer's cluster comes first:
+
+.. code-block:: python
+
+    GroupPrompt("Pick a number.", group=room, participant=participant, subgroups="pair")
 
 On a decision page, members who have answered get a tick. A member has
 answered once they wait at a barrier of the group, typically the barrier
@@ -332,7 +343,8 @@ answered when the page is drawn:
         )
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
-bubble. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
+bubble. Speech bubbles may overlap a neighbour; hovering over or tapping a
+member brings their bubble to the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
 such as an image. ``highlight`` marks members, with built-in styles for
 ``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
 

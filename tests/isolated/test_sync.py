@@ -5704,8 +5704,9 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     _arrive_at_group_barrier(exp, barrier, first)
     db_session.commit()
 
+    # The browser shows the notice for the number of ready members.
     notices = [
-        target.get("notice")
+        (target.get("group_ready") or {}).get("notices", [None])[0]
         for _, payload in publications
         for target in payload["targets"]
     ]
