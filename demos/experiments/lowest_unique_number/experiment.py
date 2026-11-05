@@ -69,7 +69,7 @@ def show_result(participant):
     else:
         outcome = f"The winning number was {result['winning_number']}."
     return InfoPage(
-        f"The room picked {result['choices']}. {outcome}",
+        f"The room picked {', '.join(map(str, result['choices']))}. {outcome}",
         time_estimate=5,
     )
 
@@ -134,7 +134,7 @@ class Exp(psynet.experiment.Experiment):
         bots[1].take_page(response=2)
         _wait_while_held(bots[:2])
         assert "You won with 1!" in bots[0].current_page_text
-        assert "The room picked [1, 2]" in bots[1].current_page_text
+        assert "The room picked 1, 2." in bots[1].current_page_text
 
         bots[2].take_page(response=1)
         assert "sat out this round" in bots[2].current_page_text
@@ -148,7 +148,7 @@ class Exp(psynet.experiment.Experiment):
         bots[2].take_page(response=4)
         _wait_while_held(bots)
         assert "You won with 4!" in bots[2].current_page_text
-        assert "The room picked [3, 3, 4]" in bots[0].current_page_text
+        assert "The room picked 3, 3, 4." in bots[0].current_page_text
 
 
 def _wait_while_held(bots, timeout=ROUND_SECONDS + CHOICE_SECONDS + 10):
