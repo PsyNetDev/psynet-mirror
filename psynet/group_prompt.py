@@ -36,8 +36,8 @@ _MAX_SCATTER_COLUMNS = 7
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
-    Members appear as silhouettes of their pseudonym animals, in their
-    colours: in a row for up to four people, and scattered over the width
+    Members appear as their pseudonym animals drawn in their colours
+    (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`): in a row for up to four people, and scattered over the width
     of the page for more. Only the participant viewing the page is labelled
     ("You"); the others' names are read out by screen readers and shown on
     hover. Hovering over or tapping a member brings their speech bubble to
@@ -276,7 +276,7 @@ class GroupPrompt(Prompt):
             pseudonym.name,
             focusable,
             bubble,
-            pseudonym.icon_html,
+            pseudonym.sticker_html,
             status,
             name,
         )

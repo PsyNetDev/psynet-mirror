@@ -37,6 +37,8 @@ def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
     blue_fox = scheme.make("blue", "fox")
     assert (blue_fox.name, blue_fox.emoji) == ("Blue fox", "🦊")
     assert "--psynet-pseudonym-color: #0072B2" in blue_fox.icon_html
+    assert "pseudonym-animals/fox.svg" in blue_fox.sticker_html
+    assert "sticker--dark" in scheme.make("black", "fox").sticker_html
 
 
 def test_schemes_and_stored_pseudonyms_can_be_customized():
@@ -51,6 +53,7 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
     stored = scheme.pseudonym(_participant(1, ("red", "bear")))
 
     assert stored.name == "Bear (red)"
+    assert "psynet-pseudonym-sticker--emoji" in stored.sticker_html
     assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
         scheme.make("red", "fox")

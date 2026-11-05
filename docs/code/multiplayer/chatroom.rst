@@ -111,7 +111,11 @@ chooses each participant's pseudonym,
 :meth:`~psynet.pseudonym.PseudonymScheme.name` combines the colour and
 animal (override it for languages where the colour must agree with the
 animal), and :meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the
-icon; override them for full control. Messages, history and occupancy updates carry each
+icon; override them for full control.
+:meth:`~psynet.pseudonym.PseudonymScheme.sticker_html` draws the larger,
+tinted animal used by :class:`~psynet.group_prompt.GroupPrompt`: the built-in
+animals use Microsoft Fluent Emoji pictures, and other animals their emoji;
+override :meth:`~psynet.pseudonym.PseudonymScheme.artwork` to supply pictures. Messages, history and occupancy updates carry each
 sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom
 chatroom widget can show it too.
 

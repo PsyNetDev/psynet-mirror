@@ -87,23 +87,6 @@
     display: inline-flex;
 }
 
-/* The animal as a silhouette in the member's colour, outlined so that light
-   colours show on a light page. */
-.psynet-group-member .psynet-pseudonym-icon {
-    width: auto;
-    height: auto;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-    color: transparent;
-    font-size: 2.8em;
-    line-height: 1.1;
-    text-shadow: 0 0 0 var(--psynet-pseudonym-color);
-    filter: drop-shadow(0 0 0.6px rgb(0 0 0 / 0.7));
-}
-
 .psynet-group-name {
     max-width: 8em;
     font-size: 0.9em;
@@ -174,8 +157,8 @@
     visibility: hidden;
 }
 
-.psynet-group-member--winner .psynet-pseudonym-icon {
-    filter: drop-shadow(0 0 0.6px rgb(0 0 0 / 0.7)) drop-shadow(0 0 4px #198754);
+.psynet-group-member--winner .psynet-pseudonym-sticker {
+    filter: drop-shadow(0 0 4px #198754);
 }
 
 .psynet-group-member--winner .psynet-group-bubble {
@@ -213,8 +196,8 @@
         gap: 0.8em 1em;
     }
 
-    .psynet-group-member .psynet-pseudonym-icon {
-        font-size: 2.3em;
+    .psynet-group-member .psynet-pseudonym-sticker {
+        font-size: 0.85em;
     }
 
     .psynet-group-cluster {
@@ -222,7 +205,7 @@
     }
 
     .psynet-group-bubble {
-        max-width: 7em;
+        max-width: 9em;
         margin-bottom: 0.3em;
     }
 }

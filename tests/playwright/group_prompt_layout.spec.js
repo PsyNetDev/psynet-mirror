@@ -17,6 +17,8 @@ const read = (file) => fs.readFileSync(path.resolve(file), "utf8");
 const BOOTSTRAP_CSS = read("psynet/resources/libraries/bootstrap/bootstrap.min.css");
 const THEME_CSS = read("psynet/resources/css/participant.css");
 const LAYOUT_JS = read("psynet/resources/scripts/psynet.layout.js");
+const ORIGIN = "http://psynet.test";
+const STATIC_PREFIX = "/static/packages/psynet/";
 
 const VIEWPORTS = [
   { label: "laptop", width: 1280, height: 720 },
@@ -66,8 +68,18 @@ async function renderPage(page, viewport, { text, group_html, css }, answers) {
         .map((n) => `<button class="btn btn-primary response push-button">${n}</button>`)
         .join("");
   const direction = answers ? "flex-column" : "flex-row";
-  await page.setContent(`<!doctype html>
+  // Served from an origin so that static URLs such as the animal artwork load.
+  await page.route(`${ORIGIN}/**`, (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith(STATIC_PREFIX)) {
+      const file = path.join("psynet/static", url.pathname.slice(STATIC_PREFIX.length));
+      return route.fulfill({ path: file });
+    }
+    return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+  });
+  const html = `<!doctype html>
 <html><head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${BOOTSTRAP_CSS}${THEME_CSS}${css} body { margin: 0; }</style>
 </head><body>
@@ -76,7 +88,9 @@ async function renderPage(page, viewport, { text, group_html, css }, answers) {
   ${group_html}
   <div id="control" class="d-flex ${direction} justify-content-center align-items-center gap-2">${control}</div>
 </div>
-</body></html>`);
+</body></html>`;
+  await page.goto(`${ORIGIN}/`);
+  await page.waitForFunction(() => [...document.images].every((img) => img.complete));
   await page.addScriptTag({ content: LAYOUT_JS });
   // Let the staggered bubble animation finish before measuring.
   await page.evaluate(() =>
@@ -102,7 +116,7 @@ function groupLayoutProblems() {
   const boxes = [];
   for (const member of members) {
     for (const part of member.querySelectorAll(
-      ".psynet-pseudonym-icon, .psynet-group-name, .psynet-group-bubble"
+      ".psynet-pseudonym-sticker, .psynet-group-name, .psynet-group-bubble"
     )) {
       if (visible(part)) boxes.push({ el: part, member });
     }

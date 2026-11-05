@@ -306,8 +306,8 @@ Showing the group
 
 :class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
 by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
-page labelled "You". Each member appears as a silhouette of their pseudonym
-animal in their colour; the other members' names are read out by screen
+page labelled "You". Each member appears as their pseudonym animal, tinted
+in their colour; the other members' names are read out by screen
 readers and shown on hover, or below the animals with ``show_names=True``.
 Members sit in a row for up to four people and are scattered over the width
 of the page for more, so the display adapts to any screen. Joining a group

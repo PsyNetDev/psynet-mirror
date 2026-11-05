@@ -28,6 +28,7 @@ from typing import Dict, Optional, Tuple
 
 from markupsafe import Markup
 
+from .static_resources import package_static_url
 from .utils import get_translator
 
 _COLORS = {
@@ -71,7 +72,10 @@ class Pseudonym:
     emoji
         The animal's emoji.
     icon_html
-        HTML for the participant's icon.
+        HTML for the participant's icon: the animal on a coloured disc.
+    sticker_html
+        HTML for a larger picture of the animal tinted in the participant's colour,
+        as in :class:`~psynet.group_prompt.GroupPrompt`.
     """
 
     color: str
@@ -80,6 +84,7 @@ class Pseudonym:
     css_color: str
     emoji: str
     icon_html: Markup
+    sticker_html: Markup
 
     def to_dict(self) -> dict:
         """Return the fields as JSON-serializable values."""
@@ -90,6 +95,7 @@ class Pseudonym:
             "css_color": self.css_color,
             "emoji": self.emoji,
             "icon_html": str(self.icon_html),
+            "sticker_html": str(self.sticker_html),
         }
 
 
@@ -110,7 +116,8 @@ class PseudonymScheme:
     Override :meth:`colors` and :meth:`animals` to change the vocabulary,
     :meth:`assign` to change who gets which pseudonym, :meth:`name` for the
     word order (for example in languages where the colour must agree with
-    the animal), and :meth:`icon_html` for the icon. Call
+    the animal), and :meth:`icon_html`, :meth:`sticker_html` or :meth:`artwork`
+    for the pictures. Call
     :meth:`~psynet.participant.Participant.set_pseudonym` to give one
     participant a particular pseudonym.
     """
@@ -202,6 +209,44 @@ class PseudonymScheme:
             ' style="--psynet-pseudonym-color: {}">{}</span>'
         ).format(name, css_color, emoji)
 
+    def artwork(self, animal: str, emoji: str) -> Optional[str]:
+        """Return the URL of an animal's picture, or ``None`` to use its emoji.
+
+        The built-in animals use Microsoft Fluent Emoji artwork (MIT licence);
+        animals added by an override, or given a different emoji, get
+        ``None``.
+        """
+        if _ANIMALS.get(animal) != emoji:
+            return None
+        return package_static_url("psynet", f"images/pseudonym-animals/{animal}.svg")
+
+    def sticker_html(
+        self, css_color: str, animal: str, emoji: str, name: str
+    ) -> Markup:
+        """Return HTML for the animal tinted in the participant's colour.
+
+        The picture from :meth:`artwork`, or else the emoji, is filled with
+        the colour, keeping its shading. Like :meth:`icon_html`, it is hidden
+        from screen readers and an override must return
+        :class:`~markupsafe.Markup`.
+        """
+        classes = "psynet-pseudonym-sticker"
+        if _is_dark(css_color):
+            classes += " psynet-pseudonym-sticker--dark"
+        url = self.artwork(animal, emoji)
+        if url is None:
+            return Markup(
+                '<span class="{} psynet-pseudonym-sticker--emoji" aria-hidden="true"'
+                ' title="{}" style="--psynet-pseudonym-color: {}">'
+                '<span class="psynet-pseudonym-sticker-shape">{}</span>'
+                '<span class="psynet-pseudonym-sticker-detail">{}</span></span>'
+            ).format(classes, name, css_color, emoji, emoji)
+        return Markup(
+            '<span class="{}" aria-hidden="true" title="{}"'
+            ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
+            '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
+        ).format(classes, name, css_color, Markup(url), url)
+
     def replacement(self, taken) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
 
@@ -250,4 +295,13 @@ class PseudonymScheme:
             css_color=css_color,
             emoji=emoji,
             icon_html=self.icon_html(css_color, emoji, name),
+            sticker_html=self.sticker_html(css_color, animal, emoji, name),
         )
+
+
+def _is_dark(css_color: str) -> bool:
+    """Return whether a ``#rrggbb`` colour is too dark to show shading by darkening."""
+    if len(css_color) != 7 or not css_color.startswith("#"):
+        return False
+    r, g, b = (int(css_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.2
