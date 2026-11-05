@@ -56,6 +56,14 @@ current page, under a waiting indicator, until their group is formed.
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
+``start_short_after`` (default: ``None``)
+    Seconds after which a smaller group may start. Once the longest-waiting
+    participant has waited this long and at least ``min_group_size`` are
+    waiting, those waiting form a group even if there are fewer than
+    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``.
+    Combine it with ``join_existing_groups=True`` so that later arrivals can
+    still fill the group up.
+
 ``content``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
@@ -114,6 +122,93 @@ then groups of two, and assigns roles at a barrier each time:
 
 Two groupers of the same type and size share a default ID, and so a waiting
 pool. Give them different ``id_`` values if they should not.
+
+Rounds with changing groups
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In games played over many rounds, a participant who is slow in one round
+should not hold up everyone else, and should not be failed either. A
+:class:`~psynet.sync.Regrouper` placed at the start of each round handles
+this. Each time a participant reaches it, they leave their previous group of
+that type and wait for the next round. The regrouper then splits everyone
+waiting into new groups:
+
+- when every member of the participant's ``within`` group is waiting, or
+- when ``deadline`` passes, without whoever isn't ready yet.
+
+Whoever missed the round joins the next one. The groups it forms are never
+dissolved when a member leaves, so members who are left continue the round
+on their own.
+
+``group_size`` and ``min_group_size`` (default 2)
+    The largest and smallest group to form. Everyone waiting is split into
+    balanced groups, for example rooms of 8, 8, 7 and 7 for 30 participants.
+
+``deadline``
+    Seconds since the previous round started (or since the first participant
+    arrived, for the first round). ``Clock(45)`` instead starts rounds at fixed
+    45-second ticks, whether or not everyone is ready earlier.
+
+``within`` (default: ``None``)
+    The ``group_type`` of a group to regroup within, such as a team formed
+    earlier by a :class:`~psynet.sync.SimpleGrouper`. Participants are only
+    grouped with members of their own team, and each team's rounds run on
+    their own. Without ``within``, everyone waiting is one pool, and a
+    ``deadline`` is required.
+
+``release_left_over`` (default: ``False``)
+    If ``True``, participants who don't fit into a group, such as an odd one
+    out when pairing, continue ungrouped so that they can see a sit-out page.
+    If ``False``, they wait for the next round.
+
+``form_groups``
+    A function of ``members``, ``within_group`` and ``regrouper`` that returns
+    the groups as lists of participants, for example to avoid repeat partners.
+    Members not placed in a group are left over. You can also subclass
+    :class:`~psynet.sync.Regrouper` and override
+    :meth:`~psynet.sync.Regrouper.form_groups`.
+
+``on_release``
+    A function called after each split with ``within_group``, ``groups``,
+    ``left_over`` and ``regrouper``, for example to count rounds or assign
+    roles.
+
+``content``
+    The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
+    the deadline, for example ``"The next round starts in {SECONDS} s."``.
+
+``max_wait_time`` (default: 300 seconds)
+    The longest a participant waits at the regrouper before being failed.
+
+In the ``lowest_unique_number`` demo, rooms of up to eight players form every
+20 seconds. A player who doesn't choose in time is removed from their room by
+a :class:`~psynet.sync.GroupBarrier` with
+``timeout_between_barriers_action="kick"``, so the rest of the room carries
+on, and they join the next round:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: play_round
+
+A participant who was removed from their group cannot pass that group's
+barriers, so check that they are still in the group, as the ``conditional``
+does here.
+
+In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
+every round. The lobby starts a smaller team after a minute and lets
+latecomers join while enough rounds are left:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: SimpleGrouper(
+   :end-before: while_loop(
+   :dedent: 8
+
+Each round pairs the team's players, avoiding last round's partners, and
+starts as soon as the whole team is ready:
+
+.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
+   :start-at: Regrouper(
+   :end-before: conditional(
+   :dedent: 8
 
 Keeping a group in step
 -----------------------

@@ -891,6 +891,27 @@
       }
     };
 
+    // Countdown spans carry a duration from the server, so they are timed
+    // against the browser's clock from when they first appear.
+    psynet.tickTimelineHoldCountdowns = function () {
+      let now = Date.now();
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          if (!element.dataset.releaseAt) {
+            element.dataset.releaseAt = String(
+              now + Number(element.dataset.releaseInMs || 0),
+            );
+          }
+          let seconds = Math.max(
+            0,
+            Math.ceil((Number(element.dataset.releaseAt) - now) / 1000),
+          );
+          element.textContent = String(seconds);
+        });
+    };
+    setInterval(psynet.tickTimelineHoldCountdowns, 250);
+
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
     };

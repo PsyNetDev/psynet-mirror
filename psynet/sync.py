@@ -18,7 +18,10 @@ Barrier
 Grouper and sync group
     A ``SimpleGrouper`` (or other grouper) is a timeline element that forms
     ``SyncGroup`` rows once enough participants are available. Group barriers
-    rely on these groups to decide who to release together.
+    rely on these groups to decide who to release together. A ``Regrouper``
+    forms new groups every round, optionally within an existing group, and
+    keeps when each pool was last split in ``var`` (on the ``within`` group,
+    or on the ``BarrierDefinition``).
 
 Barrier definition and instance
     A ``BarrierDefinition`` identifies the public waiting area. A
@@ -95,11 +98,12 @@ import random
 import time
 import uuid
 from contextlib import contextmanager
-from math import floor
+from math import ceil, floor
 from typing import Callable, List, Literal, Optional, Union
 
 from dallinger import db
 from dallinger.models import timenow
+from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
@@ -437,6 +441,11 @@ def _get_waiting_participants(
     return waiters
 
 
+def _arrival_time(barrier, participant):
+    """Return when this participant arrived at the barrier they are waiting at."""
+    return participant.active_barriers[barrier.id].arrival_time
+
+
 def _populate_active_barriers(participants):
     """Batch-load ``active_barriers`` without a relationship loader option.
 
@@ -671,6 +680,24 @@ class _BarrierHoldPage(_TimelineHoldPage):
             return None
         return self.barrier._hold_progress_text(participant)
 
+    def overlay_html(self, participant=None):
+        """Return hold copy, replacing ``{SECONDS}`` with a live countdown."""
+        html = super().overlay_html(participant)
+        if "{SECONDS}" not in html:
+            return html
+        release_time = (
+            None
+            if participant is None
+            else self.barrier.expected_release_time(participant)
+        )
+        if release_time is None:
+            return html.replace("{SECONDS}", "…")
+        remaining_ms = max(0, round((release_time - time.time()) * 1000))
+        countdown = Markup(
+            '<span class="psynet-timeline-hold-countdown" data-release-in-ms="{}">{}</span>'
+        ).format(remaining_ms, ceil(remaining_ms / 1000))
+        return Markup(html.replace("{SECONDS}", countdown))
+
     def prepare_to_resume(self, participant):
         if (
             participant.pending_redirect is not None or participant.failed
@@ -897,6 +924,14 @@ class Barrier(EltCollection):
 
     def _hold_progress_text(self, participant):
         """Return hold-overlay progress copy, if this barrier publishes arrivals."""
+        return None
+
+    def expected_release_time(self, participant) -> Optional[float]:
+        """Return when this participant will be released at the latest, in epoch seconds.
+
+        Used for the ``{SECONDS}`` countdown in ``content``. ``None`` (default)
+        means the release time is unknown.
+        """
         return None
 
     def _participant_is_waiting(self, participant):
@@ -1766,6 +1801,14 @@ class SimpleGrouper(Grouper):
         continue alone. A member whose own request is in progress is handled within about a second
         by the barrier poller instead.
 
+    start_short_after
+        If set, a group may start with fewer than ``batch_size`` participants once the
+        longest-waiting participant has waited this many seconds and at least
+        ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
+        are waiting, they form one smaller group. Requires
+        ``min_group_size < initial_group_size``. Default: ``None`` (always wait for
+        ``batch_size``).
+
     kwargs
         Further arguments to pass to Grouper.
     """
@@ -1781,6 +1824,7 @@ class SimpleGrouper(Grouper):
         join_existing_groups: bool = False,
         join_criterion: Optional[Callable] = None,
         fail_participants_below_min_size: bool = True,
+        start_short_after: Optional[float] = None,
         **kwargs,
     ):
         if "group_size" in kwargs:
@@ -1817,6 +1861,12 @@ class SimpleGrouper(Grouper):
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
         self.fail_participants_below_min_size = fail_participants_below_min_size
+        if start_short_after is not None and min_group_size >= initial_group_size:
+            raise ValueError(
+                "start_short_after needs min_group_size < initial_group_size, "
+                "otherwise there is no smaller group to start with."
+            )
+        self.start_short_after = start_short_after
 
     def resolve(self):
         from .timeline import conditional, join
@@ -1950,9 +2000,23 @@ class SimpleGrouper(Grouper):
         return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
-        return len(participants) >= self.batch_size
+        if len(participants) >= self.batch_size:
+            return True
+        return self._can_start_short(participants)
+
+    def _can_start_short(self, participants: List[Participant]) -> bool:
+        """Return whether enough people have waited long enough for a short start."""
+        if self.start_short_after is None or len(participants) < self.min_group_size:
+            return False
+        first_arrival = min(_arrival_time(self, p) for p in participants)
+        waited = (timenow() - first_arrival).total_seconds()
+        return waited >= self.start_short_after
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
+        if len(participants) < self.initial_group_size:
+            return [
+                self._make_group(participants, initial_group_size=len(participants))
+            ]
         n_groups = floor(len(participants) / self.initial_group_size)
         n_participants_to_group = n_groups * self.initial_group_size
         participants_to_group = participants[:n_participants_to_group]
@@ -1960,25 +2024,26 @@ class SimpleGrouper(Grouper):
         grouped_participants = self.randomly_partition_list(
             participants_to_group, group_size=self.initial_group_size
         )
-        groups = []
-        for _participants in grouped_participants:
-            _group = SimpleSyncGroup(
-                group_type=self.group_type,
-                initial_group_size=self.initial_group_size,
-                max_group_size=self.max_group_size,
-                min_group_size=self.min_group_size,
-                n_active_participants=len(_participants),
-                accepts_top_ups=self.join_existing_groups,
-                fail_participants_below_min_size=self.fail_participants_below_min_size,
-            )
-            groups.append(_group)
+        return [
+            self._make_group(_participants, initial_group_size=self.initial_group_size)
+            for _participants in grouped_participants
+        ]
 
-            for _participant in _participants:
-                _group.add_participant(_participant)
-
-            _group.leader = self.select_leader(_participants)
-
-        return groups
+    def _make_group(self, participants, *, initial_group_size):
+        """Create one group of these participants with this grouper's settings."""
+        group = SimpleSyncGroup(
+            group_type=self.group_type,
+            initial_group_size=initial_group_size,
+            max_group_size=self.max_group_size,
+            min_group_size=self.min_group_size,
+            n_active_participants=len(participants),
+            accepts_top_ups=self.join_existing_groups,
+            fail_participants_below_min_size=self.fail_participants_below_min_size,
+        )
+        for participant in participants:
+            group.add_participant(participant)
+        group.leader = self.select_leader(participants)
+        return group
 
     @staticmethod
     def randomly_partition_list(lst: list, group_size: int):
@@ -1991,6 +2056,314 @@ class SimpleGrouper(Grouper):
         lst = lst.copy()
         random.shuffle(lst)
         return [lst[i::n_groups] for i in range(n_groups)]
+
+
+class Clock:
+    """A :class:`Regrouper` deadline that falls every ``period`` seconds of wall-clock time.
+
+    For example, ``deadline=Clock(45)`` starts rounds at fixed 45-second ticks.
+
+    Parameters
+    ----------
+    period
+        Seconds between ticks.
+    """
+
+    def __init__(self, period: float):
+        if period <= 0:
+            raise ValueError("Clock period must be positive.")
+        self.period = float(period)
+
+
+def _latest_tick(now: float, period: float) -> float:
+    """Return the most recent tick at or before ``now`` (seconds since the epoch)."""
+    return floor(now / period) * period
+
+
+def _balanced_groups(members, max_size, min_size):
+    """Shuffle members into balanced groups of at most ``max_size``.
+
+    Members who do not fit a group of at least ``min_size`` are left out,
+    for example the odd one out when pairing.
+    """
+    members = random.sample(list(members), len(members))
+    n_groups = -(-len(members) // max_size)
+    if n_groups == 0:
+        return []
+    if len(members) // n_groups < min_size:
+        n_groups = len(members) // max_size
+        members = members[: n_groups * max_size]
+        if n_groups == 0:
+            return []
+    return [members[i::n_groups] for i in range(n_groups)]
+
+
+class Regrouper(Grouper):
+    """Repeatedly split participants into new groups, for example once per round.
+
+    Each time a participant reaches the regrouper, they leave their previous
+    group of this ``group_type`` and wait for the next split. Waiting
+    participants are pooled: by default everyone waiting is one pool, and with
+    ``within`` each existing group (such as a team) is its own pool. A pool is
+    split into groups when every active member of its ``within`` group is
+    waiting, or when its ``deadline`` passes, whichever comes first. With a
+    :class:`Clock` deadline, splits happen only on clock ticks. Absent
+    members are never waited for beyond the deadline and are never failed for
+    missing a split; they join the pool again when they come back.
+
+    Groups made by a regrouper don't accept top-ups and are never dissolved
+    when a member leaves, so a member who drops out of a round leaves their
+    partners in a smaller group rather than failing them.
+
+    Parameters
+    ----------
+    group_type
+        Type of the groups this regrouper creates, for example ``"pair"``.
+
+    within
+        Optional ``group_type`` of an existing group to regroup within, for
+        example ``"team"``. Participants are only grouped with members of the
+        same ``within`` group, and a pool counts as complete once all that
+        group's active members are waiting. A participant without such a group
+        is released ungrouped. If ``None`` (default), everyone waiting is one pool,
+        which is only split at the deadline.
+
+    group_size
+        Largest group to form. The pool is split into balanced groups of at
+        most this size, for example rooms of 8, 8, 7 and 7 for 30 people.
+
+    min_group_size
+        Smallest group to form (default 2). A pool is only split once this
+        many of its members are waiting.
+
+    deadline
+        When to stop waiting for absent members. A number is seconds since the
+        pool's previous split (or, before its first split, since its first
+        member arrived). ``Clock(period)`` splits at fixed wall-clock ticks
+        instead, even when everyone is already waiting, if at least
+        ``min_group_size`` members were waiting at the tick. ``None`` (default)
+        waits until the pool is complete, which needs ``within``.
+
+    form_groups
+        Optional callable ``form_groups(members, within_group, regrouper)``
+        that returns a list of groups, each a list of participants. Members who
+        are not placed are left over. Use it for roles or for fair sit-outs.
+        Subclasses can override :meth:`form_groups` instead. The callable must be
+        a module-level function so it can be stored with the barrier.
+
+    release_left_over
+        If ``True``, participants left over after a split continue ungrouped,
+        for example to a sit-out page, and come back for the next split. If
+        ``False`` (default), they keep waiting for the next split.
+
+    on_release
+        Optional callback ``on_release(within_group, groups, left_over, regrouper)``
+        run after each split, for example to advance a team's round counter.
+
+    max_wait_time
+        Longest a participant waits at the regrouper before being failed.
+        Default: 300 seconds.
+
+    content
+        Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
+        countdown to the pool's deadline, for example
+        ``"Next round in {SECONDS} s"``.
+
+    kwargs
+        Further arguments to pass to :class:`Grouper`.
+    """
+
+    def __init__(
+        self,
+        group_type: str,
+        *,
+        group_size: int,
+        within: Optional[str] = None,
+        min_group_size: int = 2,
+        deadline: Optional[Union[float, Clock]] = None,
+        form_groups: Optional[Callable] = None,
+        release_left_over: bool = False,
+        on_release: Optional[Callable] = None,
+        max_wait_time: Optional[float] = 300,
+        **kwargs,
+    ):
+        if min_group_size < 1 or group_size < min_group_size:
+            raise ValueError("Need 1 <= min_group_size <= group_size.")
+        if deadline is None and within is None:
+            raise ValueError(
+                "A Regrouper without `within` needs a deadline, because it cannot "
+                "tell when everyone is present."
+            )
+        kwargs.setdefault("id_", f"{group_type}_regrouper")
+        super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
+        self.within = within
+        self.group_size = group_size
+        self.min_group_size = min_group_size
+        self.clock_period = deadline.period if isinstance(deadline, Clock) else None
+        self.deadline = None if isinstance(deadline, Clock) else deadline
+        self.form_groups_function = form_groups
+        self.release_left_over = release_left_over
+        self.on_release = on_release
+
+    def receive_participant(self, participant: Participant):
+        previous = participant.active_sync_groups.get(self.group_type)
+        if previous is not None:
+            previous.remove_participant(participant)
+        Barrier.receive_participant(self, participant)
+
+    def form_groups(self, members, within_group=None):
+        """Return the groups to form from one pool's waiting members.
+
+        By default members are shuffled into balanced groups of at most
+        ``group_size`` and at least ``min_group_size``.
+        """
+        if self.form_groups_function is not None:
+            return self.form_groups_function(
+                members=members, within_group=within_group, regrouper=self
+            )
+        return _balanced_groups(members, self.group_size, self.min_group_size)
+
+    def expected_release_time(self, participant) -> Optional[float]:
+        """Return when this participant's pool will be split at the latest, in epoch seconds."""
+        if self.id not in participant.active_barriers:
+            return None
+        within_group = self._within_group(participant)
+        if self.within is not None and within_group is None:
+            return None
+        reference = self._last_split(within_group)
+        if reference is None:
+            reference = _arrival_time(self, participant).timestamp()
+        if self.clock_period is not None:
+            return _latest_tick(time.time(), self.clock_period) + self.clock_period
+        if self.deadline is None:
+            return None
+        return reference + self.deadline
+
+    def choose_who_to_release(self, waiting_participants: List[Participant]):
+        released = []
+        for within_group, members in self._pools(waiting_participants):
+            if self.within is not None and within_group is None:
+                released += members
+                continue
+            if not self._pool_is_ready(within_group, members):
+                continue
+            released += self._split(within_group, members)
+        return released
+
+    def would_release(self, waiting_participants: List[Participant]) -> bool:
+        return any(
+            (self.within is not None and within_group is None)
+            or self._pool_is_ready(within_group, members)
+            for within_group, members in self._pools(waiting_participants)
+        )
+
+    def _within_group(self, participant):
+        if self.within is None:
+            return None
+        return participant.active_sync_groups.get(self.within)
+
+    def _pools(self, waiting_participants):
+        """Yield ``(within_group, members)`` for each pool of waiting participants."""
+        pools = {}
+        for participant in waiting_participants:
+            group = self._within_group(participant)
+            key = None if group is None else group.id
+            pools.setdefault(key, (group, []))[1].append(participant)
+        return list(pools.values())
+
+    def _pool_is_ready(self, within_group, members) -> bool:
+        if len(members) < self.min_group_size and not self.release_left_over:
+            return False
+        if self.clock_period is None and within_group is not None:
+            waiting_ids = {participant.id for participant in members}
+            if all(p.id in waiting_ids for p in within_group.active_participants):
+                return True
+        return self._deadline_passed(within_group, members)
+
+    def _deadline_passed(self, within_group, members) -> bool:
+        last_split = self._last_split(within_group)
+        now = time.time()
+        if self.clock_period is not None:
+            return self._enough_waiting_at_tick(members, last_split, now)
+        if self.deadline is None:
+            return False
+        reference = last_split
+        if reference is None:
+            reference = min(_arrival_time(self, p) for p in members).timestamp()
+        return now - reference >= self.deadline
+
+    def _enough_waiting_at_tick(self, members, last_split, now) -> bool:
+        """Return whether enough members were already waiting at the latest unused tick."""
+        tick = _latest_tick(now, self.clock_period)
+        if last_split is not None and last_split >= tick:
+            return False
+        waiting_at_tick = [
+            p for p in members if _arrival_time(self, p).timestamp() <= tick
+        ]
+        needed = 1 if self.release_left_over else self.min_group_size
+        return len(waiting_at_tick) >= needed
+
+    @property
+    def _state_key(self):
+        return f"regrouper__{self.id}__last_split"
+
+    def _state_holder(self, within_group):
+        """Return the row whose ``var`` records when this pool was last split."""
+        if within_group is not None:
+            return within_group
+        return BarrierDefinition.query.get(self.id)
+
+    def _last_split(self, within_group) -> Optional[float]:
+        holder = self._state_holder(within_group)
+        return None if holder is None else holder.var.get(self._state_key, None)
+
+    def _split(self, within_group, members):
+        """Form this pool's groups and return the participants to release."""
+        groups = []
+        for group_members in self.form_groups(members, within_group=within_group):
+            if group_members:
+                groups.append(self._make_group(group_members))
+        placed = {p.id for group in groups for p in group.participants}
+        left_over = [p for p in members if p.id not in placed]
+        if not groups and not self.release_left_over:
+            return []
+        self._state_holder(within_group).var.set(self._state_key, time.time())
+        if self.on_release:
+            try:
+                self.on_release(
+                    within_group=within_group,
+                    groups=groups,
+                    left_over=left_over,
+                    regrouper=self,
+                )
+            except Exception as err:
+                if is_transient_transaction_error(err):
+                    raise
+                raise _BarrierAuthorHookError(
+                    f"Regrouper '{self.id}' on_release failed."
+                ) from err
+        released = [p for group in groups for p in group.participants]
+        if self.release_left_over:
+            released += left_over
+        return released
+
+    def _make_group(self, participants):
+        group = SimpleSyncGroup(
+            group_type=self.group_type,
+            initial_group_size=len(participants),
+            max_group_size=len(participants),
+            min_group_size=1,
+            n_active_participants=len(participants),
+            accepts_top_ups=False,
+            fail_participants_below_min_size=False,
+            active=True,
+        )
+        db.session.add(group)
+        for participant in participants:
+            group.add_participant(participant)
+        group.leader = self.select_leader(participants)
+        group.last_barrier_pass_time = timenow()
+        return group
 
 
 @register_table
