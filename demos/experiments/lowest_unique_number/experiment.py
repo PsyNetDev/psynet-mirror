@@ -96,8 +96,7 @@ def show_result(participant):
         outcome = f"You won with {winner}!"
     else:
         outcome = f"The winning number was {winner}."
-    # Stored vars are JSON, so the player IDs are strings here.
-    choices = {int(pid): n for pid, n in result["choice_by_player"].items()}
+    choices = result["choice_by_player"]
     picks = list(choices.values())
     highlight = {
         pid: "winner" if n == winner else "duplicate"

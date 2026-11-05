@@ -23,6 +23,7 @@ from typing import List
 
 import psynet.experiment
 from psynet.bot import BotDriver
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -105,11 +106,18 @@ def score_round(participants: List[Participant]):
         participants[
             0
         ].var.outcome = "Your partner ran out of time, so nobody was paid."
+        participants[0].var.decisions = None
         return
     roles = {p.var.role: p for p in participants}
     offer = roles["proposer"].var.decision
-    accepted = offer >= roles["responder"].var.decision
+    minimum = roles["responder"].var.decision
+    accepted = offer >= minimum
+    decisions = {
+        roles["proposer"].id: f"I offer {offer}",
+        roles["responder"].id: f"I accept {minimum}+",
+    }
     for participant in participants:
+        participant.var.decisions = decisions
         if not accepted:
             outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
         else:
@@ -126,6 +134,15 @@ def decision_page(participant):
             f"You are the responder. Your partner is splitting {ENDOWMENT} coins. "
             "What is the smallest offer you would accept?"
         )
+    # The page is rebuilt on submit, when a player who ran out of time has
+    # already left the pair.
+    pair = participant.active_sync_groups.get("pair")
+    if pair is not None:
+        # A tick appears once the partner has decided. Partners are anonymous,
+        # so that nobody recognises a partner from an earlier round.
+        prompt = GroupPrompt(
+            prompt, group=pair, participant=participant, anonymous=True
+        )
     return ModularPage(
         participant.var.role,
         prompt,
@@ -140,7 +157,19 @@ def show_outcome(participant):
         return InfoPage(
             "You ran out of time, so you missed this round.", time_estimate=5
         )
-    return InfoPage(participant.var.outcome, time_estimate=5)
+    if participant.var.decisions is None:
+        return InfoPage(participant.var.outcome, time_estimate=5)
+    return ModularPage(
+        "outcome",
+        GroupPrompt(
+            participant.var.outcome,
+            group=participant.active_sync_groups["pair"],
+            participant=participant,
+            answers=participant.var.decisions,
+            anonymous=True,
+        ),
+        time_estimate=5,
+    )
 
 
 def play_round():

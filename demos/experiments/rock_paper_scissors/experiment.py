@@ -5,6 +5,7 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.chatroom import ChatRoom, EnableChatrooms
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, SimpleGrouper
@@ -43,7 +44,7 @@ class RockPaperScissorsTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         return join(
-            self.choose_action(),
+            self.choose_action(participant),
             GroupBarrier(
                 id_="finished_trial",
                 group_type="rock_paper_scissors",
@@ -53,10 +54,13 @@ class RockPaperScissorsTrial(StaticTrial):
             ),
         )
 
-    def choose_action(self):
+    def choose_action(self, participant):
         return ModularPage(
             "choose_action",
-            "Choose your action:",
+            # A tick appears once the partner has chosen.
+            GroupPrompt(
+                "Choose your action:", group=self.sync_group, participant=participant
+            ),
             PushButtonControl(
                 choices=["rock", "paper", "scissors"],
             ),
@@ -65,7 +69,8 @@ class RockPaperScissorsTrial(StaticTrial):
         )
 
     def show_feedback(self, experiment, participant):
-        score = participant.var.last_trial["score"]
+        last_trial = participant.var.last_trial
+        score = last_trial["score"]
         if score == -1:
             outcome = "You lost."
         elif score == 0:
@@ -77,11 +82,14 @@ class RockPaperScissorsTrial(StaticTrial):
         with prompt:
             tags.h1("Round results")
             tags.p(
-                f"You chose {participant.var.last_trial['action_self']}, "
-                + f"your partner chose {participant.var.last_trial['action_other']}. "
+                f"You chose {last_trial['action_self']}, "
+                + f"your partner chose {last_trial['action_other']}. "
                 + outcome
             )
-            tags.h2("Now chat with your partner about the round you just played!")
+        # Stored vars are JSON, so the player IDs are strings here.
+        actions = {int(pid): a for pid, a in last_trial["action_by_player"].items()}
+        partner_id = next(pid for pid in actions if pid != participant.id)
+        winner = participant.id if score == 1 else partner_id
 
         # Derive the room from this trial's sync group (``self.sync_group``)
         # rather than ``participant.sync_group``, which raises an error if the
@@ -89,7 +97,14 @@ class RockPaperScissorsTrial(StaticTrial):
         # share the same ``self.sync_group.id``, so they meet in the same room.
         return ModularPage(
             "results",
-            prompt,
+            GroupPrompt(
+                prompt,
+                group=self.sync_group,
+                participant=participant,
+                answers=actions,
+                highlight={} if score == 0 else {winner: "winner"},
+                note="Now chat with your partner about the round you just played!",
+            ),
             chatroom=ChatRoom(
                 room_id=f"rps_room_{self.sync_group.id}",
                 show_participants=True,
@@ -103,14 +118,17 @@ class RockPaperScissorsTrial(StaticTrial):
         answers = [participant.var.last_action for participant in participants]
         score_0 = self.scoring_matrix[answers[0]][answers[1]]
         score_1 = -score_0
+        action_by_player = {p.id: a for p, a in zip(participants, answers)}
         participants[0].var.last_trial = {
             "action_self": answers[0],
             "action_other": answers[1],
+            "action_by_player": action_by_player,
             "score": score_0,
         }
         participants[1].var.last_trial = {
             "action_self": answers[1],
             "action_other": answers[0],
+            "action_by_player": action_by_player,
             "score": score_1,
         }
 

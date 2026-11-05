@@ -3,7 +3,9 @@ from typing import List
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
-from psynet.page import InfoPage, WaitPage
+from psynet.group_prompt import GroupPrompt
+from psynet.modular_page import ModularPage
+from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, GroupCloser, SimpleGrouper, SyncGroup
 from psynet.timeline import PageMaker, Timeline
@@ -62,8 +64,18 @@ def format_group_message(participant: Participant) -> str:
 
 def show_current_group():
     return PageMaker(
-        lambda participant: InfoPage(
-            format_group_message(participant),
+        lambda participant: ModularPage(
+            "current_group",
+            GroupPrompt(
+                format_group_message(participant),
+                group=participant.sync_group,
+                participant=participant,
+                # Each member's role in their speech bubble.
+                answers={
+                    p.id: p.var.role for p in participant.sync_group.active_participants
+                },
+                show_names=True,
+            ),
         ),
         time_estimate=5,
     )

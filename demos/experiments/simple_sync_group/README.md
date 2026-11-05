@@ -1,9 +1,10 @@
 # README
 
 Demonstrates `SimpleGrouper`, barriers, role assignment, and regrouping:
-participants form groups of three (with roles), then later regroup into pairs.
-Use it to learn sync-group lifecycle mechanics without game or chat logic on
-top.
+participants form groups of three (with roles), then later regroup into pairs. A
+`GroupPrompt` shows each group's members by pseudonym, with their roles in
+speech bubbles. Use it to learn sync-group lifecycle mechanics without game or
+chat logic on top.
 
 ## Usage
 

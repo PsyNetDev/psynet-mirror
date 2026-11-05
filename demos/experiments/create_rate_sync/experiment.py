@@ -1,10 +1,11 @@
 import random
+from collections import Counter
 from typing import List
 
 import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages
+from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
-from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, SimpleGrouper
 from psynet.timeline import CodeBlock, PageMaker, Timeline, join
@@ -46,12 +47,15 @@ class CreateRateTrial(StaticTrial):
             PageMaker(self.show_ratings, time_estimate=5),
         )
 
-    def create(self):
+    def create(self, participant):
         prompt = f"Type something you can have as {self.definition['target']}:"
         return join(
             ModularPage(
                 "create",
-                prompt,
+                # Ticks appear as the others finish.
+                GroupPrompt(
+                    prompt, group=self.group(participant), participant=participant
+                ),
                 TextControl(),
                 time_estimate=5,
                 save_answer="create",
@@ -66,7 +70,9 @@ class CreateRateTrial(StaticTrial):
         return join(
             ModularPage(
                 "rate",
-                prompt,
+                GroupPrompt(
+                    prompt, group=self.group(participant), participant=participant
+                ),
                 PushButtonControl(
                     choices=self.find_creations(participant),
                 ),
@@ -85,14 +91,35 @@ class CreateRateTrial(StaticTrial):
         random.shuffle(creations)
         return creations
 
-    def show_ratings(self, participant):
-        prompt = (
-            f"You chose {participant.var.last_trial['rating_self']}, "
-            + f"your partners chose {participant.var.last_trial['rating_others'][0]} and {participant.var.last_trial['rating_others'][1]}. "
-        )
+    def group(self, participant):
+        return participant.active_sync_groups["create_rate"]
 
-        return InfoPage(
-            prompt,
+    def show_ratings(self, participant):
+        result = participant.var.last_trial
+        prompt = (
+            f"You chose {result['rating_self']}, "
+            + f"your partners chose {result['rating_others'][0]} and {result['rating_others'][1]}. "
+        )
+        creations = result["creation_by_player"]
+        counts = Counter(result["rating_by_player"].values())
+        top, n_votes = counts.most_common(1)[0]
+        if list(counts.values()).count(n_votes) == 1:
+            note = f"{top} got the most votes."
+            highlight = {pid: "winner" for pid, c in creations.items() if c == top}
+        else:
+            note = "It's a tie."
+            highlight = {}
+
+        return ModularPage(
+            "show_ratings",
+            GroupPrompt(
+                prompt,
+                group=self.group(participant),
+                participant=participant,
+                answers=creations,
+                highlight=highlight,
+                note=note,
+            ),
             time_estimate=5,
         )
 
@@ -100,11 +127,15 @@ class CreateRateTrial(StaticTrial):
         assert len(participants) == 3
 
         ratings = [p.var.rate for p in participants]
+        creations = {p.id: p.var.create for p in participants}
+        rating_by_player = {p.id: p.var.rate for p in participants}
 
         for i in range(len(participants)):
             participants[i].var.last_trial = {
                 "rating_self": ratings[i],
                 "rating_others": sorted(ratings[:i] + ratings[i + 1 :]),
+                "creation_by_player": creations,
+                "rating_by_player": rating_by_player,
             }
 
 
@@ -166,6 +197,7 @@ class Exp(psynet.experiment.Experiment):
         assert texts[0] == "You chose yoghurt, your partners chose pudding and yoghurt."
         assert texts[1] == "You chose yoghurt, your partners chose pudding and yoghurt."
         assert texts[2] == "You chose pudding, your partners chose yoghurt and yoghurt."
+        assert bots[0].get_current_page().prompt.note == "yoghurt got the most votes."
 
         bots[0].take_page()
         bots[1].take_page()
