@@ -1,7 +1,7 @@
 ---
 name: deployment-test
 description: Debug deployed PsyNet test experiments via dashboard and Dozzle logs, infer app names from URLs, and summarize deployment/recruiter errors. Use when debugging a deployed PsyNet experiment, running RC validation deploys, or inspecting test deployment apps.
-compatibility: Requires SSH access to the deployment server. Recruiter and dashboard credentials are in ~/.dallingerconfig; Dozzle credentials are in deploy output. Never commit them.
+compatibility: Requires SSH access to the deployment server. Recruiter and dashboard credentials are in ~/.dallingerconfig; Dozzle credentials are in the deployment's launch-info.json. Never commit them.
 ---
 
 # Deployment test

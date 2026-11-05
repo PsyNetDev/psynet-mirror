@@ -44,8 +44,8 @@ When using browser automation, launch a dedicated browser subagent for dashboard
    `~/.dallingerconfig` (see Credentials above).
 3. Verify the dashboard loads. Check the database pages, monitoring page, lifecycle/status pages, and any page the user reported as failing.
 4. Open Dozzle at `https://logs.experiments1.cococo-lab.cornell.edu/`.
-5. Log into Dozzle with the host credentials from the deploy output
-   (see Credentials above).
+5. Log into Dozzle with the host credentials from `launch-info.json` or the
+   server (see Credentials above).
 6. Search/filter containers by the inferred app name.
 7. Inspect all matching containers, especially:
    - `<app>-web-1`
