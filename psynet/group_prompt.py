@@ -19,7 +19,6 @@ Design constraints:
   updates ticks, so pages without JavaScript still show the group.
 """
 
-import hashlib
 import math
 from typing import Callable, Dict, Optional, Union
 
@@ -30,15 +29,15 @@ from .static_resources import package_static_url
 from .utils import get_translator
 
 _MAX_ROW_MEMBERS = 4
-_MAX_SCATTER_COLUMNS = 7
+_MAX_ZIGZAG_COLUMNS = 7
 
 
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
     Members appear as their pseudonym animals drawn in their colours
-    (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`): in a row for up to four people, and scattered over the width
-    of the page for more. Only the participant viewing the page is labelled
+    (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`): in a row for up to
+    four people, and in a zigzag across the width of the page for more. Only the participant viewing the page is labelled
     ("You"); the others' names are read out by screen readers and shown on
     hover. Hovering over or tapping a member brings their speech bubble to
     the front.
@@ -183,12 +182,12 @@ class GroupPrompt(Prompt):
         return Markup('<div class="{}">{}{}</div>').format(classes, body, note)
 
     def _members_html(self, members, seats, label):
-        layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "scatter"
+        layout = "row" if len(members) <= _MAX_ROW_MEMBERS else "zigzag"
         # Balanced rows: 8 members as 4 + 4 rather than 7 + 1.
-        rows = math.ceil(len(members) / _MAX_SCATTER_COLUMNS)
+        rows = math.ceil(len(members) / _MAX_ZIGZAG_COLUMNS)
         columns = math.ceil(len(members) / rows)
         items = Markup("").join(
-            self._member_html(member, seats[member.id], index, layout)
+            self._member_html(member, seats[member.id], index)
             for index, member in enumerate(members)
         )
         return Markup(
@@ -219,7 +218,7 @@ class GroupPrompt(Prompt):
         subgroup = member.active_sync_groups.get(self.subgroups)
         return None if subgroup is None else subgroup.id
 
-    def _member_html(self, member, seat, index, layout):
+    def _member_html(self, member, seat, index):
         _p = get_translator(context=True)
         pseudonym = member.pseudonym
         is_me = member.id == self.participant.id
@@ -232,10 +231,6 @@ class GroupPrompt(Prompt):
         answered = self.show_progress and self.answered(member)
         if answered:
             classes.append("psynet-group-member--answered")
-        position = ""
-        if layout == "scatter":
-            jx, jy = _jitter(self.group.id, seat)
-            position = f"--jx: {jx:.2f}em; --jy: {jy:.2f}em; "
         bubble = Markup("")
         focusable = Markup("")
         if self.answers is not None:
@@ -266,12 +261,11 @@ class GroupPrompt(Prompt):
                 pseudonym.name
             )
         return Markup(
-            '<li class="{}" data-seat="{}" style="{}--i: {};" title="{}"{}>'
+            '<li class="{}" data-seat="{}" style="--i: {};" title="{}"{}>'
             '{}<span class="psynet-group-avatar">{}{}</span>{}</li>'
         ).format(
             " ".join(classes),
             seat,
-            position,
             index,
             pseudonym.name,
             focusable,
@@ -280,12 +274,6 @@ class GroupPrompt(Prompt):
             status,
             name,
         )
-
-
-def _jitter(group_id, seat):
-    """Return a stable offset in em that scatters a member within their cell."""
-    digest = hashlib.sha256(f"{group_id}:{seat}".encode()).digest()
-    return (digest[0] / 255 - 0.5) * 2.4, (digest[1] / 255 - 0.5) * 1.6
 
 
 def _group_seats(group):

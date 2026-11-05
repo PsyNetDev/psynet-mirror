@@ -1,5 +1,5 @@
 /**
- * GroupPrompt layout: for rows and scatters, subgroups and shown names, on a
+ * GroupPrompt layout: for rows and zigzags, subgroups and shown names, on a
  * laptop and a phone, with and without answer bubbles, members must be
  * readable and visible. Animals, labels and bubbles stay inside the window
  * and off the rest of the page; animals and labels never overlap each
