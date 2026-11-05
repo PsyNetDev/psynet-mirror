@@ -690,9 +690,12 @@ class _BarrierHoldPage(_TimelineHoldPage):
             if participant is None
             else self.barrier.expected_release_time(participant)
         )
-        if release_time is None:
+        remaining_ms = (
+            None if release_time is None else round((release_time - time.time()) * 1000)
+        )
+        if remaining_ms is None or remaining_ms <= 0:
+            # A passed release time means the split is waiting on something else.
             return html.replace("{SECONDS}", "…")
-        remaining_ms = max(0, round((release_time - time.time()) * 1000))
         countdown = Markup(
             '<span class="psynet-timeline-hold-countdown" data-release-in-ms="{}">{}</span>'
         ).format(remaining_ms, ceil(remaining_ms / 1000))
@@ -2174,8 +2177,8 @@ class Regrouper(Grouper):
 
     deadline
         When to stop waiting for absent members. A number is seconds since the
-        pool's previous split (or, before its first split, since its first
-        member arrived). ``Clock(period)`` splits at fixed wall-clock ticks
+        first of the pool's waiting members arrived, or since the pool's
+        previous split if that is later. ``Clock(period)`` splits at fixed wall-clock ticks
         instead, even when everyone is already waiting, if at least
         ``min_group_size`` members were waiting at the tick. ``None`` (default)
         waits until the pool is complete, which needs ``within``.
@@ -2194,7 +2197,10 @@ class Regrouper(Grouper):
 
     on_release
         Optional callback ``on_release(within_group, groups, left_over, regrouper)``
-        run after each split, for example to advance a team's round counter.
+        run after each split that forms at least one group, for example to
+        assign roles. A late member can make a split of their own in the same
+        round, so count rounds per participant rather than here. ``barrier``
+        is passed too, as for :class:`GroupBarrier`.
 
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
@@ -2266,9 +2272,10 @@ class Regrouper(Grouper):
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
             return None
-        reference = self._last_split(within_group)
-        if reference is None:
-            reference = _arrival_time(self, participant).timestamp()
+        reference = max(
+            self._last_split(within_group) or 0,
+            _arrival_time(self, participant).timestamp(),
+        )
         if self.clock_period is not None:
             return _latest_tick(time.time(), self.clock_period) + self.clock_period
         if self.deadline is None:
@@ -2323,9 +2330,8 @@ class Regrouper(Grouper):
             return self._enough_waiting_at_tick(members, last_split, now)
         if self.deadline is None:
             return False
-        reference = last_split
-        if reference is None:
-            reference = min(_arrival_time(self, p) for p in members).timestamp()
+        first_arrival = min(_arrival_time(self, p) for p in members).timestamp()
+        reference = max(last_split or 0, first_arrival)
         return now - reference >= self.deadline
 
     def _enough_waiting_at_tick(self, members, last_split, now) -> bool:
@@ -2361,8 +2367,8 @@ class Regrouper(Grouper):
                 groups.append(self._make_group(group_members))
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
-        if not groups and not self.release_left_over:
-            return []
+        if not groups:
+            return left_over if self.release_left_over else []
         self._state_holder(within_group).var.set(self._state_key, time.time())
         if self.on_release:
             try:
@@ -2371,6 +2377,7 @@ class Regrouper(Grouper):
                     groups=groups,
                     left_over=left_over,
                     regrouper=self,
+                    barrier=self,
                 )
             except Exception as err:
                 if is_transient_transaction_error(err):
@@ -2398,7 +2405,6 @@ class Regrouper(Grouper):
         for participant in participants:
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
-        group.last_barrier_pass_time = timenow()
         return group
 
 

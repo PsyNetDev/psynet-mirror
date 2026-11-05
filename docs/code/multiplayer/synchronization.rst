@@ -145,8 +145,8 @@ on their own.
     balanced groups, for example rooms of 8, 8, 7 and 7 for 30 participants.
 
 ``deadline``
-    Seconds since the previous round started (or since the first participant
-    arrived, for the first round). ``Clock(45)`` instead starts rounds at fixed
+    Seconds since the first waiting participant arrived, or since the previous
+    round started if that is later. ``Clock(45)`` instead starts rounds at fixed
     45-second ticks, whether or not everyone is ready earlier.
 
 ``within`` (default: ``None``)
@@ -169,9 +169,11 @@ on their own.
     :meth:`~psynet.sync.Regrouper.form_groups`.
 
 ``on_release``
-    A function called after each split with ``within_group``, ``groups``,
-    ``left_over`` and ``regrouper``, for example to count rounds or assign
-    roles.
+    A function called after each split that forms at least one group, with
+    ``within_group``, ``groups``, ``left_over`` and ``regrouper``, for example
+    to assign roles. A late participant can be split on their own in the same
+    round, so count rounds per participant, as the ``ultimatum_pairing`` demo
+    does.
 
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
