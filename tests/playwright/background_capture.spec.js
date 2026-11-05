@@ -8,7 +8,7 @@ const captureLabels = {
 };
 
 // Real MediaRecorder capture with fake Chrome devices; no experiment database.
-test.describe("Optional background capture lifecycle @both", () => {
+test.describe("Optional background capture lifecycle @both @media", () => {
   test.beforeEach(async ({ page }) => {
     await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Page</main>"}));
     for (const module of ["background-recording", "media-upload", "recording-capture"]) {
@@ -180,7 +180,7 @@ test.describe("Optional background capture lifecycle @both", () => {
 });
 
 // Both facades use the same native recorder and retain compatible source tracks.
-test.describe("Shared recording capture @both", () => {
+test.describe("Shared recording capture @both @media", () => {
   test.beforeEach(async ({page}) => {
     await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
     for (const module of ["background-recording", "media-upload", "recording-capture"]) {

@@ -3,7 +3,7 @@ const {test,expect} = require("./fixtures");
 const {withExperiment,completeInitialGateway,clickConsentButton,waitForTimelinePageReady,waitForNextEnabled} = require("./psynetHarness");
 const experiment = path.resolve("demos/features/background_recording");
 
-test("background clips survive page changes without changing button answers @inplace-only",async ({page,context}) => {
+test("background clips survive page changes without changing button answers @inplace-only @media",async ({page,context}) => {
   test.setTimeout(120000);
   const held = [];
   await context.route("**/media-upload/*",route => {held.push(route);});
@@ -36,7 +36,7 @@ test("background clips survive page changes without changing button answers @inp
   });
 });
 
-test("manual resend after lost replies uploads the original background snapshot @inplace-only",async ({page,context}) => {
+test("manual resend after lost replies uploads the original background snapshot @inplace-only @media",async ({page,context}) => {
   // The recorder keeps running after a lost reply. The resend must still carry
   // the snapshot the server first accepted, not a longer recording.
   test.setTimeout(120000);
@@ -73,7 +73,7 @@ test("manual resend after lost replies uploads the original background snapshot 
   });
 });
 
-test("denied camera permission allows both answers without prompting again @inplace-only",async ({page,context}) => {
+test("denied camera permission allows both answers without prompting again @inplace-only @media",async ({page,context}) => {
   test.setTimeout(120000);
   await context.addInitScript(() => {
     if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException("Denied","NotAllowedError"));
@@ -96,7 +96,7 @@ test("denied camera permission allows both answers without prompting again @inpl
   });
 });
 
-test("required background recording preserves independent navigation @inplace-only", async ({page,context}) => {
+test("required background recording preserves independent navigation @inplace-only @media", async ({page,context}) => {
   test.setTimeout(120000);
   let uploads = 0;
   const held = [];

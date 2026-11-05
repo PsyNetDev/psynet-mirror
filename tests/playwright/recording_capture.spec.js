@@ -61,7 +61,7 @@ test("answer capture after background capture restores the camera's settings @bo
   expect(result.answer).toBe(result.native);
 });
 
-test("a recording whose stop is never confirmed keeps playable chunks @both", async ({page}) => {
+test("a recording whose stop is never confirmed keeps playable chunks @both @media", async ({page}) => {
   await page.route("https://capture.test/", route => route.fulfill({contentType:"text/html",body:"<main>Capture</main>"}));
   await page.route("https://capture.test/recording-capture.js", route => route.fulfill({
     contentType:"text/javascript",path:path.resolve("psynet/resources/scripts/recording-capture.js"),

@@ -390,6 +390,7 @@ playwright_e2e_browsers:
       tests/playwright/browser_capability_check.spec.js
       tests/playwright/entry_check.spec.js
       tests/playwright/enable_audio.spec.js
+      tests/playwright/background_recording.spec.js
 
 # The nightly browser schedule (NIGHTLY_E2E=1) runs every spec on the other
 # browser projects, including mobile emulation, in the default mode.

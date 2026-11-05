@@ -3,7 +3,7 @@ const {test, expect} = require("./fixtures");
 const {withExperiment, completeInitialGateway, waitForTimelinePageReady} = require("./psynetHarness");
 
 for (const capture of [true, false]) {
-  test(`task startup and persistent-session recording boundaries (capture: ${capture}) @inplace-only`, async ({page, context}) => {
+  test(`task startup and persistent-session recording boundaries (capture: ${capture}) @inplace-only @media`, async ({page, context}) => {
     test.setTimeout(120000);
     await withExperiment(page, context, path.resolve("tests/playwright/experiments/task_background_recording"), async p => {
       await completeInitialGateway(p);

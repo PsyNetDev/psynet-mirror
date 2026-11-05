@@ -6,7 +6,7 @@ const {
 } = require("./psynetHarness");
 
 for (const receiveBeforeClosing of [false, true]) {
-  test(`recording resolves after reload and close (server received: ${receiveBeforeClosing}) @inplace-only`, async ({page, context}) => {
+  test(`recording resolves after reload and close (server received: ${receiveBeforeClosing}) @inplace-only @media`, async ({page, context}) => {
     test.setTimeout(120000);
     let held;
     let received = false;
@@ -49,7 +49,7 @@ for (const receiveBeforeClosing of [false, true]) {
   });
 }
 
-test("Finish drains recordings before recruiter exit @inplace-only", async ({page, context}) => {
+test("Finish drains recordings before recruiter exit @inplace-only @media", async ({page, context}) => {
   test.setTimeout(60000);
   let held;
   await context.route(/\/media-upload\/\d+$/, route => { held = route; });
@@ -88,7 +88,7 @@ async function observeDrain(page) {
   });
 }
 
-test("full-document transition waits for received recording bytes @inplace-only", async ({page, context}) => {
+test("full-document transition waits for received recording bytes @inplace-only @media", async ({page, context}) => {
   test.setTimeout(120000);
   let held;
   await context.route(/\/media-upload\/\d+$/, route => { held = route; });
