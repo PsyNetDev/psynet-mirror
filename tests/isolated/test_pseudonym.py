@@ -17,16 +17,26 @@ def _participant(id_, stored=None):
     return SimpleNamespace(id=id_, var=var)
 
 
-def test_neighbours_differ_in_colour_and_animal():
-    scheme = PseudonymScheme()
+class _SeededScheme(PseudonymScheme):
+    def __init__(self, seed):
+        self._seed = seed
+
+    def seed(self):
+        return self._seed
+
+
+def test_neighbours_differ_and_deployments_shuffle_pseudonyms():
+    scheme = _SeededScheme("deployment-a")
     pseudonyms = [scheme.pseudonym(_participant(i)) for i in range(1, 89)]
 
     assert len({p.name for p in pseudonyms}) == 88
     for a, b in zip(pseudonyms, pseudonyms[1:]):
         assert a.color != b.color and a.animal != b.animal
-    first = pseudonyms[0]
-    assert (first.name, first.emoji) == ("Sky owl", "🦉")
-    assert "--psynet-pseudonym-color: #56B4E9" in first.icon_html
+    other = [_SeededScheme("deployment-b").pseudonym(_participant(i)) for i in (1, 2)]
+    assert [p.name for p in other] != [p.name for p in pseudonyms[:2]]
+    blue_fox = scheme.make("blue", "fox")
+    assert (blue_fox.name, blue_fox.emoji) == ("Blue fox", "🦊")
+    assert "--psynet-pseudonym-color: #0072B2" in blue_fox.icon_html
 
 
 def test_schemes_and_stored_pseudonyms_can_be_customized():
@@ -41,7 +51,7 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
     stored = scheme.pseudonym(_participant(1, {"color": "red", "animal": "bear"}))
 
     assert stored.name == "Bear (red)"
-    assert scheme.pseudonym(_participant(2)).animal == "lion"
+    assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
         scheme.make("red", "fox")
 

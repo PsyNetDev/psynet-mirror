@@ -7,8 +7,10 @@ a pseudonym made of a colour and an animal, with an icon combining the two.
 Design constraints:
 
 - Page rendering is read-only, so the default pseudonym is a pure function
-  of the participant ID and is never written to the database. Colour and
-  animal indices cycle with coprime periods (8 and 11), so any 88
+  of the participant ID and the deployment, and is never written to the
+  database. Each deployment shuffles the colours and animals differently,
+  so participant 10 gets a different pseudonym in each deployment. Colour
+  and animal indices cycle with coprime periods (8 and 11), so any 88
   consecutive participants get different pseudonyms, and neighbours differ
   in both colour and animal, which helps colour-blind participants.
 - Only keys are stored when an experiment overrides a pseudonym
@@ -17,12 +19,15 @@ Design constraints:
   and setting :attr:`psynet.experiment.Experiment.pseudonym_scheme`.
 """
 
+import random
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
 from markupsafe import Markup
 
-from .utils import get_translator
+from .utils import get_logger, get_translator
+
+logger = get_logger()
 
 _COLORS = {
     "orange": "#E69F00",
@@ -140,15 +145,33 @@ class PseudonymScheme:
     def assign(self, participant) -> Tuple[str, str]:
         """Return the ``(color, animal)`` keys for a participant without a stored pseudonym.
 
-        The default cycles through colours and animals by participant ID. If
-        the two lists' lengths share no factor, every pair recurs only after
+        The default shuffles the colours and animals using :meth:`seed`, then
+        cycles through them by participant ID. If the two lists' lengths
+        share no factor, every pair recurs only after
         ``len(colors) * len(animals)`` participants.
         """
-        colors, animals = list(self.colors()), list(self.animals())
+        rng = random.Random(self.seed())
+        colors, animals = sorted(self.colors()), sorted(self.animals())
+        rng.shuffle(colors)
+        rng.shuffle(animals)
         return (
             colors[participant.id % len(colors)],
             animals[participant.id % len(animals)],
         )
+
+    def seed(self) -> str:
+        """Return the seed for :meth:`assign`'s shuffle: by default, the deployment ID.
+
+        The same within a deployment, across all its server processes, and
+        different between deployments.
+        """
+        from .experiment import Experiment
+
+        try:
+            return str(Experiment.deployment_id)
+        except (FileNotFoundError, KeyError):
+            logger.debug("No deployment ID yet; using a fixed pseudonym order.")
+            return ""
 
     def name(self, color_label: str, animal_label: str) -> str:
         """Combine translated colour and animal labels into a name, capitalizing its first letter."""

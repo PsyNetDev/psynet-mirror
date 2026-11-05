@@ -58,7 +58,8 @@ Pseudonyms
 Participants see each other by pseudonym, such as "Blue fox", with an icon
 of the animal on a disc of that colour; their own messages are labelled
 "You". Pseudonyms are fixed for the whole experiment, so a participant keeps
-the same name in every room. They follow the participant ID, so
+the same name in every room. Each deployment shuffles the colours and
+animals differently and then assigns them in order of participant ID, so
 participants who arrive one after another differ in both colour and animal,
 and any 88 participants in a row all have different pseudonyms.
 
