@@ -1190,6 +1190,8 @@ class GroupBarrier(Barrier):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
+        Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
+        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
 
     max_wait_action
         When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
@@ -1258,6 +1260,23 @@ class GroupBarrier(Barrier):
         if group_type in participant.active_sync_groups:
             participant.active_sync_groups[group_type].remove_participant(participant)
 
+    @staticmethod
+    def _check_max_wait_time(max_wait_time, timeout_between_barriers_time):
+        """Return ``max_wait_time``, defaulting it to cover the between-barrier timeout."""
+        if max_wait_time is None:
+            return 20 + (timeout_between_barriers_time or 0)
+        if (
+            timeout_between_barriers_time is not None
+            and max_wait_time <= timeout_between_barriers_time
+        ):
+            raise ValueError(
+                f"max_wait_time ({max_wait_time} s) must be longer than "
+                f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
+                "otherwise members who arrive promptly time out while waiting "
+                "for slower ones."
+            )
+        return max_wait_time
+
     def _validate_max_wait_action(self, max_wait_action):
         if max_wait_action not in ("fail", "kick"):
             raise ValueError(
@@ -1270,7 +1289,7 @@ class GroupBarrier(Barrier):
         group_type: str,
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
-        max_wait_time=20,
+        max_wait_time: Optional[float] = None,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
@@ -1282,6 +1301,9 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
+        max_wait_time = self._check_max_wait_time(
+            max_wait_time, timeout_between_barriers_time
+        )
         super().__init__(
             id_=id_,
             waiting_logic=waiting_logic,
