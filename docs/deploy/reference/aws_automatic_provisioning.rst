@@ -155,8 +155,9 @@ on another computer, after a provision you finished by hand with the printed
 ``servers add`` commands, for an instance provisioned by an older Dallinger,
 or for Route 53 records you made by hand. An
 instance provisioned without ``--dns-host`` has no records to update, and
-its ``<public ip>.nip.io`` name stops working once the instance restarts
-with a new IP.
+its ``<public ip>.nip.io`` name and its registration under the AWS hostname
+stop working once the instance restarts with a new IP; register it again
+with ``dallinger docker-ssh servers add``.
 ``stop`` deletes only records that point at the instance. If Route 53 can't
 update the records, both commands warn and carry on; ``start`` then says
 which records to point at the instance by hand.

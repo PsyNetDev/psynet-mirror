@@ -142,8 +142,8 @@ Each app has a **dashboard** at ``https://<app>.<domain>/dashboard`` for
 following participants' progress, reading logs, browsing the database and
 exporting data (see :ref:`experiment_dashboard`). It uses the
 ``dashboard_user`` and ``dashboard_password`` from your configuration; if no
-password is set, a random one is generated for each deployment. The deployment
-command prints the dashboard address and user, and saves them with the
+password is set, a random one is generated for each deployment. ``psynet
+deploy ssh`` prints the dashboard address and user, and saves them with the
 password under ``~/psynet-data/launch-data`` (see :ref:`ssh_server_launch_info`).
 
 Debug and live deployments

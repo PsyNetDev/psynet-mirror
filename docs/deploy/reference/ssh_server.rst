@@ -52,7 +52,8 @@ Before deploying, Dallinger checks that the experiment's address
 records, ``--app`` must be one of them.
 
 ``--app`` may contain only lowercase letters, digits and hyphens, and must not
-already be in use on the server. Names starting with ``dlgr-`` are refused,
+already be in use on the server, unless you pass ``--update`` (see
+:ref:`ssh_server_updating`). Names starting with ``dlgr-`` are refused,
 and so are ``logs`` and ``dallinger``, which the server uses itself. A
 classic deployment to an address that another app or one of the server's own
 sites already serves stops before the image build and names that app or
@@ -66,7 +67,7 @@ accept that name, but ``psynet deploy ssh``, ``debug ssh`` and
 be updated in place: deploy the fix as a new app with its own ``--app``.
 Deploys to such a server stop until it has had ``servers upgrade`` (see
 :ref:`ssh_server_shared_services`), which keeps the old app at the server's
-own name. Destroying the old app then frees that name.
+own name until you destroy it.
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS
@@ -238,7 +239,8 @@ Files on the server
 ``~/dallinger/``
    The shared ``docker-compose.yml``, ``Caddyfile``, Dozzle login
    (``dozzle-users.yml``) and ``.env.json``, which holds the log viewer's
-   password as ``DOZZLE_PASSWORD``. They are read-only (see
+   password as ``DOZZLE_PASSWORD``. Once ``servers add`` or ``servers
+   upgrade`` has written them, they are read-only (see
    :ref:`ssh_server_shared_services`); ``.bak`` files are copies kept by
    ``servers upgrade``.
 ``~/dallinger/caddy.d/<app>``

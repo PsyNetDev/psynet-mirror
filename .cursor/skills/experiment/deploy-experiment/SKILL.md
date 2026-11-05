@@ -116,7 +116,8 @@ that `~/.dallingerconfig` sets a real `contact_email_on_error`. Server
 commands ignore the experiment's `config.txt` and reject its template
 placeholder `XXX@gmail.com`; ask the user for the address rather than
 inventing one. `dallinger ec2 provision` also needs `dashboard_password`, and
-`server_pem` pointing at the unencrypted `~/.ssh/<ec2_default_pem>.pem`.
+`server_pem` holding the same unencrypted private key as
+`~/.ssh/<ec2_default_pem>.pem`.
 
 Provisioning also starts the shared Caddy, Postgres and Dozzle services and
 prints the Dozzle password once; record that it exists, not its value.
