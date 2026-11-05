@@ -31,8 +31,8 @@ Press :kbd:`Ctrl+C` in the terminal to stop it.
 When a script or a coding agent starts ``psynet debug local`` in a
 background shell without a terminal, keep its standard input open and skip
 the browsers, for example
-``tail -f /dev/null | psynet debug local --no-browsers``. Otherwise the server can stop without a log message when
-standard input closes.
+``tail -f /dev/null | psynet debug local --no-browsers``. Otherwise the
+server can stop without a log message when standard input closes.
 
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the
@@ -55,11 +55,12 @@ PostgreSQL database, the Redis server on port 6379 and the
 ``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
 refuses to start while another uses the same port or database. To run
 another alongside it, for example when several coding agents test
-different experiments on one machine, add ``--isolated``:
+different experiments on one machine, add ``--isolated`` (coding agents
+also add ``--no-browsers``):
 
 .. code-block:: console
 
-    $ psynet debug local --isolated
+    $ psynet debug local --isolated --no-browsers
     Local PostgreSQL and Redis: OK.
     Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
     Experiment files OK (config.txt, experiment.py; 0 MB).

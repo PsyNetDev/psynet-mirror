@@ -107,9 +107,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   bot tests that exercise at least one passing and one failing prescreener path.
 - Confirm failed participants exit before main trials and receive the intended
   status, failure tags, time credit, and recruiter branch.
-- Inspect the participant flow in `psynet debug local --no-browsers` when
-  the gate is participant-facing, especially for audio playback, hidden/visible desired
-  answers, translated text, button states, and clear exit messaging.
+- Walk the participant flow with headless Playwright (server started with
+  `psynet debug local --no-browsers`) when the gate is participant-facing,
+  especially for audio playback, hidden/visible desired answers, translated
+  text, button states, and clear exit messaging.
 - Validate any qualification JSON or platform config by loading it from the same
   path the experiment uses. Do not commit real platform credentials.
 - Check exported data or module state so the prescreen outcome can be audited

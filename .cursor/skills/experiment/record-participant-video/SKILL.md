@@ -100,7 +100,8 @@ For Playwright evidence scripts:
 
 ## Workflow
 
-1. Start the PsyNet experiment and capture the generated ad page URL.
+1. Start the PsyNet experiment with `psynet debug local --no-browsers` and
+   capture the generated ad page URL.
 2. Write or reuse a Playwright runner as in `playwright-testing/SKILL.md` that
    completes the participant path and captures the targeted screenshots needed
    for review.
