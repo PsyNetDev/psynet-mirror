@@ -1729,8 +1729,6 @@ def _debug_auto_reload(archive, no_browsers):
     DevelopmentDeployment.archive = archive
     patch_dallinger_develop()
 
-    develop_module.header = ""
-
     try:
         with _stop_child_processes_on_signal():
             develop_module.run_debug(

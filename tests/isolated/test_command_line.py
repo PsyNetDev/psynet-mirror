@@ -971,8 +971,10 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
-@pytest.mark.parametrize("isolated", [True, False])
-def test_debug_auto_reload_adds_the_isolated_session_row(monkeypatch, isolated):
+@pytest.mark.parametrize("isolated, no_browsers", [(True, True), (False, False)])
+def test_debug_auto_reload_adds_the_isolated_session_row(
+    monkeypatch, isolated, no_browsers
+):
     """In an isolated session, the ``Ready.`` block tells other terminals how to connect."""
     from psynet.command_line import _debug_auto_reload, _reloader_exclude_patterns
 
@@ -996,7 +998,7 @@ def test_debug_auto_reload_adds_the_isolated_session_row(monkeypatch, isolated):
         # This test session is itself isolated.
         monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
 
-    _debug_auto_reload(archive=None, no_browsers=True)
+    _debug_auto_reload(archive=None, no_browsers=no_browsers)
 
     rows = [
         (
@@ -1006,7 +1008,11 @@ def test_debug_auto_reload_adds_the_isolated_session_row(monkeypatch, isolated):
         )
     ]
     assert calls == [
-        {"port": 5100, "no_browsers": True, "ready_rows": rows if isolated else []}
+        {
+            "port": 5100,
+            "no_browsers": no_browsers,
+            "ready_rows": rows if isolated else [],
+        }
     ]
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5100"
     assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
