@@ -345,6 +345,9 @@ Timeouts
     passed its previous barrier, or since the member joined the group if that
     is later. A member who has not reached this barrier in time is handled by
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
+    Members who arrive promptly may wait this long for the others, so the
+    barrier's ``max_wait_time`` must be longer; it defaults to 20 seconds plus
+    this timeout.
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
