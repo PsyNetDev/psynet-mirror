@@ -70,8 +70,7 @@ Use a Cloudflare tunnel for a server on a private network, such as a lab
 computer: Let's Encrypt cannot issue certificates for a private address, so
 classic ingress cannot serve participants there. To make it the server's
 default, register it with ``dallinger docker-ssh servers add --host <host>
---default-ingress cloudflare``. Cloudflare ingress needs a Dallinger version
-newer than 12.4.
+--default-ingress cloudflare``.
 
 Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
 ``cloudflare_dns_zone`` from Dallinger config (for example
@@ -81,12 +80,10 @@ Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
 ``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
 ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
 Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
-records. With a Dallinger version that includes `Dallinger PR #10118
-<https://github.com/Dallinger/Dallinger/pull/10118>`_, ``psynet deploy ssh``,
-``psynet debug ssh`` and ``psynet performance-test ssh`` check that the token
-can be read before they start local services, contact the server or run
-``prepare``. Until a server default is changed, omitting
-``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
+records. ``psynet deploy ssh``, ``psynet debug ssh`` and
+``psynet performance-test ssh`` check that the token can be read before they
+start local services, contact the server or run ``prepare``. Until a server
+default is changed, omitting ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
 app at its public name rather than ``https://<app>.<ssh-host>``.
 
 Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS name>`` exists
@@ -115,9 +112,8 @@ it:
       Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password in launch-info.json)
       Image:            ghcr.io/my-lab/my-study:3f2a9c1e
 
-The image row names the deployed Docker image, with Dallinger versions that
-report it. The participant link appears for recruiters that print a single recruitment
-link, such as ``generic``; for other recruiters the summary ends with the
+The image row names the deployed Docker image. The participant link appears
+for recruiters that print a single recruitment link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
 An update (see `Updating a running app`_) doesn't recruit again, so it shows
 the participant link or recruiter's message saved when the app was deployed
@@ -126,10 +122,7 @@ The log viewer row appears for apps with classic ingress.
 ``performance-test ssh`` adds a ``Bot log`` row: the file on your computer
 that collects the bots' output.
 Passwords are not printed; they are saved in ``launch-info.json`` together
-with the other details. Dallinger versions without the ``show_summary``
-option of ``dallinger docker-ssh deploy`` and ``sandbox`` still print their
-own summary, including the dashboard password, above this one, for all three
-commands.
+with the other details.
 The deployment ID has the form
 ``<label>__mode=<mode>__launch=<timestamp>``.
 
@@ -279,13 +272,6 @@ server is not rejected: PsyNet skips the pending-job check and the export
 reminder for it, asks to delete its leftover data rather than to destroy it,
 and Dallinger deletes whatever data it left behind. If nothing is left, it
 says so and this does not count as a failure, so the command succeeds.
-
-The data question and the two flags need a Dallinger version whose
-``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
-With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
-as before: a classic app's database stays in PostgreSQL until an app with the
-same name is deployed, which replaces it, while a Cloudflare app's volumes are
-deleted.
 
 Updating a running app
 ----------------------
