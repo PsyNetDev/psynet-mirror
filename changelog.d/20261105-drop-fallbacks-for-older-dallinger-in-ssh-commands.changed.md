@@ -1,0 +1,1 @@
+`psynet deploy ssh`, `psynet debug ssh`, `psynet performance-test ssh`, `psynet destroy ssh`, `psynet hibernate ssh` and `psynet awaken ssh` no longer carry fallbacks for Dallinger versions older than the one PsyNet pins, so the messages asking for a newer Dallinger (for `--ingress cloudflare`, `--remove-data`/`--keep-data` and hibernation) are gone.
