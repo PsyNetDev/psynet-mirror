@@ -348,7 +348,9 @@ unless ``subgroups`` is a function:
         )
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
-bubble. Speech bubbles may overlap a neighbour; hovering over or tapping a
+bubble, as a dictionary from participant ID to answer. Participant variables
+store dictionary keys as strings, so a dictionary read back from one can be
+passed as it is; ``highlight`` takes string IDs too. Speech bubbles may overlap a neighbour; hovering over or tapping a
 member brings their bubble to the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
 such as an image. ``highlight`` marks members, with built-in styles for
 ``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
