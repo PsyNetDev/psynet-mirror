@@ -168,7 +168,8 @@ PsyNet. Do not treat `scripts update` as a substitute for first-time setup.
 
 - Confirm `psynet --version`, then `psynet services ensure` (or let
   `psynet debug` / `psynet test local` ensure services).
-- Launch with `psynet debug local` or validate with `psynet test local`.
+- Launch with `psynet debug local --no-browsers` or validate with
+  `psynet test local`.
 
 **One `psynet debug local` at a time**
 

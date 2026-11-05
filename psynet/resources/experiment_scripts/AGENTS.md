@@ -57,18 +57,15 @@ where they refuse to run.
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read
-`code/project/running_and_debugging`. After `psynet debug local`, the log
-prints an ad page URL such as
-`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
-walk through the experiment in the browser. When you start the server from a
-non-interactive background shell, keep stdin open
-(`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
-log line.
-
-Pass `--no-browsers` whenever you start `psynet debug local` yourself, and
+`code/project/running_and_debugging`. Start the server with
+`psynet debug local --no-browsers` (also with `--isolated` or `--docker`), and
 tell subagents to do the same; otherwise each server opens browser windows on
-the user's screen. To look at pages, use headless Playwright, or give the user
-the URL.
+the user's screen. The log prints an ad page URL such as
+`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer it to
+the user to walk through the experiment, and look at pages yourself with
+headless Playwright. From a non-interactive background shell, keep stdin open
+(`tail -f /dev/null | psynet debug local --no-browsers`); otherwise the server
+can stop without a log line.
 
 The `demos/index` page describes each PsyNet demo. `psynet docs demos` prints
 the folder holding their code for the installed version (without media).

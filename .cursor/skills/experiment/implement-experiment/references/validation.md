@@ -122,7 +122,7 @@ chains reduce it and may allow more participants at once.
 ## Interactive evidence
 
 ```bash
-psynet debug local
+psynet debug local --no-browsers
 ```
 
 Capture the generated ad page URL. Browser control is acceptable for quick

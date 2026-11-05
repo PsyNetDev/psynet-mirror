@@ -29,9 +29,10 @@ opened, and this block is how you reach the experiment):
 Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 When a script or a coding agent starts ``psynet debug local`` in a
-background shell without a terminal, keep its standard input open, for
-example ``tail -f /dev/null | psynet debug local``. Otherwise the server can
-stop without a log message when standard input closes.
+background shell without a terminal, keep its standard input open and skip
+the browsers, for example ``tail -f /dev/null | psynet debug local
+--no-browsers``. Otherwise the server can stop without a log message when
+standard input closes.
 
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the

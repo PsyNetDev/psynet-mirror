@@ -168,7 +168,7 @@ page. Do not substitute **Basic data** (`/dashboard/data`).
 Capture it while the server is up and at least one participant (or bot) has
 progressed far enough that the network graph shows useful state:
 
-1. Start or reuse `psynet debug local` (or a deployed app).
+1. Start or reuse `psynet debug local --no-browsers` (or a deployed app).
 2. Read dashboard credentials from the launch info PsyNet writes under
    `~/psynet-data/launch-data/<deployment_id>/launch-info.json` (or the
    equivalent printed at launch). Do not invent credentials.

@@ -23,7 +23,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 3. Give every row the IDs that trace it back to the database, such as
    `trial_id` and `participant_id`.
 4. Leave out identifiers and sensitive values; basic data is not anonymized.
-5. Run `psynet debug local`, take a few participants through the experiment,
+5. Run `psynet debug local --no-browsers`, take a few participants through the experiment,
    and export with `psynet export local`. Check the basic data files: row
    counts match the expected numbers of participants and trials, and no
    column is unexpectedly empty.

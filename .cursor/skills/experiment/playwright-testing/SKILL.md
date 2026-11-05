@@ -54,10 +54,9 @@ module.exports = defineConfig({
 ```
 
 Start the experiment with `psynet debug local --no-browsers` in one terminal
-and wait for the ad URL in its log; without `--no-browsers` it opens browser
-windows on the user's screen. From a non-interactive background shell, keep
-stdin open (`tail -f /dev/null | psynet debug local --no-browsers`), or the
-server can stop silently.
+and wait for the ad URL in its log. From a non-interactive background shell,
+keep stdin open (`tail -f /dev/null | psynet debug local --no-browsers`), or
+the server can stop silently.
 Set `PSYNET_URL` to the ad URL's scheme, host and port, and run the walk from
 another terminal:
 
