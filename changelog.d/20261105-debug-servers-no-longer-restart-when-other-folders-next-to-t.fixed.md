@@ -1,0 +1,1 @@
+`psynet debug local` no longer restarts when Python files change in other folders next to its development folder (usually `/tmp`), such as other checkouts, worktrees or experiments. Before, editing any of them restarted every debug server.

@@ -931,17 +931,19 @@ def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
 
 
 @pytest.mark.parametrize("own", ["dallinger_develop", "dallinger_develop_5100"])
-def test_reloader_ignores_only_other_develop_folders(own):
-    """A debug server watches its own development folder but not its neighbours'."""
+def test_reloader_ignores_everything_next_to_its_own_folder_and_checkout(own):
+    """A debug server watches its development folder and the checkout, not their neighbours."""
     from fnmatch import fnmatch
 
-    from psynet.command_line import _other_develop_folder_patterns
+    from psynet.command_line import _other_sibling_patterns
 
-    patterns = _other_develop_folder_patterns(f"/tmp/{own}")
+    patterns = _other_sibling_patterns("/tmp", {own, "wt-group"})
     names = {"", "_5100", "_51", "_51000", "_5200"}
-    for name in {f"dallinger_develop{suffix}" for suffix in names} - {own}:
-        assert any(fnmatch(f"/tmp/{name}/app.py", p) for p in patterns), name
-    for path in (f"/tmp/{own}/app.py", "/tmp/review/psynet/psynet/experiment.py"):
+    ignored = [f"/tmp/dallinger_develop{suffix}/app.py" for suffix in names]
+    ignored += ["/tmp/wt-group2/psynet/sync.py", "/tmp/wt-other/x.py", "/tmp/x.py"]
+    for path in set(ignored) - {f"/tmp/{own}/app.py"}:
+        assert any(fnmatch(path, p) for p in patterns), path
+    for path in (f"/tmp/{own}/app.py", "/tmp/wt-group/psynet/experiment.py"):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 

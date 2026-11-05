@@ -1658,14 +1658,13 @@ def _is_multiprocessing_helper(process):
 
 
 def _reloader_exclude_patterns():
-    """Return reloader exclusions for checkout demos, tests and docs and other debug servers.
+    """Return reloader exclusions for checkout demos, tests and docs and other folders next to the development folder.
 
     Flask's reloader watches every ``.py`` file under each non-system
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
-    watched through Dallinger's development folder, so it is unaffected, but
-    other debug servers' development folders are excluded.
+    watched through Dallinger's development folder, so it is unaffected.
     """
     import dallinger
 
@@ -1675,13 +1674,20 @@ def _reloader_exclude_patterns():
     if not config.ready:
         config.load()
     develop_path = _develop_path(config)
-    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
-    own_paths = list(dict.fromkeys([develop_path, develop_path.resolve()]))
+    roots = [
+        Path(package.__file__).resolve().parent.parent
+        for package in (psynet, dallinger)
+    ]
     patterns = []
-    for path in own_paths:
-        patterns += _other_develop_folder_patterns(path)
-    for package in (psynet, dallinger):
-        root = Path(package.__file__).resolve().parent.parent
+    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
+    for path in dict.fromkeys([develop_path, develop_path.resolve()]):
+        parent = path.parent
+        keep = {path.name}
+        for root in roots:
+            if root.is_relative_to(parent.resolve()) and root != parent.resolve():
+                keep.add(root.relative_to(parent.resolve()).parts[0])
+        patterns += _other_sibling_patterns(parent, keep)
+    for root in roots:
         if not (root / "pyproject.toml").exists():
             continue
         for folder in ("demos", "tests", "docs"):
@@ -1690,27 +1696,35 @@ def _reloader_exclude_patterns():
     return patterns
 
 
-def _other_develop_folder_patterns(develop_path):
-    """Return reloader exclusions for the other debug servers' development folders.
+def _other_sibling_patterns(parent, keep):
+    """Return reloader exclusions for everything in ``parent`` except the ``keep`` names.
 
     ``flask run`` puts the parent of the development folder (usually ``/tmp``)
     on ``sys.path``, so without these patterns each debug server would also
-    watch, and restart for, the folders that other debug servers write next
-    to it. ``fnmatch`` has no negation, so the patterns match every
-    ``dallinger_develop*`` name that differs from this server's own folder
-    at some character, plus every longer name.
+    watch, and restart for, everything else there: other debug servers'
+    development folders, and other checkouts and worktrees. ``fnmatch`` has
+    no negation, so the patterns match every name that differs from all kept
+    names at some character, plus every longer name.
     """
-    develop_path = Path(develop_path)
-    parent = glob.escape(str(develop_path.parent)) + os.sep
-    prefix = "dallinger_develop"
-    name = develop_path.name
-    if not name.startswith(prefix):
-        return [f"{parent}{prefix}*"]
-    patterns = [
-        f"{parent}{glob.escape(name[:i])}[!{name[i]}]*"
-        for i in range(len(prefix), len(name))
-    ]
-    patterns.append(f"{parent}{glob.escape(name)}[!{os.sep}]*")
+    parent = glob.escape(str(parent)) + os.sep
+    patterns = []
+
+    def exclude_after(prefix):
+        following = sorted(
+            {
+                name[len(prefix)]
+                for name in keep
+                if len(name) > len(prefix) and name.startswith(prefix)
+            }
+        )
+        allowed = following + ([os.sep] if prefix in keep else [])
+        # "]" is only literal at the start of a character class, "-" at the end.
+        allowed.sort(key=lambda char: (char != "]", char == "-"))
+        patterns.append(f"{parent}{glob.escape(prefix)}[!{''.join(allowed)}]*")
+        for char in following:
+            exclude_after(prefix + char)
+
+    exclude_after("")
     return patterns
 
 
