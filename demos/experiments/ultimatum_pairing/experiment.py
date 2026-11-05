@@ -13,7 +13,8 @@ offer they would accept.
 
 A player who doesn't answer in time is taken out of their pair so their
 partner isn't held up. A player who misses a round joins the next one, and
-nobody is failed for being slow.
+nobody is failed for being slow. Players finish after ``N_ROUNDS`` rounds in
+a pair, or after sitting out ``MAX_SIT_OUTS`` rounds.
 """
 
 import random
@@ -39,6 +40,7 @@ TEAM_SIZE = 4
 MIN_TEAM_SIZE = 2
 SHORT_START_SECONDS = 60
 N_ROUNDS = 2
+MAX_SIT_OUTS = 2
 LAST_ROUND_FOR_NEWCOMERS = 1
 ROUND_DEADLINE_SECONDS = 15
 DECISION_SECONDS = 30
@@ -60,12 +62,18 @@ def team_accepts_newcomers(group, participant):
 
 def keep_playing(participant):
     return (
-        team_of(participant) is not None and participant.var.get("rounds", 0) < N_ROUNDS
+        team_of(participant) is not None
+        and participant.var.get("rounds_played", 0) < N_ROUNDS
+        and participant.var.get("rounds_sat_out", 0) < MAX_SIT_OUTS
     )
 
 
-def count_round(participant):
-    participant.var.rounds = participant.var.get("rounds", 0) + 1
+def count_round_played(participant):
+    participant.var.rounds_played = participant.var.get("rounds_played", 0) + 1
+
+
+def count_sit_out(participant):
+    participant.var.rounds_sat_out = participant.var.get("rounds_sat_out", 0) + 1
 
 
 def pair_new_partners(members, within_group, regrouper):
@@ -149,11 +157,11 @@ def play_round():
             active_within=10,
             content="The next round starts in at most {SECONDS} s.",
         ),
-        CodeBlock(count_round),
         conditional(
             "paired",
             in_pair,
             join(
+                CodeBlock(count_round_played),
                 PageMaker(decision_page, time_estimate=10),
                 GroupBarrier(
                     id_="round_finished",
@@ -166,7 +174,13 @@ def play_round():
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
-            InfoPage("You sit out this round.", time_estimate=5),
+            join(
+                CodeBlock(count_sit_out),
+                InfoPage(
+                    "You sit out this round. It doesn't count towards your rounds.",
+                    time_estimate=5,
+                ),
+            ),
         ),
     )
 
@@ -188,7 +202,7 @@ class Exp(psynet.experiment.Experiment):
             join_criterion=team_accepts_newcomers,
             fail_participants_below_min_size=False,
             active_within=10,
-            content="Waiting for your team to form…",
+            content="Waiting for your team to form. Starting in at most {SECONDS} s.",
             max_wait_time=300,
         ),
         while_loop(
@@ -221,14 +235,16 @@ class Exp(psynet.experiment.Experiment):
         assert len(sitting_out) == 1
         _play([b for b in others if b not in sitting_out])
 
-        # The lingerer wasn't failed. Their own second round finds nobody to
-        # pair with, so they sit it out after the deadline.
+        # The pair has played its two rounds. The lingerer wasn't failed, and
+        # the sit-out didn't count, so those two play a final round together.
         for bot in bots:
             bot.take_page()
-        lingerer = bots[3]
-        _wait_while_held([lingerer])
-        assert "sit out" in lingerer.current_page_text
-        lingerer.take_page()
+        last_pair = [sitting_out[0], bots[3]]
+        _wait_while_held(last_pair)
+        _play(last_pair)
+        assert all("The offer of" in bot.current_page_text for bot in last_pair)
+        for bot in last_pair:
+            bot.take_page()
         for bot in bots:
             bot.refresh_status()
             assert "That's the end" in bot.current_page_text

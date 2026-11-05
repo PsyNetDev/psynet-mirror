@@ -440,9 +440,10 @@ Waiter-join ``NOWAIT`` stays 1. Relock ``FOR UPDATE`` stays 1.
 Arrival notice (recipient already loaded, *N* - 1 waiters)
 ----------------------------------------------------------
 
-``8`` statements, independent of *N*: the group's members load in one batch
+``9`` statements, independent of *N*: the group's members load in one batch
 with their select-in collections. Spec SELECT stays 1 because reconstructs
-are cached for that call.
+are cached for that call. One statement loads the recipient's deferred
+``vars``, which may hold a notice that they were removed from a group.
 
 Stacked last-arrival finalize (grouper + two GroupBarriers)
 -----------------------------------------------------------

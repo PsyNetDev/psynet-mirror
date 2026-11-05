@@ -532,7 +532,7 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
     _assert_budget(
         profiler,
         {
-            "queries": 8,
+            "queries": 9,
             "commits": 0,
             "for_update": 0,
             "spec_select": 1,

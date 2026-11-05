@@ -63,7 +63,9 @@ current page, under a waiting indicator, until their group is formed.
     ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
     a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
-    still fill the group up.
+    still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
+    down to that short start once ``min_group_size`` are waiting, and shows
+    "…" until then.
 
 ``active_within`` (default: ``None``)
     Seconds. If set, only participants whose browser tab is visible and
@@ -215,9 +217,11 @@ on, and they join the next round:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
-The kicked player is no longer in a room when they reach the barrier.
-``skip_if_not_in_group=True`` lets them pass straight through, and
-``show_result`` then tells them they sat the round out. Without it, a
+The kicked player sees "Your group went on without you." on the progress bar
+straight away (pass ``on_arrival_message`` to change it), and is no longer in
+a room when they reach the barrier. ``skip_if_not_in_group=True`` lets them
+pass straight through, and ``show_result`` then tells them they sat the round
+out. Without it, a
 participant who reaches a group barrier outside a group gets an error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
