@@ -1,0 +1,1 @@
+Fixed a `GroupBarrier` with `timeout_between_barriers_time` failing members who arrived promptly while they waited for slower ones. Its `max_wait_time` now defaults to 20 seconds plus that timeout, and an explicit `max_wait_time` that isn't longer than the timeout raises an error.
