@@ -185,9 +185,14 @@ def default_group_barrier_arrival_message(
 
     Pair holds keep the title only. Larger groups report how many members are
     not ready yet. Notices tell people still on an earlier page that partners
-    are already waiting.
+    are already waiting, and ``"removed"`` tells someone who was too slow that
+    their group went on without them.
     """
     _p = get_translator(context=True)
+    if kind == "removed":
+        if group_size == 1:
+            return _p("timeline_hold", "Your partner went on without you.")
+        return _p("timeline_hold", "Your group went on without you.")
     remaining = max(group_size - waiting_count, 0)
     if kind == "hold":
         if group_size <= 2 or remaining == 0:

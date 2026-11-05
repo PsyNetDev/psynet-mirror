@@ -1,4 +1,5 @@
 import sys
+import time
 import types
 from datetime import timedelta
 from pathlib import Path
@@ -204,16 +205,28 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
 ):
     exp = get_experiment()
     grouper = SimpleGrouper(
-        "lobby", initial_group_size=4, min_group_size=2, start_short_after=10
+        "lobby",
+        initial_group_size=4,
+        min_group_size=2,
+        start_short_after=10,
+        content="Starting in {SECONDS} s",
     )
     participants = _working_participants(exp, 2)
-    _arrive(exp, grouper, participants)
+    _arrive(exp, grouper, participants[:1])
+    assert grouper.expected_release_time(participants[0]) is None
+    _arrive(exp, grouper, participants[1:])
     assert not grouper.ready_to_group(participants)
+    assert grouper.expected_release_time(participants[0]) == pytest.approx(
+        time.time() + 10, abs=2
+    )
+    countdown = grouper.waiting_logic.overlay_html(participants[0])
+    assert "psynet-timeline-hold-countdown" in countdown
 
     _backdate_arrivals(grouper, participants, 11)
     released = grouper.choose_who_to_release(participants)
 
     assert set(released) == set(participants)
+    db_session.commit()
     assert participants[0].sync_group.initial_group_size == 2
 
 
