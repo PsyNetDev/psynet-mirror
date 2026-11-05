@@ -1182,7 +1182,8 @@ def _arrival_updates_for(page, participant):
     """Return partner-ready websocket config, or None when it cannot be used.
 
     Hold pages already subscribe to the same channel. Participants with no
-    sync group can never receive a ``GroupBarrier`` arrival notice. When
+    sync group only get a notice if they were removed from a group on this
+    page. When
     membership is not already loaded, a cheap existence check decides
     whether to open the websocket.
     """
@@ -1195,9 +1196,10 @@ def _arrival_updates_for(page, participant):
         from psynet.sync import _has_active_sync_group
 
         in_group = _has_active_sync_group(participant)
-    if not in_group:
+    from psynet.sync import _removed_from_group_notice, pending_arrival_notice_for
+
+    if not in_group and _removed_from_group_notice(participant) is None:
         return None
-    from psynet.sync import pending_arrival_notice_for
     from psynet.timeline_hold import _timeline_hold_channel
 
     return {
@@ -1818,6 +1820,11 @@ class Page(Elt):
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
+        from psynet.sync import waiting_page_config
+
+        waiting = waiting_page_config(self, participant)
+        if waiting is not None:
+            attributes["waiting"] = waiting
         return attributes
 
     @property

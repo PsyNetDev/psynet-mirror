@@ -891,6 +891,172 @@
       }
     };
 
+    // Countdown spans carry a duration from the server, so they are timed
+    // against the browser's clock from when they first appear.
+    psynet.tickTimelineHoldCountdowns = function () {
+      let now = Date.now();
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          if (element.dataset.releaseInMs === undefined) {
+            return;
+          }
+          if (!element.dataset.releaseAt) {
+            element.dataset.releaseAt = String(
+              now + Number(element.dataset.releaseInMs || 0),
+            );
+          }
+          let seconds = Math.max(
+            0,
+            Math.ceil((Number(element.dataset.releaseAt) - now) / 1000),
+          );
+          if (element.textContent !== String(seconds)) {
+            element.textContent = String(seconds);
+          }
+          // Check straight away at the release time rather than at the next
+          // safety poll; the short margin lets the server's clock catch up.
+          let releaseAt = Number(element.dataset.releaseAt);
+          if (!element.dataset.checked && now >= releaseAt + 300) {
+            element.dataset.checked = "true";
+            psynet.resumeTimelineHold("countdown");
+          }
+        });
+    };
+    setInterval(psynet.tickTimelineHoldCountdowns, 250);
+
+    // A barrier sends a new release time, or null when it no longer knows one.
+    psynet.setTimelineHoldCountdowns = function (releaseInMs) {
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          delete element.dataset.releaseAt;
+          delete element.dataset.checked;
+          if (releaseInMs === null || releaseInMs <= 0) {
+            delete element.dataset.releaseInMs;
+            element.textContent = "…";
+          } else {
+            element.dataset.releaseInMs = String(releaseInMs);
+          }
+        });
+      psynet.tickTimelineHoldCountdowns();
+    };
+
+    // Barriers can fail participants whose tab stays hidden, so tell the
+    // server at once when a waiting participant's tab is shown again.
+    document.addEventListener("visibilitychange", () => {
+      psynet.resumeTimelineHold("visibility change");
+      if (psynet.waiting.config && !psynet.waiting.released) {
+        psynet.waiting.poll();
+      }
+    });
+
+    /**
+     * Barrier waiting pages (explicit ``waiting_logic``).
+     *
+     * While a page of a barrier's ``waiting_logic`` is open, the browser asks
+     * the server about every 2 seconds whether the barrier has released the
+     * participant. These checks also tell ``fail_if_hidden_for`` that the tab
+     * is open. On release, ``psynetWaitingRelease`` is dispatched on
+     * ``window`` and the page ends after the barrier's ``release_grace``,
+     * unless it is submitted first. Pages that a release may not end (inside
+     * trials, or with ``release_grace=None``) run to their end.
+     * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
+     */
+    psynet.waiting = {
+      config: null,
+      released: false,
+      pollingConfig: null,
+      pollTimer: null,
+      graceTimer: null,
+      pollIntervalMs: 2000,
+
+      start(config) {
+        psynet.waiting.stop();
+        if (!config) return;
+        psynet.waiting.config = config;
+        psynet.waiting.poll();
+      },
+
+      stop() {
+        clearTimeout(psynet.waiting.pollTimer);
+        clearTimeout(psynet.waiting.graceTimer);
+        psynet.waiting.config = null;
+        psynet.waiting.pollingConfig = null;
+        psynet.waiting.released = false;
+      },
+
+      async poll() {
+        let config = psynet.waiting.config;
+        if (!config || psynet.waiting.pollingConfig === config) return;
+        psynet.waiting.pollingConfig = config;
+        clearTimeout(psynet.waiting.pollTimer);
+        let params = new URLSearchParams({
+          uniqueId: psynet.uniqueId,
+          barrierId: config.barrier_id,
+          visible: String(document.visibilityState !== "hidden"),
+        });
+        let status = null;
+        try {
+          let response = await fetch(`/timeline/waiting_status?${params}`, {
+            cache: "no-store",
+          });
+          if (response.ok) status = await response.json();
+        } catch (error) {
+          psynet.log.warn("Waiting status check failed.", error);
+        }
+        if (psynet.waiting.pollingConfig === config) {
+          psynet.waiting.pollingConfig = null;
+        }
+        if (psynet.waiting.config !== config) return;
+        if (status) {
+          window.dispatchEvent(
+            new CustomEvent("psynetWaitingStatus", {
+              detail: { releaseInMs: status.release_in_ms },
+            }),
+          );
+          if (status.released) {
+            psynet.waiting.onRelease();
+            return;
+          }
+        }
+        psynet.waiting.pollTimer = setTimeout(
+          psynet.waiting.poll,
+          psynet.waiting.pollIntervalMs,
+        );
+      },
+
+      onRelease() {
+        let config = psynet.waiting.config;
+        if (config.release_grace_ms === null) {
+          psynet.waiting.stop();
+          return;
+        }
+        psynet.waiting.released = true;
+        window.dispatchEvent(
+          new CustomEvent("psynetWaitingRelease", {
+            detail: { graceMs: config.release_grace_ms },
+          }),
+        );
+        psynet.waiting.graceTimer = setTimeout(
+          psynet.waiting.interrupt,
+          config.release_grace_ms,
+        );
+      },
+
+      interrupt() {
+        if (!psynet.waiting.config) return;
+        if (psynet.nextPagePending) {
+          // A submission in flight may still be rejected, for example by
+          // validation; try again once it has settled.
+          psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
+          return;
+        }
+        psynet.nextPage(null, { interrupted: true }, {}, undefined, {
+          interrupted: true,
+        });
+      },
+    };
+
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
     };
@@ -933,6 +1099,9 @@
         }
         if (Object.prototype.hasOwnProperty.call(target, "notice")) {
           psynet.applyArrivalNotice(target.notice);
+        }
+        if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
+          psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
       });
     };
@@ -1188,6 +1357,7 @@
 
     psynet.beginTimelineHold = function (hold) {
       psynet.stopArrivalUpdates();
+      psynet.waiting.stop();
       let active = psynet.timelineHold;
       if (active && !active.stopped) {
         let previous = active.hold;
@@ -1251,6 +1421,7 @@
         psynet.beginTimelineHold(hold);
       }
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
+      psynet.waiting.start(psynet.page.attributes?.waiting);
     };
 
     psynet.prepareTimelineFragment = function (payload) {
@@ -3388,6 +3559,7 @@
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
+        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
@@ -3445,6 +3617,10 @@
         // with a rejected page_uuid.
         psynet.stopTimelineHold();
         await psynet.loadNextTimelinePageWithReload();
+      } else if (options.interrupted) {
+        // The server hasn't seen the release yet; keep waiting.
+        psynet.restoreSubmissionControlState();
+        psynet.waiting.start(psynet.page.attributes?.waiting);
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
@@ -3707,6 +3883,8 @@
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
+        page_visible: document.visibilityState !== "hidden",
+        interrupted: Boolean(options.interrupted),
       });
     };
 

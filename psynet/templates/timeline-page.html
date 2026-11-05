@@ -79,6 +79,11 @@
             text-align: center;
         }
 
+        .psynet-timeline-hold-warning {
+            font-size: 0.85em;
+            text-align: center;
+        }
+
         /* Partner-ready notices sit on the progress bar (or the top of the
            page when there is no bar). They do not reflow #main-body. */
         #timeline-header {
@@ -121,6 +126,27 @@
             #timeline-header:not(:has(.progress)) #psynet-arrival-notice {
                 font-size: 0.75rem;
                 padding: 0.12rem 0.7rem;
+            }
+
+            /* Narrow pages start right under the progress bar, so the hold
+               chip takes the arrival notice's compact size and place there. */
+            #timeline-hold-region {
+                top: 0.2rem;
+            }
+
+            #psynet-timeline-hold-indicator {
+                font-size: 0.8rem;
+                gap: 0.4rem;
+                padding: 0.28rem 0.8rem;
+            }
+
+            #psynet-timeline-hold-indicator .spinner-border-sm {
+                --bs-spinner-height: 0.75rem;
+                --bs-spinner-width: 0.75rem;
+            }
+
+            body.timeline-held #timeline-progress-label {
+                display: none;
             }
         }
     </style>

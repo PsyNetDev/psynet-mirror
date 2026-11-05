@@ -39,9 +39,11 @@ _PAGE_FIELDS = {
 _PRESENTATION_FIELDS = {
     "content",
     "expected_wait",
+    "fail_if_hidden_for",
     "fix_time_credit",
     "max_wait_action",
     "max_wait_time",
+    "release_grace",
 }
 
 _NOTIFICATION_FIELDS = {"notify_arrivals", "on_arrival_message"}

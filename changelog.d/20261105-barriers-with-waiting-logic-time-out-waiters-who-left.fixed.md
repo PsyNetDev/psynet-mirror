@@ -1,0 +1,1 @@
+Fixed barriers with explicit `waiting_logic` never timing out a participant who closed the page while waiting: the server now applies `max_wait_time` (failing or kicking them, as `max_wait_action` says) shortly after the deadline, as it already did on the default waiting screen.

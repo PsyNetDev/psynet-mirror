@@ -120,6 +120,7 @@ from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
 from .page import InfoPage
+from .page_activity import record_page_activity
 from .participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -212,6 +213,7 @@ else:
         "/asset/",
         "/log/",
         "/timeline/arrival_notice",
+        "/timeline/waiting_status",
         "/timeline/progress_and_reward",
         "/dashboard/module/progress_info",
         "/dashboard/module/tooltip",
@@ -4182,11 +4184,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         answer=NoArgumentProvided,
         *,
         timeline_hold_resume=False,
+        interrupted=False,
     ):
         """Advance the participant after one ``/response`` write.
 
         Parameters
         ----------
+        interrupted : bool
+            Set by a barrier's waiting page that ends because the participant
+            was released (see ``release_grace`` on
+            :class:`~psynet.sync.Barrier`). The page is then not validated and
+            its answer is not saved. If the participant has not been released,
+            the submission is rejected without a message, so the page keeps
+            waiting. Keyword-only.
         timeline_hold_resume : bool
             If True, a still-waiting overlay check does not take ``FOR UPDATE``
             so last-arrival can still lock waiters with ``NOWAIT``. A resume
@@ -4221,7 +4231,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
-
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
                 "Only bots are permitted to submit formatted answers directly "
@@ -4330,6 +4339,23 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
+            if interrupted:
+                from .sync import released_waiting_barrier
+
+                if released_waiting_barrier(event, participant) is None:
+                    return ResponseResult(
+                        payload={"submission": "rejected", "message": ""}
+                    )
+                Experiment._record_interrupted_response(event, participant, metadata)
+                participant.inc_time_credit(event.time_estimate)
+                participant.inc_progress(event.time_estimate)
+                self.timeline.advance_page(self, participant)
+                page = self._advance_past_ready_holds(
+                    participant, self.timeline.get_current_elt(self, participant)
+                )
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page), page=page
+                )
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
@@ -4416,6 +4442,41 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     self, err, participant
                 ),
             )
+
+    def _skip_released_waiting_pages(self, participant, barrier):
+        """Skip the rest of a released barrier's waiting pages and return the next element.
+
+        A ``while_loop`` only checks its condition before each pass, so the
+        pages left in the current pass would otherwise each show briefly
+        and then be interrupted. Skipped pages were never seen, so they get
+        no response, time credit or progress.
+        """
+        from .sync import released_waiting_barrier
+
+        while True:
+            page = self.timeline.get_current_elt(self, participant)
+            released = released_waiting_barrier(page, participant)
+            if released is None or released.id != barrier.id:
+                return page
+            self.timeline.advance_page(self, participant)
+
+    @staticmethod
+    def _record_interrupted_response(page, participant, metadata):
+        """Store an empty response for a waiting page that a release ended.
+
+        The page's ``on_complete`` doesn't run and ``participant.answer`` is
+        not updated, but is marked as not fresh.
+        """
+        participant.answer_is_fresh = False
+        response = Response(
+            participant=participant,
+            label=page.label,
+            page_type=type(page).__name__,
+        )
+        response.answer = None
+        response.metadata = {**metadata, "interrupted": True}
+        response.successful_validation = True
+        db.session.add(response)
 
     @staticmethod
     def _pending_redirect_replaces_open_page(participant):
@@ -4549,10 +4610,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         identity. After the last allowed skip, this walk observes the landing
         page so settling on the cap still succeeds.
         """
-        from .sync import _MAX_BARRIER_WALK_PASSES, _barrier_walk_budget
+        from .sync import (
+            _MAX_BARRIER_WALK_PASSES,
+            _barrier_walk_budget,
+            released_waiting_barrier,
+        )
         from .timeline_hold import holding_next_hold_catchup
 
         for can_work in _barrier_walk_budget():
+            released = released_waiting_barrier(page, participant)
+            if released is not None:
+                page = self._skip_released_waiting_pages(participant, released)
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):
@@ -7534,6 +7602,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         return arrival_notice_payload(request.args.get("uniqueId"))
 
+    @experiment_route("/timeline/waiting_status", methods=["GET"])
+    @classmethod
+    @with_transaction
+    def get_waiting_status(cls):
+        """Tell a waiting page whether its barrier has released the participant."""
+        from .sync import waiting_status_payload
+
+        return waiting_status_payload(
+            request.args.get("uniqueId"),
+            request.args.get("barrierId"),
+            visible=request.args.get("visible") != "false",
+        )
+
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])
     @classmethod
     @with_transaction
@@ -7726,7 +7807,22 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
+        interrupted = bool(
+            get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
+        )
+        # Before any SQL, so that a busy database can't make a visible waiter
+        # look as if they had left (see psynet.page_activity).
+        if (
+            json_data.get("page_visible", True) is not False
+            and str(participant_id).isdigit()
+        ):
+            record_page_activity(int(participant_id), visible=True)
         client_ip_address = cls.get_client_ip_address()
+        # Only non-default flags are passed, so process_response overrides
+        # written before these keywords existed keep working.
+        flags = {}
+        if interrupted:
+            flags["interrupted"] = True
 
         try:
             result = exp.process_response(
@@ -7738,6 +7834,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 client_ip_address,
                 answer,
                 timeline_hold_resume=timeline_hold_resume,
+                **flags,
             )
         except Exception as error:
             clock.close_open("process", "barriers", "render")
