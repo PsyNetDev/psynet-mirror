@@ -6416,6 +6416,16 @@ def test_group_barrier_timeout_between_barriers_rejects_bad_action():
         )
 
 
+def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
+    def barrier(**kwargs):
+        return GroupBarrier(id_="round", group_type="group", **kwargs)
+
+    assert barrier().max_wait_time == 20
+    assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
+    with pytest.raises(ValueError, match="must be longer"):
+        barrier(timeout_between_barriers_time=30, max_wait_time=30)
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
