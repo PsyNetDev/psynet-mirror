@@ -1551,15 +1551,18 @@ class GroupBarrier(Barrier):
 
         Arrivals in concurrent requests do not see each other, so the browser
         counts the union of the seats it has been sent, less those no longer
-        in ``members``. For a recipient who is not waiting, the entry has the
-        notice text for each count that union can reach, from this count up
-        to everyone but the recipient.
+        in ``members``. ``n_seats`` says which seats existed when ``members``
+        was read, so that the browser keeps seats of members who joined
+        later. For a recipient who is not waiting, the entry has the notice
+        text for each count that union can reach, from this count up to
+        everyone but the recipient.
         """
         entry = {
             "group_id": group.id,
             "barrier_id": self.id,
             "seats": sorted(seats[m.id] for m in waiting),
             "members": sorted(seats[m.id] for m in members),
+            "n_seats": len(seats),
         }
         if recipient in waiting:
             return entry
@@ -2873,6 +2876,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
+        _notify_departure(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
         ):
@@ -3454,25 +3458,45 @@ def _ready_seats_for(participant):
     ready = []
     reconstructed = {}
     for group in participant.active_sync_groups.values():
-        members = group.active_participants
-        barriers = {}
-        for member in members:
-            for link in member.active_barriers.values():
-                instance = link.barrier_instance
-                if link.released or instance is None or instance.group_id != group.id:
-                    continue
-                barrier = _reconstructed_arrival_barrier(link, reconstructed)
-                if isinstance(barrier, GroupBarrier) and barrier.notify_arrivals:
-                    barriers.setdefault(barrier.id, barrier)
-        if not barriers:
-            continue
-        seats = group_seats(group)
-        for barrier in barriers.values():
-            waiting = [m for m in members if barrier._participant_is_waiting(m)]
-            ready.append(
-                barrier._group_ready_entry(group, seats, members, waiting, participant)
-            )
+        ready += _group_ready_entries(group, [participant], reconstructed).get(
+            participant.id, []
+        )
     return ready
+
+
+def _group_ready_entries(group, recipients, reconstructed):
+    """Return ``{recipient_id: entries}`` for the arrival barriers members of ``group`` wait at."""
+    members = group.active_participants
+    barriers = {}
+    for member in members:
+        for link in member.active_barriers.values():
+            instance = link.barrier_instance
+            if link.released or instance is None or instance.group_id != group.id:
+                continue
+            barrier = _reconstructed_arrival_barrier(link, reconstructed)
+            if isinstance(barrier, GroupBarrier) and barrier.notify_arrivals:
+                barriers.setdefault(barrier.id, barrier)
+    if not barriers:
+        return {}
+    seats = group_seats(group)
+    entries = {recipient.id: [] for recipient in recipients}
+    for barrier in barriers.values():
+        waiting = [m for m in members if barrier._participant_is_waiting(m)]
+        for recipient in recipients:
+            entries[recipient.id].append(
+                barrier._group_ready_entry(group, seats, members, waiting, recipient)
+            )
+    return entries
+
+
+def _notify_departure(group):
+    """Tell the remaining members of ``group`` who is still in it and waiting."""
+    remaining = group.active_participants
+    for participant_id, entries in _group_ready_entries(group, remaining, {}).items():
+        for entry in entries:
+            _queue_arrival_update(
+                participant_id, notice=_KEEP_NOTICE, group_ready=entry
+            )
 
 
 def waiting_barrier_ids(participant, group):

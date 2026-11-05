@@ -1145,13 +1145,12 @@
         groupSize: null,
       });
       (ready.seats || []).forEach((seat) => state.seats.add(seat));
-      if (ready.members?.length) {
-        // Members who have left no longer count. A member list from an
-        // older update lacks only later joiners, who have higher seats.
+      if (ready.members) {
+        // Members who have left no longer count. Seats from n_seats on
+        // belong to members who joined after this list was read.
         const members = new Set(ready.members);
-        const top = Math.max(...ready.members);
         [...state.seats].forEach((seat) => {
-          if (seat <= top && !members.has(seat)) state.seats.delete(seat);
+          if (seat < ready.n_seats && !members.has(seat)) state.seats.delete(seat);
         });
         if (state.groupSize !== ready.members.length) {
           state.groupSize = ready.members.length;
@@ -1162,7 +1161,9 @@
         state.texts[ready.notices_from + index] = text;
       });
       const seats = [...state.seats].sort((a, b) => a - b);
-      return { seats, notice: state.texts[seats.length] };
+      // Entries for a member who is waiting have no notices.
+      const notice = ready.notices ? state.texts[seats.length] : undefined;
+      return { seats, notice };
     };
 
     psynet.stopArrivalUpdates = function () {

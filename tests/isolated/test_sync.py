@@ -5729,6 +5729,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
                 "barrier_id": "notify_arrivals",
                 "seats": [0],
                 "members": [0, 1],
+                "n_seats": 2,
                 "notices": ["Your partner is ready."],
                 "notices_from": 1,
             }

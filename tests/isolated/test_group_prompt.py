@@ -17,7 +17,7 @@ from psynet.sync import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_regrouper import _arrive  # noqa: E402
+from test_regrouper import _arrive, _commit_barrier_arrivals  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
@@ -105,6 +105,13 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
         group=group, participant=first, answers={second.id: None}
     ).group_html
     assert "psynet-group-bubble--none" in html and ">None<" not in html
+
+    # When a member leaves, the others stop counting them straight away.
+    published.clear()
+    group.remove_participant(first)
+    _commit_barrier_arrivals()
+    (update, *_) = [t for t in published if t["participant_id"] == third.id]
+    assert {seats[first.id]}.isdisjoint(update["group_ready"][-1]["members"])
 
 
 @pytest.mark.parametrize(

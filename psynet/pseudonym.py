@@ -325,11 +325,12 @@ def _artwork_sticker(classes, css_color, shape, lines, name) -> Markup:
         if lines
         else Markup("")
     )
+    title = Markup(' title="{}"').format(name) if name else Markup("")
     return Markup(
-        '<span class="{}" aria-hidden="true" title="{}"'
+        '<span class="{}" aria-hidden="true"{}'
         ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
         "{}</span>"
-    ).format(classes, name, css_color, quote(shape, safe="/:._-~%?=&#"), detail)
+    ).format(classes, title, css_color, quote(shape, safe="/:._-~%?=&#"), detail)
 
 
 def _is_dark(css_color: str) -> bool:
