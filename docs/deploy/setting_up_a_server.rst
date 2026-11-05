@@ -357,8 +357,8 @@ Registering the server
       and ``server_pem`` to the file. Dallinger finds the file by this name,
       as ``~/.ssh/<ec2_default_pem>.pem``, so the file name must match the
       key pair name. A new instance accepts only this key pair, so
-      ``server_pem`` must be this same file, the key pair's private key,
-      without a passphrase; ``dallinger ec2 provision`` checks this before it
+      ``server_pem`` must hold the same private key as that file, without a
+      passphrase; ``dallinger ec2 provision`` checks this before it
       boots an instance. Keep only one ``server_pem`` line in
       ``~/.dallingerconfig``.
 
@@ -523,7 +523,8 @@ Stopping and removing the server
 
       Teardown deletes the instance with every database on it, removes the
       DNS records and removes both server registrations. On another
-      computer, or for an instance provisioned by an older Dallinger, add
+      computer, after a provision you finished with the printed ``servers
+      add`` commands, or for an instance provisioned by an older Dallinger, add
       ``--dns-host`` with its name to ``stop``, ``start`` and ``teardown``
       (see :ref:`aws_automatic_provisioning`). Data you have not exported is
       lost. Teardown only finds a running instance, so start a

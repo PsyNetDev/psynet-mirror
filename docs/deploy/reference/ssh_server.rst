@@ -63,9 +63,10 @@ own DNS name, under a name like ``dlgr-d8f9f2c4``. ``psynet export ssh``,
 ``psynet destroy ssh``, ``psynet hibernate ssh`` and ``psynet awaken ssh``
 accept that name, but ``psynet deploy ssh``, ``debug ssh`` and
 ``performance-test ssh`` don't, even with ``--update``. So such an app can't
-be updated in place. A new app with its own ``--app`` gets a new address,
-and the old address keeps serving the old app until you destroy it and run
-``servers upgrade`` (see :ref:`ssh_server_files`).
+be updated in place: deploy the fix as a new app with its own ``--app``.
+Deploys to such a server stop until it has had ``servers upgrade`` (see
+:ref:`ssh_server_shared_services`), which keeps the old app at the server's
+own name. Destroying the old app then frees that name.
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS
@@ -253,10 +254,11 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. An app that an older Dallinger deployed at the server's own DNS name
-has its route in the shared ``Caddyfile`` instead, which destroy leaves
-alone: it warns that the server's own name still points to the app, and
-``servers upgrade`` removes that route. Give it one or more app names, as
+uses it. On a server that hasn't had ``servers upgrade``, an app that an
+older Dallinger deployed at the server's own DNS name has its route in the
+shared ``Caddyfile`` instead, which destroy leaves alone: it warns that the
+server's own name still points to the app, and ``servers upgrade`` removes
+that route. Give it one or more app names, as
 arguments or with ``--app`` (the two are equivalent and can be combined):
 
 .. code-block:: bash

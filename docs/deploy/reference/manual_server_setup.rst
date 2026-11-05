@@ -62,9 +62,10 @@ take from a few minutes to several hours.
 
 An EC2 instance gets a new Public IPv4 DNS name each time it is stopped and
 started. Records you created by hand then point at the old name and must be
-updated. ``dallinger ec2 stop`` and ``start`` do this only for CNAME records
-in a Route 53 hosted zone, such as those that ``dallinger ec2 provision
---dns-host`` creates (see :doc:`/deploy/reference/aws_automatic_provisioning`).
+updated. Given ``--dns-host``, ``dallinger ec2 stop`` and ``start`` do this
+for CNAME records in a Route 53 hosted zone, such as those that ``dallinger
+ec2 provision --dns-host`` creates (see
+:doc:`/deploy/reference/aws_automatic_provisioning`).
 
 If the name was used before by another machine, SSH refuses to connect with
 ``REMOTE HOST IDENTIFICATION HAS CHANGED``; see

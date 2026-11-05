@@ -173,7 +173,8 @@ records stay behind.
   services, so on a server with other experiments, ask the user first.
 - `dallinger ec2 provision` fails after launching the instance: it keeps
   running and costs money. Fix the printed problem, then run either the
-  printed `servers add` commands that finish the setup or the printed
+  printed `servers add` commands that finish the setup (and `servers upgrade`
+  if `servers add` says it left the shared files unchanged) or the printed
   `ec2 teardown`; teardown is irreversible, so ask the user first.
 - A deploy stops with "No Let's Encrypt contact email": save one with
   `dallinger docker-ssh servers add --host <server> --contact-email <email>`

@@ -523,7 +523,8 @@ registrations:
 
    dallinger ec2 teardown --name my-server --region us-east-1
 
-On a computer other than the one that provisioned the server, or for a
+On a computer other than the one that provisioned the server, after a
+provision you finished with the printed ``servers add`` commands, or for a
 server provisioned by an older Dallinger, add the ``--dns-host`` it was
 provisioned with.
 

@@ -56,8 +56,8 @@ Options:
    configuration value, or ``dallinger``.
 ``--dns-host``
    Name to create in Route 53, for example ``memory-lab.cool-psychology.org``.
-   Without it, the server's DNS name is ``<public ip>.nip.io``, because Let's
-   Encrypt does not issue certificates for AWS hostnames. The public IP
+   Without it, the server's DNS name is ``<public ip>.nip.io``, a name that
+   resolves to the instance's public IP. The public IP
    changes when the instance is stopped and started, and nothing updates
    that name, so use ``--dns-host`` for a server you might stop.
 
@@ -66,8 +66,8 @@ Provisioning runs these steps and prints each one to the terminal:
 1. Before booting anything, checks your local settings and stops if one is
    wrong:
 
-   - ``server_pem`` must be the unencrypted private key in the local
-     ``~/.ssh/<ec2_default_pem>.pem`` key file, because a new instance
+   - ``server_pem`` must hold the same unencrypted private key as
+     ``~/.ssh/<ec2_default_pem>.pem``, because a new instance
      accepts only that key pair;
    - ``dashboard_password`` must be set (``dashboard_user`` defaults to
      ``admin``);
@@ -109,7 +109,8 @@ instance keeps running and costs money. Provisioning then prints the
 ``dallinger ec2 teardown`` command that removes it (or says to terminate it
 in the EC2 console while it may still be starting). If the setup had started,
 it also prints the ``dallinger docker-ssh servers add`` commands that finish
-the setup instead. Fix the problem, then run one or the other.
+the setup instead, plus ``servers upgrade`` in case ``servers add`` says it
+left the shared files unchanged. Fix the problem, then run one or the other.
 
 At the end, you should see something like this:
 
