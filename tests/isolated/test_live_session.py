@@ -20,7 +20,6 @@ from flask import Flask
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rq import Queue, SimpleWorker
 
-from psynet import live_session
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
@@ -32,6 +31,7 @@ from psynet.live_session import (
     Ready,
     live_session_id,
 )
+from psynet.live_session import registry as game_registry
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
@@ -339,7 +339,7 @@ READY = {"type": "psynet_ready", "message": {}}
 
 
 def _pick(number):
-    return live_session._live_session_types["pick_numbers"]._message_types["pick"](
+    return game_registry._live_session_types["pick_numbers"]._message_types["pick"](
         number=number
     )
 
@@ -354,7 +354,7 @@ def test_the_game_plays_for_a_group_s_bots_once_they_are_ready(bot_and_person):
     )
 
     assert db.session.get(RealtimeSession, session_id).bots == [int(bot)]
-    saved = live_session._live_session_types["pick_numbers"].saved_messages(session_id)
+    saved = game_registry._live_session_types["pick_numbers"].saved_messages(session_id)
     assert [
         (message.player_id, message.status, message.message) for message in saved
     ] == [
@@ -368,7 +368,7 @@ def test_the_game_plays_for_a_group_s_bots_once_they_are_ready(bot_and_person):
 def test_a_played_session_s_messages_read_back_in_order_with_their_status(played):
     session_id, first, second, before, after = played
 
-    saved = live_session._live_session_types["pick_numbers"].saved_messages(session_id)
+    saved = game_registry._live_session_types["pick_numbers"].saved_messages(session_id)
 
     assert [
         (
@@ -405,7 +405,7 @@ def test_a_played_session_s_messages_read_back_in_order_with_their_status(played
 
 def test_a_message_type_reads_back_only_its_own_messages(played):
     session_id, first, second, _, _ = played
-    pick = live_session._live_session_types["pick_numbers"]._message_types["pick"]
+    pick = game_registry._live_session_types["pick_numbers"]._message_types["pick"]
     # As when Dallinger's test fixtures run experiment.py again, so the
     # caller's class isn't the one the game lists.
     pick_again = type(
@@ -440,7 +440,7 @@ def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
     played, monkeypatch, caplog
 ):
     session_id, first, second, _, _ = played
-    game_type = live_session._live_session_types["pick_numbers"]
+    game_type = game_registry._live_session_types["pick_numbers"]
 
     class Pick(LiveMessage):
         type = "pick"
@@ -480,8 +480,8 @@ def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
 
 def test_a_message_type_can_t_read_a_game_that_isn_t_defined(pair, monkeypatch):
     session_id = _pair_session(pair)
-    pick = live_session._live_session_types["pick_numbers"]._message_types["pick"]
-    monkeypatch.setattr(live_session, "_live_session_types", {})
+    pick = game_registry._live_session_types["pick_numbers"]._message_types["pick"]
+    monkeypatch.setattr(game_registry, "_live_session_types", {})
 
     with pytest.raises(ValueError, match="no LiveSession with that channel"):
         pick.saved_messages(session_id)
@@ -489,7 +489,7 @@ def test_a_message_type_can_t_read_a_game_that_isn_t_defined(pair, monkeypatch):
 
 def test_a_game_reads_back_only_its_own_sessions(pair, monkeypatch):
     session_id = _pair_session(pair)
-    monkeypatch.setattr(live_session, "_live_session_types", {})
+    monkeypatch.setattr(game_registry, "_live_session_types", {})
 
     class Elsewhere(LiveSession):
         channel = "elsewhere"
@@ -532,8 +532,8 @@ class Move(LiveMessage):
 
 @pytest.fixture
 def registry(monkeypatch):
-    monkeypatch.setattr(live_session, "_live_session_types", {})
-    return live_session._live_session_types
+    monkeypatch.setattr(game_registry, "_live_session_types", {})
+    return game_registry._live_session_types
 
 
 class Point(BaseModel):
