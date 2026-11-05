@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from psynet import notifier
 from psynet.notifier import LoggerNotifier, Notifier
 
 
@@ -104,7 +105,7 @@ def test_worker_message_skips_workers_that_exit_while_listed(monkeypatch):
     assert "(2)" not in message
 
 
-def test_cpu_warning_lists_measured_worker_usage_busiest_first(monkeypatch):
+def test_cpu_warning_reports_measured_usage_busiest_worker_first(monkeypatch):
     def worker(name, percent):
         proc = Mock()
         proc.create_time.return_value = 0
@@ -112,14 +113,21 @@ def test_cpu_warning_lists_measured_worker_usage_busiest_first(monkeypatch):
         proc.cpu_percent.side_effect = [0.0, percent]
         return proc
 
-    monkeypatch.setattr("psynet.notifier._CPU_SAMPLE_SECONDS", 0)
+    sleeps = []
+    messages = []
+    monkeypatch.setattr("psynet.notifier.time.sleep", sleeps.append)
+    monkeypatch.setattr("psynet.notifier.redis_vars", Mock(get=lambda *a, **k: None))
     monkeypatch.setattr(
         Notifier,
         "_get_worker_processes",
         staticmethod(lambda: [(1, worker("idle", 2.0)), (2, worker("busy", 80.0))]),
     )
+    monkeypatch.setattr(Notifier, "notify", lambda self, msg: messages.append(msg))
 
-    message = Notifier()._get_worker_processes_message("cpu")
+    Notifier().resource_usage_notification("cpu", 1, usage_pct=93.5)
 
+    [message] = messages
+    assert "CPU usage high: 93.5%" in message
+    assert sleeps == [notifier._CPU_SAMPLE_SECONDS]
     assert "busy (2) running for" in message and "80.0% CPU" in message
     assert message.index("busy") < message.index("idle")

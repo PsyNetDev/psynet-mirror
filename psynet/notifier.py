@@ -209,15 +209,24 @@ class Notifier:
         return workers
 
     def resource_usage_notification(
-        self, resource_type, mute_same_warning_for_n_hours, level="warning"
+        self,
+        resource_type,
+        mute_same_warning_for_n_hours,
+        level="warning",
+        usage_pct=None,
     ):
+        """Notify about high resource use, unless the same warning is muted.
+
+        ``usage_pct`` is the CPU reading that triggered the warning; reading
+        CPU again here would cover only the moments since that reading.
+        """
         msg = self._build_initial_message(level, mute_same_warning_for_n_hours)
         if not self._should_send_notification(
             resource_type, level, mute_same_warning_for_n_hours
         ):
             return
         redis_vars.set(f"last_{resource_type}_{level}", datetime.now())
-        msg += self._get_resource_message(resource_type)
+        msg += self._get_resource_message(resource_type, usage_pct)
         if resource_type in ["ram", "cpu"]:
             msg += self._get_worker_processes_message(resource_type)
         self.notify(msg)
@@ -240,7 +249,7 @@ class Notifier:
             > datetime.now() - timedelta(hours=mute_same_warning_for_n_hours)
         )
 
-    def _get_resource_message(self, resource_type):
+    def _get_resource_message(self, resource_type, usage_pct=None):
         if resource_type == "ram":
             mem = psutil.virtual_memory()
             return f"Free RAM low: {format_bytes(mem.available)} ({mem.percent}%)"
@@ -248,7 +257,9 @@ class Notifier:
             disk = psutil.disk_usage("/")
             return f"Free disk space low: {format_bytes(disk.free)} ({disk.percent}%)"
         elif resource_type == "cpu":
-            return f"CPU usage high: {psutil.cpu_percent()}%"
+            if usage_pct is None:
+                usage_pct = psutil.cpu_percent()
+            return f"CPU usage high: {usage_pct}%"
         else:
             raise ValueError(f"Unknown resource type: {resource_type}")
 
