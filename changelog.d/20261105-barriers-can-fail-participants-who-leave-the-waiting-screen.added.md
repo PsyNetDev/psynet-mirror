@@ -1,0 +1,1 @@
+Added `fail_if_hidden_for` to groupers and barriers: a participant whose tab is hidden or closed for that many seconds while on the waiting screen is failed, and the waiting screen warns them. In multiplayer games this stops a player who left from being put into a group that then waits for them. The `lowest_unique_number` and `ultimatum_pairing` demos use `fail_if_hidden_for=15`.

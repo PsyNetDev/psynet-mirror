@@ -147,7 +147,7 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.page_activity import active_participants
+from psynet.page_activity import away_participants
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
@@ -160,7 +160,12 @@ from psynet.timeline_hold import (
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
 )
-from psynet.utils import call_function_with_context, get_config, get_logger
+from psynet.utils import (
+    call_function_with_context,
+    get_config,
+    get_logger,
+    get_translator,
+)
 
 logger = get_logger()
 
@@ -687,8 +692,23 @@ class _BarrierHoldPage(_TimelineHoldPage):
         return self.barrier._hold_progress_text(participant)
 
     def overlay_html(self, participant=None):
-        """Return hold copy, replacing ``{SECONDS}`` with a live countdown."""
-        html = super().overlay_html(participant)
+        """Return hold copy, with a live ``{SECONDS}`` countdown and the ``fail_if_hidden_for`` warning."""
+        html = self._with_countdown(super().overlay_html(participant), participant)
+        seconds = getattr(self.barrier, "fail_if_hidden_for", None)
+        if seconds is None or self._is_silent_for(participant):
+            return html
+        _p = get_translator(context=True)
+        warning = _p(
+            "timeline_hold",
+            "Keep this tab open. If you leave it for {SECONDS} seconds,"
+            " you will be removed from the experiment.",
+        ).format(SECONDS=ceil(seconds))
+        return html + Markup(
+            '<span class="psynet-timeline-hold-warning">{}</span>'
+        ).format(warning)
+
+    def _with_countdown(self, html, participant):
+        """Replace ``{SECONDS}`` in hold copy with a live countdown to the release."""
         if "{SECONDS}" not in html:
             return html
         release_time = (
@@ -795,6 +815,13 @@ class Barrier(EltCollection):
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
         pass ``markupsafe.Markup`` or a dominate tag for HTML.
+
+    fail_if_hidden_for
+        Seconds. If set, a participant on the waiting screen whose tab is
+        hidden (for example minimised or behind another tab) or closed for
+        this long is failed and sent to the end of the experiment. The
+        waiting screen tells them so. Bots are never failed for this. Only
+        applies when ``waiting_logic`` is omitted. Default: ``None``.
     """
 
     def __init__(
@@ -806,9 +833,15 @@ class Barrier(EltCollection):
         fix_time_credit=False,
         expected_wait=None,
         content=None,
+        fail_if_hidden_for: Optional[float] = None,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
+        if waiting_logic is not None and fail_if_hidden_for is not None:
+            raise ValueError(
+                "fail_if_hidden_for only applies when waiting_logic is omitted."
+            )
+        self.fail_if_hidden_for = fail_if_hidden_for
         self.fix_time_credit = fix_time_credit
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
@@ -1339,6 +1372,9 @@ class GroupBarrier(Barrier):
         on the progress bar, so keep ``kind="notice"`` return values to a
         short sentence. Hold overlay copy may use a second line.
 
+    fail_if_hidden_for
+        Fail a waiting participant whose tab is hidden or closed for this many
+        seconds; see :class:`Barrier`.
     """
 
     @staticmethod
@@ -1389,6 +1425,7 @@ class GroupBarrier(Barrier):
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: bool = False,
+        fail_if_hidden_for: Optional[float] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
         max_wait_time = self._check_max_wait_time(
@@ -1402,6 +1439,7 @@ class GroupBarrier(Barrier):
             fix_time_credit=fix_time_credit,
             expected_wait=expected_wait,
             content=content,
+            fail_if_hidden_for=fail_if_hidden_for,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
@@ -1789,14 +1827,9 @@ class Grouper(Barrier):
         alone. A member whose own request is in progress is handled within about a second by the
         barrier poller instead.
 
-    active_within
-        If set, only participants whose browser tab is visible and was last
-        seen this many seconds ago or less are grouped; the others keep waiting
-        until they come back or ``max_wait_time`` runs out. The default waiting
-        screen checks in about every 2 seconds, so 10 seconds is a good value.
-        With explicit ``waiting_logic``, a participant is only seen when they
-        submit a waiting page, so allow for the longest such page. Bots always
-        count as active. Default: ``None`` (no activity check).
+    fail_if_hidden_for
+        Fail a waiting participant whose tab is hidden or closed for this many
+        seconds; see :class:`Barrier`.
     """
 
     def __init__(
@@ -1810,7 +1843,7 @@ class Grouper(Barrier):
         expected_wait=None,
         fix_time_credit=False,
         content=None,
-        active_within: Optional[float] = None,
+        fail_if_hidden_for: Optional[float] = None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1822,16 +1855,10 @@ class Grouper(Barrier):
             expected_wait=expected_wait,
             fix_time_credit=fix_time_credit,
             content=content,
+            fail_if_hidden_for=fail_if_hidden_for,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
-        self.active_within = active_within
-
-    def _active(self, participants: List[Participant]) -> List[Participant]:
-        """Return the participants who count as active under ``active_within``."""
-        if self.active_within is None:
-            return list(participants)
-        return active_participants(participants, within=self.active_within)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
         """
@@ -1880,7 +1907,6 @@ class Grouper(Barrier):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         participants_to_release = []
-        waiting_participants = self._active(waiting_participants)
 
         if self.ready_to_group(waiting_participants):
             groups = self.group(waiting_participants)
@@ -1899,7 +1925,7 @@ class Grouper(Barrier):
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether this grouper would form groups, without creating them."""
-        return bool(self.ready_to_group(self._active(waiting_participants)))
+        return bool(self.ready_to_group(waiting_participants))
 
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
@@ -2162,7 +2188,7 @@ class SimpleGrouper(Grouper):
             released = super().choose_who_to_release(waiting_participants)
         else:
             joined, still_waiting = [], []
-            for participant in self._active(waiting_participants):
+            for participant in waiting_participants:
                 self._join_existing_groups(participant)
                 if self.group_type in participant.active_sync_groups:
                     joined.append(participant)
@@ -2179,8 +2205,9 @@ class SimpleGrouper(Grouper):
         if not self.join_existing_groups:
             return False
         # Without a join_criterion, every waiter would join the same group.
-        active = self._active(waiting_participants)
-        candidates = active if self.join_criterion else active[:1]
+        candidates = (
+            waiting_participants if self.join_criterion else waiting_participants[:1]
+        )
         return any(self._find_group_to_join(p) is not None for p in candidates)
 
     def ready_to_group(self, participants: List[Participant]) -> bool:
@@ -2203,16 +2230,14 @@ class SimpleGrouper(Grouper):
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when the waiting participants will start short, in epoch seconds.
 
-        ``None`` until ``min_group_size`` participants are waiting (active
-        ones, with ``active_within``), or without ``start_short_after``.
+        ``None`` until ``min_group_size`` participants are waiting, or without
+        ``start_short_after``.
         """
         if self.start_short_after is None or not self._participant_is_waiting(
             participant
         ):
             return None
-        return self._short_start_time(
-            self._active(self.get_waiting_participants(participant))
-        )
+        return self._short_start_time(self.get_waiting_participants(participant))
 
     @property
     def _countdown_key(self):
@@ -2230,7 +2255,7 @@ class SimpleGrouper(Grouper):
             return
         released_ids = {p.id for p in released}
         remaining = [p for p in waiting_participants if p.id not in released_ids]
-        start = self._short_start_time(self._active(remaining))
+        start = self._short_start_time(remaining)
         definition = BarrierDefinition.query.get(self.id)
         if definition is None or definition.var.get(self._countdown_key, None) == start:
             return
@@ -2394,12 +2419,6 @@ class Regrouper(Grouper):
         Longest a participant waits at the regrouper before being failed.
         Default: 300 seconds.
 
-    active_within
-        If set, participants whose tab is in the background or closed are not
-        put into groups; see :class:`Grouper`. They still count as present for
-        a ``within`` group, so the round starts without them. Once back, they
-        are grouped at the pool's next split.
-
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
         countdown to the pool's deadline, for example
@@ -2472,11 +2491,11 @@ class Regrouper(Grouper):
             return None
         pool = next(
             (
-                members or [participant]
-                for _, waiting, members in self._pools(
+                members
+                for _, members in self._pools(
                     self.get_waiting_participants(participant)
                 )
-                if participant in waiting
+                if participant in members
             ),
             [participant],
         )
@@ -2488,11 +2507,11 @@ class Regrouper(Grouper):
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
-        for within_group, waiting, members in self._pools(waiting_participants):
+        for within_group, members in self._pools(waiting_participants):
             if self.within is not None and within_group is None:
-                released += waiting
+                released += members
                 continue
-            if not self._pool_is_ready(within_group, members, waiting):
+            if not self._pool_is_ready(within_group, members):
                 continue
             if self.clock_period is not None:
                 members = self._waiting_at_tick(members, time.time())
@@ -2502,8 +2521,8 @@ class Regrouper(Grouper):
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         return any(
             (self.within is not None and within_group is None)
-            or self._pool_is_ready(within_group, members, waiting)
-            for within_group, waiting, members in self._pools(waiting_participants)
+            or self._pool_is_ready(within_group, members)
+            for within_group, members in self._pools(waiting_participants)
         )
 
     def _within_group(self, participant):
@@ -2512,34 +2531,19 @@ class Regrouper(Grouper):
         return participant.active_sync_groups.get(self.within)
 
     def _pools(self, waiting_participants):
-        """Return ``(within_group, waiting, members)`` for each pool.
-
-        ``members`` are the waiting participants who count as active under
-        ``active_within``; only they are put into groups.
-        """
-        active_ids = {p.id for p in self._active(waiting_participants)}
+        """Yield ``(within_group, members)`` for each pool of waiting participants."""
         pools = {}
         for participant in waiting_participants:
             group = self._within_group(participant)
             key = None if group is None else group.id
             pools.setdefault(key, (group, []))[1].append(participant)
-        return [
-            (group, waiting, [p for p in waiting if p.id in active_ids])
-            for group, waiting in pools.values()
-        ]
+        return list(pools.values())
 
-    def _pool_is_ready(self, within_group, members, waiting) -> bool:
-        """Return whether to split now: everyone is waiting, or the deadline passed.
-
-        A member whose tab is in the background counts as present, so the
-        round isn't held up for them, but is not put into a group.
-        """
-        if not members:
-            return False
+    def _pool_is_ready(self, within_group, members) -> bool:
         if len(members) < self.min_group_size and not self.release_left_over:
             return False
         if self.clock_period is None and within_group is not None:
-            waiting_ids = {participant.id for participant in waiting}
+            waiting_ids = {participant.id for participant in members}
             if all(p.id in waiting_ids for p in within_group.active_participants):
                 return True
         return self._deadline_passed(within_group, members)
@@ -3265,20 +3269,78 @@ def _time_out_overdue_links(participant):
             link.release()
 
 
+def _away_waiter_ids():
+    """Return waiters on a ``fail_if_hidden_for`` waiting screen whose tab has been away that long."""
+    with Session(bind=db.engine) as session:
+        rows = (
+            session.query(Participant, ParticipantLinkBarrier)
+            .join(
+                ParticipantLinkBarrier,
+                ParticipantLinkBarrier.participant_id == Participant.id,
+            )
+            .join(
+                TimelineHoldRecord,
+                TimelineHoldRecord.id == ParticipantLinkBarrier.timeline_hold_id,
+            )
+            .filter(
+                ~ParticipantLinkBarrier.released,
+                ~Participant.failed,
+                Participant.status == "working",
+                TimelineHoldRecord.page_uuid == Participant.page_uuid,
+                TimelineHoldRecord.released_at.is_(None),
+            )
+            .all()
+        )
+        away = set()
+        for participant, link in rows:
+            seconds = getattr(link.get_barrier(), "fail_if_hidden_for", None)
+            if seconds is not None and _is_away(participant, link, seconds):
+                away.add(participant.id)
+        return sorted(away)
+
+
+def _is_away(participant, link, seconds):
+    """Return whether the participant's tab was hidden or closed for ``seconds`` while waiting at ``link``."""
+    since = {participant.id: link.arrival_time.timestamp()}
+    return bool(away_participants([participant], since=since, for_seconds=seconds))
+
+
+def _fail_away_waiter(participant):
+    """Fail the participant if their tab was away for their barrier's ``fail_if_hidden_for``."""
+    for link in list(participant.active_barriers.values()):
+        record = link.timeline_hold
+        if (
+            link.released
+            or record is None
+            or record.page_uuid != participant.page_uuid
+            or record.released_at is not None
+        ):
+            continue
+        barrier = link.get_barrier()
+        seconds = getattr(barrier, "fail_if_hidden_for", None)
+        if seconds is None or not _is_away(participant, link, seconds):
+            continue
+        participant.append_failure_tags(f"barrier:{barrier.id}", "hidden_while_waiting")
+        participant.fail()
+        link.release()
+        return
+
+
 def _time_out_overdue_waiters(sweep_ends):
-    """Apply ``max_wait_time`` to waiters whose hold deadline has passed.
+    """Apply ``max_wait_time`` and ``fail_if_hidden_for`` to waiters.
 
     A waiter's own request normally applies the timeout, so someone who
     closed the tab would otherwise keep waiting, and keep the poller busy,
-    forever. Waiters are timed out earliest deadline first, each in their
-    own transaction, until ``sweep_ends`` (at least one per sweep). A
-    waiter whose own request holds their row is left to that request.
-    Waiters whose timeout raised an error go last, so they cannot use up
-    every sweep's budget.
+    forever. Waiters are timed out earliest deadline first, then those whose
+    tab is away, each in their own transaction, until ``sweep_ends`` (at
+    least one per sweep). A waiter whose own request holds their row is left
+    to that request. Waiters whose timeout raised an error go last, so they
+    cannot use up every sweep's budget.
     """
     from .experiment import get_experiment
 
     overdue_ids = _overdue_waiter_ids()
+    overdue_ids += sorted(set(_away_waiter_ids()) - set(overdue_ids))
     _poller_failed_timeouts.intersection_update(overdue_ids)
     if not overdue_ids:
         return
@@ -3301,6 +3363,8 @@ def _time_out_overdue_waiters(sweep_ends):
             )
             if participant is not None:
                 _time_out_overdue_links(participant)
+                if not participant.failed:
+                    _fail_away_waiter(participant)
             db.session.commit()
         except Exception as err:
             db.session.rollback()

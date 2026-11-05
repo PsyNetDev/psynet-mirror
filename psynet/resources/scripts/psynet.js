@@ -924,8 +924,8 @@
     };
     setInterval(psynet.tickTimelineHoldCountdowns, 250);
 
-    // Groupers can leave out participants whose tab is hidden, so tell the
-    // server at once when a waiting participant's tab is hidden or shown.
+    // Barriers can fail participants whose tab stays hidden, so tell the
+    // server at once when a waiting participant's tab is shown again.
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
     });

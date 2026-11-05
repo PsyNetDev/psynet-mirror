@@ -4184,7 +4184,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         ----------
         page_visible : bool
             Whether the browser tab was visible when it sent this request,
-            recorded for :func:`~psynet.page_activity.active_participants`.
+            recorded for :func:`~psynet.page_activity.away_participants`.
             Keyword-only.
         timeline_hold_resume : bool
             If True, a still-waiting overlay check does not take ``FOR UPDATE``

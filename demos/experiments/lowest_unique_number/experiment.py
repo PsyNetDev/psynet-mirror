@@ -103,8 +103,7 @@ def play_round():
             group_size=ROOM_SIZE,
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
-            # Players who switched to another tab sit the round out.
-            active_within=10,
+            fail_if_hidden_for=15,
             content="The next round starts in {SECONDS} s.",
         ),
         PageMaker(choose_number, time_estimate=5),
@@ -112,6 +111,7 @@ def play_round():
             id_="round_finished",
             group_type="room",
             content="Waiting for the rest of the room…",
+            fail_if_hidden_for=15,
             timeout_between_barriers_time=CHOICE_SECONDS,
             timeout_between_barriers_action="kick",
             skip_if_not_in_group=True,

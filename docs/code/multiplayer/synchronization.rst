@@ -67,17 +67,6 @@ current page, under a waiting indicator, until their group is formed.
     down to that short start once ``min_group_size`` are waiting, and shows
     "…" until then.
 
-``active_within`` (default: ``None``)
-    Seconds. If set, only participants whose browser tab is visible and
-    checked in within this many seconds are grouped. A participant who
-    switched to another tab or closed it keeps waiting, instead of starting
-    a group that then waits for them. The waiting screen checks in about every
-    2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
-    good value. A minimized window counts as hidden. A participant who stays
-    away is still failed, or kicked, after ``max_wait_time``. With explicit
-    ``waiting_logic``, participants only check in when they submit a waiting
-    page, so allow for the longest such page. Bots always count as active.
-
 ``content``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
@@ -196,15 +185,6 @@ on their own.
 
 ``max_wait_time`` (default: 300 seconds)
     The longest a participant waits at the regrouper before being failed.
-
-``active_within`` (default: ``None``)
-    As for :class:`~psynet.sync.SimpleGrouper`: participants whose tab is in
-    the background or closed are not grouped. They still count as ready for
-    their ``within`` group, so the round starts without them. Once they come
-    back, they are grouped at the pool's next split, when the rest of their
-    ``within`` group is waiting again or at the deadline. If the others are
-    still playing at the deadline, a returning player waits on alone or, with
-    ``release_left_over=True``, sits that round out.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by
@@ -339,6 +319,20 @@ Timeouts
     participant who closed the page while waiting, including on
     ``waiting_logic`` pages: the server applies the timeout shortly after
     the deadline.
+
+``fail_if_hidden_for`` (default: ``None``)
+    Seconds, on any grouper or barrier. A participant on the waiting screen
+    whose tab is hidden or closed for this long is failed. Minimising the
+    window, switching to another tab and locking a phone's screen all hide
+    the tab. The waiting screen warns participants, for example "Keep this
+    tab open. If you leave it for 15 seconds, you will be removed from the
+    experiment.", and checks in about every 2 seconds, so ``15`` is a good
+    value. Bots are never failed for this. Only the built-in waiting screen
+    checks in, so the option can't be combined with ``waiting_logic``. In
+    multiplayer games, this stops a player who left from being put into a
+    group that then waits for them. Consider ``prolific_pay_unsuccessful``
+    or similar, so that participants failed this way are still paid for
+    their time.
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
