@@ -5,7 +5,6 @@ import functools
 import glob
 import hashlib
 import importlib
-import inspect
 import io
 import itertools
 import json
@@ -1536,10 +1535,6 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-# In the launch message of Dallinger's hotair and cli recruiters.
-_SINGLE_RECRUITMENT_LINK = re.compile(r"Single recruitment link: (\S+)")
-
-
 def launch_app_without_browsers(port, auth=None, **kwargs):
     """Launch the development app without opening browsers.
 
@@ -1557,22 +1552,18 @@ def launch_app_and_open_browsers(port, auth=None, **kwargs):
     """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
-    with the password embedded; this one prints the login once, in the
-    ``Ready.`` block. It must stay importable by module path because RQ
+    auto-reload runs that open browsers, so that its ``Ready.`` block has
+    PsyNet's rows too. It must stay importable by module path because RQ
     workers resolve it that way. ``auth`` is as for
     :func:`launch_app_without_browsers`.
     """
     develop = importlib.import_module("dallinger.command_line.develop")
 
-    _launch_app_and_report(port, auth=auth)
-    config = get_config()
-    login = (
-        {"dashboard_user": auth[0], "dashboard_password": auth[1]} if auth else config
-    )
+    user, password = _launch_app_and_report(port, auth=auth)
+    login = {"dashboard_user": user, "dashboard_password": password}
     _open_browser_async(develop.dashboard_url(login, port))
     time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    _open_browser_async(develop.ad_url(config, port))
+    _open_browser_async(develop.ad_url(login, port))
 
 
 def _open_browser_async(url):
@@ -1583,49 +1574,32 @@ def _open_browser_async(url):
 
 
 def _launch_app_and_report(port, auth=None):
-    """Launch the development app, then print the ``Ready.`` block.
+    """Launch the development app, print the ``Ready.`` block and return the login used.
 
     ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
-    debug`` puts in the launch job; without it, the login comes from this
-    process's config.
+    debug`` puts in the launch job; without it, Dallinger's ``launch_auth``
+    reads it from this process's config.
 
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
     log and, in an isolated session, the ``export`` line that lets other
-    terminals use the session's database and Redis. With Dallinger versions
-    without ``echo_ready(after=...)``, :func:`_echo_ready` prints it.
+    terminals use the session's database and Redis.
     """
-    from dallinger.deployment import handle_launch_data
+    from dallinger.deployment import handle_launch_data, launch_auth
 
     from .isolated_environment import READY_ENV_VAR
 
     develop = importlib.import_module("dallinger.command_line.develop")
+    auth = tuple(auth or launch_auth())
     launch_data = handle_launch_data(
         develop.BASE_URL.format(port) + "launch",
         error=log,
         delay=1.0,
         context="local",
-        **({"auth": auth} if auth else {}),
+        auth=auth,
     )
-    message = launch_data.get("recruitment_msg")
-    launch_message_rows = getattr(develop, "launch_message_rows", None)
-    if launch_message_rows is not None:
-        details = launch_message_rows(message)
-    else:
-        message = (message or "").strip()
-        link = _SINGLE_RECRUITMENT_LINK.search(message)
-        if link:
-            details = [("Participant link", link.group(1))]
-        else:
-            details = [("Recruitment", message)] if message else []
-
-    config = get_config()
-    if not config.ready:
-        config.load()
-    user, password = auth or (
-        config.get("dashboard_user"),
-        config.get("dashboard_password"),
-    )
+    details = develop.launch_message_rows(launch_data.get("recruitment_msg"))
+    user, password = auth
     details.append(
         (
             "Dashboard",
@@ -1636,42 +1610,8 @@ def _launch_app_and_report(port, auth=None):
     after = []
     if os.environ.get(READY_ENV_VAR):
         after.append(("Other terminals", _isolated_session_export_line(os.environ)))
-    echo_ready = getattr(develop, "echo_ready", None)
-    if echo_ready and "after" in inspect.signature(echo_ready).parameters:
-        echo_ready(details, after=after)
-        return
-    log_file = getattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE", None)
-    if log_file:
-        details.append(("Full log", str(_develop_path(config) / log_file)))
-    _echo_ready(details + after)
-
-
-def _echo_ready(details):
-    """Print the block that ends a local debug session's start-up, as Dallinger's ``echo_ready`` does.
-
-    After a blank line come ``Ready.``, ``details`` as aligned
-    ``label: value`` lines, and how to stop the server, in one write so
-    that server log lines don't split the block::
-
-        Ready.
-          Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&…
-          Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password …)
-        Press Ctrl+C to stop.
-
-    Parameters
-    ----------
-    details : list of (str, str)
-        Labels and values. Lines after the first of a value are indented to
-        line up with it.
-    """
-    width = max(len(label) for label, _ in details) + 1
-    lines = ["", click.style("Ready.", fg="green", bold=True)]
-    for label, value in details:
-        first, *rest = str(value).splitlines() or [""]
-        lines.append(f"  {label + ':':<{width}} {first}")
-        lines.extend((" " * (width + 3) + line).rstrip() for line in rest)
-    lines.append("Press Ctrl+C to stop.")
-    click.echo("\n".join(lines))
+    develop.echo_ready(details, after=after)
+    return auth
 
 
 def _isolated_session_export_line(env):
@@ -1704,8 +1644,7 @@ def _stop_child_processes_on_signal():
             # A terminal Ctrl-C has usually reached the children in this
             # process group already, and a second signal makes Dallinger's
             # worker do a cold shutdown, which prints a traceback. Children in
-            # their own session, like the server of newer Dallinger versions,
-            # don't get it, so they are stopped straight away.
+            # their own session, like Dallinger's server, don't get it, so they are stopped straight away.
             reached = [child for child in children if _in_own_process_group(child)]
             _, still_running = psutil.wait_procs(reached, timeout=3)
             children = still_running + [c for c in children if c not in reached]
