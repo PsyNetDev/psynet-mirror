@@ -306,6 +306,26 @@ Avoid very long tests with extensive monkeypatching unless there is no practical
 alternative; if monkeypatching is necessary, keep it minimal and focused on
 observable behavior rather than internal implementation details.
 
+## Running work in parallel
+
+Test sessions are isolated: `pytest` from this checkout and `psynet test local`
+each get their own database, Redis server and port, so several sessions can run
+at once, alongside a debug server. They still create and remove generated files
+in the experiment directory they use, so a second session for the same
+directory waits for the first.
+
+To test another branch without switching this checkout, use a git worktree, and
+set `PYTHONPATH` because the editable install points here:
+
+```bash
+git worktree add /tmp/wt-<branch> <branch>
+cd /tmp/wt-<branch> && PYTHONPATH=/tmp/wt-<branch> python -m pytest tests/isolated/<file>.py
+```
+
+Only a plain `psynet debug local` uses the shared database, Redis and port 5000.
+Subagents and parallel dogfood runs should use `psynet debug local --isolated`.
+Remove the worktrees when you are done. See `docs/developer/running_tests.rst`.
+
 ## Code organization and documentation
 
 - Prefer marking module-internal helper functions with a leading underscore. Keep public-looking names for functions that are intended to be imported or called from outside the module.
