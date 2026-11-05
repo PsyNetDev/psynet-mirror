@@ -162,20 +162,17 @@ def _queue_timeline_hold_wake(
         )
 
 
-_KEEP_NOTICE = object()
-
-
 def _queue_arrival_update(
-    participant_id, *, hold_message=None, notice=None, group_ready=None
+    participant_id, *, hold_message=None, notice=None, refresh=False
 ):
     """Queue an arrival-progress or partner-ready update after the next commit.
 
     The browser shows ``notice``, or hides its notice if ``notice`` is
-    ``None``; pass ``_KEEP_NOTICE`` to leave it as it is. ``group_ready``
-    has the seats (see :func:`psynet.sync.group_seats`) of the group
-    members now waiting at one barrier, for
-    :class:`~psynet.group_prompt.GroupPrompt`. The update sent lists one
-    ``group_ready`` entry per group and barrier queued in this transaction.
+    ``None``. With ``refresh``, it fetches the participant's notice and
+    the ready seats of their groups instead (see
+    :func:`psynet.sync.arrival_notice_payload`), which are read after the
+    commit and so count every arrival committed by then. Updates queued
+    for a participant in one transaction are merged.
     """
     try:
         key = f"arrival:{participant_id}"
@@ -185,20 +182,10 @@ def _queue_arrival_update(
             "reason": "arrival_update",
             "hold_message": hold_message or previous.get("hold_message"),
         }
-        if notice is not _KEEP_NOTICE:
+        if refresh or previous.get("refresh"):
+            update["refresh"] = True
+        else:
             update["notice"] = notice
-        elif "notice" in previous:
-            update["notice"] = previous["notice"]
-        ready = previous.get("group_ready", [])
-        if group_ready is not None:
-            ready = [
-                entry
-                for entry in ready
-                if (entry["group_id"], entry["barrier_id"])
-                != (group_ready["group_id"], group_ready["barrier_id"])
-            ] + [group_ready]
-        if ready:
-            update["group_ready"] = ready
         _pending_wakes.get()[key] = update
     except Exception:
         logger.warning(

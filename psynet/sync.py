@@ -152,7 +152,6 @@ from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
-    _KEEP_NOTICE,
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
@@ -1340,10 +1339,9 @@ class GroupBarrier(Barrier):
         ``kind`` (``"hold"``, ``"notice"`` or ``"removed"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``recipient``,
         ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
-        surface. For ``"notice"`` it is called once per ``waiting_count``
-        the recipient's browser may show, because the browser combines
-        arrivals that the server handled at the same time; so it should
-        depend only on its arguments and have no side effects. Same
+        surface. For ``"notice"`` it is called whenever the recipient's
+        browser fetches its notice, which can be several times per arrival,
+        so it should depend only on its arguments and have no side effects. Same
         serialization rules as ``on_release``. The default pair
         notice is "Your partner is ready."; pair holds omit a second line.
         ``"removed"`` is the progress-bar notice for someone kicked by
@@ -1524,14 +1522,15 @@ class GroupBarrier(Barrier):
             return
         members = group.active_participants
         waiting = [m for m in members if self._participant_is_waiting(m)]
-        seats = group_seats(group)
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
+        # Arrivals in concurrent requests don't see each other, so the browser
+        # fetches the notice and ready seats after the commit instead of being
+        # sent the counts this request sees.
         for member in members:
             if member.failed:
                 continue
-            ready = self._group_ready_entry(group, seats, members, waiting, member)
-            if member in waiting:
+            if self._participant_is_waiting(member):
                 hold_html = None
                 if self._uses_timeline_hold:
                     hold_page = self.waiting_logic
@@ -1540,49 +1539,9 @@ class GroupBarrier(Barrier):
                     ) and hold_page._is_silent_for(member):
                         continue
                     hold_html = hold_page.overlay_html(member)
-                _queue_arrival_update(
-                    member.id, hold_message=hold_html, group_ready=ready
-                )
-            else:
-                _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=ready)
-
-    def _group_ready_entry(self, group, seats, members, waiting, recipient):
-        """Return the ``group_ready`` entry telling ``recipient`` who is waiting here.
-
-        Arrivals in concurrent requests do not see each other, so the browser
-        counts the union of the seats it has been sent, less those no longer
-        in ``members``. ``n_seats`` says which seats existed when ``members``
-        was read, so that the browser keeps seats of members who joined
-        later. For a recipient who is not waiting, the entry has the notice
-        text for each count that union can reach, from this count up to
-        everyone but the recipient.
-        """
-        entry = {
-            "group_id": group.id,
-            "barrier_id": self.id,
-            "seats": sorted(seats[m.id] for m in waiting),
-            "members": sorted(seats[m.id] for m in members),
-            "n_seats": len(seats),
-        }
-        if recipient in waiting:
-            return entry
-        counts = range(
-            len(waiting), min(len(members), len(waiting) + _MAX_COUNTED_NOTICES)
-        )
-        texts = [
-            self._call_arrival_message(
-                kind="notice",
-                waiting_count=count,
-                group_size=len(members),
-                recipient=recipient,
-                group=group,
-            )
-            for count in counts
-        ]
-        if any(texts):
-            entry["notices"] = [str(text) if text else None for text in texts]
-            entry["notices_from"] = len(waiting)
-        return entry
+                _queue_arrival_update(member.id, hold_message=hold_html, refresh=True)
+                continue
+            _queue_arrival_update(member.id, refresh=True)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -2711,10 +2670,6 @@ class Regrouper(Grouper):
         return group
 
 
-# How many counts, starting at its own, an arrival update has notice texts for.
-_MAX_COUNTED_NOTICES = 12
-
-
 def group_seats(group) -> Dict[int, int]:
     """Return ``{participant_id: seat}`` for everyone who has been in ``group``.
 
@@ -3436,11 +3391,9 @@ def arrival_notice_payload(unique_id):
     """
     from psynet.participant import Participant
 
-    participant = (
-        Participant.query.filter_by(unique_id=unique_id).one_or_none()
-        if unique_id
-        else None
-    )
+    if not unique_id:
+        return {"notice": None, "group_ready": []}
+    participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
         return {"notice": None, "group_ready": []}
     return {
@@ -3450,56 +3403,30 @@ def arrival_notice_payload(unique_id):
 
 
 def _ready_seats_for(participant):
-    """Return ``group_ready`` entries for the group barriers that members of the participant's groups wait at.
+    """Return ``{group_id, seats}`` for each of the participant's groups.
 
-    These are the entries live arrival updates would have sent, so a page
-    that connects late counts them in the same way.
+    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
+    ticks them.
     """
     ready = []
-    reconstructed = {}
     for group in participant.active_sync_groups.values():
-        members = group.active_participants
-        barriers = {}
-        for member in members:
-            for link in member.active_barriers.values():
-                instance = link.barrier_instance
-                if link.released or instance is None or instance.group_id != group.id:
-                    continue
-                barrier = _reconstructed_arrival_barrier(link, reconstructed)
-                if isinstance(barrier, GroupBarrier) and barrier.notify_arrivals:
-                    barriers.setdefault(barrier.id, barrier)
-        if not barriers:
-            continue
         seats = group_seats(group)
-        for barrier in barriers.values():
-            waiting = [m for m in members if barrier._participant_is_waiting(m)]
-            ready.append(
-                barrier._group_ready_entry(group, seats, members, waiting, participant)
-            )
+        waiting = [
+            seats[member.id]
+            for member in group.active_participants
+            if waiting_barrier_ids(member, group)
+        ]
+        ready.append({"group_id": group.id, "seats": sorted(waiting)})
     return ready
 
 
 def _notify_departure(group):
-    """Tell the remaining members of ``group`` who is still in it.
-
-    The entry has no barrier, so the browser drops the seats of members who
-    left at every barrier of the group without asking the barrier for texts.
-    """
+    """Have the remaining members of ``group`` fetch their notice and ready seats again."""
     if getattr(group, "_dissolving_below_min_size", False):
         return
-    remaining = group.active_participants
-    if not remaining:
-        return
-    seats = group_seats(group)
-    entry = {
-        "group_id": group.id,
-        "barrier_id": None,
-        "seats": [],
-        "members": sorted(seats[m.id] for m in remaining),
-        "n_seats": len(seats),
-    }
-    for member in remaining:
-        _queue_arrival_update(member.id, notice=_KEEP_NOTICE, group_ready=entry)
+    for member in group.active_participants:
+        _queue_arrival_update(member.id, refresh=True)
 
 
 def waiting_barrier_ids(participant, group):

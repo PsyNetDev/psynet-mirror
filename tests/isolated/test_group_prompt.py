@@ -21,10 +21,6 @@ from test_regrouper import _arrive, _commit_barrier_arrivals  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
-def _no_notice(**kwargs):
-    return None
-
-
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -41,32 +37,19 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     group = third.active_sync_groups["room"]
     assert len({p.pseudonym.name for p in (first, second, third)}) == 3
 
+    # Arrivals in concurrent requests don't see each other, so every member,
+    # including those already waiting, fetches the committed state instead.
     published.clear()
-    barrier = GroupBarrier("decided", group_type="room", on_arrival_message=_no_notice)
-    _arrive(exp, barrier, [first, second])
+    _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
+    refreshed = {t["participant_id"] for t in published if t.get("refresh")}
+    assert refreshed == {first.id, second.id, third.id}
     seats = group_seats(group)
-    both = sorted([seats[first.id], seats[second.id]])
-    (*_, update) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"][-1]["seats"] == both
-    # Without notice text, the update leaves the browser's notice alone.
-    assert "notice" not in update and "notices" not in update["group_ready"][-1]
-    # Members already waiting get the ticks too.
-    (*_, update) = [t for t in published if t["participant_id"] == first.id]
-    assert update["group_ready"][-1]["seats"] == both
-
-    # Otherwise it carries the notice for each count the browser can reach,
-    # so that it can count arrivals that concurrent requests reported apart.
-    published.clear()
-    _arrive(exp, GroupBarrier("next", group_type="room"), [first])
-    (update,) = [t for t in published if t["participant_id"] == third.id]
-    assert update["group_ready"][-1]["notices_from"] == 1
-    assert update["group_ready"][-1]["notices"] == [
-        "1/3 of your group are ready.",
-        "2/3 of your group are ready.",
-    ]
-    # A page that connects later gets the same entry from the snapshot.
-    snapshot = arrival_notice_payload(third.unique_id)["group_ready"]
-    assert update["group_ready"][-1] in snapshot
+    assert arrival_notice_payload(third.unique_id) == {
+        "notice": "2/3 of your group are ready.",
+        "group_ready": [
+            {"group_id": group.id, "seats": sorted([seats[first.id], seats[second.id]])}
+        ],
+    }
 
     html = GroupPrompt("Choose", group=group, participant=third).group_html
     assert html.index(">You<") < html.index(first.pseudonym.name)
@@ -106,12 +89,11 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     ).group_html
     assert "psynet-group-bubble--none" in html and ">None<" not in html
 
-    # When a member leaves, the others stop counting them straight away.
+    # When a member leaves, the others fetch the seats again without them.
     published.clear()
     group.remove_participant(first)
     _commit_barrier_arrivals()
-    (update, *_) = [t for t in published if t["participant_id"] == third.id]
-    assert {seats[first.id]}.isdisjoint(update["group_ready"][-1]["members"])
+    assert any(t.get("refresh") for t in published if t["participant_id"] == third.id)
 
 
 @pytest.mark.parametrize(

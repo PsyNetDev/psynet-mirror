@@ -18,7 +18,7 @@ function extract(name) {
   return match[0];
 }
 
-function load() {
+it("drops arrival snapshots that come back after a newer one", () => {
   const psynet = { notices: [] };
   psynet.applyArrivalNotice = (notice) => psynet.notices.push(notice);
   const window = { pageUuid: "page-1", dispatchEvent() {} };
@@ -27,59 +27,17 @@ function load() {
     "psynet",
     "window",
     "CustomEvent",
-    ["applyArrivalTarget", "readySeatsFor", "addReadySeats", "pruneReadySeats", "dropDepartedSeats"]
-      .map(extract)
-      .join("\n")
+    ["applyArrivalSnapshot", "readySeatsFor"].map(extract).join("\n")
   )(psynet, window, CustomEvent);
-  return psynet;
-}
 
-const notices = (from, to) =>
-  Array.from({ length: to - from + 1 }, (_, i) => `${from + i}/6 ready`);
-const entry = (seats, members, from, nSeats = 6) => ({
-  group_id: 1,
-  barrier_id: "chose",
-  seats,
-  members,
-  n_seats: nSeats,
-  notices: notices(from, 5),
-  notices_from: from,
-});
-
-it("counts arrivals reported out of order and by the connect snapshot", () => {
-  const psynet = load();
-  const members = [0, 1, 2, 3, 4, 5];
-  psynet.applyArrivalTarget({ group_ready: [entry([0, 1, 2], members, 3)] });
-  psynet.applyArrivalTarget({ group_ready: [entry([3], members, 1)] });
-  // A snapshot that saw fewer arrivals can't lower the count.
-  psynet.applyArrivalTarget({ notice: "1/6 ready", group_ready: [entry([0], members, 1)] });
-  assert.deepEqual(psynet.notices, ["3/6 ready", "4/6 ready", "4/6 ready"]);
-});
-
-it("drops members who left, but not later joiners missing from an older list", () => {
-  const psynet = load();
-  psynet.applyArrivalTarget({ group_ready: [entry([0, 1, 4, 5], [0, 1, 2, 3, 4, 5], 3)] });
-  assert.deepEqual(psynet.addReadySeats(entry([], [0, 2, 3, 4], 0)).seats, [0, 4]);
-  assert.deepEqual(psynet.addReadySeats(entry([], [0, 2, 3], 0, 4)).seats, [0, 4]);
-});
-
-it("leaves the notice alone for an entry without notice texts", () => {
-  const psynet = load();
-  psynet.applyArrivalTarget({ group_ready: [entry([0, 1, 2], [0, 1, 2, 3, 4, 5], 3)] });
-  const waiting = { ...entry([0, 1, 2], [0, 1, 2, 3, 4, 5], 3) };
-  delete waiting.notices;
-  psynet.applyArrivalTarget({ notice: null, group_ready: [waiting] });
-  assert.deepEqual(psynet.notices, ["3/6 ready", null]);
-});
-
-it("drops a member who left at every barrier, and hides the stale notice", () => {
-  const psynet = load();
-  psynet.applyArrivalTarget({ group_ready: [entry([5], [0, 1, 2, 3, 4, 5], 1)] });
-  psynet.applyArrivalTarget({
-    group_ready: [
-      { group_id: 1, barrier_id: null, seats: [], members: [0, 1, 2, 3, 4], n_seats: 6 },
-    ],
+  const snapshot = (count) => ({
+    notice: `${count}/6 ready`,
+    group_ready: [{ group_id: 1, seats: [...Array(count).keys()] }],
   });
+  psynet.applyArrivalSnapshot(snapshot(4), 2);
+  psynet.applyArrivalSnapshot(snapshot(3), 1);
+  assert.deepEqual(psynet.notices, ["4/6 ready"]);
+  assert.deepEqual(psynet.readySeatsFor(1), [0, 1, 2, 3]);
+  window.pageUuid = "page-2";
   assert.deepEqual(psynet.readySeatsFor(1), []);
-  assert.deepEqual(psynet.notices, ["1/6 ready", null]);
 });

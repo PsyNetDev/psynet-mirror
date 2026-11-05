@@ -1,10 +1,9 @@
 // Live ticks for GroupPrompt.
 //
-// GroupBarrier sends the seats of the members waiting at it with each
-// arrival update, and the seats still in the group; psynet.js turns that
-// into a "psynetGroupReady" window event. The server draws the initial
-// ticks; this adds the ones sent since, including any that arrived before
-// this module activated, and removes those of members who have left.
+// After each arrival or departure in the group, psynet.js fetches the seats
+// of the members waiting in it and sends them in a "psynetGroupReady" window
+// event. The server draws the initial ticks; this makes them match each
+// event, starting with any that arrived before this module activated.
 
 export async function activate({root, vars}) {
     var config = vars["group_prompt"] || {};
@@ -36,8 +35,8 @@ export async function activate({root, vars}) {
         }
     }
 
-    function untickAllBut(members) {
-        var kept = new Set(members.map(Number));
+    function untickAllBut(seats) {
+        var kept = new Set(seats.map(Number));
         root.querySelectorAll(".psynet-group-member--answered").forEach(function (member) {
             if (kept.has(Number(member.dataset.seat))) return;
             member.classList.remove("psynet-group-member--answered");
@@ -49,7 +48,7 @@ export async function activate({root, vars}) {
     function onReady(event) {
         var detail = event.detail || {};
         if (detail.groupId !== config.group_id) return;
-        if (detail.members) untickAllBut(detail.members);
+        untickAllBut(detail.seats || []);
         tick(detail.seats || []);
     }
 

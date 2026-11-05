@@ -110,6 +110,18 @@ The browser opens the live-update WebSocket for arrival notices only while
 the participant is in an active sync group. Hold pages reuse the hold-channel
 socket instead.
 
+Arrivals in concurrent requests don't see each other's uncommitted links, so
+a count read in the arriving request can be too low. Arrival and departure
+updates therefore carry no counts: they ask the browser to fetch
+``/timeline/arrival_notice`` (:func:`psynet.sync.arrival_notice_payload`)
+again. That request starts after the update's commit, so the response to the
+last update counts every arrival. Responses can come back out of order, and
+the browser drops any response to an earlier request than one it has shown.
+The response also has the seats of the members waiting in each of the
+participant's groups, for the ticks of :class:`~psynet.group_prompt.GroupPrompt`.
+Hold overlays for members who are already waiting are still sent with the
+update, so their counts can lag until the next arrival.
+
 Time credit
 -----------
 

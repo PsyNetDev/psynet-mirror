@@ -5704,9 +5704,9 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     _arrive_at_group_barrier(exp, barrier, first)
     db_session.commit()
 
-    # The browser shows the notice for the number of ready members.
-    notices = [
-        (target.get("group_ready") or [{}])[-1].get("notices", [None])[0]
+    # The partner's browser fetches the notice after the commit.
+    refreshed = [
+        target.get("refresh")
         for _, payload in publications
         for target in payload["targets"]
     ]
@@ -5715,7 +5715,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
         for _, payload in publications
         for target in payload["targets"]
     ]
-    assert "Your partner is ready." in notices
+    assert any(refreshed)
     assert all(
         not message or "psynet-timeline-hold-progress" not in message
         for message in hold_messages
@@ -5724,15 +5724,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     assert arrival_notice_payload(last.unique_id) == {
         "notice": "Your partner is ready.",
         "group_ready": [
-            {
-                "group_id": first.active_sync_groups["main"].id,
-                "barrier_id": "notify_arrivals",
-                "seats": [0],
-                "members": [0, 1],
-                "n_seats": 2,
-                "notices": ["Your partner is ready."],
-                "notices_from": 1,
-            }
+            {"group_id": first.active_sync_groups["main"].id, "seats": [0]}
         ],
     }
     assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}
