@@ -2126,7 +2126,7 @@ class Page(Elt):
         # transitions. The public timeline route now serves full pages (plus
         # mode=json), while /response embeds this fragment payload directly.
         from .background_recording import _browser_config
-        from .modular_page import VideoRecordControl
+        from .modular_page import RecordControl
 
         internal_js_vars = {
             "backgroundRecording": _browser_config(self, experiment, participant),
@@ -2136,8 +2136,8 @@ class Page(Elt):
             "recordingCaptureSources": self._recording_capture_sources(),
         }
         control = getattr(self, "control", None)
-        if isinstance(control, VideoRecordControl):
-            internal_js_vars["asynchronousVideoUploadSources"] = (
+        if isinstance(control, RecordControl):
+            internal_js_vars["asynchronousUploadSources"] = (
                 control.recording_sources
                 if control._uses_async_upload(experiment)
                 else None

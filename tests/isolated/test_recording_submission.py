@@ -285,6 +285,131 @@ def test_bots_declare_recordings_for_upload_after_acceptance(submission):
     assert set(response.blobs) == {"cameraRecording", "screenRecording"}
 
 
+def test_custom_record_controls_keep_uploading_with_the_answer(submission):
+    """A subclass that does not opt in renders and submits as before."""
+    from psynet.modular_page import RecordControl
+
+    class CustomRecordControl(RecordControl):
+        macro = "audio_record"
+
+    exp, _, _, _ = submission
+    control = CustomRecordControl(duration=1)
+    assert not control._uses_async_upload(exp)
+    assert control.get_js_vars()["asynchronousUploadSources"] is None
+
+
+def test_subclasses_that_read_the_answer_bytes_keep_uploading_with_it(submission):
+    """Overriding ``format_answer`` or the macro opts out; other overrides don't."""
+    from psynet.modular_page import AudioRecordControl
+
+    class ReadsBytes(AudioRecordControl):
+        def format_answer(self, raw_answer, **kwargs):
+            return kwargs["blobs"]["audioRecording"]
+
+    class OwnTemplate(AudioRecordControl):
+        macro = "my_audio_record"
+
+    class LongerIdle(AudioRecordControl):
+        _async_upload_idle_timeout = 300
+
+    class Settings:
+        _async_upload = True
+
+    class FromMixin(Settings, AudioRecordControl):
+        pass
+
+    exp, _, _, _ = submission
+    assert not ReadsBytes(duration=1)._uses_async_upload(exp)
+    assert not OwnTemplate(duration=1)._uses_async_upload(exp)
+    assert LongerIdle(duration=1)._uses_async_upload(exp)
+    assert FromMixin(duration=1)._uses_async_upload(exp)
+    instance_template = AudioRecordControl(duration=1)
+    instance_template.macro = "my_audio_record"
+    assert not instance_template._uses_async_upload(exp)
+
+
+def test_record_controls_opting_in_defer_their_recordings(submission):
+    """A ``RecordControl`` that opts in needs no ``format_answer`` of its own."""
+    from types import SimpleNamespace
+
+    from psynet.modular_page import RecordControl
+
+    class WavRecordControl(RecordControl):
+        macro = "audio_record"
+        _async_upload = True
+        _upload_format = "wav"
+        recording_sources = ["audio"]
+
+        def _answer_metadata(self):
+            return {}
+
+    exp, _, _, _ = submission
+    response = SimpleNamespace()
+    WavRecordControl(duration=1).format_answer(
+        None,
+        experiment=exp,
+        response=response,
+        blobs={},
+        metadata={"recording_uploads": {"audio": 10}},
+    )
+    assert response._deferred_recording_answer
+    assert response._recording_sizes == {"audio": 10}
+
+
+@pytest.mark.parametrize("size, uploads", [(1000, 1), (8 * 1024**2, 0)])
+def test_audio_answers_upload_after_acceptance(submission, monkeypatch, size, uploads):
+    """Audio answers use the same deferred path as video, as WAV files."""
+    from pathlib import Path
+
+    from psynet.modular_page import AudioRecordControl
+
+    exp, participant, _, _ = submission
+    control = AudioRecordControl(duration=3)
+    page = ModularPage("audio", "Record", control, time_estimate=3)
+    timeline = Timeline(page, InfoPage("Continue", time_estimate=1))
+    monkeypatch.setattr(exp, "timeline", timeline)
+    participant.elt_id = ["main", -1]
+    timeline.advance_page(exp, participant)
+    db.session.commit()
+    # 4.5 s of headroom over 3 s at up to 192 kHz, 16-bit mono, plus the header.
+    assert control._recording_max_bytes() == 44 + 9.5 * 192_000 * 2
+    result = exp.process_response(
+        participant_id=participant.id,
+        raw_answer=None,
+        blobs={},
+        metadata={
+            "time_taken": 3,
+            "recording_uploads": {"audio": size},
+            "recording_upload_unavailable": {},
+        },
+        page_uuid=participant.page_uuid,
+        client_ip_address="127.0.0.1",
+    ).payload
+    assert result["submission"] == "approved"
+    assert len(result["recording_uploads"]) == uploads
+    recording = Recording.query.filter_by(local_key="audio").one()
+    assert (recording.extension, recording.upload_context["format"]) == (".wav", "wav")
+    assert participant.answer["asset_id"] == recording.id
+    assert participant.answer["url"] == recording.url
+    if not uploads:
+        assert recording.upload_failed_reason == "size_limit"
+
+    bot_file = (
+        Path(__file__).resolve().parents[2]
+        / "demos/features/video/example_audio_recording.wav"
+    )
+    control.bot_response_media = str(bot_file)
+    bot = control.get_bot_response(exp, bot=None, page=page, prompt=None)
+    assert bot.metadata["recording_uploads"] == {"audio": bot_file.stat().st_size}
+
+    control.bot_response_media = str(
+        bot_file.parents[2]
+        / "experiments/imitation_chain_video/assets/example_recording.webm"
+    )
+    with pytest.raises(ValueError, match="must be a RIFF/WAVE file"):
+        control.get_bot_response(exp, bot=None, page=page, prompt=None)
+
+
 @pytest.mark.parametrize(
     "unavailable", [{"other": "queue_full"}, {"camera": {}}, {"camera": "unknown"}]
 )

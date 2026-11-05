@@ -4,12 +4,13 @@ Components declare their media, events, JavaScript variables, and rendering;
 ModularPage combines these declarations and delegates answer formatting and
 validation to its control unless the author supplies page-level validation.
 
-The asynchronous video path stages metadata during formatting and reserves
+The asynchronous recording path stages metadata during formatting and reserves
 recordings only after validation succeeds. Final references must be saved before
 completion hooks or navigation run; rejected answers must not create upload slots.
 """
 
 import json
+import math
 import os
 import random
 import shutil
@@ -3626,6 +3627,18 @@ class RecordControl(Control):
     """
 
     file_extension = None
+    # Asynchronous upload: in-place LocalStorage experiments accept the answer
+    # first and receive its recordings afterwards (see psynet.media_upload).
+    # Legacy navigation and other storage keep uploading with the answer.
+    # Subclasses opt in by setting _async_upload and describe their recordings
+    # through recording_sources, _upload_format, _answer_metadata and
+    # _answer_reference_keys; their synchronous path is _format_sync_answer.
+    # Subclasses of an opted-in control that override format_answer or macro
+    # keep uploading with the answer (see _async_upload_enabled).
+    _async_upload = False
+    _async_upload_max_bytes = 128 * 1024 * 1024
+    _async_upload_idle_timeout = None
+    _upload_format = None
 
     def __init__(
         self,
@@ -3666,6 +3679,217 @@ class RecordControl(Control):
             events["autoSubmit"] = Event(is_triggered_by="submitEnable")
         # events["uploadEnd"] = Event(is_triggered_by=[])
 
+    @property
+    def recording_sources(self):
+        """The recording sources this control captures, e.g. ``["camera"]``."""
+        raise NotImplementedError
+
+    def _answer_metadata(self):
+        """Answer fields shared by the synchronous and asynchronous paths."""
+        raise NotImplementedError
+
+    def _answer_reference_keys(self, source):
+        """Answer fields that hold a recording's asset ID and URL."""
+        return f"{source}_id", f"{source}_url"
+
+    def _recording_local_key(self, source):
+        """Asset key of a recording; multi-source controls add the source."""
+        label = self.page.label
+        if len(self.recording_sources) > 1:
+            label += "_" + source
+        return label
+
+    def _recording_max_bytes(self):
+        """Largest recording the server accepts for one source."""
+        return self._async_upload_max_bytes
+
+    def _async_upload_enabled(self):
+        """Whether this control's answer and template support asynchronous upload.
+
+        A subclass or instance that overrides ``format_answer`` or ``macro`` may
+        read the recording bytes from the answer, so it keeps uploading with the
+        answer.
+        """
+        if "_async_upload" in self.__dict__:
+            return self._async_upload
+        if "macro" in self.__dict__:
+            return False
+        # The most specific class that sets _async_upload or overrides one of
+        # these decides; setting _async_upload alongside an override re-opts in.
+        for cls in type(self).__mro__:
+            if "_async_upload" in cls.__dict__:
+                return cls._async_upload
+            if "format_answer" in cls.__dict__ or "macro" in cls.__dict__:
+                return False
+        return False
+
+    def _uses_async_upload(self, experiment):
+        """Use independent delivery for the supported shared LocalStorage backend."""
+        from .utils import get_config
+
+        return (
+            self._async_upload_enabled()
+            and isinstance(experiment.asset_storage, LocalStorage)
+            and get_config().get("inplace_timeline_transitions")
+        )
+
+    def format_answer(self, raw_answer, **kwargs):
+        if self._uses_async_upload(kwargs["experiment"]):
+            return self._format_async_answer(**kwargs)
+        return self._format_sync_answer(raw_answer, **kwargs)
+
+    def _format_sync_answer(self, raw_answer, **kwargs):
+        """Format an answer whose recordings were uploaded with it."""
+        return super().format_answer(raw_answer, **kwargs)
+
+    def _format_async_answer(self, **kwargs):
+        """Validate the browser's size manifest; recordings arrive after acceptance."""
+        sizes = kwargs["metadata"].get("recording_uploads")
+        if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
+            raise ValueError(
+                "Upload sizes must identify every expected recording source."
+            )
+        if any(
+            type(size) is not int or not 0 <= size <= 2**53 - 1
+            for size in sizes.values()
+        ):
+            raise ValueError("Recording sizes must be nonnegative safe integers.")
+        if kwargs["blobs"]:
+            raise ValueError(
+                "Asynchronous recording answers must not include recording bytes."
+            )
+        unavailable = kwargs["metadata"].get("recording_upload_unavailable", {})
+        if (
+            not isinstance(unavailable, dict)
+            or not set(unavailable).issubset(sizes)
+            or any(
+                not isinstance(reason, str)
+                or reason
+                not in {
+                    "missing_recording",
+                    "size_limit",
+                    "queue_full",
+                    "transport_unavailable",
+                }
+                for reason in unavailable.values()
+            )
+        ):
+            raise ValueError("Invalid recording unavailability manifest.")
+        unavailable = dict(unavailable)
+        for source, size in sizes.items():
+            if size == 0:
+                unavailable[source] = "missing_recording"
+            elif size > self._recording_max_bytes():
+                unavailable[source] = "size_limit"
+        response = kwargs["response"]
+        response._recording_unavailable = unavailable
+        response._deferred_recording_answer = True
+        response._recording_sizes = dict(sizes)
+        summary = self._answer_metadata()
+        for source in self.recording_sources:
+            for key in self._answer_reference_keys(source):
+                summary[key] = None
+        return summary
+
+    def get_js_vars(self):
+        """Provide defaults; rendering resolves the experiment storage backend."""
+        return {
+            "recordingLabels": _recording_labels(),
+            "asynchronousUploadSources": self.recording_sources
+            if self._async_upload_enabled()
+            else None,
+            "asynchronousUploadMaxBytes": self._recording_max_bytes(),
+        }
+
+    def _accept_recordings(self, response, participant, page_uuid):
+        """Install final read references and capabilities only after acceptance."""
+        from .media_upload import (
+            _IDLE_TIMEOUT,
+            _reserve_recording,
+            _resolve_unavailable,
+        )
+        from .trial.record import Recording
+
+        sizes = response._recording_sizes
+        parent = participant.current_trial or participant
+        summary = dict(response.answer)
+        uploads = []
+        max_bytes = self._recording_max_bytes()
+        for source in self.recording_sources:
+            asset, receipt = _reserve_recording(
+                response=response,
+                parent=parent,
+                page_uuid=page_uuid,
+                source=source,
+                local_key=self._recording_local_key(source),
+                storage=Recording.default_storage,
+                upload_size_bytes=min(sizes[source], max_bytes) or None,
+                max_bytes=max_bytes,
+                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
+                media_format=self._upload_format,
+            )
+            reason = response._recording_unavailable.get(source)
+            asset.upload_context = {
+                **asset.upload_context,
+                "captured_size_bytes": sizes[source],
+                "unavailable_reason": reason,
+            }
+            if reason:
+                # The browser already knows these bytes cannot be uploaded, so
+                # resolve now rather than waiting for the lease to expire.
+                _resolve_unavailable(asset, reason, participant.current_trial)
+            id_key, url_key = self._answer_reference_keys(source)
+            summary[id_key] = asset.id
+            summary[url_key] = asset.url
+            if not reason:
+                uploads.append({**receipt, "source": source})
+        response.answer = summary
+        return uploads
+
+    def _recording_bot_response(self, experiment, files):
+        """Respond like a browser: on the asynchronous path, declare sizes now.
+
+        ``files`` maps each source to the file the bot should return. The bot
+        driver uploads each file to ``/media-upload`` after the answer is
+        accepted, so load tests exercise the same routes as participants.
+        """
+        from .bot import BotResponse
+
+        blobs = {
+            f"{source}Recording": Blob(files[source])
+            for source in self.recording_sources
+        }
+        if not self._uses_async_upload(experiment):
+            return BotResponse(raw_answer=None, blobs=blobs)
+        from .media_upload import _MEDIA_FORMATS
+
+        header_size, valid_header, format_name = _MEDIA_FORMATS[self._upload_format]
+        for source in self.recording_sources:
+            with open(files[source], "rb") as file:
+                if not valid_header(file.read(header_size)):
+                    raise ValueError(
+                        f"Bot recording {files[source]} must be a {format_name} "
+                        f"file for {type(self).__name__}."
+                    )
+        sizes = {
+            source: os.path.getsize(files[source]) for source in self.recording_sources
+        }
+        for source, size in sizes.items():
+            if size > self._recording_max_bytes():
+                logger.warning(
+                    f"Bot recording {files[source]} ({size} bytes) exceeds the "
+                    f"{self._recording_max_bytes()}-byte limit for this control, "
+                    "so its trial will fail with size_limit."
+                )
+        return BotResponse(
+            raw_answer=None,
+            blobs=blobs,
+            metadata={
+                "recording_uploads": sizes,
+                "recording_upload_unavailable": {},
+            },
+        )
+
     def get_bot_response_files(self, experiment, bot, page, prompt):
         if self.bot_response_media is None:
             self.raise_bot_response_not_provided_error()
@@ -3688,6 +3912,17 @@ class AudioRecordControl(RecordControl):
     """
     Records audio from a participant.
 
+    In-place experiments using :class:`~psynet.asset.LocalStorage` accept answers
+    before uploading the recording, as a WAV file. A missing recording fails its
+    parent trial, without recapturing. For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback. Legacy navigation, other storage
+    backends and subclasses that override ``format_answer`` or ``macro``
+    upload the recording with the answer. Uploaded recordings are limited to
+    about one and a half times ``duration`` plus 5 seconds, so a page that ends
+    recording on its own event should set ``duration`` to the longest expected
+    recording.
+
     Parameters
     ----------
 
@@ -3707,6 +3942,11 @@ class AudioRecordControl(RecordControl):
 
     macro = "audio_record"
     file_extension = ".wav"
+    _async_upload = True
+    _upload_format = "wav"
+    # recorder.js writes 16-bit PCM at the browser's sample rate, which some
+    # audio interfaces set as high as 192 kHz.
+    _max_sample_rate = 192_000
 
     def __init__(
         self,
@@ -3726,7 +3966,29 @@ class AudioRecordControl(RecordControl):
         self.num_channels = num_channels
         self.bot_response_media = bot_response_media
 
-    def format_answer(self, raw_answer, **kwargs):
+    @property
+    def recording_sources(self):
+        return ["audio"]
+
+    def _answer_reference_keys(self, source):
+        return "asset_id", "url"
+
+    def _answer_metadata(self):
+        return {
+            "origin": "AudioRecordControl",
+            "supports_record_trial": True,
+            "duration_sec": self.duration,  # TODO - base this on the actual audio file?
+        }
+
+    def _recording_max_bytes(self):
+        """Bound an uncompressed WAV of this duration, with timing headroom."""
+        seconds = 1.5 * self.duration + 5
+        wav_bytes = 44 + math.ceil(seconds * self._max_sample_rate) * 2 * max(
+            1, self.num_channels
+        )
+        return min(self._async_upload_max_bytes, wav_bytes)
+
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         audio = blobs["audioRecording"]
         trial = kwargs["trial"]
@@ -3757,36 +4019,38 @@ class AudioRecordControl(RecordControl):
             asset.deposit(async_=async_, delete_input=True)
 
         return {
-            "origin": "AudioRecordControl",
-            "supports_record_trial": True,
+            **self._answer_metadata(),
             "asset_id": asset.id,
             "url": asset.url,
-            "duration_sec": self.duration,  # TODO - base this on the actual audio file?
         }
 
     def visualize_response(self, answer, response, trial):
+        """Show the recording, or its outcome while it is unavailable."""
+        from .trial.record import Recording
+
         if answer is None:
             return tags.p("No audio recorded yet.").render()
-        else:
-            return tags.audio(
-                tags.source(src=answer["url"]),
-                id="visualize-audio-response",
-                controls=True,
-            ).render()
+        recording = Recording.query.filter_by(id=answer.get("asset_id")).one_or_none()
+        if recording is None or not recording.deposited:
+            status = (
+                recording.recording_summary["recording_status"]
+                if recording
+                else "unavailable"
+            )
+            return tags.p(f"Recording {status}.").render()
+        return tags.audio(
+            tags.source(src=recording.url),
+            id="visualize-audio-response",
+            controls=True,
+        ).render()
 
     def update_events(self, events):
         super().update_events(events)
         events["trialFinish"].add_trigger("recordEnd")
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        from .bot import BotResponse
-
         file = self.get_bot_response_files(experiment, bot, page, prompt)
-
-        return BotResponse(
-            raw_answer=None,
-            blobs={"audioRecording": Blob(file)},
-        )
+        return self._recording_bot_response(experiment, {"audio": file})
 
     def raise_bot_response_not_provided_error(self):
         raise NotImplementedError(
@@ -3826,8 +4090,9 @@ class VideoRecordControl(RecordControl):
     before uploading video, for bots too. A missing recording fails its parent
     trial, without recapturing: immediately if the browser reports it unavailable,
     otherwise once the participant's browser stops renewing the upload (for
-    example, because it was closed). For playback outside a trial, use
-    :func:`~psynet.page.wait_for_recording` and provide an unavailable-media fallback.
+    example, because it was closed). For playback on a later page, including
+    one in the same trial, use :func:`~psynet.page.wait_for_recording` and
+    provide an unavailable-media fallback.
     Legacy navigation and other storage backends upload the recording with the
     answer.
 
@@ -3865,12 +4130,8 @@ class VideoRecordControl(RecordControl):
 
     macro = "video_record"
     file_extension = ".webm"
-    # In-place LocalStorage experiments use acceptance-bound uploads; legacy
-    # navigation and other storage retain their existing deposit path.
-    # Kept private for transport regression fixtures.
     _async_upload = True
-    _async_upload_max_bytes = 128 * 1024 * 1024
-    _async_upload_idle_timeout = None
+    _upload_format = "webm"
 
     def __init__(
         self,
@@ -3911,65 +4172,7 @@ class VideoRecordControl(RecordControl):
             self.recording_source
         ]
 
-    def _uses_async_upload(self, experiment):
-        """Use independent delivery for the supported shared LocalStorage backend."""
-        from .utils import get_config
-
-        return (
-            self._async_upload
-            and isinstance(experiment.asset_storage, LocalStorage)
-            and get_config().get("inplace_timeline_transitions")
-        )
-
-    def format_answer(self, raw_answer, **kwargs):
-        if self._uses_async_upload(kwargs["experiment"]):
-            sizes = kwargs["metadata"].get("recording_uploads")
-            if not isinstance(sizes, dict) or set(sizes) != set(self.recording_sources):
-                raise ValueError(
-                    "Upload sizes must identify every expected recording source."
-                )
-            if any(
-                type(size) is not int or not 0 <= size <= 2**53 - 1
-                for size in sizes.values()
-            ):
-                raise ValueError("Recording sizes must be nonnegative safe integers.")
-            if kwargs["blobs"]:
-                raise ValueError(
-                    "Asynchronous video answers must not include recording bytes."
-                )
-            unavailable = kwargs["metadata"].get("recording_upload_unavailable", {})
-            if (
-                not isinstance(unavailable, dict)
-                or not set(unavailable).issubset(sizes)
-                or any(
-                    not isinstance(reason, str)
-                    or reason
-                    not in {
-                        "missing_recording",
-                        "size_limit",
-                        "queue_full",
-                        "transport_unavailable",
-                    }
-                    for reason in unavailable.values()
-                )
-            ):
-                raise ValueError("Invalid recording unavailability manifest.")
-            unavailable = dict(unavailable)
-            for source, size in sizes.items():
-                if size == 0:
-                    unavailable[source] = "missing_recording"
-                elif size > self._async_upload_max_bytes:
-                    unavailable[source] = "size_limit"
-            response = kwargs["response"]
-            response._recording_unavailable = unavailable
-            response._deferred_video_answer = True
-            response._recording_sizes = dict(sizes)
-            summary = self._answer_metadata()
-            for source in self.recording_sources:
-                summary[f"{source}_id"] = None
-                summary[f"{source}_url"] = None
-            return summary
-
+    def _format_sync_answer(self, raw_answer, **kwargs):
         blobs = kwargs["blobs"]
         trial = kwargs["trial"]
         participant = kwargs["participant"]
@@ -4036,62 +4239,6 @@ class VideoRecordControl(RecordControl):
             "mirrored": self.mirrored,
         }
 
-    def get_js_vars(self):
-        """Provide defaults; rendering resolves the experiment storage backend."""
-        return {
-            "recordingLabels": _recording_labels(),
-            "asynchronousVideoUploadSources": self.recording_sources
-            if self._async_upload
-            else None,
-            "asynchronousVideoUploadMaxBytes": self._async_upload_max_bytes,
-        }
-
-    def _accept_recordings(self, response, participant, page_uuid):
-        """Install final read references and capabilities only after acceptance."""
-        from .media_upload import (
-            _IDLE_TIMEOUT,
-            _reserve_recording,
-            _resolve_unavailable,
-        )
-        from .trial.record import Recording
-
-        sizes = response._recording_sizes
-        parent = participant.current_trial or participant
-        summary = dict(response.answer)
-        uploads = []
-        for source in self.recording_sources:
-            label = self.page.label
-            if len(self.recording_sources) > 1:
-                label += "_" + source
-            asset, receipt = _reserve_recording(
-                response=response,
-                parent=parent,
-                page_uuid=page_uuid,
-                source=source,
-                local_key=label,
-                storage=Recording.default_storage,
-                upload_size_bytes=min(sizes[source], self._async_upload_max_bytes)
-                or None,
-                max_bytes=self._async_upload_max_bytes,
-                idle_timeout=self._async_upload_idle_timeout or _IDLE_TIMEOUT,
-            )
-            reason = response._recording_unavailable.get(source)
-            asset.upload_context = {
-                **asset.upload_context,
-                "captured_size_bytes": sizes[source],
-                "unavailable_reason": reason,
-            }
-            if reason:
-                # The browser already knows these bytes cannot be uploaded, so
-                # resolve now rather than waiting for the lease to expire.
-                _resolve_unavailable(asset, reason, participant.current_trial)
-            summary[f"{source}_id"] = asset.id
-            summary[f"{source}_url"] = asset.url
-            if not reason:
-                uploads.append({**receipt, "source": source})
-        response.answer = summary
-        return uploads
-
     def visualize_response(self, answer, response, trial):
         """Show available clips and explicit outcomes instead of broken players."""
         from .trial.record import Recording
@@ -4127,28 +4274,8 @@ class VideoRecordControl(RecordControl):
         events["trialFinish"].add_trigger("recordEnd")
 
     def get_bot_response(self, experiment, bot, page, prompt):
-        """Respond like a browser: on the asynchronous path, declare sizes now.
-
-        The bot driver then uploads each file to ``/media-upload`` after the
-        answer is accepted, so load tests exercise the same routes as
-        participants.
-        """
-        from .bot import BotResponse
-
         files = self.get_bot_response_files(experiment, bot, page, prompt)
-        blobs = {f"{key}Recording": Blob(files[key]) for key in self.recording_sources}
-        if not self._uses_async_upload(experiment):
-            return BotResponse(raw_answer=None, blobs=blobs)
-        return BotResponse(
-            raw_answer=None,
-            blobs=blobs,
-            metadata={
-                "recording_uploads": {
-                    key: os.path.getsize(files[key]) for key in self.recording_sources
-                },
-                "recording_upload_unavailable": {},
-            },
-        )
+        return self._recording_bot_response(experiment, files)
 
     def get_bot_response_files(self, experiment, bot, page, prompt):
         files = super().get_bot_response_files(experiment, bot, page, prompt)

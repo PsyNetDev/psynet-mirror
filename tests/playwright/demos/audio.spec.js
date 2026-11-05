@@ -14,7 +14,8 @@ const {
   waitForNextEnabled,
   waitForTimelinePageReady,
   waitForTrialEvents,
-  withExperiment
+  withExperiment,
+  isInplaceTimelineModeEnabled,
 } = require("../psynetHarness");
 
 const PROMPT_TIMEOUT_MS = 90000;
@@ -360,6 +361,10 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       await experimentPage.evaluate(() => psynet.page.control.playRecording());
     }
     await waitForSoundActiveState(experimentPage, "recording", true, 10000);
+    const recordSubmission = experimentPage.waitForRequest(request =>
+      new URL(request.url()).pathname === "/response" && request.method() === "POST",
+      { timeout: STEP_TIMEOUT_MS }
+    );
     await clickNextAndWait(experimentPage, STEP_TIMEOUT_MS);
     await waitForResponseSubmitIncrement(
       submitTracker,
@@ -367,6 +372,17 @@ test("audio demo", { tag: "@both" }, async ({ page, context }) => {
       1,
       STEP_TIMEOUT_MS
     );
+    // In-place experiments declare the WAV with the answer and upload it
+    // afterwards; legacy navigation still uploads it with the answer. (Chromium
+    // does not expose Blob-backed multipart bodies, so legacy mode can only be
+    // checked for the absence of the asynchronous declaration.)
+    const recordBody = (await recordSubmission).postDataBuffer()?.toString("latin1") || "";
+    if (isInplaceTimelineModeEnabled()) {
+      expect(recordBody).toContain('"recording_uploads"');
+      expect(recordBody).not.toContain('name="audioRecording"');
+    } else {
+      expect(recordBody).not.toContain('"recording_uploads"');
+    }
 
     // Section 14: validate playback checkpoint page and continue deterministically.
     await completeRecordedPlaybackCheckpoint(experimentPage);
