@@ -516,13 +516,15 @@ When the target number of participants is reached:
 
 If the server was provisioned only for this study, tear it down as well;
 see :doc:`/deploy/setting_up_a_server`. For an EC2 server created with
-``dallinger ec2 provision``, pass the same ``--dns-host`` so that the DNS
-records and the server registration are removed:
+``dallinger ec2 provision``, teardown also removes its DNS records and server
+registrations:
 
 .. code:: bash
 
-   dallinger ec2 teardown --name my-server --region us-east-1 \
-       --dns-host my-server.your-domain.org
+   dallinger ec2 teardown --name my-server --region us-east-1
+
+For a server provisioned by an older Dallinger, add the ``--dns-host`` it was
+provisioned with.
 
 Once an EC2 server is terminated, anything on it that was not exported is
 lost.

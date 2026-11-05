@@ -112,11 +112,11 @@ dallinger ec2 provision \
 ```
 
 Before provisioning or registering a server, check (without printing values)
-that `~/.dallingerconfig` sets `dashboard_password`, `server_pem` pointing at
-the unencrypted `~/.ssh/<ec2_default_pem>.pem`, and a real
-`contact_email_on_error`. Server commands ignore the experiment's
-`config.txt` and reject its template placeholder `XXX@gmail.com`; ask the
-user for the address rather than inventing one.
+that `~/.dallingerconfig` sets a real `contact_email_on_error`. Server
+commands ignore the experiment's `config.txt` and reject its template
+placeholder `XXX@gmail.com`; ask the user for the address rather than
+inventing one. `dallinger ec2 provision` also needs `dashboard_password`, and
+`server_pem` pointing at the unencrypted `~/.ssh/<ec2_default_pem>.pem`.
 
 Provisioning also starts the shared Caddy, Postgres and Dozzle services and
 prints the Dozzle password once; record that it exists, not its value.
@@ -143,7 +143,7 @@ Destroy and teardown:
 
 ```bash
 psynet destroy ssh --app <app-name> --server <server-name>.cap-experiments.com
-dallinger ec2 teardown --name <server-name> --region <region> --dns-host <server-name>.cap-experiments.com
+dallinger ec2 teardown --name <server-name> --region <region>
 ```
 
 ## Common failure modes
