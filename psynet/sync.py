@@ -442,7 +442,9 @@ def _get_waiting_participants(
     waiters = [link.participant for link in links]
     _populate_active_barriers(waiters)
     _populate_sync_group_links(waiters)
-    return waiters
+    # Without row locks, another request can release a waiter between the
+    # two queries; they are no longer waiting here.
+    return [p for p in waiters if barrier_id in p.active_barriers]
 
 
 def _arrival_time(barrier, participant):
