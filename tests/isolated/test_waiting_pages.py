@@ -82,6 +82,8 @@ def test_release_interrupts_a_waiting_page(
 
         _json_timeline(exp, Participant.query.get(last_id))
         db.session.expire_all()
+        last = Participant.query.get(last_id)
+        assert exp.timeline.get_current_elt(exp, last).label == "after"
         first = Participant.query.get(first_id)
         assert waiting_status_payload(first.unique_id, waiting["barrier_id"])[
             "released"

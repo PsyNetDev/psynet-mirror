@@ -3234,6 +3234,8 @@ def _interruptible_waiting_barrier(page, participant):
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
         return None
+    if participant.failed:
+        return None
     trial = participant.current_trial
     if trial is not None and not trial.finalized:
         return None
@@ -3265,7 +3267,7 @@ def waiting_page_config(page, participant):
     built; the page's first status check then ends it.
     """
     barrier = _interruptible_waiting_barrier(page, participant)
-    if barrier is None or participant.failed:
+    if barrier is None:
         return None
     return {
         "barrier_id": barrier.id,

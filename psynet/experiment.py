@@ -4343,8 +4343,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if interrupted:
                 from .sync import released_waiting_barrier
 
-                barrier = released_waiting_barrier(event, participant)
-                if barrier is None:
+                if released_waiting_barrier(event, participant) is None:
                     return ResponseResult(
                         payload={"submission": "rejected", "message": ""}
                     )
@@ -4353,7 +4352,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 participant.inc_progress(event.time_estimate)
                 self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
-                    participant, self._skip_released_waiting_pages(participant, barrier)
+                    participant, self.timeline.get_current_elt(self, participant)
                 )
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
@@ -4612,10 +4611,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         identity. After the last allowed skip, this walk observes the landing
         page so settling on the cap still succeeds.
         """
-        from .sync import _MAX_BARRIER_WALK_PASSES, _barrier_walk_budget
+        from .sync import (
+            _MAX_BARRIER_WALK_PASSES,
+            _barrier_walk_budget,
+            released_waiting_barrier,
+        )
         from .timeline_hold import holding_next_hold_catchup
 
         for can_work in _barrier_walk_budget():
+            released = released_waiting_barrier(page, participant)
+            if released is not None:
+                page = self._skip_released_waiting_pages(participant, released)
             if not _is_timeline_hold(page):
                 return page
             if not page.prepare_resume_if_ready(self, participant):

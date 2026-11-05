@@ -414,7 +414,8 @@ answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 Any other waiting pages left in the same pass of ``waiting_logic`` are
-skipped. Pass ``release_grace=None`` to let every waiting page run to its
+skipped, and so are all of them for the participant whose arrival completes
+the group. Pass ``release_grace=None`` to let every waiting page run to its
 end. Pages inside a trial, as in ``sync_quorum``, always run to their end,
 so that the trial is not left without an answer.
 
