@@ -17,7 +17,7 @@
     display: grid;
     grid-auto-flow: column;
     grid-template-rows: repeat(3, auto);
-    grid-auto-columns: minmax(4em, max-content);
+    grid-auto-columns: minmax(min-content, max-content);
     justify-content: center;
     gap: 0 1.5em;
 }
@@ -26,11 +26,10 @@
     display: grid;
     grid-row: span 3;
     grid-template-rows: subgrid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(min-content, 1fr);
     row-gap: 0;
     justify-items: center;
     align-items: end;
-    min-width: 0;
 }
 
 .psynet-group-members--row .psynet-group-bubble {
@@ -246,7 +245,7 @@
             .psynet-group-bubble:not(.psynet-group-bubble--none)
         ) {
         grid-auto-flow: row;
-        grid-template-columns: repeat(2, minmax(4em, max-content));
+        grid-template-columns: repeat(2, minmax(min-content, max-content));
         row-gap: 0.8em;
     }
 
