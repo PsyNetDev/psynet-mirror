@@ -697,9 +697,14 @@ class _BarrierHoldPage(_TimelineHoldPage):
         if remaining_ms is None or remaining_ms <= 0:
             # A passed release time means the split is waiting on something else.
             return html.replace("{SECONDS}", "…")
+        # Screen readers get the starting value once, not a live region that
+        # changes every second.
+        seconds = ceil(remaining_ms / 1000)
         countdown = Markup(
-            '<span class="psynet-timeline-hold-countdown" data-release-in-ms="{}">{}</span>'
-        ).format(remaining_ms, ceil(remaining_ms / 1000))
+            '<span class="psynet-timeline-hold-countdown" aria-hidden="true"'
+            ' data-release-in-ms="{}">{}</span>'
+            '<span class="visually-hidden">{}</span>'
+        ).format(remaining_ms, seconds, seconds)
         return Markup(html.replace("{SECONDS}", countdown))
 
     def prepare_to_resume(self, participant):
@@ -1886,8 +1891,8 @@ class SimpleGrouper(Grouper):
         longest-waiting participant has waited this many seconds and at least
         ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
         are waiting, they form one smaller group. Requires
-        ``min_group_size < initial_group_size``. Default: ``None`` (always wait for
-        ``batch_size``).
+        ``min_group_size < initial_group_size`` and a ``max_wait_time`` longer than
+        ``start_short_after``. Default: ``None`` (always wait for ``batch_size``).
 
     kwargs
         Further arguments to pass to Grouper.
@@ -1945,6 +1950,16 @@ class SimpleGrouper(Grouper):
             raise ValueError(
                 "start_short_after needs min_group_size < initial_group_size, "
                 "otherwise there is no smaller group to start with."
+            )
+        if (
+            start_short_after is not None
+            and self.max_wait_time is not None
+            and self.max_wait_time <= start_short_after
+        ):
+            raise ValueError(
+                f"start_short_after ({start_short_after} s) must be less than "
+                f"max_wait_time ({self.max_wait_time} s), otherwise participants "
+                "are failed before a smaller group can start."
             )
         self.start_short_after = start_short_after
 
@@ -2318,15 +2333,21 @@ class Regrouper(Grouper):
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
             return None
-        reference = max(
-            self._last_split(within_group) or 0,
-            _arrival_time(self, participant).timestamp(),
-        )
         if self.clock_period is not None:
             return _latest_tick(time.time(), self.clock_period) + self.clock_period
         if self.deadline is None:
             return None
-        return reference + self.deadline
+        pool = next(
+            (
+                members or [participant]
+                for _, waiting, members in self._pools(
+                    self.get_waiting_participants(participant)
+                )
+                if participant in waiting
+            ),
+            [participant],
+        )
+        return self._deadline_reference(within_group, pool) + self.deadline
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
@@ -2336,6 +2357,8 @@ class Regrouper(Grouper):
                 continue
             if not self._pool_is_ready(within_group, members, waiting):
                 continue
+            if self.clock_period is not None:
+                members = self._waiting_at_tick(members, time.time())
             released += self._split(within_group, members)
         return released
 
@@ -2391,20 +2414,26 @@ class Regrouper(Grouper):
             return self._enough_waiting_at_tick(members, last_split, now)
         if self.deadline is None:
             return False
+        return now - self._deadline_reference(within_group, members) >= self.deadline
+
+    def _deadline_reference(self, within_group, members) -> float:
+        """Return when a pool's deadline starts: its first arrival, or its last split if later."""
         first_arrival = min(_arrival_time(self, p) for p in members).timestamp()
-        reference = max(last_split or 0, first_arrival)
-        return now - reference >= self.deadline
+        return max(self._last_split(within_group) or 0, first_arrival)
+
+    def _waiting_at_tick(self, members, now):
+        """Return the members who were already waiting at the latest tick."""
+        tick = _latest_tick(now, self.clock_period)
+        return [p for p in members if _arrival_time(self, p).timestamp() <= tick]
 
     def _enough_waiting_at_tick(self, members, last_split, now) -> bool:
         """Return whether enough members were already waiting at the latest unused tick."""
-        tick = _latest_tick(now, self.clock_period)
-        if last_split is not None and last_split >= tick:
+        if last_split is not None and last_split >= _latest_tick(
+            now, self.clock_period
+        ):
             return False
-        waiting_at_tick = [
-            p for p in members if _arrival_time(self, p).timestamp() <= tick
-        ]
         needed = 1 if self.release_left_over else self.min_group_size
-        return len(waiting_at_tick) >= needed
+        return len(self._waiting_at_tick(members, now)) >= needed
 
     @property
     def _state_key(self):
@@ -2422,10 +2451,13 @@ class Regrouper(Grouper):
 
     def _split(self, within_group, members):
         """Form this pool's groups and return the participants to release."""
-        groups = []
-        for group_members in self.form_groups(members, within_group=within_group):
-            if group_members:
-                groups.append(self._make_group(group_members))
+        plan = [
+            list(group_members)
+            for group_members in self.form_groups(members, within_group=within_group)
+            if group_members
+        ]
+        self._check_plan(plan, members)
+        groups = [self._make_group(group_members) for group_members in plan]
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
@@ -2450,6 +2482,21 @@ class Regrouper(Grouper):
         if self.release_left_over:
             released += left_over
         return released
+
+    def _check_plan(self, plan, members):
+        """Raise if ``form_groups`` placed someone twice or placed a non-member."""
+        member_ids = {p.id for p in members}
+        placed = [p.id for group_members in plan for p in group_members]
+        if len(placed) != len(set(placed)):
+            raise ValueError(
+                f"Regrouper '{self.id}': form_groups put a participant in two groups."
+            )
+        outsiders = set(placed) - member_ids
+        if outsiders:
+            raise ValueError(
+                f"Regrouper '{self.id}': form_groups placed participants "
+                f"{sorted(outsiders)}, who are not waiting in this pool."
+            )
 
     def _make_group(self, participants):
         group = SimpleSyncGroup(
@@ -2579,9 +2626,11 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
-        if self.n_active_participants == 0:
+        if self.n_active_participants == 0 and not getattr(
+            self, "accepts_top_ups", False
+        ):
             self.close()
-        else:
+        elif self.n_active_participants > 0:
             self.check_leader()
 
     def _dissolve(self):

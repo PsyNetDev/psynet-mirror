@@ -150,7 +150,7 @@ def test_clock_regrouper_splits_everyone_waiting_into_balanced_rooms(
 ):
     exp = get_experiment()
     rooms = Regrouper("room", group_size=3, deadline=Clock(45))
-    participants = _working_participants(exp, 5)
+    participants = _working_participants(exp, 6)
     _arrive(exp, rooms, participants)
     assert not rooms.would_release(participants)
 
@@ -158,11 +158,41 @@ def test_clock_regrouper_splits_everyone_waiting_into_balanced_rooms(
     _backdate_arrivals(rooms, participants[:1], 60)
     assert not rooms.would_release(participants)
 
-    _backdate_arrivals(rooms, participants[1:], 60)
+    # The last player arrived after the tick, so waits for the next one.
+    _backdate_arrivals(rooms, participants[1:5], 60)
     released = rooms.choose_who_to_release(participants)
 
+    assert participants[5] not in released
     sizes = sorted(len(g.participants) for g in {p.sync_group for p in released})
     assert sizes == [2, 3]
+
+
+def _put_first_member_in_two_groups(members, **_):
+    return [members, members[:1]]
+
+
+@in_consents_experiment
+def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    pairs = Regrouper(
+        "pair",
+        group_size=2,
+        deadline=30,
+        form_groups=_put_first_member_in_two_groups,
+    )
+    first, later = _working_participants(exp, 2)
+    _arrive(exp, pairs, [first])
+    _backdate_arrivals(pairs, [first], 20)
+    _arrive(exp, pairs, [later])
+
+    assert pairs.expected_release_time(later) == pytest.approx(
+        pairs.expected_release_time(first)
+    )
+    _backdate_arrivals(pairs, [first], 20)
+    with pytest.raises(ValueError, match="two groups"):
+        pairs.choose_who_to_release([first, later])
 
 
 @in_consents_experiment
@@ -184,9 +214,16 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     assert participants[0].sync_group.initial_group_size == 2
 
 
-def test_simple_grouper_start_short_after_needs_a_smaller_min_group_size():
+@pytest.mark.parametrize(
+    "kwargs",
+    [{}, {"min_group_size": 2, "start_short_after": 60}],
+    ids=["no smaller group", "failed before a short start"],
+)
+def test_simple_grouper_checks_start_short_after(kwargs):
     with pytest.raises(ValueError, match="start_short_after"):
-        SimpleGrouper("lobby", initial_group_size=4, start_short_after=10)
+        SimpleGrouper(
+            "lobby", initial_group_size=4, **{"start_short_after": 10, **kwargs}
+        )
 
 
 def _count_releases(**kwargs):

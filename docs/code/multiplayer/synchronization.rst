@@ -60,7 +60,8 @@ current page, under a waiting indicator, until their group is formed.
     Seconds after which a smaller group may start. Once the longest-waiting
     participant has waited this long and at least ``min_group_size`` are
     waiting, those waiting form a group even if there are fewer than
-    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``.
+    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
+    a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up.
 
@@ -71,10 +72,12 @@ current page, under a waiting indicator, until their group is formed.
     a group that then waits for them. The waiting screen and ``waiting_logic``
     pages check in about every 2 seconds and as soon as the tab is hidden or
     shown again, so ``10`` is a good value. A minimized window counts as
-    hidden, and a participant who stays away is still failed after
-    ``max_wait_time``. Pages inside trials, and barriers with
-    ``release_grace=None``, don't check in, so participants there are only
-    seen when they submit a page; allow for the longest such page. Bots
+    hidden. On the default waiting screen, a participant who stays away is
+    still failed after ``max_wait_time``; with explicit ``waiting_logic``,
+    ``max_wait_time`` is only checked when they submit a waiting page. Pages
+    inside trials, and barriers with ``release_grace=None``, don't check in,
+    so participants there are only seen when they submit a page; allow for
+    the longest such page. Bots
     always count as active.
 
 ``content``

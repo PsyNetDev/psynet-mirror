@@ -10,7 +10,9 @@ participant's record stays fresh.
 The records live in Redis rather than the database because they change every
 few seconds and must not take row locks: the waiting-page poll deliberately
 keeps its database transaction read-only so it never blocks barrier releases.
-Records expire after an hour. If Redis is unavailable, participants count as
+Records expire after a day, longer than any sensible ``max_wait_time``, so
+a hidden participant does not count as active again while still waiting. If
+Redis is unavailable or a record can't be read, participants count as
 active, so grouping degrades to the behavior without activity checks.
 """
 
@@ -24,7 +26,7 @@ from .utils import get_logger
 
 logger = get_logger()
 
-_EXPIRE_SECONDS = 3600
+_EXPIRE_SECONDS = 24 * 3600
 
 
 def _key(participant_id):
@@ -60,13 +62,21 @@ def active_participants(participants, within: float):
     except RedisError:
         logger.warning("Could not read page activity; counting everyone as active.")
         return list(participants)
-    records = {p.id: json.loads(value) for p, value in zip(browsers, raw) if value}
+    records = {p.id: value for p, value in zip(browsers, raw) if value}
     now = time.time()
 
     def is_active(participant):
-        record = records.get(participant.id)
-        if isinstance(participant, Bot) or record is None:
+        value = records.get(participant.id)
+        if isinstance(participant, Bot) or value is None:
             return True
-        return record["visible"] and now - record["seen"] <= within
+        try:
+            record = json.loads(value)
+            return bool(record["visible"]) and now - float(record["seen"]) <= within
+        except (ValueError, TypeError, KeyError):
+            logger.warning(
+                "Unreadable page activity for participant %s; counting them as active.",
+                participant.id,
+            )
+            return True
 
     return [p for p in participants if is_active(p)]

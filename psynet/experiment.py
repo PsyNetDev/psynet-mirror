@@ -1565,11 +1565,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         for resource_type, pct in resources.items():
             if pct > resource_danger_pct:
                 cls.notifier.resource_usage_notification(
-                    resource_type, mute_same_warning_for_n_hours, level="danger"
+                    resource_type,
+                    mute_same_warning_for_n_hours,
+                    level="danger",
+                    usage_pct=pct,
                 )
             elif pct > resource_warning_pct:
                 cls.notifier.resource_usage_notification(
-                    resource_type, mute_same_warning_for_n_hours, level="warning"
+                    resource_type,
+                    mute_same_warning_for_n_hours,
+                    level="warning",
+                    usage_pct=pct,
                 )
 
         minimal_disk_space_warning_gb = config.get("minimal_disk_space_warning_gb")
