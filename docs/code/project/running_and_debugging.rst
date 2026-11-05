@@ -60,7 +60,7 @@ also add ``--no-browsers``):
 
 .. code-block:: console
 
-    $ psynet debug local --isolated --no-browsers
+    $ psynet debug local --isolated
     Local PostgreSQL and Redis: OK.
     Using database dallinger_test_5100, Redis 127.0.0.1:6479 and port 5100.
     Experiment files OK (config.txt, experiment.py; 0 MB).

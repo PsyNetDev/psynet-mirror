@@ -43,8 +43,8 @@ port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with
 `psynet debug local --isolated --no-browsers`, which uses a free port and a
-temporary database and Redis that are removed when it stops (see "Run several experiments at once" in
-`code/project/running_and_debugging`).
+temporary database and Redis that are removed when it stops (see "Run
+several experiments at once" in `code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
 `psynet debug ssh`, `psynet debug heroku` and `psynet performance-test ssh`)
 prepare in a scratch database and Redis of their own, so they leave a running
