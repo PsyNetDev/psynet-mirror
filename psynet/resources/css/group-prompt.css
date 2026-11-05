@@ -10,13 +10,41 @@
     padding: 0;
 }
 
-/* Up to four members sit in a row. */
+/* Up to four members sit in a row. Members share the bubble, animal and name
+   rows, so animals stay level however bubbles and names wrap; narrow columns
+   wrap names rather than members. */
 .psynet-group-members--row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(3, auto);
+    grid-auto-columns: minmax(4em, max-content);
     justify-content: center;
-    align-items: flex-start;
-    gap: 1em 1.5em;
+    gap: 0 1.5em;
+}
+
+.psynet-group-members--row .psynet-group-member {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+    justify-items: center;
+    align-items: end;
+    min-width: 0;
+}
+
+.psynet-group-members--row .psynet-group-bubble {
+    grid-row: 1;
+    max-width: min(11em, 100%);
+}
+
+.psynet-group-members--row .psynet-group-avatar {
+    grid-row: 2;
+}
+
+.psynet-group-members--row .psynet-group-name {
+    grid-row: 3;
+    align-self: start;
 }
 
 /* More zigzag: wrapped rows of up to --columns cells spread over the width,
@@ -172,7 +200,7 @@
 }
 
 .psynet-group-member--winner .psynet-group-bubble::before {
-    content: "★ ";
+    content: "★\00a0";
 }
 
 .psynet-group-member--duplicate .psynet-group-bubble {
@@ -210,7 +238,16 @@
     }
 
     .psynet-group-members--row {
-        gap: 0.8em 1em;
+        column-gap: 0.6em;
+    }
+
+    /* Four answer bubbles do not fit side by side: two lines of two. */
+    .psynet-group-members--row:has(> :nth-child(4)):has(
+            .psynet-group-bubble:not(.psynet-group-bubble--none)
+        ) {
+        grid-auto-flow: row;
+        grid-template-columns: repeat(2, minmax(4em, max-content));
+        row-gap: 0.8em;
     }
 
     .psynet-group-member .psynet-pseudonym-sticker {

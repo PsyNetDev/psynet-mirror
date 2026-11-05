@@ -3,10 +3,11 @@
  * laptop and a phone, with and without answer bubbles, members must be
  * readable and visible. Animals, labels and bubbles stay inside the window
  * and off the rest of the page; animals and labels never overlap each
- * other; a bubble may overlap a neighbour, but hovering over its member
- * brings it to the front. Text is not clipped and has enough contrast. The
- * HTML comes from GroupPrompt itself (render_group_prompt.py), with the
- * longest pseudonyms.
+ * other. Rows of up to three members fit on one line; in a row, animals on
+ * a line are level and bubbles side by side however text wraps; in a zigzag a bubble
+ * may overlap a neighbour, but hovering over its member brings it to the
+ * front. Text is not clipped and has enough contrast. The HTML comes from
+ * GroupPrompt itself (render_group_prompt.py), with the longest pseudonyms.
  */
 const fs = require("fs");
 const path = require("path");
@@ -26,6 +27,8 @@ const VIEWPORTS = [
 ];
 const SHAPES = [
   { size: 2 },
+  { size: 2, answer: "I accept 4 or more" },
+  { size: 3, show_names: true },
   { size: 4 },
   { size: 5 },
   { size: 8 },
@@ -36,7 +39,7 @@ const SHAPES = [
   { size: 2, anonymous: true, show_names: true },
 ];
 const CASES = SHAPES.flatMap((shape) => [
-  { ...shape, answers: false },
+  ...(shape.answer ? [] : [{ ...shape, answers: false }]),
   { ...shape, answers: true, note: "1 was picked twice" },
 ]);
 const describeCase = (c) =>
@@ -45,6 +48,7 @@ const describeCase = (c) =>
     c.subgroup_size && `in subgroups of ${c.subgroup_size}`,
     c.anonymous && "anonymous",
     c.show_names && "with names",
+    c.answer && "with a wrapping answer",
     c.answers && "with answers",
   ]
     .filter(Boolean)
@@ -125,6 +129,40 @@ function groupLayoutProblems() {
       if (visible(part)) boxes.push({ el: part, member });
     }
   }
+  // Whether two boxes overlap, or only their vertical extents for "y".
+  const overlap = (a, b, axis) => {
+    const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    return y > 1 && (axis === "y" || x > 1);
+  };
+
+  // Rows of up to three members fit on one line. Animals sharing a line are
+  // level, and bubbles sit side by side.
+  for (const row of document.querySelectorAll(".psynet-group-members--row")) {
+    const stickers = [...row.querySelectorAll(".psynet-pseudonym-sticker")].map((sticker) =>
+      sticker.getBoundingClientRect()
+    );
+    const lines = stickers.filter((a, i) => !stickers.slice(0, i).some((b) => overlap(a, b, "y")));
+    if (stickers.length <= 3 && lines.length > 1) {
+      problems.push(`a row of ${stickers.length} members wraps`);
+    }
+    for (const [i, a] of stickers.entries()) {
+      for (const b of stickers.slice(i + 1)) {
+        if (overlap(a, b, "y") && Math.abs(a.top - b.top) > 1) {
+          problems.push(`row animals are not level (tops ${a.top}, ${b.top})`);
+        }
+      }
+    }
+    const bubbles = [...row.querySelectorAll(".psynet-group-bubble")].filter(visible);
+    for (const [i, a] of bubbles.entries()) {
+      for (const b of bubbles.slice(i + 1)) {
+        if (overlap(a.getBoundingClientRect(), b.getBoundingClientRect())) {
+          problems.push(`${describe(a)} overlaps ${describe(b)}`);
+        }
+      }
+    }
+  }
+
   // Bubbles may overlap other members (hovering brings them to the front).
   const isBubble = (el) => el.classList.contains("psynet-group-bubble");
   const page = ["#prompt-text", "#control", ".psynet-group-note"]
@@ -141,11 +179,6 @@ function groupLayoutProblems() {
 
   // Parts of different members, and parts of one member other than its tick,
   // never overlap; nor do they overlap the text, controls or note.
-  const overlap = (a, b) => {
-    const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-    const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-    return x > 1 && y > 1;
-  };
   for (let i = 0; i < boxes.length; i++) {
     const a = boxes[i].el.getBoundingClientRect();
     for (let j = i + 1; j < boxes.length; j++) {
