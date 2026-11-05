@@ -3126,9 +3126,13 @@ def _interruptible_waiting_barrier(page, participant):
 
 
 def waiting_page_config(page, participant):
-    """Return the browser config for a waiting page that a release may end, or ``None``."""
+    """Return the browser config for a waiting page that a release may end, or ``None``.
+
+    The participant may already have been released while this page was being
+    built; the page's first status check then ends it.
+    """
     barrier = _interruptible_waiting_barrier(page, participant)
-    if barrier is None or not barrier._participant_is_waiting(participant):
+    if barrier is None or participant.failed:
         return None
     return {
         "barrier_id": barrier.id,
