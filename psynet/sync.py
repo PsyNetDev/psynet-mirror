@@ -1359,7 +1359,9 @@ class GroupBarrier(Barrier):
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs keep the hold title only. Set ``False`` to disable both.
-        Passing ``on_arrival_message`` implies ``True``.
+        Passing ``on_arrival_message`` implies ``True``. A member removed by
+        ``timeout_between_barriers_action="kick"`` is told either way; return
+        ``None`` from ``on_arrival_message`` for ``kind="removed"`` to hide it.
 
     drop_late_members_after
         Seconds. Shorthand for round-based games: a member who hasn't reached
@@ -1745,8 +1747,6 @@ class GroupBarrier(Barrier):
         their own request holds their row, since they are leaving the page.
         A failing message callback is logged rather than stopping the kick.
         """
-        if not self.notify_arrivals:
-            return
         try:
             text = self._call_arrival_message(
                 kind="removed",

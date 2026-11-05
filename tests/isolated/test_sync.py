@@ -6468,8 +6468,9 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("notify_arrivals", [True, False])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, notify_arrivals
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6477,6 +6478,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group_type="main",
         timeout_between_barriers_time=5,
         timeout_between_barriers_action="kick",
+        notify_arrivals=notify_arrivals,
     )
 
     # Create 3 participants in the same sync group, but only 2 "reach" this barrier.
