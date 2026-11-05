@@ -23,7 +23,7 @@ Design constraints:
 
 import random
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from markupsafe import Markup
 
@@ -200,6 +200,29 @@ class PseudonymScheme:
             '<span class="psynet-pseudonym-icon" aria-hidden="true" title="{}"'
             ' style="--psynet-pseudonym-color: {}">{}</span>'
         ).format(name, css_color, emoji)
+
+    def replacement(self, taken) -> Optional[Tuple[str, str]]:
+        """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
+
+        Used to give a new group member a pseudonym that differs from the
+        others'. ``taken`` is a collection of ``(color, animal)`` pairs. The
+        default prefers a pair whose colour and animal are both unused.
+        """
+        taken = set(taken)
+        used_colors = {color for color, _ in taken}
+        used_animals = {animal for _, animal in taken}
+        free = [
+            (color, animal)
+            for color in self.colors()
+            for animal in self.animals()
+            if (color, animal) not in taken
+        ]
+        distinct = [
+            pair
+            for pair in free
+            if pair[0] not in used_colors and pair[1] not in used_animals
+        ]
+        return (distinct or free or [None])[0]
 
     def pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""

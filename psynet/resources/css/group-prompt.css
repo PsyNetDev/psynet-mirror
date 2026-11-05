@@ -1,0 +1,184 @@
+.psynet-group-prompt {
+    margin: 1em auto;
+    max-width: 32em;
+}
+
+.psynet-group-members {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.psynet-group-prompt--row .psynet-group-members {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.5em;
+    padding-top: 2.5em;
+}
+
+.psynet-group-prompt--circle .psynet-group-members {
+    position: relative;
+    width: min(100%, 26em);
+    aspect-ratio: 1;
+    margin: 0 auto;
+}
+
+.psynet-group-prompt--circle .psynet-group-member {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    transform: translate(-50%, -50%);
+}
+
+.psynet-group-prompt--list .psynet-group-members {
+    columns: 3 10em;
+}
+
+.psynet-group-member {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 5em;
+    text-align: center;
+}
+
+.psynet-group-prompt--list .psynet-group-member {
+    flex-direction: row;
+    gap: 0.4em;
+    min-width: 0;
+    text-align: start;
+}
+
+.psynet-group-member .psynet-pseudonym-icon {
+    width: 2.6em;
+    height: 2.6em;
+    margin: 0;
+    font-size: 1.3em;
+}
+
+.psynet-group-prompt--list .psynet-group-member .psynet-pseudonym-icon {
+    width: 1.6em;
+    height: 1.6em;
+    font-size: 0.9em;
+}
+
+.psynet-group-name {
+    font-size: 0.85em;
+}
+
+.psynet-group-member--me .psynet-group-name {
+    font-weight: bold;
+}
+
+.psynet-group-tick {
+    visibility: hidden;
+    position: absolute;
+    top: -0.3em;
+    right: 0.6em;
+    width: 1.3em;
+    height: 1.3em;
+    border-radius: 50%;
+    background: #198754;
+    color: white;
+    font-size: 0.8em;
+    line-height: 1.3em;
+}
+
+.psynet-group-prompt--list .psynet-group-tick {
+    position: static;
+}
+
+.psynet-group-member--answered .psynet-group-tick {
+    visibility: visible;
+}
+
+.psynet-group-bubble {
+    position: absolute;
+    bottom: calc(100% + 0.4em);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.2em 0.6em;
+    border: 1px solid rgb(128 128 128 / 0.6);
+    border-radius: 0.8em;
+    background: var(--bs-body-bg, white);
+    font-weight: bold;
+    white-space: nowrap;
+    animation: psynet-group-bubble-in 0.3s ease-out both;
+    animation-delay: calc(var(--i) * 0.25s);
+}
+
+.psynet-group-bubble::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 0.4em solid transparent;
+    border-top-color: rgb(128 128 128 / 0.6);
+}
+
+.psynet-group-prompt--circle .psynet-group-member:not(.psynet-group-member--top) .psynet-group-bubble {
+    bottom: auto;
+    top: calc(100% + 0.4em);
+}
+
+.psynet-group-prompt--circle .psynet-group-member:not(.psynet-group-member--top) .psynet-group-bubble::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: rgb(128 128 128 / 0.6);
+}
+
+.psynet-group-prompt--list .psynet-group-bubble {
+    position: static;
+    transform: none;
+}
+
+.psynet-group-prompt--list .psynet-group-bubble::after {
+    display: none;
+}
+
+.psynet-group-member--winner .psynet-pseudonym-icon {
+    outline: 0.2em solid #198754;
+    outline-offset: 0.15em;
+}
+
+.psynet-group-member--winner .psynet-group-bubble {
+    border-color: #198754;
+    color: #198754;
+}
+
+.psynet-group-member--winner .psynet-group-bubble::before {
+    content: "★ ";
+}
+
+.psynet-group-member--duplicate .psynet-group-bubble {
+    color: rgb(128 128 128);
+    text-decoration: line-through;
+}
+
+.psynet-group-note {
+    margin: 0.8em 0 0;
+    text-align: center;
+}
+
+.psynet-group-prompt--circle .psynet-group-note {
+    margin-top: -55%;
+    margin-bottom: 45%;
+    position: relative;
+}
+
+@keyframes psynet-group-bubble-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.6);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .psynet-group-bubble {
+        animation: none;
+    }
+}

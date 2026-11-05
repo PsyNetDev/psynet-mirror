@@ -100,7 +100,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, Dict, List, Literal, Optional, Union
 
 from dallinger import db
 from dallinger.models import timenow
@@ -1521,6 +1521,8 @@ class GroupBarrier(Barrier):
         waiting = [m for m in members if self._participant_is_waiting(m)]
         waiting_count = len(waiting)
         group_size = len(members)
+        seats = group_seats(group)
+        ready_seats = sorted(seats[m.id] for m in waiting)
         if self._uses_timeline_hold:
             _prime_timeline_hold_records(waiting, self.id)
         for member in members:
@@ -1544,8 +1546,11 @@ class GroupBarrier(Barrier):
                 recipient=member,
                 group=group,
             )
+            ready = {"group_id": group.id, "seats": ready_seats}
             if text:
-                _queue_arrival_update(member.id, notice=str(text))
+                _queue_arrival_update(member.id, notice=str(text), group_ready=ready)
+            else:
+                _queue_arrival_update(member.id, group_ready=ready)
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Kick from the sync group when requested, then release the barrier link."""
@@ -2288,6 +2293,7 @@ class SimpleGrouper(Grouper):
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )
+        _load_vars(participants)
         for participant in participants:
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
@@ -2668,10 +2674,35 @@ class Regrouper(Grouper):
             active=True,
         )
         db.session.add(group)
+        _load_vars(participants)
         for participant in participants:
             group.add_participant(participant)
         group.leader = self.select_leader(participants)
         return group
+
+
+def _load_vars(participants):
+    """Load the deferred ``vars`` of these participants in one query.
+
+    Adding members to a group reads their pseudonyms, which are stored there.
+    """
+    unloaded = {p.id: p for p in participants if "vars" in sa_inspect(p).unloaded}
+    if unloaded:
+        rows = db.session.query(Participant.id, Participant.vars).filter(
+            Participant.id.in_(list(unloaded))
+        )
+        for participant_id, vars_ in rows:
+            set_committed_value(unloaded[participant_id], "vars", vars_)
+
+
+def group_seats(group) -> Dict[int, int]:
+    """Return ``{participant_id: seat}`` for everyone who has been in ``group``.
+
+    Seats number members in order of participant ID. They never change while
+    the group exists, so pages can refer to members without their IDs.
+    """
+    ids = sorted({link.participant_id for link in group.participant_links})
+    return {participant_id: seat for seat, participant_id in enumerate(ids)}
 
 
 @register_table
@@ -2718,7 +2749,12 @@ class SyncGroup(SQLBase, SQLMixin):
         return _ReadOnlyParticipantList(link.participant for link in links)
 
     def add_participant(self, participant: Participant):
-        """Add a participant to the group (creates an active link)."""
+        """Add a participant to the group (creates an active link).
+
+        If an active member already has the newcomer's pseudonym, the
+        newcomer is given a free one, so members can tell each other apart.
+        """
+        self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
         # Setting ``sync_group`` also appends to ``participant_links``, and lets
         # ``participant.active_sync_groups`` see the group before a flush.
@@ -2732,6 +2768,27 @@ class SyncGroup(SQLBase, SQLMixin):
     @property
     def active_participants(self) -> List[Participant]:
         return [p for p in self.participants if not p.failed and p.status == "working"]
+
+    def _give_distinct_pseudonym(self, participant):
+        """Store a free pseudonym for ``participant`` if an active member has theirs."""
+        taken = self.__dict__.get("_pseudonym_keys")
+        if taken is None:
+            others = [p for p in self.active_participants if p.id != participant.id]
+            _load_vars(others + [participant])
+            taken = {(p.pseudonym.color, p.pseudonym.animal) for p in others}
+            # Cached on the instance so forming a large group stays linear; a
+            # member who left since only makes a rename slightly more likely.
+            self.__dict__["_pseudonym_keys"] = taken
+        pseudonym = participant.pseudonym
+        keys = (pseudonym.color, pseudonym.animal)
+        if keys in taken:
+            from .experiment import get_experiment
+
+            replacement = get_experiment().pseudonym_scheme.replacement(taken)
+            if replacement is not None:
+                participant.set_pseudonym(*replacement)
+                keys = replacement
+        taken.add(keys)
 
     leader = relationship(
         "psynet.participant.Participant",

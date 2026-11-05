@@ -62,9 +62,10 @@ experiment sets a different one. Each deployment shuffles the colours and
 animals differently and then assigns them in order of participant ID, so
 participants who arrive one after another differ in both colour and animal,
 and any 88 participants in a row all have different pseudonyms. Participants
-whose IDs differ by a multiple of 88 share a pseudonym, so in a large
-experiment two members of one room can occasionally have the same name; use
-``set_pseudonym`` when the group forms if that matters. The dashboard shows
+whose IDs differ by a multiple of 88 share a pseudonym; when such a
+participant joins a :class:`~psynet.sync.SyncGroup` in which an active member
+has the same pseudonym, PsyNet gives them a free one
+(:meth:`~psynet.pseudonym.PseudonymScheme.replacement` chooses it). The dashboard shows
 each participant's pseudonym. Exports keep the deployment ID, so after
 loading an export, ``participant.pseudonym`` gives the names that
 participants saw, for example to read chat messages that mention them.

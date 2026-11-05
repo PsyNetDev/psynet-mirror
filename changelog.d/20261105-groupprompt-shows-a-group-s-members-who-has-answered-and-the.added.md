@@ -1,0 +1,1 @@
+Added `psynet.group_prompt.GroupPrompt`, which shows the members of a small group by pseudonym, ticks members off live as they answer, and then shows everyone's answers in speech bubbles, with optional highlights such as the winner. Joining a sync group now gives a newcomer a different pseudonym if an active member already has theirs (`PseudonymScheme.replacement` chooses it).

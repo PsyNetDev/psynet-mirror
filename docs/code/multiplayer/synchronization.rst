@@ -301,6 +301,52 @@ returns the text or ``None`` to hide it. Notices must fit on one line:
         on_arrival_message=arrival_message,
     )
 
+Showing the group
+~~~~~~~~~~~~~~~~~
+
+:class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
+by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
+page labelled "You". Members sit in a row for up to four people and in a
+circle for up to 12; larger groups are listed. Joining a group gives a
+newcomer a different pseudonym if another active member already has theirs.
+
+On a decision page, members who have answered get a tick. A member has
+answered once they wait at a barrier of the group, typically the barrier
+after the decision page, and the ticks appear live as members arrive (this
+uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
+``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
+answered when the page is drawn:
+
+.. code-block:: python
+
+    from psynet.group_prompt import GroupPrompt
+
+    def choose_number(participant):
+        room = participant.active_sync_groups["room"]
+        return ModularPage(
+            "choose",
+            GroupPrompt("Pick a number.", group=room, participant=participant),
+            PushButtonControl(choices=[1, 2, 3, 4, 5]),
+            save_answer="choice",
+        )
+
+After the barrier, pass ``answers`` to show each member's answer in a speech
+bubble. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
+such as an image. ``highlight`` marks members, with built-in styles for
+``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
+
+.. code-block:: python
+
+    GroupPrompt(
+        "The winning number was 2.",
+        group=room,
+        participant=participant,
+        answers={p.id: p.var.choice for p in room.participants},
+        highlight={winner.id: "winner"},
+    )
+
+The ``lowest_unique_number`` demo uses both.
+
 Trial makers
 ~~~~~~~~~~~~
 

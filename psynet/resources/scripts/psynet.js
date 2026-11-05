@@ -1097,6 +1097,16 @@
         if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
+        if (target.group_ready) {
+          window.dispatchEvent(
+            new CustomEvent("psynetGroupReady", {
+              detail: {
+                groupId: target.group_ready.group_id,
+                seats: target.group_ready.seats,
+              },
+            }),
+          );
+        }
       });
     };
 
