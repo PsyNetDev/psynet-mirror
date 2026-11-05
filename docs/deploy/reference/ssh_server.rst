@@ -59,9 +59,10 @@ server's own sites already serves stops before the image build and names
 that app or site.
 
 Older PsyNet versions deployed an experiment without ``--app`` at the server's
-own DNS name, under a name like ``dlgr-d8f9f2c4``. To update such an app, pass
-that name: ``--update --app dlgr-d8f9f2c4``. The app stays at the server's
-own DNS name, so ``dlgr-d8f9f2c4.<server DNS name>`` need not resolve.
+own DNS name, under a name like ``dlgr-d8f9f2c4``. ``psynet export ssh``,
+``psynet destroy ssh``, ``psynet hibernate ssh`` and ``psynet awaken ssh``
+accept that name, but ``psynet deploy ssh --update`` doesn't: deploy a fix
+as a new app with its own ``--app``.
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS

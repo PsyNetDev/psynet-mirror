@@ -248,7 +248,8 @@ Dashboard credentials and contact email
 
 Each experiment's dashboard is protected by ``dashboard_user`` and
 ``dashboard_password``. If you leave the password out, a new random one is
-generated for each deployment and printed at the end; ``dallinger ec2
+generated for each deployment and saved in its ``launch-info.json`` (see
+:ref:`ssh_server_launch_info`); ``dallinger ec2
 provision`` requires ``dashboard_password`` to be set (``dashboard_user``
 defaults to ``admin``).
 
@@ -396,7 +397,8 @@ Registering the server
       twice, under its AWS hostname and under the ``--dns-host`` name (here
       ``memory-lab.cool-psychology.org``); pass the ``--dns-host`` name as
       ``--server``. You can deploy once your computer resolves the new DNS
-      records, which can take up to about five minutes. Experiments are
+      records, which can take up to about five minutes (15 if you looked a
+      name up before it existed). Experiments are
       served at ``https://<app>.memory-lab.cool-psychology.org``. If
       anything fails after the instance is launched, it keeps running and
       costs money: provisioning prints the ``dallinger ec2 teardown`` command

@@ -146,6 +146,9 @@ psynet destroy ssh --app <app-name> --server <server-name>.cap-experiments.com
 dallinger ec2 teardown --name <server-name> --region <region>
 ```
 
+For an instance provisioned by an older Dallinger, add the `--dns-host` it
+was provisioned with, or its DNS records stay behind.
+
 ## Common failure modes
 
 - `psynet debug local` fails because port 5000 is already occupied.

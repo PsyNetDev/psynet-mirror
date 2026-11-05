@@ -31,9 +31,8 @@ Deployments don't set up the server's shared services, so Dallinger stops
 before building the image if the deployment needs something they lack. This
 happens on a server that an older Dallinger registered or provisioned but
 never deployed to. It also happens on a server set up by an older Dallinger
-when you update an app served at the server's own DNS name (see
-:ref:`ssh_server_addresses`), or when the older Dallinger's last deployment
-there was such a root-domain one.
+whose last deployment there was at the server's own DNS name, for example an
+older PsyNet deployment without ``--app`` (see :ref:`ssh_server_addresses`).
 Run the command that the message names, when no classic experiment on the
 server is live, then deploy again:
 
