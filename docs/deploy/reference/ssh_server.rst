@@ -52,17 +52,20 @@ Before deploying, Dallinger checks that the experiment's address
 records, ``--app`` must be one of them.
 
 ``--app`` may contain only lowercase letters, digits and hyphens, and must not
-already be in use on the server. Names starting with ``dlgr-`` are refused.
-So are ``logs``, ``caddy.d``, ``root.d`` and ``dallinger``, in any case,
-because the server uses them itself. A classic deployment to an address that another app or one of the
-server's own sites already serves stops before the image build and names
-that app or site.
+already be in use on the server. Names starting with ``dlgr-`` are refused,
+and so are ``logs`` and ``dallinger``, which the server uses itself. A
+classic deployment to an address that another app or one of the server's own
+sites already serves stops before the image build and names that app or
+site.
 
 Older PsyNet versions deployed an experiment without ``--app`` at the server's
 own DNS name, under a name like ``dlgr-d8f9f2c4``. ``psynet export ssh``,
 ``psynet destroy ssh``, ``psynet hibernate ssh`` and ``psynet awaken ssh``
-accept that name, but ``psynet deploy ssh --update`` doesn't: deploy a fix
-as a new app with its own ``--app``.
+accept that name, but ``psynet deploy ssh``, ``debug ssh`` and
+``performance-test ssh`` don't, even with ``--update``. So such an app can't
+be updated in place. A new app with its own ``--app`` gets a new address,
+and the old address keeps serving the old app until you destroy it and run
+``servers upgrade`` (see :ref:`ssh_server_files`).
 
 A deployment's ``--dns-host`` names only that experiment's address. The
 server's own sites, including the log viewer at ``https://logs.<server DNS

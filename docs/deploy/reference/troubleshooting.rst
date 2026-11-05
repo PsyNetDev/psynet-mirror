@@ -78,8 +78,8 @@ or upgraded by a newer Dallinger, which left its shared files read-only (see
 there. The deployment stopped before changing anything shared. Don't make the
 files writable. Instead, update the experiment's PsyNet pin, which brings a
 newer Dallinger (see :ref:`dependencies_updating_psynet`), and deploy again.
-An older Dallinger may first offer to destroy the server's other experiments;
-decline.
+An older Dallinger may first offer to destroy the server's other experiments.
+Decline: accepting destroys them, and the deployment still fails.
 
 .. _deploy_troubleshooting_host_key:
 

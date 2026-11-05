@@ -472,11 +472,12 @@ run ``servers add`` again; it keeps the server's other saved settings:
     dallinger docker-ssh servers add --host my-server.example.org --contact-email you@example.org
 
 Make sure that everyone who deploys to that server updates Dallinger too.
-Older versions can no longer deploy there: their deployments fail with
-``PermissionError: [Errno 13] Permission denied`` before they change the
-shared files. An older deployment without ``--app`` may first offer to destroy
-the server's other experiments; decline. See :ref:`ssh_server_shared_services`
-for what the upgrade changes.
+Older versions can no longer deploy there: unless the SSH user is ``root``,
+their deployments fail with ``PermissionError: [Errno 13] Permission
+denied`` before they change the shared files. An older deployment without
+``--app`` may first offer to destroy the server's other experiments. Decline:
+accepting destroys them, and the deployment still fails. See
+:ref:`ssh_server_shared_services` for what the upgrade changes.
 
 Stopping and removing the server
 --------------------------------
@@ -521,9 +522,10 @@ Stopping and removing the server
           dallinger ec2 teardown --name memory-lab --region us-east-1
 
       Teardown deletes the instance with every database on it, removes the
-      DNS records and removes both server registrations. For an instance
-      provisioned by an older Dallinger, add ``--dns-host`` with its name to
-      ``stop``, ``start`` and ``teardown``. Data you have not exported is
+      DNS records and removes both server registrations. On another
+      computer, or for an instance provisioned by an older Dallinger, add
+      ``--dns-host`` with its name to ``stop``, ``start`` and ``teardown``
+      (see :ref:`aws_automatic_provisioning`). Data you have not exported is
       lost. Teardown only finds a running instance, so start a
       stopped server first with ``dallinger ec2 start``. ``dallinger ec2 list
       instances --running`` shows the instances that are still running.

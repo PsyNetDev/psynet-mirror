@@ -523,7 +523,8 @@ registrations:
 
    dallinger ec2 teardown --name my-server --region us-east-1
 
-For a server provisioned by an older Dallinger, add the ``--dns-host`` it was
+On a computer other than the one that provisioned the server, or for a
+server provisioned by an older Dallinger, add the ``--dns-host`` it was
 provisioned with.
 
 Once an EC2 server is terminated, anything on it that was not exported is

@@ -146,8 +146,11 @@ psynet destroy ssh --app <app-name> --server <server-name>.cap-experiments.com
 dallinger ec2 teardown --name <server-name> --region <region>
 ```
 
-For an instance provisioned by an older Dallinger, add the `--dns-host` it
-was provisioned with, or its DNS records stay behind.
+Teardown finds the DNS name only in the server record that `ec2 provision`
+saved on this computer. On another computer, after a provision finished with
+the printed `servers add` commands, or for an instance provisioned by an
+older Dallinger, add the `--dns-host` it was provisioned with, or its DNS
+records stay behind.
 
 ## Common failure modes
 

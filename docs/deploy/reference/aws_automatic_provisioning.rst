@@ -87,7 +87,7 @@ Provisioning runs these steps and prints each one to the terminal:
    ``~/.ssh/<ec2_default_pem>.pem`` if it does not exist in the region.
 5. Boots the instance, attaches the security group and grows the disk to
    ``--storage``.
-6. Creates CNAME records for the ``--dns-host`` name and its wildcard
+6. With ``--dns-host``, creates CNAME records for that name and its wildcard
    (``*.<dns-host>``), pointing at the instance's AWS hostname. If Route 53
    can't create them, it warns, says which records to create by hand, and
    carries on.
@@ -148,9 +148,11 @@ and points the DNS records at the instance's new AWS hostname. Pass
 so ``--dns`` rarely finds it. Docker restarts the experiments with the
 instance.
 
-Both commands use the DNS name saved when the instance was provisioned with
-``--dns-host``. For an instance provisioned by an older Dallinger, or for
-records you made by hand, pass ``--dns-host <subdomain>.<your-domain>``. An
+Both commands use the DNS name that ``dallinger ec2 provision --dns-host``
+saved on your computer. Pass ``--dns-host <subdomain>.<your-domain>`` instead
+on another computer, after a provision you finished by hand with the printed
+``servers add`` commands, for an instance provisioned by an older Dallinger,
+or for Route 53 records you made by hand. An
 instance provisioned without ``--dns-host`` has no records to update, and
 its ``<public ip>.nip.io`` name stops working once the instance restarts
 with a new IP.
@@ -190,10 +192,9 @@ Terminating an instance
 
 ``teardown`` removes the instance's DNS records, terminates the instance,
 which deletes its disk with every experiment database on it, and removes its
-server registrations. Like ``stop``, it uses the saved DNS name; for an
-instance provisioned by an older Dallinger, pass ``--dns-host
-<subdomain>.<your-domain>``, or the DNS records and the ``--dns-host``
-registration stay behind. If Route 53 fails, it warns and still terminates
+server registrations. Like ``stop``, it uses the saved DNS name; in the same
+cases as for ``stop``, pass ``--dns-host <subdomain>.<your-domain>``, or the
+DNS records and the ``--dns-host`` registration stay behind. If Route 53 fails, it warns and still terminates
 the instance. Export all data first. Teardown only finds a running instance:
 start a stopped one first, or terminate it in the AWS console and remove its
 DNS records by hand.
