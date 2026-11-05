@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import dominate
 from dominate import tags
@@ -272,10 +272,29 @@ class ImmediateExitLogic(ExitLogic):
 
 
 class UnsuccessfulEndLogic(EndLogic):
+    """Show the early-end page to a participant who failed or was screened out.
+
+    Parameters
+    ----------
+    failure_tags
+        Tags appended to the participant's ``failure_tags`` on this page.
+    failure_message
+        Optional function ``failure_message(participant)`` returning a line
+        that says why the participant stopped early, or ``None``. Without
+        one, or when it returns ``None``, PsyNet explains its own reasons,
+        such as leaving a waiting page in a multiplayer game.
+    """
+
     exit_context = exit_domain.ExitContext.UNSUCCESSFUL
 
-    def __init__(self, failure_tags: Optional[List] = None, **kwargs):
+    def __init__(
+        self,
+        failure_tags: Optional[List] = None,
+        failure_message: Optional[Callable] = None,
+        **kwargs,
+    ):
         super().__init__()
+        self.failure_message = failure_message
 
         if failure_tags is None:
             failure_tags = []
@@ -307,6 +326,10 @@ class UnsuccessfulEndLogic(EndLogic):
                 )
             )
 
+            reason = self.failure_reason(participant)
+            if reason:
+                tags.p(reason)
+
             if self.should_show_reward:
                 tags.p(
                     _p(
@@ -320,6 +343,42 @@ class UnsuccessfulEndLogic(EndLogic):
             tags.p(self._finish_next_step(experiment))
 
         return self.debrief_page(html, experiment, participant)
+
+    def failure_reason(self, participant):
+        """Return the line explaining why the participant stopped early, or ``None``."""
+        if self.failure_message is not None:
+            reason = self.failure_message(participant)
+            if reason is not None:
+                return reason
+        return _builtin_failure_reason(participant.failure_tags or [])
+
+
+def _builtin_failure_reason(failure_tags):
+    """Explain the first failure tag that PsyNet itself sets, or return ``None``."""
+    _p = get_translator(context=True)
+    reasons = {
+        "hidden_while_waiting": lambda: _p(
+            "final_page_unsuccessful",
+            "You left the page while waiting for other participants, "
+            "so we had to end your session.",
+        ),
+        "timeout between barriers": lambda: _p(
+            "final_page_unsuccessful",
+            "You took too long to respond, so your group had to continue without you.",
+        ),
+        "fail_on_timeout": lambda: _p(
+            "final_page_unsuccessful",
+            "We waited too long for other participants, so we had to end your session.",
+        ),
+        "sync group below minimum size": lambda: _p(
+            "final_page_unsuccessful",
+            "Too many members of your group left, so the group could not continue.",
+        ),
+    }
+    for tag in failure_tags:
+        if tag in reasons:
+            return reasons[tag]()
+    return None
 
 
 class RejectedConsentLogic(UnsuccessfulEndLogic):

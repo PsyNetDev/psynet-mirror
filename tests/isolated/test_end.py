@@ -94,3 +94,19 @@ def test_lucid_debrief_uses_return_to_panel_copy():
     assert "send you back to your panel" not in unsuccessful.plain_text
     assert "We will return you to your panel in a few seconds." in rejected.plain_text
     assert "You may close this page." in rejected.plain_text
+
+
+def test_unsuccessful_end_explains_why_the_participant_stopped():
+    """PsyNet explains its own failure tags, and an experiment can explain its own."""
+    left = SimpleNamespace(failure_tags=["barrier:round", "hidden_while_waiting"])
+    other = SimpleNamespace(failure_tags=["screening"])
+    assert "You left the page" in UnsuccessfulEndLogic().failure_reason(left)
+    assert UnsuccessfulEndLogic().failure_reason(other) is None
+
+    def failure_message(participant):
+        if "screening" in participant.failure_tags:
+            return "You didn't pass the hearing test."
+
+    logic = UnsuccessfulEndLogic(failure_message=failure_message)
+    assert logic.failure_reason(other) == "You didn't pass the hearing test."
+    assert "You left the page" in logic.failure_reason(left)

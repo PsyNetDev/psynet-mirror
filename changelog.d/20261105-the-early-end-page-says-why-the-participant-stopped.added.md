@@ -1,0 +1,1 @@
+The early-end page now says why the participant stopped when PsyNet ended their session in a multiplayer experiment: they left a waiting page (`fail_if_hidden_for`), were too late between barriers, waited too long for others, or their group became too small. Pass `UnsuccessfulEndLogic(failure_message=...)`, a function of the participant, to explain the experiment's own reasons.

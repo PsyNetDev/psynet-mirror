@@ -221,6 +221,21 @@ branch of end logic, which you can replace with keyword arguments to
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
+The unsuccessful end page says why the participant stopped when PsyNet itself
+ended their session, for example "You left the page while waiting for other
+participants, so we had to end your session." To explain your own reasons,
+pass a function of the participant that returns a line, or ``None`` to keep
+PsyNet's:
+
+.. code-block:: python
+
+    def failure_message(participant):
+        if "screening" in participant.failure_tags:
+            return "Your answers suggest that your headphones aren't working."
+        return None
+
+    Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=failure_message))
+
 Time estimates
 --------------
 
