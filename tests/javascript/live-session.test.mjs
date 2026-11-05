@@ -10,6 +10,7 @@ const read = (name) => fs.readFileSync(path.join(ROOT, "psynet/resources/scripts
 const PAGE_SOCKET = read("page-socket.js");
 const SOURCE = read("live-session.js");
 const CALLBACKS = ["onView", "onRejected", "onEnded", "onResultSaved", "onRefused"];
+const READY = ["pick_numbers", { type: "psynet_ready", message: {} }];
 
 // Stands in for the dallinger.Socket that openExperimentSocket returns.
 class FakeSocket {
@@ -18,8 +19,10 @@ class FakeSocket {
     this.gameChannel = options.gameChannel;
     this.sent = [];
     this.closed = false;
-    this.callbacks = Object.fromEntries(CALLBACKS.map((name) => [name, []]));
-    for (const name of CALLBACKS) {
+    this.callbacks = Object.fromEntries(
+      [...CALLBACKS, "onClock", "onOpen"].map((name) => [name, []])
+    );
+    for (const name of [...CALLBACKS, "onClock", "onOpen"]) {
       this[name] = (callback) => {
         this.callbacks[name].push(callback);
         return this;
@@ -33,21 +36,29 @@ class FakeSocket {
   close() {
     this.closed = true;
   }
+  fire(name, ...args) {
+    this.callbacks[name].slice().forEach((callback) => callback(...args));
+  }
 }
+
+const view = (startedAt) => ({ live_session: { ready: [], started_at: startedAt } });
 
 // The script builds its objects in another realm, so compare JSON copies.
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
 let sockets;
+let errors;
 let token;
 let session;
 let liveSession;
 
 beforeEach(() => {
   sockets = [];
+  errors = [];
   token = "token-1";
   session = { initializerId: "pick_numbers", sessionId: 7, gameChannel: "pick_numbers" };
   const context = {
+    console: { error: (error) => errors.push(error.message) },
     dallinger: {
       pageScope: "load-1",
       openExperimentSocket(options) {
@@ -96,8 +107,69 @@ describe("psynet.liveSession", () => {
     const callback = () => {};
     for (const name of CALLBACKS) {
       assert.equal(liveSession[name](callback), liveSession);
-      assert.deepEqual(sockets[0].callbacks[name], [callback]);
+      assert.equal(sockets[0].callbacks[name].at(-1), callback);
     }
+  });
+
+  it("says the player is ready after the first clock measurement of each connection", () => {
+    liveSession.send("pick", { number: 7 });
+    assert.deepEqual(plain(sockets[0].sent), [
+      ["pick_numbers", { type: "pick", message: { number: 7 } }],
+    ]);
+    for (const reconnect of [1, 2]) {
+      sockets[0].fire("onOpen", {});
+      sockets[0].fire("onClock", {});
+      sockets[0].fire("onClock", {});
+    }
+    assert.deepEqual(plain(sockets[0].sent.slice(1)), [READY, READY]);
+  });
+
+  it("calls onStarted once, with the first view after the start", () => {
+    const started = [];
+    liveSession.onStarted(() => {
+      throw new Error("a page's mistake");
+    });
+    liveSession.onStarted((v) => started.push(["early", v]));
+    sockets[0].fire("onView", view(null));
+    sockets[0].fire("onView", null);
+    assert.deepEqual(started, []);
+    sockets[0].fire("onView", view(4));
+    sockets[0].fire("onView", view(4));
+    liveSession.onStarted((v) => started.push(["late", v]));
+    assert.deepEqual(plain(started), [
+      ["early", view(4)],
+      ["late", view(4)],
+    ]);
+    assert.deepEqual(errors, ["a page's mistake"]);
+  });
+
+  it("disables elements until the start", () => {
+    const pick = { disabled: false };
+    const pass = { disabled: false };
+    assert.equal(liveSession.disableUntilStarted(pick, pass), liveSession);
+    assert.deepEqual([pick.disabled, pass.disabled], [true, true]);
+    sockets[0].fire("onView", view(null));
+    assert.deepEqual([pick.disabled, pass.disabled], [true, true]);
+    sockets[0].fire("onView", view(4));
+    assert.deepEqual([pick.disabled, pass.disabled], [false, false]);
+
+    const late = { disabled: false };
+    liveSession.disableUntilStarted(late);
+    assert.equal(late.disabled, false);
+  });
+
+  it("says whether the session has started, up to date in onView, without joining", () => {
+    assert.equal(liveSession.started, false);
+    assert.equal(sockets.length, 0);
+    const seen = [];
+    liveSession.onView(() => seen.push(liveSession.started));
+    sockets[0].fire("onView", view(null));
+    sockets[0].fire("onView", view(4));
+    assert.deepEqual(seen, [false, true]);
+    assert.equal(liveSession.started, true);
+    assert.ok(Object.keys(liveSession).includes("started"));
+    token = "token-2";
+    assert.equal(liveSession.started, false);
   });
 
   it("leaves the session when the page changes", () => {

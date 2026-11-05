@@ -18,6 +18,7 @@ from typing import ClassVar, Literal
 from dallinger import db
 from dallinger.models import RealtimeEvent, RealtimeSession
 from dallinger.realtime import RealtimeGame, Reject, create_realtime_session
+from dallinger.realtime.utils import is_number
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -78,7 +79,8 @@ class LiveMessage(BaseModel):
             The sender's player id.
 
         now
-            When the message arrived, in seconds since the session started.
+            When the message arrived, in seconds on the session's clock,
+            which starts when the group leaves the initializer.
         """
         raise NotImplementedError
 
@@ -125,8 +127,101 @@ class LiveMessage(BaseModel):
         return _saved_messages(session_id, {cls.type: cls}, only_type=cls.type)
 
 
+class Ready(LiveMessage):
+    """The message that says a player is ready to play. A game page sends it
+    by itself once it has measured its clock against the server's, and a
+    bot sends it at once. The session starts when every player is ready, or
+    at the game's :attr:`~LiveSession.ready_timeout`.
+
+    Every game reads it, so don't list it in a game's
+    :attr:`~LiveSession.messages`. ``Ready.saved_messages(session_id)``
+    returns when each player became ready.
+    """
+
+    type = "psynet_ready"
+
+    def apply(self, game, state, player_id, now):
+        """Mark the player ready, and start the session once every player
+        is."""
+        ready_step = _ready_step(state)
+        if player_id not in ready_step["ready"]:
+            ready_step["ready"].append(player_id)
+        if set(ready_step["players"]) <= set(ready_step["ready"]):
+            game.start_session(state, now)
+
+
+#: The reason a message sent before the session starts is rejected.
+NOT_STARTED = "The game hasn't started yet."
+
+
+def _ready_step(state, what="state"):
+    try:
+        return state["live_session"]
+    except (KeyError, TypeError):
+        raise ValueError(
+            f"The {what} has no 'live_session' entry, which PsyNet adds to the "
+            "state initial_state returns, and to each view. Start from those."
+        ) from None
+
+
+def _apply_once_started(self, method, state, player_id, message, now, sent):
+    if isinstance(message, dict) and message.get("type") == Ready.type:
+        _parse_message(self._message_types, message).apply(self, state, player_id, now)
+        return None
+    if _ready_step(state)["started_at"] is None:
+        raise Reject(NOT_STARTED)
+    return method(self, state, player_id, message, now, sent)
+
+
+def _tick_once_started(self, method, state, now):
+    if _ready_step(state)["started_at"] is None:
+        if self.ready_timeout is None or now < self.ready_timeout:
+            return _UNCHANGED
+        self.start_session(state, now)
+        # Dallinger counts this tick as run, so a deadline due by now gets
+        # no other.
+        if self.is_over(state):
+            return None
+    return method(self, state, now)
+
+
+def _leave_unready(self, method, state, player_id, now):
+    ready_step = _ready_step(state)
+    if ready_step["started_at"] is None and player_id in ready_step["ready"]:
+        ready_step["ready"].remove(player_id)
+    return method(self, state, player_id, now)
+
+
+def _add_ready_step(self, method, players):
+    state = method(self, players)
+    name = type(self).__name__
+    if not isinstance(state, dict):
+        raise TypeError(
+            f"{name}.initial_state must return a dict, not {type(state).__name__}."
+        )
+    if "live_session" in state:
+        raise ValueError(
+            f"{name}.initial_state returned a state with a 'live_session' entry, "
+            "which is PsyNet's. Give it another name."
+        )
+    state["live_session"] = {"players": list(players), "ready": [], "started_at": None}
+    return state
+
+
 # The game methods that can change the state, which is converted after each.
-_STATE_METHODS = ("apply", "tick", "on_join", "on_leave")
+_STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_start")
+
+# Returned by an entry in _READY_STEP that left the state as it was, so it
+# isn't converted.
+_UNCHANGED = object()
+
+# The ready step's part of a state method, which runs in its place.
+_READY_STEP = {
+    "apply": _apply_once_started,
+    "tick": _tick_once_started,
+    "on_leave": _leave_unready,
+    "initial_state": _add_ready_step,
+}
 
 # Set while a state method runs, so one that calls another, as through
 # super() or from initial_state, converts once, after the outermost call.
@@ -135,22 +230,32 @@ _STATE_METHODS = ("apply", "tick", "on_join", "on_leave")
 _changing_state = contextvars.ContextVar("_changing_state", default=False)
 
 
-def _converts_outermost_call(method, convert):
-    """Wrap a state method so that ``convert(self, result, args)`` runs after
-    the outermost call only."""
+def _converts_outermost_call(method, name, convert):
+    """Wrap the state method ``name`` so that ``convert(self, result, args)``
+    runs after the outermost call only, and each call to the game's ``name``,
+    as opposed to a ``super()`` call, goes through its entry in
+    ``_READY_STEP``, if it has one."""
+    ready_step = _READY_STEP.get(name)
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        if ready_step is not None and getattr(type(self), name) is wrapper:
+            call = functools.partial(ready_step, self, method)
+        else:
+            call = functools.partial(method, self)
         if _changing_state.get():
-            return method(self, *args, **kwargs)
+            result = call(*args, **kwargs)
+            return None if result is _UNCHANGED else result
 
         # In a copy of the context, so nothing has to unset the flag, even
         # when Dallinger's time limit interrupts the call.
         def run():
             _changing_state.set(True)
-            return method(self, *args, **kwargs)
+            return call(*args, **kwargs)
 
         result = contextvars.copy_context().run(run)
+        if result is _UNCHANGED:
+            return None
         if not self.convert_state_to_json:
             return result
         return convert(self, result, args)
@@ -159,34 +264,75 @@ def _converts_outermost_call(method, convert):
     return wrapper
 
 
-def _stores_json(method):
+def _stores_json(method, name=None):
+    name = name or method.__name__
+
     def convert_in_place(self, result, args):
         state = args[0]
-        converted = _to_json(state, f"{type(self).__name__}.{method.__name__}")
+        converted = _to_json(state, f"{type(self).__name__}.{name}")
         # Changed in place, since Dallinger keeps the state object.
-        if isinstance(state, dict):
-            state.clear()
-            state.update(converted)
-        elif isinstance(state, list):
-            state[:] = converted
+        state.clear()
+        state.update(converted)
 
-    return _converts_outermost_call(method, convert_in_place)
+    return _converts_outermost_call(method, name, convert_in_place)
 
 
-def _returns_json(method):
+def _returns_json(method, name):
     def convert_returned(self, state, args):
-        return _to_json(state, f"{type(self).__name__}.{method.__name__}")
+        return _to_json(state, f"{type(self).__name__}.{name}")
 
-    return _converts_outermost_call(method, convert_returned)
+    return _converts_outermost_call(method, name, convert_returned)
+
+
+def _waits_for_start(method):
+    @functools.wraps(method)
+    def next_deadline(self, state):
+        if _ready_step(state)["started_at"] is None:
+            return self.ready_timeout
+        return method(self, state)
+
+    next_deadline._psynet_wrapper = True
+    return next_deadline
+
+
+def _shows_ready_step(method):
+    @functools.wraps(method)
+    def view(self, state, player_id):
+        shown = method(self, state, player_id)
+        if type(self).view is not view:
+            return shown
+        if not isinstance(shown, dict):
+            raise TypeError(
+                f"{type(self).__name__}.view must return a dict, not "
+                f"{type(shown).__name__}."
+            )
+        ready_step = _ready_step(state)
+        # A view can be the state itself.
+        if shown.get("live_session", ready_step) != ready_step:
+            raise ValueError(
+                f"{type(self).__name__}.view returned a 'live_session' entry, "
+                "which is PsyNet's. Give it another name."
+            )
+        return {**shown, "live_session": ready_step}
+
+    view._psynet_wrapper = True
+    return view
 
 
 def _sends_message(method):
     @functools.wraps(method)
-    def send(self, *args, **kwargs):
-        message = method(self, *args, **kwargs)
+    def send(self, view, player_id, now):
+        outermost = type(self).bot is send
+        if outermost:
+            ready_step = _ready_step(view, "view")
+            if player_id not in ready_step["ready"]:
+                return {"type": Ready.type, "message": {}}
+            if ready_step["started_at"] is None:
+                return None
+        message = method(self, view, player_id, now)
         # A bot calling super().bot() reaches its parent's wrapper, which
         # leaves the message for the outermost one.
-        if type(self).bot is not send or not isinstance(message, LiveMessage):
+        if not outermost or not isinstance(message, LiveMessage):
             return message
         sent = {
             "type": message.type,
@@ -232,11 +378,18 @@ class LiveSession(RealtimeGame):
     optional methods, such as ``is_over`` and ``tick``. A subclass of a game
     needs a ``channel`` of its own.
 
-    The state holds only plain data, what JSON can hold. PsyNet converts
-    anything else, such as a tuple or an enum member, after each method that
-    changes the state, and a value it can't convert, or ``NaN``, makes the
-    session fail. :doc:`/code/multiplayer/live_sessions` lists the
-    conversions.
+    The state and each view are dicts, and hold only plain data, what JSON
+    can hold. PsyNet converts anything else, such as a tuple or an enum
+    member, after each method that changes the state, and a value it can't
+    convert, or ``NaN``, makes the session fail.
+    :doc:`/code/multiplayer/live_sessions` lists the conversions.
+
+    The session starts once every player is ready (see :class:`Ready`), or
+    at :attr:`ready_timeout`. Until then the game rejects messages, and
+    ``tick`` and ``bot`` don't run. PsyNet keeps track of this in
+    ``state["live_session"]``, and adds the same entry to each view:
+    ``players``, ``ready``, the players who are ready, and ``started_at``,
+    the session time the session started, or ``None``.
     """
 
     #: The game's message types, each a :class:`LiveMessage` subclass with
@@ -249,22 +402,82 @@ class LiveSession(RealtimeGame):
     #: data itself.
     convert_state_to_json = True
 
+    #: Seconds on the session clock after which the session starts, even if
+    #: some players aren't ready. They can still join and play. ``None``
+    #: waits for every player, until ``max_duration``, if the game sets one.
+    ready_timeout = 30
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Resolved through the MRO, so methods from a mixin are wrapped too.
         for name, wrap in [
-            *((name, _stores_json) for name in _STATE_METHODS),
-            ("initial_state", _returns_json),
+            *(
+                (name, functools.partial(_stores_json, name=name))
+                for name in _STATE_METHODS
+            ),
+            ("initial_state", functools.partial(_returns_json, name="initial_state")),
+            ("next_deadline", _waits_for_start),
+            ("view", _shows_ready_step),
             ("bot", _sends_message),
         ]:
             method = getattr(cls, name)
-            if method is not getattr(RealtimeGame, name) and not getattr(
+            if method is not getattr(RealtimeGame, name, None) and not getattr(
                 method, "_psynet_wrapper", False
             ):
                 setattr(cls, name, wrap(method))
+        if cls.ready_timeout is not None and (
+            not is_number(cls.ready_timeout) or cls.ready_timeout <= 0
+        ):
+            raise ValueError(
+                f"{cls.__name__}'s ready_timeout must be None or a positive number."
+            )
         cls._message_types = _index_message_types(cls)
         if cls.channel is not None:
             _register_live_session(cls)
+
+    # Defined here, so the ready step runs in a game that doesn't define
+    # them. Each calls on along the MRO, so a later base's method runs.
+    @_stores_json
+    def tick(self, state, now):
+        """Advance ``state`` to ``now``, as in Dallinger's ``tick``. It runs
+        only once the session has started.
+        """
+        return super().tick(state, now)
+
+    @_stores_json
+    def on_leave(self, state, player_id, now):
+        """Respond to a player's last open page closing, as in Dallinger's
+        ``on_leave``. By default the game carries on without them. A player
+        who leaves before the start isn't ready any more.
+        """
+        return super().on_leave(state, player_id, now)
+
+    @_waits_for_start
+    def next_deadline(self, state):
+        """Return the session time at which ``tick`` should next run, as in
+        Dallinger's ``next_deadline``. Until the session starts, PsyNet waits
+        for :attr:`ready_timeout` instead.
+        """
+        return super().next_deadline(state)
+
+    @_stores_json
+    def on_start(self, state, now):
+        """Respond to the session starting, such as by setting the game's
+        deadlines from ``now``. ``state["live_session"]["ready"]`` says which
+        players were ready. A game can end the session here, through its
+        ``is_over``.
+        """
+
+    @_stores_json
+    def start_session(self, state, now):
+        """Start the session, as PsyNet does once every player is ready, and
+        run :meth:`on_start`. Call it in a test to play messages; a game
+        overrides :meth:`on_start` instead.
+        """
+        ready_step = _ready_step(state)
+        if ready_step["started_at"] is None:
+            ready_step["started_at"] = now
+            self.on_start(state, now)
 
     # Wrapped here, so __init_subclass__ doesn't copy a wrapper onto each
     # subclass, which would hide a later base's apply.
@@ -325,10 +538,12 @@ class LiveSession(RealtimeGame):
         """Return the messages saved for a session of this game, in the order
         the game applied them, as :class:`SavedMessage` objects.
 
-        The record is written a few seconds behind the game, so for a
-        session that's still being played, this returns the messages written
-        so far. :doc:`/code/multiplayer/live_sessions` says when the record
-        is complete.
+        They include each player's :class:`Ready` messages, and the messages
+        the game rejected, such as those sent before the start. The record is
+        written a few seconds behind the game, so for a session that's still
+        being played, this returns the messages written so far.
+        :doc:`/code/multiplayer/live_sessions` says when the record is
+        complete.
 
         Parameters
         ----------
@@ -408,8 +623,9 @@ class SavedMessage:
     #: The reason the game rejected the message, or ``None``.
     reason: object
 
-    #: When the message arrived, in seconds since the session started. It's
-    #: the ``now`` that :meth:`LiveMessage.apply` received.
+    #: When the message arrived, in seconds on the session's clock, which
+    #: starts when the group leaves the initializer. It's the ``now`` that
+    #: :meth:`LiveMessage.apply` received.
     session_time: float
 
     #: When the message arrived, as a date and time in the server's local
@@ -417,7 +633,7 @@ class SavedMessage:
     receive_time: datetime.datetime
 
     #: The number the page gave the message. A page counts its messages up
-    #: by one, from 1 when it loads, and a bot from 1 when the session starts.
+    #: by one, from 1 when it loads, and a bot from 1.
     number: int | None
 
     #: The browser's clock when the page sent the message, in seconds since
@@ -501,7 +717,7 @@ def _problems(error):
 
 
 def _index_message_types(game_type):
-    by_type = {}
+    by_type = {Ready.type: Ready}
     for message_type in game_type.messages:
         if not (
             isinstance(message_type, type) and issubclass(message_type, LiveMessage)
@@ -527,6 +743,13 @@ def _index_message_types(game_type):
                 f"{message_type.__name__} has a field of a type Pydantic can't "
                 f"read from JSON. {str(error).splitlines()[0]}"
             ) from None
+        if name == Ready.type:
+            raise ValueError(
+                f"{game_type.__name__}.messages lists {message_type.__name__}, "
+                f"with the type {name!r}, which is PsyNet's Ready message. "
+                "Every game reads Ready, so don't list it, and give other "
+                "messages another type."
+            )
         if name in by_type:
             raise ValueError(
                 f"{by_type[name].__name__} and {message_type.__name__} "

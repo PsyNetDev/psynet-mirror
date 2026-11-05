@@ -62,9 +62,10 @@ A game of rock, paper, scissors:
 
 ``initial_state`` sets up the state for the session's players, ``view`` says
 what a player's page shows, ``is_over`` says when the game ends, and ``bot``
-plays for bots (see `Bots`_). A game can also have a time limit, a clock that
-ticks, an outcome and more, which come from Dallinger's
-:class:`~dallinger.realtime.RealtimeGame`.
+plays for bots (see `Bots`_). The state and the views are dicts. A game can
+also have a time limit, a clock that ticks, an outcome and more, which come
+from Dallinger's :class:`~dallinger.realtime.RealtimeGame`. The game starts
+once every player's page is ready (see `The ready step`_).
 
 Define each game, or import it, before the experiment class. PsyNet then adds
 it to the experiment's ``realtime_games``, so you don't list it there.
@@ -82,8 +83,8 @@ A field can have any type Pydantic reads from JSON, such as a ``tuple``, an
 a value of that type. The state holds only plain data: what JSON can hold,
 which is dicts with string keys, lists, strings, numbers, booleans and
 ``None``. PsyNet converts anything else when ``initial_state`` returns, and
-after a message's ``apply`` or the game's ``tick``, ``on_join`` or
-``on_leave`` runs:
+after a message's ``apply`` or the game's ``tick``, ``on_join``,
+``on_leave`` or ``on_start`` runs:
 
 - a tuple becomes a list, and a set a list in no fixed order, so store
   ``sorted(...)`` where the order matters
@@ -138,6 +139,8 @@ To test a message, pass it to the game as a page would, with ``Sent`` from
 
     game = RockPaperScissors()
     state = game.initial_state(["1", "2"])
+    # As when every player is ready, since the game rejects messages before.
+    game.start_session(state, 0)
     message = {"type": "choose", "message": {"action": "rock"}}
     game.apply(state, "1", message, 0, Sent())
     assert state["choices"]["1"] == "rock"
@@ -190,9 +193,20 @@ function, which PsyNet runs each time the page opens
             status.textContent = "Your group couldn't start the game.";
             return;
         }
+        let buttons = ["rock", "paper", "scissors"].map(
+            (action) => root.querySelector("#" + action)
+        );
+        psynet.liveSession.disableUntilStarted(...buttons);
         psynet.liveSession.onView((view) => {
-            status.textContent =
-                view.chosen ? "Waiting for your partner" : "Your turn";
+            if (view === null) {
+                return;
+            }
+            if (!psynet.liveSession.started) {
+                status.textContent = "Waiting for your partner to arrive";
+            } else {
+                status.textContent =
+                    view.chosen ? "Waiting for your partner" : "Your turn";
+            }
         });
         psynet.liveSession.onRejected((number, reason) => {
             status.textContent = reason;
@@ -200,9 +214,9 @@ function, which PsyNet runs each time the page opens
         psynet.liveSession.onEnded(() => {
             status.textContent = "The game is over. Click Next.";
         });
-        for (let action of ["rock", "paper", "scissors"]) {
-            root.querySelector("#" + action).addEventListener("click", () => {
-                psynet.liveSession.send("choose", {action: action});
+        for (let button of buttons) {
+            button.addEventListener("click", () => {
+                psynet.liveSession.send("choose", {action: button.id});
             });
         }
     }
@@ -212,6 +226,13 @@ function, which PsyNet runs each time the page opens
 - ``send(type, message)`` sends the game the message with that ``type``, and
   returns its number, or ``undefined`` once the page's connection is closed or
   refused.
+- ``onStarted(callback)`` calls ``callback`` once the session has started,
+  with the first view after the start, or at once if it already has. A page
+  that opens after the session has ended gets ``onEnded`` instead.
+- ``disableUntilStarted(...elements)`` disables the elements, such as
+  buttons, until the session starts.
+- ``started`` says whether the session has started. In ``onView``, it's
+  already up to date for the view.
 - ``onView(callback)`` calls ``callback`` with each new view, what the game's
   ``view`` returns for this player.
 - ``onRejected(callback)`` calls ``callback`` with the number of each message
@@ -246,8 +267,8 @@ Joining in time
     joins as it opens. The session's clock starts when the group leaves the
     initializer, and if none of the group has opened the page by the game's
     ``join_timeout``, 60 seconds unless the game sets it, the session ends.
-    Pages between the initializer and the game page count against it, so
-    raise ``join_timeout`` to allow for them.
+    Pages between the initializer and the game page count against it, and
+    against the game's ``ready_timeout``, so raise both to allow for them.
 
 Rejected messages
     A message is rejected when one of its fields is missing or of the wrong
@@ -257,7 +278,8 @@ Rejected messages
 
 The end
     ``onEnded`` says the game is over. The game ignores messages sent after
-    it, though ``send`` still returns a number. The page doesn't move on by
+    it, though ``send`` still returns a number. A session that fails can end
+    with a view of ``null``, as in the example above. The page doesn't move on by
     itself. To keep the participant on the page until the game is over, pass
     ``show_next_button=False`` to the control and call ``psynet.nextPage()``
     in ``onResultSaved``. The page then needs other ways on: in
@@ -284,6 +306,69 @@ Reloading and dropped connections
 Another tab
     The same page left open in another tab can go on playing until its
     connection drops, or the session ends: then it can't connect again.
+
+The ready step
+--------------
+
+A session starts once every player is ready. A game page says so by itself,
+once it has measured its clock against the server's, which takes a moment
+after the page opens. A bot is ready at once, or, in a game with ticks, at
+the first tick. A player whose page closes before the start isn't ready any
+more, until the page reconnects or reloads.
+
+Until the start, the game rejects messages with the reason ``"The game hasn't
+started yet."``, and its ``tick`` and ``bot`` don't run. So a page disables
+its controls until the start with ``disableUntilStarted``, as in the example
+above, or waits for ``onStarted`` to set up anything else. The game's other
+methods do run before the start: ``on_join`` and ``on_leave`` as players
+arrive and leave, ``view`` for each page that joins, ``is_over`` after each
+change, and ``outcome`` if the session ends before it starts.
+
+If some players aren't ready by the game's ``ready_timeout``, 30 seconds
+unless the game sets it, the session starts without them, and they can still
+join and play. Like ``join_timeout``, it counts from when the group leaves
+the initializer. ``ready_timeout = None`` waits for every player, so a group
+in which someone never reaches the game page waits until the game's
+``max_duration``, or for ever if it has none.
+
+PsyNet keeps track of the ready step in ``state["live_session"]``, and adds
+the same entry to each view: ``players``, the ids of the session's players,
+``ready``, those who are ready, and ``started_at``, the session time the
+session started, or ``None``. So don't use the name ``live_session`` in the
+state or a view.
+
+The session time counts from when the group left the initializer, not from
+the start, and so does ``max_duration``. A game whose rounds have a time
+limit sets its deadlines in ``on_start``, and its ``tick`` runs at each one:
+
+.. code-block:: python
+
+    class TimedRockPaperScissors(RockPaperScissors):
+        channel = "timed_rock_paper_scissors"
+
+        def initial_state(self, players):
+            state = super().initial_state(players)
+            return {**state, "deadline": None, "late": False}
+
+        def on_start(self, state, now):
+            state["deadline"] = now + 10
+
+        def next_deadline(self, state):
+            return state["deadline"]
+
+        def tick(self, state, now):
+            if state["deadline"] is not None and now >= state["deadline"]:
+                state["late"] = True
+
+        def is_over(self, state):
+            return state["late"] or super().is_over(state)
+
+The deadline starts as ``None`` in ``initial_state``, since ``view`` and
+``is_over`` can read the state before ``on_start`` runs. ``on_start`` runs at
+the start, even when some players aren't ready. A game that needs every
+player can end the session there, by noting it in the state for ``is_over``.
+After the start, a player who leaves the game page doesn't end the session:
+the game carries on without them, unless its ``on_leave`` ends it.
 
 Saved messages
 --------------
@@ -314,6 +399,11 @@ game applied them, with its ``status``: ``accepted``, ``rejected`` or
 one of the game's message types, as for a message rejected for its fields, or
 one saved before its message type changed, and its ``payload`` holds what the
 page sent.
+
+The record also holds each player's
+:class:`~psynet.live_session.Ready` message, so
+``Ready.saved_messages(session_id)`` says when each player became ready, at
+their first. A page sends another each time it reconnects or reloads.
 
 The record is written a few seconds behind the game, so for a session that's
 still being played, ``saved_messages`` returns the messages written so far.
@@ -351,7 +441,8 @@ Bots
 JavaScript. When a group's members include bots, the game plays for them
 through its ``bot`` method, as in ``RockPaperScissors`` above. It gets the
 bot's view, the bot's player id and the session time, and returns the bot's
-next message, or ``None`` to send nothing. A
+next message, or ``None`` to send nothing. A bot is ready at once, and
+``bot`` runs once the session has started. A
 :class:`~psynet.live_session.LiveSessionInitializer` refuses a game without
 ``bot``, since its bots would never move.
 
@@ -361,11 +452,14 @@ as one whose type isn't in the game's ``messages``, the session fails. The
 error, in the server's log and the session's ``error`` in Dallinger's
 ``realtime_session`` table, says why.
 
-In a game without ticks, ``bot`` runs when the session starts, and again after
-every message (other bots' too), join and leave, until no bot sends a message
+In a game without ticks, ``bot`` runs once the session has started, and again
+after every message (other bots' too), join and leave, until no bot sends a message
 the game accepts. So it must return ``None`` once the bot has nothing to do.
 In a game with ticks, it runs once per tick. Dallinger's
 :meth:`~dallinger.realtime.RealtimeGame.bot` has the details.
+
+To test ``bot``, give it a view the game made after the start, such as
+``game.view(state, player_id)`` after ``game.start_session(state, 0)``.
 
 A group's bots have to reach the initializer together, so set the experiment's
 ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group

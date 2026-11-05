@@ -12,6 +12,7 @@ from dallinger import db
 from dallinger.db import redis_conn
 from dallinger.models import RealtimeSession, timenow
 from dallinger.realtime import RealtimeGame, Reject, Sent, store
+from dallinger.realtime.core import new_session, run_pass
 from dallinger.realtime.game import queued_effects
 from dallinger.realtime.runner import Runner
 from dallinger.realtime.store import RUNNING
@@ -23,10 +24,12 @@ from psynet import live_session
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_session import (
+    NOT_STARTED,
     LiveMessage,
     LiveSession,
     LiveSessionControl,
     LiveSessionInitializer,
+    Ready,
     live_session_id,
 )
 from psynet.modular_page import ModularPage
@@ -214,6 +217,19 @@ def _pick_numbers():
     ]()
 
 
+def _started(**state):
+    """A state, or a view, of a session player "1" plays, which has started."""
+    return {
+        **state,
+        "live_session": {"players": ["1"], "ready": ["1"], "started_at": 0},
+    }
+
+
+def _game_part(state):
+    """The state without PsyNet's entry for the ready step."""
+    return {key: value for key, value in state.items() if key != "live_session"}
+
+
 @pytest.mark.parametrize(
     "message, reason",
     [
@@ -243,12 +259,13 @@ def _pick_numbers():
 def test_a_message_that_doesn_t_match_its_type_is_rejected(message, reason):
     game = _pick_numbers()
     state = game.initial_state(["1", "2"])
+    game.start_session(state, 0)
 
     with pytest.raises(Reject) as rejected:
         game.apply(state, "1", message, 0.5, Sent())
 
     assert _problems(rejected.value.reason) == _problems(reason)
-    assert state == {"picks": {"1": None, "2": None}}
+    assert _game_part(state) == {"picks": {"1": None, "2": None}}
 
 
 def _pair_session(pair):
@@ -306,28 +323,46 @@ def played(pair):
     _play_to_the_end(
         session_id,
         [
-            (first, 1, {"type": "pick", "message": {"number": "7"}}),
-            (second, 1, {"type": "guess", "message": {}}),
-            (first, 2, {"type": "pick", "message": {"number": 3}}),
-            (second, 2, {"type": "pick", "message": {"number": 5}}),
+            (first, 1, READY),
+            (first, 2, {"type": "pick", "message": {"number": 7}}),
+            (second, 1, READY),
+            (first, 3, {"type": "pick", "message": {"number": "7"}}),
+            (second, 2, {"type": "guess", "message": {}}),
+            (first, 4, {"type": "pick", "message": {"number": 3}}),
+            (second, 3, {"type": "pick", "message": {"number": 5}}),
         ],
     )
     return session_id, first, second, before, timenow()
 
 
-def test_the_game_plays_for_a_group_s_bots(bot_and_person):
+READY = {"type": "psynet_ready", "message": {}}
+
+
+def _pick(number):
+    return live_session._live_session_types["pick_numbers"]._message_types["pick"](
+        number=number
+    )
+
+
+def test_the_game_plays_for_a_group_s_bots_once_they_are_ready(bot_and_person):
     session_id = _pair_session(bot_and_person)
     bot, person = (str(member.id) for member in bot_and_person[0])
 
     _play_to_the_end(
-        session_id, [(person, 1, {"type": "pick", "message": {"number": 5}})]
+        session_id,
+        [(person, 1, READY), (person, 2, {"type": "pick", "message": {"number": 5}})],
     )
 
     assert db.session.get(RealtimeSession, session_id).bots == [int(bot)]
     saved = live_session._live_session_types["pick_numbers"].saved_messages(session_id)
     assert [
-        (message.player_id, message.status, message.message.number) for message in saved
-    ] == [(bot, "accepted", int(bot)), (person, "accepted", 5)]
+        (message.player_id, message.status, message.message) for message in saved
+    ] == [
+        (bot, "accepted", Ready()),
+        (person, "accepted", Ready()),
+        (bot, "accepted", _pick(int(bot))),
+        (person, "accepted", _pick(5)),
+    ]
 
 
 def test_a_played_session_s_messages_read_back_in_order_with_their_status(played):
@@ -341,22 +376,25 @@ def test_a_played_session_s_messages_read_back_in_order_with_their_status(played
             message.number,
             message.status,
             message.reason,
-            message.message and message.message.number,
+            message.message,
         )
         for message in saved
     ] == [
+        (first, 1, "accepted", None, Ready()),
+        (first, 2, "rejected", NOT_STARTED, _pick(7)),
+        (second, 1, "accepted", None, Ready()),
         (
             first,
-            1,
+            3,
             "rejected",
             "Invalid 'pick' message: number: Input should be a valid integer.",
             None,
         ),
-        (second, 1, "rejected", "Unknown message type 'guess'.", None),
-        (first, 2, "accepted", None, 3),
-        (second, 2, "accepted", None, 5),
+        (second, 2, "rejected", "Unknown message type 'guess'.", None),
+        (first, 4, "accepted", None, _pick(3)),
+        (second, 3, "accepted", None, _pick(5)),
     ]
-    assert saved[1].payload == {"type": "guess", "message": {}}
+    assert saved[4].payload == {"type": "guess", "message": {}}
     times = [message.session_time for message in saved]
     assert times == sorted(set(times))
     assert times[-1] < (after - before).total_seconds()
@@ -385,12 +423,17 @@ def test_a_message_type_reads_back_only_its_own_messages(played):
     saved = pick_again.saved_messages(session_id)
 
     assert [(message.player_id, message.number) for message in saved] == [
-        (first, 1),
         (first, 2),
-        (second, 2),
+        (first, 3),
+        (first, 4),
+        (second, 3),
     ]
-    assert saved[0].message is None
-    assert all(isinstance(message.message, pick_again) for message in saved[1:])
+    assert saved[1].message is None
+    assert all(
+        isinstance(message.message, pick_again)
+        for i, message in enumerate(saved)
+        if i != 1
+    )
 
 
 def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
@@ -417,17 +460,20 @@ def test_a_message_its_type_can_no_longer_read_comes_back_without_it(
         saved = game_type.saved_messages(session_id)
 
     assert [(message.number, message.status, message.message) for message in saved] == [
-        (1, "rejected", None),
-        (1, "rejected", None),
-        (2, "accepted", None),
-        (2, "accepted", None),
+        (1, "accepted", None),
+        (2, "rejected", None),
+        (1, "accepted", None),
+        (3, "rejected", None),
+        (2, "rejected", None),
+        (4, "accepted", None),
+        (3, "accepted", None),
     ]
-    assert saved[2].payload == {"type": "pick", "message": {"number": 3}}
-    # The two picks that pass the field checks reach the validator. The
+    assert saved[5].payload == {"type": "pick", "message": {"number": 3}}
+    # The three picks that pass the field checks reach the validator. The
     # others fail a check, as a page's message can, which isn't logged.
     (record,) = caplog.records
     assert record.getMessage().startswith(
-        f"2 of session {session_id}'s saved messages came back with message None"
+        f"3 of session {session_id}'s saved messages came back with message None"
     )
     assert "not any more" in caplog.text
 
@@ -520,21 +566,21 @@ def walk(registry):
 
 
 def test_a_field_holds_its_type_and_is_stored_as_json(walk):
-    state = {}
+    state = _started()
 
     walk.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
 
-    assert state == {"held": "tuple", "at": [2, 3]}
+    assert _game_part(state) == {"held": "tuple", "at": [2, 3]}
 
 
 def test_a_nested_model_is_stored_as_a_dict(walk):
-    state = {}
+    state = _started()
 
     walk.apply(
         state, "1", {"type": "place", "message": {"at": {"x": 1, "y": 2}}}, 0, Sent()
     )
 
-    assert state == {"at": {"x": 1, "y": 2}}
+    assert _game_part(state) == {"at": {"x": 1, "y": 2}}
 
 
 class Jump(LiveMessage):
@@ -574,12 +620,12 @@ def test_a_bot_s_message_is_sent_as_a_page_sends_it(hop):
             return message.model_copy(update={"to": (4, 5)})
 
     game = FurtherHop()
-    message = game.bot({}, "1", 0)
+    message = game.bot(_started(), "1", 0)
 
     assert message == {"type": "jump", "message": {"from": 1, "to": [4, 5]}}
-    state = {}
+    state = _started()
     game.apply(state, "1", message, 0, Sent())
-    assert state == {"jumped": [1, [4, 5]]}
+    assert _game_part(state) == {"jumped": [1, [4, 5]]}
 
 
 def test_a_bot_can_return_what_a_page_sends(hop):
@@ -591,7 +637,7 @@ def test_a_bot_can_return_what_a_page_sends(hop):
         def bot(self, view, player_id, now):
             return sent
 
-    assert PlainHop().bot({}, "1", 0) == sent
+    assert PlainHop().bot(_started(), "1", 0) == sent
 
 
 class Aim(LiveMessage):
@@ -634,7 +680,7 @@ def test_a_bot_message_the_game_can_t_read_as_it_is_fails_loudly(
             return returned
 
     with pytest.raises(TypeError) as raised:
-        Archery().bot({}, "1", 0)
+        Archery().bot(_started(), "1", 0)
 
     assert str(raised.value) == (
         f"Archery.bot returned {returned!r}, which the game can't read as it "
@@ -662,7 +708,7 @@ def test_a_rejection_lists_at_most_five_problems(registry):
     message = {"type": "many", "message": {"numbers": ["a"] * 8}}
 
     with pytest.raises(Reject) as rejected:
-        Counting().apply({}, "1", message, 0, Sent())
+        Counting().apply(_started(), "1", message, 0, Sent())
 
     assert rejected.value.reason == (
         "Invalid 'many' message: "
@@ -687,7 +733,7 @@ def test_a_rejection_lists_at_most_five_problems(registry):
 )
 def test_model_fields_and_numbers_are_checked_strictly(walk, fields, reason):
     with pytest.raises(Reject) as rejected:
-        walk.apply({}, "1", {"type": "place", "message": fields}, 0, Sent())
+        walk.apply(_started(), "1", {"type": "place", "message": fields}, 0, Sent())
 
     assert _problems(rejected.value.reason) == _problems(reason)
 
@@ -825,6 +871,8 @@ def test_an_initializer_s_game_type_must_be_a_live_session_with_a_channel_and_a_
         ([NoType], "NoType.type must be a non-empty string"),
         ([NoApply], "NoApply must define apply"),
         ([Move, AlsoMove], "Move and AlsoMove both have the type 'move'"),
+        ([Ready], "lists Ready, with the type 'psynet_ready', which is PsyNet's"),
+        ([Ready, Move], "lists Ready, with the type 'psynet_ready', which is PsyNet's"),
     ],
 )
 def test_a_game_s_message_types_are_checked_when_it_is_defined(registry, listed, error):
@@ -873,12 +921,20 @@ def test_the_state_is_converted_to_json_after_each_method_that_changes_it(
         def on_leave(self, state, player_id, now):
             state["value"] = value
 
+        def on_start(self, state, now):
+            state["value"] = value
+
     game = Store()
-    assert game.initial_state(["1"]) == {"value": converted}
-    for name, args in [("tick", (0,)), ("on_join", ("1", 0)), ("on_leave", ("1", 0))]:
-        state = {}
+    assert _game_part(game.initial_state(["1"])) == {"value": converted}
+    for name, args in [
+        ("tick", (0,)),
+        ("on_join", ("1", 0)),
+        ("on_leave", ("1", 0)),
+        ("on_start", (0,)),
+    ]:
+        state = _started()
         getattr(game, name)(state, *args)
-        assert state == {"value": converted}, name
+        assert _game_part(state) == {"value": converted}, name
 
 
 def test_the_state_s_own_keys_are_converted(registry):
@@ -892,37 +948,37 @@ def test_the_state_s_own_keys_are_converted(registry):
         def tick(self, state, now):
             state[1] = "a"
 
-    state = {}
+    state = _started()
 
     Numbered().tick(state, 0)
 
-    assert state == {"1": "a"}
+    assert _game_part(state) == {"1": "a"}
 
 
-def test_an_overridden_apply_and_a_list_state_are_converted(registry):
+def test_an_overridden_apply_is_converted(registry):
     class Overridden(LiveSession):
         messages = [Move]
 
         def initial_state(self, players):
-            return []
+            return {"moves": []}
 
         def view(self, state, player_id):
             return state
 
         def apply(self, state, player_id, message, now, sent):
-            state.append(self.read_message(message).to)
+            state["moves"].append(self.read_message(message).to)
 
     class ViaSuper(Overridden):
         def apply(self, state, player_id, message, now, sent):
             super().apply(state, player_id, message, now, sent)
-            state.append(Colour.RED)
+            state["moves"].append(Colour.RED)
 
-    state = []
+    state = _started(moves=[])
     message = {"type": "move", "message": {"to": [2, 3]}}
 
     ViaSuper().apply(state, "1", message, 0, Sent())
 
-    assert state == [[2, 3], "red"]
+    assert _game_part(state) == {"moves": [[2, 3], "red"]}
 
 
 def test_a_method_from_a_mixin_is_converted(registry):
@@ -937,11 +993,11 @@ def test_a_method_from_a_mixin_is_converted(registry):
         def view(self, state, player_id):
             return state
 
-    state = {}
+    state = _started()
 
     Timed().tick(state, 1)
 
-    assert state == {"at": [1]}
+    assert _game_part(state) == {"at": [1]}
 
 
 def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
@@ -962,11 +1018,11 @@ def test_a_method_that_calls_another_keeps_its_references_until_it_returns(
             self.tick(state, now)
             players[player_id] = (now,)
 
-    state = {"players": {}}
+    state = _started(players={})
 
     Nested().on_join(state, "1", 2)
 
-    assert state == {"players": {"1": [2]}, "ticked": [2]}
+    assert _game_part(state) == {"players": {"1": [2]}, "ticked": [2]}
 
 
 def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
@@ -987,7 +1043,7 @@ def test_initial_state_keeps_its_references_while_it_calls_a_state_method(
         def on_join(self, state, player_id, now):
             state.setdefault("joined", []).append((player_id,))
 
-    assert Joining().initial_state(["1", "2"]) == {
+    assert _game_part(Joining().initial_state(["1", "2"])) == {
         "scores": {"1": [0], "2": [0]},
         "joined": [["1"], ["2"]],
     }
@@ -1013,11 +1069,11 @@ def test_a_game_that_inherits_apply_keeps_the_order_of_its_bases(registry):
     class Both(Plain, Logged):
         pass
 
-    state = {}
+    state = _started()
 
     Both().apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
 
-    assert state == {"logged": [True], "held": "tuple", "at": [2, 3]}
+    assert _game_part(state) == {"logged": [True], "held": "tuple", "at": [2, 3]}
 
 
 def test_the_state_is_converted_after_a_rejected_message(registry):
@@ -1034,13 +1090,13 @@ def test_the_state_is_converted_after_a_rejected_message(registry):
             state["ticked"] = (now,)
 
     game = Ticking()
-    state = {}
+    state = _started()
     with pytest.raises(Reject):
         game.apply(state, "1", {"type": "jump", "message": {}}, 0, Sent())
 
     game.tick(state, 1)
 
-    assert state == {"ticked": [1]}
+    assert _game_part(state) == {"ticked": [1]}
 
 
 class Paint(LiveMessage):
@@ -1069,7 +1125,7 @@ def test_an_effect_s_payload_is_converted_to_json(registry):
     effects = []
     token = queued_effects.set(effects)
     try:
-        Painting().apply({}, "1", message, 0, Sent())
+        Painting().apply(_started(), "1", message, 0, Sent())
         with pytest.raises(ValueError, match="'kept' effect's payload holds a value"):
             Painting().queue_effect("kept", {"thing": Thing()})
     finally:
@@ -1096,10 +1152,16 @@ def test_a_game_can_turn_the_conversion_off(registry):
 
     game = Unconverted()
     state = game.initial_state(["1"])
+    game.start_session(state, 0)
     game.tick(state, 0)
     game.apply(state, "1", {"type": "move", "message": {"to": [2, 3]}}, 0, Sent())
 
-    assert state == {"start": (0, 0), "ticked": (1, 1), "held": "tuple", "at": (2, 3)}
+    assert _game_part(state) == {
+        "start": (0, 0),
+        "ticked": (1, 1),
+        "held": "tuple",
+        "at": (2, 3),
+    }
 
 
 def test_a_state_that_can_t_be_converted_fails_loudly(registry):
@@ -1123,11 +1185,11 @@ def test_a_state_that_can_t_be_converted_fails_loudly(registry):
     with pytest.raises(ValueError, match="After Keep.initial_state, the state holds"):
         Keep().initial_state(["1"])
     with pytest.raises(ValueError, match="After Keep.tick, .* unknown type"):
-        Keep().tick({}, 0)
+        Keep().tick(_started(), 0)
     with pytest.raises(ValueError, match="After Keep.on_join, .* Circular"):
         Keep().on_join({}, "1", 0)
     with pytest.raises(ValueError, match="After Keep.on_leave, .*frozenset"):
-        Keep().on_leave({}, "1", 0)
+        Keep().on_leave(_started(), "1", 0)
 
 
 class Holds(LiveMessage):
@@ -1144,3 +1206,314 @@ def test_a_field_pydantic_can_t_read_from_json_is_refused(registry):
 
         class Game(LiveSession):
             messages = [Holds]
+
+
+class Tap(LiveMessage):
+    type = "tap"
+
+    def apply(self, game, state, player_id, now):
+        state["taps"].append(player_id)
+
+
+TAP = {"type": "tap", "message": {}}
+
+
+@pytest.fixture
+def relay(registry):
+    class Relay(LiveSession):
+        channel = "relay"
+        messages = [Tap]
+        ready_timeout = 10
+
+        def initial_state(self, players):
+            return {"taps": [], "ticks": []}
+
+        def view(self, state, player_id):
+            return {"taps": len(state["taps"])}
+
+        def tick(self, state, now):
+            state["ticks"].append(now)
+
+        def next_deadline(self, state):
+            return 99
+
+        def on_start(self, state, now):
+            state["deadline"] = now + 5
+
+        def bot(self, view, player_id, now):
+            return None if view["taps"] else Tap()
+
+    return Relay()
+
+
+def test_messages_are_rejected_until_every_player_is_ready(relay):
+    state = relay.initial_state(["1", "2"])
+
+    with pytest.raises(Reject) as rejected:
+        relay.apply(state, "1", TAP, 1, Sent())
+    for player_id, now in [("1", 2), ("1", 3), ("2", 4)]:
+        relay.apply(state, player_id, READY, now, Sent())
+    relay.apply(state, "1", TAP, 5, Sent())
+
+    assert rejected.value.reason == NOT_STARTED
+    assert state == {
+        "taps": ["1"],
+        "ticks": [],
+        "deadline": 9,
+        "live_session": {"players": ["1", "2"], "ready": ["1", "2"], "started_at": 4},
+    }
+
+
+def test_an_overridden_apply_gets_only_the_game_s_messages_after_the_start(relay):
+    class Counted(type(relay)):
+        channel = "counted"
+
+        def apply(self, state, player_id, message, now, sent):
+            state["applied"] = state.get("applied", 0) + 1
+            super().apply(state, player_id, message, now, sent)
+
+    game = Counted()
+    state = game.initial_state(["1"])
+
+    with pytest.raises(Reject, match=NOT_STARTED):
+        game.apply(state, "1", TAP, 1, Sent())
+    game.apply(state, "1", READY, 2, Sent())
+    game.apply(state, "1", TAP, 3, Sent())
+
+    assert (state["applied"], state["taps"]) == (1, ["1"])
+
+
+def test_the_session_starts_at_the_ready_timeout_without_everyone(relay):
+    state = relay.initial_state(["1", "2"])
+    relay.apply(state, "1", READY, 1, Sent())
+
+    assert relay.next_deadline(state) == 10
+    relay.tick(state, 9.9)
+    assert (state["live_session"]["started_at"], state["ticks"]) == (None, [])
+
+    relay.tick(state, 10)
+    assert state["live_session"] == {
+        "players": ["1", "2"],
+        "ready": ["1"],
+        "started_at": 10,
+    }
+    assert (state["ticks"], state["deadline"]) == ([10], 15)
+    assert relay.next_deadline(state) == 99
+    relay.apply(state, "2", READY, 11, Sent())
+    relay.apply(state, "2", TAP, 12, Sent())
+    assert state["live_session"]["started_at"] == 10
+    assert (state["taps"], state["deadline"]) == (["2"], 15)
+
+
+def test_without_a_ready_timeout_the_session_waits_for_everyone(relay):
+    class Patient(type(relay)):
+        channel = "patient"
+        ready_timeout = None
+
+    game = Patient()
+    state = game.initial_state(["1"])
+
+    assert game.next_deadline(state) is None
+    game.tick(state, 1000)
+
+    assert state["live_session"]["started_at"] is None
+
+
+def advance(self, state, now):
+    state["ticks"].append(now)
+
+
+class Clock(RealtimeGame):
+    def tick(self, state, now):
+        state["ticks"].append(now)
+
+    def next_deadline(self, state):
+        return 99
+
+    def on_leave(self, state, player_id, now):
+        state["left"] = player_id
+
+
+def test_the_ready_step_covers_renamed_methods_and_later_bases(relay):
+    class Renamed(type(relay)):
+        channel = "renamed"
+        tick = advance
+
+    class Later(LiveSession, Clock):
+        channel = "later"
+
+        def initial_state(self, players):
+            return {"ticks": []}
+
+        def view(self, state, player_id):
+            return {}
+
+    for game in [Renamed(), Later()]:
+        state = game.initial_state(["1"])
+        game.tick(state, 1)
+        game.apply(state, "1", READY, 2, Sent())
+        game.tick(state, 3)
+
+        assert state["ticks"] == [3], type(game).__name__
+        assert game.next_deadline(state) == 99
+    game.on_leave(state, "1", 4)
+    assert state["left"] == "1"
+
+
+def test_a_game_can_build_on_another_game_s_state(relay):
+    class Extended(type(relay)):
+        channel = "extended"
+
+        def initial_state(self, players):
+            return {**super().initial_state(players), "deadline": None}
+
+    state = Extended().initial_state(["1"])
+
+    assert state == {
+        "taps": [],
+        "ticks": [],
+        "deadline": None,
+        "live_session": {"players": ["1"], "ready": [], "started_at": None},
+    }
+
+
+def test_each_view_shows_who_is_ready_and_when_the_session_started(relay):
+    state = relay.initial_state(["1", "2"])
+    relay.apply(state, "2", READY, 1, Sent())
+
+    assert relay.view(state, "1") == {
+        "taps": 0,
+        "live_session": {"players": ["1", "2"], "ready": ["2"], "started_at": None},
+    }
+
+
+def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
+    state = relay.initial_state(["1", "2"])
+
+    relay.apply(state, "1", READY, 1, Sent())
+    relay.on_leave(state, "1", 2)
+    relay.apply(state, "2", READY, 3, Sent())
+    assert state["live_session"]["started_at"] is None
+    relay.apply(state, "1", READY, 4, Sent())
+    relay.on_leave(state, "1", 5)
+
+    assert state["live_session"] == {
+        "players": ["1", "2"],
+        "ready": ["2", "1"],
+        "started_at": 4,
+    }
+
+
+def test_a_game_method_that_calls_another_gets_the_ready_step(relay):
+    class Eager(type(relay)):
+        channel = "eager"
+
+        def on_join(self, state, player_id, now):
+            self.tick(state, now)
+
+    game = Eager()
+    state = game.initial_state(["1"])
+
+    game.on_join(state, "1", 1)
+
+    assert state["ticks"] == []
+
+
+CLOCK = 1.8e9
+
+
+def _entry(kind, time, player_id, payload=None):
+    """A session entry, as the web process adds it, for run_pass."""
+    entry = {"type": kind, "time": time, "participant": player_id, "scope": "page"}
+    if kind == "message":
+        entry.update(data=json.dumps(payload), received=CLOCK + time)
+    else:
+        entry["socket"] = f"{player_id}/page"
+    return entry
+
+
+def test_a_deadline_due_by_the_ready_timeout_runs_when_the_session_starts(relay):
+    class Overdue(type(relay)):
+        channel = "overdue"
+
+        def next_deadline(self, state):
+            return 5
+
+        def is_over(self, state):
+            return bool(state["ticks"])
+
+    game = Overdue()
+    entries = [_entry("join", 0, "1"), _entry("message", 1, "1", READY)]
+
+    waiting = run_pass(game, new_session(game, ["1", "2"]), entries, 2, CLOCK)
+    ended = run_pass(game, waiting.saved, [], 10, CLOCK)
+
+    assert waiting.next_due == 10
+    assert ended.ended["reason"] == "finished"
+    assert json.loads(ended.saved)["state"]["ticks"] == [10]
+
+
+def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
+    class Everyone(type(relay)):
+        channel = "everyone"
+
+        def on_start(self, state, now):
+            ready_step = state["live_session"]
+            state["everyone"] = ready_step["ready"] == ready_step["players"]
+
+        def is_over(self, state):
+            return state.get("everyone") is False
+
+    game = Everyone()
+    entries = [_entry("join", 0, "1"), _entry("message", 1, "1", READY)]
+
+    waiting = run_pass(game, new_session(game, ["1", "2"]), entries, 2, CLOCK)
+    ended = run_pass(game, waiting.saved, [], 10, CLOCK)
+
+    assert ended.ended["reason"] == "finished"
+    assert json.loads(ended.saved)["state"]["ticks"] == []
+
+
+def test_a_bot_is_ready_at_once_and_plays_once_the_session_starts(relay):
+    state = relay.initial_state(["1", "2"])
+
+    def bot_message(now):
+        return relay.bot(relay.view(state, "1"), "1", now)
+
+    assert bot_message(0) == READY
+    with pytest.raises(ValueError, match="The view has no 'live_session' entry"):
+        relay.bot({"taps": 0}, "1", 0)
+    relay.apply(state, "1", READY, 0, Sent())
+    assert bot_message(0) is None
+    relay.apply(state, "2", READY, 1, Sent())
+    assert bot_message(1) == TAP
+
+
+@pytest.mark.parametrize(
+    "state, view, error",
+    [
+        ([], {}, "Game.initial_state must return a dict, not list"),
+        ({"live_session": 1}, {}, "a 'live_session' entry, which is PsyNet's"),
+        ({}, [], "Game.view must return a dict, not list"),
+        ({}, {"live_session": 1}, "Game.view returned a 'live_session' entry"),
+    ],
+)
+def test_the_state_and_views_are_dicts_without_psynet_s_entry(
+    registry, state, view, error
+):
+    class Game(LiveSession):
+        def initial_state(self, players):
+            return state
+
+        def view(self, state, player_id):
+            return view
+
+    with pytest.raises((TypeError, ValueError), match=error):
+        game = Game()
+        game.view(game.initial_state(["1"]), "1")
+
+
+@pytest.mark.parametrize("ready_timeout", [0, -1, "30", float("inf")])
+def test_a_ready_timeout_is_none_or_a_positive_number(registry, ready_timeout):
+    with pytest.raises(ValueError, match="Game's ready_timeout must be None"):
+        type("Game", (LiveSession,), {"ready_timeout": ready_timeout})

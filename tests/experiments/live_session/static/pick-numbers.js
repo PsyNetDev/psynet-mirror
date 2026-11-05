@@ -7,13 +7,22 @@ export function activate({root, psynet}) {
   psynet.websocket.onConnect(() => {
     root.querySelector("#page-socket-status").textContent = "Connected";
   });
+  let pick = root.querySelector("#pick");
+  psynet.liveSession.disableUntilStarted(pick);
   psynet.liveSession.onView((view) => {
-    status.textContent = view.picked ? "Picked" : "Pick a number";
+    if (view === null) {
+      return;
+    }
+    if (!psynet.liveSession.started) {
+      status.textContent = "Waiting for your partner";
+    } else {
+      status.textContent = view.picked ? "Picked" : "Pick a number";
+    }
   });
   psynet.liveSession.onRejected((number, reason) => {
     root.querySelector("#game-error").textContent = reason;
   });
-  root.querySelector("#pick").addEventListener("click", () => {
+  pick.addEventListener("click", () => {
     psynet.liveSession.send("pick", {
       number: Number(root.querySelector("#pick-number").value),
     });

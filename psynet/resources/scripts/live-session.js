@@ -1,13 +1,18 @@
 (function () {
   "use strict";
 
+  // The type of PsyNet's Ready message.
+  const READY = "psynet_ready";
+
   /**
    * ``psynet.liveSession`` lets a page with a ``LiveSessionControl`` play
    * the live session its group started: send the game messages, and show
    * the views the game sends back.
    *
    * The page joins the session when it first uses ``psynet.liveSession``,
-   * and leaves it when the participant moves on. If the connection drops,
+   * and leaves it when the participant moves on. Once it has measured its
+   * clock against the server's, it tells the game the player is ready, and
+   * the game starts when every player is. If the connection drops,
    * it reconnects by itself and rejoins. The same page left open in another
    * tab can go on playing until its connection drops, or the session ends:
    * then it can't connect again.
@@ -52,14 +57,80 @@
       noTokenError:
         "This page has no page token, so it can't join its live session. " +
         "The server needs a FLASK_SECRET_KEY.",
-      newPage: () => ({ session: session() }),
-      open: (state) =>
-        dallinger.openExperimentSocket({
-          session: state.session.sessionId,
-          gameChannel: state.session.gameChannel,
-          scope: state.token + "." + dallinger.pageScope,
-        }),
+      newPage: () => ({ session: session(), startedView: null, startedCallbacks: [] }),
+      open: openSocket,
     });
+
+    function openSocket(state) {
+      let socket = dallinger.openExperimentSocket({
+        session: state.session.sessionId,
+        gameChannel: state.session.gameChannel,
+        scope: state.token + "." + dallinger.pageScope,
+      });
+      // Sent again after each reconnect, in case the connection dropped
+      // before the game read it. The game ignores a repeat.
+      let readyDue = false;
+      socket.onOpen(() => {
+        readyDue = true;
+      });
+      socket.onClock(() => {
+        if (readyDue) {
+          readyDue = false;
+          socket.send(socket.gameChannel, { type: READY, message: {} });
+        }
+      });
+      socket.onView((view) => {
+        // A failed session's final view can be null.
+        if (state.startedView === null && view !== null && view.live_session.started_at !== null) {
+          state.startedView = view;
+          state.startedCallbacks.splice(0).forEach((callback) => {
+            try {
+              callback(view);
+            } catch (error) {
+              console.error(error);
+            }
+          });
+        }
+      });
+      return socket;
+    }
+
+    /**
+     * Call ``callback`` once the session has started, with the first view
+     * after the start, or at once if it already has. Until then the game
+     * rejects the page's messages.
+     *
+     * @param {function} callback - Called with the view
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function onStarted(callback) {
+      pages.socket();
+      let state = pages.current();
+      if (state.startedView !== null) {
+        callback(state.startedView);
+      } else {
+        state.startedCallbacks.push(callback);
+      }
+      return api;
+    }
+
+    /**
+     * Disable each of ``elements`` until the session starts, so the
+     * participant can't play before then.
+     *
+     * @example
+     * psynet.liveSession.disableUntilStarted(...root.querySelectorAll("button"));
+     *
+     * @param {...HTMLElement} elements - Elements with a ``disabled``
+     *   property, such as buttons and inputs
+     * @returns {Object} ``psynet.liveSession``
+     */
+    function disableUntilStarted(...elements) {
+      elements.forEach((element) => (element.disabled = true));
+      return onStarted(() => {
+        elements.forEach((element) => (element.disabled = false));
+      });
+    }
 
     /**
      * Send the game a message, which it reads as the ``LiveMessage`` with
@@ -100,10 +171,23 @@
         let current = liveSession();
         return Boolean(current && current.sessionId != null);
       },
+      /**
+       * Whether the page has had a view from after the session started.
+       * ``onView``'s callbacks see it already updated for the view they
+       * get. Reading it doesn't join the session.
+       *
+       * @member {boolean} started
+       */
+      get started() {
+        return pages.current().startedView !== null;
+      },
       send: send,
+      onStarted: onStarted,
+      disableUntilStarted: disableUntilStarted,
       /**
        * Call ``callback`` with each new view of the game, what the game's
-       * ``view`` returns for this player, starting when the page joins.
+       * ``view`` returns for this player, starting when the page joins. Its
+       * ``live_session`` says who is ready and when the session started.
        * Dallinger's ``Socket.onView`` describes the view's details.
        *
        * @function onView

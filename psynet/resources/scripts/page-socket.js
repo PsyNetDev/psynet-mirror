@@ -148,6 +148,10 @@
      * ``"psynet"``, as the JSON text of an object with the ``type`` and, if
      * given, the ``message``.
      *
+     * The message doesn't say when the page sent it. If the experiment needs
+     * that, as for a reaction time, put ``dallinger.browserTime()``, the
+     * browser's clock in seconds, in the message.
+     *
      * @example
      * psynet.websocket.send("choice", { option: "left" });
      *
