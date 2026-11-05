@@ -908,6 +908,13 @@
             Math.ceil((Number(element.dataset.releaseAt) - now) / 1000),
           );
           element.textContent = String(seconds);
+          // Check straight away at the release time rather than at the next
+          // safety poll; the short margin lets the server's clock catch up.
+          let releaseAt = Number(element.dataset.releaseAt);
+          if (!element.dataset.checked && now >= releaseAt + 300) {
+            element.dataset.checked = "true";
+            psynet.resumeTimelineHold("countdown");
+          }
         });
     };
     setInterval(psynet.tickTimelineHoldCountdowns, 250);

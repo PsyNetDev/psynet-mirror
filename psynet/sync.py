@@ -1270,6 +1270,12 @@ class GroupBarrier(Barrier):
         Pairs keep the hold title only. Set ``False`` to disable both.
         Passing ``on_arrival_message`` implies ``True``.
 
+    skip_if_not_in_group
+        If ``True``, a participant who is not in a group of this ``group_type``
+        passes straight through, for example after being kicked by a timeout in
+        a round-based design. If ``False`` (default), they get an error, which
+        usually means a grouper is missing from the timeline.
+
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
         ``kind`` (``"hold"`` or ``"notice"``), ``waiting_count``,
@@ -1315,6 +1321,7 @@ class GroupBarrier(Barrier):
         content=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
+        skip_if_not_in_group: bool = False,
     ):
         self._validate_max_wait_action(max_wait_action)
         super().__init__(
@@ -1338,6 +1345,20 @@ class GroupBarrier(Barrier):
                 f"got {timeout_between_barriers_action!r}"
             )
         self.timeout_between_barriers_action = timeout_between_barriers_action
+        self.skip_if_not_in_group = skip_if_not_in_group
+
+    def resolve(self):
+        elts = super().resolve()
+        if not self.skip_if_not_in_group:
+            return elts
+        return conditional(
+            f"barrier:{self.id}:in_group",
+            condition=lambda participant: (
+                self.group_type in participant.active_sync_groups
+            ),
+            logic_if_true=elts,
+            log_chosen_branch=False,
+        )
 
     def get_waiting_participants(self, participant=None, *, for_update: bool = False):
         """Return people waiting at this group visit.

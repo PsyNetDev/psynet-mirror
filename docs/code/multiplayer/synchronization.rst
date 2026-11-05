@@ -189,9 +189,10 @@ on, and they join the next round:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
-A participant who was removed from their group cannot pass that group's
-barriers, so check that they are still in the group, as the ``conditional``
-does here.
+The kicked player is no longer in a room when they reach the barrier.
+``skip_if_not_in_group=True`` lets them pass straight through, and
+``show_result`` then tells them they sat the round out. Without it, a
+participant who reaches a group barrier outside a group gets an error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets

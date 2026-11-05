@@ -115,6 +115,14 @@ def decision_page(participant):
     )
 
 
+def show_outcome(participant):
+    if not in_pair(participant):
+        return InfoPage(
+            "You ran out of time, so you missed this round.", time_estimate=5
+        )
+    return InfoPage(participant.var.outcome, time_estimate=5)
+
+
 def play_round():
     return join(
         Regrouper(
@@ -132,30 +140,16 @@ def play_round():
             in_pair,
             join(
                 PageMaker(decision_page, time_estimate=10),
-                conditional(
-                    "answered_in_time",
-                    in_pair,
-                    join(
-                        GroupBarrier(
-                            id_="round_finished",
-                            group_type="pair",
-                            content="Waiting for your partner…",
-                            timeout_between_barriers_time=DECISION_SECONDS,
-                            timeout_between_barriers_action="kick",
-                            on_release=score_round,
-                        ),
-                        PageMaker(
-                            lambda participant: InfoPage(
-                                participant.var.outcome, time_estimate=5
-                            ),
-                            time_estimate=5,
-                        ),
-                    ),
-                    InfoPage(
-                        "You ran out of time, so you missed this round.",
-                        time_estimate=5,
-                    ),
+                GroupBarrier(
+                    id_="round_finished",
+                    group_type="pair",
+                    content="Waiting for your partner…",
+                    timeout_between_barriers_time=DECISION_SECONDS,
+                    timeout_between_barriers_action="kick",
+                    skip_if_not_in_group=True,
+                    on_release=score_round,
                 ),
+                PageMaker(show_outcome, time_estimate=5),
             ),
             InfoPage("You sit out this round.", time_estimate=5),
         ),

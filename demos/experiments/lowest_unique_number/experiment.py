@@ -27,7 +27,7 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import Clock, GroupBarrier, Regrouper
-from psynet.timeline import PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import PageMaker, Timeline, for_loop, join
 
 ROUND_SECONDS = 20
 CHOICE_SECONDS = 15
@@ -55,11 +55,12 @@ def score_round(participants: List[Participant]):
         }
 
 
-def in_room(participant):
-    return "room" in participant.active_sync_groups
-
-
 def show_result(participant):
+    if "room" not in participant.active_sync_groups:
+        return InfoPage(
+            "You ran out of time, so you sat out this round. You'll join the next one.",
+            time_estimate=5,
+        )
     result = participant.var.last_round
     if result["winning_number"] is None:
         outcome = "Nobody picked a unique number, so nobody won."
@@ -89,26 +90,16 @@ def play_round():
             save_answer="choice",
             time_estimate=5,
         ),
-        conditional(
-            "made_it_in_time",
-            in_room,
-            join(
-                GroupBarrier(
-                    id_="round_finished",
-                    group_type="room",
-                    content="Waiting for the rest of the room…",
-                    timeout_between_barriers_time=CHOICE_SECONDS,
-                    timeout_between_barriers_action="kick",
-                    on_release=score_round,
-                ),
-                PageMaker(show_result, time_estimate=5),
-            ),
-            InfoPage(
-                "You ran out of time, so you sat out this round. "
-                "You'll join the next one.",
-                time_estimate=5,
-            ),
+        GroupBarrier(
+            id_="round_finished",
+            group_type="room",
+            content="Waiting for the rest of the room…",
+            timeout_between_barriers_time=CHOICE_SECONDS,
+            timeout_between_barriers_action="kick",
+            skip_if_not_in_group=True,
+            on_release=score_round,
         ),
+        PageMaker(show_result, time_estimate=5),
     )
 
 
