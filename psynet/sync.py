@@ -2518,9 +2518,11 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
-        if self.n_active_participants == 0:
+        if self.n_active_participants == 0 and not getattr(
+            self, "accepts_top_ups", False
+        ):
             self.close()
-        else:
+        elif self.n_active_participants > 0:
             self.check_leader()
 
     def _dissolve(self):
