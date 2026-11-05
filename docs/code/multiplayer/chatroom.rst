@@ -46,11 +46,73 @@ Options
 :class:`~psynet.chatroom.ChatRoom` has two optional flags:
 
 ``show_participants`` (default ``False``)
-    Show a sidebar with the IDs of the participants currently in the room.
+    Show a sidebar with the participants currently in the room.
 
 ``show_history`` (default ``False``)
     Show the messages sent in the room before the participant opened the
     page. The chatroom is enabled once the earlier messages have loaded.
+
+Pseudonyms
+----------
+
+Participants see each other by pseudonym, such as "Blue fox", with an icon
+of the animal on a disc of that colour; their own messages are labelled
+"You". A participant keeps the same pseudonym in every room, unless the
+experiment sets a different one. Each deployment shuffles the colours and
+animals differently and then assigns them in order of participant ID, so
+participants who arrive one after another differ in both colour and animal,
+and any 88 participants in a row all have different pseudonyms. Participants
+whose IDs differ by a multiple of 88 share a pseudonym, so in a large
+experiment two members of one room can occasionally have the same name; use
+``set_pseudonym`` when the group forms if that matters. The dashboard shows
+each participant's pseudonym. Exports keep the deployment ID, so after
+loading an export, ``participant.pseudonym`` gives the names that
+participants saw, for example to read chat messages that mention them.
+
+Use ``participant.pseudonym`` to show the same names elsewhere, for example
+on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
+``icon_html``:
+
+.. code-block:: python
+
+    def show_partner(participant):
+        pair = participant.active_sync_groups["pair"]
+        (partner,) = [p for p in pair.participants if p != participant]
+        return InfoPage(
+            Markup("Your partner is {} {}.").format(
+                partner.pseudonym.icon_html, partner.pseudonym.name
+            ),
+        )
+
+To give a participant a particular pseudonym, call
+``participant.set_pseudonym("red", "whale")`` from a code block. To change
+the colours, animals or how names are formed, subclass
+:class:`~psynet.pseudonym.PseudonymScheme` and set it on the experiment:
+
+.. code-block:: python
+
+    from psynet.pseudonym import PseudonymScheme
+    from psynet.utils import get_translator
+
+    _ = get_translator()
+
+    class TeamScheme(PseudonymScheme):
+        def animals(self):
+            return {"lion": (_("lion"), "🦁"), "bear": (_("bear"), "🐻")}
+
+    class Exp(psynet.experiment.Experiment):
+        pseudonym_scheme = TeamScheme()
+
+Pseudonyms repeat after a number of participants equal to the least common
+multiple of the two list lengths, so lengths with no common factor (the
+default has 8 colours and 11 animals) give the most different pseudonyms. :meth:`~psynet.pseudonym.PseudonymScheme.assign`
+chooses each participant's pseudonym,
+:meth:`~psynet.pseudonym.PseudonymScheme.name` combines the colour and
+animal (override it for languages where the colour must agree with the
+animal), and :meth:`~psynet.pseudonym.PseudonymScheme.icon_html` draws the
+icon; override them for full control. Messages, history and occupancy updates carry each
+sender's pseudonym (``sender_pseudonym`` and ``pseudonyms``), so a custom
+chatroom widget can show it too.
 
 Stored data
 -----------

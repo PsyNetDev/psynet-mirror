@@ -136,6 +136,7 @@ from .participant import (
     record_platform_base_unpaid,
     review_bonus_pay_in_progress,
 )
+from .pseudonym import PseudonymScheme
 from .recruiters import (  # noqa: F401
     BaseLucidRecruiter,
     CapRecruiter,  # noqa: F401  # Backward compatibility alias
@@ -968,6 +969,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     artifact_storage = LocalArtifactStorage()
     css = []
     css_links = []
+
+    pseudonym_scheme = PseudonymScheme()
+    """How participants are named to each other, for example in chat rooms.
+
+    See :class:`~psynet.pseudonym.PseudonymScheme`.
+    """
 
     variables = {}
 

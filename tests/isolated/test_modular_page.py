@@ -336,6 +336,7 @@ def test_chatroom_contributes_managed_resources_not_inline_markup():
         "channel": "modular_page_chat",
         "show_participants": False,
         "show_history": True,
+        "you_label": "You",
     }
     assert page.js_page_modules == [
         "/static/packages/psynet/scripts/chatroom-widget.js"

@@ -30,7 +30,7 @@ from .data import SQLBase, SQLMixin, register_table
 from .javascript_hooks import JavaScriptContributor
 from .static_resources import package_static_url
 from .timeline import NullElt, WebSocketElt
-from .utils import get_logger
+from .utils import get_logger, get_translator
 
 logger = get_logger()
 
@@ -172,6 +172,7 @@ class EnableChatrooms(NullElt, WebSocketElt):
                     "room_id": room_id,
                     "content": content,
                     "sender": str(participant.id),
+                    "sender_pseudonym": participant.pseudonym.to_dict(),
                 },
                 self._occupant_ids(room_id),
             )
@@ -228,24 +229,40 @@ class EnableChatrooms(NullElt, WebSocketElt):
                 "type": "occupancy_update",
                 "room_id": room_id,
                 "participants": occupants,
+                "pseudonyms": _pseudonyms(occupants),
             },
             occupants,
         )
 
     def _send_history(self, experiment, room_id, participant):
         """Send the persisted message log for ``room_id`` to ``participant``."""
+        log = (
+            ChatMessage.query.filter_by(room_id=room_id).order_by(ChatMessage.id).all()
+        )
+        pseudonyms = _pseudonyms({m.participant_id for m in log})
         messages = [
-            {"content": m.content, "sender": str(m.participant_id)}
-            for m in (
-                ChatMessage.query.filter_by(room_id=room_id)
-                .order_by(ChatMessage.id)
-                .all()
-            )
+            {
+                "content": m.content,
+                "sender": str(m.participant_id),
+                "sender_pseudonym": pseudonyms.get(str(m.participant_id)),
+            }
+            for m in log
         ]
         experiment.publish_to_participants(
             {"type": "history", "room_id": room_id, "messages": messages},
             [participant.id],
         )
+
+
+def _pseudonyms(participant_ids):
+    """Return ``{participant_id: pseudonym dict}`` for the given IDs, keyed by string."""
+    from psynet.participant import Participant
+
+    ids = [int(i) for i in participant_ids if i is not None]
+    if not ids:
+        return {}
+    participants = Participant.query.filter(Participant.id.in_(ids)).all()
+    return {str(p.id): p.pseudonym.to_dict() for p in participants}
 
 
 class ChatRoom(JavaScriptContributor):
@@ -263,7 +280,8 @@ class ChatRoom(JavaScriptContributor):
         value computed per trial (e.g. a group ID). A participant can only
         join the room that their current page shows.
     show_participants
-        Whether to display a sidebar listing current participants.
+        Whether to display a sidebar listing the participants currently in
+        the room, by pseudonym (see :class:`~psynet.pseudonym.PseudonymScheme`).
     show_history
         Whether to wait for the persisted room log before enabling the
         chatroom. Live messages that arrive during that wait are shown
@@ -294,12 +312,14 @@ class ChatRoom(JavaScriptContributor):
 
     def get_js_vars(self):
         """Page-local configuration contributed to the hosting page."""
+        _p = get_translator(context=True)
         return {
             "chatroom_config": {
                 "room_id": self.room_id,
                 "channel": self.channel,
                 "show_participants": bool(self.show_participants),
                 "show_history": bool(self.show_history),
+                "you_label": _p("chat sender", "You"),
             }
         }
 

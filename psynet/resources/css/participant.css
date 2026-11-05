@@ -1037,6 +1037,27 @@ textarea:focus-visible,
     color: var(--psynet-accent);
 }
 
+/*
+ * A participant's pseudonym icon (psynet.pseudonym): their animal on a disc
+ * of their colour. The grey ring keeps black and yellow discs visible on
+ * dark and light backgrounds.
+ */
+.psynet-pseudonym-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6em;
+    height: 1.6em;
+    margin-inline-end: 0.3em;
+    border: 0.15em solid var(--psynet-pseudonym-color);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--psynet-pseudonym-color) 30%, transparent);
+    box-shadow: 0 0 0 1px rgb(128 128 128 / 0.5);
+    font-size: 0.9em;
+    line-height: 1;
+    vertical-align: middle;
+}
+
 @keyframes psynet-gradient {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }

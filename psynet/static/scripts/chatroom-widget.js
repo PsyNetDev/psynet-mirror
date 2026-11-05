@@ -13,6 +13,7 @@ export async function activate({root, vars}) {
     var CHANNEL      = CONFIG.channel;
     var SHOW_PARTS   = CONFIG.show_participants;
     var SHOW_HISTORY = CONFIG.show_history;
+    var YOU_LABEL    = CONFIG.you_label || "You";
     var MY_ID        = String(dallinger.identity.participantId);
 
     var chatConnection = null;
@@ -73,15 +74,28 @@ export async function activate({root, vars}) {
         leaveChat();
     }
 
-    function senderLabel(senderId) {
-        return String(senderId) === MY_ID ? "You" : "Participant " + senderId;
+    // The icon HTML comes from the experiment's PseudonymScheme on the
+    // server, which escapes the name; message text is only ever set as text.
+    function senderLabel(senderId, pseudonym) {
+        var label = document.createElement("strong");
+        label.className = "chatroom-sender";
+        if (pseudonym && pseudonym.icon_html) {
+            var icon = document.createElement("span");
+            icon.innerHTML = pseudonym.icon_html;
+            label.appendChild(icon);
+        }
+        var name = String(senderId) === MY_ID
+            ? YOU_LABEL
+            : (pseudonym ? pseudonym.name : "Participant " + senderId);
+        label.appendChild(document.createTextNode(name));
+        return label;
     }
 
     function renderMessage(msg) {
         var feed    = root.querySelector("#chatroom-messages");
         var p       = document.createElement("p");
-        var label   = document.createElement("strong");
-        label.textContent = senderLabel(msg.sender) + ": ";
+        var label   = senderLabel(msg.sender, msg.sender_pseudonym);
+        label.appendChild(document.createTextNode(": "));
         var content = document.createTextNode(msg.content || "");
         p.appendChild(label);
         p.appendChild(content);
@@ -107,12 +121,12 @@ export async function activate({root, vars}) {
         enableChat();
     }
 
-    function rebuildParticipantList(ids) {
+    function rebuildParticipantList(ids, pseudonyms) {
         var list = root.querySelector("#chatroom-participants");
         list.innerHTML = "";
         ids.forEach(function (id) {
             var li = document.createElement("li");
-            li.textContent = String(id) === MY_ID ? "You" : "Participant " + id;
+            li.appendChild(senderLabel(id, pseudonyms[String(id)]));
             list.appendChild(li);
         });
     }
@@ -159,7 +173,9 @@ export async function activate({root, vars}) {
                 }
                 renderMessage(msg);
             } else if (msg.type === "occupancy_update") {
-                if (SHOW_PARTS) rebuildParticipantList(msg.participants || []);
+                if (SHOW_PARTS) {
+                    rebuildParticipantList(msg.participants || [], msg.pseudonyms || {});
+                }
             } else if (msg.type === "history") {
                 if (SHOW_HISTORY) finishHistoryLoad(msg.messages || []);
             }
