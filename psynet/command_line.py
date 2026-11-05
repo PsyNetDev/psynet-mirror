@@ -5295,8 +5295,6 @@ def _destroy(
     Other apps are confirmed here unless ``ask_for_confirmation`` is false.
     ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
     isn't covered by a spinner, as it may prompt or report what it kept.
-    For an app that is no longer ``deployed``, finding nothing left to delete
-    counts as success.
     """
     if server:
         if deployed:
@@ -5333,12 +5331,6 @@ def _destroy(
     )
     try:
         ctx.invoke(f_destroy, **kwargs)
-    except click.Abort:
-        if deployed:
-            raise
-        # Dallinger aborts for an app that isn't deployed and has no data
-        # left, unless given --remove-data.
-        click.echo(f"Nothing left to delete for {app} on {server}.")
     except subprocess.CalledProcessError:
         click.echo(
             f"Failed to destroy {app}. "

@@ -6955,8 +6955,6 @@ def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
 
     def fake_destroy(app, server, delete_data_command=None, **data):
         destroyed.append((app, server, data))
-        if app == "gone":  # an abort for an app that is gone counts as success
-            raise click.Abort()
         if app == "empty":
             click.echo(f"Nothing left to delete for {app} on example.com.")
         if data.get("keep_data"):
@@ -7186,22 +7184,20 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
 
     result = CliRunner().invoke(
         psynet,
-        ["destroy", "ssh", "twoo", "gone", "empty", "one", "-y", "--remove-data"],
+        ["destroy", "ssh", "twoo", "empty", "one", "-y", "--remove-data"],
     )
     assert result.exit_code == 0, result.output
     assert "did you mean" not in result.output
-    assert "Nothing left to delete for gone on musix." in result.output
-    assert result.output.count("Nothing left to delete") == 2
+    assert result.output.count("Nothing left to delete") == 1
     assert "run this command again" not in result.output
-    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "empty", "one"]
+    assert [app for app, _, _ in destroyed] == ["twoo", "empty", "one"]
     assert woken == ["one"]
 
-    for name in "gone", "empty":
-        result = CliRunner().invoke(
-            psynet, ["destroy", "ssh", name, "-y", "--remove-data"]
-        )
-        assert result.exit_code == 0, result.output
-        assert result.output.count("Nothing left to delete") == 1
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "empty", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Nothing left to delete") == 1
 
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     result = CliRunner().invoke(

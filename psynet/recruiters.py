@@ -246,16 +246,10 @@ def _prolific_error_status(error: ProlificServiceException):
 def _prolific_lookup_error_is_retriable(error: Exception) -> bool:
     """Return whether a failed Prolific lookup is worth retrying.
 
-    Connection errors and timeouts reach PsyNet as ``requests`` exceptions
-    from Dallinger releases without Dallinger PR #10008
-    (https://github.com/Dallinger/Dallinger/pull/10008), and as a
+    Connection errors and timeouts reach PsyNet as a
     ``ProlificServiceException`` whose payload has an ``error`` but no
-    ``response`` from releases with it. Once PsyNet's minimum Dallinger
-    version includes that PR, drop the ``requests.RequestException``
-    handling here and at the call sites that mention this function.
+    ``response``.
     """
-    if isinstance(error, requests.RequestException):
-        return True
     try:
         payload = json.loads(str(error))
     except json.JSONDecodeError:
@@ -1749,8 +1743,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 endpoint=f"/submissions/{assignment_id}/transition/",
                 json={"action": "COMPLETE", "completion_code": code},
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as ex:
+        except ProlificServiceException as ex:
             handle_recruitment_error(ex)
             return False
         logger.info(
@@ -2082,8 +2075,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             submission = recruiter.prolificservice.get_participant_submission(
                 participant.assignment_id
             )
-        # requests.RequestException: see _prolific_lookup_error_is_retriable.
-        except (ProlificServiceException, requests.RequestException) as error:
+        except ProlificServiceException as error:
             if not _prolific_lookup_error_is_retriable(error):
                 logger.error(
                     "Could not check Prolific submission status for assignment %s "
