@@ -2227,7 +2227,8 @@ class Regrouper(Grouper):
     active_within
         If set, participants whose tab is in the background or closed are not
         put into groups; see :class:`Grouper`. They still count as present for
-        a ``within`` group, so the round starts without them.
+        a ``within`` group, so the round starts without them. Once back, they
+        are grouped at the pool's next split.
 
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live

@@ -1,9 +1,11 @@
 import sys
+import types
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
+from psynet import page_activity
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page_activity import record_page_activity
@@ -106,6 +108,40 @@ def test_regrouper_leaves_out_players_whose_tab_is_hidden(
 
     assert _waiting(pairs, team) == [team[2]]
     assert set(team[0].active_sync_groups["pair"].participants) == set(team[:2])
+
+
+@in_consents_experiment
+def test_simple_grouper_leaves_out_players_whose_tab_is_hidden(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    grouper = SimpleGrouper("pair", initial_group_size=2, active_within=10)
+    participants = _working_participants(exp, 3)
+    record_page_activity(participants[0].id, visible=False)
+
+    _arrive(exp, grouper, participants)
+
+    assert _waiting(grouper, participants) == participants[:1]
+
+
+@in_consents_experiment
+def test_active_participants_needs_a_recent_visible_check_in(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    fresh, hidden, stale, unseen = _working_participants(exp, 4)
+    clock = types.SimpleNamespace(time=lambda: 1000.0)
+    monkeypatch.setattr(page_activity, "time", clock)
+    record_page_activity(stale.id, visible=True)
+    clock.time = lambda: 1020.0
+    record_page_activity(fresh.id, visible=True)
+    record_page_activity(hidden.id, visible=False)
+
+    active = page_activity.active_participants(
+        [fresh, hidden, stale, unseen], within=10
+    )
+
+    assert active == [fresh, unseen]
 
 
 @in_consents_experiment

@@ -70,8 +70,10 @@ current page, under a waiting indicator, until their group is formed.
     switched to another tab or closed it keeps waiting, instead of starting
     a group that then waits for them. The waiting screen checks in about every
     2 seconds and as soon as the tab is hidden or shown again, so ``10`` is a
-    good value. With explicit ``waiting_logic``, participants only check in
-    when they submit a waiting page, so allow for the longest such page. Bots
+    good value. A minimized window counts as hidden, and a participant who
+    stays away is still failed after ``max_wait_time``. With explicit
+    ``waiting_logic``, participants only check in when they submit a waiting
+    page, so allow for the longest such page. Bots
     always count as active.
 
 ``content``
@@ -195,8 +197,11 @@ on their own.
 ``active_within`` (default: ``None``)
     As for :class:`~psynet.sync.SimpleGrouper`: participants whose tab is in
     the background or closed are not grouped. They still count as ready for
-    their ``within`` group, so the round starts without them, and they join
-    the first round after they come back.
+    their ``within`` group, so the round starts without them. Once they come
+    back, they are grouped at the pool's next split, when the rest of their
+    ``within`` group is waiting again or at the deadline. If the others are
+    still playing at the deadline, a returning player waits on alone or, with
+    ``release_left_over=True``, sits that round out.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by

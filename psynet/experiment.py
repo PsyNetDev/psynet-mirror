@@ -4214,7 +4214,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
-        if page_uuid == participant.page_uuid:
+        if page_uuid == participant.page_uuid and not isinstance(participant, Bot):
             record_page_activity(participant.id, page_visible)
 
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
@@ -7721,8 +7721,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        page_visible = bool(
+        page_visible = (
             get_arg_from_dict(json_data, "page_visible", use_default=True, default=True)
+            is not False
         )
         client_ip_address = cls.get_client_ip_address()
 
