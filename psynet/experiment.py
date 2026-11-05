@@ -4345,7 +4345,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
                 barrier = released_waiting_barrier(event, participant)
                 if barrier is None:
-                    return ResponseResult(payload={"submission": "rejected"})
+                    return ResponseResult(
+                        payload={"submission": "rejected", "message": ""}
+                    )
                 Experiment._record_interrupted_response(event, participant, metadata)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)

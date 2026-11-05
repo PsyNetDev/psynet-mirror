@@ -76,10 +76,11 @@ def test_release_interrupts_a_waiting_page(
         assert not waiting_status_payload(first.unique_id, waiting["barrier_id"])[
             "released"
         ]
+        last_id = last.id
         early = _post_response(first, interrupted=True).get_json()
-        assert early == {"submission": "rejected"}
+        assert early["submission"] == "rejected"
 
-        _json_timeline(exp, last)
+        _json_timeline(exp, Participant.query.get(last_id))
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert waiting_status_payload(first.unique_id, waiting["barrier_id"])[
