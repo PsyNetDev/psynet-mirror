@@ -4188,8 +4188,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             Set by a barrier's waiting page that ends because the participant
             was released (see ``release_grace`` on
             :class:`~psynet.sync.Barrier`). The page is then not validated and
-            its answer is not saved. Ignored unless the participant has been
-            released. Keyword-only.
+            its answer is not saved. If the participant has not been released,
+            the submission is rejected without a message, so the page keeps
+            waiting. Keyword-only.
         page_visible : bool
             Whether the browser tab was visible when it sent this request,
             recorded for :func:`~psynet.page_activity.active_participants`.
@@ -4339,15 +4340,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     payload=self._approved_payload(participant, page),
                     page=page,
                 )
-            if interrupted and Experiment._waiting_page_was_released(
-                event, participant
-            ):
+            if interrupted:
+                from .sync import released_waiting_barrier
+
+                barrier = released_waiting_barrier(event, participant)
+                if barrier is None:
+                    return ResponseResult(payload={"submission": "rejected"})
                 Experiment._record_interrupted_response(event, participant, metadata)
                 participant.inc_time_credit(event.time_estimate)
                 participant.inc_progress(event.time_estimate)
                 self.timeline.advance_page(self, participant)
                 page = self._advance_past_ready_holds(
-                    participant, self.timeline.get_current_elt(self, participant)
+                    participant, self._skip_released_waiting_pages(participant, barrier)
                 )
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
@@ -4439,17 +4443,31 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
             )
 
-    @staticmethod
-    def _waiting_page_was_released(page, participant):
-        """Return whether this is a barrier's waiting page and the barrier released the participant."""
-        from .sync import _interruptible_waiting_barrier
+    def _skip_released_waiting_pages(self, participant, barrier):
+        """Skip the rest of a released barrier's waiting pages and return the next element.
 
-        barrier = _interruptible_waiting_barrier(page, participant)
-        return barrier is not None and barrier.can_participant_exit(participant)
+        A ``while_loop`` only checks its condition before each pass, so the
+        pages left in the current pass would otherwise each show briefly
+        and then be interrupted. Skipped pages were never seen, so they get
+        no response, time credit or progress.
+        """
+        from .sync import released_waiting_barrier
+
+        while True:
+            page = self.timeline.get_current_elt(self, participant)
+            released = released_waiting_barrier(page, participant)
+            if released is None or released.id != barrier.id:
+                return page
+            self.timeline.advance_page(self, participant)
 
     @staticmethod
     def _record_interrupted_response(page, participant, metadata):
-        """Store an empty response for a waiting page that a release ended."""
+        """Store an empty response for a waiting page that a release ended.
+
+        The page's ``on_complete`` doesn't run and ``participant.answer`` is
+        not updated, but is marked as not fresh.
+        """
+        participant.answer_is_fresh = False
         response = Response(
             participant=participant,
             label=page.label,
@@ -7790,6 +7808,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
         )
         client_ip_address = cls.get_client_ip_address()
+        # Only non-default flags are passed, so process_response overrides
+        # written before these keywords existed keep working.
+        flags = {}
+        if not page_visible:
+            flags["page_visible"] = False
+        if interrupted:
+            flags["interrupted"] = True
 
         try:
             result = exp.process_response(
@@ -7801,8 +7826,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 client_ip_address,
                 answer,
                 timeline_hold_resume=timeline_hold_resume,
-                page_visible=page_visible,
-                interrupted=interrupted,
+                **flags,
             )
         except Exception as error:
             clock.close_open("process", "barriers", "render")

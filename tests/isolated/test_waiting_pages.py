@@ -12,7 +12,7 @@ from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleGrouper, waiting_status_payload
-from psynet.timeline import Response, Timeline
+from psynet.timeline import Response, Timeline, join
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -38,20 +38,36 @@ def _post_response(participant, **fields):
         return Experiment.route_response()
 
 
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_release_interrupts_a_waiting_page(in_experiment_directory, db_session):
-    exp = get_experiment()
-    original = exp.timeline
+def _filler(label):
+    return ModularPage(label, "A filler question", time_estimate=5)
+
+
+def _use_timeline(exp, waiting_logic, **kwargs):
     exp.timeline = Timeline(
         SimpleGrouper(
             f"pair_{uuid.uuid4().hex[:8]}",
             initial_group_size=2,
-            waiting_logic=ModularPage("filler", "A filler question", time_estimate=5),
+            waiting_logic=waiting_logic,
+            **kwargs,
         ),
         ModularPage("after", "Your partner is here", time_estimate=1),
     )
+
+
+in_consents_experiment = pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+
+
+@pytest.mark.parametrize("n_pages", [1, 2])
+@in_consents_experiment
+def test_release_interrupts_a_waiting_page(
+    in_experiment_directory, db_session, n_pages
+):
+    """An interrupt only ends the page after release, and skips the pass's other pages."""
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, join(*[_filler(f"filler_{i}") for i in range(n_pages)]))
     try:
         first, last = _working_participants(exp, 2)
         first_id = first.id
@@ -60,6 +76,8 @@ def test_release_interrupts_a_waiting_page(in_experiment_directory, db_session):
         assert not waiting_status_payload(first.unique_id, waiting["barrier_id"])[
             "released"
         ]
+        early = _post_response(first, interrupted=True).get_json()
+        assert early == {"submission": "rejected"}
 
         _json_timeline(exp, last)
         db.session.expire_all()
@@ -72,7 +90,20 @@ def test_release_interrupts_a_waiting_page(in_experiment_directory, db_session):
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "after"
-        filler = Response.query.filter_by(participant_id=first_id, question="filler")
-        assert filler.one().metadata["interrupted"] is True
+        (filler,) = Response.query.filter_by(participant_id=first_id).all()
+        assert (filler.question, filler.metadata["interrupted"]) == ("filler_0", True)
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_release_grace_none_lets_waiting_pages_run(in_experiment_directory, db_session):
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, _filler("filler"), release_grace=None)
+    try:
+        (participant,) = _working_participants(exp, 1)
+        page = _json_timeline(exp, participant).get_json()
+        assert "waiting" not in page["attributes"]
     finally:
         exp.timeline = original

@@ -901,7 +901,8 @@ class Barrier(EltCollection):
             ),
         )
         for elt in elts:
-            elt.links["barrier"] = self
+            # Keep an inner barrier's link: its waiting pages belong to it.
+            elt.links.setdefault("barrier", self)
 
         return elts
 
@@ -3192,13 +3193,31 @@ def _interruptible_waiting_barrier(page, participant):
     Pages inside a trial are left to run to their end, so that the trial
     is not finalized without an answer.
     """
-    barrier = getattr(page, "links", {}).get("barrier")
+    barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
         return None
     trial = participant.current_trial
     if trial is not None and not trial.finalized:
         return None
     return barrier
+
+
+def _has_left_barrier(participant, barrier_id):
+    """Return whether the participant is no longer waiting at this barrier."""
+    link = participant.active_barriers.get(barrier_id)
+    return link is None or bool(link.released)
+
+
+def released_waiting_barrier(page, participant):
+    """Return the barrier if this is its interruptible waiting page and it released the participant.
+
+    The waiting-status route uses the same test, so the browser and the
+    server agree on when a waiting page may be ended.
+    """
+    barrier = _interruptible_waiting_barrier(page, participant)
+    if barrier is not None and _has_left_barrier(participant, barrier.id):
+        return barrier
+    return None
 
 
 def waiting_page_config(page, participant):
@@ -3232,9 +3251,9 @@ def waiting_status_payload(unique_id, barrier_id, *, visible=True):
     if participant is None:
         return {"released": False, "release_in_ms": None}
     record_page_activity(participant.id, visible)
-    link = participant.active_barriers.get(barrier_id)
-    if link is None or link.released:
+    if _has_left_barrier(participant, barrier_id):
         return {"released": True, "release_in_ms": None}
+    link = participant.active_barriers[barrier_id]
     release_in_ms = None
     barrier = _reconstructed_arrival_barrier(link, {})
     if barrier is not None:

@@ -404,12 +404,15 @@ trials from another trial maker:
    :end-before: class Exp
 
 When the barrier releases a participant who is on a waiting page, the page
-ends ``release_grace`` seconds later (default 3) unless they submit it first.
-The page's answer is then not saved; its response is stored with
-``"interrupted": True`` in ``metadata``. Pass ``release_grace=None`` to let
-every waiting page run to its end. Pages inside a trial, as in
-``sync_quorum``, always run to their end, so that the trial is not left
-without an answer.
+ends about ``release_grace`` seconds later (default 3) unless they submit it
+first; the browser notices the release within about 2 seconds. The page's
+answer is then not saved: its response is stored with ``"interrupted": True``
+in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
+keeps its previous value (``participant.answer_is_fresh`` is ``False``).
+Any other waiting pages left in the same pass of ``waiting_logic`` are
+skipped. Pass ``release_grace=None`` to let every waiting page run to its
+end. Pages inside a trial, as in ``sync_quorum``, always run to their end,
+so that the trial is not left without an answer.
 
 A waiting page's JavaScript can react to the release: ``window`` receives a
 ``psynetWaitingRelease`` event, with the grace period in ``detail.graceMs``,
@@ -420,7 +423,7 @@ the expected release (or ``null``) in ``detail.releaseInMs``:
 
    window.addEventListener("psynetWaitingRelease", (event) => {
      document.getElementById("note").textContent =
-       "Your group is ready! Finish this question to continue.";
+       "Your group is ready. Moving on in a moment…";
    });
 
 Time credit

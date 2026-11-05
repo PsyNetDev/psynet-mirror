@@ -1018,7 +1018,13 @@
       },
 
       interrupt() {
-        if (!psynet.waiting.config || psynet.nextPagePending) return;
+        if (!psynet.waiting.config) return;
+        if (psynet.nextPagePending) {
+          // A submission in flight may still be rejected, for example by
+          // validation; try again once it has settled.
+          psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
+          return;
+        }
         psynet.nextPage(null, { interrupted: true }, {}, undefined, {
           interrupted: true,
         });
@@ -1322,6 +1328,7 @@
 
     psynet.beginTimelineHold = function (hold) {
       psynet.stopArrivalUpdates();
+      psynet.waiting.stop();
       let active = psynet.timelineHold;
       if (active && !active.stopped) {
         let previous = active.hold;
@@ -3581,6 +3588,10 @@
         // with a rejected page_uuid.
         psynet.stopTimelineHold();
         await psynet.loadNextTimelinePageWithReload();
+      } else if (options.interrupted) {
+        // The server hasn't seen the release yet; keep waiting.
+        psynet.restoreSubmissionControlState();
+        psynet.waiting.start(psynet.page.attributes?.waiting);
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
