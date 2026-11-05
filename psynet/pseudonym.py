@@ -7,14 +7,16 @@ a pseudonym made of a colour and an animal, with an icon combining the two.
 Design constraints:
 
 - Page rendering is read-only, so the default pseudonym is a pure function
-  of the participant ID and the deployment, and is never written to the
-  database. Each deployment shuffles the colours and animals differently,
-  so participant 10 gets a different pseudonym in each deployment. Colour
-  and animal indices cycle with coprime periods (8 and 11), so any 88
-  consecutive participants get different pseudonyms, and neighbours differ
-  in both colour and animal, which helps colour-blind participants.
+  of the participant ID and the deployment ID stored in the database, and
+  is never written. Each deployment shuffles the colours and animals
+  differently, so participant 10 gets a different pseudonym in each
+  deployment, and a loaded export gives the same pseudonyms that
+  participants saw. Colour and animal indices cycle with coprime periods (8 and 11), so
+  any 88 consecutive participants get different pseudonyms, and neighbours
+  differ in both colour and animal, which helps colour-blind participants.
+  Participants whose IDs differ by a multiple of 88 share a pseudonym.
 - Only keys are stored when an experiment overrides a pseudonym
-  (``participant.var.pseudonym``); labels are translated when shown.
+  (``participant.var.psynet_pseudonym``); labels are translated when shown.
 - Experiments customize pseudonyms by subclassing :class:`PseudonymScheme`
   and setting :attr:`psynet.experiment.Experiment.pseudonym_scheme`.
 """
@@ -25,13 +27,11 @@ from typing import Dict, Tuple
 
 from markupsafe import Markup
 
-from .utils import get_logger, get_translator
-
-logger = get_logger()
+from .utils import get_translator
 
 _COLORS = {
     "orange": "#E69F00",
-    "sky": "#56B4E9",
+    "light_blue": "#56B4E9",
     "green": "#009E73",
     "yellow": "#F0E442",
     "blue": "#0072B2",
@@ -81,10 +81,12 @@ class Pseudonym:
     icon_html: Markup
 
     def to_dict(self) -> dict:
-        """Return the fields that pages need, as JSON-serializable values."""
+        """Return the fields as JSON-serializable values."""
         return {
+            "color": self.color,
+            "animal": self.animal,
             "name": self.name,
-            "color": self.css_color,
+            "css_color": self.css_color,
             "emoji": self.emoji,
             "icon_html": str(self.icon_html),
         }
@@ -95,16 +97,19 @@ class PseudonymScheme:
 
     Set an instance on your experiment to change the defaults::
 
+        _ = get_translator()
+
         class TeamScheme(PseudonymScheme):
             def animals(self):
-                return {"lion": ("Lion", "🦁"), "bear": ("Bear", "🐻")}
+                return {"lion": (_("lion"), "🦁"), "bear": (_("bear"), "🐻")}
 
         class Exp(psynet.experiment.Experiment):
             pseudonym_scheme = TeamScheme()
 
     Override :meth:`colors` and :meth:`animals` to change the vocabulary,
     :meth:`assign` to change who gets which pseudonym, :meth:`name` for the
-    word order, and :meth:`icon_html` for the icon. Call
+    word order (for example in languages where the colour must agree with
+    the animal), and :meth:`icon_html` for the icon. Call
     :meth:`~psynet.participant.Participant.set_pseudonym` to give one
     participant a particular pseudonym.
     """
@@ -114,7 +119,7 @@ class PseudonymScheme:
         _p = get_translator(context=True)
         labels = {
             "orange": _p("pseudonym color", "orange"),
-            "sky": _p("pseudonym color", "sky"),
+            "light_blue": _p("pseudonym color", "light blue"),
             "green": _p("pseudonym color", "green"),
             "yellow": _p("pseudonym color", "yellow"),
             "blue": _p("pseudonym color", "blue"),
@@ -162,16 +167,18 @@ class PseudonymScheme:
     def seed(self) -> str:
         """Return the seed for :meth:`assign`'s shuffle: by default, the deployment ID.
 
-        The same within a deployment, across all its server processes, and
-        different between deployments.
+        It is read from the database, so it is the same in every server
+        process and in exports, and differs between deployments. Before
+        launch there is none yet, and the order is fixed.
         """
-        from .experiment import Experiment
+        if getattr(self, "_deployment_seed", None) is None:
+            from .experiment import get_experiment
 
-        try:
-            return str(Experiment.deployment_id)
-        except (FileNotFoundError, KeyError):
-            logger.debug("No deployment ID yet; using a fixed pseudonym order.")
-            return ""
+            deployment_id = get_experiment().var.get("deployment_id", None)
+            if deployment_id is None:
+                return ""
+            self._deployment_seed = str(deployment_id)
+        return self._deployment_seed
 
     def name(self, color_label: str, animal_label: str) -> str:
         """Combine translated colour and animal labels into a name, capitalizing its first letter."""
@@ -182,15 +189,21 @@ class PseudonymScheme:
         return name[:1].upper() + name[1:]
 
     def icon_html(self, css_color: str, emoji: str, name: str) -> Markup:
-        """Return HTML for a participant's icon: the animal on a coloured disc."""
+        """Return HTML for a participant's icon: the animal on a coloured disc.
+
+        The icon is hidden from screen readers, because pages show the name
+        next to it. Pages insert this HTML as it is, so an override must
+        return :class:`~markupsafe.Markup` and escape its arguments, as
+        :meth:`Markup.format <markupsafe.Markup.format>` does.
+        """
         return Markup(
-            '<span class="psynet-pseudonym-icon" role="img" aria-label="{}"'
+            '<span class="psynet-pseudonym-icon" aria-hidden="true" title="{}"'
             ' style="--psynet-pseudonym-color: {}">{}</span>'
         ).format(name, css_color, emoji)
 
     def pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""
-        stored = participant.var.get("pseudonym", None)
+        stored = participant.var.get("psynet_pseudonym", None)
         if stored is None:
             color, animal = self.assign(participant)
         else:

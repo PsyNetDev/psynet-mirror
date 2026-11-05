@@ -614,7 +614,13 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         from .experiment import get_experiment
 
         get_experiment().pseudonym_scheme.make(color, animal)
-        self.var.pseudonym = {"color": color, "animal": animal}
+        self.var.psynet_pseudonym = {"color": color, "animal": animal}
+
+    def to_dict(self):
+        """Return the participant's dashboard fields, including the name others see them by."""
+        x = super().to_dict()
+        x["pseudonym"] = self.pseudonym.name
+        return x
 
     # all_trials = relationship("psynet.trial.main.Trial")
 
