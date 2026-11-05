@@ -155,6 +155,7 @@ from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
+    _queue_countdown_update,
     _queue_timeline_hold_wake,
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
@@ -193,8 +194,6 @@ _POLLER_SWEEP_BUDGET_SECONDS = 0.2
 
 # How much sooner a new or changed visit is re-checked than an unchanged one.
 _POLLER_CHANGE_HEAD_START_SECONDS = 5.0
-
-_REMOVED_NOTICE_KEY = "psynet_removed_from_group_notice"
 
 # Poller-process memory: instance id -> (fingerprint, monotonic check time).
 _poller_checked_visits = {}
@@ -700,7 +699,13 @@ class _BarrierHoldPage(_TimelineHoldPage):
         )
         if remaining_ms is None or remaining_ms <= 0:
             # A passed release time means the split is waiting on something else.
-            return html.replace("{SECONDS}", "…")
+            # The empty span takes a countdown if the barrier later sends one.
+            return Markup(
+                html.replace(
+                    "{SECONDS}",
+                    Markup('<span class="psynet-timeline-hold-countdown">…</span>'),
+                )
+            )
         # Screen readers get the starting value once, not a live region that
         # changes every second.
         seconds = ceil(remaining_ms / 1000)
@@ -1325,7 +1330,7 @@ class GroupBarrier(Barrier):
         ``timeout_between_barriers_action="kick"``, shown until they leave
         their page; it defaults to "Your partner went on without you." or
         "Your group went on without you.", and ``group_size`` counts the
-        members left.
+        group before anyone was removed.
         Groups of three or more default to ``"{REMAINING} of {TOTAL} not ready yet"``
         on the hold and ``"{ARRIVED}/{TOTAL} of your group are ready."`` on the
         pill. Notice copy stays on one line (overflow ellipsizes) and sits
@@ -1641,6 +1646,7 @@ class GroupBarrier(Barrier):
         late = self._late_between_barriers(group, waiting_participant_ids)
         if self.timeout_between_barriers_action == "fail":
             late = _lock_free_participants(late)
+        group_size = len(group.active_participants)
         for participant in late:
             if self.timeout_between_barriers_action == "kick":
                 logger.info(
@@ -1650,7 +1656,7 @@ class GroupBarrier(Barrier):
                     group.id,
                 )
                 group.remove_participant(participant)
-                self._tell_removed_participant(participant, group)
+                self._tell_removed_participant(participant, group, group_size)
             else:
                 logger.info(
                     "GroupBarrier '%s': failing participant %s (timeout between barriers)",
@@ -1659,28 +1665,40 @@ class GroupBarrier(Barrier):
                 )
                 participant.fail("timeout between barriers")
 
-    def _tell_removed_participant(self, participant, group):
+    def _tell_removed_participant(self, participant, group, group_size):
         """Show a kicked participant a notice that their group went on without them.
 
-        The notice lasts until they leave their current page. It is stored
-        only if their row is free, because their own request may be writing it.
+        The notice lasts until they leave their current page. It is skipped if
+        their own request holds their row, since they are leaving the page.
+        A failing message callback is logged rather than stopping the kick.
         """
         if not self.notify_arrivals:
             return
-        text = self._call_arrival_message(
-            kind="removed",
-            waiting_count=0,
-            group_size=len(group.active_participants),
-            recipient=participant,
-            group=group,
-        )
-        if not text:
-            return
-        text = str(text)
-        if _lock_free_participants([participant]):
-            participant.var.set(
-                _REMOVED_NOTICE_KEY, {"page_uuid": participant.page_uuid, "text": text}
+        try:
+            text = self._call_arrival_message(
+                kind="removed",
+                waiting_count=0,
+                group_size=group_size,
+                recipient=participant,
+                group=group,
             )
+        except Exception as err:
+            if is_transient_transaction_error(err):
+                raise
+            logger.exception(
+                "GroupBarrier '%s': could not make the removal notice for participant %s.",
+                self.id,
+                participant.id,
+            )
+            return
+        if not text or not _lock_free_participants([participant]):
+            return
+        db.session.refresh(participant, ["page_uuid"])
+        text = str(text)
+        participant.group_removal_notice = {
+            "page_uuid": participant.page_uuid,
+            "text": text,
+        }
         _queue_arrival_update(participant.id, notice=text)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
@@ -2139,15 +2157,18 @@ class SimpleGrouper(Grouper):
         once a group opens.
         """
         if not self.join_existing_groups:
-            return super().choose_who_to_release(waiting_participants)
-        joined, still_waiting = [], []
-        for participant in self._active(waiting_participants):
-            self._join_existing_groups(participant)
-            if self.group_type in participant.active_sync_groups:
-                joined.append(participant)
-            else:
-                still_waiting.append(participant)
-        return joined + super().choose_who_to_release(still_waiting)
+            released = super().choose_who_to_release(waiting_participants)
+        else:
+            joined, still_waiting = [], []
+            for participant in self._active(waiting_participants):
+                self._join_existing_groups(participant)
+                if self.group_type in participant.active_sync_groups:
+                    joined.append(participant)
+                else:
+                    still_waiting.append(participant)
+            released = joined + super().choose_who_to_release(still_waiting)
+        self._refresh_countdowns(waiting_participants, released)
+        return released
 
     def would_release(self, waiting_participants: List[Participant]) -> bool:
         """Return whether a check would form a group or let a waiter join one."""
@@ -2191,21 +2212,30 @@ class SimpleGrouper(Grouper):
             self._active(self.get_waiting_participants(participant))
         )
 
-    def _notify_arrivals(self, arriving_participant):
-        """Start the other waiters' countdowns once enough of them are waiting."""
-        if self.start_short_after is None or not self._uses_timeline_hold:
+    @property
+    def _countdown_key(self):
+        return f"simple_grouper__{self.id}__short_start"
+
+    def _refresh_countdowns(self, waiting_participants, released):
+        """Send those still waiting the new short start time when it changes.
+
+        Runs inside the serialized barrier check, so simultaneous arrivals and
+        departures are all seen.
+        """
+        if self.start_short_after is None or "{SECONDS}" not in str(
+            getattr(self, "content", None) or ""
+        ):
             return
-        waiting = self._active(self.get_waiting_participants(arriving_participant))
-        if len(waiting) != self.min_group_size:
+        released_ids = {p.id for p in released}
+        remaining = [p for p in waiting_participants if p.id not in released_ids]
+        start = self._short_start_time(self._active(remaining))
+        definition = BarrierDefinition.query.get(self.id)
+        if definition is None or definition.var.get(self._countdown_key, None) == start:
             return
-        _prime_timeline_hold_records(waiting, self.id)
-        for member in waiting:
-            if member.id == arriving_participant.id or member.failed:
-                continue
-            if not self.waiting_logic._is_silent_for(member):
-                _queue_arrival_update(
-                    member.id, hold_message=self.waiting_logic.overlay_html(member)
-                )
+        definition.var.set(self._countdown_key, start)
+        for member in remaining:
+            if not member.failed:
+                _queue_countdown_update(member.id, start)
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
         if len(participants) < self.initial_group_size:
@@ -3321,9 +3351,7 @@ def _reconstructed_arrival_barrier(link, reconstructed):
 
 def _removed_from_group_notice(participant) -> Optional[str]:
     """Return the notice for a participant removed from a group on their current page."""
-    if participant is None:
-        return None
-    stored = participant.var.get(_REMOVED_NOTICE_KEY, None)
+    stored = getattr(participant, "group_removal_notice", None)
     if stored is None or stored["page_uuid"] != participant.page_uuid:
         return None
     return stored["text"]

@@ -898,6 +898,9 @@
       document
         .querySelectorAll(".psynet-timeline-hold-countdown")
         .forEach((element) => {
+          if (element.dataset.releaseInMs === undefined) {
+            return;
+          }
           if (!element.dataset.releaseAt) {
             element.dataset.releaseAt = String(
               now + Number(element.dataset.releaseInMs || 0),
@@ -926,6 +929,23 @@
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
     });
+
+    // A barrier sends a new release time, or null when it no longer knows one.
+    psynet.setTimelineHoldCountdowns = function (releaseInMs) {
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          delete element.dataset.releaseAt;
+          delete element.dataset.checked;
+          if (releaseInMs === null || releaseInMs <= 0) {
+            delete element.dataset.releaseInMs;
+            element.textContent = "…";
+          } else {
+            element.dataset.releaseInMs = String(releaseInMs);
+          }
+        });
+      psynet.tickTimelineHoldCountdowns();
+    };
 
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
@@ -969,6 +989,9 @@
         }
         if (Object.prototype.hasOwnProperty.call(target, "notice")) {
           psynet.applyArrivalNotice(target.notice);
+        }
+        if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
+          psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
       });
     };
