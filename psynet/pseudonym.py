@@ -247,12 +247,7 @@ class PseudonymScheme:
                 '<span class="psynet-pseudonym-sticker-shape">{}</span>'
                 '<span class="psynet-pseudonym-sticker-detail">{}</span></span>'
             ).format(classes, name, css_color, emoji, emoji)
-        shape, lines = artwork
-        return Markup(
-            '<span class="{}" aria-hidden="true" title="{}"'
-            ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
-            '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
-        ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), lines)
+        return _artwork_sticker(classes, css_color, *artwork, name)
 
     def replacement(self, taken) -> Optional[Tuple[str, str]]:
         """Return ``(color, animal)`` keys that nobody in ``taken`` has, or ``None`` if all are used.
@@ -304,6 +299,26 @@ class PseudonymScheme:
             icon_html=self.icon_html(css_color, emoji, name),
             sticker_html=self.sticker_html(css_color, animal, emoji, name),
         )
+
+
+def anonymous_sticker_html() -> Markup:
+    """Return HTML for a neutral person figure, used where members must not be recognisable."""
+    folder = "images/pseudonym-animals"
+    return _artwork_sticker(
+        "psynet-pseudonym-sticker psynet-pseudonym-sticker--anonymous",
+        "#adb5bd",
+        package_static_url("psynet", f"{folder}/person.svg"),
+        package_static_url("psynet", f"{folder}/person-lines.svg"),
+        "",
+    )
+
+
+def _artwork_sticker(classes, css_color, shape, lines, name) -> Markup:
+    return Markup(
+        '<span class="{}" aria-hidden="true" title="{}"'
+        ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
+        '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
+    ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), lines)
 
 
 def _is_dark(css_color: str) -> bool:

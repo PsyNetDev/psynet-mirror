@@ -2767,8 +2767,10 @@ class SyncGroup(SQLBase, SQLMixin):
     def add_participant(self, participant: Participant):
         """Add a participant to the group (creates an active link).
 
-        If an active member already has the newcomer's pseudonym, the
-        newcomer is given a free one, so members can tell each other apart.
+        If an active member already has the newcomer's pseudonym and this is
+        the newcomer's first group, the newcomer is given a free one, so
+        members can tell each other apart. Later groups never rename anyone,
+        so a pseudonym stays the same once others have seen it.
         """
         self._give_distinct_pseudonym(participant)
         _forget_active_sync_group(participant)
@@ -2786,7 +2788,10 @@ class SyncGroup(SQLBase, SQLMixin):
         return [p for p in self.participants if not p.failed and p.status == "working"]
 
     def _give_distinct_pseudonym(self, participant):
-        """Store a free pseudonym for ``participant`` if an active member has theirs."""
+        """Store a free pseudonym for ``participant`` if an active member has theirs.
+
+        Only in the participant's first group; see :meth:`add_participant`.
+        """
         # Cached for this transaction, so forming a large group stays linear.
         transaction = db.session().get_transaction()
         cached = self.__dict__.get("_pseudonym_keys")
@@ -2798,7 +2803,10 @@ class SyncGroup(SQLBase, SQLMixin):
             self.__dict__["_pseudonym_keys"] = (transaction, taken)
         pseudonym = participant.pseudonym
         keys = (pseudonym.color, pseudonym.animal)
-        if keys in taken:
+        first_group = all(
+            link.sync_group_id == self.id for link in participant.sync_group_links
+        )
+        if keys in taken and first_group:
             from .experiment import get_experiment
 
             replacement = get_experiment().pseudonym_scheme.replacement(taken)

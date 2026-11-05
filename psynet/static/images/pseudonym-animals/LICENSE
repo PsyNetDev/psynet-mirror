@@ -1,6 +1,7 @@
-Animal artwork from Microsoft Fluent Emoji (https://github.com/microsoft/fluentui-emoji):
-"<animal>.svg" is the Flat style, used only as a mask for the shape, and
-"<animal>-lines.svg" the High Contrast style, both unmodified.
+Animal artwork, and the "person" figure for anonymous groups, from Microsoft
+Fluent Emoji (https://github.com/microsoft/fluentui-emoji): "<name>.svg" is
+the Flat style, used only as a mask for the shape, and "<name>-lines.svg" the
+High Contrast style, both unmodified.
 
 MIT License
 

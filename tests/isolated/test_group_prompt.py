@@ -95,6 +95,15 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert "You" in clusters[0] and third.pseudonym.name in clusters[0]
     assert second.pseudonym.name in clusters[1]
 
+    html = GroupPrompt(group=group, participant=first, anonymous=True).group_html
+    assert html.count(">Another player<") == 2 and ">You<" in html
+    assert not any(p.pseudonym.name in html for p in (first, second, third))
+
+    # Pseudonyms are only made distinct in a participant's first group.
+    third.set_pseudonym(first.pseudonym.color, first.pseudonym.animal)
+    _arrive(exp, SimpleGrouper("again", initial_group_size=3), [first, second, third])
+    assert third.pseudonym.name == first.pseudonym.name
+
     # Members without an answer get no bubble.
     html = GroupPrompt(
         group=group, participant=first, answers={second.id: None}

@@ -7,8 +7,8 @@ display above a page's controls.
 
 Design constraints:
 
-- Members are shown by pseudonym (:mod:`psynet.pseudonym`), never by
-  participant ID. The page refers to members by seat
+- Members are shown by pseudonym (:mod:`psynet.pseudonym`), or all as the
+  same figure when ``anonymous``, never by participant ID. The page refers to members by seat
   (:func:`psynet.sync.group_seats`), which is also how
   :class:`~psynet.sync.GroupBarrier` reports live ticks.
 - By default a member has answered once they are waiting at a barrier of
@@ -25,6 +25,7 @@ from typing import Callable, Dict, Optional, Union
 from markupsafe import Markup
 
 from .modular_page import Prompt
+from .pseudonym import anonymous_sticker_html
 from .static_resources import package_static_url
 from .utils import get_translator
 
@@ -79,6 +80,10 @@ class GroupPrompt(Prompt):
         subgroup (``None``) form a cluster of their own.
     show_names
         If ``True``, show each member's pseudonym below their animal.
+    anonymous
+        If ``True``, show every member as the same neutral figure, labelled
+        "Your partner" in a pair and "Another player" otherwise, so that
+        nobody can recognise a member they met in an earlier group.
     text_align
         CSS alignment of the text.
     """
@@ -98,6 +103,7 @@ class GroupPrompt(Prompt):
         answered: Optional[Callable] = None,
         subgroups: Union[str, Callable, None] = None,
         show_names: bool = False,
+        anonymous: bool = False,
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
@@ -114,6 +120,7 @@ class GroupPrompt(Prompt):
         self.answered = answered or _waiting_in_group(group)
         self.subgroups = subgroups
         self.show_names = show_names
+        self.anonymous = anonymous
 
     @property
     def metadata(self):
@@ -228,8 +235,20 @@ class GroupPrompt(Prompt):
 
     def _member_html(self, member, seat, index):
         _p = get_translator(context=True)
-        pseudonym = member.pseudonym
         is_me = member.id == self.participant.id
+        if is_me:
+            label = _p("group prompt", "You")
+        elif not self.anonymous:
+            label = member.pseudonym.name
+        elif len(self.group.active_participants) == 2:
+            label = _p("group prompt", "Your partner")
+        else:
+            label = _p("group prompt", "Another player")
+        sticker = (
+            anonymous_sticker_html()
+            if self.anonymous
+            else member.pseudonym.sticker_html
+        )
         classes = ["psynet-group-member"]
         if is_me:
             classes.append("psynet-group-member--me")
@@ -260,14 +279,9 @@ class GroupPrompt(Prompt):
                 '<span class="psynet-group-tick" aria-hidden="true">✓</span>'
                 '<span class="psynet-group-status visually-hidden" aria-live="polite">{}</span>'
             ).format(_p("group prompt", "has answered") if answered else "")
-        if is_me:
-            name = Markup(
-                '<span class="psynet-group-name psynet-group-you">{}</span>'
-            ).format(_p("group prompt", "You"))
-        else:
-            name = Markup('<span class="psynet-group-name">{}</span>').format(
-                pseudonym.name
-            )
+        name = Markup('<span class="psynet-group-name{}">{}</span>').format(
+            " psynet-group-you" if is_me else "", label
+        )
         return Markup(
             '<li class="{}" data-seat="{}" style="--i: {};" title="{}"{}>'
             '{}<span class="psynet-group-avatar">{}{}</span>{}</li>'
@@ -275,10 +289,10 @@ class GroupPrompt(Prompt):
             " ".join(classes),
             seat,
             index,
-            pseudonym.name,
+            label,
             focusable,
             bubble,
-            pseudonym.sticker_html,
+            sticker,
             status,
             name,
         )

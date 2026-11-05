@@ -313,9 +313,14 @@ page labelled "You". Each member appears as their pseudonym animal, drawn
 in their colour; the other members' names are read out by screen
 readers and shown on hover, or below the animals with ``show_names=True``.
 Members sit in a row for up to four people and in a zigzag across the
-width of the page for more, so the display adapts to any screen. Joining a group
-gives a newcomer a different pseudonym if another active member already has
-theirs.
+width of the page for more, so the display adapts to any screen. Joining
+their first group gives a newcomer a different pseudonym if another active
+member already has theirs; after that, pseudonyms never change, so someone
+regrouped every round keeps the name their earlier partners saw.
+
+When partners must not recognise each other across rounds, pass
+``anonymous=True``: every member is then drawn as the same grey figure,
+labelled "Your partner" in a pair and "Another player" in a larger group.
 
 ``subgroups`` clusters the members, for example pairs formed within a
 room. Pass a sync group type, or a function returning a key per participant;

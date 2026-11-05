@@ -33,6 +33,7 @@ const SHAPES = [
   { size: 8, subgroup_size: 2 },
   { size: 12, subgroup_size: 6 },
   { size: 6, show_names: true },
+  { size: 2, anonymous: true, show_names: true },
 ];
 const CASES = SHAPES.flatMap((shape) => [
   { ...shape, answers: false },
@@ -42,6 +43,7 @@ const describeCase = (c) =>
   [
     `${c.size} members`,
     c.subgroup_size && `in subgroups of ${c.subgroup_size}`,
+    c.anonymous && "anonymous",
     c.show_names && "with names",
     c.answers && "with answers",
   ]
