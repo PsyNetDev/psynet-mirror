@@ -2642,10 +2642,9 @@ def _participant_link(result):
 def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
-    Also names the deployed Docker image, if Dallinger reports it, and the
-    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not
-    printed, so that pasted logs don't leak them; they are saved in
-    ``launch_info``. Without a single participant link, the
+    Also names the deployed Docker image and the ``bot_log`` that
+    ``performance-test ssh`` adds. Passwords are not printed, so that pasted
+    logs don't leak them; they are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead. An ``update`` doesn't open recruitment again,
     so it shows what the first deploy recorded on this computer, or, without

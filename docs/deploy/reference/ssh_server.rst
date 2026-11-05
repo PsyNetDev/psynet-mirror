@@ -70,8 +70,7 @@ Use a Cloudflare tunnel for a server on a private network, such as a lab
 computer: Let's Encrypt cannot issue certificates for a private address, so
 classic ingress cannot serve participants there. To make it the server's
 default, register it with ``dallinger docker-ssh servers add --host <host>
---default-ingress cloudflare``. Cloudflare ingress needs a Dallinger version
-newer than 12.4.
+--default-ingress cloudflare``.
 
 Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
 ``cloudflare_dns_zone`` from Dallinger config (for example

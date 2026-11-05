@@ -180,9 +180,8 @@ def _without_matching_bonus_entry(bonus_payments, amount):
 def _fetch_prolific_submission(prolificservice, assignment_id: str) -> dict | None:
     """Quiet raw submission GET via Dallinger.
 
-    Requires ``ProlificService.get_participant_submission(..., translate=False)``
-    (Dallinger PR #9779, or the first release that includes it). That
-    path goes through ``_req``, so ``DevProlificService`` can mock it,
+    Uses ``ProlificService.get_participant_submission(..., translate=False)``.
+    That path goes through ``_req``, so ``DevProlificService`` can mock it,
     keeps ``bonus_payments``, and returns ``None`` on a miss.
     """
     return prolificservice.get_participant_submission(assignment_id, translate=False)

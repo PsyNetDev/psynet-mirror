@@ -6955,6 +6955,8 @@ def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
 
     def fake_destroy(app, server, delete_data_command=None, **data):
         destroyed.append((app, server, data))
+        if app == "declined":  # e.g. a changed SSH host key was not accepted
+            raise click.Abort()
         if app == "empty":
             click.echo(f"Nothing left to delete for {app} on example.com.")
         if data.get("keep_data"):
@@ -7169,6 +7171,18 @@ def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_p
     assert destroyed == [
         ("one", "musix", {"remove_data": True, "keep_data": False, "yes": True})
     ]
+
+
+def test_destroy_ssh_remove_data_reports_an_abort_for_an_undeployed_app(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "declined", "one", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "Failed to destroy declined" in result.output
+    assert "Nothing left to delete" not in result.output
+    assert [app for app, _, _ in destroyed] == ["declined", "one"]
 
 
 def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
