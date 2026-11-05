@@ -72,8 +72,11 @@ different experiments on one machine, add ``--isolated``:
       Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
     Press Ctrl+C to stop.
 
-Run the ``Other terminals`` line in another terminal to use the server's data
-there, for example with ``psynet export local`` or ``psynet run-bot``.
+In the same experiment directory, ``psynet export local``, ``psynet run-bot``,
+``psynet db`` and ``psynet experiment-variables`` find the server by
+themselves and say which database they use. For other commands, or from
+another directory, run the ``Other terminals`` line in that terminal first.
+A ``DATABASE_URL`` you set yourself always takes precedence.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on

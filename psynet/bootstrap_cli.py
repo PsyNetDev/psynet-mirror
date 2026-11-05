@@ -96,6 +96,40 @@ def _has_version_flag() -> bool:
     return sys.argv[1:] in (["--version"], ["-V"])
 
 
+def _reads_local_database(args: list[str]) -> bool:
+    """Return whether ``psynet <args>`` reads the local experiment database."""
+    if args[:2] == ["export", "local"] or args[:1] == ["run-bot"]:
+        return True
+    remote = ("heroku", "docker_heroku", "ssh")
+    return args[:1] in (["db"], ["experiment-variables"]) and not any(
+        arg in remote for arg in args[1:]
+    )
+
+
+def _use_isolated_server_database() -> None:
+    """Point local database commands at an isolated debug server in this directory.
+
+    ``psynet debug local --isolated`` runs in its own database, Redis and port,
+    and prints an ``export`` line for other terminals; this applies that line
+    automatically in the server's directory. Dallinger reads ``DATABASE_URL``
+    and ``REDIS_URL`` when it is first imported, so this must run before the
+    full CLI is imported. An explicitly set ``DATABASE_URL`` wins.
+    """
+    if "DATABASE_URL" in os.environ or not _reads_local_database(sys.argv[1:]):
+        return
+    from psynet.testing.locks import isolated_server_environment
+
+    env = isolated_server_environment(os.getcwd())
+    if env is None:
+        return
+    os.environ.update(env)
+    database = env["DATABASE_URL"].rsplit("/", 1)[-1]
+    click.echo(
+        f"Using database {database} of the isolated debug server in this directory.",
+        err=True,
+    )
+
+
 def _load_full_psynet_cli():
     """Import the full experiment CLI group (requires ``[experiment]``)."""
     from psynet.command_line import psynet as _full_psynet
@@ -208,6 +242,7 @@ def main() -> None:
         _bootstrap(standalone_mode=True)
         return
 
+    _use_isolated_server_database()
     # Try loading the full experiment CLI.
     try:
         _full_psynet = _load_full_psynet_cli()

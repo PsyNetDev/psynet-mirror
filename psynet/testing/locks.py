@@ -19,14 +19,22 @@ can say what holds it.
 A parent process that already holds the lock (for example the CI runner,
 which scaffolds a demo before starting pytest on it) passes it down by setting
 :data:`HELD_LOCK_ENV_VAR` to the directory, so the child does not deadlock.
+
+``psynet debug local --isolated`` also records its database, Redis and port
+next to the lock (:func:`record_isolated_server`), so that commands such as
+``psynet export local`` in the same directory read its database rather than
+the shared one (:func:`isolated_server_environment`). The record is trusted
+only while the process that wrote it still holds the lock as a server, so a
+record left by a crashed server is ignored.
 """
 
 import fcntl
 import hashlib
+import json
 import logging
 import os
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 from .. import isolated_environment
 
@@ -162,6 +170,89 @@ def experiment_directory_lock(directory, export=True, *, kind=TEST_SESSION):
                 else:
                     os.environ[HELD_LOCK_ENV_VAR] = previous
             fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+_RECORDED_VARIABLES = ("DATABASE_URL", "REDIS_URL", "base_port")
+
+
+def _server_record_path(directory):
+    return os.path.splitext(_lock_path(os.path.realpath(directory)))[0] + ".json"
+
+
+@contextmanager
+def record_isolated_server(directory, env):
+    """Record an isolated debug server's database, Redis and port while the block runs.
+
+    The caller must hold ``directory``'s lock as a :data:`SERVER`. The record
+    is readable only by this user, because the URLs can contain passwords.
+
+    Parameters
+    ----------
+    directory : str or os.PathLike
+        The experiment directory.
+    env : mapping
+        The server's environment, with ``DATABASE_URL``, ``REDIS_URL`` and
+        ``base_port``.
+    """
+    path = _server_record_path(directory)
+    record = {"pid": os.getpid(), **{key: env[key] for key in _RECORDED_VARIABLES}}
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(record, f)
+    except OSError as e:
+        logger.warning(
+            "Could not record the isolated server's database in %s (%s); other "
+            "terminals need its export line.",
+            path,
+            e,
+        )
+        path = None
+    try:
+        yield
+    finally:
+        if path is not None:
+            with suppress(FileNotFoundError):
+                os.remove(path)
+
+
+def isolated_server_environment(directory):
+    """Return the environment of the isolated debug server serving ``directory``, or None.
+
+    Parameters
+    ----------
+    directory : str or os.PathLike
+        The experiment directory.
+
+    Returns
+    -------
+    dict or None
+        ``DATABASE_URL``, ``REDIS_URL`` and ``base_port`` from
+        :func:`record_isolated_server`, or None if there is no readable record
+        of this user's, or the process that wrote it no longer holds the
+        directory's lock as a server.
+    """
+    path = _server_record_path(directory)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(fd) as f:
+        if os.fstat(fd).st_uid != os.getuid():
+            return None
+        try:
+            record = json.load(f)
+        except ValueError:
+            return None
+    lock_path = _lock_path(os.path.realpath(directory))
+    try:
+        with isolated_environment.open_lock_file(lock_path) as lock_file:
+            holder = _try_acquire(lock_file)
+    except OSError:
+        return None
+    if holder != (str(record.get("pid")), SERVER):
+        return None
+    return {key: record[key] for key in _RECORDED_VARIABLES}
 
 
 def check_no_server(directory):

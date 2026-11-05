@@ -2,6 +2,8 @@ import fcntl
 import os
 import shutil
 import socket
+import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -31,6 +33,7 @@ from psynet.testing.locks import (
     DirectoryInUseError,
     check_no_server,
     experiment_directory_lock,
+    record_isolated_server,
 )
 
 
@@ -118,6 +121,33 @@ def test_a_holder_that_records_nothing_is_waited_out_briefly_then_refused(
         with pytest.raises(DirectoryInUseError, match="Another PsyNet process"):
             with experiment_directory_lock(tmp_path):
                 pass
+
+
+def test_local_database_commands_find_an_isolated_server_in_the_directory(
+    tmp_path, monkeypatch
+):
+    """``psynet db`` reads a running isolated server's record, not a stale one."""
+    monkeypatch.delenv(HELD_LOCK_ENV_VAR, raising=False)
+    hidden = ("DATABASE_URL", "REDIS_URL", "base_port", READY_ENV_VAR)
+    env = {key: value for key, value in os.environ.items() if key not in hidden}
+    server = {
+        "DATABASE_URL": f"{DEFAULT_DATABASE_URL}_test_5990",
+        "REDIS_URL": "redis://127.0.0.1:6369",
+        "base_port": "5990",
+    }
+
+    def psynet_db():
+        code = "from psynet.bootstrap_cli import main; main()"
+        command = [sys.executable, "-c", code, "db"]
+        result = subprocess.run(
+            command, cwd=tmp_path, env=env, capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+
+    with record_isolated_server(tmp_path, server):
+        with experiment_directory_lock(tmp_path, export=False, kind=SERVER):
+            assert psynet_db() == server["DATABASE_URL"]
+        assert psynet_db() == DEFAULT_DATABASE_URL
 
 
 @pytest.mark.skipif(shutil.which("redis-server") is None, reason="needs redis-server")

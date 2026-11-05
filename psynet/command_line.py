@@ -6010,6 +6010,7 @@ def _rerun_in_isolated_environment(mode="test"):
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
+    from .testing.locks import record_isolated_server
 
     _check_no_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
@@ -6021,9 +6022,12 @@ def _rerun_in_isolated_environment(mode="test"):
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
+    record = (
+        record_isolated_server(os.getcwd(), env) if mode == "debug" else nullcontext()
+    )
     exit_code = 130
     interrupted = None
-    with _exit_on_termination_signal(), environment:
+    with _exit_on_termination_signal(), environment, record:
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
