@@ -1055,8 +1055,29 @@
       document.getElementById("psynet-arrival-notice")?.remove();
     };
 
+    psynet.arrivalNoticeSuppressors = 0;
+
+    /**
+     * Hide the group arrival notice while a page shows the same information,
+     * for example live ticks. Returns a function that ends the suppression.
+     */
+    psynet.suppressArrivalNotice = function () {
+      psynet.arrivalNoticeSuppressors += 1;
+      psynet.hideArrivalNotice();
+      let released = false;
+      return function () {
+        if (released) return;
+        released = true;
+        psynet.arrivalNoticeSuppressors -= 1;
+      };
+    };
+
     psynet.showArrivalNotice = function (message) {
-      if (!message || document.body.classList.contains("timeline-held")) {
+      if (
+        !message ||
+        psynet.arrivalNoticeSuppressors > 0 ||
+        document.body.classList.contains("timeline-held")
+      ) {
         return;
       }
       let notice = document.getElementById("psynet-arrival-notice");

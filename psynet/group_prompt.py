@@ -70,7 +70,8 @@ class GroupPrompt(Prompt):
     show_progress
         If ``True`` (default) and ``answers`` is not given, members who have
         answered get a tick, which appears live as they reach the next
-        barrier.
+        barrier. While ticks appear live, the page hides the group arrival
+        notice ("2/3 of your group are ready."), which would repeat them.
     answered
         Optional ``answered(participant) -> bool`` deciding who has answered
         when the page is drawn. By default, a member has answered while they

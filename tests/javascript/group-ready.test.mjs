@@ -41,3 +41,30 @@ it("drops arrival snapshots that come back after a newer one", () => {
   window.pageUuid = "page-2";
   assert.deepEqual(psynet.readySeatsFor(1), []);
 });
+
+it("hides the arrival notice while a page suppresses it", () => {
+  let notice = null;
+  const header = { appendChild: (el) => (notice = el) };
+  const document = {
+    body: { classList: { contains: () => false } },
+    getElementById: (id) => (id === "timeline-header" ? header : notice),
+    createElement: () => ({ setAttribute() {}, remove: () => (notice = null) }),
+  };
+  const psynet = {};
+  new Function(
+    "psynet",
+    "document",
+    ["hideArrivalNotice", "suppressArrivalNotice", "showArrivalNotice"].map(extract).join("\n")
+  )(psynet, document);
+  psynet.arrivalNoticeSuppressors = 0;
+
+  psynet.showArrivalNotice("1/3 ready");
+  const release = psynet.suppressArrivalNotice();
+  assert.equal(notice, null);
+  psynet.showArrivalNotice("2/3 ready");
+  assert.equal(notice, null);
+  release();
+  release();
+  psynet.showArrivalNotice("3/3 ready");
+  assert.equal(notice.textContent, "3/3 ready");
+});

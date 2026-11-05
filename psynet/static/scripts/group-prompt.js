@@ -112,11 +112,17 @@ export async function activate({root, vars}) {
         if (detail.members && !sameMembers(detail.members)) redraw();
     }
 
+    // The ticks say who is ready, so the arrival notice would repeat them.
+    var releaseNotice =
+        config.live_ticks && window.psynet && psynet.suppressArrivalNotice
+            ? psynet.suppressArrivalNotice()
+            : null;
     if (config.live_ticks && window.psynet && psynet.readySeatsFor) {
         tick(psynet.readySeatsFor(config.group_id));
     }
     window.addEventListener("psynetGroupReady", onReady);
     return function cleanup() {
         window.removeEventListener("psynetGroupReady", onReady);
+        if (releaseNotice) releaseNotice();
     };
 }
