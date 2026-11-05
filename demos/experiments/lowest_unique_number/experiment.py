@@ -55,6 +55,25 @@ def score_round(participants: List[Participant]):
         }
 
 
+def choose_number(participant):
+    # The page is rebuilt on submit, when a player who ran out of time has
+    # already left the room.
+    room = participant.active_sync_groups.get("room")
+    room_text = ""
+    if room is not None:
+        others = len(room.participants) - 1
+        room_text = (
+            f"You're in a room with {others} other player{'s' * (others != 1)}. "
+        )
+    return ModularPage(
+        "choose",
+        f"{room_text}Pick a number. You have {CHOICE_SECONDS} seconds.",
+        PushButtonControl(choices=NUMBERS),
+        save_answer="choice",
+        time_estimate=5,
+    )
+
+
 def show_result(participant):
     if "room" not in participant.active_sync_groups:
         return InfoPage(
@@ -83,13 +102,7 @@ def play_round():
             deadline=Clock(ROUND_SECONDS),
             content="The next round starts in {SECONDS} s.",
         ),
-        ModularPage(
-            "choose",
-            f"Pick a number. You have {CHOICE_SECONDS} seconds.",
-            PushButtonControl(choices=NUMBERS),
-            save_answer="choice",
-            time_estimate=5,
-        ),
+        PageMaker(choose_number, time_estimate=5),
         GroupBarrier(
             id_="round_finished",
             group_type="room",
@@ -128,6 +141,7 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         _wait_while_held(bots)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
+        assert "You're in a room with 2 other players." in bots[0].current_page_text
 
         # The third player doesn't choose in time, so the room goes ahead without them.
         bots[0].take_page(response=1)
