@@ -432,9 +432,8 @@ the log viewer is at ``https://logs.<server DNS name>``. Its username is
 services were set up. On a server set up by an older Dallinger, it is the
 dashboard password of the server's first deployment, and ``servers upgrade``
 keeps it. The server keeps it as ``DOZZLE_PASSWORD`` in
-``~/dallinger/.env.json``; with Dallinger versions that report it, each
-deployment also saves it as ``logs_password`` in its ``launch-info.json``. To
-change it, run
+``~/dallinger/.env.json``, and each deployment also saves it as
+``logs_password`` in its ``launch-info.json``. To change it, run
 ``dallinger docker-ssh set-dozzle-password --server <server>``. Servers with
 Cloudflare ingress have no log viewer (see :ref:`ssh_server_cloudflare`).
 
