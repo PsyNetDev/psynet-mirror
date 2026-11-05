@@ -976,9 +976,9 @@ def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, bro
     """Another experiment's worker on the same Redis may run the launch job."""
     from psynet import command_line
 
-    config = Mock(ready=True)
-    config.get.side_effect = {"dashboard_password": "other-experiment"}.get
-    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr(
+        "dallinger.deployment.launch_auth", lambda: ("admin", "other-experiment")
+    )
     launches = []
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
@@ -997,9 +997,8 @@ def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, bro
     if browsers:
         assert "admin:enqueued@" in opened[0]
 
-    # Dallinger releases before #10292 neither send ``auth`` nor accept it.
     launch(5001)
-    assert "auth" not in launches[1]
+    assert launches[1]["auth"] == ("admin", "other-experiment")
 
 
 @pytest.mark.parametrize("no_browsers", [True, False])
@@ -1040,13 +1039,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     )
     assert develop.launch_app_and_open_browser is original_job
 
-    config = Mock(ready=True)
-    config.get.side_effect = {
-        "dashboard_user": "admin",
-        "dashboard_password": "s3cret",
-        "dallinger_develop_directory": "/tmp/dallinger_develop",
-    }.get
-    monkeypatch.setattr("psynet.command_line.get_config", lambda: config)
+    monkeypatch.setattr("dallinger.deployment.launch_auth", lambda: ("admin", "s3cret"))
     monkeypatch.setattr(
         "dallinger.deployment.handle_launch_data",
         lambda url, **kwargs: {
@@ -1078,8 +1071,7 @@ def test_debug_auto_reload_prints_the_dashboard_login_once(
     assert block["Dashboard"] == (
         "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
     )
-    if hasattr(importlib.import_module("dallinger.utils"), "JSON_LOGFILE"):
-        assert block["Full log"].endswith("logs.jsonl")
+    assert block["Full log"].endswith("logs.jsonl")
     assert ("Other terminals" in block) is no_browsers
     if no_browsers:
         assert block["Other terminals"] == (
