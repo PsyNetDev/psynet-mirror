@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from dallinger import db
-from dallinger.models import timenow
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -17,7 +16,6 @@ from psynet.page_activity import record_page_activity
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper, check_barriers
 from psynet.timeline import Timeline
-from psynet.timeline_hold import TimelineHoldRecord
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -101,57 +99,44 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
 
 
 @in_consents_experiment
-def test_regrouper_leaves_out_players_whose_tab_is_hidden(
-    in_experiment_directory, db_session
-):
+def test_a_waiter_whose_tab_is_away_is_failed(in_experiment_directory, db_session):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=3)
-    pairs = Regrouper(
-        "pair", within="team", group_size=2, deadline=30, active_within=10
-    )
-    team = _working_participants(exp, 3)
-    _arrive(exp, team_grouper, team)
-    record_page_activity(team[0].id, visible=True)
-    record_page_activity(team[2].id, visible=False)
+    pairs = Regrouper("pair", group_size=2, deadline=300, fail_if_hidden_for=15)
+    visible, away = _working_participants(exp, 2)
+    _arrive(exp, pairs, [visible, away])
+    _backdate_arrivals(pairs, [visible, away], 20)
+    db.session.commit()
+    record_page_activity(visible.id, visible=True)
+    record_page_activity(away.id, visible=False)
+    assert "Keep this tab open" in pairs.waiting_logic.overlay_html(visible)
 
-    _arrive(exp, pairs, team)
+    check_barriers()
 
-    assert _waiting(pairs, team) == [team[2]]
-    assert set(team[0].active_sync_groups["pair"].participants) == set(team[:2])
+    db.session.expire_all()
+    assert not visible.failed
+    assert away.failed and "hidden_while_waiting" in away.failure_tags
+    assert _barrier_link_released(away.id, pairs.id)
 
 
 @in_consents_experiment
-def test_simple_grouper_leaves_out_players_whose_tab_is_hidden(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    grouper = SimpleGrouper("pair", initial_group_size=2, active_within=10)
-    participants = _working_participants(exp, 3)
-    record_page_activity(participants[0].id, visible=False)
-
-    _arrive(exp, grouper, participants)
-
-    assert _waiting(grouper, participants) == participants[:1]
-
-
-@in_consents_experiment
-def test_active_participants_needs_a_recent_visible_check_in(
+def test_away_participants_counts_from_the_last_visible_check_in(
     in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
-    fresh, hidden, stale, unseen = _working_participants(exp, 4)
+    seen, hidden, unseen, newcomer = _working_participants(exp, 4)
     clock = types.SimpleNamespace(time=lambda: 1000.0)
     monkeypatch.setattr(page_activity, "time", clock)
-    record_page_activity(stale.id, visible=True)
+    record_page_activity(hidden.id, visible=True)
     clock.time = lambda: 1020.0
-    record_page_activity(fresh.id, visible=True)
+    record_page_activity(seen.id, visible=True)
     record_page_activity(hidden.id, visible=False)
+    since = {seen.id: 990.0, hidden.id: 990.0, unseen.id: 990.0, newcomer.id: 1010.0}
 
-    active = page_activity.active_participants(
-        [fresh, hidden, stale, unseen], within=10
+    away = page_activity.away_participants(
+        [seen, hidden, unseen, newcomer], since=since, for_seconds=15
     )
 
-    assert active == [fresh, unseen]
+    assert away == [hidden, unseen]
 
 
 @in_consents_experiment
@@ -285,28 +270,6 @@ def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
     _backdate_arrivals(pairs, team[:1], 16)
     assert pairs.choose_who_to_release(team[:1]) == team[:1]
     assert _count_releases.calls == 1
-
-
-@pytest.mark.parametrize("action", ["fail", "kick"])
-@in_consents_experiment
-def test_a_regrouper_waiter_past_max_wait_is_failed_or_continues_alone(
-    in_experiment_directory, db_session, action
-):
-    exp = get_experiment()
-    pairs = Regrouper("pair", group_size=2, deadline=30, max_wait_action=action)
-    (waiter,) = _working_participants(exp, 1)
-    _arrive(exp, pairs, [waiter])
-    TimelineHoldRecord.query.filter_by(participant_id=waiter.id).update(
-        {"deadline_at": timenow() - timedelta(seconds=1)}
-    )
-    db.session.commit()
-
-    check_barriers()
-
-    db.session.expire_all()
-    assert waiter.failed == (action == "fail")
-    assert "pair" not in waiter.active_sync_groups
-    assert _barrier_link_released(waiter.id, pairs.id)
 
 
 @in_consents_experiment

@@ -5,10 +5,10 @@ put into rooms of up to eight players, and each player picks a number. The
 lowest number that nobody else in the room picked wins.
 
 Players who don't choose in time sit out that round and join the next one,
-instead of holding up their room or being failed, and so do players who
-have switched to another tab. Good reference for
-`Regrouper` with a `Clock` deadline, the `{SECONDS}` countdown, and
-`GroupBarrier` timeouts that kick rather than fail, and `active_within`.
+instead of holding up their room or being failed. Players who leave the
+waiting screen for 15 seconds are failed. Good reference for `Regrouper`
+with a `Clock` deadline, the `{SECONDS}` countdown, `GroupBarrier` timeouts
+that kick rather than fail, and `fail_if_hidden_for`.
 
 ## Usage
 
