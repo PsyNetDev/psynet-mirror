@@ -973,12 +973,21 @@ class Barrier(EltCollection):
         barrier_is_active = self.id in participant.active_barriers
         return not barrier_is_active
 
+    def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
+        """Return the group whose members wait together at this barrier, or ``None``.
+
+        Each group gets its own waiting pool, with its own lock, so a busy
+        member of one group never delays another group's release. ``None``
+        (default) puts everyone in one pool.
+        """
+        return None
+
     def get_waiting_participants(self, participant=None, *, for_update: bool = False):
         """Return people currently waiting at this barrier visit.
 
         Pass ``participant`` to scope the list to that person's instance.
-        Ungrouped barriers (groupers) fall back to the one active pool for
-        this barrier ID. Grouped barriers require a participant; see
+        Without one, this lists the pool of participants whose
+        :meth:`waiting_pool_group` is ``None``. Grouped barriers require a participant; see
         :meth:`GroupBarrier.get_waiting_participants`. This listing does
         not take extra row locks unless ``for_update`` is true.
 
@@ -1385,6 +1394,16 @@ class GroupBarrier(Barrier):
             logic_if_true=elts,
             log_chosen_branch=False,
         )
+
+    def waiting_pool_group(self, participant) -> "SyncGroup":
+        """Return the participant's group of ``group_type``; its members wait together."""
+        group = participant.active_sync_groups.get(self.group_type)
+        if group is None:
+            raise RuntimeError(
+                f"Participant {participant.id} has no active sync group "
+                f"of type '{self.group_type}' for barrier '{self.id}'."
+            )
+        return group
 
     def get_waiting_participants(self, participant=None, *, for_update: bool = False):
         """Return people waiting at this group visit.
@@ -2350,6 +2369,10 @@ class Regrouper(Grouper):
         )
         return self._deadline_reference(within_group, pool) + self.deadline
 
+    def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
+        """Return the participant's ``within`` group, so each team waits in its own pool."""
+        return self._within_group(participant)
+
     def choose_who_to_release(self, waiting_participants: List[Participant]):
         released = []
         for within_group, waiting, members in self._pools(waiting_participants):
@@ -2938,15 +2961,8 @@ class BarrierInstance(SQLBase, SQLMixin):
 
     @staticmethod
     def _group_id(barrier, participant):
-        if not isinstance(barrier, GroupBarrier):
-            return None
-        group = participant.active_sync_groups.get(barrier.group_type)
-        if group is None:
-            raise RuntimeError(
-                f"Participant {participant.id} has no active sync group "
-                f"of type '{barrier.group_type}' for barrier '{barrier.id}'."
-            )
-        return group.id
+        group = barrier.waiting_pool_group(participant)
+        return None if group is None else group.id
 
 
 @register_table

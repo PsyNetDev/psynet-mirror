@@ -169,7 +169,8 @@ on their own.
     The ``group_type`` of a group to regroup within, such as a team formed
     earlier by a :class:`~psynet.sync.SimpleGrouper`. Participants are only
     grouped with members of their own team, and each team's rounds run on
-    their own. Without ``within``, everyone waiting is one pool, and a
+    their own: a slow request from one team never delays another team's
+    round. Without ``within``, everyone waiting is one pool, and a
     ``deadline`` is required.
 
 ``release_left_over`` (default: ``False``)
