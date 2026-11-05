@@ -302,23 +302,29 @@ class PseudonymScheme:
 
 
 def anonymous_sticker_html() -> Markup:
-    """Return HTML for a neutral person figure, used where members must not be recognisable."""
-    folder = "images/pseudonym-animals"
+    """Return HTML for a grey person silhouette, used where members must not be recognisable."""
     return _artwork_sticker(
         "psynet-pseudonym-sticker psynet-pseudonym-sticker--anonymous",
         "#adb5bd",
-        package_static_url("psynet", f"{folder}/person.svg"),
-        package_static_url("psynet", f"{folder}/person-lines.svg"),
+        package_static_url("psynet", "images/pseudonym-animals/person.svg"),
+        None,
         "",
     )
 
 
 def _artwork_sticker(classes, css_color, shape, lines, name) -> Markup:
+    detail = (
+        Markup('<img class="psynet-pseudonym-sticker-detail" src="{}" alt="">').format(
+            lines
+        )
+        if lines
+        else Markup("")
+    )
     return Markup(
         '<span class="{}" aria-hidden="true" title="{}"'
         ' style="--psynet-pseudonym-color: {}; --psynet-pseudonym-shape: url(&#39;{}&#39;)">'
-        '<img class="psynet-pseudonym-sticker-detail" src="{}" alt=""></span>'
-    ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), lines)
+        "{}</span>"
+    ).format(classes, name, css_color, quote(shape, safe="/:._-~%"), detail)
 
 
 def _is_dark(css_color: str) -> bool:
