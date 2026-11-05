@@ -1577,8 +1577,8 @@ def _launch_app_and_report(port, auth=None):
     """Launch the development app, print the ``Ready.`` block and return the login used.
 
     ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
-    debug`` puts in the launch job; without it, the login comes from this
-    process's config.
+    debug`` puts in the launch job; without it, Dallinger's ``launch_auth``
+    reads it from this process's config.
 
     The block has the participant link (see Dallinger's
     ``launch_message_rows``), the dashboard login, the location of the full
