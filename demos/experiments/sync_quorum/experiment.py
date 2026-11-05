@@ -42,14 +42,12 @@ trial_maker = StaticTrialMaker(
 
 
 def show_quorum(participant):
-    group = participant.sync_group
     return ModularPage(
         "quorate",
         # Nobody waits at a barrier here, so there is nothing to tick.
         GroupPrompt(
             # No count here: the group display updates as people join and leave.
             "We are now quorate. These participants are present:",
-            group=group,
             participant=participant,
             show_names=True,
             show_progress=False,

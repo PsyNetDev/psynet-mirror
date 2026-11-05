@@ -58,9 +58,7 @@ class RockPaperScissorsTrial(StaticTrial):
         return ModularPage(
             "choose_action",
             # A tick appears once the partner has chosen.
-            GroupPrompt(
-                "Choose your action:", group=self.sync_group, participant=participant
-            ),
+            GroupPrompt("Choose your action:", participant=participant),
             PushButtonControl(
                 choices=["rock", "paper", "scissors"],
             ),
@@ -99,7 +97,6 @@ class RockPaperScissorsTrial(StaticTrial):
             "results",
             GroupPrompt(
                 prompt,
-                group=self.sync_group,
                 participant=participant,
                 answers=actions,
                 highlight={} if score == 0 else {winner: "winner"},

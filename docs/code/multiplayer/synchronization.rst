@@ -167,8 +167,9 @@ on their own.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
-    the groups as lists of participants, for example to avoid repeat partners.
-    Members not placed in a group are left over. You can also subclass
+    the groups as lists of participants, for example to avoid repeat partners
+    with :func:`~psynet.sync.pairs_avoiding_repeats`. Members not placed in a
+    group are left over. You can also subclass
     :class:`~psynet.sync.Regrouper` and override
     :meth:`~psynet.sync.Regrouper.form_groups`.
 
@@ -188,18 +189,19 @@ on their own.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 10 seconds. A player who doesn't choose in time is removed from their room by
-a :class:`~psynet.sync.GroupBarrier` with
-``timeout_between_barriers_action="kick"``, so the rest of the room carries
-on, and they join the next round:
+a :class:`~psynet.sync.GroupBarrier` with ``drop_late_members_after``, so the
+rest of the room carries on, and they join the next round:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
 The kicked player sees "Your group went on without you." on the progress bar
 straight away (pass ``on_arrival_message`` to change it), and is no longer in
-a room when they reach the barrier. ``skip_if_not_in_group=True`` lets them
-pass straight through, and ``show_result`` then tells them they sat the round
-out. Without it, a
+a room when they reach the barrier, so they pass straight through, and
+``show_result`` then tells them they sat the round out.
+``drop_late_members_after=15`` is short for
+``timeout_between_barriers_time=15``, ``timeout_between_barriers_action="kick"``
+and ``skip_if_not_in_group=True``. Without ``skip_if_not_in_group``, a
 participant who reaches a group barrier outside a group gets an error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
@@ -285,6 +287,19 @@ Notices must fit on one line:
 Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
 live don't show the notice, since the ticks say the same.
 
+``content`` can also be a module-level function of the participant, so that
+members waiting at the same barrier see different messages, for example by
+role:
+
+.. code-block:: python
+
+    def waiting_text(participant):
+        if participant.var.role == "proposer":
+            return "Waiting for your partner to accept or reject your offer…"
+        return "Your partner is deciding how much to offer you…"
+
+    GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
+
 Showing the group
 ~~~~~~~~~~~~~~~~~
 
@@ -309,7 +324,7 @@ the viewer's cluster comes first:
 
 .. code-block:: python
 
-    GroupPrompt("Pick a number.", group=room, participant=participant, subgroups="pair")
+    GroupPrompt("Pick a number.", participant=participant, group_type="room", subgroups="pair")
 
 On a decision page, members who have answered get a tick. A member has
 answered once they wait at a barrier of the group, typically the barrier
@@ -325,10 +340,9 @@ unless ``subgroups`` is a function:
     from psynet.group_prompt import GroupPrompt
 
     def choose_number(participant):
-        room = participant.active_sync_groups["room"]
         return ModularPage(
             "choose",
-            GroupPrompt("Pick a number.", group=room, participant=participant),
+            GroupPrompt("Pick a number.", participant=participant),
             PushButtonControl(choices=[1, 2, 3, 4, 5]),
             save_answer="choice",
         )
@@ -343,13 +357,17 @@ such as an image. ``highlight`` marks members, with built-in styles for
 
     GroupPrompt(
         "The winning number was 2.",
-        group=room,
         participant=participant,
         answers={p.id: p.var.choice for p in room.participants},
         highlight={winner.id: "winner"},
     )
 
 The ``lowest_unique_number`` demo uses both.
+
+Without ``group``, the prompt shows the participant's group of type
+``group_type``, or their only group. A participant who is no longer in it,
+for example because a barrier removed them for being late, sees just the
+text, so pages that a late player may still reach need no special case.
 
 Trial makers
 ~~~~~~~~~~~~

@@ -125,6 +125,12 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
     assert ">Your partner<" in html
 
+    # Without ``group``, the prompt shows the participant's group, or just its
+    # text if they aren't in one, for example after being removed from it.
+    assert GroupPrompt(participant=early, group_type="room").group == group
+    prompt = GroupPrompt("Choose", participant=third)
+    assert prompt.group is None and prompt.group_html == ""
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True

@@ -49,10 +49,16 @@ class GroupPrompt(Prompt):
     ----------
     text
         Text shown above the group, as for :class:`~psynet.modular_page.Prompt`.
-    group
-        The :class:`~psynet.sync.SyncGroup` to show.
     participant
         The participant viewing the page.
+    group
+        The :class:`~psynet.sync.SyncGroup` to show. By default, the
+        participant's group of type ``group_type``, or their only active group.
+        If they are no longer in it, for example because a barrier removed them
+        for being late, the page shows just ``text``.
+    group_type
+        The type of group to show when ``group`` is omitted, for example
+        ``"pair"``.
     answers
         Optional ``{participant_id: answer}`` to show in speech bubbles, for
         example after the group's barrier has released. Answers are shown
@@ -101,8 +107,9 @@ class GroupPrompt(Prompt):
         self,
         text=None,
         *,
-        group,
         participant,
+        group=None,
+        group_type: Optional[str] = None,
         answers: Optional[Dict[int, Union[str, Markup]]] = None,
         highlight: Optional[Dict[int, str]] = None,
         note: Optional[str] = None,
@@ -114,6 +121,12 @@ class GroupPrompt(Prompt):
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
+        if group is None:
+            group = (
+                participant.sync_group
+                if group_type is None
+                else participant.active_sync_groups.get(group_type)
+            )
         self.group = group
         self.participant = participant
         self.answers = (
@@ -139,7 +152,7 @@ class GroupPrompt(Prompt):
     @property
     def metadata(self):
         return {
-            "group_id": self.group.id,
+            "group_id": None if self.group is None else self.group.id,
             "answers": None
             if self.answers is None
             else {str(k): str(v) for k, v in self.answers.items()},
@@ -157,6 +170,8 @@ class GroupPrompt(Prompt):
 
     def get_js_vars(self):
         """Configuration for live ticks."""
+        if self.group is None:
+            return {}
         _p = get_translator(context=True)
         return {
             "group_prompt": {
@@ -191,11 +206,15 @@ class GroupPrompt(Prompt):
 
     def get_js_page_modules(self):
         """The module that adds ticks as members answer."""
+        if self.group is None:
+            return []
         return [package_static_url("psynet", "scripts/group-prompt.js")]
 
     @property
     def group_html(self) -> Markup:
-        """HTML for the group display."""
+        """HTML for the group display, or nothing without a group."""
+        if self.group is None:
+            return Markup("")
         _p = get_translator(context=True)
         seats = _group_seats(self.group)
         clusters = self._clusters()

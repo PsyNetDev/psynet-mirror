@@ -68,7 +68,6 @@ def show_current_group():
             "current_group",
             GroupPrompt(
                 format_group_message(participant),
-                group=participant.sync_group,
                 participant=participant,
                 # Each member's role in their speech bubble.
                 answers={

@@ -50,6 +50,7 @@ from psynet.sync import (
     SimpleSyncGroup,
     SyncGroup,
     _advance_released_hold_waiters_after_commit,
+    _BarrierHoldPage,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
     _check_held_instance,
@@ -255,6 +256,27 @@ def test_barrier_accepts_custom_hold_content():
     assert hold.content == "Waiting for your partner"
     assert hold.message_kind is None
     assert hold.translated_content() == "Waiting for your partner"
+
+
+def _content_by_role(participant):
+    return f"Waiting for the {participant.var.role}'s partner"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_barrier_content_can_depend_on_the_participant(
+    in_experiment_directory, db_session
+):
+    barrier = GroupBarrier(
+        id_="wait_by_role", group_type="pair", content=_content_by_role
+    )
+    restored = barrier_from_spec_json(barrier_spec_json(barrier))
+    proposer = new_participant(get_experiment())
+    proposer.var.role = "proposer"
+
+    for hold in (barrier.waiting_logic, _BarrierHoldPage(restored)):
+        assert hold.translated_content(proposer) == "Waiting for the proposer's partner"
 
 
 def test_explicit_barrier_waiting_logic_is_preserved():
@@ -6513,10 +6535,7 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
     (newcomer,) = _working_participants(exp, 1)
     group.add_participant(newcomer)
     barrier = GroupBarrier(
-        id_="first_after_grouper",
-        group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action="kick",
+        id_="first_after_grouper", group_type="main", drop_late_members_after=5
     )
     waiting, late = participants[:2], participants[2]
 

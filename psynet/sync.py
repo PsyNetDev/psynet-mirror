@@ -814,7 +814,10 @@ class Barrier(EltCollection):
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML.
+        pass ``markupsafe.Markup`` or a dominate tag for HTML. Pass a
+        module-level function ``content(participant)`` to show each
+        participant their own message, for example one that depends on their
+        role.
 
     release_grace
         Seconds a participant on a ``waiting_logic`` page has to finish it
@@ -1345,7 +1348,9 @@ class GroupBarrier(Barrier):
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML. Independent of
+        pass ``markupsafe.Markup`` or a dominate tag for HTML, or a
+        module-level function ``content(participant)`` returning either (see
+        :class:`Barrier`). Independent of
         a preceding :class:`~psynet.sync.Grouper`'s ``content`` and of
         trial-maker ``sync_group_wait_content``.
 
@@ -1355,6 +1360,15 @@ class GroupBarrier(Barrier):
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs keep the hold title only. Set ``False`` to disable both.
         Passing ``on_arrival_message`` implies ``True``.
+
+    drop_late_members_after
+        Seconds. Shorthand for round-based games: a member who hasn't reached
+        the barrier this long after the group last passed one is removed from
+        the group, so the others go on without them, and a participant no
+        longer in the group passes straight through. Equivalent to
+        ``timeout_between_barriers_time=drop_late_members_after``,
+        ``timeout_between_barriers_action="kick"`` and
+        ``skip_if_not_in_group=True``. Default: ``None``.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
@@ -1441,8 +1455,18 @@ class GroupBarrier(Barrier):
         skip_if_not_in_group: bool = False,
         release_grace: Optional[float] = 3,
         fail_if_hidden_for: Optional[float] = None,
+        drop_late_members_after: Optional[float] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
+        if drop_late_members_after is not None:
+            if timeout_between_barriers_time is not None:
+                raise ValueError(
+                    "Pass either drop_late_members_after or "
+                    "timeout_between_barriers_time, not both."
+                )
+            timeout_between_barriers_time = drop_late_members_after
+            timeout_between_barriers_action = "kick"
+            skip_if_not_in_group = True
         max_wait_time = self._check_max_wait_time(
             max_wait_time, timeout_between_barriers_time
         )
@@ -2322,6 +2346,41 @@ class SimpleGrouper(Grouper):
         lst = lst.copy()
         random.shuffle(lst)
         return [lst[i::n_groups] for i in range(n_groups)]
+
+
+def pairs_avoiding_repeats(members, last_partner_id: Callable, attempts: int = 50):
+    """Pair members at random, repeating a previous partnership as rarely as possible.
+
+    A building block for :class:`Regrouper`'s ``form_groups``. With an odd
+    number of members, one is left over.
+
+    Parameters
+    ----------
+    members : list of Participant
+        The participants to pair.
+    last_partner_id : callable
+        ``last_partner_id(participant)`` returns the ID of the participant's
+        previous partner, or ``None``.
+    attempts : int
+        Random pairings to try before taking the one with the fewest repeats.
+
+    Returns
+    -------
+    list of list of Participant
+        The pairs.
+    """
+    best, best_repeats = [], None
+    for _ in range(attempts):
+        shuffled = random.sample(members, len(members))
+        pairs = [shuffled[i : i + 2] for i in range(0, len(shuffled) - 1, 2)]
+        repeats = sum(
+            last_partner_id(a) == b.id or last_partner_id(b) == a.id for a, b in pairs
+        )
+        if best_repeats is None or repeats < best_repeats:
+            best, best_repeats = pairs, repeats
+        if repeats == 0:
+            break
+    return best
 
 
 class Clock:
