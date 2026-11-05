@@ -20,8 +20,10 @@ Design constraints:
 """
 
 import math
+import os
 from typing import Callable, Dict, Optional, Union
 
+from itsdangerous import BadSignature, URLSafeSerializer
 from markupsafe import Markup
 
 from .modular_page import Prompt
@@ -121,6 +123,12 @@ class GroupPrompt(Prompt):
         self.show_progress = show_progress and answers is None
         self.answered = answered or _waiting_in_group(group)
         self.live_ticks = self.show_progress and answered is None
+        # Pages can redraw the group when members join or leave, unless a
+        # function decides the subgroups or who has answered, which the
+        # server can't call later, or answers fix who is shown.
+        self.live_members = (
+            answers is None and answered is None and not callable(subgroups)
+        )
         self.subgroups = subgroups
         self.show_names = show_names
         self.anonymous = anonymous
@@ -151,10 +159,32 @@ class GroupPrompt(Prompt):
             "group_prompt": {
                 "group_id": self.group.id,
                 "live_ticks": self.live_ticks,
+                "live_members": self.live_members,
                 "answered_label": _p("group prompt", "has answered"),
                 "answered_announcement": _p("group prompt", "{NAME} has answered."),
+                "redraw_token": self._redraw_token() if self.live_members else None,
             }
         }
+
+    def _redraw_token(self):
+        """Return a signed description of this display for :func:`redrawn_group_html`.
+
+        Signed so that a participant can't ask for a display other than the
+        one they were shown, such as names where the prompt is anonymous.
+        """
+        serializer = _token_serializer()
+        if serializer is None:
+            return None
+        return serializer.dumps(
+            {
+                "group": self.group.id,
+                "participant": self.participant.id,
+                "anonymous": self.anonymous,
+                "show_names": self.show_names,
+                "subgroups": self.subgroups,
+                "show_progress": self.show_progress,
+            }
+        )
 
     def get_js_page_modules(self):
         """The module that adds ticks as members answer."""
@@ -325,6 +355,58 @@ def _group_seats(group):
     from .sync import group_seats
 
     return group_seats(group)
+
+
+def redrawn_group_html(unique_id, token):
+    """Return ``{"html": ...}``, the group display a live page shows, drawn again now.
+
+    Parameters
+    ----------
+    unique_id : str
+        The participant's unique ID.
+    token : str
+        The page's redraw token (see ``GroupPrompt.get_js_vars``).
+
+    Returns
+    -------
+    dict
+        ``{"html": None}`` if the token is invalid or belongs to someone else.
+    """
+    from .participant import Participant
+    from .sync import SyncGroup
+
+    serializer = _token_serializer()
+    try:
+        options = serializer.loads(token or "") if serializer else None
+    except BadSignature:
+        options = None
+    participant = (
+        Participant.query.filter_by(unique_id=unique_id).one_or_none()
+        if options and unique_id
+        else None
+    )
+    if participant is None or participant.id != options["participant"]:
+        return {"html": None}
+    group = SyncGroup.query.get(options["group"])
+    if group is None:
+        return {"html": None}
+    prompt = GroupPrompt(
+        group=group,
+        participant=participant,
+        anonymous=options["anonymous"],
+        show_names=options["show_names"],
+        subgroups=options["subgroups"],
+        show_progress=options["show_progress"],
+    )
+    return {"html": str(prompt.group_html)}
+
+
+def _token_serializer():
+    """Return the serializer for redraw tokens, or ``None`` without a server secret."""
+    secret = os.environ.get("FLASK_SECRET_KEY")
+    if not secret:
+        return None
+    return URLSafeSerializer(secret, salt="psynet.group_prompt")
 
 
 def _waiting_in_group(group):

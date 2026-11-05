@@ -335,7 +335,9 @@ answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
 ``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
-answered when the page is drawn:
+answered when the page is drawn. Members who join or leave the group appear
+or disappear live too, on any page without ``answers`` or ``answered``,
+unless ``subgroups`` is a function:
 
 .. code-block:: python
 

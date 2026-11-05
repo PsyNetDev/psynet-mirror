@@ -6,7 +6,7 @@ from markupsafe import Markup
 
 from psynet import timeline_hold
 from psynet.experiment import get_experiment
-from psynet.group_prompt import GroupPrompt
+from psynet.group_prompt import GroupPrompt, redrawn_group_html
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
@@ -47,7 +47,11 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert arrival_notice_payload(third.unique_id) == {
         "notice": "2/3 of your group are ready.",
         "group_ready": [
-            {"group_id": group.id, "seats": sorted([seats[first.id], seats[second.id]])}
+            {
+                "group_id": group.id,
+                "seats": sorted([seats[first.id], seats[second.id]]),
+                "members": [0, 1, 2],
+            }
         ],
     }
 
@@ -120,3 +124,44 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     assert html.index('data-seat="0"') < html.index('data-seat="1"')
     html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
     assert ">Your partner<" in html
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_live_pages_redraw_the_group_when_someone_joins(
+    in_experiment_directory, db_session, monkeypatch
+):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test secret")
+    exp = get_experiment()
+    published = []
+    monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
+    first, late, other = _working_participants(exp, 3)
+    group = SimpleSyncGroup(group_type="room", initial_group_size=3)
+    db_session.add(group)
+    group.add_participant(first)
+    db_session.flush()
+
+    def token(**options):
+        prompt = GroupPrompt(group=group, participant=first, **options)
+        return prompt.get_js_vars()["group_prompt"]["redraw_token"]
+
+    named, anonymous = token(show_names=True), token(anonymous=True)
+
+    # Members already in the group are told to fetch it again.
+    published.clear()
+    group.add_participant(late)
+    _commit_barrier_arrivals()
+    assert any(t.get("refresh") for t in published if t["participant_id"] == first.id)
+    assert arrival_notice_payload(first.unique_id)["group_ready"][0]["members"] == [
+        0,
+        1,
+    ]
+
+    html = redrawn_group_html(first.unique_id, named)["html"]
+    assert late.pseudonym.name in html
+    html = redrawn_group_html(first.unique_id, anonymous)["html"]
+    assert ">Your partner<" in html and late.pseudonym.name not in html
+    # Tokens only work for the participant they were made for, unchanged.
+    assert redrawn_group_html(other.unique_id, named) == {"html": None}
+    assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}

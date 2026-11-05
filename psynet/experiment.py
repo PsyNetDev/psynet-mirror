@@ -213,6 +213,7 @@ else:
         "/asset/",
         "/log/",
         "/timeline/arrival_notice",
+        "/timeline/group_prompt",
         "/timeline/waiting_status",
         "/timeline/progress_and_reward",
         "/dashboard/module/progress_info",
@@ -7609,6 +7610,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         from .sync import arrival_notice_payload
 
         return arrival_notice_payload(request.args.get("uniqueId"))
+
+    @experiment_route("/timeline/group_prompt", methods=["GET"])
+    @classmethod
+    @with_transaction
+    def get_group_prompt(cls):
+        """Draw a live group display again after members joined or left."""
+        from .group_prompt import redrawn_group_html
+
+        return redrawn_group_html(
+            request.args.get("uniqueId"), request.args.get("token")
+        )
 
     @experiment_route("/timeline/waiting_status", methods=["GET"])
     @classmethod

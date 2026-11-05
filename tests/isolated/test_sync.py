@@ -5724,7 +5724,11 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     assert arrival_notice_payload(last.unique_id) == {
         "notice": "Your partner is ready.",
         "group_ready": [
-            {"group_id": first.active_sync_groups["main"].id, "seats": [0]}
+            {
+                "group_id": first.active_sync_groups["main"].id,
+                "seats": [0],
+                "members": [0, 1],
+            }
         ],
     }
     assert arrival_notice_payload(None) == {"notice": None, "group_ready": []}

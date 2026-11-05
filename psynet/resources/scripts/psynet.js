@@ -1113,7 +1113,11 @@
         psynet.arrivalSnapshot.groups[ready.group_id] = ready.seats;
         window.dispatchEvent(
           new CustomEvent("psynetGroupReady", {
-            detail: { groupId: ready.group_id, seats: ready.seats },
+            detail: {
+              groupId: ready.group_id,
+              seats: ready.seats,
+              members: ready.members,
+            },
           }),
         );
       });

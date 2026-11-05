@@ -2747,6 +2747,7 @@ class SyncGroup(SQLBase, SQLMixin):
             active=True,
             arrival_time=timenow(),
         )
+        _notify_membership_change(self, newcomer=participant)
 
     @property
     def active_participants(self) -> List[Participant]:
@@ -2831,7 +2832,7 @@ class SyncGroup(SQLBase, SQLMixin):
             if link.participant_id == participant.id:
                 link.active = False
         self.check_numbers()
-        _notify_departure(self)
+        _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
             self, "accepts_top_ups", False
         ):
@@ -3407,26 +3408,31 @@ def _ready_seats_for(participant):
 
     ``seats`` (see :func:`group_seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
-    ticks them.
+    ticks them, and ``members`` those of all active members, so that it can
+    redraw the group when someone joins or leaves.
     """
     ready = []
     for group in participant.active_sync_groups.values():
         seats = group_seats(group)
-        waiting = [
-            seats[member.id]
-            for member in group.active_participants
-            if waiting_barrier_ids(member, group)
-        ]
-        ready.append({"group_id": group.id, "seats": sorted(waiting)})
+        members = group.active_participants
+        waiting = [seats[m.id] for m in members if waiting_barrier_ids(m, group)]
+        ready.append(
+            {
+                "group_id": group.id,
+                "seats": sorted(waiting),
+                "members": sorted(seats[m.id] for m in members),
+            }
+        )
     return ready
 
 
-def _notify_departure(group):
-    """Have the remaining members of ``group`` fetch their notice and ready seats again."""
+def _notify_membership_change(group, newcomer=None):
+    """Have the other members of ``group`` fetch their notice and group again."""
     if getattr(group, "_dissolving_below_min_size", False):
         return
     for member in group.active_participants:
-        _queue_arrival_update(member.id, refresh=True)
+        if member is not newcomer:
+            _queue_arrival_update(member.id, refresh=True)
 
 
 def waiting_barrier_ids(participant, group):
