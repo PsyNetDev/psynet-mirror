@@ -530,7 +530,9 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
         NodeFilter.SHOW_TEXT,
         { acceptNode: (node) => (isVisibleText(node) ? 1 : 3) }
       );
-      range.selectNodeContents(walker.nextNode());
+      const firstText = walker.nextNode();
+      if (!firstText) return null;
+      range.selectNodeContents(firstText);
       return {
         firstTextTop: range.getBoundingClientRect().top,
         indicatorBottom: document
@@ -538,10 +540,11 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
           .getBoundingClientRect().bottom
       };
     });
+    expect(narrowLayout).not.toBeNull();
     expect(narrowLayout.indicatorBottom).toBeLessThanOrEqual(
       narrowLayout.firstTextTop
     );
-    await experimentPage.setViewportSize(viewport);
+    if (viewport) await experimentPage.setViewportSize(viewport);
 
     await expect(experimentPage.locator("#main-body")).toContainText(
       "Background feedback processing finished.",

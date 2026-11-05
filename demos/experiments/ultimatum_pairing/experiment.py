@@ -26,7 +26,14 @@ from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
-from psynet.timeline import PageMaker, Timeline, conditional, join, while_loop
+from psynet.timeline import (
+    CodeBlock,
+    PageMaker,
+    Timeline,
+    conditional,
+    join,
+    while_loop,
+)
 
 TEAM_SIZE = 4
 MIN_TEAM_SIZE = 2
@@ -52,8 +59,13 @@ def team_accepts_newcomers(group, participant):
 
 
 def keep_playing(participant):
-    team = team_of(participant)
-    return team is not None and team.var.get("round", 0) < N_ROUNDS
+    return (
+        team_of(participant) is not None and participant.var.get("rounds", 0) < N_ROUNDS
+    )
+
+
+def count_round(participant):
+    participant.var.rounds = participant.var.get("rounds", 0) + 1
 
 
 def pair_new_partners(members, within_group, regrouper):
@@ -71,7 +83,7 @@ def pair_new_partners(members, within_group, regrouper):
 
 
 def start_round(within_group, groups, left_over, regrouper):
-    """Count the team's rounds and give each pair a proposer and a responder."""
+    """Note that the team has started a round and give each pair its roles."""
     within_group.var.round = within_group.var.get("round", 0) + 1
     for pair in groups:
         proposer, responder = pair.participants
@@ -137,6 +149,7 @@ def play_round():
             active_within=10,
             content="The next round starts in at most {SECONDS} s.",
         ),
+        CodeBlock(count_round),
         conditional(
             "paired",
             in_pair,
@@ -208,9 +221,14 @@ class Exp(psynet.experiment.Experiment):
         assert len(sitting_out) == 1
         _play([b for b in others if b not in sitting_out])
 
-        # Missing round 2 doesn't fail the lingerer; the game is over for everyone.
+        # The lingerer wasn't failed. Their own second round finds nobody to
+        # pair with, so they sit it out after the deadline.
         for bot in bots:
             bot.take_page()
+        lingerer = bots[3]
+        _wait_while_held([lingerer])
+        assert "sit out" in lingerer.current_page_text
+        lingerer.take_page()
         for bot in bots:
             bot.refresh_status()
             assert "That's the end" in bot.current_page_text

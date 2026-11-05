@@ -70,9 +70,11 @@ current page, under a waiting indicator, until their group is formed.
     switched to another tab or closed it keeps waiting, instead of starting
     a group that then waits for them. The waiting screen and ``waiting_logic``
     pages check in about every 2 seconds and as soon as the tab is hidden or
-    shown again, so ``10`` is a good value. Pages inside trials, and barriers
-    with ``release_grace=None``, don't check in, so participants there are
-    only seen when they submit a page; allow for the longest such page. Bots
+    shown again, so ``10`` is a good value. A minimized window counts as
+    hidden, and a participant who stays away is still failed after
+    ``max_wait_time``. Pages inside trials, and barriers with
+    ``release_grace=None``, don't check in, so participants there are only
+    seen when they submit a page; allow for the longest such page. Bots
     always count as active.
 
 ``content``
@@ -156,8 +158,8 @@ on their own.
     balanced groups, for example rooms of 8, 8, 7 and 7 for 30 participants.
 
 ``deadline``
-    Seconds since the previous round started (or since the first participant
-    arrived, for the first round). ``Clock(45)`` instead starts rounds at fixed
+    Seconds since the first waiting participant arrived, or since the previous
+    round started if that is later. ``Clock(45)`` instead starts rounds at fixed
     45-second ticks, whether or not everyone is ready earlier.
 
 ``within`` (default: ``None``)
@@ -180,9 +182,11 @@ on their own.
     :meth:`~psynet.sync.Regrouper.form_groups`.
 
 ``on_release``
-    A function called after each split with ``within_group``, ``groups``,
-    ``left_over`` and ``regrouper``, for example to count rounds or assign
-    roles.
+    A function called after each split that forms at least one group, with
+    ``within_group``, ``groups``, ``left_over`` and ``regrouper``, for example
+    to assign roles. A late participant can be split on their own in the same
+    round, so count rounds per participant, as the ``ultimatum_pairing`` demo
+    does.
 
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
@@ -194,8 +198,11 @@ on their own.
 ``active_within`` (default: ``None``)
     As for :class:`~psynet.sync.SimpleGrouper`: participants whose tab is in
     the background or closed are not grouped. They still count as ready for
-    their ``within`` group, so the round starts without them, and they join
-    the first round after they come back.
+    their ``within`` group, so the round starts without them. Once they come
+    back, they are grouped at the pool's next split, when the rest of their
+    ``within`` group is waiting again or at the deadline. If the others are
+    still playing at the deadline, a returning player waits on alone or, with
+    ``release_left_over=True``, sits that round out.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by
@@ -331,8 +338,8 @@ Timeouts
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
-    passed its previous barrier, or since it was formed if this is its first
-    barrier. A member who has not reached this barrier in time is handled by
+    passed its previous barrier, or since the member joined the group if that
+    is later. A member who has not reached this barrier in time is handled by
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
 
 Trial makers with ``sync_group_type`` take the same settings with a
@@ -362,7 +369,8 @@ When failed or departed members take a group below ``min_group_size``, what
 happens depends on whether the group accepts top-ups:
 
 - With ``join_existing_groups=True``, the group's next barrier waits for new
-  members to join.
+  members to join. If every member leaves, the group closes, and later
+  arrivals form a new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_min_size=False``
   on the grouper to remove them from the group without failing them, so that
