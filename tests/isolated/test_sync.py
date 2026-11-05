@@ -6464,7 +6464,9 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
         _arrive_at_group_barrier(exp, grouper, participant)
     _commit_barrier_arrivals()
     group = participants[0].sync_group
-    _backdate_group(group, seconds=10)
+    assert group.last_barrier_pass_time is None
+    for link in group.participant_links:
+        link.arrival_time -= timedelta(seconds=10)
     (newcomer,) = _working_participants(exp, 1)
     group.add_participant(newcomer)
     barrier = GroupBarrier(
