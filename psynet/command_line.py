@@ -1552,9 +1552,8 @@ def launch_app_and_open_browsers(port, auth=None, **kwargs):
     """Launch the development app, print the ``Ready.`` block, then open the browsers.
 
     Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload runs that open browsers. Dallinger's job logs the dashboard URL
-    with the password embedded; this one prints the login once, in the
-    ``Ready.`` block. It must stay importable by module path because RQ
+    auto-reload runs that open browsers, so that its ``Ready.`` block has
+    PsyNet's rows too. It must stay importable by module path because RQ
     workers resolve it that way. ``auth`` is as for
     :func:`launch_app_without_browsers`.
     """
@@ -1645,8 +1644,7 @@ def _stop_child_processes_on_signal():
             # A terminal Ctrl-C has usually reached the children in this
             # process group already, and a second signal makes Dallinger's
             # worker do a cold shutdown, which prints a traceback. Children in
-            # their own session, like the server of newer Dallinger versions,
-            # don't get it, so they are stopped straight away.
+            # their own session, like Dallinger's server, don't get it, so they are stopped straight away.
             reached = [child for child in children if _in_own_process_group(child)]
             _, still_running = psutil.wait_procs(reached, timeout=3)
             children = still_running + [c for c in children if c not in reached]
