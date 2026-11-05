@@ -2355,14 +2355,8 @@ class Regrouper(Grouper):
         is passed too, as for :class:`GroupBarrier`.
 
     max_wait_time
-        Longest a participant waits at the regrouper, for example with their
-        tab hidden, before ``max_wait_action`` applies. Default: 300 seconds.
-
-    max_wait_action
-        What happens at ``max_wait_time``: ``"fail"`` (default) fails the
-        participant and sends them to the end of the experiment, and
-        ``"kick"`` lets them continue without a group, like a participant left
-        over after a split with ``release_left_over``.
+        Longest a participant waits at the regrouper before being failed.
+        Default: 300 seconds.
 
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
@@ -2385,13 +2379,8 @@ class Regrouper(Grouper):
         release_left_over: bool = False,
         on_release: Optional[Callable] = None,
         max_wait_time: Optional[float] = 300,
-        max_wait_action: Literal["fail", "kick"] = "fail",
         **kwargs,
     ):
-        if max_wait_action not in ("fail", "kick"):
-            raise ValueError(
-                f"max_wait_action must be 'fail' or 'kick', got {max_wait_action!r}."
-            )
         if min_group_size < 1 or group_size < min_group_size:
             raise ValueError("Need 1 <= min_group_size <= group_size.")
         if deadline is None and within is None:
@@ -2401,7 +2390,6 @@ class Regrouper(Grouper):
             )
         kwargs.setdefault("id_", f"{group_type}_regrouper")
         super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
-        self.max_wait_action = max_wait_action
         self.within = within
         self.group_size = group_size
         self.min_group_size = min_group_size
