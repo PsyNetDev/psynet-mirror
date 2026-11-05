@@ -218,8 +218,8 @@ Timeouts
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
-    passed its previous barrier, or since it was formed if this is its first
-    barrier. A member who has not reached this barrier in time is handled by
+    passed its previous barrier, or since the member joined the group if that
+    is later. A member who has not reached this barrier in time is handled by
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
 
 Trial makers with ``sync_group_type`` take the same settings with a
@@ -249,7 +249,8 @@ When failed or departed members take a group below ``min_group_size``, what
 happens depends on whether the group accepts top-ups:
 
 - With ``join_existing_groups=True``, the group's next barrier waits for new
-  members to join.
+  members to join. If every member leaves, the group closes, and later
+  arrivals form a new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_min_size=False``
   on the grouper to remove them from the group without failing them, so that
