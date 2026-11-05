@@ -137,7 +137,8 @@ needed. Without a terminal, setup stops if the folder has no `experiment.py`
 and contains files that aren't part of a PsyNet experiment (`static/`,
 `audit/`, `uv init` files, licence files and caches are fine); if those files belong to this experiment, re-run
 with `psynet setup --yes`. After setup, use
-`psynet debug local --docker --no-browsers` when the experiment should run in Docker mode.
+`psynet debug local --docker --no-browsers` when the experiment should run in
+Docker mode.
 
 When splitting logic out of `experiment.py`, follow
 `develop-experiment-back-end/SKILL.md`: import sibling modules with

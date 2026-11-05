@@ -125,9 +125,9 @@ chains reduce it and may allow more participants at once.
 psynet debug local --no-browsers
 ```
 
-Capture the generated ad page URL. Headless Playwright is fine for quick
-exploration too; make repeatable screenshots, assertions, and participant
-recordings Playwright-driven scripts. Write the walk with `playwright-testing/SKILL.md`.
+Capture the generated ad page URL. Use headless Playwright for quick
+exploration too, and write repeatable screenshots, assertions and participant
+recordings as Playwright scripts with `playwright-testing/SKILL.md`.
 For canonical participant recordings, follow
 `record-participant-video/SKILL.md`.
 

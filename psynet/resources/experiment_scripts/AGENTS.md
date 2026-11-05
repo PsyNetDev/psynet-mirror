@@ -42,8 +42,8 @@ processes. Before `psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with
-`psynet debug local --isolated --no-browsers`, which uses a free port and a temporary database and Redis that are removed
-when it stops (see "Run several experiments at once" in
+`psynet debug local --isolated --no-browsers`, which uses a free port and a
+temporary database and Redis that are removed when it stops (see "Run several experiments at once" in
 `code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet deploy heroku`,
 `psynet debug ssh`, `psynet debug heroku` and `psynet performance-test ssh`)
@@ -63,7 +63,7 @@ running, debugging and inspecting the database, read
 browser windows on the user's screen. The log prints an ad page URL such as
 `http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer it to
 the user to walk through the experiment, and look at pages yourself with
-headless Playwright. From a non-interactive background shell, keep stdin open
+headless Playwright (see `playwright-testing/SKILL.md`). From a non-interactive background shell, keep stdin open
 (`tail -f /dev/null | psynet debug local --no-browsers`); otherwise the server
 can stop without a log line.
 

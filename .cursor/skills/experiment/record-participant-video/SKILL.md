@@ -21,11 +21,10 @@ Create an MP4 recording of the participant-facing PsyNet flow that includes:
 - Enough of the flow for reviewers to judge instructions, trials, responses,
   feedback, and completion behavior.
 
-Drive the participant browser with Playwright by default. Use `ffmpeg` for video
-recording because browser-only video capture can miss system audio. Do not use
-agent browser control for canonical evidence capture unless Playwright cannot
-exercise the flow; reserve browser control for quick exploratory inspection and
-debugging.
+Drive the participant browser with headless Playwright, including for quick
+exploration and debugging. Use agent browser control only when Playwright
+cannot exercise the flow. Use `ffmpeg` for video recording because
+browser-only video capture can miss system audio.
 
 Participant videos must be short, review-focused evidence artifacts. Do not
 commit or publish videos longer than 3 minutes. For long or repetitive
