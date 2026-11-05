@@ -52,9 +52,9 @@ Before deploying, Dallinger checks that the experiment's address
 records, ``--app`` must be one of them.
 
 ``--app`` may contain only lowercase letters, digits and hyphens, and must not
-already be in use on the server. The names ``logs``, ``caddy.d``, ``root.d``
-and ``dallinger`` are refused, in any case, because the server uses them
-itself. A classic deployment to an address that another app or one of the
+already be in use on the server. Names starting with ``dlgr-`` are refused.
+So are ``logs``, ``caddy.d``, ``root.d`` and ``dallinger``, in any case,
+because the server uses them itself. A classic deployment to an address that another app or one of the
 server's own sites already serves stops before the image build and names
 that app or site.
 

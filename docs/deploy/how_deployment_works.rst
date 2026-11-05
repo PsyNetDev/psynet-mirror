@@ -85,8 +85,10 @@ Each deployed experiment is an **app**, named with ``--app``. An app has its
 own Docker containers, its own database on the server's PostgreSQL instance,
 and its own address, ``https://<app>.<domain>``, where ``<domain>`` is the
 server's DNS name. Participants see the app name in the address. PsyNet
-refuses to deploy an app whose name is already in use on the server, so a
-redeployment needs a new name or the old app destroyed first.
+refuses to deploy a new app whose name is already in use on the server. To
+ship a fix to a running app, update it in place with ``--update`` (see
+:ref:`ssh_server_updating`); otherwise use a new name or destroy the old app
+first.
 
 .. _deployment_security_headers:
 
@@ -141,8 +143,8 @@ following participants' progress, reading logs, browsing the database and
 exporting data (see :ref:`experiment_dashboard`). It uses the
 ``dashboard_user`` and ``dashboard_password`` from your configuration; if no
 password is set, a random one is generated for each deployment. The deployment
-command prints the dashboard address and credentials and saves them under
-``~/psynet-data/launch-data``.
+command prints the dashboard address and user, and saves them with the
+password under ``~/psynet-data/launch-data`` (see :ref:`ssh_server_launch_info`).
 
 Debug and live deployments
 --------------------------
