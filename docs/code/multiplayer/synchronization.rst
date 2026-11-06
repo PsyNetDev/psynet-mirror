@@ -151,7 +151,9 @@ on their own.
 ``deadline``
     Seconds since the first waiting participant arrived, or since the previous
     round started if that is later. ``Clock(45)`` instead starts rounds at fixed
-    45-second ticks, whether or not everyone is ready earlier.
+    45-second ticks, whether or not everyone is ready earlier. Make it longer
+    than a round takes, so that players who finish early are not split again
+    before the rest are back.
 
 ``within`` (default: ``None``)
     The ``group_type`` of a group to regroup within, such as a team formed
@@ -164,12 +166,13 @@ on their own.
 ``release_left_over`` (default: ``False``)
     If ``True``, participants who don't fit into a group, such as an odd one
     out when pairing, continue ungrouped so that they can see a sit-out page.
-    If ``False``, they wait for the next round. Someone waiting alone waits
-    for teammates who are still playing for up to one more ``deadline`` (or
-    ``Clock`` tick) before sitting out, so they don't sit out round after
-    round while a slow round finishes. Taking participants who stop playing
-    out of the ``within`` group with ``remove_participant`` means nobody
-    waits for them.
+    If ``False``, they wait for the next round. With ``True`` and ``within``,
+    someone waiting alone waits for teammates who are still playing for up to
+    one more ``deadline`` (or ``Clock`` tick) before sitting out, so they don't
+    sit out round after round while a slow round finishes. ``max_wait_time``
+    must then be longer than twice the deadline. Taking participants who stop
+    playing out of the ``within`` group with ``remove_participant`` means
+    nobody waits for them.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns

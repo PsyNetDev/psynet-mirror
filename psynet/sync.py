@@ -2388,11 +2388,12 @@ class Regrouper(Grouper):
     release_left_over
         If ``True``, participants left over after a split continue ungrouped,
         for example to a sit-out page, and come back for the next split. If
-        ``False`` (default), they keep waiting for the next split. When too
-        few are waiting to form any group, for example one player whose
-        teammates are still playing a round, they wait for those teammates
-        for up to one more ``deadline`` (or ``Clock`` tick) before they are
-        released ungrouped. Taking members who stop playing out of the
+        ``False`` (default), they keep waiting for the next split. With
+        ``within``, when too few are waiting to form any group, for example
+        one player whose teammates are still playing a round, they wait for
+        those teammates for up to one more ``deadline`` (or ``Clock`` tick)
+        before they are released ungrouped, or until ``max_wait_time`` if
+        there is no deadline. Taking members who stop playing out of the
         ``within`` group, for example with ``remove_participant``, means
         nobody waits for them.
 
@@ -2405,7 +2406,9 @@ class Regrouper(Grouper):
 
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
-        Default: 300 seconds.
+        Default: 300 seconds. With ``release_left_over`` and ``within``, it
+        must be longer than twice the ``deadline`` (or ``Clock`` period), so
+        that a player waiting alone sits out instead of being failed.
 
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
@@ -2449,6 +2452,20 @@ class Regrouper(Grouper):
         self.form_groups_function = form_groups
         self.release_left_over = release_left_over
         self.on_release = on_release
+        longest_lone_wait = self.clock_period or self.deadline
+        if (
+            release_left_over
+            and within is not None
+            and longest_lone_wait is not None
+            and isinstance(max_wait_time, (int, float))
+            and max_wait_time <= 2 * longest_lone_wait
+        ):
+            raise ValueError(
+                f"max_wait_time ({max_wait_time} s) must be longer than twice the "
+                f"deadline ({longest_lone_wait} s): with release_left_over, a player "
+                "waiting alone for teammates who are still playing waits up to two "
+                "deadlines before sitting out."
+            )
 
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
@@ -2567,6 +2584,7 @@ class Regrouper(Grouper):
         )
 
     def _waited_an_extra_deadline(self, within_group, members) -> bool:
+        """Return whether the pool has waited a deadline (or ``Clock`` tick) past the usual one."""
         now = time.time()
         if self.clock_period is not None:
             previous_tick = _latest_tick(now, self.clock_period) - self.clock_period

@@ -12,7 +12,7 @@ from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper
+from psynet.sync import Clock, GroupBarrier, Regrouper, SimpleGrouper, _latest_tick
 from psynet.timeline import Timeline
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -244,12 +244,66 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     assert pairs.choose_who_to_release([odd_one_out]) == []
     # ...but for one more deadline at most, then they sit out.
     _backdate_arrivals(pairs, [odd_one_out], 15)
+    now = time.time()
+    t = _latest_tick(now, 15)
+    m = [odd_one_out]
+    print(
+        "DBG",
+        now,
+        t,
+        pairs._arrival_debug(odd_one_out) if hasattr(pairs, "_arrival_debug") else None,
+        __import__("psynet.sync", fromlist=["x"])
+        ._arrival_time(pairs, odd_one_out)
+        .timestamp(),
+        pairs._last_split(team_group),
+        pairs._may_release_only_left_over(team_group, m),
+        pairs._pool_is_ready(team_group, m),
+        pairs._pools(m),
+    )
     assert pairs.choose_who_to_release([odd_one_out]) == [odd_one_out]
     _backdate_arrivals(pairs, [odd_one_out], -15)
 
     _arrive(exp, pairs, paired)
     assert _waiting(pairs, team) == []
     assert _count_releases.calls == 2
+
+
+@in_consents_experiment
+def test_clock_regrouper_left_over_waits_one_more_tick(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    pairs = Regrouper(
+        "pair", within="team", group_size=2, deadline=Clock(15), release_left_over=True
+    )
+    team = _working_participants(exp, 3)
+    _arrive(exp, team_grouper, team)
+    # Two were waiting at the last tick, so they pair up when the third arrives.
+    _arrive(exp, pairs, team[:2])
+    _backdate_arrivals(pairs, team[:2], 16)
+    _arrive(exp, pairs, team[2:])
+    assert _waiting(pairs, team) == team[2:]
+    team_group = team[0].active_sync_groups["team"]
+    team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 32)
+
+    # The pair is still playing: held through one tick, released at the next.
+    since_tick = time.time() - _latest_tick(time.time(), 15)
+    _backdate_arrivals(pairs, team[2:], since_tick + 1)
+    assert pairs.choose_who_to_release(team[2:]) == []
+    _backdate_arrivals(pairs, team[2:], 15)
+    assert pairs.choose_who_to_release(team[2:]) == team[2:]
+
+
+def test_regrouper_max_wait_time_outlasts_a_lone_wait():
+    with pytest.raises(ValueError, match="twice the deadline"):
+        Regrouper(
+            "pair",
+            within="team",
+            group_size=2,
+            deadline=150,
+            release_left_over=True,
+        )
 
 
 @in_consents_experiment
