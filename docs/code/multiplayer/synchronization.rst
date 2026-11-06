@@ -312,7 +312,8 @@ Timeouts
 
 ``max_wait_time``
     The longest a participant waits at one grouper or barrier: 20 seconds by
-    default. At a grouper, a participant who waits longer is failed. At a
+    default, or ``timeout_between_barriers_time`` plus 20 seconds at a
+    :class:`~psynet.sync.GroupBarrier` that sets it. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
     from the group so that they continue alone. With the default wait
