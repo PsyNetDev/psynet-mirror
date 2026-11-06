@@ -321,6 +321,12 @@ Timeouts
     ``waiting_logic`` pages: the server applies the timeout shortly after
     the deadline.
 
+    ``max_wait_time`` is a hard limit counted from arrival. With
+    ``waiting_logic``, the server applies it even while the participant is
+    partway through a filler page, not only between filler pages. Make it
+    long enough to cover long filler pages, for example trials used as
+    filler.
+
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
     passed its previous barrier, or since the member joined the group if that

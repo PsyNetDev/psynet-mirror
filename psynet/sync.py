@@ -160,7 +160,12 @@ from psynet.timeline_hold import (
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
 )
-from psynet.utils import call_function_with_context, get_config, get_logger
+from psynet.utils import (
+    call_function_with_context,
+    call_if_callable,
+    get_config,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -780,6 +785,9 @@ class Barrier(EltCollection):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded then the participant will be failed and sent to the end of the experiment.
+        This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
+        even while the participant is partway through a filler page, so make it long enough to cover long
+        filler pages (for example trials used as filler).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -883,7 +891,7 @@ class Barrier(EltCollection):
                 ),
                 logic=self.waiting_logic,
                 expected_repetitions=self.waiting_logic_expected_repetitions,
-                max_loop_time=self.max_wait_time,
+                max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
                 on_timeout=self.handle_max_wait_timeout,
@@ -930,21 +938,20 @@ class Barrier(EltCollection):
         )
         participant.active_barriers[self.id] = link
         if not self._uses_timeline_hold:
-            max_wait_time = self._max_wait_time_for(participant)
+            max_wait_time = call_if_callable(
+                self.max_wait_time, participant=participant
+            )
             if max_wait_time is not None:
                 link.deadline_at = now + timedelta(seconds=max_wait_time)
             self._queue_check_on_arrival(barrier_instance)
             self._notify_arrivals(participant)
 
-    def _max_wait_time_for(self, participant):
-        """Return ``max_wait_time`` in seconds for this participant, calling it if it is a function."""
-        if not callable(self.max_wait_time):
-            return self.max_wait_time
-        from .experiment import get_experiment
-
-        return call_function_with_context(
-            self.max_wait_time, participant=participant, experiment=get_experiment()
-        )
+    def _arrival_max_wait_time(self, participant):
+        """Return the ``max_wait_time`` resolved when the participant arrived, in seconds."""
+        link = participant.active_barriers.get(self.id)
+        if link is None or link.deadline_at is None:
+            return None
+        return (link.deadline_at - link.arrival_time).total_seconds()
 
     def _queue_check_on_arrival(self, barrier_instance):
         """Schedule the fast release check for immediately after commit."""
@@ -1270,6 +1277,9 @@ class GroupBarrier(Barrier):
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
         promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
+        This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
+        even while the participant is partway through a filler page, so make it long enough to cover long
+        filler pages (for example trials used as filler).
 
     max_wait_action
         When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
@@ -1763,7 +1773,9 @@ class Grouper(Barrier):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded and the participant is still not released, then the participant will be failed
-        and sent to the end of the experiment.
+        and sent to the end of the experiment. This is a hard limit counted from arrival: with explicit
+        ``waiting_logic``, the server applies it even while the participant is partway through a filler page,
+        so make it long enough to cover long filler pages (for example trials used as filler).
 
     expected_wait
         Expected duration of a default timeline hold. If omitted, preserves the
