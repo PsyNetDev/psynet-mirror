@@ -988,6 +988,8 @@ def test_reloader_keeps_a_checkout_containing_the_development_folder(
     checkout = tmp_path / "wt-group"
     (checkout / "psynet").mkdir(parents=True)
     (checkout / "dallinger_develop").mkdir()
+    (checkout / "tests").mkdir()
+    (checkout / "pyproject.toml").touch()
     monkeypatch.setattr(psynet, "__file__", str(checkout / "psynet" / "__init__.py"))
     monkeypatch.setattr(command_line, "get_config", lambda: SimpleNamespace(ready=True))
     monkeypatch.setattr(
@@ -996,6 +998,7 @@ def test_reloader_keeps_a_checkout_containing_the_development_folder(
 
     patterns = command_line._reloader_exclude_patterns()
     assert not any(fnmatch(f"{checkout}/psynet/sync.py", p) for p in patterns)
+    assert any(fnmatch(f"{checkout}/tests/test_x.py", p) for p in patterns)
 
 
 @pytest.mark.parametrize("browsers", [False, True])

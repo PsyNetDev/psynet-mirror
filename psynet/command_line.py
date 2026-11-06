@@ -1666,7 +1666,9 @@ def _reloader_exclude_patterns():
     ``.py`` file under each non-system ``sys.path`` entry, and an editable
     install puts the whole PsyNet (or Dallinger) checkout there. Without these
     patterns, editing a test or scaffolding a demo restarts every debug
-    server. The served experiment is watched through Dallinger's development folder, so it is unaffected.
+    server. The served experiment is watched through Dallinger's development
+    folder, so it is unaffected. Only Werkzeug's default stat reloader applies
+    these patterns to nested files.
     """
     import dallinger
 
