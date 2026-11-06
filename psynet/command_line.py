@@ -5,7 +5,6 @@ import functools
 import glob
 import hashlib
 import importlib
-import io
 import itertools
 import json
 import logging
@@ -25,7 +24,6 @@ from contextlib import (
     ExitStack,
     contextmanager,
     nullcontext,
-    redirect_stdout,
     suppress,
 )
 from pathlib import Path
@@ -40,6 +38,7 @@ import psycopg2
 from dallinger import db
 from dallinger.command_line.docker_ssh import (
     CONFIGURED_HOSTS,
+    option_ingress,
     option_server,
     remote_postgres,
     resolve_server_option,
@@ -122,35 +121,6 @@ from .utils import (
 ensure_runtime()
 
 logger = get_logger()
-
-
-def _reject_ingress_without_dallinger_support(ctx, param, value):
-    """Reject ``--ingress cloudflare`` when Dallinger only supports classic ingress.
-
-    The value is not passed on, because such a Dallinger has no ingress option.
-    """
-    if value == "cloudflare":
-        raise click.UsageError(
-            "--ingress cloudflare needs a Dallinger version with Cloudflare "
-            "ingress support, which this Dallinger installation does not have. "
-            "Install Dallinger from its master branch, or use classic ingress."
-        )
-    return None
-
-
-try:
-    from dallinger.command_line.docker_ssh import option_ingress
-except ImportError:  # pragma: no cover - older Dallinger without Cloudflare ingress
-    option_ingress = click.option(
-        "--ingress",
-        type=click.Choice(["classic", "cloudflare"]),
-        default=None,
-        callback=_reject_ingress_without_dallinger_support,
-        help=(
-            "How participants reach the experiment. Cloudflare ingress needs a "
-            "newer Dallinger than the one installed."
-        ),
-    )
 
 
 _LOCAL_PSYNET_WHEEL_PATTERN = "psynet-*.whl"
@@ -2383,10 +2353,8 @@ def _check_ssh_deploy_credentials(server, ingress):
     """Stop an SSH launch early if the deploy's credentials are missing.
 
     Run before the launch starts local services, contacts the server or runs
-    ``prepare``. Dallinger versions with
-    ``check_deploy_credentials`` check that a Cloudflare-ingress deploy can
-    load its Cloudflare API token. Older versions lack it, so the check is
-    skipped and Dallinger's deploy checks the token later.
+    ``prepare``. Dallinger's ``check_deploy_credentials`` checks that a
+    Cloudflare-ingress deploy can load its Cloudflare API token.
 
     Parameters
     ----------
@@ -2402,10 +2370,8 @@ def _check_ssh_deploy_credentials(server, ingress):
     click.UsageError
         If Dallinger doesn't know the server or the ingress.
     """
-    try:
-        from dallinger.command_line.docker_ssh import check_deploy_credentials
-    except ImportError:
-        return
+    from dallinger.command_line.docker_ssh import check_deploy_credentials
+
     check_deploy_credentials(server=server, ingress=ingress)
 
 
@@ -2608,32 +2574,26 @@ def _invoke_docker_ssh_deploy(
     config_options=None,
     dallinger_summary=True,
 ):
-    """Invoke Dallinger docker-ssh deploy/sandbox, forwarding options it supports.
+    """Invoke Dallinger docker-ssh deploy/sandbox.
 
     ``config_options`` are config variables that the app gets in its
     environment, on top of those of the local config. Without
-    ``dallinger_summary``, Dallinger versions that support it skip their
-    closing summary, which includes the dashboard password, because the
-    caller prints its own.
+    ``dallinger_summary``, Dallinger skips its closing summary, which
+    includes the dashboard password, because the caller prints its own.
     """
-    kwargs = {
-        "server": server,
-        "dns_host": dns_host,
-        "app_name": app,
-        "config_options": config_options or {},
-        "archive_path": None,
-        "update": bool(update),
-    }
-    params = {getattr(param, "name", None) for param in getattr(command, "params", ())}
-    if "ingress" in params:
-        kwargs["ingress"] = ingress
-    if "show_summary" in params:
-        kwargs["show_summary"] = dallinger_summary
-    output = io.StringIO()
-    with redirect_stdout(_OutputTee(sys.stdout, output)):
-        result = ctx.invoke(command, **kwargs)
+    result = ctx.invoke(
+        command,
+        server=server,
+        dns_host=dns_host,
+        app_name=app,
+        config_options=config_options or {},
+        archive_path=None,
+        update=bool(update),
+        ingress=ingress,
+        show_summary=dallinger_summary,
+    )
     if isinstance(result, dict):
-        link = _participant_link(result, output.getvalue())
+        link = _participant_link(result)
         if update:
             # Dallinger doesn't open recruitment again, so keep what the
             # first deploy recorded, before _post_deploy overwrites it.
@@ -2667,14 +2627,14 @@ def _recorded_launch_info():
     return recorded if isinstance(recorded, dict) else {}
 
 
-def _participant_link(result, output):
+def _participant_link(result):
     """Return the single recruitment link from a Dallinger deploy, or ``None``.
 
-    Dallinger versions that return ``recruitment_msg`` (``None`` for an
-    update) are read from it; older ones only print it, to ``output``.
-    Other URLs in the message, such as a bot's own link, aren't shareable.
+    It is read from the deploy's ``recruitment_msg`` (``None`` for an
+    update). Other URLs in the message, such as a bot's own link, aren't
+    shareable.
     """
-    message = result.get("recruitment_msg", output) or ""
+    message = result.get("recruitment_msg") or ""
     match = re.search(r"Single recruitment link: (https?://[^\s\x1b]+)", message)
     return match and match.group(1)
 
@@ -2682,10 +2642,9 @@ def _participant_link(result, output):
 def _print_ssh_ready(result, launch_info, update=False):
     """End an SSH deployment with the links and commands the user needs next.
 
-    Also names the deployed Docker image, if Dallinger reports it, and the
-    ``bot_log`` that ``performance-test ssh`` adds. Passwords are not
-    printed, so that pasted logs don't leak them; they are saved in
-    ``launch_info``. Without a single participant link, the
+    Also names the deployed Docker image and the ``bot_log`` that
+    ``performance-test ssh`` adds. Passwords are not printed, so that pasted
+    logs don't leak them; they are saved in ``launch_info``. Without a single participant link, the
     recruitment message that Dallinger returned (for example a Prolific
     study) is shown instead. An ``update`` doesn't open recruitment again,
     so it shows what the first deploy recorded on this computer, or, without
@@ -2884,10 +2843,8 @@ def _write_local_image_pins(local_packages):
 
 def _awaken_ssh_app(server, app):
     """Wake a sleeping docker-ssh app before export or other database access."""
-    try:
-        from dallinger.command_line.docker_ssh import awaken_app
-    except ImportError:
-        return
+    from dallinger.command_line.docker_ssh import awaken_app
+
     awaken_app(server, app, required=False)
 
 
@@ -5337,8 +5294,6 @@ def _destroy(
     Other apps are confirmed here unless ``ask_for_confirmation`` is false.
     ``destroy_kwargs`` are extra options for ``f_destroy``. Dallinger's output
     isn't covered by a spinner, as it may prompt or report what it kept.
-    For an app that is no longer ``deployed``, finding nothing left to delete
-    counts as success.
     """
     if server:
         if deployed:
@@ -5375,11 +5330,6 @@ def _destroy(
     )
     try:
         ctx.invoke(f_destroy, **kwargs)
-    except click.Abort:
-        if deployed:
-            raise
-        # Older Dallinger versions abort when nothing is left to delete.
-        click.echo(f"Nothing left to delete for {app} on {server}.")
     except subprocess.CalledProcessError:
         click.echo(
             f"Failed to destroy {app}. "
@@ -5395,11 +5345,7 @@ def _command_params(command):
 
 
 def _delete_data_command(app, server):
-    """Make Dallinger name ``psynet destroy ssh`` as the command that deletes kept data, if it can."""
-    from dallinger.command_line.docker_ssh import destroy
-
-    if "delete_data_command" not in _command_params(destroy):
-        return {}
+    """Make Dallinger name ``psynet destroy ssh`` as the command that deletes kept data."""
     command = f"psynet destroy ssh {app} --server {server} --remove-data"
     return {"delete_data_command": command}
 
@@ -5471,7 +5417,9 @@ def hibernate__ssh(ctx, app, server):
     """
     Hibernate the experiment on a remote server via SSH.
     """
-    ctx.invoke(_dallinger_hibernation_command("hibernate"), server=server, app=app)
+    from dallinger.command_line.docker_ssh import hibernate as dallinger_hibernate
+
+    ctx.invoke(dallinger_hibernate, server=server, app=app)
 
 
 @psynet.group("awaken")
@@ -5495,18 +5443,9 @@ def awaken__ssh(ctx, app, server):
     """
     Awaken the experiment on a remote server via SSH.
     """
-    ctx.invoke(_dallinger_hibernation_command("awaken"), server=server, app=app)
+    from dallinger.command_line.docker_ssh import awaken as dallinger_awaken
 
-
-def _dallinger_hibernation_command(name):
-    """Return Dallinger's docker-ssh ``hibernate`` or ``awaken`` command."""
-    docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
-    command = getattr(docker_ssh, name, None)
-    if command is None:
-        raise click.UsageError(
-            "The installed Dallinger does not support docker-ssh hibernation."
-        )
-    return command
+    ctx.invoke(dallinger_awaken, server=server, app=app)
 
 
 @destroy.command("ssh")
@@ -5552,11 +5491,9 @@ def destroy__docker_ssh(
     Without --remove-data or --keep-data, asks whether to delete the apps'
     data: Dallinger asks for a single app, listing its data, and PsyNet asks
     once for several apps; --yes does not answer this. Non-interactive
-    runs must pass one of the two. Both need a Dallinger whose
-    `dallinger docker-ssh destroy` has them; older versions destroy apps as
-    before. With --remove-data, it also deletes the data left behind by an
-    app that was destroyed earlier with its data kept, and succeeds if
-    nothing is left. Before the question that decides whether data is
+    runs must pass one of the two. With --remove-data, it also deletes the
+    data left behind by an app that was destroyed earlier with its data
+    kept, and succeeds if nothing is left. Before the question that decides whether data is
     deleted, PsyNet reminds you to export apps without a local export.
 
     Apps with pending async jobs are not destroyed unless you confirm
@@ -5575,20 +5512,14 @@ def destroy__docker_ssh(
         )
     if remove_data and keep_data:
         raise click.UsageError("Pass only one of --remove-data and --keep-data.")
-    data_choice = "remove_data" in _command_params(destroy)
-    if (remove_data or keep_data) and not data_choice:
-        raise click.UsageError(
-            "--remove-data and --keep-data need a newer Dallinger, whose "
-            "`dallinger docker-ssh destroy` has these options."
-        )
-    if data_choice and not (remove_data or keep_data or _stdin_is_interactive()):
+    if not (remove_data or keep_data or _stdin_is_interactive()):
         raise click.UsageError(
             "Choose what happens to the experiment data: pass --remove-data or "
             "--keep-data in non-interactive sessions."
         )
 
     batch = len(apps) > 1
-    if remove_data and data_choice:
+    if remove_data:
         # An app destroyed with its data kept is no longer listed. Dallinger
         # deletes its leftovers, or says that none are left.
         undeployed = set(apps) - _ssh_app_names(server)
@@ -5598,13 +5529,9 @@ def destroy__docker_ssh(
     exportable = [name for name in apps if name not in undeployed]
     if not yes:
         _confirm_destroy_ssh_apps(server, apps, undeployed, remove_data)
-    data_options = (
-        _ssh_data_options(apps, server, remove_data, keep_data, exportable)
-        if data_choice
-        else {}
-    )
+    data_options = _ssh_data_options(apps, server, remove_data, keep_data, exportable)
     # Dallinger asks about a single app's data after the pending-job check.
-    warn_unexported = data_choice and not (remove_data or keep_data or batch)
+    warn_unexported = not (remove_data or keep_data or batch)
     failed = []
     for name in apps:
         try:
