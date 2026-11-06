@@ -144,7 +144,10 @@ def _count_waiting_screen(participant):
 def test_response_into_a_hold_with_a_waiting_screen_returns_its_fragment(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """The waiting screen arrives in place, carrying the hold's attributes."""
+    """The waiting screen arrives in place, carrying the hold's attributes.
+
+    It shows the hold chip both in place and on a reload.
+    """
     from dallinger.experiment_server.experiment_server import app
 
     # Deployments copy PsyNet's templates next to Dallinger's; tests don't.
@@ -152,6 +155,9 @@ def test_response_into_a_hold_with_a_waiting_screen_returns_its_fragment(
         [
             FileSystemLoader(str(resources.files("psynet") / "templates")),
             app.jinja_loader,
+            FileSystemLoader(
+                str(resources.files("dallinger") / "frontend" / "templates")
+            ),
         ]
     )
     monkeypatch.setattr(app, "jinja_loader", loader)
@@ -168,17 +174,26 @@ def test_response_into_a_hold_with_a_waiting_screen_returns_its_fragment(
     )
     try:
         (participant,) = _working_participants(exp, 1)
+        participant_id = participant.id
         assert _json_timeline(exp, participant).status_code == 200
-        participant = Participant.query.get(participant.id)
+        participant = Participant.query.get(participant_id)
         _WAITING_SCREEN_CALLS.clear()
         reply = _route_approved_response(participant, app=app).get_json()
+        assert len(_WAITING_SCREEN_CALLS) == 1
+        participant = Participant.query.get(participant_id)
+        with app.test_request_context(
+            f"/timeline?unique_id={participant.unique_id}",
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        ):
+            reload_html = Experiment._route_timeline(exp, participant, mode=None)
     finally:
         exp.timeline = original
     hold = reply["page"]["attributes"]["timeline_hold"]
     assert hold["replaces_page"] is True
     assert hold["page_uuid"] == reply["timeline_fragment"]["page_uuid"]
-    assert "You offered 5 coins." in reply["timeline_fragment"]["html"]
-    assert len(_WAITING_SCREEN_CALLS) == 1
+    for html in [reply["timeline_fragment"]["html"], reload_html]:
+        assert "You offered 5 coins." in html
+        assert 'id="psynet-timeline-hold-indicator"' in html
 
 
 @CONSENTS
