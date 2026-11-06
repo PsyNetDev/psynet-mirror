@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -495,7 +496,7 @@ def test_expected_wait_sets_how_often_waiting_logic_repeats():
     assert estimate_duration(barrier()) == 6
     with pytest.warns(FutureWarning, match="pass expected_wait") as warned:
         legacy = barrier(waiting_logic_expected_repetitions=4)
-    assert warned[0].filename == __file__
+    assert Path(warned[0].filename).resolve() == Path(__file__).resolve()
     assert estimate_duration(legacy) == 8
     with pytest.raises(ValueError, match="not both"), pytest.warns(FutureWarning):
         barrier(expected_wait=9, waiting_logic_expected_repetitions=4)

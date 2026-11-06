@@ -969,15 +969,13 @@ class Barrier(EltCollection):
             raise ValueError(
                 "waiting_screen only applies when waiting_logic is omitted."
             )
+        default_repetitions = (
+            3
+            if waiting_logic_expected_repetitions is None
+            else waiting_logic_expected_repetitions
+        )
         self.expected_wait = (
-            0.5
-            * (
-                3
-                if waiting_logic_expected_repetitions is None
-                else waiting_logic_expected_repetitions
-            )
-            if expected_wait is None
-            else expected_wait
+            0.5 * default_repetitions if expected_wait is None else expected_wait
         )
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
@@ -988,13 +986,7 @@ class Barrier(EltCollection):
             None
             if waiting_logic is None
             else _expected_repetitions(
-                waiting_logic,
-                expected_wait,
-                (
-                    3
-                    if waiting_logic_expected_repetitions is None
-                    else waiting_logic_expected_repetitions
-                ),
+                waiting_logic, expected_wait, default_repetitions
             )
         )
         if waiting_logic is None:

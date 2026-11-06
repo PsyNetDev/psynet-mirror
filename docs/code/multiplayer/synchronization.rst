@@ -596,7 +596,7 @@ participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: waiting_logic = PageMaker(
+   :start-at: def waiting_logic(
    :end-before: class Exp
 
 ``expected_wait`` says how long participants are expected to wait, in
@@ -647,7 +647,8 @@ By default, participants are credited for the time they actually wait, up to
 ``max_wait_time``. Set ``fix_time_credit=True`` to credit every participant
 ``expected_wait`` seconds instead (1.5 seconds by default). With
 ``waiting_logic``, participants are credited for the waiting pages they
-complete, by those pages' own time estimates.
+complete, by those pages' own time estimates; with ``fix_time_credit=True``,
+they are credited for the expected passes instead.
 
 .. seealso::
 
