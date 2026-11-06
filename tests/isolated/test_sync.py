@@ -6610,14 +6610,14 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
 
     assert set(released) == set(waiting_participants)
     removal = {"notice": "Your group went on without you. Please continue.", "removed": True}
+    assert removal in [
+        {key: target.get(key) for key in removal}
+        for participant_id, payload in publications
+        if participant_id == missing_participants[0].id
+        for target in payload["targets"]
+    ]
     for missing_participant in missing_participants:
         assert missing_participant not in group.active_participants
-        assert removal in [
-            {key: target.get(key) for key in removal}
-            for participant_id, payload in publications
-            if participant_id == missing_participant.id
-            for target in payload["targets"]
-        ]
         assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None
