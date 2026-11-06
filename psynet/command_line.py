@@ -1662,11 +1662,11 @@ def _reloader_exclude_patterns():
 
     These cover checkout demos, tests and docs, and other folders next to the
     development folder. PsyNet and Dallinger checkouts next to or containing
-    the development folder stay watched. Flask's reloader watches every ``.py`` file under each non-system
-    ``sys.path`` entry, and an editable install puts the whole PsyNet (or
-    Dallinger) checkout there. Without these patterns, editing a test or
-    scaffolding a demo restarts every debug server. The served experiment is
-    watched through Dallinger's development folder, so it is unaffected.
+    the development folder stay watched. Flask's reloader watches every
+    ``.py`` file under each non-system ``sys.path`` entry, and an editable
+    install puts the whole PsyNet (or Dallinger) checkout there. Without these
+    patterns, editing a test or scaffolding a demo restarts every debug
+    server. The served experiment is watched through Dallinger's development folder, so it is unaffected.
     """
     import dallinger
 
