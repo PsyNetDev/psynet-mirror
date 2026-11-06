@@ -8,7 +8,6 @@ import dallinger.db
 import dallinger.experiment
 import dallinger.recruiters
 import pytest
-import requests
 from dallinger.prolific import ProlificServiceException
 
 from psynet.db import forbid_commits
@@ -106,10 +105,7 @@ def prolific_error(status):
 @pytest.mark.parametrize(
     "error",
     [prolific_error(status) for status in (408, 429, 500, 502, 503, 504)]
-    + [
-        requests.Timeout("slow"),
-        ProlificServiceException('{"URL": "/submissions/1/", "error": "Timeout()"}'),
-    ],
+    + [ProlificServiceException('{"URL": "/submissions/1/", "error": "Timeout()"}')],
 )
 def test_check_assignment_return_status_handles_retriable_prolific_lookup_failure(
     error,
@@ -779,16 +775,18 @@ def test_approve_hit_does_not_notify_when_complete_fails():
 def test_approve_hit_reports_failure_when_the_request_cannot_be_sent():
     """A transport error means the study reward was not paid.
 
-    ``ProlificService._req`` raises ``ProlificServiceException`` for an
-    error payload but lets transport errors through raw, so this must be
-    reported as a failure rather than escaping and killing the
-    submission-complete worker before the bonus is paid.
+    ``ProlificService._req`` raises transport errors as
+    ``ProlificServiceException``, which must be reported as a failure rather
+    than escaping and killing the submission-complete worker before the
+    bonus is paid.
     """
     experiment = MagicMock()
     config = make_config(prolific_screen_out_slots=70)
     recruiter = make_prolific_recruiter(config)
     recruiter.prolificservice = MagicMock()
-    recruiter.prolificservice._req.side_effect = requests.ConnectionError("no route")
+    recruiter.prolificservice._req.side_effect = ProlificServiceException(
+        '{"URL": "/submissions/assignment-1/transition/", "error": "ConnectionError()"}'
+    )
     participant = _approve_hit_participant()
     query = MagicMock()
     query.filter_by.return_value.order_by.return_value.first.return_value = participant
