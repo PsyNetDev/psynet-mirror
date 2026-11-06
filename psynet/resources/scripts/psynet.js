@@ -936,7 +936,7 @@
           delete element.dataset.checked;
           if (releaseInMs === null || releaseInMs <= 0) {
             delete element.dataset.releaseInMs;
-            element.textContent = "…";
+            element.textContent = releaseInMs === null ? "…" : "0";
           } else {
             element.dataset.releaseInMs = String(releaseInMs);
           }
@@ -1019,7 +1019,11 @@
             }),
           );
           if (status.released) {
-            psynet.waiting.onRelease();
+            if (status.ends_page) {
+              psynet.waiting.onRelease();
+            } else {
+              psynet.waiting.stop();
+            }
             return;
           }
         }
@@ -1126,7 +1130,7 @@
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
         if (target.refresh) {
-          psynet.fetchArrivalNotice();
+          psynet.requestArrivalRefresh();
         } else if (Object.prototype.hasOwnProperty.call(target, "notice")) {
           psynet.applyArrivalNotice(target.notice);
         }
@@ -1191,6 +1195,16 @@
         }
         psynet.applyArrivalSnapshot(data || {}, request);
       });
+    };
+
+    // Every arrival, join or departure in the group asks each member to
+    // fetch again, so requests close together share one fetch.
+    psynet.requestArrivalRefresh = function () {
+      if (psynet.arrivalRefreshTimer) return;
+      psynet.arrivalRefreshTimer = setTimeout(function () {
+        psynet.arrivalRefreshTimer = null;
+        psynet.fetchArrivalNotice();
+      }, 150);
     };
 
     psynet.ensureArrivalUpdates = function (config) {

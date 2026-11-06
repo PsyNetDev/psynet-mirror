@@ -4455,14 +4455,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         and then be interrupted. Skipped pages were never seen, so they get
         no response, time credit or progress.
         """
-        from .sync import released_waiting_barrier
+        from .sync import (
+            _MAX_BARRIER_WALK_PASSES,
+            _barrier_walk_budget,
+            released_waiting_barrier,
+        )
 
-        while True:
+        for can_work in _barrier_walk_budget():
             page = self.timeline.get_current_elt(self, participant)
             released = released_waiting_barrier(page, participant)
             if released is None or released.id != barrier.id:
                 return page
+            if not can_work:
+                break
             self.timeline.advance_page(self, participant)
+        raise RuntimeError(
+            f"Skipping the waiting pages of barrier '{barrier.id}' did not settle "
+            f"after {_MAX_BARRIER_WALK_PASSES} steps."
+        )
 
     @staticmethod
     def _record_interrupted_response(page, participant, metadata):

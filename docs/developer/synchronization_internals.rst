@@ -33,12 +33,14 @@ browser is still open also checks their own visit on each hold poll.
 Each sweep first applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
-``waiting_logic`` pages, whose link records its own deadline. It then checks waiting visits, least recently
-checked first, with a 5-second head start for visits that are new or whose
-waiters or sync group changed since this process last checked them. A visit
-whose check is deferred or fails is retried at most once in the same sweep and
-then queued like a checked one, and a waiter whose timeout fails goes behind the
-other overdue waiters, so a broken item cannot hold up the rest. Each of
+``waiting_logic`` pages, whose link records its own deadline, even if they
+are still partway through a filler page. It then checks waiting visits,
+least recently checked first, with a 5-second head start for visits that
+are new or whose waiters or sync group changed since this process last
+checked them. A visit whose check is deferred or fails is retried at most
+once in the same sweep and then queued like a checked one, and a waiter
+whose timeout fails goes behind the other overdue waiters, so a broken item
+cannot hold up the rest. Each of
 the two steps stops starting new work after 0.2 seconds, so with thousands
 of waiters a sweep normally stays within its interval and later sweeps reach
 the remaining visits. One timeout or check can still overrun while it waits

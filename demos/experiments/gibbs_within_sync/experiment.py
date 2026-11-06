@@ -91,7 +91,7 @@ class CustomTrial(GibbsTrial):
         return ColorSliderPage(
             "color_trial",
             # Ticks appear as the others submit.
-            GroupPrompt(prompt, participant=participant),
+            GroupPrompt(prompt, group=self.sync_group, participant=participant),
             starting_values=self.initial_vector,
             selected_idx=self.active_index,
             reverse_scale=self.reverse_scale,
@@ -111,6 +111,7 @@ class CustomTrial(GibbsTrial):
             GroupPrompt(
                 f"Here is how your group set the {color} slider. "
                 f"The summarized response was {round(last_node.var.summarize_trials_output)}.",
+                group=self.sync_group,
                 participant=participant,
                 answers=answers,
             ),

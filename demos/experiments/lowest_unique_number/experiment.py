@@ -8,7 +8,9 @@ The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time sits out the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
 closing the tab, is removed from their room ``LEFT_PAGE_SECONDS`` later.
-Nobody is failed for missing a round.
+Missing a round doesn't fail anyone. A player who comes back after the
+others' last round has started waits alone, though, and is failed once they
+reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
 
 To keep the same people together across rounds, for example in teams, form
 the teams first and regroup within them::
@@ -74,6 +76,12 @@ def score_round(participants: List[Participant]):
         }
 
 
+def round_message(seconds_left):
+    if seconds_left is None:
+        return "Waiting for another player."
+    return "The next round starts in {SECONDS} s."
+
+
 def choose_number(participant):
     return ModularPage(
         "choose",
@@ -93,8 +101,7 @@ def choose_number(participant):
 def show_result(participant):
     if "room" not in participant.active_sync_groups or participant.var.choice is None:
         return InfoPage(
-            "You ran out of time, so you sat out this round. You'll join the next one.",
-            time_estimate=5,
+            "You ran out of time, so you sat out this round.", time_estimate=5
         )
     result = participant.var.last_round
     winner = result["winning_number"]
@@ -131,7 +138,7 @@ def play_round():
             group_size=ROOM_SIZE,
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
-            content="The next round starts in {SECONDS} s.",
+            content=round_message,
         ),
         PageMaker(choose_number, time_estimate=5),
         GroupBarrier(

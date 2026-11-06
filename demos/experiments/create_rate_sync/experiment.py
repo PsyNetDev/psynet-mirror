@@ -57,7 +57,7 @@ class CreateRateTrial(StaticTrial):
             ModularPage(
                 "create",
                 # Ticks appear as the others finish.
-                GroupPrompt(prompt, participant=participant),
+                GroupPrompt(prompt, group=self.sync_group, participant=participant),
                 TextControl(),
                 time_estimate=5,
                 save_answer="create",
@@ -72,7 +72,7 @@ class CreateRateTrial(StaticTrial):
         return join(
             ModularPage(
                 "rate",
-                GroupPrompt(prompt, participant=participant),
+                GroupPrompt(prompt, group=self.sync_group, participant=participant),
                 PushButtonControl(
                     choices=self.find_creations(participant),
                 ),
@@ -123,6 +123,7 @@ class CreateRateTrial(StaticTrial):
             "show_ratings",
             GroupPrompt(
                 prompt,
+                group=self.sync_group,
                 participant=participant,
                 answers=creations,
                 highlight=highlight,
