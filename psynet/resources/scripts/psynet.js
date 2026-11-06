@@ -1468,7 +1468,9 @@
           if (!controller.stopped) {
             // Catches up on arrivals between rendering and subscribing, for
             // waiting screens that show who is ready.
-            psynet.fetchArrivalNotice();
+            if (controller.hold.replaces_page) {
+              psynet.fetchArrivalNotice();
+            }
             psynet.resumeTimelineHold("websocket connection");
           }
         },
