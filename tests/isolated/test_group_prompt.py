@@ -207,6 +207,7 @@ def test_a_removed_partner_stays_in_the_viewers_subgroup(
         group=room, participant=viewer, subgroups="pair", anonymous=True
     ).group_html
     clusters = html.split('class="psynet-group-cluster"')[1:]
+    assert len(clusters) == 2
     assert ">Your partner (out of time)<" in clusters[0]
 
 
