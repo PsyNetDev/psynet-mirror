@@ -238,12 +238,12 @@ Timeouts
     :ref:`groups below minimum size <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
-``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
+``sync_group_`` prefix: ``sync_group_max_wait_time``,
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``. As with a barrier,
-``sync_group_max_wait_time`` must be longer than
-``sync_group_timeout_between_barriers_time``, so raise it when you set a
-between-barrier timeout of 45 seconds or more.
+and ``sync_group_timeout_between_barriers_action``. ``sync_group_max_wait_time``
+defaults to 45 seconds, or to 20 seconds more than the between-barrier
+timeout if that is longer. As with a barrier, a value you pass must be
+longer than ``sync_group_timeout_between_barriers_time``.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while
