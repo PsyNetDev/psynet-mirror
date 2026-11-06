@@ -120,7 +120,9 @@ class GroupPrompt(Prompt):
         ``"pair"`` for pairs formed within the group, or a function
         ``subgroups(participant)`` returning a key, members with equal keys
         forming a cluster. The viewer's cluster comes first. Members without a
-        subgroup (``None``) are shown together in one cluster.
+        subgroup (``None``) are shown together in one cluster. With a sync
+        group type, a former member who is still shown stays in the latest
+        such group that a current member is still in.
     show_names
         If ``True``, show each member's pseudonym below their animal.
     anonymous
@@ -393,8 +395,8 @@ class GroupPrompt(Prompt):
     def _subgroup_key(self, member):
         """Return the member's subgroup.
 
-        A former member keeps their latest subgroup shared with someone still
-        in the group, even after joining a new one.
+        A former member is placed in their latest subgroup that someone still
+        in the group is in now, even after joining a new one.
         """
         if callable(self.subgroups):
             return self.subgroups(member)
@@ -409,13 +411,10 @@ class GroupPrompt(Prompt):
             ),
             key=_link_order,
         )
-        current_ids = {p.id for p in self.group.active_participants}
-        shared = [
-            link
-            for link in links
-            if current_ids
-            & {other.participant_id for other in link.sync_group.participant_links}
-        ]
+        current = {
+            self._subgroup_key(other) for other in self.group.active_participants
+        }
+        shared = [link for link in links if link.sync_group_id in current]
         chosen = shared or links
         return chosen[-1].sync_group_id if chosen else None
 
