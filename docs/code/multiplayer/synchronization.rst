@@ -324,9 +324,12 @@ a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
 function of the participant that returns one of these, or ``None`` to keep
 the last page. The participant can't submit a waiting screen, so a page
-with a Next button raises an error. Groupers take ``waiting_screen`` too,
+with a Next button, push buttons or another control that submits it
+raises an error. Groupers take ``waiting_screen`` too,
 for example to replace the instructions while a team forms. Here the
-participant's own choice replaces the buttons they chose it with:
+participant's own choice replaces the buttons they chose it with.
+``show_progress=False`` hides the answer ticks, which would otherwise
+also tick a partner who reached the barrier because their page timed out:
 
 .. code-block:: python
 
@@ -335,6 +338,7 @@ participant's own choice replaces the buttons they chose it with:
             f"You offer {participant.var.decision} coins.",
             participant=participant,
             group_type="pair",
+            show_progress=False,
         )
 
     GroupBarrier(

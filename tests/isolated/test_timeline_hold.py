@@ -457,7 +457,7 @@ def _waiting_participant(keep_page):
 
 
 def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
-    from psynet.modular_page import ModularPage, NullControl
+    from psynet.modular_page import ModularPage, NullControl, PushButtonControl
 
     def hold(waiting_screen):
         return GroupBarrier(
@@ -483,6 +483,10 @@ def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
         hold(ModularPage("next", "Wait")).waiting_screen_page(
             _waiting_participant(False)
         )
+    with pytest.raises(ValueError, match="PushButtonControl that submits it"):
+        hold(
+            ModularPage("push", "Wait", PushButtonControl(["OK"]))
+        ).waiting_screen_page(_waiting_participant(False))
     with pytest.raises(ValueError, match="waiting_screen only applies"):
         GroupBarrier(
             "decided",

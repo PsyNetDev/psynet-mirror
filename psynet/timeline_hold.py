@@ -754,7 +754,8 @@ class _TimelineHoldPage(Page):
         Raises
         ------
         ValueError
-            If the screen is not a ``ModularPage``, shows a Next button, or
+            If the screen is not a ``ModularPage``, shows a Next button, has
+            a control that submits it (push buttons or ``auto_advance``), or
             needs a full page reload under in-place transitions.
         """
         if self.waiting_screen is None:
@@ -767,7 +768,12 @@ class _TimelineHoldPage(Page):
         return screen
 
     def _build_waiting_screen(self, participant):
-        from psynet.modular_page import ModularPage, NextButton, NullControl
+        from psynet.modular_page import (
+            ModularPage,
+            NextButton,
+            NullControl,
+            PushButtonControl,
+        )
         from psynet.utils import get_config
 
         screen = self.waiting_screen
@@ -787,6 +793,10 @@ class _TimelineHoldPage(Page):
             problem = "is not a ModularPage"
         elif any(isinstance(button, NextButton) for button in screen.buttons):
             problem = "shows a Next button"
+        elif isinstance(screen.control, PushButtonControl) or getattr(
+            screen.control, "auto_advance", False
+        ):
+            problem = f"has a {type(screen.control).__name__} that submits it"
         elif screen.requires_full_page_reload and get_config().get(
             "inplace_timeline_transitions"
         ):
@@ -795,9 +805,10 @@ class _TimelineHoldPage(Page):
             raise ValueError(
                 f"The waiting_screen of {self.hold_id!r} returned page "
                 f"{screen.label!r}, which {problem}. A waiting screen must be "
-                "text, a prompt, or a ModularPage whose control has "
-                "show_next_button=False and which works with in-place "
-                "transitions, because the participant cannot submit it."
+                "text, a prompt, or a ModularPage that works with in-place "
+                "transitions and that nothing submits, such as one with "
+                "NullControl(show_next_button=False), because the participant "
+                "cannot submit it."
             )
         # A copy, so a page the experiment reuses doesn't keep this hold's attributes.
         screen = copy.copy(screen)
