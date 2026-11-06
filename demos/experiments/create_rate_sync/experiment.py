@@ -17,8 +17,12 @@ from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 # are created. In each trial, each participant is first asked to type the name of a food item.
 # In a second phase of each trial, each participant chooses between the food items given by
 # the other two participants, and is then informed about the choices made by the other participants.
+# The vote has a time limit, so one slow participant can't hold up the group; a participant who
+# runs out of time doesn't vote.
 
 # #############################################################################
+
+VOTE_SECONDS = 20
 
 
 class CreateRateTrialMaker(StaticTrialMaker):
@@ -74,6 +78,7 @@ class CreateRateTrial(StaticTrial):
                 ),
                 time_estimate=5,
                 save_answer="rate",
+                time_limit=VOTE_SECONDS,
             ),
             CodeBlock(lambda participant: self.var.set("rate", participant.var.rate)),
         )
@@ -89,19 +94,30 @@ class CreateRateTrial(StaticTrial):
 
     def show_ratings(self, participant):
         result = participant.var.last_trial
-        prompt = (
-            f"You chose {result['rating_self']}, "
-            + f"your partners chose {result['rating_others'][0]} and {result['rating_others'][1]}. "
-        )
-        creations = result["creation_by_player"]
-        counts = Counter(result["rating_by_player"].values())
-        top, n_votes = counts.most_common(1)[0]
-        if list(counts.values()).count(n_votes) == 1:
-            note = f"{top} got the most votes."
-            highlight = {pid: "winner" for pid, c in creations.items() if c == top}
+        own = result["rating_self"]
+        others = [r for r in result["rating_others"] if r is not None]
+        you = "You ran out of time to vote" if own is None else f"You chose {own}"
+        if not others:
+            partners = "your partners didn't vote"
+        elif len(others) == 1:
+            partners = f"one partner chose {others[0]} and the other didn't vote"
         else:
-            note = "It's a tie."
-            highlight = {}
+            partners = f"your partners chose {others[0]} and {others[1]}"
+        prompt = f"{you}, {partners}. "
+        creations = result["creation_by_player"]
+        counts = Counter(
+            r for r in result["rating_by_player"].values() if r is not None
+        )
+        highlight = {}
+        if not counts:
+            note = "Nobody voted."
+        else:
+            top, n_votes = counts.most_common(1)[0]
+            if list(counts.values()).count(n_votes) == 1:
+                note = f"{top} got the most votes."
+                highlight = {pid: "winner" for pid, c in creations.items() if c == top}
+            else:
+                note = "It's a tie."
 
         return ModularPage(
             "show_ratings",
@@ -125,7 +141,9 @@ class CreateRateTrial(StaticTrial):
         for i in range(len(participants)):
             participants[i].var.last_trial = {
                 "rating_self": ratings[i],
-                "rating_others": sorted(ratings[:i] + ratings[i + 1 :]),
+                "rating_others": sorted(
+                    ratings[:i] + ratings[i + 1 :], key=lambda r: (r is None, r or "")
+                ),
                 "creation_by_player": creations,
                 "rating_by_player": rating_by_player,
             }
