@@ -86,11 +86,6 @@ class RockPaperScissorsTrial(StaticTrial):
             )
         actions = last_trial["action_by_player"]
         winning_action = last_trial["action_self" if score == 1 else "action_other"]
-
-        # Derive the room from this trial's sync group (``self.sync_group``)
-        # rather than ``participant.sync_group``, which raises an error if the
-        # participant belongs to more than one active sync group. Both members
-        # share the same ``self.sync_group.id``, so they meet in the same room.
         return ModularPage(
             "results",
             GroupPrompt(
@@ -105,6 +100,8 @@ class RockPaperScissorsTrial(StaticTrial):
                 note="Now chat with your partner about the round you just played!",
             ),
             chatroom=ChatRoom(
+                # Both members share this trial's sync group, so they meet in
+                # the same room.
                 room_id=f"rps_room_{self.sync_group.id}",
                 show_participants=True,
                 show_history=True,

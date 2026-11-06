@@ -81,9 +81,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `Regrouper(group_type, group_size=..., deadline=..., within=...)` at the
   start of each round instead of a grouper and closer. Slow participants miss a
   round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(drop_late_members_after=...)` so late members are removed and
-  then pass the round's later barriers, as in the `lowest_unique_number` and
-  `ultimatum_pairing` demos. Use `pairs_avoiding_repeats` in `form_groups` to
+  `GroupBarrier(timeout_between_barriers_time=...,
+  timeout_between_barriers_action="kick")` so late members are removed and
+  pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
+  demos; give the round's other barriers `skip_if_not_in_group=True`. Use `pairs_avoiding_repeats` in `form_groups` to
   avoid repeat partners.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(min_group_size=..., start_short_after=...)`, with

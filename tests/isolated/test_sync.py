@@ -11,6 +11,7 @@ import pytest
 from dallinger import db
 from dallinger.experiment_server import sockets
 from dallinger.models import timenow
+from dominate import tags
 from flask import Flask
 from sqlalchemy import Column, String, text
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -50,7 +51,6 @@ from psynet.sync import (
     SimpleSyncGroup,
     SyncGroup,
     _advance_released_hold_waiters_after_commit,
-    _BarrierHoldPage,
     _check_and_skip_held_instance,
     _check_claimed_barrier_instance,
     _check_held_instance,
@@ -81,7 +81,7 @@ from psynet.timeline_hold import (
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
 )
-from psynet.utils import get_config
+from psynet.utils import call_function_with_context, get_config
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -256,6 +256,8 @@ def test_barrier_accepts_custom_hold_content():
     assert hold.content == "Waiting for your partner"
     assert hold.message_kind is None
     assert hold.translated_content() == "Waiting for your partner"
+    html = GroupBarrier(id_="tag", group_type="pair", content=tags.b("Wait"))
+    assert str(html.waiting_logic.translated_content()) == "<b>Wait</b>"
 
 
 def _content_by_role(participant):
@@ -275,8 +277,11 @@ def test_barrier_content_can_depend_on_the_participant(
     proposer = new_participant(get_experiment())
     proposer.var.role = "proposer"
 
-    for hold in (barrier.waiting_logic, _BarrierHoldPage(restored)):
-        assert hold.translated_content(proposer) == "Waiting for the proposer's partner"
+    expected = "Waiting for the proposer's partner"
+    assert barrier.waiting_logic.translated_content(proposer) == expected
+    assert (
+        call_function_with_context(restored.content, participant=proposer) == expected
+    )
 
 
 def test_explicit_barrier_waiting_logic_is_preserved():
@@ -6537,7 +6542,10 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
     (newcomer,) = _working_participants(exp, 1)
     group.add_participant(newcomer)
     barrier = GroupBarrier(
-        id_="first_after_grouper", group_type="main", drop_late_members_after=5
+        id_="first_after_grouper",
+        group_type="main",
+        timeout_between_barriers_time=5,
+        timeout_between_barriers_action="kick",
     )
     waiting, late = participants[:2], participants[2]
 

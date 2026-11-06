@@ -1327,7 +1327,8 @@ class GroupBarrier(Barrier):
     timeout_between_barriers_action
         When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
         rest can proceed without them), or ``"fail"`` fails the participant and sends them to the end of the experiment.
-        Default is ``"fail"``.
+        Default is ``"fail"``. A kicked participant is no longer in the group when they reach the barrier, so
+        ``"kick"`` also makes ``skip_if_not_in_group`` default to ``True``.
 
     on_release
         Optional callback invoked when the barrier releases participants.
@@ -1358,25 +1359,17 @@ class GroupBarrier(Barrier):
         If ``True`` (default), group members who have not reached this barrier
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
-        Pairs keep the hold title only. Set ``False`` to disable both.
-        Passing ``on_arrival_message`` implies ``True``. A member removed by
-        ``timeout_between_barriers_action="kick"`` is told either way; return
-        ``None`` from ``on_arrival_message`` for ``kind="removed"`` to hide it.
-
-    drop_late_members_after
-        Seconds. Shorthand for round-based games: a member who hasn't reached
-        the barrier this long after the group last passed one is removed from
-        the group, so the others go on without them, and a participant no
-        longer in the group passes straight through. Equivalent to
-        ``timeout_between_barriers_time=drop_late_members_after``,
-        ``timeout_between_barriers_action="kick"`` and
-        ``skip_if_not_in_group=True``. Default: ``None``.
+        Pairs keep the hold title only. Set ``False`` to disable both. A
+        member removed by ``timeout_between_barriers_action="kick"`` is told
+        either way; return ``None`` from ``on_arrival_message`` for
+        ``kind="removed"`` to hide it.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
         passes straight through, for example after being kicked by a timeout in
-        a round-based design. If ``False`` (default), they get an error, which
-        usually means a grouper is missing from the timeline.
+        a round-based design. If ``False``, they get an error, which usually
+        means a grouper is missing from the timeline. Defaults to ``True`` when
+        ``timeout_between_barriers_action="kick"``, and ``False`` otherwise.
 
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
@@ -1454,21 +1447,11 @@ class GroupBarrier(Barrier):
         content=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
-        skip_if_not_in_group: bool = False,
+        skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
         fail_if_hidden_for: Optional[float] = None,
-        drop_late_members_after: Optional[float] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
-        if drop_late_members_after is not None:
-            if timeout_between_barriers_time is not None:
-                raise ValueError(
-                    "Pass either drop_late_members_after or "
-                    "timeout_between_barriers_time, not both."
-                )
-            timeout_between_barriers_time = drop_late_members_after
-            timeout_between_barriers_action = "kick"
-            skip_if_not_in_group = True
         max_wait_time = self._check_max_wait_time(
             max_wait_time, timeout_between_barriers_time
         )
@@ -1487,7 +1470,7 @@ class GroupBarrier(Barrier):
         self.group_type = group_type
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
-        self.notify_arrivals = bool(notify_arrivals) or on_arrival_message is not None
+        self.notify_arrivals = bool(notify_arrivals)
         self.timeout_between_barriers_time = timeout_between_barriers_time
         if timeout_between_barriers_action not in ("kick", "fail"):
             raise ValueError(
@@ -1495,6 +1478,8 @@ class GroupBarrier(Barrier):
                 f"got {timeout_between_barriers_action!r}"
             )
         self.timeout_between_barriers_action = timeout_between_barriers_action
+        if skip_if_not_in_group is None:
+            skip_if_not_in_group = timeout_between_barriers_action == "kick"
         self.skip_if_not_in_group = skip_if_not_in_group
 
     def resolve(self):

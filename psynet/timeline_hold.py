@@ -25,6 +25,7 @@ from datetime import timedelta
 
 from dallinger import db
 from dallinger.models import timenow
+from dominate.dom_tag import dom_tag
 from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
@@ -236,6 +237,11 @@ def default_group_barrier_arrival_message(
         ARRIVED=waiting_count,
         TOTAL=group_size,
     )
+
+
+def _is_content_function(content):
+    """Return whether hold ``content`` is a function of the participant (dominate tags are callable too)."""
+    return callable(content) and not isinstance(content, dom_tag)
 
 
 def compose_hold_overlay_html(title, progress_text=None):
@@ -655,16 +661,15 @@ class _TimelineHoldPage(Page):
     def translated_content(self, participant=None):
         """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
-        if self.message_kind == "barrier" or (
-            callable(self.content) and participant is None
-        ):
+        content_function = _is_content_function(self.content)
+        if self.message_kind == "barrier" or (content_function and participant is None):
             return _p("timeline_hold", "Waiting for other participants…")
         if self.message_kind == "generic":
             return _p(
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
-        if callable(self.content):
+        if content_function:
             return call_function_with_context(self.content, participant=participant)
         return self.content
 
