@@ -320,6 +320,7 @@ class ChatRoom(JavaScriptContributor):
                 "show_participants": bool(self.show_participants),
                 "show_history": bool(self.show_history),
                 "you_label": _p("chat sender", "You"),
+                "you_in_list_label": _p("chat participant list", "{NAME} (you)"),
             }
         }
 

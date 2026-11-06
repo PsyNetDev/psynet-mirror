@@ -254,6 +254,13 @@ test("default barriers hold the current page until websocket release", { tag: "@
         secondParticipant.locator("#chatroom-send-btn")
       ).toBeEnabled({ timeout: STEP_TIMEOUT_MS })
     ]);
+    // Each list names its own participant by pseudonym, and never by ID.
+    await expect(
+      firstParticipant.locator("#chatroom-participants")
+    ).toContainText(/\w+ \w+ \(you\)/);
+    await expect(
+      firstParticipant.locator("#chatroom-participants")
+    ).not.toContainText("Participant ");
     await sendButton.click();
     await Promise.all([
       expect(firstParticipant.locator("#chatroom-messages")).toContainText(

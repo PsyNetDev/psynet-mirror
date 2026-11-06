@@ -52,14 +52,11 @@ def format_group_message(participant: Participant) -> str:
     )
     participants_text = ", ".join(
         [
-            f"{participant.id} ({participant.var.role})"
-            for participant in ordered_participants
+            f"{member.pseudonym.name} ({member.var.role})"
+            for member in ordered_participants
         ]
     )
-    return (
-        f"You are now in group {participant.sync_group.id} with participants "
-        f"{participants_text}"
-    )
+    return f"You are now in a group with {participants_text}."
 
 
 def show_current_group():
@@ -122,7 +119,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         for bot in bots:
-            assert bot.current_page_text.startswith("You are now in group")
+            assert bot.current_page_text.startswith("You are now in a group with")
 
         first_groups = SyncGroup.query.filter_by(active=True).all()
         assert len(first_groups) == 2
@@ -141,7 +138,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         for bot in bots:
-            assert bot.current_page_text.startswith("You are now in group")
+            assert bot.current_page_text.startswith("You are now in a group with")
             assert bot.sync_group_n_active_participants == 2
 
         second_groups = SyncGroup.query.filter_by(active=True).all()
