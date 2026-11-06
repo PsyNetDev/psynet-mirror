@@ -720,15 +720,13 @@ class _BarrierHoldPage(_TimelineHoldPage):
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
         if content_is_function:
-            context = (
-                {}
-                if participant is None
-                else {
-                    "participant": participant,
-                    **self.barrier._hold_message_counts(participant),
-                }
+            context = {} if participant is None else {"participant": participant}
+            content = content(
+                barrier=self.barrier,
+                seconds_left=seconds,
+                **context,
+                **self.barrier._hold_message_counts(participant),
             )
-            content = content(barrier=self.barrier, seconds_left=seconds, **context)
         html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
         if "{SECONDS}" not in html:
             return html
@@ -862,7 +860,8 @@ class Barrier(EltCollection):
         that returns the message; it may take ``seconds_left`` (whole seconds,
         or ``None`` while the release time is unknown), ``participant`` and
         ``barrier``, and on a :class:`GroupBarrier` also ``waiting_count``
-        and ``group_size``. Return :func:`hold_message` to set the progress
+        and ``group_size`` (both ``None`` if the participant has no group).
+        Return :func:`hold_message` to set the progress
         line under the message yourself.
     """
 
@@ -1535,13 +1534,19 @@ class GroupBarrier(Barrier):
         if not self.notify_arrivals or not self._participant_is_waiting(participant):
             return None
         counts = self._hold_message_counts(participant)
-        return default_hold_progress(**counts) if counts else None
+        if counts["group_size"] is None:
+            return None
+        return default_hold_progress(**counts)
 
     def _hold_message_counts(self, participant):
-        """Return ``waiting_count`` and ``group_size`` for the participant's group."""
-        group = participant.active_sync_groups.get(self.group_type)
+        """Return ``waiting_count`` and ``group_size``, both ``None`` without a group."""
+        group = (
+            None
+            if participant is None
+            else participant.active_sync_groups.get(self.group_type)
+        )
         if group is None:
-            return {}
+            return {"waiting_count": None, "group_size": None}
         return {
             "waiting_count": sum(
                 1
@@ -1746,10 +1751,15 @@ class GroupBarrier(Barrier):
         """Show a kicked participant a notice that their group went on without them.
 
         The notice lasts until they leave their current page. It is skipped if
-        their own request holds their row, since they are leaving the page.
-        A failing message callback is logged rather than stopping the kick.
+        their own request holds their row, since they are leaving the page,
+        and when the kick dissolved the group, since nobody went on. A
+        failing message callback is logged rather than stopping the kick.
         """
-        if not self.notify_arrivals:
+        if (
+            not self.notify_arrivals
+            or group.n_active_participants == 0
+            or group.dissolving
+        ):
             return
         try:
             text = self._call_arrival_message(
@@ -1770,7 +1780,6 @@ class GroupBarrier(Barrier):
             return
         if not text or not _lock_free_participants([participant]):
             return
-        db.session.refresh(participant, ["page_uuid"])
         text = str(text)
         participant.group_removal_notice = {
             "page_uuid": participant.page_uuid,
