@@ -25,6 +25,7 @@ finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
 after sitting out ``MAX_SIT_OUTS`` rounds or if their team falls apart.
 """
 
+import random
 from typing import List
 
 import psynet.experiment
