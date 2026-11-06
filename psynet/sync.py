@@ -1441,7 +1441,7 @@ class GroupBarrier(Barrier):
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``content`` to customize that indicator's
-        message.
+        message. Give each barrier its own elements (see :class:`Barrier`).
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -1971,7 +1971,8 @@ class Grouper(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator.
+        waiting indicator. Give each grouper its own elements (see
+        :class:`Barrier`).
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
