@@ -3546,6 +3546,8 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     deadline_rows = (
         ParticipantLinkBarrier.query if waiting_page else TimelineHoldRecord.query
     )
+    arrival_deadline = deadline_rows.filter_by(participant_id=overdue.id).one()
+    assert arrival_deadline.deadline_at - timenow() > timedelta(seconds=290)
     deadline_rows.filter_by(participant_id=overdue.id).update(
         {"deadline_at": timenow() - timedelta(seconds=1)}
     )

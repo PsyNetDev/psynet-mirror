@@ -944,6 +944,9 @@
     // Background tabs slow their timers down, so check for a release as soon
     // as the tab is shown again rather than at the next poll.
     document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
       psynet.resumeTimelineHold("visibility change");
       if (psynet.waiting.config && !psynet.waiting.released) {
         psynet.waiting.poll();
@@ -1169,6 +1172,7 @@
       }
       psynet.arrivalRequests = (psynet.arrivalRequests || 0) + 1;
       const request = psynet.arrivalRequests;
+      const pageUuid = window.pageUuid;
       $.ajax({
         url: "/timeline/arrival_notice",
         cache: false,
@@ -1176,6 +1180,10 @@
       }).done(function (data) {
         // Waiting screens get arrival updates on their own channel.
         if (!psynet.arrivalUpdates && !psynet.timelineHold) {
+          return;
+        }
+        // The answer describes the page that asked for it.
+        if (pageUuid !== window.pageUuid) {
           return;
         }
         psynet.applyArrivalSnapshot(data || {}, request);
@@ -3667,10 +3675,13 @@
         // with a rejected page_uuid.
         psynet.stopTimelineHold();
         await psynet.loadNextTimelinePageWithReload();
-      } else if (options.interrupted) {
+      } else if (options.interrupted && !response.message) {
         // The server hasn't seen the release yet; keep waiting.
         psynet.restoreSubmissionControlState();
         psynet.waiting.start(psynet.page.attributes?.waiting);
+      } else if (options.interrupted) {
+        // This page is stale, e.g. another tab already moved on.
+        await psynet.loadNextTimelinePageWithReload();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();

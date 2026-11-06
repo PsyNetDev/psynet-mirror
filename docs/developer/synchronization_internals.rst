@@ -30,9 +30,10 @@ deferred or lost, for barriers with explicit ``waiting_logic`` (whose wait
 pages don't check the barrier), and for waiters who have left. A waiter whose
 browser is still open also checks their own visit on each hold poll.
 
-Each sweep first applies ``max_wait_time`` to waiters at the default wait
-indicator whose deadline has passed, since nobody else would: their own
-request normally does it. It then checks waiting visits, least recently
+Each sweep first applies ``max_wait_time`` to waiters whose deadline has
+passed, since nobody else would: their own request normally does it. This
+covers waiters at the default wait indicator and at explicit
+``waiting_logic`` pages, whose link records its own deadline. It then checks waiting visits, least recently
 checked first, with a 5-second head start for visits that are new or whose
 waiters or sync group changed since this process last checked them. A visit
 whose check is deferred or fails is retried at most once in the same sweep and

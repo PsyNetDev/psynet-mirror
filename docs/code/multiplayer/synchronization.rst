@@ -409,7 +409,8 @@ Timeouts
 
 ``max_wait_time``
     The longest a participant waits at one grouper or barrier: 20 seconds by
-    default. At a grouper, a participant who waits longer is failed. At a
+    default, or ``timeout_between_barriers_time`` plus 20 seconds at a
+    :class:`~psynet.sync.GroupBarrier` that sets it. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
     from the group so that they continue alone. This also applies to a
@@ -485,8 +486,9 @@ trials from another trial maker:
    :end-before: class Exp
 
 When the barrier releases a participant who is on a waiting page, the page
-ends about ``release_grace`` seconds later (default 3) unless they submit it
-first; the browser notices the release within about 2 seconds. The page's
+ends ``release_grace`` seconds (default 3) after the browser notices the
+release, which is usually within about 2 seconds, unless they submit it
+first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).

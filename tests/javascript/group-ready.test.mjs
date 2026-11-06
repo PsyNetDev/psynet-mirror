@@ -42,6 +42,26 @@ it("drops arrival snapshots that come back after a newer one", () => {
   assert.deepEqual(psynet.readySeatsFor(1), []);
 });
 
+it("ignores an arrival snapshot that comes back after the page changed", () => {
+  const applied = [];
+  const psynet = { uniqueId: "p1", arrivalUpdates: {} };
+  psynet.applyArrivalSnapshot = (data) => applied.push(data);
+  const window = { pageUuid: "page-1" };
+  const pending = [];
+  const $ = { ajax: () => ({ done: (callback) => pending.push(callback) }) };
+  new Function("psynet", "window", "$", extract("fetchArrivalNotice"))(
+    psynet,
+    window,
+    $
+  );
+
+  psynet.fetchArrivalNotice();
+  window.pageUuid = "page-2";
+  psynet.fetchArrivalNotice();
+  pending.forEach((callback, i) => callback({ request: i }));
+  assert.deepEqual(applied, [{ request: 1 }]);
+});
+
 it("hides the arrival notice while a page suppresses it", () => {
   let notice = null;
   const header = { appendChild: (el) => (notice = el) };
