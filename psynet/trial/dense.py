@@ -6,6 +6,7 @@ import random
 from typing import List, Literal, Optional
 
 from ..utils import sample_from_surface_of_unit_sphere
+from .main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
 from .static import StaticNode, StaticTrial, StaticTrialMaker
 
 
@@ -224,7 +225,7 @@ class DenseTrialMaker(StaticTrialMaker):
         fail_trials_on_participant_performance_check: bool = True,
         n_repeat_trials: int = 0,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
