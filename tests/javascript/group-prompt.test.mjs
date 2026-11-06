@@ -17,8 +17,11 @@ function member(seat) {
   };
 }
 
-function groupRoot(seats) {
+function groupRoot(seats, leftSeats = []) {
   const members = seats.map(member);
+  members
+    .filter((m) => leftSeats.includes(Number(m.dataset.seat)))
+    .forEach((m) => m.classList.add("psynet-group-member--left"));
   return {
     isConnected: true,
     querySelector(selector) {
@@ -26,8 +29,11 @@ function groupRoot(seats) {
       return seat ? members.find((m) => m.dataset.seat === seat[1]) : null;
     },
     querySelectorAll(selector) {
-      return selector === ".psynet-group-member--answered"
-        ? members.filter((m) => m.classList.contains("psynet-group-member--answered"))
+      if (selector === ".psynet-group-member--answered") {
+        return members.filter((m) => m.classList.contains("psynet-group-member--answered"));
+      }
+      return selector.endsWith(":not(.psynet-group-member--left)")
+        ? members.filter((m) => !m.classList.contains("psynet-group-member--left"))
         : members;
     },
     ticked: () =>
@@ -65,6 +71,23 @@ it("ticks the members already waiting, then only those still waiting", async () 
   assert.deepEqual(root.ticked(), [1]);
   send({ groupId: 8, seats: [] });
   assert.deepEqual(root.ticked(), [1]);
+});
+
+it("doesn't redraw for a member who left and is still drawn", async () => {
+  const { send } = setUp();
+  let requests = 0;
+  const pending = { done: () => pending, fail: () => pending, always: () => pending };
+  globalThis.$ = { ajax: () => ((requests += 1), pending) };
+  const root = groupRoot([0, 1, 2], [2]);
+  await activate({
+    root,
+    vars: { group_prompt: { group_id: 7, live_members: true, redraw_token: "t" } },
+  });
+
+  send({ groupId: 7, seats: [], members: [0, 1] });
+  assert.equal(requests, 0);
+  send({ groupId: 7, seats: [], members: [0] });
+  assert.equal(requests, 1);
 });
 
 it("retries a failed redraw once when another was asked for meanwhile", async (t) => {
