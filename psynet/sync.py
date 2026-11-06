@@ -1791,8 +1791,8 @@ class GroupBarrier(Barrier):
         if self.timeout_between_barriers_action == "fail":
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
-        for participant in late:
-            if self.timeout_between_barriers_action == "kick":
+        if self.timeout_between_barriers_action == "kick":
+            for participant in late:
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
                     self.id,
@@ -1800,29 +1800,29 @@ class GroupBarrier(Barrier):
                     group.id,
                 )
                 group.remove_participant(participant)
-                self._tell_removed_participant(participant, group, group_size)
-            else:
-                logger.info(
-                    "GroupBarrier '%s': failing participant %s (timeout between barriers)",
-                    self.id,
-                    participant.id,
-                )
-                participant.fail("timeout between barriers")
+            if (
+                self.notify_arrivals
+                and group.n_active_participants > 0
+                and not group.dissolving
+            ):
+                for participant in late:
+                    self._tell_removed_participant(participant, group, group_size)
+            return
+        for participant in late:
+            logger.info(
+                "GroupBarrier '%s': failing participant %s (timeout between barriers)",
+                self.id,
+                participant.id,
+            )
+            participant.fail("timeout between barriers")
 
     def _tell_removed_participant(self, participant, group, group_size):
         """Show a kicked participant a notice that their group went on without them.
 
         The notice lasts until they leave their current page. It is skipped if
-        their own request holds their row, since they are leaving the page,
-        and when the kick dissolved the group, since nobody went on. A
+        their own request holds their row, since they are leaving the page. A
         failing message callback is logged rather than stopping the kick.
         """
-        if (
-            not self.notify_arrivals
-            or group.n_active_participants == 0
-            or group.dissolving
-        ):
-            return
         try:
             text = self._call_arrival_message(
                 kind="removed",
@@ -3056,7 +3056,7 @@ def _lock_free_participants(participants):
     for participant in participants:
         if participant.id not in locked:
             continue
-        db.session.refresh(participant, ["failed", "status"])
+        db.session.refresh(participant, ["failed", "status", "page_uuid"])
         if not participant.failed and participant.status == "working":
             free.append(participant)
     return free
