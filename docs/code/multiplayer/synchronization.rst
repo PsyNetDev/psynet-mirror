@@ -231,7 +231,7 @@ error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
-latecomers join while enough rounds are left:
+latecomers join until one of the team's players has finished a round:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(

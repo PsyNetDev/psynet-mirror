@@ -103,7 +103,7 @@ def leave_team(participant):
 
 
 def team_accepts_newcomers(group, participant):
-    """Let latecomers join a team only while enough rounds are left."""
+    """Let latecomers join until a teammate has finished ``LAST_ROUND_FOR_NEWCOMERS`` rounds."""
     rounds_played = [p.var.get("rounds_played", 0) for p in group.active_participants]
     return max(rounds_played, default=0) < LAST_ROUND_FOR_NEWCOMERS
 
@@ -220,7 +220,6 @@ def play_round():
             "paired",
             in_pair,
             join(
-                CodeBlock(count_round_played),
                 PageMaker(decision_page, time_estimate=10),
                 GroupBarrier(
                     id_="round_finished",
@@ -231,6 +230,7 @@ def play_round():
                     on_release=score_round,
                 ),
                 PageMaker(show_outcome, time_estimate=5),
+                CodeBlock(count_round_played),
             ),
             join(
                 CodeBlock(count_sit_out),
@@ -284,7 +284,9 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
 
-        # Round 1: the whole team is ready, so it starts at once.
+        # Round 1: the whole team is ready, so it starts at once. Latecomers
+        # can still join while it is being played.
+        assert _team_accepts_newcomers(bots[0])
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
 
@@ -294,6 +296,7 @@ class Exp(psynet.experiment.Experiment):
         for bot in others:
             bot.take_page()
         advance_past_wait_pages(others, timeout=WAIT_TIMEOUT)
+        assert not _team_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
         _play([b for b in others if b not in sitting_out])
@@ -318,3 +321,7 @@ def _play(bots):
         response = 5 if bot.current_page_label == "proposer" else 3
         bot.take_page(response=response)
     advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
+
+
+def _team_accepts_newcomers(bot):
+    return team_accepts_newcomers(team_of(Participant.query.get(bot.id)), None)
