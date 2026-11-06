@@ -211,6 +211,11 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         bots[0].take_page(response=3)
+        # While the others choose, the waiting screen shows the player's pick.
+        advance_past_wait_pages(
+            bots[:1], stop_at="round_finished", timeout=WAIT_TIMEOUT
+        )
+        assert "You picked 3." in bots[0].current_page_text
         bots[1].take_page(response=3)
         bots[2].take_page(response=4)
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)

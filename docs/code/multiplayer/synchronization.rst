@@ -329,8 +329,8 @@ a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
 function of the participant that returns one of these, or ``None`` to keep
 the last page. The participant can't submit a waiting screen, so a page
-with a Next button, push buttons or another control that submits it
-raises an error. Groupers take ``waiting_screen`` too,
+with a Next button, push buttons or ``auto_advance`` raises an error; use
+a control that doesn't submit, such as ``NullControl``. Groupers take ``waiting_screen`` too,
 for example to replace the instructions while a team forms. Here the
 participant's own choice replaces the buttons they chose it with.
 ``show_progress=False`` hides the answer ticks, which would otherwise
