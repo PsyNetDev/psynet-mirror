@@ -2036,6 +2036,15 @@ class Page(Elt):
         """
         return raw_answer
 
+    def _check_raw_answer(self, raw_answer):
+        """Reject a browser answer the page could not have produced.
+
+        Runs before the answer is formatted or validated, so pages that
+        override ``format_answer`` or ``validate`` never see it. Returns
+        ``None`` or a :class:`FailedValidation`.
+        """
+        return None
+
     def validate(self, response, **kwargs):
         """
         Takes the :class:`psynet.timeline.Response` object

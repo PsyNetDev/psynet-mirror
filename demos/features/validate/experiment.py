@@ -56,7 +56,7 @@ class Exp(psynet.experiment.Experiment):
             ),
             time_estimate=5,
             # Buttons only send their own choices, so PsyNet rejects this
-            # tampered answer before any validation method runs.
+            # tampered answer before formatting or validating it.
             bot_response=BotResponse(raw_answer="purple"),
         ),
     )
@@ -121,11 +121,14 @@ class Exp(psynet.experiment.Experiment):
         assert bot.current_page_text.startswith(
             "This page has a custom validation method that prohibits the answer 'red'."
         )
+        n_responses = Response.query.filter_by(participant_id=bot.id).count()
         with pytest.raises(
             RuntimeError, match="The participant's response was rejected"
         ):
             bot.take_page()
         assert bot.from_db("answer") == "red", "A rejected answer must not be saved"
+        # Rejected before the answer is formatted, so no response is recorded.
+        assert Response.query.filter_by(participant_id=bot.id).count() == n_responses
         bot.take_page(response="blue")
         assert bot.from_db("answer") == "blue"
 

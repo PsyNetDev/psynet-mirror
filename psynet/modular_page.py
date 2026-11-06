@@ -877,8 +877,9 @@ class Control(JavaScriptContributor):
     def _check_raw_answer(self, raw_answer):
         """Reject a browser answer the control could not have produced.
 
-        Response processing runs it before the page's ``validate`` method, so
-        pages that override ``validate`` cannot skip it. Returns ``None`` or a
+        Response processing runs it before formatting or validating the
+        answer, so overrides of ``format_answer`` or ``validate`` never see a
+        rejected answer. Returns ``None`` or a
         :class:`~psynet.timeline.FailedValidation`.
         """
         return None
@@ -1001,8 +1002,20 @@ class OptionControl(Control):
         # Bots that submit a formatted ``answer`` send no raw answer.
         if raw_answer is NoArgumentProvided or self._raw_answer_is_allowed(raw_answer):
             return None
+        # Choices built from live state, such as a sync group's members, can
+        # change between drawing the page and submitting it.
+        logger.warning(
+            "Rejected answer %r, which is not one of the choices %r.",
+            raw_answer,
+            self.choices,
+        )
         _p = get_translator(context=True)
-        return FailedValidation(_p("validation", "You need to select an answer!"))
+        return FailedValidation(
+            _p(
+                "validation",
+                "That option is no longer available. Please reload the page.",
+            )
+        )
 
     def format_answer(self, raw_answer, **kwargs):
         """Return the choice named by the browser's string answer.
@@ -1642,8 +1655,8 @@ class RadioButtonControl(OptionControl):
     def _raw_answer_is_allowed(self, raw_answer):
         if raw_answer is None:
             return True
-        if self.show_free_text_option:
-            return isinstance(raw_answer, str)
+        if self.show_free_text_option and isinstance(raw_answer, str):
+            return True
         return self._names_choice(raw_answer)
 
 
@@ -2249,6 +2262,9 @@ class ModularPage(Page):
         renderers = self.get_renderers()
 
         return "\n".join([renderers[key] for key in self.layout])
+
+    def _check_raw_answer(self, raw_answer):
+        return self.control._check_raw_answer(raw_answer)
 
     def validate(self, response, **kwargs):
         if self._validate_function is None:
