@@ -401,12 +401,13 @@ HTML such as an image. ``highlight`` marks members, with built-in styles for
 .. code-block:: python
 
     result = participant.var.last_round
+    choices = result["choice_by_player"]
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
         group_type="room",
-        answers=result["choice_by_player"],
-        highlight={winner.id: "winner"},
+        answers=choices,
+        highlight={pid: "winner" for pid, n in choices.items() if n == 2},
     )
 
 Store the answers when the barrier releases, as the ``lowest_unique_number``
