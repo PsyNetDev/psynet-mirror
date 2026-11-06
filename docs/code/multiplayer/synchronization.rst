@@ -189,20 +189,21 @@ on their own.
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 10 seconds. A player who doesn't choose in time is removed from their room by
-a :class:`~psynet.sync.GroupBarrier` with ``drop_late_members_after``, so the
-rest of the room carries on, and they join the next round:
+a :class:`~psynet.sync.GroupBarrier` with
+``timeout_between_barriers_action="kick"``, so the rest of the room carries
+on, and they join the next round:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
 The kicked player sees "Your group went on without you." on the progress bar
 straight away (pass ``on_arrival_message`` to change it), and is no longer in
-a room when they reach the barrier, so they pass straight through, and
-``show_result`` then tells them they sat the round out.
-``drop_late_members_after=15`` is short for
-``timeout_between_barriers_time=15``, ``timeout_between_barriers_action="kick"``
-and ``skip_if_not_in_group=True``. Without ``skip_if_not_in_group``, a
-participant who reaches a group barrier outside a group gets an error.
+a room when they reach the barrier. A barrier that kicks lets participants
+who are not in a group pass straight through (``skip_if_not_in_group``
+defaults to ``True``), and ``show_result`` then tells them they sat the round
+out. Pass ``skip_if_not_in_group=True`` to the round's other barriers too.
+Without it, a participant who reaches a group barrier outside a group gets an
+error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
@@ -350,9 +351,10 @@ unless ``subgroups`` is a function:
 After the barrier, pass ``answers`` to show each member's answer in a speech
 bubble, as a dictionary from participant ID to answer. Participant variables
 store dictionary keys as strings, so a dictionary read back from one can be
-passed as it is; ``highlight`` takes string IDs too. Speech bubbles may overlap a neighbour; hovering over or tapping a
-member brings their bubble to the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for HTML
-such as an image. ``highlight`` marks members, with built-in styles for
+passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
+overlap a neighbour; hovering over or tapping a member brings their bubble to
+the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
+HTML such as an image. ``highlight`` marks members, with built-in styles for
 ``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
 
 .. code-block:: python

@@ -121,6 +121,10 @@ class GroupPrompt(Prompt):
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
+        if group is not None and group_type is not None:
+            raise ValueError(
+                "Pass either group or group_type to GroupPrompt, not both."
+            )
         if group is None:
             group = (
                 participant.sync_group
