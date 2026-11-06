@@ -2930,8 +2930,12 @@ class Regrouper(Grouper):
             self._update_history(member, **changes)
 
     def _least_held_roles(self, members) -> dict:
-        """Return ``{member: role}``, giving each role to whoever has had it least."""
-        unassigned = random.sample(members, len(members))
+        """Return ``{member: role}``, giving each role to whoever has had it least.
+
+        Ties go by member order, which ``form_groups`` shuffles, so the
+        assignment scored when choosing groups is the one that is stored.
+        """
+        unassigned = list(members)
         roles = {}
         for role in self.roles:
             member = min(

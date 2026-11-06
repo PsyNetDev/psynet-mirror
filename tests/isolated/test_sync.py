@@ -6571,7 +6571,7 @@ def test_group_barrier_timeout_between_barriers_rejects_bad_action():
         )
 
 
-def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
+def test_group_barrier_max_wait_time_with_timeout_between_barriers():
     def barrier(**kwargs):
         return GroupBarrier(id_="round", group_type="group", **kwargs)
 

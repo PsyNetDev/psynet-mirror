@@ -2025,6 +2025,7 @@ class Page(Elt):
                 participant.var.set(self.save_answer, resp.answer)
         else:
             participant.answer_is_fresh = False
+        participant.page_deadline = None
 
         self.on_complete(experiment=experiment, participant=participant)
 

@@ -247,7 +247,7 @@ error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
-latecomers join during the team's first round:
+latecomers join until the team's second round starts:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
