@@ -270,7 +270,10 @@ participant:
     )
 
 The server counts the time from when the participant reached the page, so
-reloading the page does not restart the countdown. It also records
+reloading the page does not restart the countdown. The time includes any
+wait before the participant can answer, such as audio that must finish
+before the Next button is enabled, so allow for it in ``time_limit``. The
+server also records
 ``time_limit_answer`` for an answer that arrives more than 5 seconds after
 the limit, so a tampered or stalled page cannot take longer. Answers given
 because of the time limit skip validation and have ``time_limit_reached`` in

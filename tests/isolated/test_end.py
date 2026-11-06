@@ -103,7 +103,7 @@ def test_end_pages_can_continue_by_themselves():
             experiment, MagicMock()
         )
     assert (page.time_limit, page.time_limit_answer) == (3, "Finish")
-    assert "This page continues by itself in 3 seconds." in page.plain_text
+    assert "This page continues by itself in 3 s." in page.plain_text
     assert "Click Finish" not in page.plain_text
 
 

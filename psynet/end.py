@@ -51,6 +51,8 @@ class EndLogic(ExitLogic):
 
     def __init__(self, auto_continue_seconds: Optional[float] = None):
         super().__init__()
+        if auto_continue_seconds is not None and auto_continue_seconds < 0:
+            raise ValueError("auto_continue_seconds must be non-negative.")
         self.auto_continue_seconds = auto_continue_seconds
 
     def resolve(self) -> Union[Elt, List[Elt]]:
@@ -175,7 +177,7 @@ class EndLogic(ExitLogic):
             countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
                 math.ceil(self.auto_continue_seconds)
             )
-            text = _("This page continues by itself in {SECONDS} seconds.")
+            text = _("This page continues by itself in {SECONDS} s.")
             return dominate.util.raw(escape(text).replace("{SECONDS}", countdown))
         if experiment.with_lucid_recruitment():
             return _("Click Finish to return to your panel.")

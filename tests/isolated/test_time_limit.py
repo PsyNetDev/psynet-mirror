@@ -46,6 +46,9 @@ def test_time_limit_counts_from_reaching_the_page(in_experiment_directory, db_se
     assert rebuilt.time_limit_seconds_left(participant) <= 6
 
     assert _answer(page, participant, "7") == "7"
+    # The browser's timeout counts only once the deadline is (nearly) reached.
+    assert _answer(page, participant, "8", time_limit_reached=True) == "8"
+    participant.page_deadline = timenow()
     assert _answer(page, participant, time_limit_reached=True) == "timeout"
     participant.page_deadline = timenow() - timedelta(
         seconds=TIME_LIMIT_GRACE_SECONDS + 1

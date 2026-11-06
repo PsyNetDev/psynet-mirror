@@ -27,6 +27,7 @@ export function activate({root, vars, psynet}) {
     }
     var timer = null;
     var submitted = false;
+    var retries = 0;
 
     function submit() {
         if (submitted) return;
@@ -38,7 +39,14 @@ export function activate({root, vars, psynet}) {
         submitted = true;
         var staged = (psynet.response && psynet.response.staged) || {};
         var metadata = Object.assign({}, staged.metadata || {}, {time_limit_reached: true});
-        psynet.nextPage(null, metadata, {});
+        Promise.resolve(psynet.nextPage(null, metadata, {})).then(function (accepted) {
+            // A blocked or rejected submission is retried a few times.
+            if (accepted === false && retries < 5 && root.isConnected) {
+                retries += 1;
+                submitted = false;
+                timer = window.setTimeout(submit, 1000);
+            }
+        });
     }
 
     function tick() {
