@@ -1682,7 +1682,7 @@ class TrialMaker(Module):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds. Must be longer than ``sync_group_timeout_between_barriers_time`` when that is set.
+        Defaults to 45.0 seconds; ``None`` waits indefinitely. Must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
@@ -2843,7 +2843,7 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds. Must be longer than ``sync_group_timeout_between_barriers_time`` when that is set.
+        Defaults to 45.0 seconds; ``None`` waits indefinitely. Must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
