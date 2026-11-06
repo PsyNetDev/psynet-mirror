@@ -443,7 +443,8 @@ A waiting page's JavaScript can react to the release: ``window`` receives a
 and a ``psynetWaitingStatus`` event about every 2 seconds, with the time to
 the expected release (or ``null``) in ``detail.releaseInMs``. Call
 ``preventDefault()`` on the release event to show your own notice instead
-of the built-in one:
+of the built-in one. This only replaces the notice: the page still ends
+when the grace period is over.
 
 .. code-block:: javascript
 

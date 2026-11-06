@@ -517,6 +517,7 @@
     };
 
     psynet.resetPageState = function () {
+      psynet.waiting.stop();
       psynet.runPageCleanupCallbacks();
       psynet.clearPageEventListeners();
       psynet.comments = [];
@@ -962,7 +963,9 @@
      * ``window`` and the page ends after the barrier's ``release_grace``,
      * unless it is submitted first. Meanwhile the header counts down to the
      * end, unless a listener cancels the event. Pages that a release may not end (inside
-     * trials, or with ``release_grace=None``) run to their end.
+     * trials, or with ``release_grace=None``) run to their end. A page that the
+     * release could end but the server no longer shows, for example because
+     * another tab moved on, reloads the timeline.
      * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
      */
     psynet.waiting = {
@@ -1021,12 +1024,19 @@
               detail: { releaseInMs: status.release_in_ms },
             }),
           );
-          if (status.released) {
-            if (status.ends_page) {
-              psynet.waiting.onRelease();
-            } else {
-              psynet.waiting.stop();
-            }
+          if (status.released && status.ends_page) {
+            psynet.waiting.onRelease();
+            return;
+          }
+          if (status.released && config.release_grace_ms === null) {
+            psynet.waiting.stop();
+            return;
+          }
+          if (status.released && !psynet.nextPagePending) {
+            // The release could have ended this page, so the participant has
+            // moved past it, for example in another tab.
+            psynet.waiting.stop();
+            await psynet.loadNextTimelinePageWithReload();
             return;
           }
         }
@@ -1050,7 +1060,9 @@
           }),
         );
         let endsAt = Date.now() + config.release_grace_ms;
-        if (showNotice && config.release_notice && config.release_grace_ms > 0) {
+        if (!showNotice) {
+          psynet.hideArrivalNotice();
+        } else if (config.release_notice && config.release_grace_ms > 0) {
           psynet.waiting.showReleaseNotice(config.release_notice, endsAt);
         }
         psynet.waiting.graceTimer = setTimeout(
@@ -1062,12 +1074,16 @@
       // Counts down in the header's status line, which arrival notices then
       // leave alone until the page ends.
       showReleaseNotice(template, endsAt) {
+        let shownSeconds = null;
         let render = () => {
           if (!psynet.waiting.released) {
             clearInterval(psynet.waiting.noticeTimer);
             return;
           }
-          let seconds = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+          let seconds = Math.max(1, Math.ceil((endsAt - Date.now()) / 1000));
+          // The notice is an aria-live region, so only rewrite it when it changes.
+          if (seconds === shownSeconds) return;
+          shownSeconds = seconds;
           psynet.showArrivalNotice(template.replace("{SECONDS}", seconds), {
             release: true,
           });
