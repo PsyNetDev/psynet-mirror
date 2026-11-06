@@ -228,7 +228,8 @@ Timeouts
     accepts top-ups, a newcomer is timed from when they joined, so members
     already waiting can reach ``max_wait_time`` first.
 
-    At a group's first barrier the timeout counts from when the group formed.
+    At a group's first barrier the timeout counts from when each member joined
+    the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are timed
     out before they arrive.
