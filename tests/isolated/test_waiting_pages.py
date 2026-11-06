@@ -99,16 +99,76 @@ def test_release_interrupts_a_waiting_page(
         exp.timeline = original
 
 
+def _release_pair(exp):
+    """Have two participants arrive; return the first, waiting page config included."""
+    first, last = _working_participants(exp, 2)
+    first_id, last_id = first.id, last.id
+    waiting = _json_timeline(exp, first).get_json()["attributes"]["waiting"]
+    _json_timeline(exp, Participant.query.get(last_id))
+    db.session.expire_all()
+    return Participant.query.get(first_id), waiting
+
+
+@pytest.mark.parametrize("make_uninterruptible", ["no_release_grace", "failed"])
 @in_consents_experiment
-def test_waiting_pages_without_release_grace_run_to_their_end(
-    in_experiment_directory, db_session
+def test_release_does_not_end_an_uninterruptible_waiting_page(
+    in_experiment_directory, db_session, make_uninterruptible
 ):
+    """Status reports the release without ending the page, and an interrupt is refused."""
     exp = get_experiment()
     original = exp.timeline
-    _use_timeline(exp, _filler("filler"), initial_group_size=3, release_grace=None)
+    release_grace = None if make_uninterruptible == "no_release_grace" else 3
+    _use_timeline(exp, _filler("filler"), release_grace=release_grace)
     try:
-        (participant,) = _working_participants(exp, 1)
-        page = _json_timeline(exp, participant).get_json()
-        assert page["attributes"]["waiting"]["release_grace_ms"] is None
+        first, waiting = _release_pair(exp)
+        if make_uninterruptible == "failed":
+            first.failed = True
+            db.session.commit()
+        status = waiting_status_payload(first.unique_id, waiting["barrier_id"])
+        assert (status["released"], status["ends_page"]) == (True, False)
+        assert _post_response(first, interrupted=True).get_json()["submission"] == (
+            "rejected"
+        )
     finally:
         exp.timeline = original
+
+
+@in_consents_experiment
+def test_waiting_pages_end_on_a_release_earlier_in_the_same_request(
+    in_experiment_directory, db_session
+):
+    """A link released in this session still counts, though ``active_barriers`` keeps it."""
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, join(_filler("filler_0"), _filler("filler_1")))
+    try:
+        (participant,) = _working_participants(exp, 1)
+        _json_timeline(exp, participant)
+        page = exp.timeline.get_current_elt(exp, participant)
+        participant.active_barriers[page.links["barrier"].id].release()
+        assert exp._advance_past_ready_holds(participant, page).label == "after"
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_hold_pages_get_no_waiting_config(in_experiment_directory, db_session):
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, None)
+    try:
+        (participant,) = _working_participants(exp, 1)
+        attributes = _json_timeline(exp, participant).get_json()["attributes"]
+        assert "timeline_hold" in attributes and "waiting" not in attributes
+    finally:
+        exp.timeline = original
+
+
+def test_negative_release_grace_is_rejected():
+    with pytest.raises(ValueError, match="release_grace"):
+        SimpleGrouper(
+            "pair",
+            initial_group_size=2,
+            waiting_logic=_filler("filler"),
+            release_grace=-1,
+        )

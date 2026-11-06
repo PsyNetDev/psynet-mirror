@@ -205,7 +205,7 @@ class BotResponse:
 def advance_past_wait_pages(
     bots: List["BotDriver"],
     max_iterations: Optional[int] = None,
-    timeout: float = 10.0,
+    timeout: Optional[float] = None,
 ):
     """
     Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
@@ -220,9 +220,10 @@ def advance_past_wait_pages(
     bots : list of BotDriver
         Bots to advance.
     max_iterations : int, optional
-        Deprecated; use ``timeout``. If given, also stop after this many passes.
-    timeout : float
-        Seconds to keep trying before giving up (default 10).
+        Deprecated; use ``timeout``. If given, stop after this many passes.
+    timeout : float, optional
+        Seconds to keep trying before giving up. Defaults to 10, or to no
+        limit when only ``max_iterations`` is given.
 
     Raises
     ------
@@ -239,7 +240,9 @@ def advance_past_wait_pages(
             FutureWarning,
             stacklevel=2,
         )
-    deadline = time.monotonic() + timeout
+    elif timeout is None:
+        timeout = 10.0
+    deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
     while True:
         iteration += 1
@@ -261,7 +264,7 @@ def advance_past_wait_pages(
             raise RuntimeError(
                 f"Bots {ids} are still waiting after {max_iterations} passes."
             )
-        if time.monotonic() > deadline:
+        if deadline is not None and time.monotonic() > deadline:
             raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
         if iteration >= 2:
             time.sleep(0.5)

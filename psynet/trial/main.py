@@ -1682,7 +1682,7 @@ class TrialMaker(Module):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds.
+        Defaults to 45.0 seconds. Must be longer than ``sync_group_timeout_between_barriers_time`` when that is set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
@@ -1787,6 +1787,16 @@ class TrialMaker(Module):
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
+        if (
+            sync_group_timeout_between_barriers_time is not None
+            and sync_group_max_wait_time <= sync_group_timeout_between_barriers_time
+        ):
+            raise ValueError(
+                f"sync_group_max_wait_time ({sync_group_max_wait_time} s) must be "
+                "longer than sync_group_timeout_between_barriers_time "
+                f"({sync_group_timeout_between_barriers_time} s) in trial maker "
+                f"'{id_}'. Raise sync_group_max_wait_time (default 45 s)."
+            )
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = sync_group_max_wait_time
         self.sync_group_max_wait_action = sync_group_max_wait_action
@@ -2818,7 +2828,7 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds.
+        Defaults to 45.0 seconds. Must be longer than ``sync_group_timeout_between_barriers_time`` when that is set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
