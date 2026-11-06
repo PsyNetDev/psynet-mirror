@@ -6425,6 +6425,10 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
     with pytest.raises(ValueError, match="must be longer"):
         barrier(timeout_between_barriers_time=30, max_wait_time=30)
+    assert (
+        barrier(timeout_between_barriers_time=30, max_wait_time=None).max_wait_time
+        is None
+    )
 
 
 @pytest.mark.parametrize(

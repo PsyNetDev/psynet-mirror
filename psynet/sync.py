@@ -1232,6 +1232,9 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+_DEFAULT_MAX_WAIT_TIME = object()
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1276,6 +1279,7 @@ class GroupBarrier(Barrier):
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
         promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
+        ``None`` means no limit.
 
     max_wait_action
         When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
@@ -1365,19 +1369,18 @@ class GroupBarrier(Barrier):
         wait has their between-barrier timeout counted from when they joined,
         so the waiters can still reach ``max_wait_time`` first.
         """
-        if max_wait_time is None:
+        if max_wait_time is _DEFAULT_MAX_WAIT_TIME:
             return 20 + (timeout_between_barriers_time or 0)
         if (
-            timeout_between_barriers_time is not None
+            max_wait_time is not None
+            and timeout_between_barriers_time is not None
             and max_wait_time <= timeout_between_barriers_time
         ):
             raise ValueError(
                 f"max_wait_time ({max_wait_time} s) must be longer than "
                 f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
                 "otherwise members who arrive promptly time out while waiting "
-                "for slower ones. This holds while group membership is fixed; "
-                "newcomers to a group that accepts top-ups are timed from when "
-                "they joined."
+                "for slower ones."
             )
         return max_wait_time
 
@@ -1393,7 +1396,7 @@ class GroupBarrier(Barrier):
         group_type: str,
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
-        max_wait_time: Optional[float] = None,
+        max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
