@@ -11,6 +11,7 @@ from psynet.end import (
     SuccessfulEndLogic,
     UnsuccessfulEndLogic,
 )
+from psynet.page import UnsuccessfulEndPage
 
 
 def _reward_html(monkeypatch, time_reward, performance_reward):
@@ -119,7 +120,7 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
     )
     other = SimpleNamespace(failure_tags=["performance_check"], module_state=None)
     async_job = SimpleNamespace(
-        failure_tags=["timeline_hold:job", "fail_on_timeout"], module_state=None
+        failure_tags=["timeline_hold:wait_while", "fail_on_timeout"], module_state=None
     )
     barrier_wait = SimpleNamespace(
         failure_tags=["timeline_hold:barrier:round", "fail_on_timeout"],
@@ -151,6 +152,10 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
     assert logic.failure_reason(other) == "You didn't pass the hearing test."
     assert "took too long" in logic.failure_reason(slow)
 
+    assert UnsuccessfulEndLogic(failure_message="").failure_reason(slow) == ""
+    silent = UnsuccessfulEndLogic(failure_message=lambda participant: "")
+    assert silent.failure_reason(slow) == ""
+
 
 def test_failure_message_errors_fall_back_to_builtin_reason(caplog):
     def failure_message(participant):
@@ -169,3 +174,8 @@ def test_failure_message_errors_fall_back_to_builtin_reason(caplog):
 def test_rejected_consent_logic_refuses_failure_message():
     with pytest.raises(TypeError, match="failure_message"):
         RejectedConsentLogic(failure_message="Bye.")
+
+
+def test_unsuccessful_end_page_points_failure_message_to_end_logic():
+    with pytest.raises(TypeError, match="UnsuccessfulEndLogic"):
+        UnsuccessfulEndPage(failure_message="You didn't pass screening.")

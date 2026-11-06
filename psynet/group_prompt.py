@@ -325,7 +325,6 @@ class GroupPrompt(Prompt):
                 member.id in active_ids
                 or member.id == self.participant.id
                 or reasons.get(member.id) == "moved_on"
-                or self.group.group_type in member.active_sync_groups
             ):
                 continue
             left[member.id] = member
