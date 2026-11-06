@@ -1357,7 +1357,14 @@ class GroupBarrier(Barrier):
 
     @staticmethod
     def _check_max_wait_time(max_wait_time, timeout_between_barriers_time):
-        """Return ``max_wait_time``, defaulting it to cover the between-barrier timeout."""
+        """Return ``max_wait_time``, defaulting it to cover the between-barrier timeout.
+
+        Requiring ``max_wait_time > timeout_between_barriers_time`` guarantees
+        that prompt members outlast slow ones only while membership is fixed.
+        In a group that accepts top-ups, a newcomer who joins while others
+        wait has their between-barrier timeout counted from when they joined,
+        so the waiters can still reach ``max_wait_time`` first.
+        """
         if max_wait_time is None:
             return 20 + (timeout_between_barriers_time or 0)
         if (
@@ -1368,7 +1375,9 @@ class GroupBarrier(Barrier):
                 f"max_wait_time ({max_wait_time} s) must be longer than "
                 f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
                 "otherwise members who arrive promptly time out while waiting "
-                "for slower ones."
+                "for slower ones. This holds while group membership is fixed; "
+                "newcomers to a group that accepts top-ups are timed from when "
+                "they joined."
             )
         return max_wait_time
 
@@ -2750,7 +2759,7 @@ class SyncGroup(SQLBase, SQLMixin):
             self, "accepts_top_ups", False
         ):
             self.close()
-        elif self.n_active_participants > 0:
+        else:
             self.check_leader()
 
     def _dissolve(self):
@@ -3700,8 +3709,10 @@ def check_sync_groups():
     """Recount active membership and close groups with no active members left.
 
     Members who finish or return the experiment stay linked to their groups,
-    so this is what closes a group once all of them are gone. Groups locked
-    by another request are skipped until the next tick.
+    so this is what closes a group once all of them are gone. It closes any
+    active :class:`SyncGroup` with no active members, including emptied
+    groups that accept top-ups, unless the group is still dissolving.
+    Groups locked by another request are skipped until the next tick.
 
     Dedicated sessions keep these maintenance commits separate from any
     transaction owned by the caller. Each group's recount runs in its own
