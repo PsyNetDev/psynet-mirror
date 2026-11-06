@@ -3548,7 +3548,12 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
         ParticipantLinkBarrier.query if waiting_page else TimelineHoldRecord.query
     )
     arrival_deadline = deadline_rows.filter_by(participant_id=overdue.id).one()
-    assert arrival_deadline.deadline_at - timenow() > timedelta(seconds=290)
+    arrived_at = (
+        arrival_deadline.arrival_time if waiting_page else arrival_deadline.started_at
+    )
+    assert (arrival_deadline.deadline_at - arrived_at).total_seconds() == (
+        pytest.approx(300)
+    )
     deadline_rows.filter_by(participant_id=overdue.id).update(
         {"deadline_at": timenow() - timedelta(seconds=1)}
     )
@@ -3567,6 +3572,53 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+_max_wait_time_calls = []
+
+
+def _shrinking_max_wait_time(participant):
+    _max_wait_time_calls.append(participant.id)
+    return 300 if len(_max_wait_time_calls) == 1 else 1
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_callable_max_wait_time_is_evaluated_once_on_arrival(
+    in_experiment_directory, db_session
+):
+    """A callable ``max_wait_time`` fixes the waiting-page deadline on arrival."""
+    _max_wait_time_calls.clear()
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="callable_deadline",
+            group_type="main",
+            max_wait_time=_shrinking_max_wait_time,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("after", "After", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        link = ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).one()
+        assert (link.deadline_at - link.arrival_time).total_seconds() == (
+            pytest.approx(300)
+        )
+        time.sleep(1.1)
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        assert not waiter.failed
+        assert _max_wait_time_calls == [waiter_id]
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize("action", ["fail", "kick"])
@@ -6514,6 +6566,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
     with pytest.raises(ValueError, match="must be longer"):
         barrier(timeout_between_barriers_time=30, max_wait_time=30)
+    barrier(timeout_between_barriers_time=30, max_wait_time=_shrinking_max_wait_time)
 
 
 @pytest.mark.parametrize(
@@ -6521,7 +6574,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
 )
 @pytest.mark.parametrize("notify_arrivals", [True, False])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session, notify_arrivals
+    in_experiment_directory, db_session, notify_arrivals, monkeypatch
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6553,18 +6606,24 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group.add_participant(p)
     _backdate_group(group, seconds=10)
     db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
 
     barrier.check_waiting_participants(waiting_participants)
     released = barrier.choose_who_to_release(waiting_participants)
+    db_session.commit()
 
     assert missing_participant not in group.active_participants
     assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
-    assert (
-        pending_arrival_notice_for(missing_participant)
-        == "Your group went on without you."
-    )
+    removal = {"notice": "Your group went on without you.", "removed": True}
+    assert removal in [
+        {key: target.get(key) for key in removal}
+        for participant_id, payload in publications
+        if participant_id == missing_participant.id
+        for target in payload["targets"]
+    ]
+    assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participant.page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participant) is None
 

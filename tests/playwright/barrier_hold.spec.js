@@ -261,17 +261,27 @@ test("default barriers hold the current page until websocket release", { tag: "@
     await expect(
       firstParticipant.locator("#chatroom-participants")
     ).not.toContainText("Participant ");
+    // The icon's emoji and the name, as the partner's feed labels this sender.
+    const firstSenderLabel = (
+      await firstParticipant
+        .locator("#chatroom-participants li")
+        .filter({ hasText: "(you)" })
+        .textContent()
+    ).replace(" (you)", "");
     await sendButton.click();
     await Promise.all([
       expect(firstParticipant.locator("#chatroom-messages")).toContainText(
-        chatMessage,
+        `You: ${chatMessage}`,
         { timeout: STEP_TIMEOUT_MS }
       ),
       expect(secondParticipant.locator("#chatroom-messages")).toContainText(
-        chatMessage,
+        `${firstSenderLabel}: ${chatMessage}`,
         { timeout: STEP_TIMEOUT_MS }
       )
     ]);
+    await expect(
+      secondParticipant.locator("#chatroom-messages")
+    ).not.toContainText("Participant ");
 
     delayedChatSocket.disconnect();
     await delayedChatSocket.reconnect.created;
