@@ -184,11 +184,18 @@ def _queue_countdown_update(participant_id, release_time):
     release_in_ms = (
         None if release_time is None else round((release_time - time.time()) * 1000)
     )
-    _pending_wakes.get()[f"countdown:{participant_id}"] = {
-        "participant_id": participant_id,
-        "reason": "countdown",
-        "release_in_ms": release_in_ms,
-    }
+    try:
+        _pending_wakes.get()[f"countdown:{participant_id}"] = {
+            "participant_id": participant_id,
+            "reason": "countdown",
+            "release_in_ms": release_in_ms,
+        }
+    except Exception:
+        logger.warning(
+            "Failed to queue a countdown update for participant %s.",
+            participant_id,
+            exc_info=True,
+        )
 
 
 def default_group_barrier_arrival_message(
