@@ -66,6 +66,8 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
 
     assert stored.name == "Bear (red)"
     assert "psynet-pseudonym-sticker--emoji" in stored.sticker_html
+    half_stored = _participant(1, ("red", None))
+    assert scheme.pseudonym(half_stored) == scheme.pseudonym(_participant(1))
     assert scheme.pseudonym(_participant(2)).animal in {"lion", "bear"}
     with pytest.raises(ValueError, match="Unknown pseudonym animal 'fox'"):
         scheme.make("red", "fox")
@@ -90,5 +92,6 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
     assert participants[0].to_dict()["pseudonym"] == "Red whale"
+    assert "pseudonym" in [c["data"] for c in exp.table_columns("participant")]
     with pytest.raises(ValueError, match="Unknown pseudonym color"):
         participants[0].set_pseudonym("teal", "whale")
