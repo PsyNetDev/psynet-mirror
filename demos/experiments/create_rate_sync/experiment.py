@@ -46,6 +46,8 @@ class CreateRateTrial(StaticTrial):
                 id_="finished_rating",
                 group_type="create_rate",
                 content="Waiting for the rest of your group",
+                # The fastest voter may wait out the rest of the vote.
+                max_wait_time=VOTE_SECONDS + 30,
                 on_release=self.save_ratings,
             ),
             PageMaker(self.show_ratings, time_estimate=5),

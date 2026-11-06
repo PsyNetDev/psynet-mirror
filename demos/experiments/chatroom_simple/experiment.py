@@ -58,6 +58,8 @@ class ChatTrial(StaticTrial):
                 id_="finished_chatting",
                 group_type=GROUP_TYPE,
                 content="Waiting for your partner to finish chatting",
+                # Whoever presses Next first may wait out the rest of the chat.
+                max_wait_time=CHAT_SECONDS + 30,
             ),
         )
 
