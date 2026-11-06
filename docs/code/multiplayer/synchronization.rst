@@ -324,16 +324,21 @@ role (it can also take ``seconds_left``; see :ref:`sync-countdown-messages`):
     GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
 
 A ``content`` function on a group barrier can also take ``waiting_count`` and
-``group_size``; return :func:`~psynet.sync.hold_message` from it to write the
-second line yourself, or to leave it out:
+``group_size`` (both ``None`` if the participant has no group); return
+:func:`~psynet.sync.hold_message` from it to write the second line yourself,
+or to leave it out:
 
 .. code-block:: python
+
+    from psynet.sync import GroupBarrier, hold_message
 
     def waiting_text(waiting_count, group_size):
         return hold_message(
             "Waiting for the rest of the room…",
             f"{waiting_count} of {group_size} have chosen",
         )
+
+    GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
 
 Showing the group
 ~~~~~~~~~~~~~~~~~
@@ -379,7 +384,7 @@ one, PsyNet logs a warning and the group stays as first drawn:
     def choose_number(participant):
         return ModularPage(
             "choose",
-            GroupPrompt("Pick a number.", participant=participant),
+            GroupPrompt("Pick a number.", participant=participant, group_type="room"),
             PushButtonControl(choices=[1, 2, 3, 4, 5]),
             save_answer="choice",
         )

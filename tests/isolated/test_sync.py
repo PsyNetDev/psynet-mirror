@@ -5917,7 +5917,7 @@ def test_group_hold_content_function_writes_its_own_progress_line(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    first, _, _ = _sync_group_of(exp, db_session, 3)[0]
+    first, second, _ = _sync_group_of(exp, db_session, 3)[0]
     barrier = GroupBarrier(
         id_="group_hold_custom_progress",
         group_type="main",
@@ -5930,6 +5930,10 @@ def test_group_hold_content_function_writes_its_own_progress_line(
     assert "Waiting for the room" in overlay
     assert "1 of 3 have chosen" in overlay
     assert "not ready yet" not in overlay
+
+    _arrive_at_group_barrier(exp, barrier, second)
+    db_session.commit()
+    assert "2 of 3 have chosen" in barrier.waiting_logic.overlay_html(first)
 
 
 def _group_n_active(group_id):
@@ -6595,8 +6599,9 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("notify_arrivals", [True, False])
+@pytest.mark.parametrize("min_group_size", [2, 3])
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session, notify_arrivals, monkeypatch
+    in_experiment_directory, db_session, notify_arrivals, monkeypatch, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6618,7 +6623,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group_type="main",
         initial_group_size=3,
         max_group_size=3,
-        min_group_size=2,
+        min_group_size=min_group_size,
         n_active_participants=3,
         accepts_top_ups=False,
         fail_participants_below_min_size=True,
@@ -6631,6 +6636,11 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     publications = _hold_wake_publications(monkeypatch)
 
     barrier.check_waiting_participants(waiting_participants)
+    if min_group_size == 3:
+        # The kick dissolves the group, so nobody went on without them.
+        assert all(p.failed for p in waiting_participants)
+        assert pending_arrival_notice_for(missing_participant) is None
+        return
     released = barrier.choose_who_to_release(waiting_participants)
     db_session.commit()
 
@@ -6638,7 +6648,10 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
-    removal = {"notice": "Your group went on without you. Please continue.", "removed": True}
+    removal = {
+        "notice": "Your group went on without you. Please continue.",
+        "removed": True,
+    }
     assert removal in [
         {key: target.get(key) for key in removal}
         for participant_id, payload in publications
