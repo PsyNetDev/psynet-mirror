@@ -519,6 +519,9 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+    assert compose_hold_overlay_html("") == (
+        '<span class="psynet-timeline-hold-title"></span>'
+    )
     assert "progress" not in compose_hold_overlay_html(
         hold_message("Waiting for your group"), "1 of 3 not ready yet"
     )

@@ -1933,9 +1933,10 @@ class Grouper(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page, or the ``waiting_screen`` if given,
-        remains visible beneath a lightweight waiting indicator.
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
+        waiting indicator.
 
     waiting_logic_expected_repetitions
         Expected repetitions for explicit ``waiting_logic``. For a default
