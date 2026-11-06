@@ -6576,7 +6576,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
         return GroupBarrier(id_="round", group_type="group", **kwargs)
 
     assert barrier().max_wait_time == 20
-    assert barrier(timeout_between_barriers_time=30).max_wait_time == 50
+    assert barrier(timeout_between_barriers_time=30).max_wait_time is None
     with pytest.raises(ValueError, match="must be longer"):
         barrier(timeout_between_barriers_time=30, max_wait_time=30)
     barrier(timeout_between_barriers_time=30, max_wait_time=_shrinking_max_wait_time)

@@ -1454,9 +1454,10 @@ class GroupBarrier(Barrier):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
-        Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
-        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``;
-        this is not checked when ``max_wait_time`` is a function. ``None`` means no limit.
+        Defaults to 20 seconds, or to no limit with ``timeout_between_barriers_time``, which then moves
+        slow members on instead, however long their pages' time limits are. Must be longer than
+        ``timeout_between_barriers_time``; this is not checked when ``max_wait_time`` is a function.
+        ``None`` means no limit.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1561,16 +1562,24 @@ class GroupBarrier(Barrier):
 
     @staticmethod
     def _check_max_wait_time(max_wait_time, timeout_between_barriers_time):
-        """Return ``max_wait_time``, defaulting it to cover the between-barrier timeout.
+        """Return ``max_wait_time``, with no default limit when the between-barrier timeout is set.
 
-        Requiring ``max_wait_time > timeout_between_barriers_time`` guarantees
-        that prompt members outlast slow ones only while membership is fixed.
-        In a group that accepts top-ups, a newcomer who joins while others
-        wait has their between-barrier timeout counted from when they joined,
-        so the waiters can still reach ``max_wait_time`` first.
+        That timeout removes or fails every member who is late, including
+        those whose page's time limit ran out, so prompt members never need
+        a limit of their own; one fixed on arrival could not know how long a
+        slower member's page still has. Requiring ``max_wait_time >
+        timeout_between_barriers_time`` guarantees that prompt members
+        outlast slow ones only while membership is fixed. In a group that
+        accepts top-ups, a newcomer who joins while others wait has their
+        between-barrier timeout counted from when they joined, so the waiters
+        can still reach ``max_wait_time`` first.
         """
         if isinstance(max_wait_time, _DefaultMaxWaitTime):
-            return float(max_wait_time) + (timeout_between_barriers_time or 0)
+            return (
+                None
+                if timeout_between_barriers_time is not None
+                else float(max_wait_time)
+            )
         if (
             max_wait_time is not None
             and timeout_between_barriers_time is not None
