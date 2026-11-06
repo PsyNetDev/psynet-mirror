@@ -5,8 +5,9 @@ at least ``MIN_TEAM_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
 still join a team until it is near the end of the game.
 
 Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
-It starts the round as soon as the whole team is ready, or after
-``ROUND_DEADLINE_SECONDS`` without the players who aren't ready yet. An odd
+It starts the round as soon as the whole team is ready, or
+``ROUND_DEADLINE_SECONDS`` after the previous round started, without the
+players who aren't ready yet. An odd
 player out sits that round out. In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
@@ -48,8 +49,10 @@ SHORT_START_SECONDS = 60
 N_ROUNDS = 2
 MAX_SIT_OUTS = 2
 LAST_ROUND_FOR_NEWCOMERS = 1
-ROUND_DEADLINE_SECONDS = 15
 DECISION_SECONDS = 30
+# Longer than a round takes, so a player who sits a round out waits for the
+# others instead of sitting out the next round too.
+ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
 ENDOWMENT = 10
 # Only players who have left their page reach this: the others are moved on by the time limit.
 LEFT_PAGE_SECONDS = DECISION_SECONDS + 10
