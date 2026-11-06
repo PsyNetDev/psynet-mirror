@@ -165,12 +165,14 @@ def _queue_timeline_hold_wake(
 
 
 def _queue_arrival_update(
-    participant_id, *, hold_message=None, notice=None, refresh=False
+    participant_id, *, hold_message=None, notice=None, removed=False, refresh=False
 ):
     """Queue an arrival-progress or partner-ready update after the next commit.
 
     The browser shows ``notice``, or hides its notice if ``notice`` is
-    ``None``. With ``refresh``, it fetches the participant's notice and
+    ``None``. ``removed`` marks a notice that the participant was removed
+    from their group, which pages that hide arrival notices still show.
+    With ``refresh``, it fetches the participant's notice and
     the ready seats of their groups instead (see
     :func:`psynet.sync.arrival_notice_payload`), which are read after the
     commit and so count every arrival committed by then. Updates queued
@@ -188,6 +190,8 @@ def _queue_arrival_update(
             update["refresh"] = True
         else:
             update["notice"] = notice
+            if removed:
+                update["removed"] = True
         _pending_wakes.get()[key] = update
     except Exception:
         logger.warning(

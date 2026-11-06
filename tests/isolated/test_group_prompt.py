@@ -142,6 +142,13 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
 
     assert 'psynet-group-member--left" data-seat="0"' in html()
     assert ">Your partner (out of time)<" in html()
+    # Joining another room doesn't hide the seat they ran out of time in.
+    other = SimpleSyncGroup(group_type="room", initial_group_size=2, min_group_size=1)
+    db_session.add(other)
+    other.add_participant(late)
+    db_session.flush()
+    assert ">Your partner (out of time)<" in html()
+    other.remove_participant(late)
     late.status = "returned"
     assert ">Your partner (left)<" in html()
     # An open-ended group, like a lobby, doesn't show who left.

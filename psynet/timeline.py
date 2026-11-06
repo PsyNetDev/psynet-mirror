@@ -1196,7 +1196,7 @@ def _arrival_updates_for(page, participant):
         from psynet.sync import _has_active_sync_group
 
         in_group = _has_active_sync_group(participant)
-    from psynet.sync import _removed_from_group_notice, pending_arrival_notice_for
+    from psynet.sync import _arrival_notice_fields, _removed_from_group_notice
 
     if not in_group and _removed_from_group_notice(participant) is None:
         return None
@@ -1204,7 +1204,7 @@ def _arrival_updates_for(page, participant):
 
     return {
         "channel": _timeline_hold_channel(participant.id),
-        "notice": pending_arrival_notice_for(participant),
+        **_arrival_notice_fields(participant),
     }
 
 
