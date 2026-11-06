@@ -324,7 +324,7 @@ methods do run before the start: ``on_join`` and ``on_leave`` as players
 arrive and leave, ``view`` for each page that joins, ``is_over`` after each
 change, and ``outcome`` if the session ends before it starts.
 
-If some players aren't ready by the game's ``ready_timeout``, 30 seconds
+If some players aren't ready by the game's ``ready_timeout``, 60 seconds
 unless the game sets it, the session starts without them, and they can still
 join and play. Like ``join_timeout``, it counts from when the group leaves
 the initializer. ``ready_timeout = None`` waits for every player, so a group

@@ -55,7 +55,7 @@ class LiveSession(RealtimeGame):
     #: Seconds on the session clock after which the session starts, even if
     #: some players aren't ready. They can still join and play. ``None``
     #: waits for every player, until ``max_duration``, if the game sets one.
-    ready_timeout = 30
+    ready_timeout = 60
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
