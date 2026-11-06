@@ -1016,7 +1016,11 @@
             }),
           );
           if (status.released) {
-            psynet.waiting.onRelease();
+            if (status.ends_page) {
+              psynet.waiting.onRelease();
+            } else {
+              psynet.waiting.stop();
+            }
             return;
           }
         }

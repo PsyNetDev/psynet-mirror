@@ -996,8 +996,12 @@ class Barrier(EltCollection):
         link.release()
 
     def can_participant_exit(self, participant: "Participant"):
-        barrier_is_active = self.id in participant.active_barriers
-        return not barrier_is_active
+        """Return whether the participant may leave ``waiting_logic``.
+
+        Checks the ``released`` flag, because a link released earlier in
+        the same request stays in ``active_barriers`` until it expires.
+        """
+        return not self._participant_is_waiting(participant)
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
         """Return the group whose members wait together at this barrier, or ``None``.
@@ -3347,8 +3351,8 @@ def _has_left_barrier(participant, barrier_id):
 def released_waiting_barrier(page, participant):
     """Return the barrier if this is its interruptible waiting page and it released the participant.
 
-    The waiting-status route uses the same test, so the browser and the
-    server agree on when a waiting page may be ended.
+    The waiting-status route uses the same test, so the browser only ends a
+    waiting page when the server will accept the interrupt.
     """
     barrier = _interruptible_waiting_barrier(page, participant)
     if barrier is not None and _has_left_barrier(participant, barrier.id):
@@ -3359,7 +3363,8 @@ def released_waiting_barrier(page, participant):
 def _waiting_page_barrier_id(participant):
     """Return the ID of the barrier whose ``waiting_logic`` the participant is in, or ``None``."""
     for barrier_id, link in participant.active_barriers.items():
-        if not link.released and link.timeline_hold_id is None:
+        # A hold's record may not be flushed yet, so test the object, not its id.
+        if not link.released and link.timeline_hold is None:
             return barrier_id
     return None
 
@@ -3371,8 +3376,11 @@ def waiting_page_config(page, participant):
     trial makers generate there, so each can count down to the release.
     ``release_grace_ms`` is ``None`` unless a release may end the
     page. The participant may already have been released while this page was
-    being built; the page's first status check then ends it.
+    being built; the page's first status check then ends it. Timeline holds
+    get no config, because they already poll for their release.
     """
+    if _is_timeline_hold(page):
+        return None
     barrier = _interruptible_waiting_barrier(page, participant)
     if barrier is not None:
         return {
@@ -3388,10 +3396,15 @@ def waiting_page_config(page, participant):
 def waiting_status_payload(unique_id, barrier_id):
     """Return whether a participant on a waiting page has been released.
 
-    Waiting pages fetch this about every 2 seconds. ``release_in_ms`` is the
-    time left until :meth:`Barrier.expected_release_time`, or ``None``.
+    Waiting pages fetch this about every 2 seconds. ``ends_page`` tells
+    whether the participant's current page would now accept an interrupt
+    (see :func:`released_waiting_barrier`); a released participant whose
+    page may not be ended, for example inside an unfinished trial, gets
+    ``released`` without ``ends_page`` and finishes the page normally.
+    ``release_in_ms`` is the time left until
+    :meth:`Barrier.expected_release_time`, or ``None``.
     """
-    from psynet.participant import Participant
+    from psynet.experiment import get_experiment
 
     participant = (
         Participant.query.filter_by(unique_id=unique_id).one_or_none()
@@ -3399,9 +3412,16 @@ def waiting_status_payload(unique_id, barrier_id):
         else None
     )
     if participant is None:
-        return {"released": False, "release_in_ms": None}
+        return {"released": False, "ends_page": False, "release_in_ms": None}
     if _has_left_barrier(participant, barrier_id):
-        return {"released": True, "release_in_ms": None}
+        exp = get_experiment()
+        page = exp.timeline.get_current_elt(exp, participant)
+        released = released_waiting_barrier(page, participant)
+        return {
+            "released": True,
+            "ends_page": released is not None and released.id == barrier_id,
+            "release_in_ms": None,
+        }
     link = participant.active_barriers[barrier_id]
     release_in_ms = None
     barrier = _reconstructed_arrival_barrier(link, {})
@@ -3409,7 +3429,7 @@ def waiting_status_payload(unique_id, barrier_id):
         release_time = barrier.expected_release_time(participant)
         if release_time is not None:
             release_in_ms = max(0, round((release_time - time.time()) * 1000))
-    return {"released": False, "release_in_ms": release_in_ms}
+    return {"released": False, "ends_page": False, "release_in_ms": release_in_ms}
 
 
 def _reconstructed_arrival_barrier(link, reconstructed):

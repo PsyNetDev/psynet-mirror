@@ -389,17 +389,18 @@ trials from another trial maker:
    :end-before: class Exp
 
 When the barrier releases a participant who is on a waiting page, the page
-ends ``release_grace`` seconds (default 3) after the browser notices the
-release, which is usually within about 2 seconds, unless they submit it
-first. The page's
+ends ``release_grace`` seconds (default 3; see
+:class:`~psynet.sync.Barrier`) after the browser notices the release, which
+is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 Any other waiting pages left in the same pass of ``waiting_logic`` are
 skipped, and so are all of them for the participant whose arrival completes
-the group. Pass ``release_grace=None`` to let every waiting page run to its
-end. Pages inside a trial, as in ``sync_quorum``, always run to their end,
-so that the trial is not left without an answer.
+the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
+:class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
+run to its end. Pages inside a trial, as in ``sync_quorum``, always run to
+their end, so that the trial is not left without an answer.
 
 A waiting page's JavaScript can react to the release: ``window`` receives a
 ``psynetWaitingRelease`` event, with the grace period in ``detail.graceMs``,
