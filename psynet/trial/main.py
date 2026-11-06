@@ -1788,7 +1788,8 @@ class TrialMaker(Module):
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
         if (
-            sync_group_timeout_between_barriers_time is not None
+            sync_group_max_wait_time is not None
+            and sync_group_timeout_between_barriers_time is not None
             and sync_group_max_wait_time <= sync_group_timeout_between_barriers_time
         ):
             raise ValueError(
