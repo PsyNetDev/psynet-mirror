@@ -401,7 +401,7 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
 
     def __init__(self, *args, **kwargs):
-        if kwargs.get("failure_message") is not None:
+        if "failure_message" in kwargs:
             raise TypeError(
                 "RejectedConsentLogic does not show a failure_message; "
                 "override debrief_participant to change its page."
