@@ -5410,6 +5410,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             kick_reason=request.form.get("kick_reason"),
         )
 
+    def table_columns(self, table="participant", polymorphic_identity=None):
+        """Return the Database tab's columns, adding each participant's pseudonym."""
+        columns = super().table_columns(
+            table=table, polymorphic_identity=polymorphic_identity
+        )
+        if table == "participant":
+            # Not an SQL column, so the dashboard cannot sort by it.
+            columns.append(
+                {"name": "pseudonym", "data": "pseudonym", "orderable": False}
+            )
+        return columns
+
     @dashboard_tab("Participants")
     @classmethod
     def dashboard_participants(cls):

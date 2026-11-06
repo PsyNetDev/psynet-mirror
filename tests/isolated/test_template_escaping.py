@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from dominate import tags
 from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -319,12 +319,17 @@ def test_lucid_dashboard_renders_pandas_data_as_json(app):
     assert '"registered_at": "2026-01-01 00:00:00"' in response_data
 
 
-def test_participant_dashboard_copies_the_linked_resume_url(app):
+def test_participant_dashboard_escapes_the_pseudonym_and_resume_url(app):
     from html import unescape
 
     from flask import render_template
 
-    participant = SimpleNamespace(id=1, unique_id="1:a\"'&<b>", bonus=None)
+    participant = SimpleNamespace(
+        id=1,
+        unique_id="1:a\"'&<b>",
+        bonus=None,
+        pseudonym=SimpleNamespace(name=PAYLOAD),
+    )
     with app.test_request_context("/"):
         html = render_template(
             "dashboard_participant.html",
@@ -336,3 +341,4 @@ def test_participant_dashboard_copies_the_linked_resume_url(app):
 
     assert json.loads(_between(html, "let url = ", ";\n")) == link
     assert link == "https://x/timeline?unique_id=1%3Aa%22%27%26%3Cb%3E"
+    assert f"<td>Pseudonym</td>\n            <td>{escape(PAYLOAD)}</td>" in html

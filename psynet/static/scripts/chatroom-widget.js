@@ -87,7 +87,7 @@ export async function activate({root, vars}) {
         }
         var name = pseudonym ? pseudonym.name : "Participant " + senderId;
         if (String(senderId) === MY_ID) {
-            // The list is the only place participants learn their own name.
+            // Own messages say "You", so the list spells out the participant's name.
             name = inList && pseudonym
                 ? YOU_IN_LIST_LABEL.replace("{NAME}", pseudonym.name)
                 : YOU_LABEL;

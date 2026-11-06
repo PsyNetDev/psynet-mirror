@@ -204,10 +204,9 @@ class PseudonymScheme:
 
     def pseudonym(self, participant) -> Pseudonym:
         """Return this participant's pseudonym."""
-        if participant.pseudonym_color is None:
+        color, animal = participant.pseudonym_color, participant.pseudonym_animal
+        if color is None or animal is None:
             color, animal = self.assign(participant)
-        else:
-            color, animal = participant.pseudonym_color, participant.pseudonym_animal
         return self.make(color, animal)
 
     def make(self, color: str, animal: str) -> Pseudonym:
