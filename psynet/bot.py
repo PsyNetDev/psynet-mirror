@@ -3,7 +3,7 @@ import time
 import uuid
 import warnings
 from functools import cached_property
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from dallinger import db
 
@@ -206,6 +206,7 @@ def advance_past_wait_pages(
     bots: List["BotDriver"],
     max_iterations: Optional[int] = None,
     timeout: float = 10.0,
+    stop_at: Sequence[str] = (),
 ):
     """
     Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
@@ -223,6 +224,9 @@ def advance_past_wait_pages(
         Deprecated; use ``timeout``. If given, also stop after this many passes.
     timeout : float
         Seconds to keep trying before giving up (default 10).
+    stop_at : sequence of str
+        IDs of barriers to leave bots waiting at, for example a responder
+        waiting for the proposer's offer while the test plays the proposer.
 
     Raises
     ------
@@ -249,6 +253,8 @@ def advance_past_wait_pages(
             # submitting. Refresh before reading the cached page.
             bot.refresh_status()
             current_page = bot.get_current_page()
+            if getattr(current_page, "barrier_id", None) in stop_at:
+                continue
             if isinstance(current_page, WaitPage) or getattr(
                 current_page, "is_timeline_hold", False
             ):

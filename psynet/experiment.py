@@ -6661,10 +6661,15 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(bot_response, BotResponse):
                 bot_response = BotResponse(answer=bot_response)
 
+            shown_page = current_page
+            if _is_timeline_hold(current_page):
+                shown_page = (
+                    current_page.waiting_screen_page(participant) or current_page
+                )
             status["page"] = {
                 "id": current_page.id,
                 "label": current_page.label,
-                "text": current_page.plain_text,
+                "text": shown_page.plain_text,
                 "time_estimate": current_page.time_estimate,
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
