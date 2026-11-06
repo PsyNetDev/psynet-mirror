@@ -256,6 +256,10 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     _arrive(exp, pairs, [odd_one_out])
     _backdate_arrivals(pairs, [odd_one_out], 16)
     assert pairs.choose_who_to_release([odd_one_out]) == []
+    # ...but for one more deadline at most, then they sit out.
+    _backdate_arrivals(pairs, [odd_one_out], 15)
+    assert pairs.choose_who_to_release([odd_one_out]) == [odd_one_out]
+    _backdate_arrivals(pairs, [odd_one_out], -15)
 
     _arrive(exp, pairs, paired)
     assert _waiting(pairs, team) == []

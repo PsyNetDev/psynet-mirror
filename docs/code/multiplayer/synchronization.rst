@@ -164,12 +164,12 @@ on their own.
 ``release_left_over`` (default: ``False``)
     If ``True``, participants who don't fit into a group, such as an odd one
     out when pairing, continue ungrouped so that they can see a sit-out page.
-    If ``False``, they wait for the next round. Someone waiting alone is only
-    released ungrouped once nobody else in their ``within`` group is still
-    playing, so they don't sit out round after round while a slow round
-    finishes. Take participants who stop playing out of the ``within`` group
-    with ``remove_participant``; otherwise a lone teammate waits for them
-    until ``max_wait_time``.
+    If ``False``, they wait for the next round. Someone waiting alone waits
+    for teammates who are still playing for up to one more ``deadline`` (or
+    ``Clock`` tick) before sitting out, so they don't sit out round after
+    round while a slow round finishes. Taking participants who stop playing
+    out of the ``within`` group with ``remove_participant`` means nobody
+    waits for them.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
