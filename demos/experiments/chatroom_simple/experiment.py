@@ -58,6 +58,8 @@ class ChatTrial(StaticTrial):
                 id_="finished_chatting",
                 group_type=GROUP_TYPE,
                 content="Waiting for your partner to finish chatting",
+                # Whoever presses Next first may wait out the rest of the chat.
+                max_wait_time=CHAT_SECONDS + 30,
             ),
         )
 
@@ -80,8 +82,9 @@ class ChatTrial(StaticTrial):
                 group=self.sync_group,
                 participant=participant,
                 show_names=True,
-                note="Press Next when you have finished. "
-                "A tick shows when your partner has.",
+                note="Press Next when you have finished; the chat also ends "
+                "by itself when the time runs out. "
+                "A tick shows when your partner has finished.",
             ),
             chatroom=ChatRoom(
                 room_id=f"chat_room_{self.sync_group.id}",

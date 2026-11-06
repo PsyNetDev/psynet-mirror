@@ -15,6 +15,11 @@ export async function activate({root, vars}) {
     var redrawing = false;
     var redrawAgain = false;
     var failedRedraws = 0;
+    var request = null;
+    var retryTimer = null;
+    // Pages can change in place, keeping root, so a redraw that ends after
+    // cleanup would draw this page's group on the next page.
+    var closed = false;
 
     function memberAt(seat) {
         return root.querySelector('.psynet-group-member[data-seat="' + Number(seat) + '"]');
@@ -86,25 +91,30 @@ export async function activate({root, vars}) {
     }
 
     function redraw() {
-        if (!config.redraw_token || typeof $ === "undefined") return;
+        retryTimer = null;
+        if (closed || !config.redraw_token || typeof $ === "undefined") return;
         if (redrawing) {
             redrawAgain = true;
             return;
         }
         redrawing = true;
-        $.ajax({
+        request = $.ajax({
             url: "/timeline/group_prompt",
             cache: false,
             data: {uniqueId: psynet.uniqueId, token: config.redraw_token},
         }).done(function (data) {
+            if (closed) return;
             failedRedraws = 0;
-            if (data && data.html && root.isConnected) replaceMembers(data.html);
+            if (data && data.html) replaceMembers(data.html);
         }).fail(function () {
+            if (closed) return;
             failedRedraws += 1;
-            if (failedRedraws <= 3 && root.isConnected && !redrawAgain) {
-                setTimeout(redraw, 2000 * failedRedraws);
+            if (failedRedraws <= 3 && !redrawAgain) {
+                retryTimer = setTimeout(redraw, 2000 * failedRedraws);
             }
         }).always(function () {
+            request = null;
+            if (closed) return;
             redrawing = false;
             showTicks(latestSeats);
             if (redrawAgain) {
@@ -132,6 +142,9 @@ export async function activate({root, vars}) {
     }
     window.addEventListener("psynetGroupReady", onReady);
     return function cleanup() {
+        closed = true;
+        clearTimeout(retryTimer);
+        if (request) request.abort();
         window.removeEventListener("psynetGroupReady", onReady);
         if (releaseNotice) releaseNotice();
     };

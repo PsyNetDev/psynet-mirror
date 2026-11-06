@@ -801,6 +801,7 @@ class Barrier(EltCollection):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded then the participant will be failed and sent to the end of the experiment.
+        May also be a function of ``participant``, evaluated once when the participant arrives.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1339,7 +1340,8 @@ class GroupBarrier(Barrier):
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
-        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
+        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``;
+        this is not checked when ``max_wait_time`` is a function.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1451,6 +1453,7 @@ class GroupBarrier(Barrier):
             return 20 + (timeout_between_barriers_time or 0)
         if (
             timeout_between_barriers_time is not None
+            and not callable(max_wait_time)
             and max_wait_time <= timeout_between_barriers_time
         ):
             raise ValueError(
@@ -1795,7 +1798,7 @@ class GroupBarrier(Barrier):
             "page_uuid": participant.page_uuid,
             "text": text,
         }
-        _queue_arrival_update(participant.id, notice=text)
+        _queue_arrival_update(participant.id, notice=text, removed=True)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
@@ -2069,7 +2072,8 @@ class SimpleGrouper(Grouper):
         ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
         are waiting, they form one smaller group. Requires
         ``min_group_size < initial_group_size`` and a ``max_wait_time`` longer than
-        ``start_short_after``. Default: ``None`` (always wait for ``batch_size``).
+        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
+        Default: ``None`` (always wait for ``batch_size``).
 
     kwargs
         Further arguments to pass to Grouper.
@@ -2131,6 +2135,7 @@ class SimpleGrouper(Grouper):
         if (
             start_short_after is not None
             and self.max_wait_time is not None
+            and not callable(self.max_wait_time)
             and self.max_wait_time <= start_short_after
         ):
             raise ValueError(
@@ -2466,8 +2471,9 @@ class Regrouper(Grouper):
     split into groups when every active member of its ``within`` group is
     waiting, or when its ``deadline`` passes, whichever comes first. With a
     :class:`Clock` deadline, splits happen only on clock ticks. Absent
-    members are never waited for beyond the deadline and are never failed for
-    missing a split; they join the pool again when they come back.
+    members are not waited for beyond the deadline once a group can be
+    formed without them, and are never failed for missing a split; they join
+    the pool again when they come back.
 
     Groups made by a regrouper don't accept top-ups and are never dissolved
     when a member leaves, so a member who drops out of a round leaves their
@@ -2498,8 +2504,8 @@ class Regrouper(Grouper):
         When to stop waiting for absent members. A number is seconds since the
         first of the pool's waiting members arrived, or since the pool's
         previous split if that is later. Make it longer than a round takes:
-        otherwise members who finish a round early, or sit it out, are split
-        again before the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
+        otherwise members who finish a round early are split again before
+        the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
         instead, even when everyone is already waiting, if at least
         ``min_group_size`` members were waiting at the tick. ``None`` (default)
         waits until the pool is complete, which needs ``within``.
@@ -2514,7 +2520,12 @@ class Regrouper(Grouper):
     release_left_over
         If ``True``, participants left over after a split continue ungrouped,
         for example to a sit-out page, and come back for the next split. If
-        ``False`` (default), they keep waiting for the next split.
+        ``False`` (default), they keep waiting for the next split. When too
+        few are waiting to form any group, they are released ungrouped only
+        once no other active member of their ``within`` group is still away,
+        for example still playing a round; until then, ``max_wait_time``
+        bounds their wait. So take members who stop playing out of the
+        ``within`` group, for example with ``remove_participant``.
 
     on_release
         Optional callback ``on_release(within_group, groups, left_over, regrouper)``
@@ -2607,13 +2618,14 @@ class Regrouper(Grouper):
             ),
             [participant],
         )
-        if len(pool) < (1 if self.release_left_over else self.min_group_size):
+        if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None
         if self.clock_period is None:
             return self._deadline_reference(within_group, pool) + self.deadline
         now = time.time()
         tick = _latest_tick(now, self.clock_period)
-        if self._enough_waiting_at_tick(pool, self._last_split(within_group), now):
+        waited_for_tick = _arrival_time(self, participant).timestamp() <= tick
+        if waited_for_tick and self._enough_waiting_at_tick(within_group, pool, now):
             # Due now: the poller has not split the pool yet.
             return tick
         return tick + self.clock_period
@@ -2657,19 +2669,40 @@ class Regrouper(Grouper):
         return list(pools.values())
 
     def _pool_is_ready(self, within_group, members) -> bool:
-        if len(members) < self.min_group_size and not self.release_left_over:
+        if len(members) < self._smallest_pool_to_split(within_group, members):
             return False
-        if self.clock_period is None and within_group is not None:
-            waiting_ids = {participant.id for participant in members}
-            if all(p.id in waiting_ids for p in within_group.active_participants):
-                return True
+        if self.clock_period is None and self._pool_is_complete(within_group, members):
+            return True
         return self._deadline_passed(within_group, members)
 
+    @staticmethod
+    def _pool_is_complete(within_group, members) -> bool:
+        """Return whether every active member of the ``within`` group is in ``members``."""
+        if within_group is None:
+            return False
+        waiting_ids = {participant.id for participant in members}
+        return all(p.id in waiting_ids for p in within_group.active_participants)
+
+    def _may_release_only_left_over(self, within_group, members) -> bool:
+        """Return whether a split that forms no group may release its members ungrouped.
+
+        Not while teammates are still active elsewhere, for example still
+        playing a round, so that a lone waiter waits for them rather than
+        sitting out round after round.
+        """
+        return self.release_left_over and (
+            within_group is None or self._pool_is_complete(within_group, members)
+        )
+
+    def _smallest_pool_to_split(self, within_group, members) -> int:
+        if self._may_release_only_left_over(within_group, members):
+            return 1
+        return self.min_group_size
+
     def _deadline_passed(self, within_group, members) -> bool:
-        last_split = self._last_split(within_group)
         now = time.time()
         if self.clock_period is not None:
-            return self._enough_waiting_at_tick(members, last_split, now)
+            return self._enough_waiting_at_tick(within_group, members, now)
         if self.deadline is None:
             return False
         return now - self._deadline_reference(within_group, members) >= self.deadline
@@ -2684,14 +2717,15 @@ class Regrouper(Grouper):
         tick = _latest_tick(now, self.clock_period)
         return [p for p in members if _arrival_time(self, p).timestamp() <= tick]
 
-    def _enough_waiting_at_tick(self, members, last_split, now) -> bool:
+    def _enough_waiting_at_tick(self, within_group, members, now) -> bool:
         """Return whether enough members were already waiting at the latest unused tick."""
+        last_split = self._last_split(within_group)
         if last_split is not None and last_split >= _latest_tick(
             now, self.clock_period
         ):
             return False
-        needed = 1 if self.release_left_over else self.min_group_size
-        return len(self._waiting_at_tick(members, now)) >= needed
+        at_tick = self._waiting_at_tick(members, now)
+        return len(at_tick) >= self._smallest_pool_to_split(within_group, at_tick)
 
     @property
     def _state_key(self):
@@ -2719,7 +2753,9 @@ class Regrouper(Grouper):
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
-            return left_over if self.release_left_over else []
+            if self._may_release_only_left_over(within_group, members):
+                return left_over
+            return []
         self._state_holder(within_group).var.set(self._state_key, time.time())
         if self.on_release:
             try:
@@ -3523,7 +3559,7 @@ def arrival_notice_payload(unique_id):
     if participant is None:
         return {"notice": None, "group_ready": []}
     return {
-        "notice": pending_arrival_notice_for(participant),
+        **_arrival_notice_fields(participant),
         "group_ready": _ready_seats_for(participant),
     }
 
@@ -3574,8 +3610,10 @@ def waiting_barrier_ids(participant, group):
 def _interruptible_waiting_barrier(page, participant):
     """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
 
-    Pages inside a trial are left to run to their end, so that the trial
-    is not finalized without an answer.
+    Pages of a trial that is still waiting for its answer are left to run
+    to their end, so that the trial is not finalized without an answer.
+    ``participant.current_trial`` is not cleared after a trial, so an
+    earlier, answered trial doesn't count.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
@@ -3583,7 +3621,7 @@ def _interruptible_waiting_barrier(page, participant):
     if participant.failed:
         return None
     trial = participant.current_trial
-    if trial is not None and not trial.finalized:
+    if trial is not None and not trial.complete:
         return None
     return barrier
 
@@ -3714,6 +3752,18 @@ def _removed_from_group_notice(participant) -> Optional[str]:
     if stored is None or stored["page_uuid"] != participant.page_uuid:
         return None
     return stored["text"]
+
+
+def _arrival_notice_fields(participant):
+    """Return ``{"notice": ...}``, adding ``"removed": True`` for a removal notice.
+
+    Pages that hide arrival notices, such as live-tick GroupPrompt pages,
+    still show a removal notice.
+    """
+    notice = pending_arrival_notice_for(participant)
+    if notice is not None and _removed_from_group_notice(participant) is not None:
+        return {"notice": notice, "removed": True}
+    return {"notice": notice}
 
 
 def pending_arrival_notice_for(participant):

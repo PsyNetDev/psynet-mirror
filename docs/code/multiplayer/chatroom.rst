@@ -67,8 +67,9 @@ participant joins their first :class:`~psynet.sync.SyncGroup` and an active
 member there has the same pseudonym, PsyNet gives them a free one
 (:meth:`~psynet.pseudonym.PseudonymScheme.replacement` chooses it). Later
 groups never rename anyone, so names stay the same once others have seen
-them; in a later group, two members can therefore share a pseudonym. The dashboard shows
-each participant's pseudonym. Exports keep the deployment ID, so after
+them; in a later group, two members can therefore share a pseudonym. The dashboard's
+Participants page and the participant table on its Database page show each
+participant's pseudonym. Exports keep the deployment ID, so after
 loading an export, ``participant.pseudonym`` gives the names that
 participants saw, for example to read chat messages that mention them.
 

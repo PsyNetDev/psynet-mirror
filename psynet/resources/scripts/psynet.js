@@ -204,6 +204,13 @@
   syncJsVars();
 
   let beforeunloadFunction = function () {};
+
+  function psynetNavigationResponseStart() {
+    let entry = performance.getEntriesByType?.("navigation")?.[0];
+    if (!performance.timeOrigin) return Date.now();
+    return performance.timeOrigin + (entry?.responseStart || 0);
+  }
+
   var psynet = (function () {
     /**
      * @namespace
@@ -222,8 +229,8 @@
       var: psynetTemplateData.jsVars,
       submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
       // When the current page left the server, in Date.now() milliseconds; the
-      // navigation start on a full load, otherwise when /response answered.
-      pageReceivedAt: performance.timeOrigin || Date.now(),
+      // first response byte on a full load, otherwise when /response answered.
+      pageReceivedAt: psynetNavigationResponseStart(),
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -520,6 +527,7 @@
     };
 
     psynet.resetPageState = function () {
+      psynet.waiting.stop();
       psynet.runPageCleanupCallbacks();
       psynet.clearPageEventListeners();
       psynet.comments = [];
@@ -965,7 +973,9 @@
      * ``window`` and the page ends after the barrier's ``release_grace``,
      * unless it is submitted first. Meanwhile the header counts down to the
      * end, unless a listener cancels the event. Pages that a release may not end (inside
-     * trials, or with ``release_grace=None``) run to their end.
+     * trials, or with ``release_grace=None``) run to their end. A page that the
+     * release could end but the server no longer shows, for example because
+     * another tab moved on, reloads the timeline.
      * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
      */
     psynet.waiting = {
@@ -1024,12 +1034,19 @@
               detail: { releaseInMs: status.release_in_ms },
             }),
           );
-          if (status.released) {
-            if (status.ends_page) {
-              psynet.waiting.onRelease();
-            } else {
-              psynet.waiting.stop();
-            }
+          if (status.released && status.ends_page) {
+            psynet.waiting.onRelease();
+            return;
+          }
+          if (status.released && config.release_grace_ms === null) {
+            psynet.waiting.stop();
+            return;
+          }
+          if (status.released && !psynet.nextPagePending) {
+            // The release could have ended this page, so the participant has
+            // moved past it, for example in another tab.
+            psynet.waiting.stop();
+            await psynet.loadNextTimelinePageWithReload();
             return;
           }
         }
@@ -1053,7 +1070,9 @@
           }),
         );
         let endsAt = Date.now() + config.release_grace_ms;
-        if (showNotice && config.release_notice && config.release_grace_ms > 0) {
+        if (!showNotice) {
+          psynet.hideArrivalNotice();
+        } else if (config.release_notice && config.release_grace_ms > 0) {
           psynet.waiting.showReleaseNotice(config.release_notice, endsAt);
         }
         psynet.waiting.graceTimer = setTimeout(
@@ -1065,12 +1084,16 @@
       // Counts down in the header's status line, which arrival notices then
       // leave alone until the page ends.
       showReleaseNotice(template, endsAt) {
+        let shownSeconds = null;
         let render = () => {
           if (!psynet.waiting.released) {
             clearInterval(psynet.waiting.noticeTimer);
             return;
           }
-          let seconds = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+          let seconds = Math.max(1, Math.ceil((endsAt - Date.now()) / 1000));
+          // The notice is an aria-live region, so only rewrite it when it changes.
+          if (seconds === shownSeconds) return;
+          shownSeconds = seconds;
           psynet.showArrivalNotice(template.replace("{SECONDS}", seconds), {
             release: true,
           });
@@ -1102,11 +1125,14 @@
 
     /**
      * Hide the group arrival notice while a page shows the same information,
-     * for example live ticks. Returns a function that ends the suppression.
+     * for example live ticks. Notices that the participant was removed from
+     * their group still show. Returns a function that ends the suppression.
      */
     psynet.suppressArrivalNotice = function () {
       psynet.arrivalNoticeSuppressors += 1;
-      psynet.hideArrivalNotice();
+      if (!document.getElementById("psynet-arrival-notice")?.dataset.removed) {
+        psynet.hideArrivalNotice();
+      }
       let released = false;
       return function () {
         if (released) return;
@@ -1115,10 +1141,13 @@
       };
     };
 
-    psynet.showArrivalNotice = function (message, { release = false } = {}) {
+    psynet.showArrivalNotice = function (
+      message,
+      { release = false, removed = false } = {},
+    ) {
       if (
         !message ||
-        (psynet.arrivalNoticeSuppressors > 0 && !release) ||
+        (psynet.arrivalNoticeSuppressors > 0 && !release && !removed) ||
         document.body.classList.contains("timeline-held")
       ) {
         return;
@@ -1136,14 +1165,19 @@
       }
       notice.textContent = message;
       notice.title = message;
+      if (removed) {
+        notice.dataset.removed = "true";
+      } else {
+        delete notice.dataset.removed;
+      }
     };
 
-    psynet.applyArrivalNotice = function (notice) {
+    psynet.applyArrivalNotice = function (notice, { removed = false } = {}) {
       if (psynet.waiting?.released) {
         return;
       }
       if (notice) {
-        psynet.showArrivalNotice(notice);
+        psynet.showArrivalNotice(notice, { removed });
       } else {
         psynet.hideArrivalNotice();
       }
@@ -1167,7 +1201,7 @@
         if (target.refresh) {
           psynet.requestArrivalRefresh();
         } else if (Object.prototype.hasOwnProperty.call(target, "notice")) {
-          psynet.applyArrivalNotice(target.notice);
+          psynet.applyArrivalNotice(target.notice, { removed: target.removed });
         }
       });
     };
@@ -1178,7 +1212,7 @@
     psynet.applyArrivalSnapshot = function (data, request) {
       if (request < (psynet.arrivalSnapshot?.request ?? 0)) return;
       psynet.arrivalSnapshot = { request, pageUuid: window.pageUuid, groups: {} };
-      psynet.applyArrivalNotice(data.notice);
+      psynet.applyArrivalNotice(data.notice, { removed: data.removed });
       (data.group_ready || []).forEach((ready) => {
         psynet.arrivalSnapshot.groups[ready.group_id] = ready.seats;
         window.dispatchEvent(
@@ -1249,7 +1283,7 @@
         return;
       }
       if (psynet.arrivalUpdates?.channel === config.channel) {
-        psynet.applyArrivalNotice(config.notice);
+        psynet.applyArrivalNotice(config.notice, { removed: config.removed });
         psynet.fetchArrivalNotice();
         return;
       }
@@ -1263,7 +1297,7 @@
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
-      psynet.applyArrivalNotice(config.notice);
+      psynet.applyArrivalNotice(config.notice, { removed: config.removed });
     };
 
     psynet.updatePageForTimelineHold = function (page) {
@@ -3737,6 +3771,9 @@
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
         await psynet.loadNextTimelinePageWithReload();
+      } else if (response.time_limit_seconds_left !== undefined) {
+        // The time limit's countdown resubmits when the server's deadline arrives.
+        psynet.restoreSubmissionControlState();
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();

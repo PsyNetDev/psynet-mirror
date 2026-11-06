@@ -331,6 +331,7 @@ class UnsuccessfulEndLogic(EndLogic):
     def __init__(
         self,
         failure_tags: Optional[List] = None,
+        *,
         failure_message: Optional[Union[str, Callable]] = None,
         auto_continue_seconds: Optional[float] = None,
         **kwargs,

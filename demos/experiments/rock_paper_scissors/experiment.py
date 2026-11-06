@@ -82,12 +82,15 @@ class RockPaperScissorsTrial(StaticTrial):
             assert score == 1
             outcome = "You won!"
         if last_trial["timed_out_self"]:
-            you = f"You ran out of time, so you played {last_trial['action_self']}"
+            you = (
+                f"You ran out of time, so we chose {last_trial['action_self']} for you"
+            )
         else:
             you = f"You chose {last_trial['action_self']}"
         if last_trial["timed_out_other"]:
             other = (
-                f"your partner ran out of time and played {last_trial['action_other']}"
+                "your partner ran out of time, so we chose "
+                f"{last_trial['action_other']} for them"
             )
         else:
             other = f"your partner chose {last_trial['action_other']}"

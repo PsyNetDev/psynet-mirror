@@ -1203,7 +1203,7 @@ def _arrival_updates_for(page, participant):
         from psynet.sync import _has_active_sync_group
 
         in_group = _has_active_sync_group(participant)
-    from psynet.sync import _removed_from_group_notice, pending_arrival_notice_for
+    from psynet.sync import _arrival_notice_fields, _removed_from_group_notice
 
     if not in_group and _removed_from_group_notice(participant) is None:
         return None
@@ -1211,7 +1211,7 @@ def _arrival_updates_for(page, participant):
 
     return {
         "channel": _timeline_hold_channel(participant.id),
-        "notice": pending_arrival_notice_for(participant),
+        **_arrival_notice_fields(participant),
     }
 
 
@@ -1892,18 +1892,27 @@ class Page(Elt):
             return None
         return max(0.0, (participant.page_deadline - timenow()).total_seconds())
 
+    def _time_limit_seconds_to_wait(self, metadata, participant) -> Optional[float]:
+        """Return the seconds left if the browser reports the time limit too early.
+
+        The browser's flag is trusted only around the deadline, so an edited
+        or early page cannot end the time limit early.
+        """
+        if metadata.get("time_limit_reached") is not True:
+            return None
+        seconds_left = self.time_limit_seconds_left(participant)
+        if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:
+            return None
+        return seconds_left
+
     def _time_limit_reached(self, metadata, participant) -> bool:
         """Return whether this answer is given because the time limit ran out."""
         if self.time_limit is None or participant.page_deadline is None:
             return False
-        now = timenow()
-        # The browser's flag is trusted only around the deadline, so an
-        # edited page cannot end the time limit early.
-        early = timedelta(seconds=TIME_LIMIT_EARLY_SECONDS)
         if metadata.get("time_limit_reached") is True:
-            return now >= participant.page_deadline - early
+            return self._time_limit_seconds_to_wait(metadata, participant) is None
         grace = timedelta(seconds=TIME_LIMIT_GRACE_SECONDS)
-        return now > participant.page_deadline + grace
+        return timenow() > participant.page_deadline + grace
 
     def on_complete(self, experiment, participant):
         pass
