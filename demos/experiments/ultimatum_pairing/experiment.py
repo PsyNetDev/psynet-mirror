@@ -14,7 +14,8 @@ offer they would accept.
 A player who doesn't answer in time is taken out of their pair so their
 partner isn't held up. A player who misses a round joins the next one, and
 nobody is failed for being slow. Players finish after ``N_ROUNDS`` rounds in
-a pair, or after sitting out ``MAX_SIT_OUTS`` rounds.
+a pair, or early, with an explanation, after sitting out ``MAX_SIT_OUTS``
+rounds or if their team falls apart.
 """
 
 import random
@@ -54,6 +55,16 @@ def team_of(participant):
 
 def in_pair(participant):
     return "pair" in participant.active_sync_groups
+
+
+def lobby_message(seconds_left):
+    if seconds_left is None:
+        return "Waiting for another player to join your team."
+    return "Waiting for your team to form. Starting in at most {SECONDS} s."
+
+
+def ended_early(participant):
+    return participant.var.get("rounds_played", 0) < N_ROUNDS
 
 
 def team_accepts_newcomers(group, participant):
@@ -228,7 +239,7 @@ class Exp(psynet.experiment.Experiment):
             join_existing_groups=True,
             join_criterion=team_accepts_newcomers,
             fail_participants_below_min_size=False,
-            content="Waiting for your team to form. Starting in at most {SECONDS} s.",
+            content=lobby_message,
             max_wait_time=300,
         ),
         while_loop(
@@ -236,6 +247,14 @@ class Exp(psynet.experiment.Experiment):
             keep_playing,
             play_round(),
             expected_repetitions=N_ROUNDS,
+        ),
+        conditional(
+            "ended_early",
+            ended_early,
+            InfoPage(
+                "Not enough players stayed to keep playing, so the game ended early.",
+                time_estimate=5,
+            ),
         ),
     )
 

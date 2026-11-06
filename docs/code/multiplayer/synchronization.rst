@@ -65,7 +65,8 @@ current page, under a waiting indicator, until their group is formed.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
     down to that short start once ``min_group_size`` are waiting, and shows
-    "…" until then.
+    "…" until then; :ref:`a content function <sync-countdown-messages>` can
+    show other text instead.
 
 ``content``
     The message on the waiting indicator. If omitted, participants see
@@ -182,9 +183,24 @@ on their own.
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
     the deadline, for example ``"The next round starts in {SECONDS} s."``.
+    See :ref:`countdown messages <sync-countdown-messages>`.
 
 ``max_wait_time`` (default: 300 seconds)
     The longest a participant waits at the regrouper before being failed.
+
+.. _sync-countdown-messages:
+
+**Countdown messages.** Sometimes the barrier doesn't know yet when the
+wait will end, for example while a participant waits alone for a partner,
+and ``{SECONDS}`` shows "…". To show different text then, pass a
+module-level function as ``content``. It receives ``seconds_left``, which
+is ``None`` while the time is unknown and otherwise the whole seconds left
+(0 once the time has passed), and can also take ``participant`` and
+``barrier``. The message switches within a few seconds of the time
+becoming known:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: round_message
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 10 seconds. A player who doesn't choose in time is removed from their room by
@@ -393,6 +409,12 @@ Timeouts
     ``waiting_logic`` pages: the server applies the timeout shortly after
     the deadline.
 
+    ``max_wait_time`` is a hard limit counted from arrival. With
+    ``waiting_logic``, the server applies it even while the participant is
+    partway through a filler page, not only between filler pages. Make it
+    long enough to cover long filler pages, for example trials used as
+    filler.
+
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
     passed its previous barrier, or since the member joined the group if that
@@ -400,12 +422,22 @@ Timeouts
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
     Members who arrive promptly may wait this long for the others, so the
     barrier's ``max_wait_time`` must be longer; it defaults to 20 seconds plus
-    this timeout.
+    this timeout. This guarantee assumes fixed membership: in a group that
+    accepts top-ups, a newcomer is timed from when they joined, so members
+    already waiting can reach ``max_wait_time`` first.
+
+    At a group's first barrier the timeout counts from when the group formed.
+    Size it to cover everything between the grouper and that barrier, such as
+    instructions or a practice trial, or members who read slowly are timed
+    out before they arrive.
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``.
+and ``sync_group_timeout_between_barriers_action``. As with a barrier,
+``sync_group_max_wait_time`` must be longer than
+``sync_group_timeout_between_barriers_time``, so raise it when you set a
+between-barrier timeout of 45 seconds or more.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while
@@ -461,17 +493,18 @@ trials from another trial maker:
    :end-before: class Exp
 
 When the barrier releases a participant who is on a waiting page, the page
-ends ``release_grace`` seconds (default 3) after the browser notices the
-release, which is usually within about 2 seconds, unless they submit it
-first. The page's
+ends ``release_grace`` seconds (default 3; see
+:class:`~psynet.sync.Barrier`) after the browser notices the release, which
+is usually within about 2 seconds, unless they submit it first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 Any other waiting pages left in the same pass of ``waiting_logic`` are
 skipped, and so are all of them for the participant whose arrival completes
-the group. Pass ``release_grace=None`` to let every waiting page run to its
-end. Pages inside a trial, as in ``sync_quorum``, always run to their end,
-so that the trial is not left without an answer.
+the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
+:class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
+run to its end. Pages inside a trial, as in ``sync_quorum``, always run to
+their end, so that the trial is not left without an answer.
 
 A waiting page's JavaScript can react to the release: ``window`` receives a
 ``psynetWaitingRelease`` event, with the grace period in ``detail.graceMs``,

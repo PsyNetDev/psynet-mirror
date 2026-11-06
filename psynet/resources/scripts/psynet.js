@@ -933,7 +933,7 @@
           delete element.dataset.checked;
           if (releaseInMs === null || releaseInMs <= 0) {
             delete element.dataset.releaseInMs;
-            element.textContent = "…";
+            element.textContent = releaseInMs === null ? "…" : "0";
           } else {
             element.dataset.releaseInMs = String(releaseInMs);
           }
@@ -1016,7 +1016,11 @@
             }),
           );
           if (status.released) {
-            psynet.waiting.onRelease();
+            if (status.ends_page) {
+              psynet.waiting.onRelease();
+            } else {
+              psynet.waiting.stop();
+            }
             return;
           }
         }
