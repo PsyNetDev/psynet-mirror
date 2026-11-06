@@ -6,7 +6,7 @@ from dominate import tags
 from markupsafe import Markup, escape
 
 from psynet.page import WaitPage, wait_while
-from psynet.sync import GroupBarrier, _BarrierHoldPage
+from psynet.sync import GroupBarrier, _BarrierHoldPage, hold_message
 from psynet.timeline import (
     AsyncCodeBlock,
     StartFixProgress,
@@ -519,6 +519,9 @@ def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert 'class="psynet-timeline-hold-title"' in html
     assert 'class="psynet-timeline-hold-progress"' in html
     assert "1 of 3 not ready yet" in html
+    assert "progress" not in compose_hold_overlay_html(
+        hold_message("Waiting for your group"), "1 of 3 not ready yet"
+    )
 
 
 def test_experiment_refuses_to_publish_reserved_direct_types(monkeypatch):

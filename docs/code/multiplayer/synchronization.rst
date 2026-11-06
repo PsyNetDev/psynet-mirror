@@ -221,7 +221,7 @@ on, and they join the next round:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
-The kicked player sees "Your group went on without you." on the progress bar
+The kicked player sees "Your group went on without you. Please continue." on the progress bar
 straight away (pass ``on_arrival_message`` to change it), and is no longer in
 a room when they reach the barrier. A barrier that kicks lets participants
 who are not in a group pass straight through (``skip_if_not_in_group``
@@ -284,10 +284,10 @@ Arrival notices
 While a member waits at a barrier, members who have not reached it yet see a
 notice on the progress bar ("Your partner is ready.", or
 "{ARRIVED}/{TOTAL} of your group are ready."). In groups of three or more,
-the waiting indicator also says how many members are not ready yet. Set
-``notify_arrivals=False`` to turn both off, or pass ``on_arrival_message`` to
-change the text. It receives ``kind`` (``"hold"`` for the waiting indicator,
-``"notice"`` for the progress bar, ``"removed"`` for the notice a member
+the waiting indicator also has a smaller second line saying how many members
+are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
+``on_arrival_message`` to change the notices. It receives ``kind``
+(``"notice"`` for the progress bar, ``"removed"`` for the notice a member
 sees after being kicked from the group), ``waiting_count`` and
 ``group_size``, and returns the text or ``None`` to hide it. For a notice it
 is called whenever the browser fetches the current count, which can be
@@ -297,13 +297,8 @@ have no side effects. Notices must fit on one line:
 .. code-block:: python
 
     def arrival_message(*, kind, waiting_count, group_size, **kwargs):
-        remaining = group_size - waiting_count
-        if kind == "hold":
-            if group_size <= 2 or remaining <= 0:
-                return None
-            return f"{remaining} of {group_size} not ready yet"
         if kind == "removed":
-            return "Your partner went on without you."
+            return "Your partner went on without you. Please continue."
         return "Your partner is ready."
 
     GroupBarrier(
@@ -328,6 +323,18 @@ role (it can also take ``seconds_left``; see :ref:`sync-countdown-messages`):
         return "Your partner is deciding how much to offer you…"
 
     GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
+
+A ``content`` function on a group barrier can also take ``waiting_count`` and
+``group_size``; return :func:`~psynet.sync.hold_message` from it to write the
+second line yourself, or to leave it out:
+
+.. code-block:: python
+
+    def waiting_text(waiting_count, group_size):
+        return hold_message(
+            "Waiting for the rest of the room…",
+            f"{waiting_count} of {group_size} have chosen",
+        )
 
 By default the participant's last page stays on screen, greyed out, while
 they wait. To show something else instead, pass ``waiting_screen``: text,
@@ -515,7 +522,10 @@ Timeouts
     the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are timed
-    out before they arrive.
+    out before they arrive. Kicking a slow member can also take a group below
+    ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
+    which by default fails the members who arrived on time (see
+    :ref:`groups below minimum size <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
@@ -539,6 +549,8 @@ At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
 there can take the group below ``min_group_size``, with the consequences
 described under *Groups below minimum size* below.
+
+.. _groups_below_min_size:
 
 Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -160,6 +160,7 @@ from psynet.timeline import (
     conditional,
 )
 from psynet.timeline_hold import (
+    HoldMessage,
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
     _queue_arrival_update,
@@ -168,6 +169,7 @@ from psynet.timeline_hold import (
     _TimelineHoldPage,
     compose_hold_overlay_html,
     default_group_barrier_arrival_message,
+    default_hold_progress,
 )
 from psynet.utils import (
     NoArgumentProvided,
@@ -731,7 +733,14 @@ class _BarrierHoldPage(_TimelineHoldPage):
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
         if content_is_function:
-            context = {} if participant is None else {"participant": participant}
+            context = (
+                {}
+                if participant is None
+                else {
+                    "participant": participant,
+                    **self.barrier._hold_message_counts(participant),
+                }
+            )
             content = content(barrier=self.barrier, seconds_left=seconds, **context)
         html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
         if "{SECONDS}" not in html:
@@ -771,6 +780,39 @@ class _ReadOnlyParticipantList(list):
         _raise_mutation_error
     )
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
+
+
+def hold_message(title, progress=None):
+    """Return a waiting message with its own progress line.
+
+    By default, a :class:`GroupBarrier`'s waiting indicator shows its
+    ``content`` with a smaller progress line underneath in groups of three or
+    more ("1 of 3 not ready yet"). Return ``hold_message(title, progress)``
+    from a ``content`` function to write that line yourself, or leave out
+    ``progress`` to show no progress line. The message is redrawn as members
+    arrive unless the barrier has ``notify_arrivals=False``.
+
+    Parameters
+    ----------
+    title
+        The waiting message, as for ``content``.
+    progress
+        Optional second line, for example ``f"{waiting_count} of {group_size}
+        are ready"``.
+
+    Examples
+    --------
+    ::
+
+        def waiting_text(waiting_count, group_size):
+            return hold_message(
+                "Waiting for the rest of the room…",
+                f"{waiting_count} of {group_size} have chosen",
+            )
+
+        GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+    """
+    return HoldMessage(title, progress)
 
 
 class Barrier(EltCollection):
@@ -837,7 +879,9 @@ class Barrier(EltCollection):
         that returns the message, for example one that depends on the
         participant's role; it may take ``participant``, ``seconds_left``
         (whole seconds, or ``None`` while the release time is unknown) and
-        ``barrier``.
+        ``barrier``, and on a :class:`GroupBarrier` also ``waiting_count``
+        and ``group_size``. Return :func:`hold_message` to set the progress
+        line under the message yourself.
 
     waiting_screen
         What to show in place of the current page while the participant
@@ -1048,6 +1092,10 @@ class Barrier(EltCollection):
     def _hold_progress_text(self, participant):
         """Return hold-overlay progress copy, if this barrier publishes arrivals."""
         return None
+
+    def _hold_message_counts(self, participant):
+        """Return extra arguments for a ``content`` function; groups add their counts."""
+        return {}
 
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when this participant will be released at the latest, in epoch seconds.
@@ -1415,10 +1463,12 @@ class GroupBarrier(Barrier):
         If ``True`` (default), group members who have not reached this barrier
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
-        Pairs keep the hold title only. Set ``False`` to disable both. A
+        Pairs show only the message. Set ``False`` to disable both. A
         member removed by ``timeout_between_barriers_action="kick"`` is told
         either way; return ``None`` from ``on_arrival_message`` for
-        ``kind="removed"`` to hide it.
+        ``kind="removed"`` to hide it. To change the waiting indicator's
+        progress line, return :func:`hold_message` from a ``content``
+        function.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
@@ -1435,24 +1485,24 @@ class GroupBarrier(Barrier):
 
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
-        ``kind`` (``"hold"``, ``"notice"`` or ``"removed"``), ``waiting_count``,
+        ``kind`` (``"notice"`` or ``"removed"``), ``waiting_count``,
         ``group_size``, and the usual context arguments (``recipient``,
         ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
-        surface. For ``"notice"`` it is called whenever the recipient's
-        browser fetches its notice, which can be several times per arrival,
-        so it should depend only on its arguments and have no side effects. Same
-        serialization rules as ``on_release``. The default pair
-        notice is "Your partner is ready."; pair holds omit a second line.
+        surface. Same serialization rules as ``on_release``.
+
+        ``"notice"`` is the progress-bar notice for members who have not
+        reached the barrier yet. It defaults to "Your partner is ready." in
+        pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
+        groups. It is called whenever the recipient's browser fetches its
+        notice, which can be several times per arrival, so it should depend
+        only on its arguments and have no side effects. Notices stay on one
+        line (overflow ellipsizes), so keep them to a short sentence.
+
         ``"removed"`` is the progress-bar notice for someone kicked by
         ``timeout_between_barriers_action="kick"``, shown until they leave
-        their page; it defaults to "Your partner went on without you." or
-        "Your group went on without you.", and ``group_size`` counts the
-        group before anyone was removed.
-        Groups of three or more default to ``"{REMAINING} of {TOTAL} not ready yet"``
-        on the hold and ``"{ARRIVED}/{TOTAL} of your group are ready."`` on the
-        pill. Notice copy stays on one line (overflow ellipsizes) and sits
-        on the progress bar, so keep ``kind="notice"`` return values to a
-        short sentence. Hold overlay copy may use a second line.
+        their page. It defaults to "Your partner went on without you. Please
+        continue." or "Your group went on without you. Please continue.", and
+        ``group_size`` counts the group before anyone was removed.
 
     """
 
@@ -1590,21 +1640,22 @@ class GroupBarrier(Barrier):
         """Return hold-overlay progress when arrival notices are enabled."""
         if not self.notify_arrivals or not self._participant_is_waiting(participant):
             return None
+        counts = self._hold_message_counts(participant)
+        return default_hold_progress(**counts) if counts else None
+
+    def _hold_message_counts(self, participant):
+        """Return ``waiting_count`` and ``group_size`` for the participant's group."""
         group = participant.active_sync_groups.get(self.group_type)
         if group is None:
-            return None
-        waiting_count = sum(
-            1
-            for member in group.active_participants
-            if self._participant_is_waiting(member)
-        )
-        return self._call_arrival_message(
-            kind="hold",
-            waiting_count=waiting_count,
-            group_size=len(group.active_participants),
-            recipient=participant,
-            group=group,
-        )
+            return {}
+        return {
+            "waiting_count": sum(
+                1
+                for member in group.active_participants
+                if self._participant_is_waiting(member)
+            ),
+            "group_size": len(group.active_participants),
+        }
 
     def _call_arrival_message(self, **kwargs):
         """Return author or default arrival copy for one recipient.
