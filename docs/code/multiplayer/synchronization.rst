@@ -337,7 +337,9 @@ second line yourself, or to leave it out:
         )
 
 By default the participant's last page stays on screen, greyed out, while
-they wait. To show something else instead, pass ``waiting_screen``: text,
+they wait. To show something else instead, pass ``waiting_screen``; to give
+them something to do, such as filler trials, pass ``waiting_logic``
+instead. A waiting screen can be text,
 a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
 function of the participant that returns one of these, or ``None`` to keep

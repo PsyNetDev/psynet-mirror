@@ -843,7 +843,9 @@ class Barrier(EltCollection):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at the
+        to the participant while they are waiting at the barrier. Use it to
+        give participants something to do while they wait, such as filler
+        trials, and ``waiting_screen`` to show them something. If left at the
         default value of ``None``, the participant sees ``waiting_screen``,
         or their current page beneath a lightweight waiting indicator.
 
@@ -1399,8 +1401,9 @@ class GroupBarrier(Barrier):
 
     waiting_logic
         Either a single timeline element or a list of timeline elements (created by ``join``) that is to be displayed
-        to the participant while they are waiting at the barrier. If left at
-        ``None``, the current page remains visible beneath a lightweight
+        to the participant while they are waiting at the barrier, for
+        example filler trials. If left at ``None``, the participant sees
+        ``waiting_screen``, or their current page beneath a lightweight
         waiting indicator. Pass ``content`` to customize that indicator's
         message.
 
