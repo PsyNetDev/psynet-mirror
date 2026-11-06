@@ -55,6 +55,11 @@ class _ParticipantsGroup:
 _PARTICIPANTS_GROUP = _ParticipantsGroup()
 
 
+def _link_order(link):
+    """Sort key putting sync group links in creation order, unflushed ones last."""
+    return float("inf") if link.id is None else link.id
+
+
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
@@ -362,10 +367,7 @@ class GroupPrompt(Prompt):
 
     def _removal_reasons(self):
         """Return ``{participant_id: reason}`` from each member's latest link to the group."""
-        links = sorted(
-            self.group.participant_links,
-            key=lambda link: float("inf") if link.id is None else link.id,
-        )
+        links = sorted(self.group.participant_links, key=_link_order)
         return {link.participant_id: link.removal_reason for link in links}
 
     def _left_label(self, member, label):
@@ -389,26 +391,33 @@ class GroupPrompt(Prompt):
         return list(clusters.values())
 
     def _subgroup_key(self, member):
-        """Return the member's subgroup; a former member keeps their last one."""
+        """Return the member's subgroup.
+
+        A former member keeps their latest subgroup shared with someone still
+        in the group, even after joining a new one.
+        """
         if callable(self.subgroups):
             return self.subgroups(member)
-        subgroup = member.active_sync_groups.get(self.subgroups)
-        if subgroup is not None:
-            return subgroup.id
         if member in self.group.active_participants:
-            return None
-        links = [
-            link
-            for link in member.sync_group_links
-            if link.sync_group.group_type == self.subgroups
-        ]
-        return (
-            max(
-                links, key=lambda link: float("inf") if link.id is None else link.id
-            ).sync_group_id
-            if links
-            else None
+            subgroup = member.active_sync_groups.get(self.subgroups)
+            return None if subgroup is None else subgroup.id
+        links = sorted(
+            (
+                link
+                for link in member.sync_group_links
+                if link.sync_group.group_type == self.subgroups
+            ),
+            key=_link_order,
         )
+        current_ids = {p.id for p in self.group.active_participants}
+        shared = [
+            link
+            for link in links
+            if current_ids
+            & {other.participant_id for other in link.sync_group.participant_links}
+        ]
+        chosen = shared or links
+        return chosen[-1].sync_group_id if chosen else None
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
