@@ -96,6 +96,17 @@ def test_lucid_debrief_uses_return_to_panel_copy():
     assert "You may close this page." in rejected.plain_text
 
 
+def test_end_pages_can_continue_by_themselves():
+    experiment = MagicMock()
+    with patch.object(SuccessfulEndLogic, "should_show_reward", False):
+        page = SuccessfulEndLogic(auto_continue_seconds=3).debrief_participant(
+            experiment, MagicMock()
+        )
+    assert (page.time_limit, page.time_limit_answer) == (3, "Finish")
+    assert "This page continues by itself in 3 seconds." in page.plain_text
+    assert "Click Finish" not in page.plain_text
+
+
 def test_unsuccessful_end_explains_why_the_participant_stopped():
     """PsyNet explains its own failure tags, and an experiment can explain its own."""
     left = SimpleNamespace(

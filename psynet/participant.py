@@ -22,6 +22,7 @@ from dallinger.notifications import admin_notifier
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -472,6 +473,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
+    # When the current page's ``time_limit`` runs out; see ``Page.time_limit``.
+    page_deadline = Column(DateTime)
     page_count = Column(Integer)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)

@@ -4369,14 +4369,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     client_ip_address=client_ip_address,
                     answer=answer,
                 )
-                validation = event.validate(
-                    response=response,
-                    answer=response.answer,
-                    raw_answer=raw_answer,
-                    participant=participant,
-                    experiment=self,
-                    page=event,
-                )
+                if (response.metadata or {}).get("time_limit_reached") is True:
+                    validation = None
+                else:
+                    validation = event.validate(
+                        response=response,
+                        answer=response.answer,
+                        raw_answer=raw_answer,
+                        participant=participant,
+                        experiment=self,
+                        page=event,
+                    )
                 if isinstance(validation, str):
                     validation = FailedValidation(message=validation)
 

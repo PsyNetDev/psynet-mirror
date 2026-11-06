@@ -236,6 +236,45 @@ your own reasons, pass a function of the participant that returns a line, or
 
     Timeline(..., unsuccessful_end=UnsuccessfulEndLogic(failure_message=failure_message))
 
+To end without waiting for a click on Finish, for example in a multiplayer
+game, pass ``auto_continue_seconds``. The page then says "This page continues
+by itself in 3 seconds." and counts down:
+
+.. code-block:: python
+
+    Timeline(
+        ...,
+        successful_end=SuccessfulEndLogic(auto_continue_seconds=3),
+        unsuccessful_end=UnsuccessfulEndLogic(auto_continue_seconds=3),
+    )
+
+Time limits
+-----------
+
+Give a page ``time_limit`` to allow only that many seconds on it. The page
+shows "15 s left", counting down, and when time runs out it submits
+``time_limit_answer`` for the participant:
+
+.. code-block:: python
+
+    ModularPage(
+        "offer",
+        "How many coins do you offer?",
+        PushButtonControl(choices=list(range(11))),
+        time_limit=15,
+        time_limit_answer="timeout",
+        time_estimate=15,
+    )
+
+The server counts the time from when the participant reached the page, so
+reloading the page does not restart the countdown. It also records
+``time_limit_answer`` for an answer that arrives more than 5 seconds after
+the limit, so a tampered or stalled page cannot take longer. Answers given
+because of the time limit skip validation and have ``time_limit_reached`` in
+their response metadata. To place the countdown yourself, put an element with
+the attribute ``data-psynet-seconds-left`` in the page's content, for example
+``<p>Answer within <span data-psynet-seconds-left></span> seconds.</p>``.
+
 Time estimates
 --------------
 
