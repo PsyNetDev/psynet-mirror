@@ -1682,7 +1682,7 @@ class GroupBarrier(Barrier):
                     participant.id,
                     group.id,
                 )
-                group.remove_participant(participant)
+                group.remove_participant(participant, reason="out_of_time")
                 self._tell_removed_participant(participant, group, group_size)
             else:
                 logger.info(
@@ -2483,7 +2483,7 @@ class Regrouper(Grouper):
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
         if previous is not None:
-            previous.remove_participant(participant)
+            previous.remove_participant(participant, reason="moved_on")
         Barrier.receive_participant(self, participant)
 
     def form_groups(self, members, within_group=None):
@@ -2840,11 +2840,29 @@ class SyncGroup(SQLBase, SQLMixin):
     def check_numbers(self):
         self.n_active_participants = len(self.active_participants)
 
-    def remove_participant(self, participant: Participant):
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        """Remove a participant from the group.
+
+        Parameters
+        ----------
+        participant
+            The member to remove.
+        reason
+            Optional reason stored on their link, such as ``"moved_on"`` for a
+            member who went on to their next group or ``"out_of_time"`` for one
+            kicked by a timeout. :class:`~psynet.group_prompt.GroupPrompt`
+            uses it to label former members.
+        """
         _forget_active_sync_group(participant)
         for link in self.participant_links:
-            if link.participant_id == participant.id:
+            is_member = (
+                link.participant is participant or link.participant_id == participant.id
+            )
+            if is_member and link.active:
                 link.active = False
+                link.removal_reason = reason
         self.check_numbers()
         _notify_membership_change(self)
         if self.n_active_participants == 0 and not getattr(
@@ -2896,8 +2914,10 @@ class SimpleSyncGroup(SyncGroup):
     accepts_top_ups = Column(Boolean)
     fail_participants_below_min_size = Column(Boolean, default=True)
 
-    def remove_participant(self, participant: Participant):
-        super().remove_participant(participant)
+    def remove_participant(
+        self, participant: Participant, reason: Optional[str] = None
+    ):
+        super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_min_size()
 
     def dissolve_if_below_min_size(self):
@@ -3168,6 +3188,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
 
     arrival_time = Column(DateTime)
     active = Column(Boolean, default=True)
+    removal_reason = Column(String)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
     participant = relationship(

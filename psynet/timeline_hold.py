@@ -668,7 +668,6 @@ class _TimelineHoldPage(Page):
     def translated_content(self, participant):
         """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
-        content_function = _is_content_function(self.content)
         if self.message_kind == "barrier":
             return _p("timeline_hold", "Waiting for other participants…")
         if self.message_kind == "generic":
@@ -676,7 +675,7 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
-        if content_function:
+        if _is_content_function(self.content):
             return call_function_with_context(self.content, participant=participant)
         return self.content
 

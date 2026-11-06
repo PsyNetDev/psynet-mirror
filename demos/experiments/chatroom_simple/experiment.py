@@ -75,6 +75,7 @@ class ChatTrial(StaticTrial):
             "chat",
             GroupPrompt(
                 prompt,
+                group=self.sync_group,
                 participant=participant,
                 show_names=True,
                 note="Press Next when you have finished. "

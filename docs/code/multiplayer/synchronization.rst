@@ -359,9 +359,11 @@ HTML such as an image. ``highlight`` marks members, with built-in styles for
 
 .. code-block:: python
 
+    room = participant.active_sync_groups["room"]
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
+        group=room,
         answers={p.id: p.var.choice for p in room.participants},
         highlight={winner.id: "winner"},
     )
@@ -374,10 +376,13 @@ for example because a barrier removed them for being late, sees just the
 text, so the prompt itself needs no special case on pages that a late
 player may still reach; the page's other content, such as a round's
 outcome, may still need one. The members who stay see the removed player
-faded in their seat, labelled "(left)". Players who simply moved on to
-another group of the same type, such as next round's pair, are no longer
-shown, and neither are leavers of groups that accept top-ups, such as a
-lobby.
+faded in their seat, labelled "(out of time)" if a barrier removed them for
+being late, "(left)" if they failed or left the experiment, and "(dropped
+out)" otherwise. Players who moved on to their next group, such as next
+round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown, and
+neither are leavers of groups that accept top-ups, such as a lobby.
+Removing a member with :meth:`~psynet.sync.SyncGroup.remove_participant`
+accepts a ``reason`` (``"moved_on"`` or ``"out_of_time"``) for these labels.
 
 Trial makers
 ~~~~~~~~~~~~

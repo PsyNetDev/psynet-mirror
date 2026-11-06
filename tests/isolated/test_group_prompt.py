@@ -131,21 +131,32 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     prompt = GroupPrompt("Choose", participant=third)
     assert prompt.group is None and prompt.group_html == ""
 
-    # A removed member stays in their seat, faded, until they join another room.
+    # A removed member stays in their seat, faded and labelled by why they went.
     group.accepts_top_ups = False
     group.min_group_size = 1
-    group.remove_participant(late)
+    group.remove_participant(late, reason="out_of_time")
     db_session.flush()
-    html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
-    assert 'psynet-group-member--left" data-seat="0"' in html
-    assert ">Your partner (left)<" in html
+
+    def html():
+        return GroupPrompt(group=group, participant=early, anonymous=True).group_html
+
+    assert 'psynet-group-member--left" data-seat="0"' in html()
+    assert ">Your partner (out of time)<" in html()
+    late.status = "returned"
+    assert ">Your partner (left)<" in html()
     # An open-ended group, like a lobby, doesn't show who left.
     group.accepts_top_ups = True
-    assert "(left)" not in GroupPrompt(group=group, participant=early).group_html
-    SimpleSyncGroup(group_type="room", initial_group_size=1).add_participant(late)
-    db_session.flush()
-    html = GroupPrompt(group=group, participant=early).group_html
-    assert "psynet-group-member--left" not in html and 'data-seat="0"' not in html
+    assert "(left)" not in html()
+    group.accepts_top_ups = False
+    late.status = "working"
+    for reason, label in [(None, "(dropped out)"), ("moved_on", None)]:
+        group.add_participant(late)
+        group.remove_participant(late, reason=reason)
+        db_session.flush()
+        if label:
+            assert f">Your partner {label}<" in html()
+    # Members who moved on to their next group are not shown.
+    assert "psynet-group-member--left" not in html()
 
 
 @pytest.mark.parametrize(

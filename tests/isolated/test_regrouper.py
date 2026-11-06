@@ -228,14 +228,21 @@ def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
     assert _count_releases.calls == 1
 
     # The round took longer than the deadline; the first player back waits.
+    first = [next(p for p in team if "pair" in p.active_sync_groups)]
     team_group = team[0].active_sync_groups["team"]
     team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 40)
-    _arrive(exp, pairs, team[:1])
-    assert _waiting(pairs, team[:1]) == team[:1]
+    _arrive(exp, pairs, first)
+    assert _waiting(pairs, first) == first
+    # Leaving their pair for the next round counts as moving on, not dropping out.
+    assert [
+        link.removal_reason
+        for link in first[0].sync_group_links
+        if link.sync_group.group_type == "pair"
+    ] == ["moved_on"]
 
     # Alone at the deadline, they sit out without that counting as a split.
-    _backdate_arrivals(pairs, team[:1], 16)
-    assert pairs.choose_who_to_release(team[:1]) == team[:1]
+    _backdate_arrivals(pairs, first, 16)
+    assert pairs.choose_who_to_release(first) == first
     assert _count_releases.calls == 1
 
 

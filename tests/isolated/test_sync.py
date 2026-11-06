@@ -6514,6 +6514,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     released = barrier.choose_who_to_release(waiting_participants)
 
     assert missing_participant not in group.active_participants
+    assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
     assert (

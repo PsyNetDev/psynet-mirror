@@ -15,9 +15,12 @@ Design constraints:
   the group, typically the barrier after the decision page. Live ticks come
   from that barrier's arrival updates, so they need ``notify_arrivals``
   (the default).
-- Members who leave the group, for example because a barrier removed them
-  for being late, stay in their seat, faded. Members who moved on to another
-  group of the same type, as in a new round, are no longer shown.
+- Members who drop out of the group stay in their seat, faded and marked
+  "(left)" if they failed or left the experiment, "(out of time)" if a
+  barrier removed them for being late, and "(dropped out)" otherwise.
+  Members who moved on to their next group, as in a new round, are no
+  longer shown. The reason comes from
+  :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks, so pages without JavaScript still show the group.
 """
@@ -46,8 +49,9 @@ class GroupPrompt(Prompt):
     four people, and in a zigzag across the width of the page for more. Only the participant viewing the page is labelled
     ("You"); the others' names are read out by screen readers and shown on
     hover. Hovering over or tapping a member brings their speech bubble to
-    the front. A member who has left the group, rather than moved on to
-    another group of the same type, is drawn faded.
+    the front. A member who dropped out of the group is drawn faded and
+    marked "(left)", "(out of time)" or "(dropped out)"; one who moved on to
+    their next group, as in a new round, is no longer shown.
 
     Parameters
     ----------
@@ -298,25 +302,41 @@ class GroupPrompt(Prompt):
         return me + [m for m in members if m.id != self.participant.id]
 
     def _left_members(self):
-        """Return former members who left the group without joining another of its type.
+        """Return former members who dropped out rather than moved on to another group.
 
         Groups that take top-ups are open-ended, like a lobby, so their
         leavers are not shown.
         """
-        if self.group.accepts_top_ups:
+        if getattr(self.group, "accepts_top_ups", False):
             return []
         active_ids = {p.id for p in self.group.active_participants}
         left = {}
+        reasons = self._removal_reasons()
         for link in self.group.participant_links:
             member = link.participant
             if (
                 member.id in active_ids
                 or member.id == self.participant.id
+                or reasons.get(member.id) == "moved_on"
                 or self.group.group_type in member.active_sync_groups
             ):
                 continue
             left[member.id] = member
         return list(left.values())
+
+    def _removal_reasons(self):
+        """Return ``{participant_id: reason}`` from each member's latest link to the group."""
+        links = sorted(self.group.participant_links, key=lambda link: link.id or 0)
+        return {link.participant_id: link.removal_reason for link in links}
+
+    def _left_label(self, member, label):
+        """Return ``label`` marked with why ``member`` is no longer in the group."""
+        _p = get_translator(context=True)
+        if member.failed or member.status != "working":
+            return _p("group prompt", "{NAME} (left)").format(NAME=label)
+        if self._removal_reasons().get(member.id) == "out_of_time":
+            return _p("group prompt", "{NAME} (out of time)").format(NAME=label)
+        return _p("group prompt", "{NAME} (dropped out)").format(NAME=label)
 
     def _clusters(self):
         """Return the members in subgroups, the viewer's first."""
@@ -357,7 +377,7 @@ class GroupPrompt(Prompt):
             classes.append("psynet-group-member--me")
         if has_left:
             classes.append("psynet-group-member--left")
-            label = _p("group prompt", "{NAME} (left)").format(NAME=label)
+            label = self._left_label(member, label)
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")

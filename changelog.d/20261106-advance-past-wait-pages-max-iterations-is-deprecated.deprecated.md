@@ -1,0 +1,1 @@
+The `max_iterations` argument of `advance_past_wait_pages` is deprecated and emits a `FutureWarning`; pass `timeout` in seconds instead.
