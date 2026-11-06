@@ -7,8 +7,10 @@ still join a team until it is near the end of the game.
 Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
 It starts the round as soon as the whole team is ready, or
 ``ROUND_DEADLINE_SECONDS`` after the previous round started, without the
-players who aren't ready yet. An odd
-player out sits that round out. In each pair, the proposer offers part of
+players who aren't ready yet. An odd player out sits that round out; a
+player left waiting alone waits for the others to finish their round
+instead. Players leave the team when they finish, so nobody waits for them.
+In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
 
@@ -46,8 +48,8 @@ N_ROUNDS = 2
 MAX_SIT_OUTS = 2
 LAST_ROUND_FOR_NEWCOMERS = 1
 DECISION_SECONDS = 30
-# Longer than a round takes, so a player who sits a round out waits for the
-# others instead of sitting out the next round too.
+# Longer than the decisions take, so a pair that finishes early is re-paired
+# with the rest of the team rather than without them.
 ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
 ENDOWMENT = 10
 
@@ -66,8 +68,32 @@ def lobby_message(seconds_left):
     return "Waiting for your team to form. Starting in at most {SECONDS} s."
 
 
+def round_message(seconds_left):
+    if seconds_left is None:
+        return "Waiting for the other players to finish their round."
+    return "The next round starts in at most {SECONDS} s."
+
+
 def ended_early(participant):
     return participant.var.get("rounds_played", 0) < N_ROUNDS
+
+
+def ended_early_page(participant):
+    if participant.var.get("rounds_sat_out", 0) >= MAX_SIT_OUTS:
+        text = (
+            f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
+            "so the game ended early for you."
+        )
+    else:
+        text = "Not enough players stayed to keep playing, so the game ended early."
+    return InfoPage(text, time_estimate=5)
+
+
+def leave_team(participant):
+    """Leave the team, so teammates who are still playing don't wait for you."""
+    team = team_of(participant)
+    if team is not None:
+        team.remove_participant(participant)
 
 
 def team_accepts_newcomers(group, participant):
@@ -196,7 +222,7 @@ def play_round():
             form_groups=pair_new_partners,
             release_left_over=True,
             on_release=start_round,
-            content="The next round starts in at most {SECONDS} s.",
+            content=round_message,
         ),
         conditional(
             "paired",
@@ -251,13 +277,11 @@ class Exp(psynet.experiment.Experiment):
             play_round(),
             expected_repetitions=N_ROUNDS,
         ),
+        CodeBlock(leave_team),
         conditional(
             "ended_early",
             ended_early,
-            InfoPage(
-                "Not enough players stayed to keep playing, so the game ended early.",
-                time_estimate=5,
-            ),
+            PageMaker(ended_early_page, time_estimate=5),
         ),
     )
 

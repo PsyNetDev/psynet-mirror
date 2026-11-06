@@ -13,6 +13,7 @@ from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleGrouper, waiting_status_payload
 from psynet.timeline import Response, Timeline, join
+from psynet.trial.main import GenericTrialNode, Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -112,7 +113,24 @@ def _release_pair(exp):
     return Participant.query.get(first_id), waiting
 
 
-@pytest.mark.parametrize("make_uninterruptible", ["no_release_grace", "failed"])
+def _set_current_trial(exp, participant, complete):
+    """Make an unfinalized trial the participant's current trial."""
+    trial = Trial(
+        exp,
+        GenericTrialNode("earlier_trial", exp),
+        participant,
+        propagate_failure=False,
+        is_repeat_trial=False,
+        definition={},
+    )
+    trial.complete = complete
+    participant.current_trial = trial
+    db.session.commit()
+
+
+@pytest.mark.parametrize(
+    "make_uninterruptible", ["no_release_grace", "failed", "unanswered_trial"]
+)
 @in_consents_experiment
 def test_release_does_not_end_an_uninterruptible_waiting_page(
     in_experiment_directory, db_session, make_uninterruptible
@@ -127,10 +145,32 @@ def test_release_does_not_end_an_uninterruptible_waiting_page(
         if make_uninterruptible == "failed":
             first.failed = True
             db.session.commit()
+        if make_uninterruptible == "unanswered_trial":
+            _set_current_trial(exp, first, complete=False)
         status = waiting_status_payload(first.unique_id, waiting["barrier_id"])
         assert (status["released"], status["ends_page"]) == (True, False)
         assert _post_response(first, interrupted=True).get_json()["submission"] == (
             "rejected"
+        )
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_an_answered_earlier_trial_does_not_stop_the_interrupt(
+    in_experiment_directory, db_session
+):
+    """``current_trial`` outlives its trial, and may stay unfinalized, e.g. awaiting async processing."""
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, _filler("filler"))
+    try:
+        first, waiting = _release_pair(exp)
+        _set_current_trial(exp, first, complete=True)
+        status = waiting_status_payload(first.unique_id, waiting["barrier_id"])
+        assert (status["released"], status["ends_page"]) == (True, True)
+        assert _post_response(first, interrupted=True).get_json()["submission"] == (
+            "approved"
         )
     finally:
         exp.timeline = original

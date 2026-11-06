@@ -57,14 +57,15 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
         within="team",
         group_size=2,
         deadline=30,
-        content="Next round in {SECONDS} s",
+        content="Next round (<1 min) in {SECONDS} s",
     )
     team = _working_participants(exp, 4)
     _arrive(exp, team_grouper, team)
 
     _arrive(exp, pairs, team[:3])
     assert _waiting(pairs, team[:3]) == team[:3]
-    assert "psynet-timeline-hold-countdown" in pairs.waiting_logic.overlay_html(team[0])
+    html = pairs.waiting_logic.overlay_html(team[0])
+    assert "psynet-timeline-hold-countdown" in html and "(&lt;1 min)" in html
 
     _arrive(exp, pairs, team[3:])
     assert _waiting(pairs, team) == []
@@ -114,6 +115,7 @@ def test_clock_regrouper_splits_everyone_waiting_into_balanced_rooms(
     _backdate_arrivals(rooms, participants[1:5], 60)
     # A tick that is due but not yet split counts down to zero, not to the next tick.
     assert rooms.expected_release_time(participants[0]) <= time.time()
+    assert rooms.expected_release_time(participants[5]) > time.time()
     released = rooms.choose_who_to_release(participants)
 
     assert participants[5] not in released
@@ -207,12 +209,26 @@ def test_simple_grouper_checks_start_short_after(kwargs):
         )
 
 
+def _five_minutes(participant):
+    return 300
+
+
+def test_simple_grouper_accepts_callable_max_wait_time_with_start_short_after():
+    SimpleGrouper(
+        "lobby",
+        initial_group_size=4,
+        min_group_size=2,
+        start_short_after=10,
+        max_wait_time=_five_minutes,
+    )
+
+
 def _count_releases(**kwargs):
     _count_releases.calls += 1
 
 
 @in_consents_experiment
-def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
+def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -230,17 +246,20 @@ def test_regrouper_deadline_counts_from_the_first_return_after_a_long_round(
     _count_releases.calls = 0
     _arrive(exp, pairs, team)
     assert _count_releases.calls == 1
+    (odd_one_out,) = [p for p in team if "pair" not in p.active_sync_groups]
+    paired = [p for p in team if p is not odd_one_out]
 
-    # The round took longer than the deadline; the first player back waits.
+    # The pair's round runs past the deadline; the odd one out, back first,
+    # keeps waiting for them instead of sitting out again.
     team_group = team[0].active_sync_groups["team"]
     team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 40)
-    _arrive(exp, pairs, team[:1])
-    assert _waiting(pairs, team[:1]) == team[:1]
+    _arrive(exp, pairs, [odd_one_out])
+    _backdate_arrivals(pairs, [odd_one_out], 16)
+    assert pairs.choose_who_to_release([odd_one_out]) == []
 
-    # Alone at the deadline, they sit out without that counting as a split.
-    _backdate_arrivals(pairs, team[:1], 16)
-    assert pairs.choose_who_to_release(team[:1]) == team[:1]
-    assert _count_releases.calls == 1
+    _arrive(exp, pairs, paired)
+    assert _waiting(pairs, team) == []
+    assert _count_releases.calls == 2
 
 
 @in_consents_experiment
