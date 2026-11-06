@@ -1188,6 +1188,7 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     assert not kicked_participant.failed
     assert group.active_participants == []
     assert group.n_active_participants == 0
+    assert group.leader is None
     db_session.commit()
     check_sync_groups()
     db_session.refresh(group)
@@ -3566,6 +3567,49 @@ def test_check_barriers_times_out_waiters_past_their_deadline(
     assert partner.failure_tags == ["sync group below minimum size"]
     assert not patient.failed
     assert _barrier_link_released(patient.id, barrier.id) is False
+
+
+@pytest.mark.parametrize("action", ["fail", "kick"])
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_waiting_page_timeout_applies_on_the_next_request(
+    in_experiment_directory, db_session, action
+):
+    """A waiter timed out mid filler page is failed, or continues alone, on their next Next."""
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        GroupBarrier(
+            id_="filler_timeout",
+            group_type="main",
+            max_wait_time=300,
+            max_wait_action=action,
+            waiting_logic=InfoPage("Filler", time_estimate=5),
+        ),
+        ModularPage("choose_action", "Choose your action", time_estimate=1),
+    )
+    try:
+        (waiter, _), _ = _pair_sync_group(exp, db_session)
+        waiter_id = waiter.id
+        assert _json_timeline(exp, waiter).status_code == 200
+        ParticipantLinkBarrier.query.filter_by(participant_id=waiter_id).update(
+            {"deadline_at": timenow() - timedelta(seconds=1)}
+        )
+        db_session.commit()
+        check_barriers()
+
+        waiter = Participant.query.get(waiter_id)
+        _process_response(exp, waiter, waiter.page_uuid)
+        waiter = Participant.query.get(waiter_id)
+        if action == "fail":
+            assert waiter.failed
+            assert exp.timeline.get_participant_branch(waiter) == "unsuccessful_end"
+        else:
+            assert not waiter.failed
+            assert exp.timeline.get_current_elt(exp, waiter).label == "choose_action"
+    finally:
+        exp.timeline = original_timeline
 
 
 @pytest.mark.parametrize(

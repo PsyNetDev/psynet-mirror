@@ -180,6 +180,8 @@ def test_live_pages_redraw_the_group_when_someone_joins(
         return prompt.get_js_vars()["group_prompt"]["redraw_token"]
 
     named, anonymous = token(show_names=True), token(anonymous=True)
+    # A redraw would drop highlights, so highlighted pages don't redraw.
+    assert token(highlight={first.id: "winner"}) is None
 
     # Members already in the group are told to fetch it again.
     published.clear()

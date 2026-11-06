@@ -35,10 +35,13 @@ from markupsafe import Markup
 from .modular_page import Prompt
 from .pseudonym import anonymous_sticker_html
 from .static_resources import package_static_url
-from .utils import get_translator
+from .utils import get_logger, get_translator
+
+logger = get_logger()
 
 _MAX_ROW_MEMBERS = 4
 _MAX_ZIGZAG_COLUMNS = 7
+_warned_no_secret = False
 
 
 class GroupPrompt(Prompt):
@@ -77,7 +80,8 @@ class GroupPrompt(Prompt):
         ``"duplicate"`` have built-in styles; any other style becomes the
         CSS class ``psynet-group-member--<style>``. In both dictionaries the
         IDs may be strings, as in a dictionary read back from a participant
-        variable.
+        variable. A display with highlights is not redrawn when members
+        join or leave.
     note
         Optional short text shown below the group, for example
         "1 was picked twice".
@@ -153,9 +157,12 @@ class GroupPrompt(Prompt):
         self.live_ticks = self.show_progress and answered is None
         # Pages can redraw the group when members join or leave, unless a
         # function decides the subgroups or who has answered, which the
-        # server can't call later, or answers fix who is shown.
+        # server can't call later, or answers or highlights fix who is shown.
         self.live_members = (
-            answers is None and answered is None and not callable(subgroups)
+            answers is None
+            and answered is None
+            and not callable(subgroups)
+            and not self.highlight
         )
         self.subgroups = subgroups
         self.show_names = show_names
@@ -479,8 +486,15 @@ def redrawn_group_html(unique_id, token):
 
 def _token_serializer():
     """Return the serializer for redraw tokens, or ``None`` without a server secret."""
+    global _warned_no_secret
     secret = os.environ.get("FLASK_SECRET_KEY")
     if not secret:
+        if not _warned_no_secret:
+            _warned_no_secret = True
+            logger.warning(
+                "FLASK_SECRET_KEY is not set, so GroupPrompt pages won't redraw "
+                "the group when members join or leave."
+            )
         return None
     return URLSafeSerializer(secret, salt="psynet.group_prompt")
 

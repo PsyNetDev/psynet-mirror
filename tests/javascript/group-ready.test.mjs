@@ -62,6 +62,21 @@ it("ignores an arrival snapshot that comes back after the page changed", () => {
   assert.deepEqual(applied, [{ request: 1 }]);
 });
 
+it("fetches once for refresh requests that come close together", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let fetches = 0;
+  const psynet = { fetchArrivalNotice: () => (fetches += 1) };
+  new Function("psynet", extract("requestArrivalRefresh"))(psynet);
+
+  psynet.requestArrivalRefresh();
+  psynet.requestArrivalRefresh();
+  t.mock.timers.tick(150);
+  assert.equal(fetches, 1);
+  psynet.requestArrivalRefresh();
+  t.mock.timers.tick(150);
+  assert.equal(fetches, 2);
+});
+
 it("hides the arrival notice while a page suppresses it", () => {
   let notice = null;
   const header = { appendChild: (el) => (notice = el) };
