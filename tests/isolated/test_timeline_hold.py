@@ -263,13 +263,13 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
         if getattr(elt, "is_timeline_hold", False)
     )
 
-    assert plain.overlay_html() == (
+    assert plain.overlay_html(None) == (
         '<span class="psynet-timeline-hold-title">'
         f"{escape('<strong>Waiting</strong>')}"
         "</span>"
     )
     assert (
-        trusted.overlay_html()
+        trusted.overlay_html(None)
         == '<span class="psynet-timeline-hold-title"><strong>Waiting</strong></span>'
     )
 

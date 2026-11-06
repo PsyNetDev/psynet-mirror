@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+import warnings
 from functools import cached_property
 from typing import List, Optional
 
@@ -202,33 +203,43 @@ class BotResponse:
 
 
 def advance_past_wait_pages(
-    bots: List["BotDriver"], max_iterations=10, timeout: Optional[float] = None
+    bots: List["BotDriver"],
+    max_iterations: Optional[int] = None,
+    timeout: float = 10.0,
 ):
     """
     Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
 
     Useful in synchronous bot tests, where bots must pass barriers or wait pages together.
+    After the first two passes over ``bots``, it polls every half second, as a
+    browser would, so it also works when barriers release on a clock or a
+    deadline, as in round-based games.
 
     Parameters
     ----------
     bots : list of BotDriver
         Bots to advance.
-    max_iterations : int
-        Maximum number of passes over ``bots``. Ignored if ``timeout`` is given.
-    timeout : float, optional
-        Keep polling, every half second as a browser would, for up to this
-        many seconds. Use this when barriers release on a clock or a deadline,
-        as in round-based games.
+    max_iterations : int, optional
+        Deprecated; use ``timeout``. If given, also stop after this many passes.
+    timeout : float
+        Seconds to keep trying before giving up (default 10).
 
     Raises
     ------
     RuntimeError
-        If some bots are still waiting after ``max_iterations`` passes, or
-        after ``timeout`` seconds.
+        If some bots are still waiting after ``timeout`` seconds (or
+        ``max_iterations`` passes).
     """
     from .page import WaitPage
 
-    deadline = None if timeout is None else time.monotonic() + timeout
+    if max_iterations is not None:
+        warnings.warn(
+            "advance_past_wait_pages(max_iterations=...) is deprecated; "
+            "pass timeout=<seconds> instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+    deadline = time.monotonic() + timeout
     iteration = 0
     while True:
         iteration += 1
@@ -244,15 +255,15 @@ def advance_past_wait_pages(
                 waiting.append(bot)
                 bot.take_page()
         if not waiting:
-            break
-        if deadline is None and iteration >= max_iterations:
-            raise RuntimeError("Not all bots finished waiting in time.")
-        if deadline is not None:
-            if time.monotonic() > deadline:
-                raise RuntimeError(
-                    f"Bots {[bot.id for bot in waiting]} are still waiting"
-                    f" after {timeout} s."
-                )
+            return
+        ids = [bot.id for bot in waiting]
+        if max_iterations is not None and iteration >= max_iterations:
+            raise RuntimeError(
+                f"Bots {ids} are still waiting after {max_iterations} passes."
+            )
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Bots {ids} are still waiting after {timeout} s.")
+        if iteration >= 2:
             time.sleep(0.5)
 
 

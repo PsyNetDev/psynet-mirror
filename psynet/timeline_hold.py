@@ -658,11 +658,11 @@ class _TimelineHoldPage(Page):
         record = self.get_hold_record(participant)
         return bool(record is not None and record.silent)
 
-    def translated_content(self, participant=None):
+    def translated_content(self, participant):
         """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
         content_function = _is_content_function(self.content)
-        if self.message_kind == "barrier" or (content_function and participant is None):
+        if self.message_kind == "barrier":
             return _p("timeline_hold", "Waiting for other participants…")
         if self.message_kind == "generic":
             return _p(
@@ -673,7 +673,7 @@ class _TimelineHoldPage(Page):
             return call_function_with_context(self.content, participant=participant)
         return self.content
 
-    def overlay_html(self, participant=None):
+    def overlay_html(self, participant):
         """Return hold copy as HTML for both Jinja and the dynamic overlay.
 
         Trusted ``Markup`` is preserved; plain strings are escaped so a refresh

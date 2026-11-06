@@ -210,7 +210,7 @@ class Exp(psynet.experiment.Experiment):
 
         # Going now to the next trial;
         # Trial 2 (degree = 1)
-        advance_past_wait_pages(original_bots, max_iterations=30)
+        advance_past_wait_pages(original_bots)
 
         # Check that the trials have been aggregated appropriately
         page = bots[0].get_current_page()
@@ -253,7 +253,7 @@ class Exp(psynet.experiment.Experiment):
         # Trial 3 (degree = 2)
         bots = [bots[1], bots[2], new_bot]
 
-        advance_past_wait_pages(bots, max_iterations=30)
+        advance_past_wait_pages(bots)
 
         for bot in bots:
             assert bot.current_trial is not None
@@ -278,7 +278,7 @@ class Exp(psynet.experiment.Experiment):
                 page = bot.get_current_page()
                 assert page.label == "color_trial"
                 bot.take_page()
-            advance_past_wait_pages(bots, max_iterations=30)
+            advance_past_wait_pages(bots)
 
         for bot in bots:
             page = bot.get_current_page()

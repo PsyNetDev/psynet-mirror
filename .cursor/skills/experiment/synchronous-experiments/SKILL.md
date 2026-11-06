@@ -131,8 +131,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Run `psynet test local` with at least as many bots as the group size, plus
   extra bots for late-arrival or top-up paths.
 - Use serial bot tests with `advance_past_wait_pages(bots)` for deterministic
-  barrier progression, with `timeout=` when rounds start on a clock or a
-  deadline; use concurrent bot runs when arrival races matter.
+  barrier progression. It polls for up to 10 s; pass a longer `timeout=` when
+  rounds start on a clock or a deadline. Use concurrent bot runs when arrival
+  races matter.
 - Assert group formation, active group size, role assignment, shared node/trial
   IDs, barrier IDs, `on_release` side effects, and failed/overflow exits.
 - Test dropout and top-up behavior, not only a complete group that finishes.
