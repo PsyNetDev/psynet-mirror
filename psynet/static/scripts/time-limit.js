@@ -17,10 +17,11 @@ export function activate({root, vars, psynet}) {
         line = document.createElement("div");
         line.className = "psynet-status-chip psynet-time-limit";
         var parts = String(config.text).split("{SECONDS}");
-        line.append(parts[0]);
+        var text = document.createElement("span");
         var label = document.createElement("span");
         label.setAttribute("data-psynet-seconds-left", "");
-        line.append(label, parts.slice(1).join("{SECONDS}"));
+        text.append(parts[0], label, parts.slice(1).join("{SECONDS}"));
+        line.append(text);
         (document.getElementById("timeline-hold-region") || root).append(line);
         labels = [label];
     }
