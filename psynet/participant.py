@@ -634,6 +634,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def to_dict(self):
         """Return the participant's dashboard fields, including the name others see them by."""
         x = super().to_dict()
+        x.pop("pseudonym_color", None)
+        x.pop("pseudonym_animal", None)
         try:
             x["pseudonym"] = self.pseudonym.name
         except ValueError:
