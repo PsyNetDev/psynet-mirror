@@ -98,7 +98,7 @@ export async function activate({root, vars}) {
             if (data && data.html && root.isConnected) replaceMembers(data.html);
         }).fail(function () {
             failedRedraws += 1;
-            if (failedRedraws <= 3 && root.isConnected) {
+            if (failedRedraws <= 3 && root.isConnected && !redrawAgain) {
                 setTimeout(redraw, 2000 * failedRedraws);
             }
         }).always(function () {

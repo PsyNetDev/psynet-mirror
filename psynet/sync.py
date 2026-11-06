@@ -3374,7 +3374,7 @@ def arrival_notice_payload(unique_id):
 
 
 def _ready_seats_for(participant):
-    """Return ``{group_id, seats}`` for each of the participant's groups.
+    """Return ``{group_id, seats, members}`` for each of the participant's groups.
 
     ``seats`` (see :func:`group_seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`

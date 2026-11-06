@@ -1123,7 +1123,7 @@
           psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
         if (target.refresh) {
-          psynet.fetchArrivalNotice();
+          psynet.requestArrivalRefresh();
         } else if (Object.prototype.hasOwnProperty.call(target, "notice")) {
           psynet.applyArrivalNotice(target.notice);
         }
@@ -1188,6 +1188,16 @@
         }
         psynet.applyArrivalSnapshot(data || {}, request);
       });
+    };
+
+    // Every arrival, join or departure in the group asks each member to
+    // fetch again, so requests close together share one fetch.
+    psynet.requestArrivalRefresh = function () {
+      if (psynet.arrivalRefreshTimer) return;
+      psynet.arrivalRefreshTimer = setTimeout(function () {
+        psynet.arrivalRefreshTimer = null;
+        psynet.fetchArrivalNotice();
+      }, 150);
     };
 
     psynet.ensureArrivalUpdates = function (config) {
