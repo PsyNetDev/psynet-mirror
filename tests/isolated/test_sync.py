@@ -6493,7 +6493,7 @@ def test_group_barrier_max_wait_time_covers_timeout_between_barriers():
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 def test_group_barrier_timeout_between_barriers_kick_missing_participants(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
@@ -6524,17 +6524,23 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         group.add_participant(p)
     _backdate_group(group, seconds=10)
     db_session.commit()
+    publications = _hold_wake_publications(monkeypatch)
 
     barrier.check_waiting_participants(waiting_participants)
     released = barrier.choose_who_to_release(waiting_participants)
+    db_session.commit()
 
     assert missing_participant not in group.active_participants
     assert missing_participant not in released
     assert set(released) == set(waiting_participants)
-    assert (
-        pending_arrival_notice_for(missing_participant)
-        == "Your group went on without you."
-    )
+    removal = {"notice": "Your group went on without you.", "removed": True}
+    assert removal in [
+        {key: target.get(key) for key in removal}
+        for participant_id, payload in publications
+        if participant_id == missing_participant.id
+        for target in payload["targets"]
+    ]
+    assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participant.page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participant) is None
 

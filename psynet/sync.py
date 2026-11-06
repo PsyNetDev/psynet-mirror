@@ -1757,7 +1757,7 @@ class GroupBarrier(Barrier):
             "page_uuid": participant.page_uuid,
             "text": text,
         }
-        _queue_arrival_update(participant.id, notice=text)
+        _queue_arrival_update(participant.id, notice=text, removed=True)
 
     def _late_between_barriers(self, group: "SyncGroup", waiting_ids) -> list:
         """Return active members past the between-barrier timeout who are not waiting.
@@ -3424,7 +3424,7 @@ def arrival_notice_payload(unique_id):
     if participant is None:
         return {"notice": None, "group_ready": []}
     return {
-        "notice": pending_arrival_notice_for(participant),
+        **_arrival_notice_fields(participant),
         "group_ready": _ready_seats_for(participant),
     }
 
@@ -3615,6 +3615,18 @@ def _removed_from_group_notice(participant) -> Optional[str]:
     if stored is None or stored["page_uuid"] != participant.page_uuid:
         return None
     return stored["text"]
+
+
+def _arrival_notice_fields(participant):
+    """Return ``{"notice": ...}``, adding ``"removed": True`` for a removal notice.
+
+    Pages that hide arrival notices, such as live-tick GroupPrompt pages,
+    still show a removal notice.
+    """
+    notice = pending_arrival_notice_for(participant)
+    if notice is not None and _removed_from_group_notice(participant) is not None:
+        return {"notice": notice, "removed": True}
+    return {"notice": notice}
 
 
 def pending_arrival_notice_for(participant):

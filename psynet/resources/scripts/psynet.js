@@ -1099,11 +1099,14 @@
 
     /**
      * Hide the group arrival notice while a page shows the same information,
-     * for example live ticks. Returns a function that ends the suppression.
+     * for example live ticks. Notices that the participant was removed from
+     * their group still show. Returns a function that ends the suppression.
      */
     psynet.suppressArrivalNotice = function () {
       psynet.arrivalNoticeSuppressors += 1;
-      psynet.hideArrivalNotice();
+      if (!document.getElementById("psynet-arrival-notice")?.dataset.removed) {
+        psynet.hideArrivalNotice();
+      }
       let released = false;
       return function () {
         if (released) return;
@@ -1112,10 +1115,13 @@
       };
     };
 
-    psynet.showArrivalNotice = function (message, { release = false } = {}) {
+    psynet.showArrivalNotice = function (
+      message,
+      { release = false, removed = false } = {},
+    ) {
       if (
         !message ||
-        (psynet.arrivalNoticeSuppressors > 0 && !release) ||
+        (psynet.arrivalNoticeSuppressors > 0 && !release && !removed) ||
         document.body.classList.contains("timeline-held")
       ) {
         return;
@@ -1133,14 +1139,19 @@
       }
       notice.textContent = message;
       notice.title = message;
+      if (removed) {
+        notice.dataset.removed = "true";
+      } else {
+        delete notice.dataset.removed;
+      }
     };
 
-    psynet.applyArrivalNotice = function (notice) {
+    psynet.applyArrivalNotice = function (notice, { removed = false } = {}) {
       if (psynet.waiting?.released) {
         return;
       }
       if (notice) {
-        psynet.showArrivalNotice(notice);
+        psynet.showArrivalNotice(notice, { removed });
       } else {
         psynet.hideArrivalNotice();
       }
@@ -1164,7 +1175,7 @@
         if (target.refresh) {
           psynet.requestArrivalRefresh();
         } else if (Object.prototype.hasOwnProperty.call(target, "notice")) {
-          psynet.applyArrivalNotice(target.notice);
+          psynet.applyArrivalNotice(target.notice, { removed: target.removed });
         }
       });
     };
@@ -1175,7 +1186,7 @@
     psynet.applyArrivalSnapshot = function (data, request) {
       if (request < (psynet.arrivalSnapshot?.request ?? 0)) return;
       psynet.arrivalSnapshot = { request, pageUuid: window.pageUuid, groups: {} };
-      psynet.applyArrivalNotice(data.notice);
+      psynet.applyArrivalNotice(data.notice, { removed: data.removed });
       (data.group_ready || []).forEach((ready) => {
         psynet.arrivalSnapshot.groups[ready.group_id] = ready.seats;
         window.dispatchEvent(
@@ -1246,7 +1257,7 @@
         return;
       }
       if (psynet.arrivalUpdates?.channel === config.channel) {
-        psynet.applyArrivalNotice(config.notice);
+        psynet.applyArrivalNotice(config.notice, { removed: config.removed });
         psynet.fetchArrivalNotice();
         return;
       }
@@ -1260,7 +1271,7 @@
           onOpen: psynet.fetchArrivalNotice,
         }),
       };
-      psynet.applyArrivalNotice(config.notice);
+      psynet.applyArrivalNotice(config.notice, { removed: config.removed });
     };
 
     psynet.updatePageForTimelineHold = function (page) {
