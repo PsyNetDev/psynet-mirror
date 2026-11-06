@@ -55,8 +55,9 @@ this module. That loop:
 
 - Finishes dissolving sync groups whose dissolution skipped members who were
   busy in their own request (see ``SyncGroup._dissolve``).
-- Applies ``max_wait_time`` to waiters whose hold deadline has passed. Their
-  own request normally does this, so waiters who left would otherwise stay.
+- Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
+  passed. Their own request normally does this, so waiters who left would
+  otherwise stay.
 - Finds waiting barrier instances and checks them least recently checked
   first, new or changed ones with a head start, within a per-sweep time budget.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated

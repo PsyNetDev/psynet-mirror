@@ -927,7 +927,9 @@
     // Background tabs slow their timers down, so check a hold as soon as the
     // tab is shown again rather than at the next safety poll.
     document.addEventListener("visibilitychange", () => {
-      psynet.resumeTimelineHold("visibility change");
+      if (document.visibilityState === "visible") {
+        psynet.resumeTimelineHold("visibility change");
+      }
     });
 
     // A barrier sends a new release time, or null when it no longer knows one.
