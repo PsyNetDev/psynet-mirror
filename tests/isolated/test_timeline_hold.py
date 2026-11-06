@@ -446,6 +446,36 @@ def test_timeline_hold_payload_is_omitted_without_a_record():
     assert page.timeline_hold_payload(participant) is None
 
 
+def _waiting_screen(participant):
+    return None if participant.var.keep_page else "You offered 5 coins."
+
+
+def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
+    from psynet.modular_page import ModularPage
+
+    hold = GroupBarrier(
+        "decided", group_type="pair", waiting_screen=_waiting_screen
+    ).waiting_logic
+
+    screen = hold.waiting_screen_page(
+        SimpleNamespace(var=SimpleNamespace(keep_page=False))
+    )
+    assert isinstance(screen, ModularPage)
+    assert screen.prompt.text == "You offered 5 coins."
+    assert not screen.control.show_next_button
+    assert (
+        hold.waiting_screen_page(SimpleNamespace(var=SimpleNamespace(keep_page=True)))
+        is None
+    )
+    with pytest.raises(ValueError, match="waiting_screen only applies"):
+        GroupBarrier(
+            "decided",
+            group_type="pair",
+            waiting_logic=WaitPage(1),
+            waiting_screen=_waiting_screen,
+        )
+
+
 def test_compose_hold_overlay_html_always_emits_the_title_span():
     assert (
         compose_hold_overlay_html("Waiting for your partner")

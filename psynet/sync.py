@@ -633,6 +633,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
             content=barrier.content,
             message_kind="barrier" if barrier.content is None else None,
             on_timeout=barrier.handle_max_wait_timeout,
+            waiting_screen=barrier.waiting_screen,
         )
 
     @property
@@ -798,6 +799,15 @@ class Barrier(EltCollection):
         participant their own message, for example one that depends on their
         role.
 
+    waiting_screen
+        Function ``waiting_screen(participant)`` returning what to show in
+        place of the current page while the participant waits: a prompt,
+        text or HTML (shown without a Next button), or a whole
+        :class:`~psynet.timeline.Page`. The ``content`` message still shows
+        on top. Return ``None`` to keep the current page, which is what
+        happens when ``waiting_screen`` is omitted. Only used when
+        ``waiting_logic`` is omitted.
+
     release_grace
         Seconds a participant on a ``waiting_logic`` page has to finish it
         once they are released; the page then ends without an answer,
@@ -806,6 +816,9 @@ class Barrier(EltCollection):
         always run to their end. Default: 3 seconds.
 
     """
+
+    # Reconstructed barriers skip ``__init__`` and never render a hold page.
+    waiting_screen = None
 
     def __init__(
         self,
@@ -817,12 +830,14 @@ class Barrier(EltCollection):
         expected_wait=None,
         content=None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
+        self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
         if waiting_logic is not None and expected_wait is not None:
             raise ValueError(
@@ -830,6 +845,10 @@ class Barrier(EltCollection):
             )
         if waiting_logic is not None and content is not None:
             raise ValueError("content only applies when waiting_logic is omitted.")
+        if waiting_logic is not None and waiting_screen is not None:
+            raise ValueError(
+                "waiting_screen only applies when waiting_logic is omitted."
+            )
         self.expected_wait = (
             0.5 * waiting_logic_expected_repetitions
             if expected_wait is None
@@ -1345,6 +1364,9 @@ class GroupBarrier(Barrier):
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
+    waiting_screen
+        See :class:`Barrier`.
+
     on_arrival_message
         Optional callable that returns copy for one recipient. It receives
         ``kind`` (``"hold"``, ``"notice"`` or ``"removed"``), ``waiting_count``,
@@ -1417,6 +1439,7 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         self._validate_max_wait_action(max_wait_action)
         max_wait_time = self._check_max_wait_time(
@@ -1431,6 +1454,7 @@ class GroupBarrier(Barrier):
             expected_wait=expected_wait,
             content=content,
             release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
@@ -1814,6 +1838,9 @@ class Grouper(Barrier):
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
+    waiting_screen
+        See :class:`Barrier`.
+
     """
 
     def __init__(
@@ -1828,6 +1855,7 @@ class Grouper(Barrier):
         fix_time_credit=False,
         content=None,
         release_grace: Optional[float] = 3,
+        waiting_screen=None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1840,6 +1868,7 @@ class Grouper(Barrier):
             fix_time_credit=fix_time_credit,
             content=content,
             release_grace=release_grace,
+            waiting_screen=waiting_screen,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size

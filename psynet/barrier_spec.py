@@ -34,6 +34,7 @@ _PAGE_FIELDS = {
     "_uses_timeline_hold",
     "waiting_logic",
     "waiting_logic_expected_repetitions",
+    "waiting_screen",
 }
 
 _PRESENTATION_FIELDS = {

@@ -3590,7 +3590,9 @@
       }
 
       let hold = response.page?.attributes?.timeline_hold;
-      if (hold) {
+      let holdPageShown =
+        hold?.page_uuid === psynet.page.attributes?.timeline_hold?.page_uuid;
+      if (hold && (!hold.replaces_page || holdPageShown)) {
         // Nothing records while the participant waits.
         await psynet.endPageRecording([]);
         psynet.updatePageForTimelineHold(response.page);

@@ -7907,16 +7907,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     raise RuntimeError(
                         "Approved response did not retain its resolved page."
                     )
-                if not _is_timeline_hold(page):
+                if participant is None:
+                    participant = cls._participant_request_query().get(participant_id)
+                if _is_timeline_hold(page):
+                    render_fragment = page.waiting_screen_page(participant) is not None
+                else:
                     render_fragment = not page.requires_full_page_reload
-                    if render_fragment:
-                        if participant is None:
-                            participant = cls._participant_request_query().get(
-                                participant_id
-                            )
-                        page_uuid_after_response = cls._prepare_approved_inplace_page(
-                            exp, participant, page, payload
-                        )
+                if render_fragment:
+                    page_uuid_after_response = cls._prepare_approved_inplace_page(
+                        exp, participant, page, payload
+                    )
             if result.recording_response_id is not None:
                 from .media_upload import _refresh_recording_receipt
 

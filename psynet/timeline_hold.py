@@ -464,7 +464,12 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
 
 
 class _TimelineHoldPage(Page):
-    """Internal page checkpoint that preserves the preceding browser page."""
+    """Internal page checkpoint that preserves the preceding browser page.
+
+    With a ``waiting_screen``, the hold instead shows the page that function
+    returns, rendered with this hold's browser attributes so the browser
+    still waits for the release.
+    """
 
     is_timeline_hold = True
 
@@ -480,6 +485,7 @@ class _TimelineHoldPage(Page):
         message_kind=None,
         fail_on_timeout=True,
         on_timeout=None,
+        waiting_screen=None,
     ):
         self.hold_id = hold_id
         self.expected_wait = expected_wait
@@ -488,6 +494,7 @@ class _TimelineHoldPage(Page):
         self.check_interval = check_interval
         self.content = content
         self.message_kind = message_kind
+        self.waiting_screen = waiting_screen
         self._fail_on_timeout = fail_on_timeout
         self.on_timeout = on_timeout
         super().__init__(
@@ -717,6 +724,7 @@ class _TimelineHoldPage(Page):
             "safety_poll_ms": round(self.check_interval * 1000),
             "timeout_ms": remaining_timeout_ms,
             "silent": bool(record.silent),
+            "replaces_page": self.waiting_screen_page(participant) is not None,
         }
 
     def attributes(self, participant):
@@ -725,6 +733,30 @@ class _TimelineHoldPage(Page):
         if payload is not None:
             attributes["timeline_hold"] = payload
         return attributes
+
+    def waiting_screen_page(self, participant):
+        """Return the page shown while this hold waits, or ``None`` to keep the previous page."""
+        from psynet.modular_page import ModularPage, NullControl
+
+        if self.waiting_screen is None:
+            return None
+        screen = self.waiting_screen(participant)
+        if screen is None or isinstance(screen, Page):
+            return screen
+        return ModularPage(
+            "waiting_screen",
+            screen,
+            NullControl(show_next_button=False),
+            time_estimate=0,
+        )
+
+    def render(self, experiment, participant, partial_mode=False):
+        screen = self.waiting_screen_page(participant)
+        if screen is None:
+            return super().render(experiment, participant, partial_mode)
+        screen.attributes = self.attributes
+        screen.pre_render()
+        return screen.render(experiment, participant, partial_mode)
 
     def get_bot_response(self, experiment, bot):
         return None

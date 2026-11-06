@@ -11,8 +11,9 @@ player out sits that round out. In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
 
-A player who doesn't answer in time is taken out of their pair so their
-partner isn't held up. A player who misses a round joins the next one, and
+A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
+round, and nor does their partner. A player who closes their page is taken
+out of their pair so their partner isn't held up. A player who misses a round joins the next one, and
 nobody is failed for being slow. Players finish after ``N_ROUNDS`` rounds in
 a pair, or after sitting out ``MAX_SIT_OUTS`` rounds.
 """
@@ -49,7 +50,9 @@ LAST_ROUND_FOR_NEWCOMERS = 1
 ROUND_DEADLINE_SECONDS = 15
 DECISION_SECONDS = 30
 ENDOWMENT = 10
-WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 10
+# Only players who have left their page reach this: the others are moved on by the time limit.
+LEFT_PAGE_SECONDS = DECISION_SECONDS + 10
+WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + LEFT_PAGE_SECONDS + 10
 
 
 def team_of(participant):
@@ -96,12 +99,19 @@ def start_round(within_group, groups, left_over, regrouper):
 
 
 def score_round(participants: List[Participant]):
-    """Pay out the round, or note that the partner ran out of time."""
+    """Pay out the round, or note who ran out of time or left."""
     if len(participants) < 2:
-        participants[
-            0
-        ].var.outcome = "Your partner ran out of time, so nobody was paid."
+        participants[0].var.outcome = "Your partner left, so nobody was paid."
         participants[0].var.decisions = None
+        return
+    if any(p.var.decision is None for p in participants):
+        for participant in participants:
+            participant.var.decisions = None
+            participant.var.outcome = (
+                "You ran out of time, so nobody was paid."
+                if participant.var.decision is None
+                else "Your partner ran out of time, so nobody was paid."
+            )
         return
     roles = {p.var.role: p for p in participants}
     offer = roles["proposer"].var.decision
@@ -136,7 +146,32 @@ def decision_page(participant):
         GroupPrompt(prompt, participant=participant, group_type="pair", anonymous=True),
         PushButtonControl(choices=list(range(ENDOWMENT + 1))),
         save_answer="decision",
+        time_limit=DECISION_SECONDS,
         time_estimate=10,
+    )
+
+
+def forming_team(participant):
+    return "We're putting together a team for you. Each round, you play with one other player from it."
+
+
+def pairing_up(participant):
+    return "Next, you'll be paired with another player from your team."
+
+
+def waiting_for_partner(participant):
+    """Replace the decision buttons with the player's choice while their partner decides."""
+    if participant.var.decision is None:
+        text = "You ran out of time."
+    elif participant.var.role == "proposer":
+        text = f"You offer {participant.var.decision} coins."
+    else:
+        text = f"You accept at least {participant.var.decision} coins."
+    return GroupPrompt(
+        text,
+        participant=participant,
+        group_type="pair",
+        anonymous=True,
     )
 
 
@@ -171,6 +206,7 @@ def play_round():
             release_left_over=True,
             on_release=start_round,
             content="The next round starts in at most {SECONDS} s.",
+            waiting_screen=pairing_up,
         ),
         conditional(
             "paired",
@@ -182,7 +218,8 @@ def play_round():
                     id_="round_finished",
                     group_type="pair",
                     content="Waiting for your partner…",
-                    timeout_between_barriers_time=DECISION_SECONDS,
+                    waiting_screen=waiting_for_partner,
+                    timeout_between_barriers_time=LEFT_PAGE_SECONDS,
                     timeout_between_barriers_action="kick",
                     on_release=score_round,
                 ),
@@ -216,6 +253,7 @@ class Exp(psynet.experiment.Experiment):
             join_criterion=team_accepts_newcomers,
             fail_participants_below_min_size=False,
             content="Waiting for your team to form. Starting in at most {SECONDS} s.",
+            waiting_screen=forming_team,
             max_wait_time=300,
         ),
         while_loop(
