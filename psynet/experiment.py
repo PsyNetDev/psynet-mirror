@@ -5416,9 +5416,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             table=table, polymorphic_identity=polymorphic_identity
         )
         if table == "participant":
-            # Not an SQL column, so the dashboard cannot sort by it.
+            # Not an SQL column, so the dashboard cannot sort or search by it.
             columns.append(
-                {"name": "pseudonym", "data": "pseudonym", "orderable": False}
+                {
+                    "name": "pseudonym",
+                    "data": "pseudonym",
+                    "orderable": False,
+                    "searchable": False,
+                }
             )
         return columns
 
