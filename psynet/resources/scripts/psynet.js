@@ -221,6 +221,9 @@
       comments: [],
       var: psynetTemplateData.jsVars,
       submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
+      // When the current page left the server, in Date.now() milliseconds; the
+      // navigation start on a full load, otherwise when /response answered.
+      pageReceivedAt: performance.timeOrigin || Date.now(),
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -3590,6 +3593,7 @@
 
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
+      psynet.pageReceivedAt = Date.now();
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();

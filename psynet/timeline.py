@@ -1434,7 +1434,7 @@ class Page(Elt):
         server more than ``TIME_LIMIT_GRACE_SECONDS`` (5) after the limit is
         replaced by ``time_limit_answer`` too. Answers given because of the
         time limit skip validation and have ``time_limit_reached`` in their
-        metadata.
+        metadata. Cannot be combined with ``session_id``.
 
     time_limit_answer
         The answer recorded when ``time_limit`` runs out (default ``None``).
@@ -1651,6 +1651,10 @@ class Page(Elt):
         self.start_trial_automatically = start_trial_automatically
         if time_limit is not None and time_limit < 0:
             raise ValueError(f"time_limit must not be negative, got {time_limit}.")
+        if time_limit is not None and session_id is not None:
+            # Same-session updates keep the page's scripts, so the countdown
+            # would not restart and could submit the next page.
+            raise ValueError("A page cannot have both time_limit and session_id.")
         self.time_limit = time_limit
         self.time_limit_answer = time_limit_answer
         if show_abort_button is not None:

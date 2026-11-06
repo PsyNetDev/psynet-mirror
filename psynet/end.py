@@ -173,15 +173,19 @@ class EndLogic(ExitLogic):
     def _finish_next_step(self, experiment):
         """Tell the participant what Finish does on this debrief."""
         _ = get_translator()
-        if self.auto_continue_seconds is not None:
-            countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
-                math.ceil(self.auto_continue_seconds)
-            )
-            text = _("This page continues by itself in {SECONDS} s.")
-            return dominate.util.raw(escape(text).replace("{SECONDS}", countdown))
         if experiment.with_lucid_recruitment():
-            return _("Click Finish to return to your panel.")
-        return _("Click Finish to finalize the session.")
+            text = _("Click Finish to return to your panel.")
+        else:
+            text = _("Click Finish to finalize the session.")
+        if self.auto_continue_seconds is None:
+            return text
+        countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
+            math.ceil(self.auto_continue_seconds)
+        )
+        auto_continue = _("This page continues by itself in {SECONDS} s.")
+        return dominate.util.raw(
+            escape(text) + " " + escape(auto_continue).replace("{SECONDS}", countdown)
+        )
 
 
 class SuccessfulEndLogic(EndLogic):
