@@ -377,7 +377,8 @@ def _team_and_pairs(exp, n, **kwargs):
 
 def _partner(participant):
     (partner,) = [
-        p for p in participant.active_sync_groups["pair"].participants
+        p
+        for p in participant.active_sync_groups["pair"].participants
         if p is not participant
     ]
     return partner
@@ -392,7 +393,10 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
 
     _arrive(exp, pairs, team)
     first = {p.id: (pairs.role(p), _partner(p)) for p in team}
-    assert sorted(role for role, _ in first.values()) == ["proposer"] * 2 + ["responder"] * 2
+    assert (
+        sorted(role for role, _ in first.values())
+        == ["proposer"] * 2 + ["responder"] * 2
+    )
     assert all(pairs.role(_partner(p)) != pairs.role(p) for p in team)
 
     _arrive(exp, pairs, team)

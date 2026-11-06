@@ -144,7 +144,9 @@ def score_round(participants: List[Participant]):
         if not accepted:
             outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
         else:
-            coins = ENDOWMENT - offer if pairing.role(participant) == "proposer" else offer
+            coins = (
+                ENDOWMENT - offer if pairing.role(participant) == "proposer" else offer
+            )
             outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
         participant.var.outcome = outcome
 

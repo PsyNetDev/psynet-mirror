@@ -2852,7 +2852,9 @@ class Regrouper(Grouper):
         if self.roles and not self.keep_roles:
             for member, role in self._least_held_roles(group).items():
                 counts = self._history(member).get("role_counts", {})
-                repeats += counts.get(role, 0) - min(counts.get(r, 0) for r in self.roles)
+                repeats += counts.get(role, 0) - min(
+                    counts.get(r, 0) for r in self.roles
+                )
         return repeats
 
     def _give_kept_roles(self, members):
