@@ -7825,8 +7825,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
         )
         client_ip_address = cls.get_client_ip_address()
-        # Only non-default flags are passed, so process_response overrides
-        # written before these keywords existed keep working.
+        # ``interrupted`` is only passed when true, so process_response
+        # overrides written before that keyword existed keep working.
         flags = {}
         if interrupted:
             flags["interrupted"] = True

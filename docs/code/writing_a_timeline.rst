@@ -221,11 +221,13 @@ branch of end logic, which you can replace with keyword arguments to
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
-The unsuccessful end page says why the participant stopped when PsyNet itself
-ended their session, for example "We waited too long for other participants,
-so we had to end your session." To explain
-your own reasons, pass a function of the participant that returns a line, or
-``None`` to keep PsyNet's:
+When PsyNet ends a multiplayer session itself (a participant waited too long
+at a barrier, was too slow to reach the next one, or their group became too
+small), the unsuccessful end page says why, for example "We waited too long
+for other participants, so we had to end your session." Other endings, such
+as screening, get no such line. To explain your own reasons, pass a line, or
+a function of the participant that returns a line or ``None`` to keep
+PsyNet's:
 
 .. code-block:: python
 

@@ -298,7 +298,13 @@ class GroupPrompt(Prompt):
         return me + [m for m in members if m.id != self.participant.id]
 
     def _left_members(self):
-        """Return former members who left the group without joining another of its type."""
+        """Return former members who left the group without joining another of its type.
+
+        Groups that take top-ups are open-ended, like a lobby, so their
+        leavers are not shown.
+        """
+        if self.group.accepts_top_ups:
+            return []
         active_ids = {p.id for p in self.group.active_participants}
         left = {}
         for link in self.group.participant_links:

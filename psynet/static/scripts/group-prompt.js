@@ -14,6 +14,7 @@ export async function activate({root, vars}) {
     var latestSeats = [];
     var redrawing = false;
     var redrawAgain = false;
+    var failedRedraws = 0;
 
     function memberAt(seat) {
         return root.querySelector('.psynet-group-member[data-seat="' + Number(seat) + '"]');
@@ -57,7 +58,10 @@ export async function activate({root, vars}) {
     }
 
     function drawnMembers() {
-        return Array.from(root.querySelectorAll(".psynet-group-member[data-seat]"))
+        // Members who left stay drawn, faded, but are not in the event's members.
+        return Array.from(
+            root.querySelectorAll(".psynet-group-member[data-seat]:not(.psynet-group-member--left)")
+        )
             .map(function (member) { return Number(member.dataset.seat); })
             .sort(function (a, b) { return a - b; });
     }
@@ -93,7 +97,13 @@ export async function activate({root, vars}) {
             cache: false,
             data: {uniqueId: psynet.uniqueId, token: config.redraw_token},
         }).done(function (data) {
+            failedRedraws = 0;
             if (data && data.html && root.isConnected) replaceMembers(data.html);
+        }).fail(function () {
+            failedRedraws += 1;
+            if (failedRedraws <= 3 && root.isConnected) {
+                setTimeout(redraw, 2000 * failedRedraws);
+            }
         }).always(function () {
             redrawing = false;
             showTicks(latestSeats);
