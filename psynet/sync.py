@@ -168,6 +168,7 @@ from psynet.utils import (
     call_if_callable,
     get_config,
     get_logger,
+    get_translator,
 )
 
 logger = get_logger()
@@ -3420,6 +3421,14 @@ def _waiting_page_barrier_id(participant):
     return None
 
 
+def _release_notice(barrier):
+    """Return the notice a waiting page shows once its barrier releases the participant."""
+    _p = get_translator(context=True)
+    if isinstance(barrier, (GroupBarrier, Grouper)):
+        return _p("waiting", "Your group is ready. Moving on in {SECONDS} s.")
+    return _p("waiting", "Moving on in {SECONDS} s.")
+
+
 def waiting_page_config(page, participant):
     """Return the browser config for a page shown while waiting at a barrier, or ``None``.
 
@@ -3437,6 +3446,7 @@ def waiting_page_config(page, participant):
         return {
             "barrier_id": barrier.id,
             "release_grace_ms": round(barrier.release_grace * 1000),
+            "release_notice": _release_notice(barrier),
         }
     barrier_id = None if participant.failed else _waiting_page_barrier_id(participant)
     if barrier_id is None:

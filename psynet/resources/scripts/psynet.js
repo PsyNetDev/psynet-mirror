@@ -960,7 +960,8 @@
      * the server about every 2 seconds whether the barrier has released the
      * participant. On release, ``psynetWaitingRelease`` is dispatched on
      * ``window`` and the page ends after the barrier's ``release_grace``,
-     * unless it is submitted first. Pages that a release may not end (inside
+     * unless it is submitted first. Meanwhile the header counts down to the
+     * end, unless a listener cancels the event. Pages that a release may not end (inside
      * trials, or with ``release_grace=None``) run to their end.
      * ``psynetWaitingStatus`` carries ``releaseInMs`` for countdowns.
      */
@@ -970,6 +971,7 @@
       pollingConfig: null,
       pollTimer: null,
       graceTimer: null,
+      noticeTimer: null,
       pollIntervalMs: 2000,
 
       start(config) {
@@ -982,9 +984,13 @@
       stop() {
         clearTimeout(psynet.waiting.pollTimer);
         clearTimeout(psynet.waiting.graceTimer);
+        clearInterval(psynet.waiting.noticeTimer);
+        if (psynet.waiting.released) {
+          psynet.waiting.released = false;
+          psynet.hideArrivalNotice();
+        }
         psynet.waiting.config = null;
         psynet.waiting.pollingConfig = null;
-        psynet.waiting.released = false;
       },
 
       async poll() {
@@ -1037,15 +1043,38 @@
           return;
         }
         psynet.waiting.released = true;
-        window.dispatchEvent(
+        let showNotice = window.dispatchEvent(
           new CustomEvent("psynetWaitingRelease", {
+            cancelable: true,
             detail: { graceMs: config.release_grace_ms },
           }),
         );
+        let endsAt = Date.now() + config.release_grace_ms;
+        if (showNotice && config.release_notice && config.release_grace_ms > 0) {
+          psynet.waiting.showReleaseNotice(config.release_notice, endsAt);
+        }
         psynet.waiting.graceTimer = setTimeout(
           psynet.waiting.interrupt,
           config.release_grace_ms,
         );
+      },
+
+      // Counts down in the header's status line, which arrival notices then
+      // leave alone until the page ends.
+      showReleaseNotice(template, endsAt) {
+        let render = () => {
+          if (!psynet.waiting.released) {
+            clearInterval(psynet.waiting.noticeTimer);
+            return;
+          }
+          let seconds = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+          psynet.showArrivalNotice(template.replace("{SECONDS}", seconds), {
+            release: true,
+          });
+        };
+        clearInterval(psynet.waiting.noticeTimer);
+        render();
+        psynet.waiting.noticeTimer = setInterval(render, 250);
       },
 
       interrupt() {
@@ -1066,8 +1095,11 @@
       document.getElementById("psynet-arrival-notice")?.remove();
     };
 
-    psynet.showArrivalNotice = function (message) {
+    psynet.showArrivalNotice = function (message, { release = false } = {}) {
       if (!message || document.body.classList.contains("timeline-held")) {
+        return;
+      }
+      if (psynet.waiting.released && !release) {
         return;
       }
       let notice = document.getElementById("psynet-arrival-notice");
@@ -1083,6 +1115,9 @@
     };
 
     psynet.applyArrivalNotice = function (notice) {
+      if (psynet.waiting.released) {
+        return;
+      }
       if (notice) {
         psynet.showArrivalNotice(notice);
       } else {

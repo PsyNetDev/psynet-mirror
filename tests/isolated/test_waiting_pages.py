@@ -73,6 +73,9 @@ def test_release_interrupts_a_waiting_page(
         first_id = first.id
         waiting = _json_timeline(exp, first).get_json()["attributes"]["waiting"]
         assert waiting["release_grace_ms"] == 3000
+        assert waiting["release_notice"] == (
+            "Your group is ready. Moving on in {SECONDS} s."
+        )
         assert not waiting_status_payload(first.unique_id, waiting["barrier_id"])[
             "released"
         ]
