@@ -203,6 +203,17 @@ def test_wait_while_content_can_depend_on_the_participant():
     assert hold.translated_content(participant) == "Waiting for the proposer"
 
 
+def test_wait_while_can_show_a_waiting_screen():
+    logic = wait_while(lambda: True, expected_wait=1, waiting_screen=_waiting_screen)
+    hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
+
+    screen = hold.waiting_screen_page(_waiting_participant(False))
+    assert screen.prompt.text == "You offered 5 coins."
+    assert hold.waiting_screen_page(_waiting_participant(True)) is None
+    with pytest.raises(ValueError, match="waiting_screen only applies"):
+        wait_while(lambda: True, expected_wait=1, wait_page=WaitPage, waiting_screen="Hi")
+
+
 def test_wait_while_rejects_content_with_wait_page():
     with pytest.raises(
         ValueError, match="content only applies when wait_page is omitted"

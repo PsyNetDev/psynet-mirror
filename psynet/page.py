@@ -261,6 +261,7 @@ def wait_while(
     fix_time_credit: Optional[bool] = None,
     content: Union[str, Markup, dom_tag, Callable, None] = None,
     on_timeout: Optional[Callable] = None,
+    waiting_screen=None,
 ):
     """
     Displays the participant a waiting page while a given condition
@@ -323,6 +324,14 @@ def wait_while(
         ``max_wait_time`` is reached, before the participant is failed or
         moves on. It must not commit the database session.
 
+    waiting_screen
+        What to show in place of the current page while the participant
+        waits, as for :class:`~psynet.sync.Barrier`: text, a prompt, a
+        :class:`~psynet.modular_page.ModularPage` that nothing submits, or a
+        module-level function of the participant returning one of these (or
+        ``None`` to keep the current page). Only used when ``wait_page`` is
+        omitted.
+
     Returns
     -------
 
@@ -335,6 +344,8 @@ def wait_while(
     uses_timeline_hold = wait_page is None
     if wait_page is not None and content is not None:
         raise ValueError("content only applies when wait_page is omitted.")
+    if wait_page is not None and waiting_screen is not None:
+        raise ValueError("waiting_screen only applies when wait_page is omitted.")
     if fix_time_credit is None:
         fix_time_credit = not uses_timeline_hold
 
@@ -368,6 +379,7 @@ def wait_while(
             message_kind="generic" if content is None else None,
             fail_on_timeout=fail_on_timeout,
             on_timeout=on_timeout,
+            waiting_screen=waiting_screen,
         )
         hold_logic = hold if log_message is None else join(CodeBlock(log), hold)
         return join(
