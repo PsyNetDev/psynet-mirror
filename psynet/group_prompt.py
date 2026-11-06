@@ -389,10 +389,20 @@ class GroupPrompt(Prompt):
         return list(clusters.values())
 
     def _subgroup_key(self, member):
+        """Return the member's subgroup; a former member keeps their last one."""
         if callable(self.subgroups):
             return self.subgroups(member)
         subgroup = member.active_sync_groups.get(self.subgroups)
-        return None if subgroup is None else subgroup.id
+        if subgroup is not None:
+            return subgroup.id
+        if member in self.group.active_participants:
+            return None
+        links = [
+            link
+            for link in member.sync_group_links
+            if link.sync_group.group_type == self.subgroups
+        ]
+        return max(links, key=lambda link: link.id).sync_group_id if links else None
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
