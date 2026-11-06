@@ -1172,6 +1172,7 @@
       }
       psynet.arrivalRequests = (psynet.arrivalRequests || 0) + 1;
       const request = psynet.arrivalRequests;
+      const pageUuid = window.pageUuid;
       $.ajax({
         url: "/timeline/arrival_notice",
         cache: false,
@@ -1179,6 +1180,10 @@
       }).done(function (data) {
         // Waiting screens get arrival updates on their own channel.
         if (!psynet.arrivalUpdates && !psynet.timelineHold) {
+          return;
+        }
+        // The answer describes the page that asked for it.
+        if (pageUuid !== window.pageUuid) {
           return;
         }
         psynet.applyArrivalSnapshot(data || {}, request);

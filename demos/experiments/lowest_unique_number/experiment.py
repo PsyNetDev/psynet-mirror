@@ -67,11 +67,7 @@ def choose_number(participant):
     text = f"Pick a number. You have {CHOICE_SECONDS} seconds."
     prompt = text
     if room is not None:
-        others = len(room.participants) - 1
-        text = (
-            f"You're in a room with {others} other player{'s' * (others != 1)}. {text}"
-        )
-        # Ticks appear as the others choose.
+        # The prompt shows who is in the room, live, and ticks them as they choose.
         prompt = GroupPrompt(text, group=room, participant=participant)
     return ModularPage(
         "choose",
@@ -164,7 +160,7 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         _wait_while_held(bots)
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
-        assert "You're in a room with 2 other players." in bots[0].current_page_text
+        assert "Pick a number." in bots[0].current_page_text
 
         # The third player doesn't choose in time, so the room goes ahead without them.
         bots[0].take_page(response=1)

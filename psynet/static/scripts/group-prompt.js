@@ -14,6 +14,7 @@ export async function activate({root, vars}) {
     var latestSeats = [];
     var redrawing = false;
     var redrawAgain = false;
+    var failedRedraws = 0;
 
     function memberAt(seat) {
         return root.querySelector('.psynet-group-member[data-seat="' + Number(seat) + '"]');
@@ -93,7 +94,13 @@ export async function activate({root, vars}) {
             cache: false,
             data: {uniqueId: psynet.uniqueId, token: config.redraw_token},
         }).done(function (data) {
+            failedRedraws = 0;
             if (data && data.html && root.isConnected) replaceMembers(data.html);
+        }).fail(function () {
+            failedRedraws += 1;
+            if (failedRedraws <= 3 && root.isConnected) {
+                setTimeout(redraw, 2000 * failedRedraws);
+            }
         }).always(function () {
             redrawing = false;
             showTicks(latestSeats);
