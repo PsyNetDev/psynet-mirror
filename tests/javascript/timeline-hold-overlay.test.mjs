@@ -11,13 +11,11 @@ const SOURCE = fs.readFileSync(
 );
 
 function extractFunction(name) {
-  const start = SOURCE.indexOf(`psynet.${name} = function`);
-  assert.notEqual(start, -1, `missing psynet.${name}`);
-  const match = SOURCE.slice(start).match(
-    new RegExp(`psynet\\.${name} = function[\\s\\S]*?\\n    \\};`)
+  const match = SOURCE.match(
+    new RegExp(`psynet\\.${name} = (async )?function[\\s\\S]*?\\n    \\};`)
   );
   assert.ok(match, `could not extract psynet.${name}`);
-  return match[0].replace(`psynet.${name} = function`, `function ${name}`);
+  return match[0].replace(`psynet.${name} = `, "").replace("function", `function ${name}`);
 }
 
 function createDom({ commentDisabled = false } = {}) {
@@ -180,6 +178,58 @@ describe("timeline hold overlay reuse", () => {
     assert.equal(mainBody.inert, false);
     assert.equal(commentButton.disabled, false);
     assert.equal(document.getElementById("psynet-timeline-hold-indicator"), null);
+  });
+});
+
+describe("approved response into a waiting screen", () => {
+  function loadHandler(shownHoldUuid) {
+    const calls = [];
+    const record = (name) => async () => calls.push(name);
+    const psynet = {
+      log: { debug() {} },
+      page: { attributes: { timeline_hold: { page_uuid: shownHoldUuid } } },
+      isSameSessionPageUpdate: () => false,
+      requiresFullPageReloadTransition: () => false,
+      endPageRecording: record("endPageRecording"),
+      updatePageForTimelineHold: record("updatePageForTimelineHold"),
+      beginTimelineHold: record("beginTimelineHold"),
+      stopTimelineHold: record("stopTimelineHold"),
+      clearSubmissionControlState: record("clearSubmissionControlState"),
+      requireTimelineFragmentPayload: (response) => response.timeline_fragment,
+      loadNextTimelinePageFromResponse: record("loadNextTimelinePageFromResponse"),
+      loadNextTimelinePageWithReload: record("loadNextTimelinePageWithReload"),
+      timelineHold: {},
+    };
+    const templateData = { flags: { inplaceTimelineTransitions: true } };
+    const handle = new Function(
+      "psynet",
+      "psynetTemplateData",
+      `${extractFunction("handleApprovedResponse")}; return handleApprovedResponse;`
+    )(psynet, templateData);
+    return { handle, calls };
+  }
+
+  function holdResponse(pageUuid) {
+    const hold = { page_uuid: pageUuid, replaces_page: true };
+    return {
+      page: { attributes: { timeline_hold: hold } },
+      timeline_fragment: { page_uuid: pageUuid, html: "<div></div>" },
+    };
+  }
+
+  it("keeps waiting on the waiting screen it already shows", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-1"));
+    assert.ok(calls.includes("beginTimelineHold"));
+    assert.ok(!calls.includes("loadNextTimelinePageFromResponse"));
+    assert.ok(!calls.includes("loadNextTimelinePageWithReload"));
+  });
+
+  it("renders the waiting screen of a different hold", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-2"));
+    assert.ok(!calls.includes("beginTimelineHold"));
+    assert.ok(calls.includes("loadNextTimelinePageFromResponse"));
   });
 });
 
