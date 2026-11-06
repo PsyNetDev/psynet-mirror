@@ -181,7 +181,8 @@ on their own.
     By default each member gets the role they have had least often, so roles
     alternate; with ``keep_roles=True``, participants keep the role they are
     first given, newcomers get the role that lets the most waiting players
-    play, and players of a role nobody is free to pair with sit out.
+    play (or else the rarer role among participants still in the
+    experiment), and players of a role nobody is free to pair with sit out.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns

@@ -2640,7 +2640,9 @@ class Regrouper(Grouper):
         If ``True``, a participant keeps the role they are first given for the
         rest of the experiment. Participants without a role get one when they
         are first split, choosing the role that lets the most waiting
-        participants play; those of a role nobody is free to pair with sit out.
+        participants play, or else the role that fewer participants still in
+        the experiment have. Those of a role nobody is free to pair with sit
+        out.
 
     form_groups
         Optional callable ``form_groups(members, within_group, regrouper)``
@@ -2816,6 +2818,10 @@ class Regrouper(Grouper):
         )
 
     @property
+    def _roles_key(self):
+        return f"regrouper__{self.id}__roles"
+
+    @property
     def _history_key(self):
         return f"regrouper__{self.id}__history"
 
@@ -2857,18 +2863,40 @@ class Regrouper(Grouper):
                 )
         return repeats
 
-    def _give_kept_roles(self, members):
-        """Give members without a role the role that lets the most of them play."""
-        counts = {role: 0 for role in self.roles}
+    def _give_kept_roles(self, within_group, members):
+        """Give members without a role the role that lets the most of them play.
+
+        When the waiting members' roles are balanced, a newcomer takes the
+        role that fewer participants still in the experiment have.
+        """
+        newcomers = [m for m in members if self.role(m) is None]
+        if not newcomers:
+            return
+        waiting = {role: 0 for role in self.roles}
         for member in members:
             if self.role(member) is not None:
-                counts[self.role(member)] += 1
-        for member in random.sample(members, len(members)):
-            if self.role(member) is None:
-                fewest = min(counts.values())
-                role = random.choice([r for r, n in counts.items() if n == fewest])
-                self._update_history(member, role=role)
-                counts[role] += 1
+                waiting[self.role(member)] += 1
+        holder = self._state_holder(within_group)
+        given = dict(holder.var.get(self._roles_key, None) or {})
+        in_game = {role: 0 for role in self.roles}
+        still_playing = Participant.query.filter(
+            Participant.id.in_([int(pid) for pid in given]),
+            Participant.status == "working",
+            Participant.failed.is_(False),
+        )
+        for participant in still_playing:
+            in_game[given[str(participant.id)]] += 1
+        for member in random.sample(newcomers, len(newcomers)):
+            tally = next(
+                (t for t in (waiting, in_game) if len(set(t.values())) > 1), waiting
+            )
+            fewest = min(tally.values())
+            role = random.choice([r for r, n in tally.items() if n == fewest])
+            self._update_history(member, role=role)
+            given[str(member.id)] = role
+            waiting[role] += 1
+            in_game[role] += 1
+        holder.var.set(self._roles_key, given)
 
     def _record_group(self, group, members):
         """Count the round for each member, and give out roles."""
@@ -3064,7 +3092,7 @@ class Regrouper(Grouper):
     def _split(self, within_group, members):
         """Form this pool's groups and return the participants to release."""
         if self.keep_roles:
-            self._give_kept_roles(members)
+            self._give_kept_roles(within_group, members)
         plan = [
             list(group_members)
             for group_members in self.form_groups(members, within_group=within_group)

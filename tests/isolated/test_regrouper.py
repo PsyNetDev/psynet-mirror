@@ -427,7 +427,10 @@ def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_ses
     assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
     roles = {p.id: pairs.role(p) for p in team}
 
-    _arrive(exp, pairs, team)
+    (newcomer,) = _working_participants(exp, 1)
+    team[0].active_sync_groups["team"].add_participant(newcomer)
+    _arrive(exp, pairs, team + [newcomer])
     assert {p.id: pairs.role(p) for p in team} == roles
-    assert "pair" in sitter.active_sync_groups
+    assert pairs.role(newcomer) != pairs.role(sitter)
+    assert all("pair" in p.active_sync_groups for p in team + [newcomer])
     assert pairs.rounds_played(sitter) == 1
