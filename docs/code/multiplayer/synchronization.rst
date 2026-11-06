@@ -372,6 +372,9 @@ Without ``group``, the prompt shows the participant's group of type
 ``group_type``, or their only group. A participant who is no longer in it,
 for example because a barrier removed them for being late, sees just the
 text, so pages that a late player may still reach need no special case.
+The members who stay see the removed player faded in their seat, labelled
+"(left)". Players who simply moved on to another group of the same type,
+such as next round's pair, are no longer shown.
 
 Trial makers
 ~~~~~~~~~~~~

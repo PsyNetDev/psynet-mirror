@@ -255,9 +255,9 @@ def test_barrier_accepts_custom_hold_content():
 
     assert hold.content == "Waiting for your partner"
     assert hold.message_kind is None
-    assert hold.translated_content() == "Waiting for your partner"
+    assert hold.translated_content(None) == "Waiting for your partner"
     html = GroupBarrier(id_="tag", group_type="pair", content=tags.b("Wait"))
-    assert str(html.waiting_logic.translated_content()) == "<b>Wait</b>"
+    assert str(html.waiting_logic.translated_content(None)) == "<b>Wait</b>"
 
 
 def _content_by_role(participant):

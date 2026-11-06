@@ -1020,7 +1020,7 @@ def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
     }
     assert all(hold.content == "Waiting for your partner" for hold in holds)
     assert all(
-        hold.translated_content() == "Waiting for your partner" for hold in holds
+        hold.translated_content(None) == "Waiting for your partner" for hold in holds
     )
 
 

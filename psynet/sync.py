@@ -691,7 +691,7 @@ class _BarrierHoldPage(_TimelineHoldPage):
             return None
         return self.barrier._hold_progress_text(participant)
 
-    def overlay_html(self, participant=None):
+    def overlay_html(self, participant):
         """Return hold copy, with a live ``{SECONDS}`` countdown and the ``fail_if_hidden_for`` warning."""
         html = self._with_countdown(super().overlay_html(participant), participant)
         seconds = getattr(self.barrier, "fail_if_hidden_for", None)

@@ -15,6 +15,9 @@ Design constraints:
   the group, typically the barrier after the decision page. Live ticks come
   from that barrier's arrival updates, so they need ``notify_arrivals``
   (the default).
+- Members who leave the group, for example because a barrier removed them
+  for being late, stay in their seat, faded. Members who moved on to another
+  group of the same type, as in a new round, are no longer shown.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks, so pages without JavaScript still show the group.
 """
@@ -43,7 +46,8 @@ class GroupPrompt(Prompt):
     four people, and in a zigzag across the width of the page for more. Only the participant viewing the page is labelled
     ("You"); the others' names are read out by screen readers and shown on
     hover. Hovering over or tapping a member brings their speech bubble to
-    the front.
+    the front. A member who has left the group, rather than moved on to
+    another group of the same type, is drawn faded.
 
     Parameters
     ----------
@@ -284,13 +288,29 @@ class GroupPrompt(Prompt):
         ).format(layout, columns, label, items)
 
     def _members(self):
-        """Return the active members, starting with the viewer and then by seat."""
+        """Return the members and those who left, the viewer first and then by seat."""
         seats = _group_seats(self.group)
         members = sorted(
-            self.group.active_participants, key=lambda p: seats.get(p.id, len(seats))
+            [*self.group.active_participants, *self._left_members()],
+            key=lambda p: seats.get(p.id, len(seats)),
         )
         me = [m for m in members if m.id == self.participant.id]
         return me + [m for m in members if m.id != self.participant.id]
+
+    def _left_members(self):
+        """Return former members who left the group without joining another of its type."""
+        active_ids = {p.id for p in self.group.active_participants}
+        left = {}
+        for link in self.group.participant_links:
+            member = link.participant
+            if (
+                member.id in active_ids
+                or member.id == self.participant.id
+                or self.group.group_type in member.active_sync_groups
+            ):
+                continue
+            left[member.id] = member
+        return list(left.values())
 
     def _clusters(self):
         """Return the members in subgroups, the viewer's first."""
@@ -325,13 +345,17 @@ class GroupPrompt(Prompt):
             if self.anonymous
             else member.pseudonym.sticker_html
         )
+        has_left = member not in self.group.active_participants
         classes = ["psynet-group-member"]
         if is_me:
             classes.append("psynet-group-member--me")
+        if has_left:
+            classes.append("psynet-group-member--left")
+            label = _p("group prompt", "{NAME} (left)").format(NAME=label)
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
-        answered = self.show_progress and self.answered(member)
+        answered = self.show_progress and not has_left and self.answered(member)
         if answered:
             classes.append("psynet-group-member--answered")
         bubble = Markup("")

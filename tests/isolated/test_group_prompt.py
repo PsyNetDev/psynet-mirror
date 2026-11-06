@@ -131,6 +131,18 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     prompt = GroupPrompt("Choose", participant=third)
     assert prompt.group is None and prompt.group_html == ""
 
+    # A removed member stays in their seat, faded, until they join another room.
+    group.accepts_top_ups = True
+    group.remove_participant(late)
+    db_session.flush()
+    html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
+    assert 'psynet-group-member--left" data-seat="0"' in html
+    assert ">Your partner (left)<" in html
+    SimpleSyncGroup(group_type="room", initial_group_size=1).add_participant(late)
+    db_session.flush()
+    html = GroupPrompt(group=group, participant=early).group_html
+    assert "psynet-group-member--left" not in html and 'data-seat="0"' not in html
+
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
