@@ -11,7 +11,8 @@ Design constraints:
   is never written. Each deployment shuffles the colours and animals
   differently, so participant 10 gets a different pseudonym in each
   deployment, and a loaded export gives the same pseudonyms that
-  participants saw. Colour and animal indices cycle with coprime periods (8 and 11), so
+  participants saw, as long as it is loaded with the same PsyNet version,
+  pseudonym scheme and locale. Colour and animal indices cycle with coprime periods (8 and 11), so
   any 88 consecutive participants get different pseudonyms, and neighbours
   differ in both colour and animal, which helps colour-blind participants.
   Participants whose IDs differ by a multiple of 88 share a pseudonym.
