@@ -8,7 +8,8 @@ still join a team until one of its players has finished
 Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
 It starts the round as soon as the whole team is ready, or
 ``ROUND_DEADLINE_SECONDS`` after the previous round started, without the
-players who aren't ready yet. An odd player out sits that round out; a
+players who aren't ready yet. With an odd number of players, one who has
+played the most rounds sits that round out; a
 player left waiting alone waits up to another ``ROUND_DEADLINE_SECONDS``
 for the others to finish their round instead. Players leave the team when
 they finish, so nobody waits for them.
@@ -99,8 +100,7 @@ def leave_team(participant):
 
 def team_accepts_newcomers(group, participant):
     """Let latecomers join until a teammate has finished ``LAST_ROUND_FOR_NEWCOMERS`` rounds."""
-    rounds_played = [p.var.get("rounds_played", 0) for p in group.active_participants]
-    return max(rounds_played, default=0) < LAST_ROUND_FOR_NEWCOMERS
+    return not group.var.get("closed_to_newcomers", False)
 
 
 def keep_playing(participant):
@@ -115,6 +115,10 @@ def keep_playing(participant):
 
 def count_round_played(participant):
     participant.var.rounds_played = participant.var.get("rounds_played", 0) + 1
+    team = team_of(participant)
+    if team is not None and participant.var.rounds_played >= LAST_ROUND_FOR_NEWCOMERS:
+        # Kept on the team, so it stays closed after its players leave.
+        team.var.closed_to_newcomers = True
 
 
 def count_sit_out(participant):
@@ -122,7 +126,17 @@ def count_sit_out(participant):
 
 
 def pair_new_partners(members, within_group, regrouper):
-    """Pair members at random, avoiding last round's partner when possible."""
+    """Pair members at random, avoiding last round's partner when possible.
+
+    With an odd number of members, one who has played the most rounds sits
+    out, so a latecomer isn't left without a round.
+    """
+    if len(members) % 2:
+        most = max(p.var.get("rounds_played", 0) for p in members)
+        sitter = random.choice(
+            [p for p in members if p.var.get("rounds_played", 0) == most]
+        )
+        members = [p for p in members if p is not sitter]
     best = None
     for _ in range(20):
         shuffled = random.sample(members, len(members))
