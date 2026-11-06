@@ -1661,7 +1661,8 @@ def _reloader_exclude_patterns():
     """Return reloader exclusions that stop debug servers restarting for unrelated files.
 
     These cover checkout demos, tests and docs, and other folders next to the
-    development folder. Flask's reloader watches every ``.py`` file under each non-system
+    development folder. PsyNet and Dallinger checkouts next to or containing
+    the development folder stay watched. Flask's reloader watches every ``.py`` file under each non-system
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
@@ -1685,10 +1686,16 @@ def _reloader_exclude_patterns():
         parent = path.parent
         resolved_parent = parent.resolve()
         keep = {path.name}
+        parent_is_checkout = False
         for root in roots:
-            if root.is_relative_to(resolved_parent) and root != resolved_parent:
-                keep.add(root.relative_to(resolved_parent).parts[0])
-        patterns += _other_sibling_patterns(parent, keep)
+            if not root.is_relative_to(resolved_parent):
+                continue
+            if root == resolved_parent:
+                parent_is_checkout = True
+                continue
+            keep.add(root.relative_to(resolved_parent).parts[0])
+        if not parent_is_checkout:
+            patterns += _other_sibling_patterns(parent, keep)
     for root in roots:
         if not (root / "pyproject.toml").exists():
             continue
