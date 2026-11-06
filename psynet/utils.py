@@ -137,6 +137,15 @@ def call_function(function, *args, **kwargs):
     return function(*args, **kwargs)
 
 
+def call_if_callable(value, **kwargs):
+    """Return ``value``, or the result of calling it with context if it is a function.
+
+    Used for settings such as time limits that may be a number or a function of
+    ``participant`` and/or ``experiment``; see :func:`call_function_with_context`.
+    """
+    return call_function_with_context(value, **kwargs) if callable(value) else value
+
+
 def find_git_repo():
     """
     Finds the origin of the git repository of the current directory.

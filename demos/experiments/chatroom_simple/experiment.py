@@ -12,7 +12,8 @@ shared, persisted room), but with almost no custom code: the chatroom UI,
 message persistence and history replay are all provided by the built-in
 ``ChatRoom`` component. Instead of the chat's participant list, a
 :class:`~psynet.group_prompt.GroupPrompt` above the chat shows the pair and
-ticks a partner who has pressed Next. The structure mirrors the
+ticks a partner who has pressed Next. The chat ends by itself after
+``CHAT_SECONDS``. The structure mirrors the
 rock-paper-scissors chatroom demo, minus the game logic.
 """
 
@@ -34,6 +35,7 @@ from psynet.utils import get_logger
 logger = get_logger()
 
 GROUP_TYPE = "chat"
+CHAT_SECONDS = 120
 
 
 class ChatTrialMaker(StaticTrialMaker):
@@ -75,6 +77,7 @@ class ChatTrial(StaticTrial):
             "chat",
             GroupPrompt(
                 prompt,
+                group=self.sync_group,
                 participant=participant,
                 show_names=True,
                 note="Press Next when you have finished. "
@@ -87,6 +90,8 @@ class ChatTrial(StaticTrial):
                 show_history=True,
             ),
             time_estimate=60,
+            # Moves on by itself, so a partner who never presses Next can't hold the other up.
+            time_limit=CHAT_SECONDS,
         )
 
 

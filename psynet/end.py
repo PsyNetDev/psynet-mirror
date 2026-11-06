@@ -19,7 +19,9 @@ from psynet.timeline import (
     conditional,
     join,
 )
-from psynet.utils import call_function_with_context, get_translator
+from psynet.utils import call_function_with_context, get_logger, get_translator
+
+logger = get_logger()
 
 
 class ExitLogic(EltCollection):
@@ -173,15 +175,19 @@ class EndLogic(ExitLogic):
     def _finish_next_step(self, experiment):
         """Tell the participant what Finish does on this debrief."""
         _ = get_translator()
-        if self.auto_continue_seconds is not None:
-            countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
-                math.ceil(self.auto_continue_seconds)
-            )
-            text = _("This page continues by itself in {SECONDS} s.")
-            return dominate.util.raw(escape(text).replace("{SECONDS}", countdown))
         if experiment.with_lucid_recruitment():
-            return _("Click Finish to return to your panel.")
-        return _("Click Finish to finalize the session.")
+            text = _("Click Finish to return to your panel.")
+        else:
+            text = _("Click Finish to finalize the session.")
+        if self.auto_continue_seconds is None:
+            return text
+        countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
+            math.ceil(self.auto_continue_seconds)
+        )
+        auto_continue = _("This page continues by itself in {SECONDS} s.")
+        return dominate.util.raw(
+            escape(text) + " " + escape(auto_continue).replace("{SECONDS}", countdown)
+        )
 
 
 class SuccessfulEndLogic(EndLogic):
@@ -314,6 +320,10 @@ class UnsuccessfulEndLogic(EndLogic):
         Without one, or when it returns ``None``, PsyNet explains its own
         multiplayer reasons: waiting too long at a barrier, being too slow
         to reach the next one, or the group becoming too small.
+        A plain string replaces these built-in lines for every participant,
+        so prefer a function that returns ``None`` for reasons you don't
+        handle. Returning ``""`` shows no line at all. If the function
+        raises, PsyNet logs the error and shows its built-in line.
     """
 
     exit_context = exit_domain.ExitContext.UNSUCCESSFUL
@@ -378,16 +388,19 @@ class UnsuccessfulEndLogic(EndLogic):
 
     def failure_reason(self, participant):
         """Return the line explaining why the participant stopped early, or ``None``."""
-        if self.failure_message is not None:
-            reason = (
-                call_function_with_context(
-                    self.failure_message, participant=participant
+        reason = self.failure_message
+        if callable(reason):
+            try:
+                reason = call_function_with_context(reason, participant=participant)
+            except Exception:
+                logger.exception(
+                    "failure_message raised for participant %s; "
+                    "showing PsyNet's built-in reason instead.",
+                    getattr(participant, "id", None),
                 )
-                if callable(self.failure_message)
-                else self.failure_message
-            )
-            if reason is not None:
-                return reason
+                reason = None
+        if reason is not None:
+            return reason
         return _builtin_failure_reason(participant.failure_tags or [])
 
 
@@ -397,13 +410,13 @@ def _builtin_failure_reason(failure_tags):
     if "timeout between barriers" in failure_tags:
         return _p(
             "final_page_unsuccessful",
-            "You took too long to reach the next step, so we had to end your session.",
+            "You took too long to reach the next step, so we ended your session.",
         )
     if "sync group below minimum size" in failure_tags:
         return _p(
             "final_page_unsuccessful",
             "Too few members of your group remained to continue, "
-            "so we had to end your session.",
+            "so we ended your session.",
         )
     waited_at_barrier = any(
         tag.startswith(("timeline_hold:barrier:", "while_loop:barrier:"))
@@ -412,13 +425,21 @@ def _builtin_failure_reason(failure_tags):
     if "fail_on_timeout" in failure_tags and waited_at_barrier:
         return _p(
             "final_page_unsuccessful",
-            "We waited too long for other participants, so we had to end your session.",
+            "We waited too long for other participants, so we ended your session.",
         )
     return None
 
 
 class RejectedConsentLogic(UnsuccessfulEndLogic):
     exit_context = exit_domain.ExitContext.REJECTED_CONSENT
+
+    def __init__(self, *args, **kwargs):
+        if kwargs.get("failure_message") is not None:
+            raise TypeError(
+                "RejectedConsentLogic does not show a failure_message; "
+                "override debrief_participant to change its page."
+            )
+        super().__init__(*args, **kwargs)
 
     def before_debrief_logic(self) -> TimelineLogic:
         return conditional(

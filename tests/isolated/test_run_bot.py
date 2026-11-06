@@ -7,9 +7,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from psynet.asset import Asset
-from psynet.bot import BotDriver
+from psynet.bot import BotDriver, advance_past_wait_pages
 from psynet.experiment import Request
 from psynet.modular_page import ModularPage
+from psynet.page import WaitPage
 from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import Response
@@ -444,3 +445,17 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     driver.take_page(render_pages=False, time_factor=time_factor)
 
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
+
+
+def test_advance_past_wait_pages_names_bots_still_waiting():
+    stuck = SimpleNamespace(
+        id=7,
+        refresh_status=lambda: None,
+        get_current_page=lambda: WaitPage(wait_time=1),
+        take_page=lambda: None,
+    )
+    with pytest.raises(RuntimeError, match=r"Bots \[7\] .* after 0 s"):
+        advance_past_wait_pages([stuck], timeout=0)
+    with pytest.warns(FutureWarning, match="max_iterations"):
+        with pytest.raises(RuntimeError, match="after 1 passes"):
+            advance_past_wait_pages([stuck], max_iterations=1)
