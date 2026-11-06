@@ -2,7 +2,8 @@
 
 Players first wait in a lobby until a team of ``TEAM_SIZE`` forms, or until
 at least ``MIN_TEAM_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
-still join a team until it is near the end of the game.
+still join a team until one of its players has finished
+``LAST_ROUND_FOR_NEWCOMERS`` rounds.
 
 Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
 It starts the round as soon as the whole team is ready, or
@@ -98,7 +99,8 @@ def leave_team(participant):
 
 def team_accepts_newcomers(group, participant):
     """Let latecomers join a team only while enough rounds are left."""
-    return group.var.get("round", 0) < LAST_ROUND_FOR_NEWCOMERS
+    rounds_played = [p.var.get("rounds_played", 0) for p in group.active_participants]
+    return max(rounds_played, default=0) < LAST_ROUND_FOR_NEWCOMERS
 
 
 def keep_playing(participant):
@@ -134,8 +136,7 @@ def pair_new_partners(members, within_group, regrouper):
 
 
 def start_round(within_group, groups, left_over, regrouper):
-    """Note that the team has started a round and give each pair its roles."""
-    within_group.var.round = within_group.var.get("round", 0) + 1
+    """Give each pair its roles."""
     for pair in groups:
         proposer, responder = pair.participants
         proposer.var.role, responder.var.role = "proposer", "responder"
