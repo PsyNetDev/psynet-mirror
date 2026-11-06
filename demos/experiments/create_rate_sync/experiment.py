@@ -90,8 +90,9 @@ class CreateRateTrial(StaticTrial):
     def show_ratings(self, participant):
         result = participant.var.last_trial
         prompt = (
-            f"You chose {result['rating_self']}, "
-            + f"your partners chose {result['rating_others'][0]} and {result['rating_others'][1]}. "
+            f"You voted for {result['rating_self']}, "
+            + f"your partners voted for {result['rating_others'][0]} and {result['rating_others'][1]}. "
+            + "Here is what everyone made."
         )
         creations = result["creation_by_player"]
         counts = Counter(result["rating_by_player"].values())
@@ -187,9 +188,18 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         texts = [bot.current_page_text for bot in bots]
-        assert texts[0] == "You chose yoghurt, your partners chose pudding and yoghurt."
-        assert texts[1] == "You chose yoghurt, your partners chose pudding and yoghurt."
-        assert texts[2] == "You chose pudding, your partners chose yoghurt and yoghurt."
+        assert (
+            texts[0]
+            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made."
+        )
+        assert (
+            texts[1]
+            == "You voted for yoghurt, your partners voted for pudding and yoghurt. Here is what everyone made."
+        )
+        assert (
+            texts[2]
+            == "You voted for pudding, your partners voted for yoghurt and yoghurt. Here is what everyone made."
+        )
         assert bots[0].get_current_page().prompt.note == "yoghurt got the most votes."
 
         bots[0].take_page()
@@ -210,9 +220,18 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         texts = [bot.current_page_text for bot in bots]
-        assert texts[0] == "You chose salad, your partners chose salad and schnitzel."
-        assert texts[1] == "You chose schnitzel, your partners chose salad and salad."
-        assert texts[2] == "You chose salad, your partners chose salad and schnitzel."
+        assert (
+            texts[0]
+            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made."
+        )
+        assert (
+            texts[1]
+            == "You voted for schnitzel, your partners voted for salad and salad. Here is what everyone made."
+        )
+        assert (
+            texts[2]
+            == "You voted for salad, your partners voted for salad and schnitzel. Here is what everyone made."
+        )
 
         bots[0].take_page()
         bots[1].take_page()
@@ -232,9 +251,18 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots)
 
         texts = [bot.current_page_text for bot in bots]
-        assert texts[0] == "You chose soup, your partners chose melon and soup."
-        assert texts[1] == "You chose soup, your partners chose melon and soup."
-        assert texts[2] == "You chose melon, your partners chose soup and soup."
+        assert (
+            texts[0]
+            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made."
+        )
+        assert (
+            texts[1]
+            == "You voted for soup, your partners voted for melon and soup. Here is what everyone made."
+        )
+        assert (
+            texts[2]
+            == "You voted for melon, your partners voted for soup and soup. Here is what everyone made."
+        )
 
         bots[0].take_page()
         bots[1].take_page()
