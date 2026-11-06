@@ -511,6 +511,8 @@ def test_option_controls_reject_choices_with_the_same_text():
     [
         (PushButtonControl([1, 2]), "2", "7"),
         (DropdownControl([1, 2], force_selection=False), "", "7"),
+        (DropdownControl([1, 2]), "2", "7"),
+        (CheckboxControl([1, 2]), [], "1"),
         (RadioButtonControl([1, 2], force_selection=False), None, "7"),
         (RadioButtonControl([1, 2], show_free_text_option=True), "abc", ["1"]),
         (RadioButtonControl([1, 2], show_free_text_option=True), 2, 7),
