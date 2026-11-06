@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, Column, Float, Integer, String
 from ..field import PythonObject
 from ..utils import get_args
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
+from .main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
 
 # Overview #############################################################################################################
 
@@ -218,7 +219,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
