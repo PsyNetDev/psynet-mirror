@@ -2900,6 +2900,8 @@ class Regrouper(Grouper):
 
     def _record_group(self, group, members):
         """Count the round for each member, and give out roles."""
+        if group.id is None:
+            db.session.flush()
         roles = dict(zip(members, self.roles or []))
         if self.roles and not self.keep_roles and not self._custom_grouping:
             roles = self._least_held_roles(members)
