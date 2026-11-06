@@ -6,7 +6,10 @@ number, and the lowest number that nobody else in the room picked wins.
 
 A player who doesn't choose within ``CHOICE_SECONDS`` is removed from their
 room, so the rest of the room isn't held up, and joins the next round
-instead. Nobody is failed for missing a round.
+instead. Missing a round doesn't fail anyone. A player who comes back after
+the others' last round has started waits alone, though, and is failed once
+they reach the regrouper's ``max_wait_time`` (300 s by default), as at any
+barrier.
 
 To keep the same people together across rounds, for example in teams, form
 the teams first and regroup within them::
@@ -58,6 +61,12 @@ def score_round(participants: List[Participant]):
         }
 
 
+def round_message(seconds_left):
+    if seconds_left is None:
+        return "Waiting for another player."
+    return "The next round starts in {SECONDS} s."
+
+
 def choose_number(participant):
     # The page is rebuilt on submit, when a player who ran out of time has
     # already left the room.
@@ -80,8 +89,7 @@ def choose_number(participant):
 def show_result(participant):
     if "room" not in participant.active_sync_groups:
         return InfoPage(
-            "You ran out of time, so you sat out this round. You'll join the next one.",
-            time_estimate=5,
+            "You ran out of time, so you sat out this round.", time_estimate=5
         )
     result = participant.var.last_round
     if result["winning_number"] is None:
@@ -103,7 +111,7 @@ def play_round():
             group_size=ROOM_SIZE,
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
-            content="The next round starts in {SECONDS} s.",
+            content=round_message,
         ),
         PageMaker(choose_number, time_estimate=5),
         GroupBarrier(

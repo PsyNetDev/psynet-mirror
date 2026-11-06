@@ -94,6 +94,7 @@ release/callback receiver, not a wait page. See :class:`Barrier` for which
 methods are live-only.
 """
 
+import inspect
 import random
 import time
 import uuid
@@ -146,7 +147,7 @@ from psynet.db import (
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
-from psynet.serialize import serialize_callable
+from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
 from psynet.timeline_hold import (
     TimelineHoldRecord,
@@ -155,9 +156,15 @@ from psynet.timeline_hold import (
     _queue_countdown_update,
     _queue_timeline_hold_wake,
     _TimelineHoldPage,
+    compose_hold_overlay_html,
     default_group_barrier_arrival_message,
 )
-from psynet.utils import call_function_with_context, get_config, get_logger
+from psynet.utils import (
+    NoArgumentProvided,
+    call_function_with_context,
+    get_config,
+    get_logger,
+)
 
 logger = get_logger()
 
@@ -683,36 +690,47 @@ class _BarrierHoldPage(_TimelineHoldPage):
             return None
         return self.barrier._hold_progress_text(participant)
 
-    def overlay_html(self, participant=None):
-        """Return hold copy, replacing ``{SECONDS}`` with a live countdown."""
-        html = super().overlay_html(participant)
-        if "{SECONDS}" not in html:
-            return html
-        release_time = (
-            None
-            if participant is None
-            else self.barrier.expected_release_time(participant)
-        )
+    def overlay_html(self, participant=None, release_time=NoArgumentProvided):
+        """Return hold copy, calling a ``content`` function and filling in ``{SECONDS}``.
+
+        ``release_time`` (epoch seconds, or ``None`` if unknown) defaults to the
+        barrier's :meth:`~Barrier.expected_release_time`.
+        """
+        content = self.content
+        content_is_function = isinstance(content, SerializedCallable)
+        if not content_is_function and "{SECONDS}" not in str(content or ""):
+            return super().overlay_html(participant)
+        if self._is_silent_for(participant):
+            return compose_hold_overlay_html("", None)
+        if release_time is NoArgumentProvided:
+            release_time = (
+                None
+                if participant is None
+                else self.barrier.expected_release_time(participant)
+            )
         remaining_ms = (
             None if release_time is None else round((release_time - time.time()) * 1000)
         )
+        seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
+        if content_is_function:
+            context = {} if participant is None else {"participant": participant}
+            content = content(barrier=self.barrier, seconds_left=seconds, **context)
+        html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
+        if "{SECONDS}" not in html:
+            return html
         if remaining_ms is None or remaining_ms <= 0:
-            # A passed release time means the split is waiting on something else.
-            # The empty span takes a countdown if the barrier later sends one.
-            return Markup(
-                html.replace(
-                    "{SECONDS}",
-                    Markup('<span class="psynet-timeline-hold-countdown">…</span>'),
-                )
-            )
-        # Screen readers get the starting value once, not a live region that
-        # changes every second.
-        seconds = ceil(remaining_ms / 1000)
-        countdown = Markup(
-            '<span class="psynet-timeline-hold-countdown" aria-hidden="true"'
-            ' data-release-in-ms="{}">{}</span>'
-            '<span class="visually-hidden">{}</span>'
-        ).format(remaining_ms, seconds, seconds)
+            # The span takes a countdown if the barrier later sends one.
+            countdown = Markup(
+                '<span class="psynet-timeline-hold-countdown">{}</span>'
+            ).format("…" if remaining_ms is None else 0)
+        else:
+            # Screen readers get the starting value once, not a live region
+            # that changes every second.
+            countdown = Markup(
+                '<span class="psynet-timeline-hold-countdown" aria-hidden="true"'
+                ' data-release-in-ms="{}">{}</span>'
+                '<span class="visually-hidden">{}</span>'
+            ).format(remaining_ms, seconds, seconds)
         return Markup(html.replace("{SECONDS}", countdown))
 
     def prepare_to_resume(self, participant):
@@ -791,7 +809,12 @@ class Barrier(EltCollection):
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML.
+        pass ``markupsafe.Markup`` or a dominate tag for HTML. A ``{SECONDS}``
+        placeholder counts down to :meth:`expected_release_time`, showing "…"
+        while it is unknown. ``content`` can also be a module-level function
+        that returns the message; it may take ``seconds_left`` (whole seconds,
+        or ``None`` while the release time is unknown), ``participant`` and
+        ``barrier``.
     """
 
     def __init__(
@@ -830,7 +853,7 @@ class Barrier(EltCollection):
         self.max_wait_action = "fail"
 
     def __setattr__(self, name, value):
-        if name.startswith("on_"):
+        if name.startswith("on_") or (name == "content" and inspect.isroutine(value)):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
         super().__setattr__(name, value)
 
@@ -1758,7 +1781,8 @@ class Grouper(Barrier):
         ``markupsafe.Markup`` or a dominate tag for HTML. This Grouper's
         overlay is independent of trial-maker ``sync_group_wait_content``;
         pass ``content`` here and on later :class:`~psynet.sync.GroupBarrier`
-        waits if they should match.
+        waits if they should match. Can be a function of ``seconds_left``, as
+        for :class:`Barrier`.
 
     fix_time_credit
         If ``True``, award fixed ``expected_wait`` credit instead of actual
@@ -2183,13 +2207,15 @@ class SimpleGrouper(Grouper):
         return f"simple_grouper__{self.id}__short_start"
 
     def _refresh_countdowns(self, waiting_participants, released):
-        """Send those still waiting the new short start time when it changes.
+        """Send those still waiting the new short start time, and its message, when it changes.
 
         Runs inside the serialized barrier check, so simultaneous arrivals and
         departures are all seen.
         """
-        if self.start_short_after is None or "{SECONDS}" not in str(
-            getattr(self, "content", None) or ""
+        content = getattr(self, "content", None)
+        if self.start_short_after is None or (
+            not isinstance(content, SerializedCallable)
+            and "{SECONDS}" not in str(content or "")
         ):
             return
         released_ids = {p.id for p in released}
@@ -2199,9 +2225,14 @@ class SimpleGrouper(Grouper):
         if definition is None or definition.var.get(self._countdown_key, None) == start:
             return
         definition.var.set(self._countdown_key, start)
+        hold_page = _BarrierHoldPage(self)
         for member in remaining:
             if not member.failed:
-                _queue_countdown_update(member.id, start)
+                _queue_countdown_update(
+                    member.id,
+                    start,
+                    hold_message=hold_page.overlay_html(member, release_time=start),
+                )
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
         if len(participants) < self.initial_group_size:
@@ -2361,7 +2392,9 @@ class Regrouper(Grouper):
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
         countdown to the pool's deadline, for example
-        ``"Next round in {SECONDS} s"``.
+        ``"Next round in {SECONDS} s"``. To show other text while the deadline
+        is unknown, for example while a participant waits alone, pass a function
+        of ``seconds_left``, which is ``None`` then (see :class:`Barrier`).
 
     kwargs
         Further arguments to pass to :class:`Grouper`.
@@ -2436,6 +2469,8 @@ class Regrouper(Grouper):
             ),
             [participant],
         )
+        if len(pool) < (1 if self.release_left_over else self.min_group_size):
+            return None
         if self.clock_period is None:
             return self._deadline_reference(within_group, pool) + self.deadline
         now = time.time()
@@ -2443,8 +2478,6 @@ class Regrouper(Grouper):
         if self._enough_waiting_at_tick(pool, self._last_split(within_group), now):
             # Due now: the poller has not split the pool yet.
             return tick
-        if len(pool) < (1 if self.release_left_over else self.min_group_size):
-            return None
         return tick + self.clock_period
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:

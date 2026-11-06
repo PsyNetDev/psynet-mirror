@@ -65,7 +65,8 @@ current page, under a waiting indicator, until their group is formed.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
     down to that short start once ``min_group_size`` are waiting, and shows
-    "…" until then.
+    "…" until then; :ref:`a content function <sync-countdown-messages>` can
+    show other text instead.
 
 ``content``
     The message on the waiting indicator. If omitted, participants see
@@ -182,9 +183,24 @@ on their own.
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
     the deadline, for example ``"The next round starts in {SECONDS} s."``.
+    See :ref:`countdown messages <sync-countdown-messages>`.
 
 ``max_wait_time`` (default: 300 seconds)
     The longest a participant waits at the regrouper before being failed.
+
+.. _sync-countdown-messages:
+
+**Countdown messages.** Sometimes the barrier doesn't know yet when the
+wait will end, for example while a participant waits alone for a partner,
+and ``{SECONDS}`` shows "…". To show different text then, pass a
+module-level function as ``content``. It receives ``seconds_left``, which
+is ``None`` while the time is unknown and otherwise the whole seconds left
+(0 once the time has passed), and can also take ``participant`` and
+``barrier``. The message switches within a few seconds of the time
+becoming known:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: round_message
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by
