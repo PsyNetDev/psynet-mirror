@@ -219,7 +219,7 @@ on, and they join the next round:
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
 
-The kicked player sees "Your group went on without you." on the progress bar
+The kicked player sees "Your group went on without you. Please continue." on the progress bar
 straight away (pass ``on_arrival_message`` to change it), and is no longer in
 a room when they reach the barrier. ``skip_if_not_in_group=True`` lets them
 pass straight through, and ``show_result`` then tells them they sat the round
@@ -280,23 +280,19 @@ Arrival notices
 While a member waits at a barrier, members who have not reached it yet see a
 notice on the progress bar ("Your partner is ready.", or
 "{ARRIVED}/{TOTAL} of your group are ready."). In groups of three or more,
-the waiting indicator also says how many members are not ready yet. Set
-``notify_arrivals=False`` to turn both off, or pass ``on_arrival_message`` to
-change the text. It receives ``kind`` (``"hold"`` for the waiting indicator,
-``"notice"`` for the progress bar, ``"removed"`` for the notice a member
+the waiting indicator also has a smaller second line saying how many members
+are not ready yet. Set ``notify_arrivals=False`` to turn both off, or pass
+``on_arrival_message`` to change the notices. It receives ``kind``
+(``"notice"`` for the progress bar, ``"removed"`` for the notice a member
 sees after being kicked from the group), ``waiting_count`` and
-``group_size``, and returns the text or ``None`` to hide it. Notices must fit on one line:
+``group_size``, and returns the text or ``None`` to hide it. Notices must fit
+on one line:
 
 .. code-block:: python
 
     def arrival_message(*, kind, waiting_count, group_size, **kwargs):
-        remaining = group_size - waiting_count
-        if kind == "hold":
-            if group_size <= 2 or remaining <= 0:
-                return None
-            return f"{remaining} of {group_size} not ready yet"
         if kind == "removed":
-            return "Your partner went on without you."
+            return "Your partner went on without you. Please continue."
         return "Your partner is ready."
 
     GroupBarrier(
@@ -305,6 +301,19 @@ sees after being kicked from the group), ``waiting_count`` and
         content="Waiting for your partner",
         on_arrival_message=arrival_message,
     )
+
+The waiting indicator's own text comes from ``content``. A ``content``
+function on a group barrier can also take ``waiting_count`` and
+``group_size``; return :func:`~psynet.sync.hold_message` from it to write the
+second line yourself, or to leave it out:
+
+.. code-block:: python
+
+    def waiting_text(waiting_count, group_size):
+        return hold_message(
+            "Waiting for the rest of the room…",
+            f"{waiting_count} of {group_size} have chosen",
+        )
 
 Trial makers
 ~~~~~~~~~~~~

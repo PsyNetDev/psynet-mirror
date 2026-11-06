@@ -67,6 +67,7 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
+    hold_message,
     pending_arrival_notice_for,
 )
 from psynet.timeline import Page, PageMaker, Response, Timeline
@@ -78,6 +79,7 @@ from psynet.timeline_hold import (
     _timeline_hold_channel,
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
+    default_hold_progress,
 )
 from psynet.utils import get_config
 
@@ -5611,30 +5613,11 @@ def test_last_group_arrival_defers_when_a_partner_is_locked(
 
 
 def test_default_group_barrier_arrival_message_copy():
+    assert default_hold_progress(waiting_count=1, group_size=2) is None
     assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=1, group_size=2
-        )
-        is None
+        default_hold_progress(waiting_count=1, group_size=3) == "2 of 3 not ready yet"
     )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=1, group_size=3
-        )
-        == "2 of 3 not ready yet"
-    )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=2, group_size=3
-        )
-        == "1 of 3 not ready yet"
-    )
-    assert (
-        default_group_barrier_arrival_message(
-            kind="hold", waiting_count=3, group_size=3
-        )
-        is None
-    )
+    assert default_hold_progress(waiting_count=3, group_size=3) is None
     assert (
         default_group_barrier_arrival_message(
             kind="notice", waiting_count=1, group_size=2
@@ -5771,6 +5754,34 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     overlay = barrier.waiting_logic.overlay_html(first)
     assert "1 of 3 not ready yet" in overlay
     assert pending_arrival_notice_for(third) == "2/3 of your group are ready."
+
+
+def _chosen_waiting_text(waiting_count, group_size):
+    return hold_message(
+        "Waiting for the room", f"{waiting_count} of {group_size} have chosen"
+    )
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_group_hold_content_function_writes_its_own_progress_line(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    first, _, _ = _sync_group_of(exp, db_session, 3)[0]
+    barrier = GroupBarrier(
+        id_="group_hold_custom_progress",
+        group_type="main",
+        content=_chosen_waiting_text,
+    )
+
+    _arrive_at_group_barrier(exp, barrier, first)
+    db_session.commit()
+    overlay = barrier.waiting_logic.overlay_html(first)
+    assert "Waiting for the room" in overlay
+    assert "1 of 3 have chosen" in overlay
+    assert "not ready yet" not in overlay
 
 
 def _group_n_active(group_id):
@@ -6475,7 +6486,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     assert set(released) == set(waiting_participants)
     assert (
         pending_arrival_notice_for(missing_participant)
-        == "Your group went on without you."
+        == "Your group went on without you. Please continue."
     )
     missing_participant.page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participant) is None
