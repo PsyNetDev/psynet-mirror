@@ -224,12 +224,22 @@ Timeouts
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
     Members who arrive promptly may wait this long for the others, so the
     barrier's ``max_wait_time`` must be longer; it defaults to 20 seconds plus
-    this timeout.
+    this timeout. This guarantee assumes fixed membership: in a group that
+    accepts top-ups, a newcomer is timed from when they joined, so members
+    already waiting can reach ``max_wait_time`` first.
+
+    At a group's first barrier the timeout counts from when the group formed.
+    Size it to cover everything between the grouper and that barrier, such as
+    instructions or a practice trial, or members who read slowly are timed
+    out before they arrive.
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``.
+and ``sync_group_timeout_between_barriers_action``. As with a barrier,
+``sync_group_max_wait_time`` must be longer than
+``sync_group_timeout_between_barriers_time``, so raise it when you set a
+between-barrier timeout of 45 seconds or more.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while

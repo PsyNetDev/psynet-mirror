@@ -202,6 +202,21 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
 
 
+def test_sync_group_timeout_between_barriers_must_be_below_max_wait():
+    with pytest.raises(ValueError, match="sync_group_timeout_between_barriers_time"):
+        StaticTrialMaker(
+            id_="slow_barriers",
+            trial_class=CustomStaticTrial,
+            nodes=[StaticNode(definition={"x": 1})],
+            expected_trials_per_participant=1,
+            max_trials_per_participant=1,
+            recruit_mode="n_trials",
+            target_trials_per_node=1,
+            sync_group_type="group",
+            sync_group_timeout_between_barriers_time=60,
+        )
+
+
 @pytest.mark.parametrize(
     "make, kwargs, message",
     [
