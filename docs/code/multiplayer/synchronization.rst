@@ -337,7 +337,10 @@ function of the participant that returns one of these, or ``None`` to keep
 the last page. The participant can't submit a waiting screen, so a page
 with a Next button, push buttons or ``auto_advance`` raises an error; use
 a control that doesn't submit, such as ``NullControl``. Groupers take ``waiting_screen`` too,
-for example to replace the instructions while a team forms. Here the
+for example to replace the instructions while a team forms. A barrier
+without a waiting screen (or one whose function returns ``None``) that
+follows another barrier's waiting screen shows a plain waiting page, since
+the last page is no longer on screen. Here the
 participant's own choice replaces the buttons they chose it with.
 ``show_progress=False`` hides the answer ticks, which would otherwise
 also tick a partner who reached the barrier because their page timed out:

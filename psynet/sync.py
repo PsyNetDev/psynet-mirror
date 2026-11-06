@@ -844,7 +844,8 @@ class Barrier(EltCollection):
         or a check for the release), sometimes more than once, so base it on
         the participant's state
         rather than on chance. Returning ``None`` keeps the current page, as
-        omitting ``waiting_screen`` does. The ``content`` message still shows
+        omitting ``waiting_screen`` does; if that page is another barrier's
+        waiting screen, a plain waiting page replaces it. The ``content`` message still shows
         on top. A page with a Next button, push buttons or ``auto_advance``,
         or one that needs a full page reload (for
         example deprecated ``js_links``) while
