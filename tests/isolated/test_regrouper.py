@@ -207,6 +207,20 @@ def test_simple_grouper_checks_start_short_after(kwargs):
         )
 
 
+def _five_minutes(participant):
+    return 300
+
+
+def test_simple_grouper_accepts_callable_max_wait_time_with_start_short_after():
+    SimpleGrouper(
+        "lobby",
+        initial_group_size=4,
+        min_group_size=2,
+        start_short_after=10,
+        max_wait_time=_five_minutes,
+    )
+
+
 def _count_releases(**kwargs):
     _count_releases.calls += 1
 

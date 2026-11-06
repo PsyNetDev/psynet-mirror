@@ -799,6 +799,7 @@ class Barrier(EltCollection):
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded then the participant will be failed and sent to the end of the experiment.
+        May also be a function of ``participant``, evaluated once when the participant arrives.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1295,7 +1296,8 @@ class GroupBarrier(Barrier):
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
-        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``.
+        promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``;
+        this is not checked when ``max_wait_time`` is a function.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1392,6 +1394,7 @@ class GroupBarrier(Barrier):
             return 20 + (timeout_between_barriers_time or 0)
         if (
             timeout_between_barriers_time is not None
+            and not callable(max_wait_time)
             and max_wait_time <= timeout_between_barriers_time
         ):
             raise ValueError(
@@ -2002,7 +2005,8 @@ class SimpleGrouper(Grouper):
         ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
         are waiting, they form one smaller group. Requires
         ``min_group_size < initial_group_size`` and a ``max_wait_time`` longer than
-        ``start_short_after``. Default: ``None`` (always wait for ``batch_size``).
+        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
+        Default: ``None`` (always wait for ``batch_size``).
 
     kwargs
         Further arguments to pass to Grouper.
@@ -2064,6 +2068,7 @@ class SimpleGrouper(Grouper):
         if (
             start_short_after is not None
             and self.max_wait_time is not None
+            and not callable(self.max_wait_time)
             and self.max_wait_time <= start_short_after
         ):
             raise ValueError(
