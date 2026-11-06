@@ -387,12 +387,6 @@ class UnsuccessfulEndLogic(EndLogic):
 def _builtin_failure_reason(failure_tags):
     """Explain why PsyNet ended a multiplayer session, from its failure tags, or return ``None``."""
     _p = get_translator(context=True)
-    if "hidden_while_waiting" in failure_tags:
-        return _p(
-            "final_page_unsuccessful",
-            "You switched away from this page while waiting for other participants, "
-            "so we had to end your session.",
-        )
     if "timeout between barriers" in failure_tags:
         return _p(
             "final_page_unsuccessful",

@@ -109,8 +109,8 @@ def test_end_pages_can_continue_by_themselves():
 
 def test_unsuccessful_end_explains_why_the_participant_stopped():
     """PsyNet explains its own failure tags, and an experiment can explain its own."""
-    left = SimpleNamespace(
-        failure_tags=["barrier:round", "hidden_while_waiting"], module_state=None
+    slow = SimpleNamespace(
+        failure_tags=["barrier:round", "timeout between barriers"], module_state=None
     )
     other = SimpleNamespace(failure_tags=["screening"], module_state=None)
     async_job = SimpleNamespace(
@@ -122,7 +122,7 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
     )
     assert UnsuccessfulEndLogic().failure_reason(async_job) is None
     assert "waited too long" in UnsuccessfulEndLogic().failure_reason(barrier_wait)
-    assert "switched away" in UnsuccessfulEndLogic().failure_reason(left)
+    assert "took too long" in UnsuccessfulEndLogic().failure_reason(slow)
     assert UnsuccessfulEndLogic().failure_reason(other) is None
 
     def failure_message(participant):
@@ -131,4 +131,4 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
 
     logic = UnsuccessfulEndLogic(failure_message=failure_message)
     assert logic.failure_reason(other) == "You didn't pass the hearing test."
-    assert "switched away" in logic.failure_reason(left)
+    assert "took too long" in logic.failure_reason(slow)

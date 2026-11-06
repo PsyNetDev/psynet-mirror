@@ -10,17 +10,15 @@ from dallinger import db
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from psynet import page_activity, timeline_hold
+from psynet import timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
-from psynet.page_activity import record_page_activity
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     Clock,
     GroupBarrier,
     Regrouper,
     SimpleGrouper,
-    check_barriers,
     pairs_avoiding_repeats,
 )
 from psynet.timeline import Timeline
@@ -32,11 +30,7 @@ from test_sync import (  # noqa: E402
     _arrive_at_group_barrier,
     _commit_barrier_arrivals,
 )
-from timeline_hold_helpers import (  # noqa: E402
-    _barrier_link_released,
-    _json_timeline,
-    _working_participants,
-)
+from timeline_hold_helpers import _json_timeline, _working_participants  # noqa: E402
 
 in_consents_experiment = pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
@@ -104,47 +98,6 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
         released[0].active_sync_groups["pair"]
         is (released[1].active_sync_groups["pair"])
     )
-
-
-@in_consents_experiment
-def test_a_waiter_whose_tab_is_away_is_failed(in_experiment_directory, db_session):
-    exp = get_experiment()
-    pairs = Regrouper("pair", group_size=2, deadline=300, fail_if_hidden_for=15)
-    visible, away = _working_participants(exp, 2)
-    _arrive(exp, pairs, [visible, away])
-    _backdate_arrivals(pairs, [visible, away], 20)
-    db.session.commit()
-    record_page_activity(visible.id, visible=True)
-    record_page_activity(away.id, visible=False)
-    assert "Keep this tab open" in pairs.waiting_logic.overlay_html(visible)
-
-    check_barriers()
-
-    db.session.expire_all()
-    assert not visible.failed
-    assert away.failed and "hidden_while_waiting" in away.failure_tags
-    assert _barrier_link_released(away.id, pairs.id)
-
-
-@in_consents_experiment
-def test_away_participants_counts_from_the_last_visible_check_in(
-    in_experiment_directory, db_session, monkeypatch
-):
-    exp = get_experiment()
-    seen, hidden, unseen, newcomer = _working_participants(exp, 4)
-    clock = types.SimpleNamespace(time=lambda: 1000.0)
-    monkeypatch.setattr(page_activity, "time", clock)
-    record_page_activity(hidden.id, visible=True)
-    clock.time = lambda: 1020.0
-    record_page_activity(seen.id, visible=True)
-    record_page_activity(hidden.id, visible=False)
-    since = {seen.id: 990.0, hidden.id: 990.0, unseen.id: 990.0, newcomer.id: 1010.0}
-
-    away = page_activity.away_participants(
-        [seen, hidden, unseen, newcomer], since=since, for_seconds=15
-    )
-
-    assert away == [hidden, unseen]
 
 
 @in_consents_experiment

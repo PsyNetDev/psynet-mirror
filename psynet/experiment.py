@@ -120,7 +120,6 @@ from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
 from .page import InfoPage
-from .page_activity import record_page_activity
 from .participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -4232,6 +4231,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
+
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
                 "Only bots are permitted to submit formatted answers directly "
@@ -7627,7 +7627,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         return waiting_status_payload(
             request.args.get("uniqueId"),
             request.args.get("barrierId"),
-            visible=request.args.get("visible") != "false",
         )
 
     @experiment_route("/timeline/progress_and_reward", methods=["GET"])
@@ -7825,13 +7824,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         interrupted = bool(
             get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
         )
-        # Before any SQL, so that a busy database can't make a visible waiter
-        # look as if they had left (see psynet.page_activity).
-        if (
-            json_data.get("page_visible", True) is not False
-            and str(participant_id).isdigit()
-        ):
-            record_page_activity(int(participant_id), visible=True)
         client_ip_address = cls.get_client_ip_address()
         # Only non-default flags are passed, so process_response overrides
         # written before these keywords existed keep working.
