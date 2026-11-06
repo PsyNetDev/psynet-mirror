@@ -1897,6 +1897,13 @@ class TrialMaker(Module):
         if self.sync_group_type is None:
             return False
         if self.sync_group_type not in participant.active_sync_groups:
+            if any(
+                link.sync_group.group_type == self.sync_group_type
+                for link in participant.sync_group_links
+            ):
+                # Removed from their group, for example kicked for being late,
+                # so they continue on their own.
+                return False
             participant_id = getattr(participant, "id", "<unknown>")
             raise RuntimeError(
                 f"Trial maker '{self.id}' expected participant {participant_id} "

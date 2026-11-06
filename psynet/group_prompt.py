@@ -19,8 +19,8 @@ Design constraints:
   "(left)" if they failed or left the experiment, "(out of time)" if a
   barrier removed them for being late, and "(dropped out)" otherwise.
   Members who moved on to their next group, as in a new round, are no
-  longer shown, except on pages with ``answers``, where they keep their
-  seat and bubble. The reason comes from
+  longer shown, except on pages with ``answers`` that include their answer,
+  where they keep their seat and bubble. The reason comes from
   :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks, so pages without JavaScript still show the group.
