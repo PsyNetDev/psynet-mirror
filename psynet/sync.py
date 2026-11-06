@@ -55,8 +55,9 @@ this module. That loop:
 
 - Finishes dissolving sync groups whose dissolution skipped members who were
   busy in their own request (see ``SyncGroup._dissolve``).
-- Applies ``max_wait_time`` to waiters whose hold deadline has passed. Their
-  own request normally does this, so waiters who left would otherwise stay.
+- Applies ``max_wait_time`` to waiters whose hold or waiting-page deadline has
+  passed. Their own request normally does this, so waiters who left would
+  otherwise stay.
 - Finds waiting barrier instances and checks them least recently checked
   first, new or changed ones with a head start, within a per-sweep time budget.
 - Claims each with a PostgreSQL advisory transaction lock on a dedicated
@@ -2464,9 +2465,7 @@ class Regrouper(Grouper):
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
             return None
-        if self.clock_period is not None:
-            return _latest_tick(time.time(), self.clock_period) + self.clock_period
-        if self.deadline is None:
+        if self.clock_period is None and self.deadline is None:
             return None
         pool = next(
             (
@@ -2478,7 +2477,16 @@ class Regrouper(Grouper):
             ),
             [participant],
         )
-        return self._deadline_reference(within_group, pool) + self.deadline
+        if self.clock_period is None:
+            return self._deadline_reference(within_group, pool) + self.deadline
+        now = time.time()
+        tick = _latest_tick(now, self.clock_period)
+        if self._enough_waiting_at_tick(pool, self._last_split(within_group), now):
+            # Due now: the poller has not split the pool yet.
+            return tick
+        if len(pool) < (1 if self.release_left_over else self.min_group_size):
+            return None
+        return tick + self.clock_period
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
         """Return the participant's ``within`` group, so each team waits in its own pool."""

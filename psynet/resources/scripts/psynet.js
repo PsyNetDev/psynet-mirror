@@ -944,6 +944,9 @@
     // Background tabs slow their timers down, so check for a release as soon
     // as the tab is shown again rather than at the next poll.
     document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
       psynet.resumeTimelineHold("visibility change");
       if (psynet.waiting.config && !psynet.waiting.released) {
         psynet.waiting.poll();
