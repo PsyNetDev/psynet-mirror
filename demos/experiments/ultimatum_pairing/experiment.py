@@ -107,8 +107,10 @@ def team_accepts_newcomers(group, participant):
 
 
 def keep_playing(participant):
+    team = team_of(participant)
     return (
-        team_of(participant) is not None
+        team is not None
+        and len(team.active_participants) >= 2
         and participant.var.get("rounds_played", 0) < N_ROUNDS
         and participant.var.get("rounds_sat_out", 0) < MAX_SIT_OUTS
     )

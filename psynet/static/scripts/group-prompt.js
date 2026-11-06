@@ -91,6 +91,7 @@ export async function activate({root, vars}) {
     }
 
     function redraw() {
+        clearTimeout(retryTimer);
         retryTimer = null;
         if (closed || !config.redraw_token || typeof $ === "undefined") return;
         if (redrawing) {

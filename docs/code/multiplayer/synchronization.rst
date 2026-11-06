@@ -151,7 +151,9 @@ on their own.
 ``deadline``
     Seconds since the first waiting participant arrived, or since the previous
     round started if that is later. ``Clock(45)`` instead starts rounds at fixed
-    45-second ticks, whether or not everyone is ready earlier.
+    45-second ticks, whether or not everyone is ready earlier. Make it longer
+    than a round takes, so that players who finish early are not split again
+    before the rest are back.
 
 ``within`` (default: ``None``)
     The ``group_type`` of a group to regroup within, such as a team formed
@@ -164,12 +166,13 @@ on their own.
 ``release_left_over`` (default: ``False``)
     If ``True``, participants who don't fit into a group, such as an odd one
     out when pairing, continue ungrouped so that they can see a sit-out page.
-    If ``False``, they wait for the next round. Someone waiting alone waits
-    for teammates who are still playing for up to one more ``deadline`` (or
-    ``Clock`` tick) before sitting out, so they don't sit out round after
-    round while a slow round finishes. Taking participants who stop playing
-    out of the ``within`` group with ``remove_participant`` means nobody
-    waits for them.
+    If ``False``, they wait for the next round. With ``True`` and ``within``,
+    someone waiting alone waits for teammates who are still playing for up to
+    one more ``deadline`` (or ``Clock`` tick) before sitting out, so they don't
+    sit out round after round while a slow round finishes. ``max_wait_time``
+    must then be longer than twice the deadline. Taking participants who stop
+    playing out of the ``within`` group with ``remove_participant`` means
+    nobody waits for them.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
@@ -355,7 +358,9 @@ uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
 ``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
 answered when the page is drawn. Members who join the group appear live
 too, and members who leave are faded (see below), on any page without
-``answers``, ``answered`` or ``highlight``, unless ``subgroups`` is a function:
+``answers``, ``answered`` or ``highlight``, unless ``subgroups`` is a function.
+Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
+one, PsyNet logs a warning and the group stays as first drawn:
 
 .. code-block:: python
 
@@ -400,7 +405,8 @@ outcome, may still need one. The members who stay see the removed player
 faded in their seat, labelled "(out of time)" if a barrier removed them for
 being late, "(left)" if they failed or left the experiment, and "(dropped
 out)" otherwise. Players who moved on to their next group, such as next
-round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown, and
+round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown,
+except with their answer on a results page (one with ``answers``), and
 neither are leavers of groups that accept top-ups, such as a lobby.
 Removing a member with :meth:`~psynet.sync.SyncGroup.remove_participant`
 accepts a ``reason`` (``"moved_on"`` or ``"out_of_time"``) for these labels.
