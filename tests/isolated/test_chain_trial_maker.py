@@ -221,6 +221,11 @@ def test_sync_group_timeout_between_barriers_must_be_below_a_finite_max_wait():
         sync_group_timeout_between_barriers_time=60,
         sync_group_max_wait_time=None,
     )
+    make_trial_maker(
+        sync_group_type="group",
+        sync_group_timeout_between_barriers_time=60,
+        sync_group_max_wait_time=80,
+    )
 
 
 @pytest.mark.parametrize(
