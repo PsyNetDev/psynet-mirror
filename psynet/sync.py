@@ -801,13 +801,19 @@ class Barrier(EltCollection):
         role.
 
     waiting_screen
-        Function ``waiting_screen(participant)`` returning what to show in
-        place of the current page while the participant waits: a prompt,
-        text or HTML (shown without a Next button), or a whole
-        :class:`~psynet.timeline.Page`. The ``content`` message still shows
-        on top. Return ``None`` to keep the current page, which is what
-        happens when ``waiting_screen`` is omitted. Only used when
-        ``waiting_logic`` is omitted.
+        What to show in place of the current page while the participant
+        waits: a prompt, text or HTML (shown without a Next button), or a
+        :class:`~psynet.modular_page.ModularPage` whose control has
+        ``show_next_button=False``. Pass a module-level function
+        ``waiting_screen(participant)`` to show each participant their own
+        screen. It runs once per request (a page load or a check for the
+        release), so base it on the participant's state rather than on
+        chance. Returning ``None`` keeps the current page, as omitting
+        ``waiting_screen`` does. The ``content`` message still shows on top.
+        A page with a Next button, or one that needs a full page reload (for
+        example deprecated ``js_links``) while
+        ``inplace_timeline_transitions`` is on, raises ``ValueError`` when
+        it is shown. Only used when ``waiting_logic`` is omitted.
 
     release_grace
         Seconds a participant on a ``waiting_logic`` page has to finish it

@@ -3,7 +3,7 @@ import time
 import uuid
 import warnings
 from functools import cached_property
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 from dallinger import db
 
@@ -206,7 +206,7 @@ def advance_past_wait_pages(
     bots: List["BotDriver"],
     max_iterations: Optional[int] = None,
     timeout: float = 10.0,
-    stop_at: Sequence[str] = (),
+    stop_at: Union[str, Sequence[str]] = (),
 ):
     """
     Repeatedly take wait pages and timeline holds for a group of bots until none are waiting.
@@ -224,8 +224,8 @@ def advance_past_wait_pages(
         Deprecated; use ``timeout``. If given, also stop after this many passes.
     timeout : float
         Seconds to keep trying before giving up (default 10).
-    stop_at : sequence of str
-        IDs of barriers to leave bots waiting at, for example a responder
+    stop_at : str or sequence of str
+        ID or IDs of barriers to leave bots waiting at, for example a responder
         waiting for the proposer's offer while the test plays the proposer.
 
     Raises
@@ -243,6 +243,7 @@ def advance_past_wait_pages(
             FutureWarning,
             stacklevel=2,
         )
+    stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
     deadline = time.monotonic() + timeout
     iteration = 0
     while True:

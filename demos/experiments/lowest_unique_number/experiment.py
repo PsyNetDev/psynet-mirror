@@ -75,6 +75,16 @@ def choose_number(participant):
     )
 
 
+def your_pick(participant):
+    """Replace the number buttons with the player's pick while the rest of the room chooses."""
+    # Ticks appear as the others choose.
+    return GroupPrompt(
+        f"You picked {participant.var.choice}.",
+        participant=participant,
+        group_type="room",
+    )
+
+
 def show_result(participant):
     if "room" not in participant.active_sync_groups:
         return InfoPage(
@@ -117,12 +127,14 @@ def play_round():
             min_group_size=2,
             deadline=Clock(ROUND_SECONDS),
             content="The next round starts in {SECONDS} s.",
+            waiting_screen="Getting the next round ready.",
         ),
         PageMaker(choose_number, time_estimate=5),
         GroupBarrier(
             id_="round_finished",
             group_type="room",
             content="Waiting for the rest of the room…",
+            waiting_screen=your_pick,
             timeout_between_barriers_time=CHOICE_SECONDS,
             timeout_between_barriers_action="kick",
             on_release=score_round,

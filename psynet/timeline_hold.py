@@ -743,31 +743,73 @@ class _TimelineHoldPage(Page):
         return attributes
 
     def waiting_screen_page(self, participant):
-        """Return the page shown while this hold waits, or ``None`` to keep the previous page."""
-        from psynet.modular_page import ModularPage, NullControl
+        """Return the page shown while this hold waits, or ``None`` to keep the previous page.
 
+        The ``waiting_screen`` function runs once per request; later calls
+        reuse its page, so every part of a response sees the same screen.
+        The page is prepared (``pre_render``) when it is first built, which
+        the request's write phase does before the read-only render.
+
+        Raises
+        ------
+        ValueError
+            If the screen is not a ``ModularPage``, shows a Next button, or
+            needs a full page reload under in-place transitions.
+        """
         if self.waiting_screen is None:
             return None
-        screen = call_function_with_context(
-            self.waiting_screen, participant=participant
-        )
-        if screen is None or isinstance(screen, Page):
-            return screen
-        return ModularPage(
-            "waiting_screen",
-            screen,
-            NullControl(show_next_button=False),
-            time_estimate=0,
-        )
+        cached = getattr(participant, "_waiting_screen", None)
+        if cached is not None and cached[0] == participant.page_uuid:
+            return cached[1]
+        screen = self._build_waiting_screen(participant)
+        participant._waiting_screen = (participant.page_uuid, screen)
+        return screen
 
-    def render(self, experiment, participant, partial_mode=False):
-        screen = self.waiting_screen_page(participant)
+    def _build_waiting_screen(self, participant):
+        from psynet.modular_page import ModularPage, NextButton, NullControl
+        from psynet.utils import get_config
+
+        screen = self.waiting_screen
+        if callable(screen) and not isinstance(screen, dom_tag):
+            screen = call_function_with_context(screen, participant=participant)
         if screen is None:
-            return super().render(experiment, participant, partial_mode)
+            return None
+        if not isinstance(screen, Page):
+            screen = ModularPage(
+                "waiting_screen",
+                screen,
+                NullControl(show_next_button=False),
+                time_estimate=0,
+            )
+        problem = None
+        if not isinstance(screen, ModularPage):
+            problem = "is not a ModularPage"
+        elif any(isinstance(button, NextButton) for button in screen.buttons):
+            problem = "shows a Next button"
+        elif screen.requires_full_page_reload and get_config().get(
+            "inplace_timeline_transitions"
+        ):
+            problem = "needs a full page reload"
+        if problem is not None:
+            raise ValueError(
+                f"The waiting_screen of {self.hold_id!r} returned page "
+                f"{screen.label!r}, which {problem}. A waiting screen must be "
+                "text, a prompt, or a ModularPage whose control has "
+                "show_next_button=False and which works with in-place "
+                "transitions, because the participant cannot submit it."
+            )
         # A copy, so a page the experiment reuses doesn't keep this hold's attributes.
         screen = copy.copy(screen)
         screen.attributes = self.attributes
-        screen.pre_render()
+        with forbid_commits(f"pre_render of waiting_screen of {self.hold_id!r}"):
+            screen.pre_render()
+        return screen
+
+    def render(self, experiment, participant, partial_mode=False):
+        """Render the waiting screen, if there is one, in place of the hold page."""
+        screen = self.waiting_screen_page(participant)
+        if screen is None:
+            return super().render(experiment, participant, partial_mode)
         return screen.render(experiment, participant, partial_mode)
 
     def get_bot_response(self, experiment, bot):

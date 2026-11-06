@@ -7228,18 +7228,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        cls._pre_render(page, participant)
 
         return page
+
+    @staticmethod
+    def _pre_render(page, participant):
+        """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
+        with forbid_commits(f"{type(page).__name__}.pre_render"):
+            page.pre_render()
+        if _is_timeline_hold(page):
+            page.waiting_screen_page(participant)
 
     @classmethod
     def _prepare_resolved_timeline_page(cls, experiment, participant, page):
         """Run write-phase preparation for the page that will be rendered."""
         if page is None:
             return page
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        cls._pre_render(page, participant)
         available = getattr(page, "early_exit_available", None)
         if callable(available) and available(experiment, participant):
             experiment.prepare_voluntary_exit_plan(participant)

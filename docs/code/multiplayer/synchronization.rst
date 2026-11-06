@@ -303,10 +303,13 @@ role:
     GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
 
 By default the participant's last page stays on screen, greyed out, while
-they wait. To show something else instead, pass ``waiting_screen``, a
-module-level function of the participant that returns a prompt, text or a
-whole page, or ``None`` to keep the last page. Groupers take it too, for
-example to replace the instructions while a team forms. Here the
+they wait. To show something else instead, pass ``waiting_screen``: text,
+a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
+button (``NullControl(show_next_button=False)``), or a module-level
+function of the participant that returns one of these, or ``None`` to keep
+the last page. The participant can't submit a waiting screen, so a page
+with a Next button raises an error. Groupers take ``waiting_screen`` too,
+for example to replace the instructions while a team forms. Here the
 participant's own choice replaces the buttons they chose it with:
 
 .. code-block:: python

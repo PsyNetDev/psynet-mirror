@@ -13,9 +13,10 @@ offer they would accept.
 
 A player who doesn't answer within ``DECISION_SECONDS`` gets nothing that
 round, and nor does their partner. A player who closes their page is taken
-out of their pair so their partner isn't held up. A player who misses a round joins the next one, and
-nobody is failed for being slow. Players finish after ``N_ROUNDS`` rounds in
-a pair, or after sitting out ``MAX_SIT_OUTS`` rounds.
+out of their pair so their partner isn't held up. A player who misses a
+round joins the next one, and nobody is failed for being slow. Players
+finish after ``N_ROUNDS`` rounds in a pair, or after sitting out
+``MAX_SIT_OUTS`` rounds.
 """
 
 from typing import List
@@ -152,26 +153,31 @@ def decision_page(participant):
 
 
 def forming_team(participant):
+    """Replace the welcome page while the player waits for a team."""
     return "We're putting together a team for you. Each round, you play with one other player from it."
 
 
 def pairing_up(participant):
+    """Replace the last results page while the team pairs up for the next round."""
     return "Getting the next round ready."
 
 
 def waiting_for_partner(participant):
     """Replace the decision buttons with the player's choice while their partner decides."""
     if participant.var.decision is None:
-        text = "You ran out of time."
+        text = "You ran out of time, so nobody will be paid this round."
     elif participant.var.role == "proposer":
         text = f"You offer {participant.var.decision} coins."
     else:
         text = f"You accept at least {participant.var.decision} coins."
+    # No ticks: the partner arriving releases the pair at once, and one who
+    # ran out of time would get a tick for an answer they never gave.
     return GroupPrompt(
         text,
         participant=participant,
         group_type="pair",
         anonymous=True,
+        show_progress=False,
     )
 
 
