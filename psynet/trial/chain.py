@@ -1977,12 +1977,9 @@ class ChainTrialMaker(NetworkTrialMaker):
             blocks = list(dict.fromkeys(block for block, _ in rows))
             self.init_block_order(experiment, participant, blocks)
         else:
-            participant.module_state.block_order = (
-                sync_group.leader.module_state.block_order
-            )
-            participant.module_state.set_block_position(
-                sync_group.leader.module_state.block_position
-            )
+            leader_state = self._leader_state(sync_group)
+            participant.module_state.block_order = leader_state.block_order
+            participant.module_state.set_block_position(leader_state.block_position)
 
     def init_block_order(self, experiment, participant, blocks):
         """Choose and store the participant's block order.
@@ -3016,7 +3013,14 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Return the module states that move together: the participant's, or the sync group's."""
         if self.sync_group_type:
             group = participant.active_sync_groups[self.sync_group_type]
-            return [member.module_state for member in group.participants]
+            # Members who have left, or not yet reached this trial maker, are
+            # in another module, so their current state isn't for this one.
+            return [
+                member.module_state
+                for member in group.active_participants
+                if member.module_state is not None
+                and member.module_state.module_id == self.id
+            ]
         return [participant.module_state]
 
     def _update_group_states(self, participant, **values):
