@@ -19,7 +19,8 @@ Design constraints:
   "(left)" if they failed or left the experiment, "(out of time)" if a
   barrier removed them for being late, and "(dropped out)" otherwise.
   Members who moved on to their next group, as in a new round, are no
-  longer shown. The reason comes from
+  longer shown, except on pages with ``answers``, where they keep their
+  seat and bubble. The reason comes from
   :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
   updates ticks, so pages without JavaScript still show the group.
@@ -54,7 +55,8 @@ class GroupPrompt(Prompt):
     hover. Hovering over or tapping a member brings their speech bubble to
     the front. A member who dropped out of the group is drawn faded and
     marked "(left)", "(out of time)" or "(dropped out)"; one who moved on to
-    their next group, as in a new round, is no longer shown.
+    their next group, as in a new round, is no longer shown, unless the page
+    shows their answer.
 
     Parameters
     ----------
@@ -319,20 +321,39 @@ class GroupPrompt(Prompt):
         active_ids = {p.id for p in self.group.active_participants}
         left = {}
         reasons = self._removal_reasons()
+        moved_on = self._moved_on_with_answers()
         for link in self.group.participant_links:
             member = link.participant
             if (
                 member.id in active_ids
                 or member.id == self.participant.id
-                or reasons.get(member.id) == "moved_on"
+                or (reasons.get(member.id) == "moved_on" and member.id not in moved_on)
             ):
                 continue
             left[member.id] = member
         return list(left.values())
 
+    def _moved_on_with_answers(self):
+        """Return the IDs of members who moved on but whose answers this page shows.
+
+        Results pages keep their seats, so the page reads the same for
+        players who reload it after others have gone on to the next round.
+        """
+        if self.answers is None:
+            return set()
+        reasons = self._removal_reasons()
+        return {
+            member_id
+            for member_id, reason in reasons.items()
+            if reason == "moved_on" and member_id in self.answers
+        }
+
     def _removal_reasons(self):
         """Return ``{participant_id: reason}`` from each member's latest link to the group."""
-        links = sorted(self.group.participant_links, key=lambda link: link.id or 0)
+        links = sorted(
+            self.group.participant_links,
+            key=lambda link: float("inf") if link.id is None else link.id,
+        )
         return {link.participant_id: link.removal_reason for link in links}
 
     def _left_label(self, member, label):
@@ -377,7 +398,10 @@ class GroupPrompt(Prompt):
             if self.anonymous
             else member.pseudonym.sticker_html
         )
-        has_left = member not in self.group.active_participants
+        has_left = (
+            member not in self.group.active_participants
+            and member.id not in self._moved_on_with_answers()
+        )
         classes = ["psynet-group-member"]
         if is_me:
             classes.append("psynet-group-member--me")

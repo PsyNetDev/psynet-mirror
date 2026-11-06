@@ -400,7 +400,8 @@ outcome, may still need one. The members who stay see the removed player
 faded in their seat, labelled "(out of time)" if a barrier removed them for
 being late, "(left)" if they failed or left the experiment, and "(dropped
 out)" otherwise. Players who moved on to their next group, such as next
-round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown, and
+round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown,
+except with their answer on a results page (one with ``answers``), and
 neither are leavers of groups that accept top-ups, such as a lobby.
 Removing a member with :meth:`~psynet.sync.SyncGroup.remove_participant`
 accepts a ``reason`` (``"moved_on"`` or ``"out_of_time"``) for these labels.
