@@ -203,7 +203,14 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
 
 
-def test_sync_group_timeout_between_barriers_must_be_below_a_finite_max_wait():
+def test_sync_group_max_wait_outlasts_the_timeout_between_barriers():
+    assert (
+        make_trial_maker(
+            sync_group_type="group", sync_group_timeout_between_barriers_time=60
+        ).sync_group_max_wait_time
+        == 80
+    )
+    assert make_trial_maker(sync_group_type="group").sync_group_max_wait_time == 45
     with pytest.raises(ValueError, match="sync_group_timeout_between_barriers_time"):
         StaticTrialMaker(
             id_="slow_barriers",
@@ -215,6 +222,7 @@ def test_sync_group_timeout_between_barriers_must_be_below_a_finite_max_wait():
             target_trials_per_node=1,
             sync_group_type="group",
             sync_group_timeout_between_barriers_time=60,
+            sync_group_max_wait_time=45,
         )
     make_trial_maker(
         sync_group_type="group",
