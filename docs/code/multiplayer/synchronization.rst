@@ -379,7 +379,7 @@ one, PsyNet logs a warning and the group stays as first drawn:
     def choose_number(participant):
         return ModularPage(
             "choose",
-            GroupPrompt("Pick a number.", participant=participant),
+            GroupPrompt("Pick a number.", participant=participant, group_type="room"),
             PushButtonControl(choices=[1, 2, 3, 4, 5]),
             save_answer="choice",
         )
