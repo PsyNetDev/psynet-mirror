@@ -493,8 +493,9 @@ def test_expected_wait_sets_how_often_waiting_logic_repeats():
 
     assert estimate_duration(barrier(expected_wait=9)) == 10
     assert estimate_duration(barrier()) == 6
-    with pytest.warns(FutureWarning, match="pass expected_wait"):
+    with pytest.warns(FutureWarning, match="pass expected_wait") as warned:
         legacy = barrier(waiting_logic_expected_repetitions=4)
+    assert warned[0].filename == __file__
     assert estimate_duration(legacy) == 8
     with pytest.raises(ValueError, match="not both"), pytest.warns(FutureWarning):
         barrier(expected_wait=9, waiting_logic_expected_repetitions=4)

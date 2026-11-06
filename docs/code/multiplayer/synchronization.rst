@@ -599,6 +599,13 @@ trials from another trial maker:
    :start-at: waiting_logic = PageMaker(
    :end-before: class Exp
 
+``expected_wait`` says how long participants are expected to wait, in
+seconds. With ``waiting_logic``, progress estimates assume the waiting pages
+repeat often enough to fill that time, rounded up to whole passes; here,
+``expected_wait=10 * AnimalTrial.time_estimate`` expects ten trials. Without
+``expected_wait``, three passes are expected. The older
+``waiting_logic_expected_repetitions`` argument is deprecated.
+
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
 :class:`~psynet.sync.Barrier`) after the browser notices the release, which
@@ -640,7 +647,7 @@ By default, participants are credited for the time they actually wait, up to
 ``max_wait_time``. Set ``fix_time_credit=True`` to credit every participant
 ``expected_wait`` seconds instead (1.5 seconds by default). With
 ``waiting_logic``, the waiting pages are credited by their own time
-estimates.
+estimates, for as many passes as ``expected_wait`` implies.
 
 .. seealso::
 

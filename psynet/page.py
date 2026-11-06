@@ -329,7 +329,8 @@ def wait_while(
         waits, as for :class:`~psynet.sync.Barrier`: text, a prompt, a
         :class:`~psynet.modular_page.ModularPage` that nothing submits, or a
         module-level function of the participant returning one of these (or
-        ``None`` to keep the current page). Only used when ``wait_page`` is
+        ``None`` to keep the current page). ``content`` still sets the
+        waiting indicator shown on top. Only used when ``wait_page`` is
         omitted.
 
     Returns

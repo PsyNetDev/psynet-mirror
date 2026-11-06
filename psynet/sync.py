@@ -785,10 +785,11 @@ class _ReadOnlyParticipantList(list):
 
 def _warn_from_caller(message, category):
     """Warn with the location of the first caller outside PsyNet."""
-    if sys.version_info >= (3, 12):
-        warnings.warn(message, category, skip_file_prefixes=psynet_source_prefixes())
-    else:
-        warnings.warn(message, category, stacklevel=3)
+    prefixes = psynet_source_prefixes()
+    frame, stacklevel = sys._getframe(0), 1
+    while frame is not None and frame.f_code.co_filename.startswith(prefixes):
+        frame, stacklevel = frame.f_back, stacklevel + 1
+    warnings.warn(message, category, stacklevel=stacklevel)
 
 
 def hold_message(title, progress=None):
@@ -877,8 +878,8 @@ class Barrier(EltCollection):
     expected_wait
         How long participants are expected to wait here, in seconds, for
         progress estimates and fixed time credit. With ``waiting_logic``, the
-        waiting logic is expected to repeat often enough to fill this time
-        (at least once). If omitted, a default hold expects 1.5 seconds and
+        waiting logic is expected to repeat often enough to fill this time,
+        rounded up to whole passes (at least one). If omitted, a default hold expects 1.5 seconds and
         ``waiting_logic`` three repetitions.
 
     content
