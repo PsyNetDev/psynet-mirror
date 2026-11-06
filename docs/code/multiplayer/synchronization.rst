@@ -363,7 +363,10 @@ Timeouts
     the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are timed
-    out before they arrive.
+    out before they arrive. Kicking a slow member can also take a group below
+    ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
+    which by default fails the members who arrived on time (see
+    :ref:`groups below minimum size <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
@@ -387,6 +390,8 @@ At later barriers, ``max_wait_time`` needs to cover how much longer some
 members take over the previous page than others. A member who times out
 there can take the group below ``min_group_size``, with the consequences
 described under *Groups below minimum size* below.
+
+.. _groups_below_min_size:
 
 Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~
