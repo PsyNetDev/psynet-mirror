@@ -170,7 +170,7 @@ on their own.
     someone waiting alone waits for teammates who are still playing for up to
     one more ``deadline`` (or ``Clock`` tick) before sitting out, so they don't
     sit out round after round while a slow round finishes. ``max_wait_time``
-    must then be longer than twice the deadline. Taking participants who stop
+    must then be longer than twice the deadline (or ``Clock`` period). Taking participants who stop
     playing out of the ``within`` group with ``remove_participant`` means
     nobody waits for them.
 
@@ -283,11 +283,12 @@ notice on the progress bar ("Your partner is ready.", or
 the waiting indicator also says how many members are not ready yet. Set
 ``notify_arrivals=False`` to turn both off, or pass ``on_arrival_message`` to
 change the text. It receives ``kind`` (``"hold"`` for the waiting indicator,
-``"notice"`` for the progress bar), ``waiting_count`` and ``group_size``, and
-returns the text or ``None`` to hide it. For a notice it is called whenever
-the browser fetches the current count, which can be several times per
-arrival, so it should depend only on its arguments and have no side effects.
-Notices must fit on one line:
+``"notice"`` for the progress bar, ``"removed"`` for the notice a member
+sees after being kicked from the group), ``waiting_count`` and
+``group_size``, and returns the text or ``None`` to hide it. For a notice it
+is called whenever the browser fetches the current count, which can be
+several times per arrival, so it should depend only on its arguments and
+have no side effects. Notices must fit on one line:
 
 .. code-block:: python
 
@@ -297,6 +298,8 @@ Notices must fit on one line:
             if group_size <= 2 or remaining <= 0:
                 return None
             return f"{remaining} of {group_size} not ready yet"
+        if kind == "removed":
+            return "Your partner went on without you."
         return "Your partner is ready."
 
     GroupBarrier(
