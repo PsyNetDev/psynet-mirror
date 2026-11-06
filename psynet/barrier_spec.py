@@ -31,6 +31,7 @@ from psynet.utils import finalize_template_value
 SPEC_VERSION = 1
 
 _PAGE_FIELDS = {
+    "_expected_wait_given",
     "_uses_timeline_hold",
     "_waiting_loop_markers",
     "waiting_logic",

@@ -97,8 +97,10 @@ methods are live-only.
 
 import inspect
 import random
+import sys
 import time
 import uuid
+import warnings
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
@@ -178,6 +180,7 @@ from psynet.utils import (
     get_config,
     get_logger,
     get_translator,
+    psynet_source_prefixes,
 )
 
 logger = get_logger()
@@ -780,6 +783,14 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+def _warn_from_caller(message, category):
+    """Warn with the location of the first caller outside PsyNet."""
+    if sys.version_info >= (3, 12):
+        warnings.warn(message, category, skip_file_prefixes=psynet_source_prefixes())
+    else:
+        warnings.warn(message, category, stacklevel=3)
+
+
 def hold_message(title, progress=None):
     """Return a waiting message with its own progress line.
 
@@ -848,9 +859,8 @@ class Barrier(EltCollection):
         or their current page beneath a lightweight waiting indicator.
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -865,9 +875,11 @@ class Barrier(EltCollection):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate of 0.5 seconds multiplied by
-        ``waiting_logic_expected_repetitions``.
+        How long participants are expected to wait here, in seconds, for
+        progress estimates and fixed time credit. With ``waiting_logic``, the
+        waiting logic is expected to repeat often enough to fill this time
+        (at least once). If omitted, a default hold expects 1.5 seconds and
+        ``waiting_logic`` three repetitions.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -917,7 +929,7 @@ class Barrier(EltCollection):
         self,
         id_: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fix_time_credit=False,
         expected_wait=None,
@@ -928,14 +940,20 @@ class Barrier(EltCollection):
         self.id = id_
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
+        if waiting_logic_expected_repetitions is not None:
+            _warn_from_caller(
+                "waiting_logic_expected_repetitions is deprecated; pass expected_wait "
+                "(in seconds) instead.",
+                FutureWarning,
+            )
+            if expected_wait is not None:
+                raise ValueError(
+                    "Pass expected_wait or waiting_logic_expected_repetitions, not both."
+                )
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
         self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
-        if waiting_logic is not None and expected_wait is not None:
-            raise ValueError(
-                "expected_wait only applies when waiting_logic is omitted."
-            )
         if waiting_logic is not None and content is not None:
             raise ValueError("content only applies when waiting_logic is omitted.")
         if waiting_logic is not None and waiting_screen is not None:
@@ -943,10 +961,11 @@ class Barrier(EltCollection):
                 "waiting_screen only applies when waiting_logic is omitted."
             )
         self.expected_wait = (
-            0.5 * waiting_logic_expected_repetitions
+            0.5 * (waiting_logic_expected_repetitions or 3)
             if expected_wait is None
             else expected_wait
         )
+        self._expected_wait_given = expected_wait is not None
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
         if release_grace is not None and release_grace < 0:
@@ -996,6 +1015,17 @@ class Barrier(EltCollection):
         """
         return bool(waiting_participants)
 
+    def _waiting_logic_repetitions(self):
+        """Return how often ``waiting_logic`` is expected to run while the participant waits."""
+        from psynet.timeline import estimate_duration
+
+        if not self._expected_wait_given:
+            return self.waiting_logic_expected_repetitions or 3
+        duration = estimate_duration(self.waiting_logic)
+        if duration <= 0:
+            return 1
+        return max(1, ceil(self.expected_wait / duration))
+
     def resolve(self):
         from psynet.timeline import join, while_loop
 
@@ -1008,7 +1038,7 @@ class Barrier(EltCollection):
                     not self.can_participant_exit(participant)
                 ),
                 logic=self.waiting_logic,
-                expected_repetitions=self.waiting_logic_expected_repetitions,
+                expected_repetitions=self._waiting_logic_repetitions(),
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),
@@ -1407,9 +1437,8 @@ class GroupBarrier(Barrier):
         message.
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1448,8 +1477,7 @@ class GroupBarrier(Barrier):
         holds credit actual visible waiting time up to ``max_wait_time``.
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -1553,7 +1581,7 @@ class GroupBarrier(Barrier):
         id_: str,
         group_type: str,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
@@ -1939,9 +1967,8 @@ class Grouper(Barrier):
         waiting indicator.
 
     waiting_logic_expected_repetitions
-        Expected repetitions for explicit ``waiting_logic``. For a default
-        hold, this is used only to derive the legacy ``expected_wait`` when no
-        explicit estimate is supplied.
+        Deprecated; pass ``expected_wait`` instead. Expected repetitions of
+        ``waiting_logic``.
 
     max_wait_time
         The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
@@ -1951,8 +1978,7 @@ class Grouper(Barrier):
         so make it long enough to cover long filler pages (for example trials used as filler).
 
     expected_wait
-        Expected duration of a default timeline hold. If omitted, preserves the
-        historical default estimate.
+        See :class:`Barrier`.
 
     content
         Message displayed by the default timeline hold overlay. Only used when
@@ -1988,7 +2014,7 @@ class Grouper(Barrier):
         group_type: str,
         id_: Optional[str] = None,
         waiting_logic=None,
-        waiting_logic_expected_repetitions=3,
+        waiting_logic_expected_repetitions=None,
         max_wait_time=20,
         fail_participants_below_min_size: bool = True,
         expected_wait=None,

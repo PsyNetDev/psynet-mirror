@@ -84,7 +84,7 @@ class Exp(psynet.experiment.Experiment):
                 min_group_size=3,
                 join_existing_groups=True,
                 waiting_logic=waiting_logic,
-                waiting_logic_expected_repetitions=10,
+                expected_wait=10 * AnimalTrial.time_estimate,
                 max_wait_time=120,
             ),
             for_loop(

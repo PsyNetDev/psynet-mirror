@@ -211,7 +211,9 @@ def test_wait_while_can_show_a_waiting_screen():
     assert screen.prompt.text == "You offered 5 coins."
     assert hold.waiting_screen_page(_waiting_participant(True)) is None
     with pytest.raises(ValueError, match="waiting_screen only applies"):
-        wait_while(lambda: True, expected_wait=1, wait_page=WaitPage, waiting_screen="Hi")
+        wait_while(
+            lambda: True, expected_wait=1, wait_page=WaitPage, waiting_screen="Hi"
+        )
 
 
 def test_wait_while_rejects_content_with_wait_page():
@@ -479,6 +481,23 @@ def _waiting_participant(keep_page):
     return SimpleNamespace(
         var=SimpleNamespace(keep_page=keep_page), module_state=None, page_uuid="a"
     )
+
+
+def test_expected_wait_sets_how_often_waiting_logic_repeats():
+    from psynet.page import InfoPage
+    from psynet.timeline import estimate_duration
+
+    def barrier(**kwargs):
+        filler = InfoPage("Filler", time_estimate=2)
+        return GroupBarrier("filler", group_type="pair", waiting_logic=filler, **kwargs)
+
+    assert estimate_duration(barrier(expected_wait=9)) == 10
+    assert estimate_duration(barrier()) == 6
+    with pytest.warns(FutureWarning, match="pass expected_wait"):
+        legacy = barrier(waiting_logic_expected_repetitions=4)
+    assert estimate_duration(legacy) == 8
+    with pytest.raises(ValueError, match="not both"), pytest.warns(FutureWarning):
+        barrier(expected_wait=9, waiting_logic_expected_repetitions=4)
 
 
 def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():

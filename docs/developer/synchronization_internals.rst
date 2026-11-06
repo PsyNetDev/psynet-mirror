@@ -132,5 +132,6 @@ Default holds credit the visible waiting time, including the interval
 between the server release and the browser resuming, up to
 ``max_wait_time``. Progress uses the estimated duration, so participants who
 arrive early do not appear further through the experiment. When
-``expected_wait`` is omitted, it is ``0.5 * waiting_logic_expected_repetitions``
-seconds (1.5 seconds by default).
+``expected_wait`` is omitted, it is 1.5 seconds. With ``waiting_logic``,
+``expected_wait`` sets the expected repetitions of the waiting loop, from
+:func:`~psynet.timeline.estimate_duration` of one pass.
