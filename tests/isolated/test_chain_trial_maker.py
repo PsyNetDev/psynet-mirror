@@ -334,15 +334,31 @@ def test_follower_copies_leader_group_after_leader_moved_on():
     assert follower.module_state.participant_group == "B"
 
 
-def test_participant_removed_from_their_group_starts_the_trial_maker_alone():
-    trial_maker = make_trial_maker(sync_group_type="main")
+WITHIN_CHAINS = dict(
+    chain_type="within",
+    chains_per_experiment=None,
+    chains_per_participant=1,
+    recruit_mode=None,
+)
+
+
+@pytest.mark.parametrize("chain_kwargs", [WITHIN_CHAINS, {}])
+def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
+    trial_maker = make_trial_maker(sync_group_type="main", **chain_kwargs)
     kicked = SimpleNamespace(
         active_sync_groups={},
         sync_group_links=[
-            SimpleNamespace(sync_group=SimpleNamespace(group_type="main"))
+            SimpleNamespace(active=False, sync_group=SimpleNamespace(group_type="main"))
         ],
+        select_module=lambda module_id: None,
+        module_state=SimpleNamespace(participant_group=None),
     )
     assert not trial_maker._requires_sync_group_initialization_barrier(kicked)
+
+    trial_maker.init_participant(experiment=None, participant=kicked)
+
+    assert kicked.module_state.trial_maker_initialized
+    assert kicked.module_state.participant_group == "default"
 
 
 def test_trial_sync_group_returns_none_after_kick():

@@ -269,3 +269,49 @@ it("ignores directed messages that are not hold wakes", () => {
   options.onDirect({ type: "message", targets: [{ wake_token: "w", hold_message: "<b>" }] });
   assert.deepEqual(calls, []);
 });
+
+describe("timeline hold countdown", () => {
+  function load() {
+    const element = { dataset: {}, textContent: "" };
+    const document = { querySelectorAll: () => [element] };
+    const resumes = [];
+    const psynet = { resumeTimelineHold: (reason) => resumes.push(reason) };
+    const now = { value: 0 };
+    const DateStub = { now: () => now.value };
+    for (const name of ["tickTimelineHoldCountdowns", "setTimelineHoldCountdowns"]) {
+      psynet[name] = new Function(
+        "psynet",
+        "document",
+        "Date",
+        `${extractFunction(name)}; return ${name};`
+      )(psynet, document, DateStub);
+    }
+    return { psynet, element, resumes, now };
+  }
+
+  it("counts down to the release and then checks for it once", () => {
+    const { psynet, element, resumes, now } = load();
+    psynet.setTimelineHoldCountdowns(2500);
+    assert.equal(element.textContent, "3");
+
+    now.value = 1600;
+    psynet.tickTimelineHoldCountdowns();
+    assert.equal(element.textContent, "1");
+    assert.deepEqual(resumes, []);
+
+    now.value = 2900;
+    psynet.tickTimelineHoldCountdowns();
+    psynet.tickTimelineHoldCountdowns();
+    assert.equal(element.textContent, "0");
+    assert.deepEqual(resumes, ["countdown"]);
+  });
+
+  it("shows an ellipsis while the release time is unknown", () => {
+    const { psynet, element, resumes } = load();
+    psynet.setTimelineHoldCountdowns(null);
+    assert.equal(element.textContent, "…");
+    psynet.setTimelineHoldCountdowns(0);
+    assert.equal(element.textContent, "0");
+    assert.deepEqual(resumes, []);
+  });
+});
