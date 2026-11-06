@@ -80,8 +80,9 @@ class ChatTrial(StaticTrial):
                 group=self.sync_group,
                 participant=participant,
                 show_names=True,
-                note="Press Next when you have finished. "
-                "A tick shows when your partner has.",
+                note="Press Next when you have finished; the chat also ends "
+                "by itself when the time runs out. "
+                "A tick shows when your partner has finished.",
             ),
             chatroom=ChatRoom(
                 room_id=f"chat_room_{self.sync_group.id}",
