@@ -941,8 +941,8 @@
       psynet.tickTimelineHoldCountdowns();
     };
 
-    // Barriers can fail participants whose tab stays hidden, so tell the
-    // server at once when a waiting participant's tab is shown again.
+    // Background tabs slow their timers down, so check for a release as soon
+    // as the tab is shown again rather than at the next poll.
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
       if (psynet.waiting.config && !psynet.waiting.released) {
@@ -955,8 +955,7 @@
      *
      * While a page of a barrier's ``waiting_logic`` is open, the browser asks
      * the server about every 2 seconds whether the barrier has released the
-     * participant. These checks also tell ``fail_if_hidden_for`` that the tab
-     * is open. On release, ``psynetWaitingRelease`` is dispatched on
+     * participant. On release, ``psynetWaitingRelease`` is dispatched on
      * ``window`` and the page ends after the barrier's ``release_grace``,
      * unless it is submitted first. Pages that a release may not end (inside
      * trials, or with ``release_grace=None``) run to their end.
@@ -993,7 +992,6 @@
         let params = new URLSearchParams({
           uniqueId: psynet.uniqueId,
           barrierId: config.barrier_id,
-          visible: String(document.visibilityState !== "hidden"),
         });
         let status = null;
         try {
@@ -3883,7 +3881,6 @@
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
-        page_visible: document.visibilityState !== "hidden",
         interrupted: Boolean(options.interrupted),
       });
     };
