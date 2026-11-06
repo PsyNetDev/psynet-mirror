@@ -196,6 +196,11 @@ def test_a_removed_partner_stays_in_the_viewers_subgroup(
     other_pair.add_participant(other)
     room.remove_participant(partner, reason="out_of_time")
     pair.remove_participant(partner, reason="out_of_time")
+    next_pair = SimpleSyncGroup(
+        group_type="pair", initial_group_size=2, min_group_size=1
+    )
+    db_session.add(next_pair)
+    next_pair.add_participant(partner)
     db_session.flush()
 
     html = GroupPrompt(
