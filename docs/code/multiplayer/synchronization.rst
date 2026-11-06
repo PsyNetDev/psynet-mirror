@@ -385,16 +385,19 @@ HTML such as an image. ``highlight`` marks members, with built-in styles for
 
 .. code-block:: python
 
-    room = participant.active_sync_groups["room"]
+    result = participant.var.last_round
     GroupPrompt(
         "The winning number was 2.",
         participant=participant,
-        group=room,
-        answers={p.id: p.var.choice for p in room.participants},
+        group_type="room",
+        answers=result["choice_by_player"],
         highlight={winner.id: "winner"},
     )
 
-The ``lowest_unique_number`` demo uses both.
+Store the answers when the barrier releases, as the ``lowest_unique_number``
+demo does in ``on_release``, rather than reading them from the group's
+current members: a member who has already moved on to the next round is no
+longer in the group, and would disappear if the page is reloaded.
 
 Without ``group``, the prompt shows the participant's group of type
 ``group_type``, or their only group. A participant who is no longer in it,
