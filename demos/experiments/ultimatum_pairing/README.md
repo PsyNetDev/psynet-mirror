@@ -4,11 +4,10 @@ An ultimatum game played in teams. Players wait in a lobby until a team
 forms, or start in a smaller team if nobody else arrives in time. Every
 round, the team is randomly re-paired into proposers and responders, an odd
 player out sits out, and slow players miss a round rather than holding up
-their partner or being failed. Players who leave the waiting screen for 15
-seconds are failed. An anonymous `GroupPrompt` shows the pair, with a tick
-once the partner has decided, and then both decisions in speech bubbles;
-partners appear as the same grey figure, so nobody recognises a partner from
-an earlier round.
+their partner or being failed. An anonymous `GroupPrompt` shows the pair,
+with a tick once the partner has decided, and then both decisions in speech
+bubbles; partners appear as the same grey figure, so nobody recognises a
+partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent teams made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with a custom
