@@ -1,6 +1,7 @@
 import pytest
 
 import psynet.experiment
+from psynet.bot import BotResponse
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.timeline import Response, Timeline
 from psynet.utils import get_logger
@@ -12,6 +13,12 @@ class NoGreenControl(PushButtonControl):
     def validate(self, response, **kwargs):
         if response.answer == "green":
             return "Green is an invalid answer!"
+
+
+class NoRedPage(ModularPage):
+    def validate(self, response, **kwargs):
+        if response.answer == "red":
+            return "Red is an invalid answer!"
 
 
 class Exp(psynet.experiment.Experiment):
@@ -39,6 +46,18 @@ class Exp(psynet.experiment.Experiment):
                 ["Red", "Green", "Blue"],
             ),
             time_estimate=5,
+        ),
+        NoRedPage(
+            "colors_no_red",
+            prompt="This page has a custom validation method that prohibits the answer 'red'.",
+            control=PushButtonControl(
+                ["red", "green", "blue"],
+                ["Red", "Green", "Blue"],
+            ),
+            time_estimate=5,
+            # Buttons only send their own choices, so PsyNet rejects this
+            # tampered answer before any validation method runs.
+            bot_response=BotResponse(raw_answer="purple"),
         ),
     )
 
@@ -98,5 +117,16 @@ class Exp(psynet.experiment.Experiment):
             .first()
         )
         assert response.successful_validation
+
+        assert bot.current_page_text.startswith(
+            "This page has a custom validation method that prohibits the answer 'red'."
+        )
+        with pytest.raises(
+            RuntimeError, match="The participant's response was rejected"
+        ):
+            bot.take_page()
+        assert bot.from_db("answer") == "red", "A rejected answer must not be saved"
+        bot.take_page(response="blue")
+        assert bot.from_db("answer") == "blue"
 
         bot.run_to_completion()

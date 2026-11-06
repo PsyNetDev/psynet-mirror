@@ -20,6 +20,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     TimedPushButtonControl,
 )
 from psynet.timeline import FailedValidation
+from psynet.utils import NoArgumentProvided
 
 # from importlib import resources
 
@@ -516,15 +517,16 @@ def test_option_controls_reject_choices_with_the_same_text():
     ],
 )
 def test_option_controls_reject_answers_that_name_no_choice(control, valid, invalid):
-    """A tampered answer fails validation, even when the page has its own validate function."""
-    page = ModularPage("test", "Hi!", control, validate=lambda answer: None)
+    """A browser answer the control could not have sent fails validation."""
+    assert control._check_raw_answer(valid) is None
+    assert isinstance(control._check_raw_answer(invalid), FailedValidation)
+    # Bots that submit a formatted answer send no raw answer.
+    assert control._check_raw_answer(NoArgumentProvided) is None
 
-    def validate(raw_answer):
-        response = SimpleNamespace(answer=control.format_answer(raw_answer))
-        return page.validate(response, raw_answer=raw_answer, answer=response.answer)
 
-    assert validate(valid) is None
-    assert isinstance(validate(invalid), FailedValidation)
+def test_timed_push_buttons_accept_any_raw_answer():
+    """Timed buttons save the event log, so their raw answer names no choice."""
+    assert TimedPushButtonControl([1, 2])._check_raw_answer(None) is None
 
 
 @pytest.mark.parametrize(

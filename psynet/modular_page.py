@@ -877,8 +877,8 @@ class Control(JavaScriptContributor):
     def _check_raw_answer(self, raw_answer):
         """Reject a browser answer the control could not have produced.
 
-        Runs before :meth:`validate` and before any custom page ``validate``
-        function. Returns ``None`` or a
+        Response processing runs it before the page's ``validate`` method, so
+        pages that override ``validate`` cannot skip it. Returns ``None`` or a
         :class:`~psynet.timeline.FailedValidation`.
         """
         return None
@@ -1002,7 +1002,7 @@ class OptionControl(Control):
         if raw_answer is NoArgumentProvided or self._raw_answer_is_allowed(raw_answer):
             return None
         _p = get_translator(context=True)
-        return FailedValidation(_p("validation", "Please choose one of the options."))
+        return FailedValidation(_p("validation", "You need to select an answer!"))
 
     def format_answer(self, raw_answer, **kwargs):
         """Return the choice named by the browser's string answer.
@@ -2251,11 +2251,6 @@ class ModularPage(Page):
         return "\n".join([renderers[key] for key in self.layout])
 
     def validate(self, response, **kwargs):
-        failed = self.control._check_raw_answer(
-            kwargs.get("raw_answer", NoArgumentProvided)
-        )
-        if failed is not None:
-            return failed
         if self._validate_function is None:
             return self.control.validate(response, **kwargs)
         else:
