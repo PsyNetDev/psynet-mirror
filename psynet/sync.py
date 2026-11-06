@@ -2080,6 +2080,20 @@ class Grouper(Barrier):
         """Return whether this grouper would form groups, without creating them."""
         return bool(self.ready_to_group(waiting_participants))
 
+    def _create_group(self, participants, **settings):
+        """Create a ``SimpleSyncGroup`` of these participants, led by :meth:`select_leader`."""
+        group = SimpleSyncGroup(
+            group_type=self.group_type,
+            n_active_participants=len(participants),
+            active=True,
+            **settings,
+        )
+        db.session.add(group)
+        for participant in participants:
+            group.add_participant(participant)
+        group.leader = self.select_leader(participants)
+        return group
+
     def select_leader(self, participants: List[Participant]) -> Participant:
         """
         By default the leader is randomly chosen from the list of available participants.
@@ -2445,19 +2459,14 @@ class SimpleGrouper(Grouper):
 
     def _make_group(self, participants, *, initial_group_size):
         """Create one group of these participants with this grouper's settings."""
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        return self._create_group(
+            participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
             min_group_size=self.min_group_size,
-            n_active_participants=len(participants),
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
 
     @staticmethod
     def randomly_partition_list(lst: list, group_size: int):
@@ -2913,21 +2922,15 @@ class Regrouper(Grouper):
             )
 
     def _make_group(self, participants):
-        group = SimpleSyncGroup(
-            group_type=self.group_type,
+        """Create a fixed group that never dissolves or fails its members."""
+        return self._create_group(
+            participants,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
-            n_active_participants=len(participants),
             accepts_top_ups=False,
             fail_participants_below_min_size=False,
-            active=True,
         )
-        db.session.add(group)
-        for participant in participants:
-            group.add_participant(participant)
-        group.leader = self.select_leader(participants)
-        return group
 
 
 def group_seats(group) -> Dict[int, int]:
