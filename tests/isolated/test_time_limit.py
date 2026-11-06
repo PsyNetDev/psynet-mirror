@@ -14,15 +14,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
-def _answer(page, participant, raw_answer=None, **metadata):
-    response = page.process_response(
+def _respond(page, participant, raw_answer=None, **metadata):
+    return page.process_response(
         raw_answer=raw_answer,
         blobs={},
         metadata=metadata,
         experiment=get_experiment(),
         participant=participant,
     )
-    return response.answer
+
+
+def _answer(page, participant, raw_answer=None, **metadata):
+    return _respond(page, participant, raw_answer, **metadata).answer
 
 
 @pytest.mark.parametrize(
@@ -52,4 +55,7 @@ def test_time_limit_counts_from_reaching_the_page(in_experiment_directory, db_se
     untimed = ModularPage("guess", "Guess", TextControl())
     untimed.consume(exp, participant)
     assert untimed.time_limit_seconds_left(participant) is None
-    assert _answer(untimed, participant, "7", time_limit_reached=True) == "7"
+    # The flag skips validation, so a page without a time limit drops it.
+    response = _respond(untimed, participant, "7", time_limit_reached=True)
+    assert response.answer == "7"
+    assert "time_limit_reached" not in response.metadata

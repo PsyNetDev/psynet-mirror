@@ -1936,7 +1936,10 @@ class Page(Elt):
         if self._time_limit_reached(metadata, participant):
             answer = self.time_limit_answer
             metadata = {**metadata, "time_limit_reached": True}
-        elif answer == NoArgumentProvided:
+        else:
+            # The flag skips validation, so only the server may set it.
+            metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
+        if answer == NoArgumentProvided:
             answer = self.format_answer(
                 raw_answer,
                 blobs=blobs,
