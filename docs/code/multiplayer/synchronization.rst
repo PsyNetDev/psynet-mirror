@@ -646,8 +646,8 @@ Time credit
 By default, participants are credited for the time they actually wait, up to
 ``max_wait_time``. Set ``fix_time_credit=True`` to credit every participant
 ``expected_wait`` seconds instead (1.5 seconds by default). With
-``waiting_logic``, the waiting pages are credited by their own time
-estimates, for as many passes as ``expected_wait`` implies.
+``waiting_logic``, participants are credited for the waiting pages they
+complete, by those pages' own time estimates.
 
 .. seealso::
 

@@ -82,6 +82,13 @@ def warn_from_caller(message, category):
 
     Works on every supported Python version, unlike
     ``warnings.warn(skip_file_prefixes=...)``, which needs Python 3.12.
+
+    Parameters
+    ----------
+    message : str
+        The warning text.
+    category : type
+        The warning class, such as ``DeprecationWarning``.
     """
     prefixes = psynet_source_prefixes()
     frame, stacklevel = sys._getframe(0), 1

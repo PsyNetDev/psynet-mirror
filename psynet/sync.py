@@ -784,8 +784,8 @@ class _ReadOnlyParticipantList(list):
 def _expected_repetitions(waiting_logic, expected_wait, default):
     """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
 
-    Called before the timeline multiplies the logic's own repetition
-    estimates, so a ``waiting_logic`` shared between barriers is measured once.
+    Called when the barrier is built, before the timeline multiplies the
+    logic's own repetition estimates.
     """
     from psynet.timeline import estimate_duration
 
@@ -863,7 +863,9 @@ class Barrier(EltCollection):
         give participants something to do while they wait, such as filler
         trials, and ``waiting_screen`` to show them something. If left at the
         default value of ``None``, the participant sees ``waiting_screen``,
-        or their current page beneath a lightweight waiting indicator.
+        or their current page beneath a lightweight waiting indicator. Give
+        each barrier its own elements: the timeline scales their time
+        estimates in place, so shared elements inflate progress estimates.
 
     waiting_logic_expected_repetitions
         Deprecated; pass ``expected_wait`` instead. Expected repetitions of
@@ -968,7 +970,12 @@ class Barrier(EltCollection):
                 "waiting_screen only applies when waiting_logic is omitted."
             )
         self.expected_wait = (
-            0.5 * (waiting_logic_expected_repetitions or 3)
+            0.5
+            * (
+                3
+                if waiting_logic_expected_repetitions is None
+                else waiting_logic_expected_repetitions
+            )
             if expected_wait is None
             else expected_wait
         )
@@ -983,7 +990,11 @@ class Barrier(EltCollection):
             else _expected_repetitions(
                 waiting_logic,
                 expected_wait,
-                waiting_logic_expected_repetitions or 3,
+                (
+                    3
+                    if waiting_logic_expected_repetitions is None
+                    else waiting_logic_expected_repetitions
+                ),
             )
         )
         if waiting_logic is None:
