@@ -2272,6 +2272,14 @@ class TrialMaker(Module):
             return None
         return participant.active_sync_groups.get(self.sync_group_type)
 
+    def _leader_state(self, sync_group):
+        """Return the group leader's state for this trial maker.
+
+        The leader may already be in a later module, so this reads their state
+        for this trial maker rather than their current module state.
+        """
+        return sync_group.leader.module_states[self.id][-1]
+
     def init_participant_group(self, experiment, participant):
         if participant.module_state.participant_group:
             return
@@ -2282,10 +2290,7 @@ class TrialMaker(Module):
             logger.info(
                 f"participant = {participant.id}, sync_group id = {sync_group.id}"
             )
-            # The leader may already be in a later module, so read their state
-            # for this trial maker rather than their current module state.
-            leader_state = sync_group.leader.module_states[self.id][-1]
-            participant_group = leader_state.participant_group
+            participant_group = self._leader_state(sync_group).participant_group
         else:
             if self.choose_participant_group is None:
                 participant_group = "default"
