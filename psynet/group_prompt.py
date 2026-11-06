@@ -402,7 +402,13 @@ class GroupPrompt(Prompt):
             for link in member.sync_group_links
             if link.sync_group.group_type == self.subgroups
         ]
-        return max(links, key=lambda link: link.id).sync_group_id if links else None
+        return (
+            max(
+                links, key=lambda link: float("inf") if link.id is None else link.id
+            ).sync_group_id
+            if links
+            else None
+        )
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
