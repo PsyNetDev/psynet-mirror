@@ -1898,11 +1898,11 @@ class TrialMaker(Module):
             return False
         if self.sync_group_type not in participant.active_sync_groups:
             if any(
-                link.sync_group.group_type == self.sync_group_type
+                not link.active and link.sync_group.group_type == self.sync_group_type
                 for link in participant.sync_group_links
             ):
-                # Removed from their group, for example kicked for being late,
-                # so they continue on their own.
+                # Removed from their group, for example kicked for being late.
+                # They initialize alone and leave before their first trial.
                 return False
             participant_id = getattr(participant, "id", "<unknown>")
             raise RuntimeError(
@@ -2266,15 +2266,17 @@ class TrialMaker(Module):
         self.init_participant_group(experiment, participant)
         participant.module_state.trial_maker_initialized = True
 
+    def _active_sync_group(self, participant):
+        """Return the participant's active group of ``sync_group_type``, if any."""
+        if self.sync_group_type is None:
+            return None
+        return participant.active_sync_groups.get(self.sync_group_type)
+
     def init_participant_group(self, experiment, participant):
         if participant.module_state.participant_group:
             return
 
-        sync_group = (
-            participant.active_sync_groups[self.sync_group_type]
-            if self.sync_group_type
-            else None
-        )
+        sync_group = self._active_sync_group(participant)
         is_follower = sync_group and participant != sync_group.leader
         if is_follower:
             logger.info(
