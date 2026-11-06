@@ -339,7 +339,9 @@ uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
 ``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
 answered when the page is drawn. Members who join or leave the group appear
 or disappear live too, on any page without ``answers``, ``answered`` or
-``highlight``, unless ``subgroups`` is a function:
+``highlight``, unless ``subgroups`` is a function. Live redraws need the same
+``FLASK_SECRET_KEY`` on every web process; without one, PsyNet logs a warning
+and the group stays as first drawn:
 
 .. code-block:: python
 
