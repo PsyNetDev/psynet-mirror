@@ -963,6 +963,8 @@ def test_reloader_keeps_a_checkout_next_to_the_development_folder(
     link.symlink_to(real)
     checkout = real / "wt-group"
     (checkout / "psynet").mkdir(parents=True)
+    (checkout / "tests").mkdir()
+    (checkout / "pyproject.toml").touch()
     monkeypatch.setattr(psynet, "__file__", str(checkout / "psynet" / "__init__.py"))
     monkeypatch.setattr(command_line, "get_config", lambda: SimpleNamespace(ready=True))
     monkeypatch.setattr(
@@ -974,6 +976,7 @@ def test_reloader_keeps_a_checkout_next_to_the_development_folder(
         assert not any(fnmatch(f"{root}/wt-group/psynet/sync.py", p) for p in patterns)
         assert not any(fnmatch(f"{root}/dallinger_develop/app.py", p) for p in patterns)
         assert any(fnmatch(f"{root}/wt-other/x.py", p) for p in patterns)
+        assert any(fnmatch(f"{root}/wt-group/tests/test_x.py", p) for p in patterns)
 
 
 def test_reloader_keeps_a_checkout_containing_the_development_folder(

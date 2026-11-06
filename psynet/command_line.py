@@ -1683,7 +1683,9 @@ def _reloader_exclude_patterns():
         for package in (psynet, dallinger)
     ]
     patterns = []
-    # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
+    # Each checkout under each spelling of its path, as ``{spelling: resolved}``.
+    checkouts = {root: root for root in roots}
+    # The reloader may watch either spelling, e.g. /tmp or /private/tmp on macOS.
     for path in dict.fromkeys([develop_path, develop_path.resolve()]):
         parent = path.parent
         resolved_parent = parent.resolve()
@@ -1692,19 +1694,20 @@ def _reloader_exclude_patterns():
         for root in roots:
             if not root.is_relative_to(resolved_parent):
                 continue
+            checkouts[parent / root.relative_to(resolved_parent)] = root
             if root == resolved_parent:
                 parent_is_checkout = True
                 continue
             keep.add(root.relative_to(resolved_parent).parts[0])
         if not parent_is_checkout:
             patterns += _other_sibling_patterns(parent, keep)
-    for root in roots:
+    for spelling, root in checkouts.items():
         if not (root / "pyproject.toml").exists():
             continue
         for folder in ("demos", "tests", "docs"):
             if (root / folder).is_dir():
-                patterns.append(f"{root / folder}{os.sep}*")
-    return patterns
+                patterns.append(f"{spelling / folder}{os.sep}*")
+    return list(dict.fromkeys(patterns))
 
 
 def _other_sibling_patterns(parent, keep):
