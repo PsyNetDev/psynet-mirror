@@ -14,6 +14,7 @@ export async function activate({root, vars}) {
     var SHOW_PARTS   = CONFIG.show_participants;
     var SHOW_HISTORY = CONFIG.show_history;
     var YOU_LABEL    = CONFIG.you_label || "You";
+    var YOU_IN_LIST_LABEL = CONFIG.you_in_list_label || "{NAME} (you)";
     var MY_ID        = String(dallinger.identity.participantId);
 
     var chatConnection = null;
@@ -76,7 +77,7 @@ export async function activate({root, vars}) {
 
     // The icon HTML comes from the experiment's PseudonymScheme on the
     // server, which escapes the name; message text is only ever set as text.
-    function senderLabel(senderId, pseudonym) {
+    function senderLabel(senderId, pseudonym, inList) {
         var label = document.createElement("strong");
         label.className = "chatroom-sender";
         if (pseudonym && pseudonym.icon_html) {
@@ -84,9 +85,13 @@ export async function activate({root, vars}) {
             icon.innerHTML = pseudonym.icon_html;
             label.appendChild(icon);
         }
-        var name = String(senderId) === MY_ID
-            ? YOU_LABEL
-            : (pseudonym ? pseudonym.name : "Participant " + senderId);
+        var name = pseudonym ? pseudonym.name : "Participant " + senderId;
+        if (String(senderId) === MY_ID) {
+            // The list is the only place participants learn their own name.
+            name = inList && pseudonym
+                ? YOU_IN_LIST_LABEL.replace("{NAME}", pseudonym.name)
+                : YOU_LABEL;
+        }
         label.appendChild(document.createTextNode(name));
         return label;
     }
@@ -126,7 +131,7 @@ export async function activate({root, vars}) {
         list.innerHTML = "";
         ids.forEach(function (id) {
             var li = document.createElement("li");
-            li.appendChild(senderLabel(id, pseudonyms[String(id)]));
+            li.appendChild(senderLabel(id, pseudonyms[String(id)], true));
             list.appendChild(li);
         });
     }
