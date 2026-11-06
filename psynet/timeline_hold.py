@@ -17,6 +17,7 @@ participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 
+import copy
 import time
 import uuid
 from contextlib import contextmanager
@@ -747,7 +748,9 @@ class _TimelineHoldPage(Page):
 
         if self.waiting_screen is None:
             return None
-        screen = self.waiting_screen(participant)
+        screen = call_function_with_context(
+            self.waiting_screen, participant=participant
+        )
         if screen is None or isinstance(screen, Page):
             return screen
         return ModularPage(
@@ -761,6 +764,8 @@ class _TimelineHoldPage(Page):
         screen = self.waiting_screen_page(participant)
         if screen is None:
             return super().render(experiment, participant, partial_mode)
+        # A copy, so a page the experiment reuses doesn't keep this hold's attributes.
+        screen = copy.copy(screen)
         screen.attributes = self.attributes
         screen.pre_render()
         return screen.render(experiment, participant, partial_mode)

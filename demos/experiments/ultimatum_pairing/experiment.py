@@ -156,7 +156,7 @@ def forming_team(participant):
 
 
 def pairing_up(participant):
-    return "Next, you'll be paired with another player from your team."
+    return "Getting the next round ready."
 
 
 def waiting_for_partner(participant):
@@ -178,7 +178,8 @@ def waiting_for_partner(participant):
 def show_outcome(participant):
     if not in_pair(participant):
         return InfoPage(
-            "You ran out of time, so you got no coins this round.", time_estimate=5
+            "You were away for too long, so you got no coins this round.",
+            time_estimate=5,
         )
     if participant.var.decisions is None:
         return InfoPage(participant.var.outcome, time_estimate=5)

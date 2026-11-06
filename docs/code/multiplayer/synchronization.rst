@@ -17,7 +17,8 @@ Forming groups
 
 :class:`~psynet.sync.SimpleGrouper` waits until enough participants are
 waiting, then randomly splits them into groups. Participants stay on their
-current page, under a waiting indicator, until their group is formed.
+current page, under a waiting indicator, until their group is formed, unless
+the grouper has a ``waiting_screen`` (see below).
 
 ``group_type``
     A label for the groups. Barriers and trial makers refer to the groups by

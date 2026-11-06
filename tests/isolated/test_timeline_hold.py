@@ -458,13 +458,15 @@ def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
     ).waiting_logic
 
     screen = hold.waiting_screen_page(
-        SimpleNamespace(var=SimpleNamespace(keep_page=False))
+        SimpleNamespace(var=SimpleNamespace(keep_page=False), module_state=None)
     )
     assert isinstance(screen, ModularPage)
     assert screen.prompt.text == "You offered 5 coins."
     assert not screen.control.show_next_button
     assert (
-        hold.waiting_screen_page(SimpleNamespace(var=SimpleNamespace(keep_page=True)))
+        hold.waiting_screen_page(
+            SimpleNamespace(var=SimpleNamespace(keep_page=True), module_state=None)
+        )
         is None
     )
     with pytest.raises(ValueError, match="waiting_screen only applies"):
