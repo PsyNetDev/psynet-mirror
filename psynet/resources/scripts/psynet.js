@@ -1099,7 +1099,7 @@
       if (!message || document.body.classList.contains("timeline-held")) {
         return;
       }
-      if (psynet.waiting.released && !release) {
+      if (psynet.waiting?.released && !release) {
         return;
       }
       let notice = document.getElementById("psynet-arrival-notice");
@@ -1115,7 +1115,7 @@
     };
 
     psynet.applyArrivalNotice = function (notice) {
-      if (psynet.waiting.released) {
+      if (psynet.waiting?.released) {
         return;
       }
       if (notice) {
