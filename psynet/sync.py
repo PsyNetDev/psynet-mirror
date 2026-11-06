@@ -147,7 +147,6 @@ from psynet.db import (
 )
 from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
-from psynet.page_activity import away_participants, record_page_activity
 from psynet.participant import Participant
 from psynet.serialize import serialize_callable
 from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
@@ -160,12 +159,7 @@ from psynet.timeline_hold import (
     _TimelineHoldPage,
     default_group_barrier_arrival_message,
 )
-from psynet.utils import (
-    call_function_with_context,
-    get_config,
-    get_logger,
-    get_translator,
-)
+from psynet.utils import call_function_with_context, get_config, get_logger
 
 logger = get_logger()
 
@@ -692,23 +686,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
         return self.barrier._hold_progress_text(participant)
 
     def overlay_html(self, participant):
-        """Return hold copy, with a live ``{SECONDS}`` countdown and the ``fail_if_hidden_for`` warning."""
-        html = self._with_countdown(super().overlay_html(participant), participant)
-        seconds = getattr(self.barrier, "fail_if_hidden_for", None)
-        if seconds is None or self._is_silent_for(participant):
-            return html
-        _p = get_translator(context=True)
-        warning = _p(
-            "timeline_hold",
-            "Keep this tab open. If you leave it for {SECONDS} seconds,"
-            " you will be removed from the experiment.",
-        ).format(SECONDS=ceil(seconds))
-        return html + Markup(
-            '<span class="psynet-timeline-hold-warning">{}</span>'
-        ).format(warning)
-
-    def _with_countdown(self, html, participant):
-        """Replace ``{SECONDS}`` in hold copy with a live countdown to the release."""
+        """Return hold copy, replacing ``{SECONDS}`` with a live countdown."""
+        html = super().overlay_html(participant)
         if "{SECONDS}" not in html:
             return html
         release_time = (
@@ -826,12 +805,6 @@ class Barrier(EltCollection):
         ``None`` lets each waiting page run to its end. Pages inside trials
         always run to their end. Default: 3 seconds.
 
-    fail_if_hidden_for
-        Seconds. If set, a participant on the waiting screen whose tab is
-        hidden (for example minimised or behind another tab) or closed for
-        this long is failed and sent to the end of the experiment. This
-        covers the default waiting screen, which tells them so, and every page
-        of ``waiting_logic``. Bots are never failed for this. Default: ``None``.
     """
 
     def __init__(
@@ -844,11 +817,9 @@ class Barrier(EltCollection):
         expected_wait=None,
         content=None,
         release_grace: Optional[float] = 3,
-        fail_if_hidden_for: Optional[float] = None,
     ):
         self.id = id_
         self.max_wait_time = max_wait_time
-        self.fail_if_hidden_for = fail_if_hidden_for
         self.fix_time_credit = fix_time_credit
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
         self.content = content
@@ -1395,9 +1366,6 @@ class GroupBarrier(Barrier):
         on the progress bar, so keep ``kind="notice"`` return values to a
         short sentence. Hold overlay copy may use a second line.
 
-    fail_if_hidden_for
-        Fail a waiting participant whose tab is hidden or closed for this many
-        seconds; see :class:`Barrier`.
     """
 
     @staticmethod
@@ -1449,7 +1417,6 @@ class GroupBarrier(Barrier):
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
-        fail_if_hidden_for: Optional[float] = None,
     ):
         self._validate_max_wait_action(max_wait_action)
         max_wait_time = self._check_max_wait_time(
@@ -1464,7 +1431,6 @@ class GroupBarrier(Barrier):
             expected_wait=expected_wait,
             content=content,
             release_grace=release_grace,
-            fail_if_hidden_for=fail_if_hidden_for,
         )
         self.max_wait_action = max_wait_action
         self.group_type = group_type
@@ -1848,9 +1814,6 @@ class Grouper(Barrier):
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
 
-    fail_if_hidden_for
-        Fail a waiting participant whose tab is hidden or closed for this many
-        seconds; see :class:`Barrier`.
     """
 
     def __init__(
@@ -1865,7 +1828,6 @@ class Grouper(Barrier):
         fix_time_credit=False,
         content=None,
         release_grace: Optional[float] = 3,
-        fail_if_hidden_for: Optional[float] = None,
     ):
         if not id_:
             id_ = f"{group_type}_grouper"
@@ -1878,7 +1840,6 @@ class Grouper(Barrier):
             fix_time_credit=fix_time_credit,
             content=content,
             release_grace=release_grace,
-            fail_if_hidden_for=fail_if_hidden_for,
         )
         self.group_type = group_type
         self.fail_participants_below_min_size = fail_participants_below_min_size
@@ -3380,82 +3341,20 @@ def _time_out_overdue_links(participant):
             link.release()
 
 
-def _away_waiter_ids():
-    """Return waiters on a ``fail_if_hidden_for`` waiting screen whose tab has been away that long."""
-    with Session(bind=db.engine) as session:
-        rows = (
-            session.query(Participant, ParticipantLinkBarrier)
-            .join(
-                ParticipantLinkBarrier,
-                ParticipantLinkBarrier.participant_id == Participant.id,
-            )
-            .outerjoin(
-                TimelineHoldRecord,
-                TimelineHoldRecord.id == ParticipantLinkBarrier.timeline_hold_id,
-            )
-            .filter(
-                ~ParticipantLinkBarrier.released,
-                ~Participant.failed,
-                Participant.status == "working",
-                or_(
-                    (TimelineHoldRecord.page_uuid == Participant.page_uuid)
-                    & TimelineHoldRecord.released_at.is_(None),
-                    ParticipantLinkBarrier.timeline_hold_id.is_(None),
-                ),
-            )
-            .all()
-        )
-        away = set()
-        for participant, link in rows:
-            seconds = getattr(link.get_barrier(), "fail_if_hidden_for", None)
-            if seconds is not None and _is_away(participant, link, seconds):
-                away.add(participant.id)
-        return sorted(away)
-
-
-def _is_away(participant, link, seconds):
-    """Return whether the participant's tab was hidden or closed for ``seconds`` while waiting at ``link``."""
-    since = {participant.id: link.arrival_time.timestamp()}
-    return bool(away_participants([participant], since=since, for_seconds=seconds))
-
-
-def _fail_away_waiter(participant):
-    """Fail the participant if their tab was away for their barrier's ``fail_if_hidden_for``."""
-    for link in list(participant.active_barriers.values()):
-        record = link.timeline_hold
-        if link.released or (
-            record is not None
-            and (
-                record.page_uuid != participant.page_uuid
-                or record.released_at is not None
-            )
-        ):
-            continue
-        barrier = link.get_barrier()
-        seconds = getattr(barrier, "fail_if_hidden_for", None)
-        if seconds is None or not _is_away(participant, link, seconds):
-            continue
-        participant.append_failure_tags(f"barrier:{barrier.id}", "hidden_while_waiting")
-        participant.fail()
-        link.release()
-        return
-
-
 def _time_out_overdue_waiters(sweep_ends):
-    """Apply ``max_wait_time`` and ``fail_if_hidden_for`` to waiters.
+    """Apply ``max_wait_time`` to waiters whose deadline has passed.
 
     A waiter's own request normally applies the timeout, so someone who
     closed the tab would otherwise keep waiting, and keep the poller busy,
-    forever. Waiters are timed out earliest deadline first, then those whose
-    tab is away, each in their own transaction, until ``sweep_ends`` (at
-    least one per sweep). A waiter whose own request holds their row is left
-    to that request. Waiters whose timeout raised an error go last, so they
-    cannot use up every sweep's budget.
+    forever. Waiters are timed out earliest deadline first, each in their
+    own transaction, until ``sweep_ends`` (at least one per sweep). A
+    waiter whose own request holds their row is left to that request.
+    Waiters whose timeout raised an error go last, so they cannot use up
+    every sweep's budget.
     """
     from .experiment import get_experiment
 
     overdue_ids = _overdue_waiter_ids()
-    overdue_ids += sorted(set(_away_waiter_ids()) - set(overdue_ids))
     _poller_failed_timeouts.intersection_update(overdue_ids)
     if not overdue_ids:
         return
@@ -3478,8 +3377,6 @@ def _time_out_overdue_waiters(sweep_ends):
             )
             if participant is not None:
                 _time_out_overdue_links(participant)
-                if not participant.failed:
-                    _fail_away_waiter(participant)
             db.session.commit()
         except Exception as err:
             db.session.rollback()
@@ -3602,8 +3499,8 @@ def waiting_page_config(page, participant):
     """Return the browser config for a page shown while waiting at a barrier, or ``None``.
 
     Every page shown during ``waiting_logic`` checks in, including pages that
-    trial makers generate there, so ``fail_if_hidden_for`` sees participants
-    on them. ``release_grace_ms`` is ``None`` unless a release may end the
+    trial makers generate there, so each can count down to the release.
+    ``release_grace_ms`` is ``None`` unless a release may end the
     page. The participant may already have been released while this page was
     being built; the page's first status check then ends it.
     """
@@ -3619,8 +3516,8 @@ def waiting_page_config(page, participant):
     return {"barrier_id": barrier_id, "release_grace_ms": None}
 
 
-def waiting_status_payload(unique_id, barrier_id, *, visible=True):
-    """Return whether a participant on a waiting page has been released, and record activity.
+def waiting_status_payload(unique_id, barrier_id):
+    """Return whether a participant on a waiting page has been released.
 
     Waiting pages fetch this about every 2 seconds. ``release_in_ms`` is the
     time left until :meth:`Barrier.expected_release_time`, or ``None``.
@@ -3634,7 +3531,6 @@ def waiting_status_payload(unique_id, barrier_id, *, visible=True):
     )
     if participant is None:
         return {"released": False, "release_in_ms": None}
-    record_page_activity(participant.id, visible)
     if _has_left_barrier(participant, barrier_id):
         return {"released": True, "release_in_ms": None}
     link = participant.active_barriers[barrier_id]
