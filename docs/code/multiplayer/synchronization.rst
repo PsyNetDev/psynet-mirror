@@ -309,16 +309,21 @@ live don't show the notice, since the ticks say the same.
 
 The waiting indicator's own text comes from ``content``. A ``content``
 function on a group barrier can also take ``waiting_count`` and
-``group_size``; return :func:`~psynet.sync.hold_message` from it to write the
-second line yourself, or to leave it out:
+``group_size`` (both ``None`` if the participant has no group); return
+:func:`~psynet.sync.hold_message` from it to write the second line yourself,
+or to leave it out:
 
 .. code-block:: python
+
+    from psynet.sync import GroupBarrier, hold_message
 
     def waiting_text(waiting_count, group_size):
         return hold_message(
             "Waiting for the rest of the room…",
             f"{waiting_count} of {group_size} have chosen",
         )
+
+    GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
 
 Showing the group
 ~~~~~~~~~~~~~~~~~
