@@ -330,10 +330,12 @@ class Exp(psynet.experiment.Experiment):
 
         # The pair has played its two rounds. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
+        # The team stays closed to latecomers after the pair has left it.
         for bot in bots:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
         _wait_while_held(last_pair)
+        assert not _team_accepts_newcomers(last_pair[0])
         _play(last_pair)
         assert all("The offer of" in bot.current_page_text for bot in last_pair)
         for bot in last_pair:

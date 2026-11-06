@@ -229,24 +229,17 @@ def default_group_barrier_arrival_message(
 ):
     """Return default GroupBarrier arrival copy for one recipient.
 
-    Pair holds keep the title only. Larger groups report how many members are
-    not ready yet. Notices tell people still on an earlier page that partners
-    are already waiting, and ``"removed"`` tells someone who was too slow that
-    their group went on without them.
+    Notices tell people still on an earlier page that partners are already
+    waiting, and ``"removed"`` tells someone who was too slow that their group
+    went on without them.
     """
     _p = get_translator(context=True)
     if kind == "removed":
         if group_size <= 2:
-            return _p("timeline_hold", "Your partner went on without you.")
-        return _p("timeline_hold", "Your group went on without you.")
-    remaining = max(group_size - waiting_count, 0)
-    if kind == "hold":
-        if group_size <= 2 or remaining == 0:
-            return None
-        return _p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet").format(
-            REMAINING=remaining,
-            TOTAL=group_size,
-        )
+            return _p(
+                "timeline_hold", "Your partner went on without you. Please continue."
+            )
+        return _p("timeline_hold", "Your group went on without you. Please continue.")
     if group_size == 2:
         return _p("timeline_hold", "Your partner is ready.")
     return _p("timeline_hold", "{ARRIVED}/{TOTAL} of your group are ready.").format(
@@ -255,12 +248,40 @@ def default_group_barrier_arrival_message(
     )
 
 
+def default_hold_progress(waiting_count, group_size):
+    """Return the waiting indicator's progress line, or ``None`` for pairs and full groups."""
+    remaining = max(group_size - waiting_count, 0)
+    if group_size <= 2 or remaining == 0:
+        return None
+    _p = get_translator(context=True)
+    return _p("timeline_hold", "{REMAINING} of {TOTAL} not ready yet").format(
+        REMAINING=remaining,
+        TOTAL=group_size,
+    )
+
+
+class HoldMessage:
+    """A waiting message that sets its own progress line; see :func:`psynet.sync.hold_message`."""
+
+    def __init__(self, title, progress=None):
+        self.title = title
+        self.progress = progress
+
+    def __str__(self):
+        return f"{self.title}{self.progress or ''}"
+
+
 def compose_hold_overlay_html(title, progress_text=None):
     """Join a hold title with an optional progress line as ``Markup``.
+
+    A :class:`HoldMessage` title brings its own progress line, which replaces
+    ``progress_text``.
 
     Plain strings are escaped; trusted ``Markup`` and dominate tags are kept as
     HTML, as in page templates.
     """
+    if isinstance(title, HoldMessage):
+        title, progress_text = title.title, title.progress
     html = Markup('<span class="psynet-timeline-hold-title">{}</span>').format(
         "" if title is None else finalize_template_value(title)
     )
