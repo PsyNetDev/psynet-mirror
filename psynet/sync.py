@@ -2443,11 +2443,12 @@ class Regrouper(Grouper):
         If ``True``, participants left over after a split continue ungrouped,
         for example to a sit-out page, and come back for the next split. If
         ``False`` (default), they keep waiting for the next split. When too
-        few are waiting to form any group, they are released ungrouped only
-        once no other active member of their ``within`` group is still away,
-        for example still playing a round; until then, ``max_wait_time``
-        bounds their wait. So take members who stop playing out of the
-        ``within`` group, for example with ``remove_participant``.
+        few are waiting to form any group, for example one player whose
+        teammates are still playing a round, they wait for those teammates
+        for up to one more ``deadline`` (or ``Clock`` tick) before they are
+        released ungrouped. Taking members who stop playing out of the
+        ``within`` group, for example with ``remove_participant``, means
+        nobody waits for them.
 
     on_release
         Optional callback ``on_release(within_group, groups, left_over, regrouper)``
@@ -2610,11 +2611,26 @@ class Regrouper(Grouper):
 
         Not while teammates are still active elsewhere, for example still
         playing a round, so that a lone waiter waits for them rather than
-        sitting out round after round.
+        sitting out round after round; but only for one more deadline, in case
+        those teammates have stopped playing.
         """
         return self.release_left_over and (
-            within_group is None or self._pool_is_complete(within_group, members)
+            within_group is None
+            or self._pool_is_complete(within_group, members)
+            or self._waited_an_extra_deadline(within_group, members)
         )
+
+    def _waited_an_extra_deadline(self, within_group, members) -> bool:
+        now = time.time()
+        if self.clock_period is not None:
+            previous_tick = _latest_tick(now, self.clock_period) - self.clock_period
+            return any(
+                _arrival_time(self, p).timestamp() <= previous_tick for p in members
+            )
+        if self.deadline is None:
+            return False
+        reference = self._deadline_reference(within_group, members)
+        return now - reference >= 2 * self.deadline
 
     def _smallest_pool_to_split(self, within_group, members) -> int:
         if self._may_release_only_left_over(within_group, members):
