@@ -179,6 +179,35 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_a_removed_partner_stays_in_the_viewers_subgroup(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    viewer, partner, other = _working_participants(exp, 3)
+    room, pair, other_pair = [
+        SimpleSyncGroup(group_type=group_type, initial_group_size=3, min_group_size=1)
+        for group_type in ("room", "pair", "pair")
+    ]
+    db_session.add_all([room, pair, other_pair])
+    for member in (viewer, partner, other):
+        room.add_participant(member)
+    pair.add_participant(viewer)
+    pair.add_participant(partner)
+    other_pair.add_participant(other)
+    room.remove_participant(partner, reason="out_of_time")
+    pair.remove_participant(partner, reason="out_of_time")
+    db_session.flush()
+
+    html = GroupPrompt(
+        group=room, participant=viewer, subgroups="pair", anonymous=True
+    ).group_html
+    clusters = html.split('class="psynet-group-cluster"')[1:]
+    assert ">Your partner (out of time)<" in clusters[0]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_live_pages_redraw_the_group_when_someone_joins(
     in_experiment_directory, db_session, monkeypatch
 ):
