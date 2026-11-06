@@ -12,7 +12,7 @@ from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import SimpleGrouper, waiting_status_payload
-from psynet.timeline import Response, Timeline, join
+from psynet.timeline import PageMaker, Response, Timeline, for_loop, join
 from psynet.trial.main import GenericTrialNode, Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -157,6 +157,21 @@ def test_release_does_not_end_an_uninterruptible_waiting_page(
 
 
 @in_consents_experiment
+def test_an_unanswered_trial_page_only_counts_down(in_experiment_directory, db_session):
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, _filler("filler"))
+    try:
+        (participant,) = _working_participants(exp, 1)
+        _json_timeline(exp, participant)
+        _set_current_trial(exp, participant, complete=False)
+        waiting = _json_timeline(exp, participant).get_json()["attributes"]["waiting"]
+        assert waiting["release_grace_ms"] is None and waiting["barrier_id"]
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
 def test_an_answered_earlier_trial_does_not_stop_the_interrupt(
     in_experiment_directory, db_session
 ):
@@ -190,6 +205,30 @@ def test_waiting_pages_end_on_a_release_earlier_in_the_same_request(
         page = exp.timeline.get_current_elt(exp, participant)
         participant.active_barriers[page.links["barrier"].id].release()
         assert exp._advance_past_ready_holds(participant, page).label == "after"
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_waiting_logic_reused_after_the_barrier_is_shown(
+    in_experiment_directory, db_session
+):
+    """A page maker that resolves the waiting logic again later shows its pages."""
+    exp = get_experiment()
+    original = exp.timeline
+    waiting_logic = PageMaker(lambda: _filler("filler"), time_estimate=5)
+    exp.timeline = Timeline(
+        SimpleGrouper("pair", initial_group_size=2, waiting_logic=waiting_logic),
+        for_loop(label="again", iterate_over=range(1), logic=waiting_logic),
+    )
+    try:
+        first, last = _working_participants(exp, 2)
+        _json_timeline(exp, first)
+        attributes = _json_timeline(exp, last).get_json()["attributes"]
+        assert "waiting" not in attributes
+        db.session.expire_all()
+        last = Participant.query.get(last.id)
+        assert exp.timeline.get_current_elt(exp, last).label == "filler"
     finally:
         exp.timeline = original
 

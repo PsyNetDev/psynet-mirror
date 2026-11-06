@@ -151,7 +151,14 @@ from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import SerializedCallable, serialize_callable
-from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
+from psynet.timeline import (
+    CodeBlock,
+    EltCollection,
+    EndWhile,
+    StartWhile,
+    _is_timeline_hold,
+    conditional,
+)
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -943,6 +950,14 @@ class Barrier(EltCollection):
         for elt in elts:
             # Keep an inner barrier's link: its waiting pages belong to it.
             elt.links.setdefault("barrier", self)
+        # Page makers can resolve the waiting logic again elsewhere, carrying
+        # this link with it, so the loop's own markers say where it really is.
+        self._waiting_loop_markers = [
+            elt
+            for elt in elts
+            if isinstance(elt, (StartWhile, EndWhile))
+            and elt.label == f"barrier:{self.id}"
+        ]
 
         return elts
 
@@ -3440,12 +3455,29 @@ def _interruptible_waiting_barrier(page, participant):
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
         return None
+    if not _is_inside_waiting_loop(barrier, participant):
+        return None
     if participant.failed:
         return None
     trial = participant.current_trial
     if trial is not None and not trial.complete:
         return None
     return barrier
+
+
+def _is_inside_waiting_loop(barrier, participant):
+    """Return whether the participant's timeline position is inside the barrier's ``waiting_logic`` loop."""
+    markers = getattr(barrier, "_waiting_loop_markers", None)
+    position = participant.elt_id
+    if not markers or position is None:
+        return True
+    start, end = (marker.id for marker in markers)
+    depth = len(start)
+    return (
+        len(position) >= depth
+        and list(position[: depth - 1]) == list(start[:-1])
+        and start[-1] < position[depth - 1] < end[-1]
+    )
 
 
 def _has_left_barrier(participant, barrier_id):
