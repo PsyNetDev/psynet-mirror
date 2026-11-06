@@ -222,8 +222,8 @@ See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
 The unsuccessful end page says why the participant stopped when PsyNet itself
-ended their session, for example "You switched away from this page while
-waiting for other participants, so we had to end your session." To explain
+ended their session, for example "We waited too long for other participants,
+so we had to end your session." To explain
 your own reasons, pass a function of the participant that returns a line, or
 ``None`` to keep PsyNet's:
 
