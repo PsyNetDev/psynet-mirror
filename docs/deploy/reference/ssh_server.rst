@@ -26,12 +26,14 @@ to the experiment directory's name, made into a valid app name; see
 :doc:`/deploy/running_a_study`.
 
 ``--dns-host`` sets the domain the experiment is served under. It defaults to
-the ``--server`` name, so the experiment is served at
-``https://<app>.<server>``. Pass it:
+the server's own DNS name: the ``--dns-host`` saved with ``dallinger
+docker-ssh servers add``, or else the ``--server`` name. The experiment is then
+served at ``https://<app>.<server DNS name>``. Pass it:
 
-- if the server is registered by IP address. ``--server`` is then the IP
-  address and ``--dns-host`` the public name, and leaving ``--dns-host`` out
-  is an error:
+- if the server is registered by IP address without a saved DNS name.
+  ``--server`` is then the IP address and ``--dns-host`` the public name, and
+  leaving ``--dns-host`` out is an error. Saving the name once with
+  ``servers add --host <ip> --dns-host <name>`` avoids this:
 
   .. code:: bash
 
@@ -43,16 +45,35 @@ the ``--server`` name, so the experiment is served at
   about such names, and HTTPS certificates for nip.io names are sometimes
   unavailable because of rate limits.
 
-Before deploying, Dallinger checks that ``<app>.<dns-host>`` resolves to the
-server's IP address and stops with a ``DNS resolution error`` otherwise. A
-wildcard record (``*.my-server.example.org``) covers every app name; with a
-fixed list of records, ``--app`` must be one of them.
+Before deploying, Dallinger checks that the experiment's address
+(``<app>.<dns-host>``) resolves to the server's IP address and stops with a
+``DNS resolution error`` otherwise. A wildcard record
+(``*.my-server.example.org``) covers every app name; with a fixed list of
+records, ``--app`` must be one of them.
 
 ``--app`` may contain only lowercase letters, digits and hyphens, and must not
-already be in use on the server. Without ``--app``, the experiment is served at
-the ``--dns-host`` name itself rather than a subdomain, and its logs at
-``https://<dns-host>/logs``. Such a deployment needs a server with no other
-apps: Dallinger offers to destroy any it finds first.
+already be in use on the server, unless you pass ``--update`` (see
+:ref:`ssh_server_updating`). Names starting with ``dlgr-`` are refused,
+and so are ``logs`` and ``dallinger``, which the server uses itself. A
+classic deployment to an address that another app or one of the server's own
+sites already serves stops before the image build and names that app or
+site.
+
+Older PsyNet versions deployed an experiment without ``--app`` at the server's
+own DNS name, under a name like ``dlgr-d8f9f2c4``. ``psynet export ssh``,
+``psynet destroy ssh``, ``psynet hibernate ssh`` and ``psynet awaken ssh``
+accept that name, but ``psynet deploy ssh``, ``debug ssh`` and
+``performance-test ssh`` don't, even with ``--update``. So such an app can't
+be updated in place: deploy the fix as a new app with its own ``--app``.
+Deploys to such a server stop until it has had ``servers upgrade`` (see
+:ref:`ssh_server_shared_services`), which keeps the old app at the server's
+own name until you destroy it.
+
+A deployment's ``--dns-host`` names only that experiment's address. The
+server's own sites, including the log viewer at ``https://logs.<server DNS
+name>``, use the server's own DNS name. The exception is a server registered
+by IP address without a saved DNS name, where the deployment's ``--dns-host``
+also serves as the server's own; ``servers upgrade`` needs the saved name.
 
 .. _ssh_server_cloudflare:
 
@@ -70,8 +91,7 @@ Use a Cloudflare tunnel for a server on a private network, such as a lab
 computer: Let's Encrypt cannot issue certificates for a private address, so
 classic ingress cannot serve participants there. To make it the server's
 default, register it with ``dallinger docker-ssh servers add --host <host>
---default-ingress cloudflare``. Cloudflare ingress needs a Dallinger version
-newer than 12.4.
+--default-ingress cloudflare``.
 
 Classic ``--dns-host`` is only for host Caddy. Cloudflare hostnames use
 ``cloudflare_dns_zone`` from Dallinger config (for example
@@ -81,17 +101,15 @@ Set the non-secret ``cloudflare_account_id``, ``cloudflare_zone_id``, and
 ``cloudflare_dns_zone`` in ``~/.dallingerconfig``. The API token is read from
 ``CLOUDFLARE_API_TOKEN``, then ``~/.dallingerconfig``, then the macOS
 Keychain item ``dallinger-cloudflare-api-token``. It is never stored in host
-records. With a Dallinger version that includes `Dallinger PR #10118
-<https://github.com/Dallinger/Dallinger/pull/10118>`_, ``psynet deploy ssh``,
-``psynet debug ssh`` and ``psynet performance-test ssh`` check that the token
-can be read before they start local services, contact the server or run
-``prepare``. Until a server default is changed, omitting
-``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
+records. ``psynet deploy ssh``, ``psynet debug ssh`` and
+``psynet performance-test ssh`` check that the token can be read before they
+start local services, contact the server or run ``prepare``. Until a server
+default is changed, omitting ``--ingress`` keeps classic Caddy. ``psynet export ssh`` reaches a Cloudflare
 app at its public name rather than ``https://<app>.<ssh-host>``.
 
-Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS name>`` exists
-only on servers with classic ingress. Read a Cloudflare app's logs with the
-``ssh … docker compose … logs -f`` command printed at the end of the
+Cloudflare ingress has no Dozzle log viewer: ``https://logs.<server DNS
+name>`` exists only on servers with classic ingress. Read a Cloudflare app's
+logs with the ``ssh … docker compose … logs -f`` command printed at the end of the
 deployment, or over SSH as described in :ref:`ssh_server_working_over_ssh`.
 The dashboard's **Monitor > Logger** page shows the experiment's own log
 output with either ingress.
@@ -115,9 +133,8 @@ it:
       Log viewer:       https://logs.my-server.example.org (user: dallinger; password saved as logs_password in launch-info.json)
       Image:            ghcr.io/my-lab/my-study:3f2a9c1e
 
-The image row names the deployed Docker image, with Dallinger versions that
-report it. The participant link appears for recruiters that print a single recruitment
-link, such as ``generic``; for other recruiters the summary ends with the
+The image row names the deployed Docker image. The participant link appears
+for recruiters that print a single recruitment link, such as ``generic``; for other recruiters the summary ends with the
 recruiter's message instead (for Prolific, a link to the new draft study).
 An update (see `Updating a running app`_) doesn't recruit again, so it shows
 the participant link or recruiter's message saved when the app was deployed
@@ -126,10 +143,7 @@ The log viewer row appears for apps with classic ingress.
 ``performance-test ssh`` adds a ``Bot log`` row: the file on your computer
 that collects the bots' output.
 Passwords are not printed; they are saved in ``launch-info.json`` together
-with the other details. Dallinger versions without the ``show_summary``
-option of ``dallinger docker-ssh deploy`` and ``sandbox`` still print their
-own summary, including the dashboard password, above this one, for all three
-commands.
+with the other details.
 The deployment ID has the form
 ``<label>__mode=<mode>__launch=<timestamp>``.
 
@@ -138,15 +152,22 @@ What a deployment does
 
 1. PsyNet runs its pre-deployment checks and prepares the experiment files
    from ``deploy.toml``.
-2. Dallinger adds ``server_pem`` to your SSH agent and builds the Docker image
+2. With classic ingress, Dallinger checks that the experiment's address
+   resolves to the server, that no other site on the server serves it, and
+   that the server's shared services are set up (see
+   :ref:`ssh_server_shared_services`). If not, it stops and says what to do.
+3. Dallinger adds ``server_pem`` to your SSH agent and builds the Docker image
    with the server's Docker daemon, over SSH. The image stays on the server.
-3. It writes the shared ``docker-compose.yml`` and ``Caddyfile`` to
-   ``~/dallinger`` and starts the shared services.
 4. It creates the app's database and database user, writes
    ``~/dallinger/<app>/docker-compose.yml``, starts the app's containers and
    initializes the database.
-5. It adds the app's address to Caddy and calls the experiment's ``/launch``
-   route, which opens recruitment.
+5. It writes the app's Caddy route, ``~/dallinger/caddy.d/<app>``, and
+   reloads Caddy. An app served at the server's own DNS name gets
+   ``~/dallinger/root.d/<app>`` instead. It then calls the experiment's
+   ``/launch`` route, which opens recruitment.
+
+A deployment doesn't change the server's shared files or restart its shared
+services, so the other experiments on the server keep running.
 
 Experiment containers run as the SSH user rather than root. Deploy chowns
 ``~/psynet-data/assets`` (and other writable ``docker_volumes`` bind mounts
@@ -216,10 +237,17 @@ Files on the server
 ^^^^^^^^^^^^^^^^^^^
 
 ``~/dallinger/``
-   The shared ``docker-compose.yml``, ``Caddyfile`` and Dozzle login
-   (``dozzle-users.yml``).
+   The shared ``docker-compose.yml``, ``Caddyfile``, Dozzle login
+   (``dozzle-users.yml``) and ``.env.json``, which holds the log viewer's
+   password as ``DOZZLE_PASSWORD``. Once ``servers add`` or ``servers
+   upgrade`` has written them, they are read-only (see
+   :ref:`ssh_server_shared_services`); ``.bak`` files are copies kept by
+   ``servers upgrade``.
 ``~/dallinger/caddy.d/<app>``
    The app's Caddy configuration.
+``~/dallinger/root.d/<app>``
+   The Caddy route of an app served at the server's own DNS name, in place of
+   ``caddy.d/<app>``.
 ``~/dallinger/<app>/docker-compose.yml``
    The app's services and configuration.
 ``~/dallinger-data/<app>/``
@@ -228,7 +256,11 @@ Files on the server
 
 ``psynet destroy ssh`` stops the app's containers and removes
 ``~/dallinger/<app>/``, its Caddy configuration, and its image if no other app
-uses it. Give it one or more app names, as
+uses it. On a server that hasn't had ``servers upgrade``, an app that an
+older Dallinger deployed at the server's own DNS name has its route in the
+shared ``Caddyfile`` instead, which destroy leaves alone: it warns that the
+server's own name still points to the app, and ``servers upgrade`` removes
+that route. Give it one or more app names, as
 arguments or with ``--app`` (the two are equivalent and can be combined):
 
 .. code-block:: bash
@@ -280,12 +312,76 @@ reminder for it, asks to delete its leftover data rather than to destroy it,
 and Dallinger deletes whatever data it left behind. If nothing is left, it
 says so and this does not count as a failure, so the command succeeds.
 
-The data question and the two flags need a Dallinger version whose
-``dallinger docker-ssh destroy`` has ``--remove-data`` and ``--keep-data``.
-With older versions, ``psynet destroy ssh`` refuses the flags and destroys apps
-as before: a classic app's database stays in PostgreSQL until an app with the
-same name is deployed, which replaces it, while a Cloudflare app's volumes are
-deleted.
+.. _ssh_server_shared_services:
+
+Setting up and upgrading the shared services
+--------------------------------------------
+
+Deployments never set up the shared classic-ingress services. These Dallinger
+commands do:
+
+- ``dallinger docker-ssh servers add`` sets them up on a server that has no
+  ``~/dallinger/docker-compose.yml`` yet, unless it is registered with
+  ``--default-ingress cloudflare``, and prints the new log viewer password
+  once. It leaves a server that already has that file unchanged.
+  ``dallinger ec2 provision`` does the same for the server it creates.
+- ``dallinger docker-ssh servers upgrade --host <server>`` sets them up or
+  rewrites them. Run it on a server set up by an older Dallinger version, and
+  when a deployment asks for it:
+
+  .. code-block:: bash
+
+      dallinger docker-ssh servers upgrade --host my-server.example.org
+
+  It lists the files it will replace and asks first (``--yes`` skips the
+  question). It keeps a ``<file>.<timestamp>.bak`` copy of each replaced file
+  and keeps the log viewer's password. A root-domain app deployed by an older
+  Dallinger keeps its address. A server with an app called ``root.d``, a name
+  older Dallinger allowed, is refused before anything changes: destroy that
+  app first, because its directory is where the new routes go. Shared
+  services whose configuration changed are recreated, which briefly
+  interrupts every classic app on the server, so upgrade when no classic
+  experiment is live.
+
+When these commands write the server's ``Caddyfile``, they write it for the
+server's own DNS name (see :ref:`ssh_server_addresses`). Caddy gives Let's Encrypt the contact email
+saved with the server. ``servers add`` and ``servers upgrade`` save, in this
+order, the one passed with ``--contact-email``, a valid one already saved, or
+``contact_email_on_error`` from ``~/.dallingerconfig`` or the environment
+(never from an experiment's ``config.txt``), and print it with where it came
+from. Placeholders such as ``XXX@gmail.com`` don't count. A deployment to a
+server saved without an email also accepts a valid ``contact_email_on_error``
+from the experiment's ``config.txt``. If a deployment stops because a server
+has no contact email, run the ``servers add … --contact-email <email>``
+command that it prints, which saves one without restarting anything (see
+:ref:`upgrading_an_existing_server`).
+
+Running ``servers add`` again for a saved server keeps every saved field
+(SSH user, default ingress, DNS name and a valid contact email) that you don't
+pass, so ``servers add --host <server> --contact-email <email>`` changes only
+the email.
+
+Caddy keeps its HTTPS certificates on the ``caddy_data`` Docker volume, so
+they survive recreating Caddy. On a server set up by an
+older Dallinger, the first ``servers upgrade`` adds this volume, and Caddy may
+obtain new certificates once. The log viewer moves to ``https://logs.<server
+DNS name>`` if it was at ``https://<server>/logs``, so that name must also
+resolve to the server.
+
+``servers add`` and ``ec2 provision`` (when they set up a server) and
+``servers upgrade`` leave the shared ``Caddyfile``, ``docker-compose.yml``,
+``dozzle-users.yml`` and ``.env.json`` read-only. Older Dallinger versions
+rewrite these files on every classic deployment, so on such a server their
+deployments fail with ``PermissionError: [Errno 13] Permission denied``,
+after building the image but before changing anything shared. Everyone who
+deploys to the server must therefore use a Dallinger version with ``servers
+upgrade``. Read-only files don't stop an SSH user that is ``root``, and
+``servers add`` doesn't change the mode of files a server already has, so
+files that were writable stay writable until ``servers upgrade``. If an older
+version rewrote the files anyway, deployments stop before the build and ask
+you to run ``servers upgrade`` again, which restores them.
+
+.. _ssh_server_updating:
 
 Updating a running app
 ----------------------
@@ -412,8 +508,8 @@ can run on your computer.
 Connecting to the database
 --------------------------
 
-The PostgreSQL server starts with the first deployment. To open ``psql`` on
-the server:
+The PostgreSQL server is one of the :ref:`shared services
+<ssh_server_shared_services>`. To open ``psql`` on the server:
 
 .. code:: bash
 
