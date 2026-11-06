@@ -389,8 +389,9 @@ trials from another trial maker:
    :end-before: class Exp
 
 When the barrier releases a participant who is on a waiting page, the page
-ends about ``release_grace`` seconds later (default 3) unless they submit it
-first; the browser notices the release within about 2 seconds. The page's
+ends ``release_grace`` seconds (default 3) after the browser notices the
+release, which is usually within about 2 seconds, unless they submit it
+first. The page's
 answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
