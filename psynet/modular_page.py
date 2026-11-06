@@ -953,6 +953,12 @@ class OptionControl(Control):
     The saved answer is the element of ``choices`` that the participant picked,
     with its original type: ``DropdownControl([1, 2, 3])`` saves the integer ``3``.
     NumPy scalars in ``choices`` become the equivalent Python values.
+
+    A submitted answer that isn't one of ``choices`` is rejected. PsyNet
+    builds the page again when the answer arrives, so a page maker or
+    ``show_trial`` must give the same choices then: draw random choices once
+    and store them, for example in the trial's definition or a participant
+    variable, rather than drawing them in the page maker.
     """
 
     def __init__(
