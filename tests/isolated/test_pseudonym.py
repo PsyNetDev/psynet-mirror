@@ -77,6 +77,9 @@ def test_stored_deployment_id_and_overrides_decide_pseudonyms(
     participants[0].set_pseudonym("red", "whale")
     assert participants[0].pseudonym.name == "Red whale"
     assert participants[0].to_dict()["pseudonym"] == "Red whale"
-    assert "pseudonym" in [c["data"] for c in exp.table_columns("participant")]
+    (column,) = [
+        c for c in exp.table_columns("participant") if c["data"] == "pseudonym"
+    ]
+    assert not column["orderable"] and not column["searchable"]
     with pytest.raises(ValueError, match="Unknown pseudonym color"):
         participants[0].set_pseudonym("teal", "whale")
