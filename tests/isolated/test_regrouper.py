@@ -244,22 +244,6 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     assert pairs.choose_who_to_release([odd_one_out]) == []
     # ...but for one more deadline at most, then they sit out.
     _backdate_arrivals(pairs, [odd_one_out], 15)
-    now = time.time()
-    t = _latest_tick(now, 15)
-    m = [odd_one_out]
-    print(
-        "DBG",
-        now,
-        t,
-        pairs._arrival_debug(odd_one_out) if hasattr(pairs, "_arrival_debug") else None,
-        __import__("psynet.sync", fromlist=["x"])
-        ._arrival_time(pairs, odd_one_out)
-        .timestamp(),
-        pairs._last_split(team_group),
-        pairs._may_release_only_left_over(team_group, m),
-        pairs._pool_is_ready(team_group, m),
-        pairs._pools(m),
-    )
     assert pairs.choose_who_to_release([odd_one_out]) == [odd_one_out]
     _backdate_arrivals(pairs, [odd_one_out], -15)
 
