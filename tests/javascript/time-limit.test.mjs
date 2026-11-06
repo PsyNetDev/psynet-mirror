@@ -48,3 +48,23 @@ it("resumes the countdown when the server's deadline is still to come", async ()
   assert.equal(label.textContent, 4);
   deactivate();
 });
+
+it("does not retry a submission the server refused with a message", async () => {
+  globalThis.window = { setTimeout, clearTimeout };
+  const root = { querySelectorAll: () => [{ textContent: "" }], isConnected: true };
+  let calls = 0;
+  const psynet = {
+    pageReady: true,
+    pageReceivedAt: Date.now() - 10000,
+    nextPage: (rawAnswer, metadata, blobs, onRejection) => {
+      calls += 1;
+      onRejection({ submission: "rejected", message: "This page is out of date." });
+      return false;
+    },
+  };
+
+  const deactivate = activate({ root, vars: { timeLimit: { secondsLeft: 10 } }, psynet });
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  assert.equal(calls, 1);
+  deactivate();
+});

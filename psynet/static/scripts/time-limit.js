@@ -53,9 +53,14 @@ export function activate({root, vars, psynet}) {
         var staged = (psynet.response && psynet.response.staged) || {};
         var metadata = Object.assign({}, staged.metadata || {}, {time_limit_reached: true});
         var early = null;
+        var refused = false;
         function onRejection(response) {
             if (response && response.time_limit_seconds_left !== undefined) {
                 early = Number(response.time_limit_seconds_left);
+            } else if (response && response.message) {
+                // For example a stale second tab: the participant has already
+                // been told, and retrying would repeat the alert.
+                refused = true;
             }
         }
         Promise.resolve()
@@ -64,7 +69,9 @@ export function activate({root, vars, psynet}) {
             })
             .then(function (accepted) {
                 if (accepted !== false || stopped) return;
-                if (early !== null) {
+                if (refused) {
+                    stopped = true;
+                } else if (early !== null) {
                     deadline = Date.now() + early * 1000;
                     submitted = false;
                     tick();

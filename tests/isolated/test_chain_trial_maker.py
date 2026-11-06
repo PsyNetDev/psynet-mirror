@@ -61,6 +61,7 @@ class DummyParticipant:
     def __init__(self):
         self.id = 1
         self.active_sync_groups = {}
+        self.sync_group_links = []
         self.branch_log = []
         self.module_state = DummyModuleState()
         self.current_trial = None
@@ -202,7 +203,7 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
         assert Path(warning.filename).resolve() == Path(__file__).resolve()
 
 
-def test_sync_group_timeout_between_barriers_must_be_below_max_wait():
+def test_sync_group_timeout_between_barriers_must_be_below_a_finite_max_wait():
     with pytest.raises(ValueError, match="sync_group_timeout_between_barriers_time"):
         StaticTrialMaker(
             id_="slow_barriers",
@@ -215,6 +216,11 @@ def test_sync_group_timeout_between_barriers_must_be_below_max_wait():
             sync_group_type="group",
             sync_group_timeout_between_barriers_time=60,
         )
+    make_trial_maker(
+        sync_group_type="group",
+        sync_group_timeout_between_barriers_time=60,
+        sync_group_max_wait_time=None,
+    )
 
 
 @pytest.mark.parametrize(
@@ -326,6 +332,17 @@ def test_follower_copies_leader_group_after_leader_moved_on():
     trial_maker.init_participant_group(experiment=None, participant=follower)
 
     assert follower.module_state.participant_group == "B"
+
+
+def test_participant_removed_from_their_group_starts_the_trial_maker_alone():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    kicked = SimpleNamespace(
+        active_sync_groups={},
+        sync_group_links=[
+            SimpleNamespace(sync_group=SimpleNamespace(group_type="main"))
+        ],
+    )
+    assert not trial_maker._requires_sync_group_initialization_barrier(kicked)
 
 
 def test_trial_sync_group_returns_none_after_kick():
