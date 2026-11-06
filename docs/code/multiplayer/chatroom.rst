@@ -70,8 +70,9 @@ groups never rename anyone, so names stay the same once others have seen
 them; in a later group, two members can therefore share a pseudonym. The dashboard's
 Participants page and the participant table on its Database page show each
 participant's pseudonym. Exports keep the deployment ID, so after
-loading an export, ``participant.pseudonym`` gives the names that
-participants saw, for example to read chat messages that mention them.
+loading an export with the same PsyNet version, pseudonym scheme and locale,
+``participant.pseudonym`` gives the names that participants saw, for example
+to read chat messages that mention them.
 
 Use ``participant.pseudonym`` to show the same names elsewhere, for example
 on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and an
