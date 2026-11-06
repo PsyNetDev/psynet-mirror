@@ -62,8 +62,10 @@ take from a few minutes to several hours.
 
 An EC2 instance gets a new Public IPv4 DNS name each time it is stopped and
 started. Records you created by hand then point at the old name and must be
-updated. ``dallinger ec2 stop`` and ``start`` do this only for servers created
-with ``dallinger ec2 provision``.
+updated. Given ``--dns-host``, ``dallinger ec2 stop`` and ``start`` do this
+for CNAME records in a Route 53 hosted zone, such as those that ``dallinger
+ec2 provision --dns-host`` creates (see
+:doc:`/deploy/reference/aws_automatic_provisioning`).
 
 If the name was used before by another machine, SSH refuses to connect with
 ``REMOTE HOST IDENTIFICATION HAS CHANGED``; see
@@ -160,3 +162,10 @@ private key to ``~/.ssh`` on that computer, run ``chmod 600`` on it and set
 ``server_pem`` to it. If SSH is restricted to certain IP addresses, check that
 the computer uses one of them. Then log in once with ``ssh`` to check the
 connection, and register the server with ``dallinger docker-ssh servers add``.
+Pass the same ``--host``, ``--user`` and, if the original registration had
+them, ``--dns-host`` and ``--default-ingress``, because each computer keeps
+its own server record. Pass ``--contact-email`` too, unless that computer's
+``~/.dallingerconfig`` sets a real ``contact_email_on_error``. On a server
+that is already set up, this leaves the shared services alone. That computer
+needs a Dallinger version with ``servers upgrade``, because older versions
+can't deploy to an upgraded server (see :ref:`upgrading_an_existing_server`).
