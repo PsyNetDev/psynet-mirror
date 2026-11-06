@@ -182,7 +182,7 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     published = []
     monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
     first, late, other = _working_participants(exp, 3)
-    group = SimpleSyncGroup(group_type="room", initial_group_size=3)
+    group = SimpleSyncGroup(group_type="room", initial_group_size=3, min_group_size=1)
     db_session.add(group)
     group.add_participant(first)
     db_session.flush()
@@ -212,3 +212,13 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     # Tokens only work for the participant they were made for, unchanged.
     assert redrawn_group_html(other.unique_id, named) == {"html": None}
     assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}
+    # A removed viewer keeps their drawing rather than one without "You".
+    group.remove_participant(first)
+    assert redrawn_group_html(first.unique_id, named) == {"html": None}
+
+    # group=None, as trial.sync_group is after a removal, shows no group
+    # even though the participant is still in another one.
+    assert GroupPrompt("Hi", participant=late).group_html
+    assert GroupPrompt("Hi", group=None, participant=late).group_html == ""
+    with pytest.raises(ValueError, match="not both"):
+        GroupPrompt("Hi", group=None, group_type="room", participant=late)
