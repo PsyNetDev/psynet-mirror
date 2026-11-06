@@ -1942,12 +1942,12 @@ class ChainTrialMaker(NetworkTrialMaker):
         super().init_participant(experiment, participant)
         participant.module_state.participated_networks = []
 
-        sync_group = (
-            participant.active_sync_groups[self.sync_group_type]
-            if self.sync_group_type
-            else None
-        )
-        is_follower = sync_group and participant != sync_group.leader
+        sync_group = self._active_sync_group(participant)
+        if self.sync_group_type is not None and sync_group is None:
+            # Removed from their group: they leave before their first trial,
+            # so they need no networks or block order.
+            return
+        is_follower = participant != sync_group.leader if sync_group else False
 
         if not is_follower:
             if self.chain_type == "within":
