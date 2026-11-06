@@ -54,6 +54,15 @@ CONSENTS = pytest.mark.parametrize(
 )
 
 
+@pytest.fixture(autouse=True)
+def _deployed(in_experiment_directory, deployment_info):
+    """Let wake publication import Dallinger's experiment server.
+
+    Without deployment info that import fails after registering the
+    experiment blueprint, and every later import of the server then fails.
+    """
+
+
 def _track_barrier_check_claims(monkeypatch):
     """Record ``_run_pending_barrier_checks`` results without changing behavior."""
     claimed = []
@@ -133,7 +142,7 @@ def _count_waiting_screen(participant):
 
 @CONSENTS
 def test_response_into_a_hold_with_a_waiting_screen_returns_its_fragment(
-    in_experiment_directory, db_session, deployment_info, monkeypatch
+    in_experiment_directory, db_session, monkeypatch
 ):
     """The waiting screen arrives in place, carrying the hold's attributes."""
     from dallinger.experiment_server.experiment_server import app
