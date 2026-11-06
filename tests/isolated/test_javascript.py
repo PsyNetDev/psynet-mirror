@@ -74,6 +74,8 @@ def _page_participant(**overrides):
         unique_id="participant-1",
         page_uuid="page-1",
         id=7,
+        failed=False,
+        active_barriers={},
         active_sync_groups={},
     )
     participant.__dict__.update(overrides)

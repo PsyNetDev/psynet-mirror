@@ -42,6 +42,7 @@ from psynet.db import _SessionQueue, forbid_commits
 from psynet.timeline import Page, get_template
 from psynet.utils import (
     call_function_with_context,
+    call_if_callable,
     finalize_template_value,
     get_logger,
     get_translator,
@@ -179,8 +180,12 @@ def _queue_arrival_update(participant_id, *, hold_message=None, notice=None):
         )
 
 
-def _queue_countdown_update(participant_id, release_time):
-    """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit."""
+def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
+    """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit.
+
+    ``hold_message`` is the hold copy re-rendered for the new target, for
+    ``content`` functions whose text depends on it.
+    """
     release_in_ms = (
         None if release_time is None else round((release_time - time.time()) * 1000)
     )
@@ -188,6 +193,7 @@ def _queue_countdown_update(participant_id, release_time):
         _pending_wakes.get()[f"countdown:{participant_id}"] = {
             "participant_id": participant_id,
             "reason": "countdown",
+            "hold_message": hold_message,
             "release_in_ms": release_in_ms,
         }
     except Exception:
@@ -487,12 +493,8 @@ class _TimelineHoldPage(Page):
         super().consume(experiment, participant)
         now = timenow()
         # Resolve a participant-specific budget once; polls use the saved deadline.
-        max_wait_time = (
-            call_function_with_context(
-                self.max_wait_time, participant=participant, experiment=experiment
-            )
-            if callable(self.max_wait_time)
-            else self.max_wait_time
+        max_wait_time = call_if_callable(
+            self.max_wait_time, participant=participant, experiment=experiment
         )
         deadline_at = (
             None if max_wait_time is None else now + timedelta(seconds=max_wait_time)
