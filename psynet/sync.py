@@ -3380,8 +3380,10 @@ def arrival_notice_payload(unique_id):
 def _interruptible_waiting_barrier(page, participant):
     """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
 
-    Pages inside a trial are left to run to their end, so that the trial
-    is not finalized without an answer.
+    Pages of a trial that is still waiting for its answer are left to run
+    to their end, so that the trial is not finalized without an answer.
+    ``participant.current_trial`` is not cleared after a trial, so an
+    earlier, answered trial doesn't count.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
@@ -3389,7 +3391,7 @@ def _interruptible_waiting_barrier(page, participant):
     if participant.failed:
         return None
     trial = participant.current_trial
-    if trial is not None and not trial.finalized:
+    if trial is not None and not trial.complete:
         return None
     return barrier
 
