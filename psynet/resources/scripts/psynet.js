@@ -1466,6 +1466,9 @@
         confirmListening: true,
         onOpen() {
           if (!controller.stopped) {
+            // Catches up on arrivals between rendering and subscribing, for
+            // waiting screens that show who is ready.
+            psynet.fetchArrivalNotice();
             psynet.resumeTimelineHold("websocket connection");
           }
         },

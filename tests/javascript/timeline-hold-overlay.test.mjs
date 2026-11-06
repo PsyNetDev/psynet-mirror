@@ -270,6 +270,25 @@ it("ignores directed messages that are not hold wakes", () => {
   assert.deepEqual(calls, []);
 });
 
+it("fetches who has arrived once the hold socket opens", () => {
+  let options;
+  const calls = [];
+  const psynet = {
+    fetchArrivalNotice: () => calls.push("fetch"),
+    resumeTimelineHold: () => calls.push("resume"),
+  };
+  const channel = { connect: (opts) => (options = opts) };
+  const connect = new Function(
+    "psynet",
+    "PsyNetWebSocketChannel",
+    `${extractFunction("_connectTimelineHoldSocket")}; return _connectTimelineHoldSocket;`
+  )(psynet, channel);
+  connect({ stopped: false, hold: { channel: "c", wake_token: "w" } });
+
+  options.onOpen();
+  assert.deepEqual(calls, ["fetch", "resume"]);
+});
+
 describe("timeline hold countdown", () => {
   function load() {
     const element = { dataset: {}, textContent: "" };
