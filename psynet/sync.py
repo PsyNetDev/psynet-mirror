@@ -2422,7 +2422,9 @@ class Regrouper(Grouper):
     deadline
         When to stop waiting for absent members. A number is seconds since the
         first of the pool's waiting members arrived, or since the pool's
-        previous split if that is later. ``Clock(period)`` splits at fixed wall-clock ticks
+        previous split if that is later. Make it longer than a round takes:
+        otherwise members who finish a round early, or sit it out, are split
+        again before the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
         instead, even when everyone is already waiting, if at least
         ``min_group_size`` members were waiting at the tick. ``None`` (default)
         waits until the pool is complete, which needs ``within``.
