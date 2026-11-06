@@ -63,6 +63,8 @@ logger = get_logger()
 
 # Seconds after a page's ``time_limit`` that an answer still counts as given in time.
 TIME_LIMIT_GRACE_SECONDS = 5
+# Seconds before a page's ``time_limit`` that the browser may already report it reached.
+TIME_LIMIT_EARLY_SECONDS = 2
 
 
 def _normalize_javascript_urls(urls, argument_name):
@@ -1890,10 +1892,14 @@ class Page(Elt):
         """Return whether this answer is given because the time limit ran out."""
         if self.time_limit is None or participant.page_deadline is None:
             return False
+        now = timenow()
+        # The browser's flag is trusted only around the deadline, so an
+        # edited page cannot end the time limit early.
+        early = timedelta(seconds=TIME_LIMIT_EARLY_SECONDS)
         if metadata.get("time_limit_reached") is True:
-            return True
+            return now >= participant.page_deadline - early
         grace = timedelta(seconds=TIME_LIMIT_GRACE_SECONDS)
-        return timenow() > participant.page_deadline + grace
+        return now > participant.page_deadline + grace
 
     def on_complete(self, experiment, participant):
         pass

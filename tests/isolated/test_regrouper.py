@@ -98,6 +98,8 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
         released[0].active_sync_groups["pair"]
         is (released[1].active_sync_groups["pair"])
     )
+    (odd_one_out,) = [p for p in present if p not in released]
+    assert "pair" not in odd_one_out.active_sync_groups
 
 
 @in_consents_experiment
@@ -109,13 +111,17 @@ def test_clock_regrouper_splits_everyone_waiting_into_balanced_rooms(
     participants = _working_participants(exp, 6)
     _arrive(exp, rooms, participants)
     assert not rooms.would_release(participants)
+    assert rooms.expected_release_time(participants[0]) > time.time()
 
     # One player waited through a tick alone; a newcomer doesn't start a round early.
     _backdate_arrivals(rooms, participants[:1], 60)
     assert not rooms.would_release(participants)
+    assert rooms.expected_release_time(participants[0]) > time.time()
 
     # The last player arrived after the tick, so waits for the next one.
     _backdate_arrivals(rooms, participants[1:5], 60)
+    # A tick that is due but not yet split counts down to zero, not to the next tick.
+    assert rooms.expected_release_time(participants[0]) <= time.time()
     released = rooms.choose_who_to_release(participants)
 
     assert participants[5] not in released
@@ -240,7 +246,10 @@ def test_group_barrier_can_let_ungrouped_participants_through(
     exp = get_experiment()
     original = exp.timeline
     exp.timeline = Timeline(
-        GroupBarrier("round_end", group_type="pair", skip_if_not_in_group=True),
+        # A barrier that kicks late members lets ungrouped participants through.
+        GroupBarrier(
+            "round_end", group_type="pair", timeout_between_barriers_action="kick"
+        ),
         ModularPage("after", "Round over", time_estimate=1),
     )
     try:

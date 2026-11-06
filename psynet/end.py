@@ -51,6 +51,8 @@ class EndLogic(ExitLogic):
 
     def __init__(self, auto_continue_seconds: Optional[float] = None):
         super().__init__()
+        if auto_continue_seconds is not None and auto_continue_seconds < 0:
+            raise ValueError("auto_continue_seconds must be non-negative.")
         self.auto_continue_seconds = auto_continue_seconds
 
     def resolve(self) -> Union[Elt, List[Elt]]:
@@ -175,7 +177,7 @@ class EndLogic(ExitLogic):
             countdown = Markup("<span data-psynet-seconds-left>{}</span>").format(
                 math.ceil(self.auto_continue_seconds)
             )
-            text = _("This page continues by itself in {SECONDS} seconds.")
+            text = _("This page continues by itself in {SECONDS} s.")
             return dominate.util.raw(escape(text).replace("{SECONDS}", countdown))
         if experiment.with_lucid_recruitment():
             return _("Click Finish to return to your panel.")
@@ -306,11 +308,12 @@ class UnsuccessfulEndLogic(EndLogic):
     auto_continue_seconds
         See :class:`EndLogic`.
     failure_message
-        Optional function of ``participant`` (and, if it asks for them, other
-        context arguments such as ``experiment``) returning a line
-        that says why the participant stopped early, or ``None``. Without
-        one, or when it returns ``None``, PsyNet explains its own reasons,
-        such as leaving a waiting page in a multiplayer game.
+        Optional line that says why the participant stopped early, or a
+        function of ``participant`` (and, if it asks for them, other context
+        arguments such as ``experiment``) that returns one, or ``None``.
+        Without one, or when it returns ``None``, PsyNet explains its own
+        multiplayer reasons: waiting too long at a barrier, being too slow
+        to reach the next one, or the group becoming too small.
     """
 
     exit_context = exit_domain.ExitContext.UNSUCCESSFUL
@@ -318,7 +321,7 @@ class UnsuccessfulEndLogic(EndLogic):
     def __init__(
         self,
         failure_tags: Optional[List] = None,
-        failure_message: Optional[Callable] = None,
+        failure_message: Optional[Union[str, Callable]] = None,
         auto_continue_seconds: Optional[float] = None,
         **kwargs,
     ):
@@ -333,7 +336,7 @@ class UnsuccessfulEndLogic(EndLogic):
         if "template_filename" in kwargs:
             raise ValueError(
                 "UnsuccessfulEndPage no longer accepts a template_filename argument. "
-                "Instead you should customize its content by subclassing its message attribute."
+                "Instead, pass failure_message or override debrief_participant."
             )
 
     def before_debrief(self, experiment, participant) -> None:
@@ -376,8 +379,12 @@ class UnsuccessfulEndLogic(EndLogic):
     def failure_reason(self, participant):
         """Return the line explaining why the participant stopped early, or ``None``."""
         if self.failure_message is not None:
-            reason = call_function_with_context(
-                self.failure_message, participant=participant
+            reason = (
+                call_function_with_context(
+                    self.failure_message, participant=participant
+                )
+                if callable(self.failure_message)
+                else self.failure_message
             )
             if reason is not None:
                 return reason

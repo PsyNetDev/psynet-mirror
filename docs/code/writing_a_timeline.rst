@@ -221,11 +221,13 @@ branch of end logic, which you can replace with keyword arguments to
 See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
-The unsuccessful end page says why the participant stopped when PsyNet itself
-ended their session, for example "We waited too long for other participants,
-so we had to end your session." To explain
-your own reasons, pass a function of the participant that returns a line, or
-``None`` to keep PsyNet's:
+When PsyNet ends a multiplayer session itself (a participant waited too long
+at a barrier, was too slow to reach the next one, or their group became too
+small), the unsuccessful end page says why, for example "We waited too long
+for other participants, so we had to end your session." Other endings, such
+as screening, get no such line. To explain your own reasons, pass a line, or
+a function of the participant that returns a line or ``None`` to keep
+PsyNet's:
 
 .. code-block:: python
 
@@ -268,7 +270,10 @@ participant:
     )
 
 The server counts the time from when the participant reached the page, so
-reloading the page does not restart the countdown. It also records
+reloading the page does not restart the countdown. The time includes any
+wait before the participant can answer, such as audio that must finish
+before the Next button is enabled, so allow for it in ``time_limit``. The
+server also records
 ``time_limit_answer`` for an answer that arrives more than 5 seconds after
 the limit, so a tampered or stalled page cannot take longer. Answers given
 because of the time limit skip validation and have ``time_limit_reached`` in

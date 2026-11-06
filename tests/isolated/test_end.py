@@ -103,7 +103,7 @@ def test_end_pages_can_continue_by_themselves():
             experiment, MagicMock()
         )
     assert (page.time_limit, page.time_limit_answer) == (3, "Finish")
-    assert "This page continues by itself in 3 seconds." in page.plain_text
+    assert "This page continues by itself in 3 s." in page.plain_text
     assert "Click Finish" not in page.plain_text
 
 
@@ -120,10 +120,23 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
         failure_tags=["timeline_hold:barrier:round", "fail_on_timeout"],
         module_state=None,
     )
+    waiting_page = SimpleNamespace(
+        failure_tags=["while_loop:barrier:round", "fail_on_timeout"],
+        module_state=None,
+    )
+    too_few = SimpleNamespace(
+        failure_tags=["sync group below minimum size"], module_state=None
+    )
     assert UnsuccessfulEndLogic().failure_reason(async_job) is None
     assert "waited too long" in UnsuccessfulEndLogic().failure_reason(barrier_wait)
+    assert "waited too long" in UnsuccessfulEndLogic().failure_reason(waiting_page)
+    assert "Too few members" in UnsuccessfulEndLogic().failure_reason(too_few)
     assert "took too long" in UnsuccessfulEndLogic().failure_reason(slow)
     assert UnsuccessfulEndLogic().failure_reason(other) is None
+    assert (
+        UnsuccessfulEndLogic(failure_message="The study is full.").failure_reason(other)
+        == "The study is full."
+    )
 
     def failure_message(participant):
         if "screening" in participant.failure_tags:

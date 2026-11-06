@@ -178,7 +178,7 @@ def waiting_for_partner(participant):
 def show_outcome(participant):
     if not in_pair(participant):
         return InfoPage(
-            "You ran out of time, so you missed this round.", time_estimate=5
+            "You ran out of time, so you got no coins this round.", time_estimate=5
         )
     if participant.var.decisions is None:
         return InfoPage(participant.var.outcome, time_estimate=5)
