@@ -3013,7 +3013,14 @@ class ChainTrialMaker(NetworkTrialMaker):
         """Return the module states that move together: the participant's, or the sync group's."""
         if self.sync_group_type:
             group = participant.active_sync_groups[self.sync_group_type]
-            return [member.module_state for member in group.participants]
+            # Members who have left, or not yet reached this trial maker, are
+            # in another module, so their current state isn't for this one.
+            return [
+                member.module_state
+                for member in group.active_participants
+                if member.module_state is not None
+                and member.module_state.module_id == self.id
+            ]
         return [participant.module_state]
 
     def _update_group_states(self, participant, **values):

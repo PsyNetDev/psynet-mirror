@@ -373,6 +373,23 @@ def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
     assert trial_maker._prepare_trial_uncommitted(None, kicked, None) == (None, "exit")
 
 
+def test_group_plan_updates_skip_members_in_other_modules():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    here = SimpleNamespace(module_id=trial_maker.id, plan_position=0)
+    elsewhere = SimpleNamespace(module_id="earlier_module", plan_position=0)
+    members = [
+        SimpleNamespace(module_state=here),
+        SimpleNamespace(module_state=elsewhere),
+        SimpleNamespace(module_state=None),
+    ]
+    group = SimpleNamespace(active_participants=members)
+    leader = SimpleNamespace(module_state=here, active_sync_groups={"main": group})
+
+    trial_maker._update_group_states(leader, plan_position=1)
+
+    assert (here.plan_position, elsewhere.plan_position) == (1, 0)
+
+
 def test_participant_whose_group_was_closed_still_needs_a_new_group():
     trial_maker = make_trial_maker(sync_group_type="main")
     closed = SimpleNamespace(
