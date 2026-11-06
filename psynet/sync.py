@@ -151,7 +151,14 @@ from psynet.field import PythonClass
 from psynet.page import UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.serialize import SerializedCallable, serialize_callable
-from psynet.timeline import CodeBlock, EltCollection, _is_timeline_hold, conditional
+from psynet.timeline import (
+    CodeBlock,
+    EltCollection,
+    EndWhile,
+    StartWhile,
+    _is_timeline_hold,
+    conditional,
+)
 from psynet.timeline_hold import (
     TimelineHoldRecord,
     _defer_timeline_hold_wakes,
@@ -944,6 +951,14 @@ class Barrier(EltCollection):
         for elt in elts:
             # Keep an inner barrier's link: its waiting pages belong to it.
             elt.links.setdefault("barrier", self)
+        # Page makers can resolve the waiting logic again elsewhere, carrying
+        # this link with it, so the loop's own markers say where it really is.
+        self._waiting_loop_markers = [
+            elt
+            for elt in elts
+            if isinstance(elt, (StartWhile, EndWhile))
+            and elt.label == f"barrier:{self.id}"
+        ]
 
         return elts
 
@@ -1271,6 +1286,9 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
+_DEFAULT_MAX_WAIT_TIME = object()
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1315,7 +1333,7 @@ class GroupBarrier(Barrier):
         if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
         Defaults to 20 seconds plus ``timeout_between_barriers_time``, so that a member who arrives
         promptly can wait out a slower one. Must be longer than ``timeout_between_barriers_time``;
-        this is not checked when ``max_wait_time`` is a function.
+        this is not checked when ``max_wait_time`` is a function. ``None`` means no limit.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
@@ -1420,10 +1438,11 @@ class GroupBarrier(Barrier):
         wait has their between-barrier timeout counted from when they joined,
         so the waiters can still reach ``max_wait_time`` first.
         """
-        if max_wait_time is None:
+        if max_wait_time is _DEFAULT_MAX_WAIT_TIME:
             return 20 + (timeout_between_barriers_time or 0)
         if (
-            timeout_between_barriers_time is not None
+            max_wait_time is not None
+            and timeout_between_barriers_time is not None
             and not callable(max_wait_time)
             and max_wait_time <= timeout_between_barriers_time
         ):
@@ -1431,9 +1450,7 @@ class GroupBarrier(Barrier):
                 f"max_wait_time ({max_wait_time} s) must be longer than "
                 f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
                 "otherwise members who arrive promptly time out while waiting "
-                "for slower ones. This holds while group membership is fixed; "
-                "newcomers to a group that accepts top-ups are timed from when "
-                "they joined."
+                "for slower ones."
             )
         return max_wait_time
 
@@ -1449,7 +1466,7 @@ class GroupBarrier(Barrier):
         group_type: str,
         waiting_logic=None,
         waiting_logic_expected_repetitions=3,
-        max_wait_time: Optional[float] = None,
+        max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
@@ -2484,11 +2501,12 @@ class Regrouper(Grouper):
     release_left_over
         If ``True``, participants left over after a split continue ungrouped,
         for example to a sit-out page, and come back for the next split. If
-        ``False`` (default), they keep waiting for the next split. When too
-        few are waiting to form any group, for example one player whose
-        teammates are still playing a round, they wait for those teammates
-        for up to one more ``deadline`` (or ``Clock`` tick) before they are
-        released ungrouped. Taking members who stop playing out of the
+        ``False`` (default), they keep waiting for the next split. With
+        ``within``, when too few are waiting to form any group, for example
+        one player whose teammates are still playing a round, they wait for
+        those teammates for up to one more ``deadline`` (or ``Clock`` tick)
+        before they are released ungrouped, or until ``max_wait_time`` if
+        there is no deadline. Taking members who stop playing out of the
         ``within`` group, for example with ``remove_participant``, means
         nobody waits for them.
 
@@ -2501,7 +2519,9 @@ class Regrouper(Grouper):
 
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
-        Default: 300 seconds.
+        Default: 300 seconds. With ``release_left_over`` and ``within``, it
+        must be longer than twice the ``deadline`` (or ``Clock`` period), so
+        that a player waiting alone sits out instead of being failed.
 
     content
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
@@ -2545,6 +2565,20 @@ class Regrouper(Grouper):
         self.form_groups_function = form_groups
         self.release_left_over = release_left_over
         self.on_release = on_release
+        longest_lone_wait = self.clock_period or self.deadline
+        if (
+            release_left_over
+            and within is not None
+            and longest_lone_wait is not None
+            and isinstance(max_wait_time, (int, float))
+            and max_wait_time <= 2 * longest_lone_wait
+        ):
+            raise ValueError(
+                f"max_wait_time ({max_wait_time} s) must be longer than twice the "
+                f"deadline ({longest_lone_wait} s): with release_left_over, a player "
+                "waiting alone for teammates who are still playing waits up to two "
+                "deadlines before sitting out."
+            )
 
     def receive_participant(self, participant: Participant):
         previous = participant.active_sync_groups.get(self.group_type)
@@ -2663,6 +2697,7 @@ class Regrouper(Grouper):
         )
 
     def _waited_an_extra_deadline(self, within_group, members) -> bool:
+        """Return whether the pool has waited a deadline (or ``Clock`` tick) past the usual one."""
         now = time.time()
         if self.clock_period is not None:
             previous_tick = _latest_tick(now, self.clock_period) - self.clock_period
@@ -3598,12 +3633,29 @@ def _interruptible_waiting_barrier(page, participant):
     barrier = (getattr(page, "links", None) or {}).get("barrier")
     if not isinstance(barrier, Barrier) or barrier.release_grace is None:
         return None
+    if not _is_inside_waiting_loop(barrier, participant):
+        return None
     if participant.failed:
         return None
     trial = participant.current_trial
     if trial is not None and not trial.complete:
         return None
     return barrier
+
+
+def _is_inside_waiting_loop(barrier, participant):
+    """Return whether the participant's timeline position is inside the barrier's ``waiting_logic`` loop."""
+    markers = getattr(barrier, "_waiting_loop_markers", None)
+    position = participant.elt_id
+    if not markers or position is None:
+        return True
+    start, end = (marker.id for marker in markers)
+    depth = len(start)
+    return (
+        len(position) >= depth
+        and list(position[: depth - 1]) == list(start[:-1])
+        and start[-1] < position[depth - 1] < end[-1]
+    )
 
 
 def _has_left_barrier(participant, barrier_id):

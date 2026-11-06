@@ -162,8 +162,13 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
         db_session.flush()
         if label:
             assert f">Your partner {label}<" in html()
-    # Members who moved on to their next group are not shown.
+    # Members who moved on to their next group are not shown, except with
+    # their answer on a results page, which reads the same after a reload.
     assert "psynet-group-member--left" not in html()
+    results = GroupPrompt(
+        group=group, participant=early, anonymous=True, answers={late.id: "3"}
+    ).group_html
+    assert ">3</span>" in results and "psynet-group-member--left" not in results
 
 
 @pytest.mark.parametrize(
