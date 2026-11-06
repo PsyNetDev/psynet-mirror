@@ -3685,8 +3685,15 @@
       }
 
       let hold = response.page?.attributes?.timeline_hold;
-      let holdPageShown =
-        hold?.page_uuid === psynet.page?.attributes?.timeline_hold?.page_uuid;
+      let shownHold = psynet.page?.attributes?.timeline_hold;
+      let holdPageShown = hold?.page_uuid === shownHold?.page_uuid;
+      if (hold && !holdPageShown && !hold.replaces_page && shownHold?.replaces_page) {
+        // An indicator over the previous hold's waiting screen would show
+        // that screen's out-of-date text, so the server renders this hold.
+        psynet.stopTimelineHold();
+        await psynet.loadNextTimelinePageWithReload();
+        return true;
+      }
       if (hold && (!hold.replaces_page || holdPageShown)) {
         // Nothing records while the participant waits.
         await psynet.endPageRecording([]);

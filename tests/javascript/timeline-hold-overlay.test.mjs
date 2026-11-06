@@ -182,12 +182,16 @@ describe("timeline hold overlay reuse", () => {
 });
 
 describe("approved response into a waiting screen", () => {
-  function loadHandler(shownHoldUuid) {
+  function loadHandler(shownHoldUuid, shownReplacesPage = true) {
     const calls = [];
     const record = (name) => async () => calls.push(name);
     const psynet = {
       log: { debug() {} },
-      page: { attributes: { timeline_hold: { page_uuid: shownHoldUuid } } },
+      page: {
+        attributes: {
+          timeline_hold: { page_uuid: shownHoldUuid, replaces_page: shownReplacesPage },
+        },
+      },
       isSameSessionPageUpdate: () => false,
       requiresFullPageReloadTransition: () => false,
       endPageRecording: record("endPageRecording"),
@@ -209,8 +213,8 @@ describe("approved response into a waiting screen", () => {
     return { handle, calls };
   }
 
-  function holdResponse(pageUuid) {
-    const hold = { page_uuid: pageUuid, replaces_page: true };
+  function holdResponse(pageUuid, replacesPage = true) {
+    const hold = { page_uuid: pageUuid, replaces_page: replacesPage };
     return {
       page: { attributes: { timeline_hold: hold } },
       timeline_fragment: { page_uuid: pageUuid, html: "<div></div>" },
@@ -230,6 +234,20 @@ describe("approved response into a waiting screen", () => {
     await handle(holdResponse("hold-2"));
     assert.ok(!calls.includes("beginTimelineHold"));
     assert.ok(calls.includes("loadNextTimelinePageFromResponse"));
+  });
+
+  it("reloads into a hold without a waiting screen from a waiting screen", async () => {
+    const { handle, calls } = loadHandler("hold-1");
+    await handle(holdResponse("hold-2", false));
+    assert.ok(!calls.includes("beginTimelineHold"));
+    assert.ok(calls.includes("loadNextTimelinePageWithReload"));
+  });
+
+  it("keeps the participant's page under a hold without a waiting screen", async () => {
+    const { handle, calls } = loadHandler(undefined, false);
+    await handle(holdResponse("hold-2", false));
+    assert.ok(calls.includes("beginTimelineHold"));
+    assert.ok(!calls.includes("loadNextTimelinePageWithReload"));
   });
 });
 
