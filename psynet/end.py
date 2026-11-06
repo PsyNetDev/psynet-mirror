@@ -17,7 +17,7 @@ from psynet.timeline import (
     conditional,
     join,
 )
-from psynet.utils import get_translator
+from psynet.utils import call_function_with_context, get_translator
 
 
 class ExitLogic(EltCollection):
@@ -279,7 +279,8 @@ class UnsuccessfulEndLogic(EndLogic):
     failure_tags
         Tags appended to the participant's ``failure_tags`` on this page.
     failure_message
-        Optional function ``failure_message(participant)`` returning a line
+        Optional function of ``participant`` (and, if it asks for them, other
+        context arguments such as ``experiment``) returning a line
         that says why the participant stopped early, or ``None``. Without
         one, or when it returns ``None``, PsyNet explains its own reasons,
         such as leaving a waiting page in a multiplayer game.
@@ -347,37 +348,43 @@ class UnsuccessfulEndLogic(EndLogic):
     def failure_reason(self, participant):
         """Return the line explaining why the participant stopped early, or ``None``."""
         if self.failure_message is not None:
-            reason = self.failure_message(participant)
+            reason = call_function_with_context(
+                self.failure_message, participant=participant
+            )
             if reason is not None:
                 return reason
         return _builtin_failure_reason(participant.failure_tags or [])
 
 
 def _builtin_failure_reason(failure_tags):
-    """Explain the first failure tag that PsyNet itself sets, or return ``None``."""
+    """Explain why PsyNet ended a multiplayer session, from its failure tags, or return ``None``."""
     _p = get_translator(context=True)
-    reasons = {
-        "hidden_while_waiting": lambda: _p(
+    if "hidden_while_waiting" in failure_tags:
+        return _p(
             "final_page_unsuccessful",
-            "You left the page while waiting for other participants, "
+            "You switched away from this page while waiting for other participants, "
             "so we had to end your session.",
-        ),
-        "timeout between barriers": lambda: _p(
+        )
+    if "timeout between barriers" in failure_tags:
+        return _p(
             "final_page_unsuccessful",
-            "You took too long to respond, so your group had to continue without you.",
-        ),
-        "fail_on_timeout": lambda: _p(
+            "You took too long to reach the next step, so we had to end your session.",
+        )
+    if "sync group below minimum size" in failure_tags:
+        return _p(
+            "final_page_unsuccessful",
+            "Too few members of your group remained to continue, "
+            "so we had to end your session.",
+        )
+    waited_at_barrier = any(
+        tag.startswith(("timeline_hold:barrier:", "while_loop:barrier:"))
+        for tag in failure_tags
+    )
+    if "fail_on_timeout" in failure_tags and waited_at_barrier:
+        return _p(
             "final_page_unsuccessful",
             "We waited too long for other participants, so we had to end your session.",
-        ),
-        "sync group below minimum size": lambda: _p(
-            "final_page_unsuccessful",
-            "Too many members of your group left, so the group could not continue.",
-        ),
-    }
-    for tag in failure_tags:
-        if tag in reasons:
-            return reasons[tag]()
+        )
     return None
 
 
