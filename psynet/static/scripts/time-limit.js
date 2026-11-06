@@ -2,10 +2,10 @@
 //
 // The server sends the seconds left when the page is drawn, so a reload
 // continues the same countdown. Elements with data-psynet-seconds-left show
-// it; without one, the module adds a "N s left" line at the top of the
-// page, so it is seen before the controls of a long page. At zero the page
-// submits with time_limit_reached in its metadata, and the server records the
-// page's time_limit_answer.
+// it; without one, the module adds a "N s left" chip where timeline holds
+// show their status, hidden while the page is being submitted or held. At
+// zero the page submits with time_limit_reached in its metadata, and the
+// server records the page's time_limit_answer.
 
 export function activate({root, vars, psynet}) {
     var config = vars["timeLimit"];
@@ -14,14 +14,14 @@ export function activate({root, vars, psynet}) {
     var labels = Array.from(root.querySelectorAll("[data-psynet-seconds-left]"));
     var line = null;
     if (labels.length === 0) {
-        line = document.createElement("p");
-        line.className = "psynet-time-limit";
+        line = document.createElement("div");
+        line.className = "psynet-status-chip psynet-time-limit";
         var parts = String(config.text).split("{SECONDS}");
         line.append(parts[0]);
         var label = document.createElement("span");
         label.setAttribute("data-psynet-seconds-left", "");
         line.append(label, parts.slice(1).join("{SECONDS}"));
-        root.prepend(line);
+        (document.getElementById("timeline-hold-region") || root).append(line);
         labels = [label];
     }
     var timer = null;
@@ -45,6 +45,7 @@ export function activate({root, vars, psynet}) {
         labels.forEach(function (label) {
             label.textContent = left;
         });
+        if (line) line.hidden = Boolean(psynet.nextPagePending || psynet.timelineHold);
         if (left > 0) timer = window.setTimeout(tick, 250);
         else submit();
     }

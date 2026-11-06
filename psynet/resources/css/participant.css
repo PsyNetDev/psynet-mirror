@@ -1144,8 +1144,9 @@ textarea:focus-visible,
 
 /* Countdown added by Page(time_limit=...) when the page has no countdown of its own. */
 .psynet-time-limit {
-    margin-bottom: 1rem;
-    text-align: center;
     font-variant-numeric: tabular-nums;
-    color: var(--bs-secondary-color, #6c757d);
+}
+
+.psynet-time-limit[hidden] {
+    display: none;
 }

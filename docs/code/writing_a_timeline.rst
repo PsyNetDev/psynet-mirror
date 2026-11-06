@@ -252,8 +252,9 @@ Time limits
 -----------
 
 Give a page ``time_limit`` to allow only that many seconds on it. The page
-shows "15 s left", counting down, and when time runs out it submits
-``time_limit_answer`` for the participant:
+shows "15 s left" at the top, where waiting messages also appear, counting
+down, and when time runs out it submits ``time_limit_answer`` for the
+participant:
 
 .. code-block:: python
 
