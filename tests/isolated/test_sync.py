@@ -6612,19 +6612,19 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
         notify_arrivals=notify_arrivals,
     )
 
-    # Create 3 participants in the same sync group, but only 2 "reach" this barrier.
-    participants = [new_participant(exp) for _ in range(3)]
+    # Create 4 participants in the same sync group, but only 2 "reach" this barrier.
+    participants = [new_participant(exp) for _ in range(4)]
     for p in participants:
         p.status = "working"
     waiting_participants = participants[:2]
-    missing_participant = participants[2]
+    missing_participants = participants[2:]
 
     group = SimpleSyncGroup(
         group_type="main",
-        initial_group_size=3,
-        max_group_size=3,
+        initial_group_size=4,
+        max_group_size=4,
         min_group_size=min_group_size,
-        n_active_participants=3,
+        n_active_participants=4,
         accepts_top_ups=False,
         fail_participants_below_min_size=True,
     )
@@ -6637,16 +6637,13 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
 
     barrier.check_waiting_participants(waiting_participants)
     if min_group_size == 3:
-        # The kick dissolves the group, so nobody went on without them.
+        # The second kick dissolves the group, so nobody went on without either.
         assert all(p.failed for p in waiting_participants)
-        assert pending_arrival_notice_for(missing_participant) is None
+        assert all(pending_arrival_notice_for(p) is None for p in missing_participants)
         return
     released = barrier.choose_who_to_release(waiting_participants)
     db_session.commit()
 
-    assert missing_participant not in group.active_participants
-    assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
-    assert missing_participant not in released
     assert set(released) == set(waiting_participants)
     removal = {
         "notice": "Your group went on without you. Please continue.",
@@ -6655,12 +6652,15 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     assert removal in [
         {key: target.get(key) for key in removal}
         for participant_id, payload in publications
-        if participant_id == missing_participant.id
+        if participant_id == missing_participants[0].id
         for target in payload["targets"]
     ]
-    assert arrival_notice_payload(missing_participant.unique_id)["removed"]
-    missing_participant.page_uuid = "next-page"
-    assert pending_arrival_notice_for(missing_participant) is None
+    for missing_participant in missing_participants:
+        assert missing_participant not in group.active_participants
+        assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
+        assert arrival_notice_payload(missing_participant.unique_id)["removed"]
+    missing_participants[0].page_uuid = "next-page"
+    assert pending_arrival_notice_for(missing_participants[0]) is None
 
 
 @pytest.mark.parametrize(
