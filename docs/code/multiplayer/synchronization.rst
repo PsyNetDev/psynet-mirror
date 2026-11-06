@@ -175,20 +175,32 @@ on their own.
     playing out of the ``within`` group with ``remove_participant`` means
     nobody waits for them.
 
+``roles`` (default: ``None``)
+    Role names, for example ``["proposer", "responder"]``. Each group then has
+    one member per role, so ``group_size`` must equal the number of roles.
+    By default each member gets the role they have had least often, so roles
+    alternate; with ``keep_roles=True``, participants keep the role they are
+    first given, newcomers get the role that lets the most waiting players
+    play, and players of a role nobody is free to pair with sit out.
+
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
-    the groups as lists of participants, for example to avoid repeat partners
-    with :func:`~psynet.sync.pairs_avoiding_repeats`. Members not placed in a
-    group are left over. You can also subclass
+    the groups as lists of participants, replacing the default grouping.
+    Members not placed in a group are left over. You can also subclass
     :class:`~psynet.sync.Regrouper` and override
     :meth:`~psynet.sync.Regrouper.form_groups`.
 
 ``on_release``
     A function called after each split that forms at least one group, with
-    ``within_group``, ``groups``, ``left_over`` and ``regrouper``, for example
-    to assign roles. A late participant can be split on their own in the same
-    round, so count rounds per participant, as the ``ultimatum_pairing`` demo
-    does.
+    ``within_group``, ``groups``, ``left_over`` and ``regrouper``.
+
+By default, when not everyone fits into a group, those who have played the
+most rounds sit out, and participants are kept apart from last round's
+partners where possible. The regrouper keeps count for each participant:
+:meth:`~psynet.sync.Regrouper.rounds_played`,
+:meth:`~psynet.sync.Regrouper.rounds_sat_out` and, with ``roles``,
+:meth:`~psynet.sync.Regrouper.role`. It does this while holding its lock,
+so two rounds starting at once cannot give two players the same seat.
 
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
@@ -213,10 +225,12 @@ becoming known:
    :pyobject: round_message
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
-10 seconds. A player who doesn't choose in time is removed from their room by
-a :class:`~psynet.sync.GroupBarrier` with
+10 seconds. A player who closes their choice page is removed from their room
+by a :class:`~psynet.sync.GroupBarrier` with
 ``timeout_between_barriers_action="kick"``, so the rest of the room carries
-on, and they join the next round:
+on, and they join the next round. Because the choice page has a
+``time_limit``, the barrier waits for that limit before removing them, so
+the timeout itself can stay short:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: play_round
@@ -232,20 +246,21 @@ error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
-latecomers join until one of the team's players has finished a round:
+latecomers join during the team's first round:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
    :end-before: while_loop(
    :dedent: 8
 
-Each round pairs the team's players, avoiding last round's partners, and
-starts as soon as the whole team is ready:
+Each round pairs the team's players, avoiding last round's partners and
+alternating who proposes, and starts as soon as the whole team is ready. The
+game reads the regrouper's counts and roles, for example
+``pairing.role(participant)``:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :start-at: Regrouper(
-   :end-before: conditional(
-   :dedent: 8
+   :start-at: pairing = Regrouper(
+   :end-before: def play_round
 
 Keeping a group in step
 -----------------------
@@ -406,10 +421,10 @@ On a decision page, members who have answered get a tick. A member has
 answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
-``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
+``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
 answered when the page is drawn. Members who join the group appear live
 too, and members who leave are faded (see below), on any page without
-``answers``, ``answered`` or ``highlight``, unless ``subgroups`` is a function.
+``answers``, ``has_answered`` or ``highlight``, unless ``subgroups`` is a function.
 Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
 one, PsyNet logs a warning and the group stays as first drawn:
 
@@ -526,6 +541,13 @@ Timeouts
     accepts top-ups, a newcomer is timed from when they joined, so members
     already waiting can reach ``max_wait_time`` first.
 
+    A member on a page with a ``time_limit`` is judged by that page instead:
+    they are not late before the limit runs out, and are late once it ran out
+    more than 10 seconds ago, since the page would have moved them on had
+    they still been there. So the timeout need not be longer than the
+    pages' time limits; it covers pages without one, for example a member
+    who closed their tab before the timed page loaded.
+
     At a group's first barrier the timeout counts from when each member joined
     the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
@@ -596,7 +618,7 @@ participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:
 
 .. literalinclude:: ../../../demos/experiments/sync_quorum/experiment.py
-   :start-at: def waiting_logic(
+   :start-at: filler = 
    :end-before: class Exp
 
 ``expected_wait`` says how long participants are expected to wait, in

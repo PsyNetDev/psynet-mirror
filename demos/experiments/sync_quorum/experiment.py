@@ -56,9 +56,7 @@ def show_quorum(participant):
     )
 
 
-def waiting_logic():
-    """Return filler trials; each place in the timeline needs its own copy."""
-    return PageMaker(trial_maker.cue_trial, time_estimate=AnimalTrial.time_estimate)
+filler = PageMaker(trial_maker.cue_trial, time_estimate=AnimalTrial.time_estimate)
 
 
 class Exp(psynet.experiment.Experiment):
@@ -83,7 +81,7 @@ class Exp(psynet.experiment.Experiment):
                 max_group_size=None,
                 min_group_size=3,
                 join_existing_groups=True,
-                waiting_logic=waiting_logic(),
+                waiting_logic=filler,
                 expected_wait=10 * AnimalTrial.time_estimate,
                 max_wait_time=120,
             ),
@@ -100,7 +98,7 @@ class Exp(psynet.experiment.Experiment):
                             >= participant.sync_group.min_group_size
                         ),
                         logic_if_true=PageMaker(show_quorum, time_estimate=5),
-                        logic_if_false=waiting_logic(),
+                        logic_if_false=filler,
                     ),
                 ),
             ),

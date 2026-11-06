@@ -7,7 +7,7 @@ number, and the lowest number that nobody else in the room picked wins.
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
 doesn't choose in time sits out the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
-closing the tab, is removed from their room ``LEFT_PAGE_SECONDS`` later.
+closing the tab, is removed from their room soon after the time limit.
 Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
@@ -45,12 +45,10 @@ from psynet.timeline import (
 
 ROUND_SECONDS = 10
 CHOICE_SECONDS = 15
-# Extra seconds before a player who left the choice page is removed from their room.
-LEFT_PAGE_SECONDS = 15
 ROOM_SIZE = 8
 N_ROUNDS = 2
 NUMBERS = [1, 2, 3, 4, 5]
-WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + LEFT_PAGE_SECONDS + 10
+WAIT_TIMEOUT = ROUND_SECONDS + CHOICE_SECONDS + 20
 
 
 def lowest_unique(choices: dict):
@@ -119,6 +117,11 @@ def show_result(participant):
         )
     result = participant.var.last_round
     winner = result["winning_number"]
+    if len(result["choices"]) == 1:
+        return InfoPage(
+            "Everyone else in your room ran out of time, so nobody won this round.",
+            time_estimate=5,
+        )
     if winner is None:
         outcome = "Nobody picked a unique number, so nobody won."
     elif result["won"]:
@@ -161,7 +164,9 @@ def play_round():
             group_type="room",
             content="Waiting for the rest of the room…",
             waiting_screen=your_pick,
-            timeout_between_barriers_time=CHOICE_SECONDS + LEFT_PAGE_SECONDS,
+            # For a player who never opens the choice page. One who leaves
+            # it is taken out once its time limit has run out.
+            timeout_between_barriers_time=10,
             timeout_between_barriers_action="kick",
             on_release=score_round,
         ),

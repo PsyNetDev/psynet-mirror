@@ -6695,6 +6695,39 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_timeout_between_barriers_follows_a_timed_page(
+    in_experiment_directory, db_session
+):
+    """A member on a timed page is late only once its time limit ran out."""
+    exp = get_experiment()
+    grouper = SimpleGrouper("main", initial_group_size=4, min_group_size=2)
+    participants = _working_participants(exp, 4)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    group = participants[0].sync_group
+    for link in group.participant_links:
+        link.arrival_time -= timedelta(seconds=30)
+    waiting, deciding, left_timed_page, no_time_limit = participants
+    deciding.page_deadline = timenow() + timedelta(seconds=5)
+    left_timed_page.page_deadline = timenow() - timedelta(seconds=12)
+    barrier = GroupBarrier(
+        id_="after_timed_page",
+        group_type="main",
+        timeout_between_barriers_time=20,
+        timeout_between_barriers_action="kick",
+    )
+
+    barrier.check_waiting_participants([waiting])
+
+    assert set(group.active_participants) == {waiting, deciding}
+    assert left_timed_page.sync_group_links[0].removal_reason == "out_of_time"
+    assert no_time_limit.sync_group_links[0].removal_reason == "out_of_time"
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_dissolution(
     in_experiment_directory, db_session
 ):

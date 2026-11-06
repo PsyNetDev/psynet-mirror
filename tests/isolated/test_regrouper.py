@@ -1,7 +1,5 @@
-import random
 import sys
 import time
-import types
 from datetime import timedelta
 from pathlib import Path
 
@@ -20,7 +18,6 @@ from psynet.sync import (
     Regrouper,
     SimpleGrouper,
     _latest_tick,
-    pairs_avoiding_repeats,
 )
 from psynet.timeline import Timeline
 
@@ -362,10 +359,71 @@ def test_a_busy_player_does_not_hold_up_other_teams(
     assert _waiting(pairs, team_b) == []
 
 
-def test_pairs_avoiding_repeats_never_repeats_when_it_can_avoid_it():
-    a, b, c, d, e = (types.SimpleNamespace(id=i) for i in range(5))
-    last = {a.id: b.id, b.id: a.id, c.id: d.id, d.id: c.id}
-    random.seed(1)
-    pairs = pairs_avoiding_repeats([a, b, c, d, e], lambda p: last.get(p.id))
-    assert len(pairs) == 2
-    assert all(last.get(x.id) != y.id for x, y in pairs)
+def _team_and_pairs(exp, n, **kwargs):
+    team_grouper = SimpleGrouper("team", initial_group_size=n, min_group_size=2)
+    pairs = Regrouper(
+        "pair",
+        within="team",
+        group_size=2,
+        roles=["proposer", "responder"],
+        release_left_over=True,
+        deadline=30,
+        **kwargs,
+    )
+    team = _working_participants(exp, n)
+    _arrive(exp, team_grouper, team)
+    return team, pairs
+
+
+def _partner(participant):
+    (partner,) = [
+        p for p in participant.active_sync_groups["pair"].participants
+        if p is not participant
+    ]
+    return partner
+
+
+@in_consents_experiment
+def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    team, pairs = _team_and_pairs(exp, 4)
+
+    _arrive(exp, pairs, team)
+    first = {p.id: (pairs.role(p), _partner(p)) for p in team}
+    assert sorted(role for role, _ in first.values()) == ["proposer"] * 2 + ["responder"] * 2
+    assert all(pairs.role(_partner(p)) != pairs.role(p) for p in team)
+
+    _arrive(exp, pairs, team)
+    for p in team:
+        role, partner = first[p.id]
+        assert pairs.role(p) != role
+        assert _partner(p) is not partner
+        assert pairs.rounds_played(p) == 2
+
+    # Three players left: one sits out, and plays first next round.
+    team[0].active_sync_groups["team"].remove_participant(team[3])
+    _arrive(exp, pairs, team[:3])
+    (sitter,) = [p for p in team[:3] if "pair" not in p.active_sync_groups]
+    assert pairs.role(sitter) is None
+    assert pairs.rounds_sat_out(sitter) == 1
+    _arrive(exp, pairs, team[:3])
+    assert "pair" in sitter.active_sync_groups
+
+
+@in_consents_experiment
+def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_session):
+    exp = get_experiment()
+    team, pairs = _team_and_pairs(exp, 3, keep_roles=True)
+
+    _arrive(exp, pairs, team)
+    (sitter,) = [p for p in team if "pair" not in p.active_sync_groups]
+    playing = [p for p in team if p is not sitter]
+    assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
+    roles = {p.id: pairs.role(p) for p in team}
+
+    _arrive(exp, pairs, team)
+    assert {p.id: pairs.role(p) for p in team} == roles
+    assert "pair" in sitter.active_sync_groups
+    assert pairs.rounds_played(sitter) == 1

@@ -49,7 +49,7 @@ from ..error import (  # noqa  # Importing the error module is important to ensu
 from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
-from ..sync import GroupBarrier, SyncGroup
+from ..sync import GroupBarrier, SyncGroup, _DefaultMaxWaitTime
 from ..timeline import (
     CodeBlock,
     DatabaseCheck,
@@ -1489,10 +1489,6 @@ class TrialMakerState(ModuleState):
         self.trial_maker_initialized = False
 
 
-class _DefaultMaxWaitTime(float):
-    """Marks ``sync_group_max_wait_time`` as not passed, so it can follow the between-barrier timeout."""
-
-
 _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME = _DefaultMaxWaitTime(45.0)
 
 
@@ -1785,7 +1781,7 @@ class TrialMaker(Module):
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
-        if sync_group_max_wait_time is _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME:
+        if isinstance(sync_group_max_wait_time, _DefaultMaxWaitTime):
             sync_group_max_wait_time = max(
                 45.0, (sync_group_timeout_between_barriers_time or 0) + 20
             )

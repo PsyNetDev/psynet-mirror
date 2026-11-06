@@ -502,6 +502,19 @@ def test_expected_wait_sets_how_often_waiting_logic_repeats():
         barrier(expected_wait=9, waiting_logic_expected_repetitions=4)
 
 
+def test_barriers_can_share_waiting_logic():
+    from psynet.page import InfoPage, SuccessfulEndPage
+    from psynet.timeline import Timeline, estimate_duration
+
+    filler = InfoPage("Filler", time_estimate=2)
+    first = GroupBarrier("first", group_type="pair", waiting_logic=filler)
+    second = GroupBarrier("second", group_type="pair", waiting_logic=filler)
+
+    assert estimate_duration(first) == estimate_duration(first) == 6
+    Timeline(first, second, SuccessfulEndPage())
+    assert estimate_duration(second) == 6
+
+
 def test_barrier_waiting_screen_replaces_the_page_unless_it_returns_none():
     from psynet.modular_page import ModularPage, NullControl, PushButtonControl
 

@@ -2,14 +2,14 @@
 
 Players first wait in a lobby until a team of ``TEAM_SIZE`` forms, or until
 at least ``MIN_TEAM_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
-still join a team until one of its players has finished
-``LAST_ROUND_FOR_NEWCOMERS`` rounds.
+still join a team during its first ``ROUNDS_OPEN_TO_NEWCOMERS`` rounds.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
-It starts the round as soon as the whole team is ready, or
-``ROUND_DEADLINE_SECONDS`` after the previous round started, without the
-players who aren't ready yet. With an odd number of players, one who has
-played the most rounds sits that round out; a
+Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players,
+avoiding last round's partner, and gives each pair a proposer and a
+responder, alternating each player's role. It starts the round as soon as
+the whole team is ready, or ``ROUND_DEADLINE_SECONDS`` after the previous
+round started, without the players who aren't ready yet. With an odd number
+of players, one who has played the most rounds sits that round out; a
 player left waiting alone waits up to another ``ROUND_DEADLINE_SECONDS``
 for the others to finish their round instead. Players leave the team when
 they finish, so nobody waits for them.
@@ -25,7 +25,6 @@ finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
 after sitting out ``MAX_SIT_OUTS`` rounds or if their team falls apart.
 """
 
-import random
 from typing import List
 
 import psynet.experiment
@@ -34,12 +33,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import (
-    GroupBarrier,
-    Regrouper,
-    SimpleGrouper,
-    pairs_avoiding_repeats,
-)
+from psynet.sync import GroupBarrier, Regrouper, SimpleGrouper
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -54,15 +48,13 @@ MIN_TEAM_SIZE = 2
 SHORT_START_SECONDS = 60
 N_ROUNDS = 2
 MAX_SIT_OUTS = 2
-LAST_ROUND_FOR_NEWCOMERS = 1
+ROUNDS_OPEN_TO_NEWCOMERS = 1
 DECISION_SECONDS = 30
 # Longer than the decisions take, so a pair that finishes early is re-paired
 # with the rest of the team rather than without them.
 ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
 ENDOWMENT = 10
-# Only players who have left their page reach this: the others are moved on by the time limit.
-LEFT_PAGE_SECONDS = DECISION_SECONDS + 10
-WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + LEFT_PAGE_SECONDS + 10
+WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 20
 
 
 def team_of(participant):
@@ -86,11 +78,11 @@ def round_message(seconds_left):
 
 
 def ended_early(participant):
-    return participant.var.get("rounds_played", 0) < N_ROUNDS
+    return pairing.rounds_played(participant) < N_ROUNDS
 
 
 def ended_early_page(participant):
-    if participant.var.get("rounds_sat_out", 0) >= MAX_SIT_OUTS:
+    if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
         text = (
             f"You sat out {MAX_SIT_OUTS} rounds without a partner, "
             "so the game ended early for you."
@@ -108,8 +100,10 @@ def leave_team(participant):
 
 
 def team_accepts_newcomers(group, participant):
-    """Let latecomers join until a teammate has finished ``LAST_ROUND_FOR_NEWCOMERS`` rounds."""
-    return not group.var.get("closed_to_newcomers", False)
+    """Let latecomers join during the team's first ``ROUNDS_OPEN_TO_NEWCOMERS`` rounds."""
+    # Includes players who have left, so the team stays closed after they go.
+    team = [link.participant for link in group.participant_links]
+    return all(pairing.rounds_played(p) <= ROUNDS_OPEN_TO_NEWCOMERS for p in team)
 
 
 def keep_playing(participant):
@@ -117,44 +111,9 @@ def keep_playing(participant):
     return (
         team is not None
         and len(team.active_participants) >= 2
-        and participant.var.get("rounds_played", 0) < N_ROUNDS
-        and participant.var.get("rounds_sat_out", 0) < MAX_SIT_OUTS
+        and pairing.rounds_played(participant) < N_ROUNDS
+        and pairing.rounds_sat_out(participant) < MAX_SIT_OUTS
     )
-
-
-def count_round_played(participant):
-    participant.var.rounds_played = participant.var.get("rounds_played", 0) + 1
-    team = team_of(participant)
-    if team is not None and participant.var.rounds_played >= LAST_ROUND_FOR_NEWCOMERS:
-        # Kept on the team, so it stays closed after its players leave.
-        team.var.closed_to_newcomers = True
-
-
-def count_sit_out(participant):
-    participant.var.rounds_sat_out = participant.var.get("rounds_sat_out", 0) + 1
-
-
-def pair_new_partners(members, within_group, regrouper):
-    """Pair members at random, avoiding last round's partner when possible.
-
-    With an odd number of members, one who has played the most rounds sits
-    out, so a latecomer isn't left without a round.
-    """
-    if len(members) % 2:
-        most = max(p.var.get("rounds_played", 0) for p in members)
-        sitter = random.choice(
-            [p for p in members if p.var.get("rounds_played", 0) == most]
-        )
-        members = [p for p in members if p is not sitter]
-    return pairs_avoiding_repeats(members, lambda p: p.var.get("partner", None))
-
-
-def start_round(within_group, groups, left_over, regrouper):
-    """Give each pair its roles."""
-    for pair in groups:
-        proposer, responder = pair.participants
-        proposer.var.role, responder.var.role = "proposer", "responder"
-        proposer.var.partner, responder.var.partner = responder.id, proposer.id
 
 
 def score_round(participants: List[Participant]):
@@ -172,7 +131,7 @@ def score_round(participants: List[Participant]):
                 else "Your partner ran out of time, so nobody was paid."
             )
         return
-    roles = {p.var.role: p for p in participants}
+    roles = {pairing.role(p): p for p in participants}
     offer = roles["proposer"].var.decision
     minimum = roles["responder"].var.decision
     accepted = offer >= minimum
@@ -185,13 +144,14 @@ def score_round(participants: List[Participant]):
         if not accepted:
             outcome = f"The offer of {offer} coins was rejected, so nobody was paid."
         else:
-            coins = ENDOWMENT - offer if participant.var.role == "proposer" else offer
+            coins = ENDOWMENT - offer if pairing.role(participant) == "proposer" else offer
             outcome = f"The offer of {offer} coins was accepted. You earned {coins}."
         participant.var.outcome = outcome
 
 
 def decision_page(participant):
-    if participant.var.role == "proposer":
+    role = pairing.role(participant)
+    if role == "proposer":
         prompt = f"You are the proposer. How many of {ENDOWMENT} coins do you offer?"
     else:
         prompt = (
@@ -199,7 +159,7 @@ def decision_page(participant):
             "What is the smallest offer you would accept?"
         )
     return ModularPage(
-        participant.var.role,
+        role,
         # A tick appears once the partner has decided. Partners are anonymous,
         # so that nobody recognises a partner from an earlier round.
         GroupPrompt(prompt, participant=participant, group_type="pair", anonymous=True),
@@ -224,7 +184,7 @@ def waiting_for_partner(participant):
     """Replace the decision buttons with the player's choice while their partner decides."""
     if participant.var.decision is None:
         text = "You ran out of time, so nobody will be paid this round."
-    elif participant.var.role == "proposer":
+    elif pairing.role(participant) == "proposer":
         text = f"You offer {participant.var.decision} coins."
     else:
         text = f"You accept at least {participant.var.decision} coins."
@@ -260,19 +220,21 @@ def show_outcome(participant):
     )
 
 
+pairing = Regrouper(
+    "pair",
+    within="team",
+    group_size=2,
+    roles=["proposer", "responder"],
+    deadline=ROUND_DEADLINE_SECONDS,
+    release_left_over=True,
+    content=round_message,
+    waiting_screen=pairing_up,
+)
+
+
 def play_round():
     return join(
-        Regrouper(
-            "pair",
-            within="team",
-            group_size=2,
-            deadline=ROUND_DEADLINE_SECONDS,
-            form_groups=pair_new_partners,
-            release_left_over=True,
-            on_release=start_round,
-            content=round_message,
-            waiting_screen=pairing_up,
-        ),
+        pairing,
         conditional(
             "paired",
             in_pair,
@@ -283,19 +245,17 @@ def play_round():
                     group_type="pair",
                     content="Waiting for your partner…",
                     waiting_screen=waiting_for_partner,
-                    timeout_between_barriers_time=LEFT_PAGE_SECONDS,
+                    # For a player who never opens the decision page. One who
+                    # leaves it is taken out once its time limit has run out.
+                    timeout_between_barriers_time=10,
                     timeout_between_barriers_action="kick",
                     on_release=score_round,
                 ),
                 PageMaker(show_outcome, time_estimate=5),
-                CodeBlock(count_round_played),
             ),
-            join(
-                CodeBlock(count_sit_out),
-                InfoPage(
-                    "You sit out this round. It doesn't count towards your rounds.",
-                    time_estimate=5,
-                ),
+            InfoPage(
+                "You sit out this round. It doesn't count towards your rounds.",
+                time_estimate=5,
             ),
         ),
     )

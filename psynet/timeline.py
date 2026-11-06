@@ -3443,8 +3443,7 @@ def while_loop(
     start_while = StartWhile(label)
     end_while = EndWhile(label)
 
-    logic = join(logic)
-    logic = multiply_expected_repetitions(logic, expected_repetitions)
+    logic = multiply_expected_repetitions(_copy_elts(join(logic)), expected_repetitions)
 
     def condition_wrapped(participant, experiment):
         result = call_function_with_context(
@@ -3816,6 +3815,29 @@ def with_fixed_time_credit(elts, time_credit):
     end_fix = EndFixTimeCredit(time_credit)
     start_fix = StartFixTimeCredit(time_credit, end_fix)
     return join(start_fix, elts, end_fix)
+
+
+def _copy_elts(elts: List[Elt]) -> List[Elt]:
+    """Return shallow copies of ``elts`` that refer to each other instead of the originals.
+
+    Lets a loop scale its elements' estimates without changing elements that
+    are used elsewhere too, or that are resolved again later.
+    """
+    copies = {id(elt): copy.copy(elt) for elt in elts}
+
+    def remap(value):
+        if isinstance(value, Elt):
+            return copies.get(id(value), value)
+        if isinstance(value, dict) and any(isinstance(v, Elt) for v in value.values()):
+            return {key: remap(item) for key, item in value.items()}
+        if isinstance(value, list) and any(isinstance(v, Elt) for v in value):
+            return [remap(item) for item in value]
+        return value
+
+    for elt in copies.values():
+        elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
+        elt.links = dict(getattr(elt, "links", {}))
+    return list(copies.values())
 
 
 def multiply_expected_repetitions(logic, factor: float):

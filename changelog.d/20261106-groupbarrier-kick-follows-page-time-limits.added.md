@@ -1,0 +1,1 @@
+`GroupBarrier`'s `timeout_between_barriers_time` now follows pages with a `time_limit`: a member on such a page is not late before its time limit runs out, and is late once it ran out more than 10 seconds ago. The timeout therefore no longer has to be longer than the page's time limit; it only covers members who never reached the timed page.

@@ -64,7 +64,7 @@ def _render(case):
         answers=answers,
         highlight=highlight,
         note=case.get("note"),
-        answered=lambda member: member.id % 2 == 0,
+        has_answered=lambda member: member.id % 2 == 0,
         subgroups=(lambda m: (m.id - 1) // subgroup_size) if subgroup_size else None,
         show_names=case.get("show_names", False),
         anonymous=case.get("anonymous", False),

@@ -109,11 +109,11 @@ class GroupPrompt(Prompt):
         answered get a tick, which appears live as they reach the next
         barrier. While ticks appear live, the page hides the group arrival
         notice ("2/3 of your group are ready."), which would repeat them.
-    answered
-        Optional ``answered(participant) -> bool`` deciding who has answered
+    has_answered
+        Optional ``has_answered(participant) -> bool`` deciding who has answered
         when the page is drawn. By default, a member has answered while they
         wait at a barrier of this group, and ticks then also appear live as
-        members arrive at the group's barriers. With a custom ``answered``,
+        members arrive at the group's barriers. With a custom ``has_answered``,
         ticks are only drawn when the page loads.
     subgroups
         Optional way to cluster the members: a sync group type, such as
@@ -147,7 +147,7 @@ class GroupPrompt(Prompt):
         highlight: Optional[Dict[Union[int, str], str]] = None,
         note: Optional[str] = None,
         show_progress: bool = True,
-        answered: Optional[Callable] = None,
+        has_answered: Optional[Callable] = None,
         subgroups: Union[str, Callable, None] = None,
         show_names: bool = False,
         anonymous: bool = False,
@@ -174,14 +174,14 @@ class GroupPrompt(Prompt):
         self.highlight = {int(k): v for k, v in (highlight or {}).items()}
         self.note = note
         self.show_progress = show_progress and answers is None
-        self.answered = answered or _waiting_in_group(group)
-        self.live_ticks = self.show_progress and answered is None
+        self.has_answered = has_answered or _waiting_in_group(group)
+        self.live_ticks = self.show_progress and has_answered is None
         # Pages can redraw the group when members join or leave, unless a
         # function decides the subgroups or who has answered, which the
         # server can't call later, or answers or highlights fix who is shown.
         self.live_members = (
             answers is None
-            and answered is None
+            and has_answered is None
             and not callable(subgroups)
             and not self.highlight
         )
@@ -447,7 +447,7 @@ class GroupPrompt(Prompt):
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
-        answered = self.show_progress and not has_left and self.answered(member)
+        answered = self.show_progress and not has_left and self.has_answered(member)
         if answered:
             classes.append("psynet-group-member--answered")
         bubble = Markup("")
