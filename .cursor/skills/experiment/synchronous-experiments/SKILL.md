@@ -87,9 +87,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.
-- Pass `fail_if_hidden_for=15` to groupers and barriers in a game, so a
-  participant who leaves the waiting screen for another tab, or closes it,
-  is failed rather than holding up their group.
 - Use `join_existing_groups=True` only with a task-specific `join_criterion`
   that rejects stale, completed, or unsuitable groups.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with

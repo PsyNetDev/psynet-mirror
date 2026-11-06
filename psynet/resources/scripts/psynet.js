@@ -924,8 +924,8 @@
     };
     setInterval(psynet.tickTimelineHoldCountdowns, 250);
 
-    // Barriers can fail participants whose tab stays hidden, so tell the
-    // server at once when a waiting participant's tab is shown again.
+    // Background tabs slow their timers down, so check a hold as soon as the
+    // tab is shown again rather than at the next safety poll.
     document.addEventListener("visibilitychange", () => {
       psynet.resumeTimelineHold("visibility change");
     });
@@ -3766,7 +3766,6 @@
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
-        page_visible: document.visibilityState !== "hidden",
       });
     };
 

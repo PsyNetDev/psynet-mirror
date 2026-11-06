@@ -120,7 +120,6 @@ from .field import ImmutableVarStore, PythonDict
 from .graphics import PsyNetLogo
 from .notifier import Notifier
 from .page import InfoPage
-from .page_activity import record_page_activity
 from .participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -4215,6 +4214,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 payload={"submission": "rejected"},
                 flask_response=Experiment._unknown_participant_response(),
             )
+
         if answer is not NoArgumentProvided and not isinstance(participant, Bot):
             raise ValueError(
                 "Only bots are permitted to submit formatted answers directly "
@@ -7719,13 +7719,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        # Before any SQL, so that a busy database can't make a visible waiter
-        # look as if they had left (see psynet.page_activity).
-        if (
-            json_data.get("page_visible", True) is not False
-            and str(participant_id).isdigit()
-        ):
-            record_page_activity(int(participant_id), visible=True)
         client_ip_address = cls.get_client_ip_address()
 
         try:

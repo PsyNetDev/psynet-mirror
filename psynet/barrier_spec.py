@@ -39,7 +39,6 @@ _PAGE_FIELDS = {
 _PRESENTATION_FIELDS = {
     "content",
     "expected_wait",
-    "fail_if_hidden_for",
     "fix_time_credit",
     "max_wait_action",
     "max_wait_time",

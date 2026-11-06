@@ -320,20 +320,6 @@ Timeouts
     ``waiting_logic`` pages: the server applies the timeout shortly after
     the deadline.
 
-``fail_if_hidden_for`` (default: ``None``)
-    Seconds, on any grouper or barrier. A participant on the waiting screen
-    whose tab is hidden or closed for this long is failed. Minimising the
-    window, switching to another tab and locking a phone's screen all hide
-    the tab. The waiting screen warns participants, for example "Keep this
-    tab open. If you leave it for 15 seconds, you will be removed from the
-    experiment.", and checks in about every 2 seconds, so ``15`` is a good
-    value. Bots are never failed for this. Only the built-in waiting screen
-    checks in, so the option can't be combined with ``waiting_logic``. In
-    multiplayer games, this stops a player who left from being put into a
-    group that then waits for them. Consider ``prolific_pay_unsuccessful``
-    or similar, so that participants failed this way are still paid for
-    their time.
-
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
     passed its previous barrier, or since the member joined the group if that
