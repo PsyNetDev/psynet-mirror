@@ -396,7 +396,8 @@ class GroupPrompt(Prompt):
         """Return the member's subgroup.
 
         A former member is placed in their latest subgroup that someone still
-        in the group is in now, even after joining a new one.
+        in the group is in now, even after joining a new one, or else with
+        the members without a subgroup.
         """
         if callable(self.subgroups):
             return self.subgroups(member)
@@ -415,8 +416,7 @@ class GroupPrompt(Prompt):
             self._subgroup_key(other) for other in self.group.active_participants
         }
         shared = [link for link in links if link.sync_group_id in current]
-        chosen = shared or links
-        return chosen[-1].sync_group_id if chosen else None
+        return shared[-1].sync_group_id if shared else None
 
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
