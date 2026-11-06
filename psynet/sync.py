@@ -2369,8 +2369,9 @@ class Regrouper(Grouper):
     split into groups when every active member of its ``within`` group is
     waiting, or when its ``deadline`` passes, whichever comes first. With a
     :class:`Clock` deadline, splits happen only on clock ticks. Absent
-    members are never waited for beyond the deadline and are never failed for
-    missing a split; they join the pool again when they come back.
+    members are not waited for beyond the deadline once a group can be
+    formed without them, and are never failed for missing a split; they join
+    the pool again when they come back.
 
     Groups made by a regrouper don't accept top-ups and are never dissolved
     when a member leaves, so a member who drops out of a round leaves their
@@ -2401,8 +2402,8 @@ class Regrouper(Grouper):
         When to stop waiting for absent members. A number is seconds since the
         first of the pool's waiting members arrived, or since the pool's
         previous split if that is later. Make it longer than a round takes:
-        otherwise members who finish a round early, or sit it out, are split
-        again before the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
+        otherwise members who finish a round early are split again before
+        the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
         instead, even when everyone is already waiting, if at least
         ``min_group_size`` members were waiting at the tick. ``None`` (default)
         waits until the pool is complete, which needs ``within``.
@@ -2417,7 +2418,12 @@ class Regrouper(Grouper):
     release_left_over
         If ``True``, participants left over after a split continue ungrouped,
         for example to a sit-out page, and come back for the next split. If
-        ``False`` (default), they keep waiting for the next split.
+        ``False`` (default), they keep waiting for the next split. When too
+        few are waiting to form any group, they are released ungrouped only
+        once no other active member of their ``within`` group is still away,
+        for example still playing a round; until then, ``max_wait_time``
+        bounds their wait. So take members who stop playing out of the
+        ``within`` group, for example with ``remove_participant``.
 
     on_release
         Optional callback ``on_release(within_group, groups, left_over, regrouper)``
@@ -2510,13 +2516,14 @@ class Regrouper(Grouper):
             ),
             [participant],
         )
-        if len(pool) < (1 if self.release_left_over else self.min_group_size):
+        if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None
         if self.clock_period is None:
             return self._deadline_reference(within_group, pool) + self.deadline
         now = time.time()
         tick = _latest_tick(now, self.clock_period)
-        if self._enough_waiting_at_tick(pool, self._last_split(within_group), now):
+        waited_for_tick = _arrival_time(self, participant).timestamp() <= tick
+        if waited_for_tick and self._enough_waiting_at_tick(within_group, pool, now):
             # Due now: the poller has not split the pool yet.
             return tick
         return tick + self.clock_period
@@ -2560,19 +2567,40 @@ class Regrouper(Grouper):
         return list(pools.values())
 
     def _pool_is_ready(self, within_group, members) -> bool:
-        if len(members) < self.min_group_size and not self.release_left_over:
+        if len(members) < self._smallest_pool_to_split(within_group, members):
             return False
-        if self.clock_period is None and within_group is not None:
-            waiting_ids = {participant.id for participant in members}
-            if all(p.id in waiting_ids for p in within_group.active_participants):
-                return True
+        if self.clock_period is None and self._pool_is_complete(within_group, members):
+            return True
         return self._deadline_passed(within_group, members)
 
+    @staticmethod
+    def _pool_is_complete(within_group, members) -> bool:
+        """Return whether every active member of the ``within`` group is in ``members``."""
+        if within_group is None:
+            return False
+        waiting_ids = {participant.id for participant in members}
+        return all(p.id in waiting_ids for p in within_group.active_participants)
+
+    def _may_release_only_left_over(self, within_group, members) -> bool:
+        """Return whether a split that forms no group may release its members ungrouped.
+
+        Not while teammates are still active elsewhere, for example still
+        playing a round, so that a lone waiter waits for them rather than
+        sitting out round after round.
+        """
+        return self.release_left_over and (
+            within_group is None or self._pool_is_complete(within_group, members)
+        )
+
+    def _smallest_pool_to_split(self, within_group, members) -> int:
+        if self._may_release_only_left_over(within_group, members):
+            return 1
+        return self.min_group_size
+
     def _deadline_passed(self, within_group, members) -> bool:
-        last_split = self._last_split(within_group)
         now = time.time()
         if self.clock_period is not None:
-            return self._enough_waiting_at_tick(members, last_split, now)
+            return self._enough_waiting_at_tick(within_group, members, now)
         if self.deadline is None:
             return False
         return now - self._deadline_reference(within_group, members) >= self.deadline
@@ -2587,14 +2615,15 @@ class Regrouper(Grouper):
         tick = _latest_tick(now, self.clock_period)
         return [p for p in members if _arrival_time(self, p).timestamp() <= tick]
 
-    def _enough_waiting_at_tick(self, members, last_split, now) -> bool:
+    def _enough_waiting_at_tick(self, within_group, members, now) -> bool:
         """Return whether enough members were already waiting at the latest unused tick."""
+        last_split = self._last_split(within_group)
         if last_split is not None and last_split >= _latest_tick(
             now, self.clock_period
         ):
             return False
-        needed = 1 if self.release_left_over else self.min_group_size
-        return len(self._waiting_at_tick(members, now)) >= needed
+        at_tick = self._waiting_at_tick(members, now)
+        return len(at_tick) >= self._smallest_pool_to_split(within_group, at_tick)
 
     @property
     def _state_key(self):
@@ -2622,7 +2651,9 @@ class Regrouper(Grouper):
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
-            return left_over if self.release_left_over else []
+            if self._may_release_only_left_over(within_group, members):
+                return left_over
+            return []
         self._state_holder(within_group).var.set(self._state_key, time.time())
         if self.on_release:
             try:

@@ -164,7 +164,12 @@ on their own.
 ``release_left_over`` (default: ``False``)
     If ``True``, participants who don't fit into a group, such as an odd one
     out when pairing, continue ungrouped so that they can see a sit-out page.
-    If ``False``, they wait for the next round.
+    If ``False``, they wait for the next round. Someone waiting alone is only
+    released ungrouped once nobody else in their ``within`` group is still
+    playing, so they don't sit out round after round while a slow round
+    finishes. Take participants who stop playing out of the ``within`` group
+    with ``remove_participant``; otherwise a lone teammate waits for them
+    until ``max_wait_time``.
 
 ``form_groups``
     A function of ``members``, ``within_group`` and ``regrouper`` that returns
@@ -354,7 +359,8 @@ Timeouts
     accepts top-ups, a newcomer is timed from when they joined, so members
     already waiting can reach ``max_wait_time`` first.
 
-    At a group's first barrier the timeout counts from when the group formed.
+    At a group's first barrier the timeout counts from when each member joined
+    the group, which for its original members is when it formed.
     Size it to cover everything between the grouper and that barrier, such as
     instructions or a practice trial, or members who read slowly are timed
     out before they arrive.
