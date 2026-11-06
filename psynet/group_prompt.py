@@ -45,6 +45,16 @@ _MAX_ZIGZAG_COLUMNS = 7
 _warned_no_secret = False
 
 
+class _ParticipantsGroup:
+    """Default for ``GroupPrompt(group=...)``: look up the participant's group."""
+
+    def __repr__(self):
+        return "<the participant's group>"
+
+
+_PARTICIPANTS_GROUP = _ParticipantsGroup()
+
+
 class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
@@ -67,8 +77,10 @@ class GroupPrompt(Prompt):
     group
         The :class:`~psynet.sync.SyncGroup` to show. By default, the
         participant's group of type ``group_type``, or their only active group.
-        If they are no longer in it, for example because a barrier removed them
-        for being late, the page shows just ``text``.
+        If the lookup finds no group, for example because a barrier removed
+        them for being late, the page shows just ``text``, as it does for
+        ``group=None`` (what ``trial.sync_group`` is after such a removal).
+        A group passed explicitly is drawn even if the viewer has left it.
     group_type
         The type of group to show when ``group`` is omitted, for example
         ``"pair"``.
@@ -86,7 +98,7 @@ class GroupPrompt(Prompt):
         join or leave.
     note
         Optional short text shown below the group, for example
-        "1 was picked twice".
+        "1 was picked twice". It is hidden when there is no group to show.
     show_progress
         If ``True`` (default) and ``answers`` is not given, members who have
         answered get a tick, which appears live as they reach the next
@@ -122,7 +134,7 @@ class GroupPrompt(Prompt):
         text=None,
         *,
         participant,
-        group=None,
+        group=_PARTICIPANTS_GROUP,
         group_type: Optional[str] = None,
         answers: Optional[Dict[Union[int, str], Union[str, Markup]]] = None,
         highlight: Optional[Dict[Union[int, str], str]] = None,
@@ -135,11 +147,11 @@ class GroupPrompt(Prompt):
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
-        if group is not None and group_type is not None:
+        if group is not _PARTICIPANTS_GROUP and group_type is not None:
             raise ValueError(
                 "Pass either group or group_type to GroupPrompt, not both."
             )
-        if group is None:
+        if group is _PARTICIPANTS_GROUP:
             group = (
                 participant.sync_group
                 if group_type is None
@@ -494,7 +506,8 @@ def redrawn_group_html(unique_id, token):
     if participant is None or participant.id != options["participant"]:
         return {"html": None}
     group = SyncGroup.query.get(options["group"])
-    if group is None:
+    if group is None or participant not in group.active_participants:
+        # A removed viewer keeps the drawing they have until their next page.
         return {"html": None}
     prompt = GroupPrompt(
         group=group,

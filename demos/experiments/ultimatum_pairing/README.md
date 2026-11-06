@@ -11,8 +11,8 @@ partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent teams made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with a custom
-`form_groups` that avoids repeat partners and an `on_release` that counts the
-team's rounds.
+`form_groups` that avoids repeat partners and a `join_criterion` that closes
+the team to latecomers once someone has finished a round.
 
 ## Usage
 

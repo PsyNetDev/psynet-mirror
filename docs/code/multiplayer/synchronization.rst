@@ -231,7 +231,7 @@ error.
 
 In the ``ultimatum_pairing`` demo, teams form in a lobby and are re-paired
 every round. The lobby starts a smaller team after a minute and lets
-latecomers join while enough rounds are left:
+latecomers join until one of the team's players has finished a round:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
@@ -405,7 +405,8 @@ longer in the group, and would disappear if the page is reloaded.
 Without ``group``, the prompt shows the participant's group of type
 ``group_type``, or their only group. A participant who is no longer in it,
 for example because a barrier removed them for being late, sees just the
-text, so the prompt itself needs no special case on pages that a late
+text, as they do with ``group=self.sync_group`` in trial code (it is ``None``
+after such a removal), so the prompt itself needs no special case on pages that a late
 player may still reach; the page's other content, such as a round's
 outcome, may still need one. The members who stay see the removed player
 faded in their seat, labelled "(out of time)" if a barrier removed them for
