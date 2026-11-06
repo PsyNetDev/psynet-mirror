@@ -212,8 +212,10 @@ function, which PsyNet runs each time the page opens
             status.textContent = reason;
         });
         psynet.liveSession.onEnded(() => {
-            status.textContent = "The game is over. Click Next.";
+            status.textContent = "The game is over.";
         });
+        psynet.liveSession.onResultSaved(() => psynet.nextPage());
+        psynet.liveSession.onRefused(() => psynet.nextPage());
         for (let button of buttons) {
             button.addEventListener("click", () => {
                 psynet.liveSession.send("choose", {action: button.id});
@@ -277,20 +279,24 @@ Rejected messages
     the participant the reason, or match the number ``send`` returned.
 
 The end
-    ``onEnded`` says the game is over. The game ignores messages sent after
-    it, though ``send`` still returns a number. A session that fails can end
-    with a view of ``null``, as in the example above. The page doesn't move on by
-    itself. To keep the participant on the page until the game is over, pass
-    ``show_next_button=False`` to the control and call ``psynet.nextPage()``
-    in ``onResultSaved``. The page then needs other ways on: in
-    ``onRefused``, since a refused page gets no ``onResultSaved``, and, with
-    no session, its own button that calls ``psynet.nextPage()``.
+    ``onEnded`` runs when the game is over. The game ignores any message sent
+    after that, though ``send`` still returns a number. If the session fails,
+    the final view can be ``null``, which the example above allows for.
+
+    The participant can leave the game page only after the session's result
+    is saved (see `The answer and bonuses`_). To move on automatically, call
+    ``psynet.nextPage()`` in ``onResultSaved``, as the example does. Call it
+    in ``onRefused`` too, because a page whose connection is refused never
+    gets ``onResultSaved``. If you hide the Next button by passing
+    ``show_next_button=False`` to the control, give the page another way to
+    move on when there's no session, such as a button of its own that calls
+    ``psynet.nextPage()``.
 
 Joining and leaving
     The game's ``on_join`` runs when a player opens their first page in the
-    session, and ``on_leave`` when their last one closes. With a Next button,
-    a participant can move on during the game. Their page leaves the session,
-    ``on_leave`` runs unless the page is still open in another tab, and the
+    session, and ``on_leave`` runs when their last one closes. If a
+    participant closes the page during the game, they leave the session.
+    ``on_leave`` runs, unless the page is still open in another tab, and the
     game carries on without them unless ``on_leave`` ends it.
 
 Reloading and dropped connections
@@ -327,9 +333,10 @@ change, and ``outcome`` if the session ends before it starts.
 If some players aren't ready by the game's ``ready_timeout``, 60 seconds
 unless the game sets it, the session starts without them, and they can still
 join and play. Like ``join_timeout``, it counts from when the group leaves
-the initializer. ``ready_timeout = None`` waits for every player, so a group
-in which someone never reaches the game page waits until the game's
-``max_duration``, or for ever if it has none.
+the initializer. ``ready_timeout = None`` waits for every player. If someone
+never reaches the game page, the group then waits until the game's
+``max_duration``, or indefinitely if the game also sets
+``max_duration = None``.
 
 PsyNet keeps track of the ready step in ``state["live_session"]``, and adds
 the same entry to each view: ``players``, the ids of the session's players,
@@ -370,6 +377,71 @@ player can end the session there, by noting it in the state for ``is_over``.
 After the start, a player who leaves the game page doesn't end the session:
 the game carries on without them, unless its ``on_leave`` ends it.
 
+The answer and bonuses
+----------------------
+
+The game page's answer is the session's outcome, the value the game's
+``outcome`` returned when the session ended. PsyNet sets the answer on the
+server and ignores whatever the page sends, so every player in a session gets
+the same answer. If you need each player's score, or why the session ended,
+include them in the outcome. If the participant has no session, the answer is
+``None``.
+
+Participants can leave the game page only after the session's result is
+saved. That happens a few seconds after the game ends, and the page's
+``onResultSaved`` runs then. If a participant clicks Next before that, the
+page shows "Please wait while the game finishes..." and resends the response
+every second until it's accepted.
+
+Because participants can't move on until their session ends, every session
+needs a time limit. A session still running at the game's ``max_duration``,
+10 minutes unless the game sets it, ends with the reason ``"max_duration"``.
+``max_duration = None`` removes the limit, so set it only if the game always
+ends by itself, even when players leave.
+
+A game can pay bonuses, which are added to each player's performance reward,
+in two ways. For a bonus based on the outcome, define
+``bonus(outcome, reason, player_id)`` to return the player's bonus. PsyNet
+pays it when the player leaves the game page, once per session. This game
+pays 0.10 for a win:
+
+.. code-block:: python
+
+    BEATS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+
+
+    class RockPaperScissors(LiveSession):
+        ...
+
+        def outcome(self, state, reason):
+            return state["choices"]
+
+        def bonus(self, outcome, reason, player_id):
+            mine = outcome[player_id]
+            (theirs,) = [
+                choice for player, choice in outcome.items() if player != player_id
+            ]
+            return 0.10 if mine is not None and BEATS[mine] == theirs else 0
+
+``reason`` is ``"finished"`` when ``is_over`` ended the game. Dallinger's
+:meth:`~dallinger.realtime.RealtimeGame.outcome` lists the other reasons. If
+the session failed because of an error in the game's code, ``reason`` is
+``"failed"``, and ``outcome`` is the outcome of the state just before the
+error.
+
+For a bonus earned during the game, such as for each coin a player collects,
+call ``game.queue_bonus(player_id, amount)`` in a message's ``apply`` or in
+another method that changes the state. PsyNet adds it to the player's reward
+a few seconds later, so the player keeps it even if they close the page
+before the game ends.
+
+Both kinds of bonus must be numbers of 0 or more.
+
+If the session's record couldn't be saved, the game page's answer is ``None``
+and no player gets a bonus from ``bonus``. To check how a session ended, call
+:func:`~psynet.live_session.live_session_result`. It returns the session's
+status, end reason and outcome, and whether its record is complete.
+
 Saved messages
 --------------
 
@@ -405,14 +477,13 @@ The record also holds each player's
 ``Ready.saved_messages(session_id)`` says when each player became ready, at
 their first. A page sends another each time it reconnects or reloads.
 
-The record is written a few seconds behind the game, so for a session that's
-still being played, ``saved_messages`` returns the messages written so far.
-The record is complete once the session's ending is saved, as it is on any
-page the participant reaches after the game page's ``onResultSaved``. The
-session's ``status`` in Dallinger's ``realtime_session`` table is then
-``ended`` or ``failed``. A session can also fail because its record couldn't
-be saved. It then keeps only the messages saved before that, and its
-``error`` says why.
+The record is written a few seconds behind the game, so while a session is
+still running, ``saved_messages`` returns only the messages written so far.
+By the time a participant reaches the page after the game page, the session's
+ending has been saved, and ``live_session_result(session_id).record_complete``
+says whether the whole record was saved. If it wasn't, the session keeps only
+the messages saved before the problem, and the session's ``error`` in
+Dallinger's ``realtime_session`` table says what went wrong.
 
 A game saves every message by default. A game whose pages send many messages,
 such as a move on every key press, can leave some out by defining
@@ -463,5 +534,6 @@ To test ``bot``, give it a view the game made after the start, such as
 
 A group's bots have to reach the initializer together, so set the experiment's
 ``test_mode = "parallel"``, and ``test_n_bots`` to a multiple of the group
-size. A bot moves on from the game page at once, without waiting for the game
-to end.
+size. A bot leaves the game page once the session's result is saved, just as
+a participant does, and its answer is the outcome too, so the page doesn't
+need a ``bot_response``.

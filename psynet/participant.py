@@ -369,6 +369,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         each one. Read it with :func:`~psynet.live_session.live_session_id`.
         Should not be modified directly.
 
+    live_session_bonuses_paid : list or None
+        The ids of the live sessions whose outcome bonus the participant has
+        been paid. Should not be modified directly.
+
     complete : bool
         Whether the participant has successfully completed the experiment.
         A participant is considered to have successfully completed the experiment
@@ -455,6 +459,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     page_uuid = Column(String)
     page_count = Column(Integer)
     live_sessions = Column(PythonDict)
+    live_session_bonuses_paid = Column(PythonList)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
@@ -1515,6 +1520,9 @@ class ParticipantDriver:
         At least one of raw_answer and answer should be provided.
         If answer is present, then raw_answer will be ignored.
 
+        If the server refuses the response with a ``retry_after``, the bot
+        resends it after that many seconds, as a browser does.
+
         Parameters
         ----------
         status : dict
@@ -1561,8 +1569,15 @@ class ParticipantDriver:
                     files=files,
                 )
 
-            http_response = _retry_busy_http(send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS)
-        resp_json = http_response.json()
+            while True:
+                http_response = _retry_busy_http(
+                    send, attempts=_BOT_TIMELINE_BUSY_ATTEMPTS
+                )
+                resp_json = http_response.json()
+                retry_after = resp_json.get("retry_after")
+                if resp_json.get("submission") != "rejected" or retry_after is None:
+                    break
+                self._sleep(retry_after)
         if resp_json.get("submission") != "approved":
             if self._retry_submit_after_page_advanced(
                 status, response, _retried_stale_page

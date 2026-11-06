@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+import numpy
 import pytest
 from dallinger import db
 from dallinger.db import redis_conn
@@ -28,8 +29,10 @@ from psynet.live_session import (
     LiveSession,
     LiveSessionControl,
     LiveSessionInitializer,
+    LiveSessionResult,
     Ready,
     live_session_id,
+    live_session_result,
 )
 from psynet.live_session import registry as game_registry
 from psynet.modular_page import ModularPage
@@ -41,7 +44,7 @@ from psynet.sync import (
     _run_pending_barrier_checks,
     _take_pending_barrier_checks,
 )
-from psynet.timeline import Timeline
+from psynet.timeline import Response, Timeline
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -1517,3 +1520,221 @@ def test_the_state_and_views_are_dicts_without_psynet_s_entry(
 def test_a_ready_timeout_is_none_or_a_positive_number(registry, ready_timeout):
     with pytest.raises(ValueError, match="Game's ready_timeout must be None"):
         type("Game", (LiveSession,), {"ready_timeout": ready_timeout})
+
+
+def _game_page():
+    (page,) = [
+        elt
+        for elt in get_experiment().timeline.all_elts
+        if isinstance(elt, ModularPage) and elt.label == "pick_numbers"
+    ]
+    return page
+
+
+def _submit_on_the_game_page(member):
+    """Send the game page's response through the response route, with an
+    answer of the page's own, and return the route's payload."""
+    experiment = get_experiment()
+    member.elt_id = _game_page().id
+    db.session.commit()
+    result = experiment.process_response(
+        participant_id=member.id,
+        raw_answer="sent by the page",
+        blobs={},
+        metadata={"time_taken": 1},
+        page_uuid=member.page_uuid,
+        client_ip_address="127.0.0.1",
+    )
+    db.session.commit()
+    return result.payload
+
+
+def _accepted_answers(member):
+    return [
+        answer
+        for (answer,) in db.session.query(Response.answer).filter_by(
+            participant_id=member.id,
+            question="pick_numbers",
+            successful_validation=True,
+        )
+    ]
+
+
+def _reward(member):
+    return (
+        db.session.query(Participant.performance_reward)
+        .filter_by(id=member.id)
+        .scalar()
+    )
+
+
+def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    first, second = (str(member.id) for member in members)
+
+    payload = _submit_on_the_game_page(members[0])
+
+    assert payload == {
+        "submission": "rejected",
+        "message": "Please wait while the game finishes...",
+        "retry_after": 1,
+    }
+    # A response the page sends again leaves nothing behind.
+    assert (
+        db.session.query(Response).filter_by(participant_id=members[0].id).count() == 0
+    )
+    assert live_session_result(session_id) is None
+
+    _play_to_the_end(
+        session_id,
+        [
+            (first, 1, READY),
+            (second, 1, READY),
+            (first, 2, {"type": "pick", "message": {"number": 3}}),
+            (second, 2, {"type": "pick", "message": {"number": 5}}),
+        ],
+    )
+    # The worker that wrote the record closed the database session.
+    members = [db.session.get(Participant, int(member)) for member in (first, second)]
+    # Each Pick's bonus effect is handled as the record is written.
+    assert _reward(members[0]) == pytest.approx(0.5)
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+
+    outcome = {first: 3, second: 5}
+    assert live_session_result(session_id) == LiveSessionResult(
+        "ended", "finished", outcome
+    )
+    assert _accepted_answers(members[0]) == [outcome]
+    # The game's bonus is the player's pick, in hundredths.
+    assert _reward(members[0]) == pytest.approx(0.53)
+    assert _reward(members[1]) == pytest.approx(0.5)
+
+    # Another visit to the page answers again, without paying the bonus again.
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+    assert _accepted_answers(members[0]) == [outcome, outcome]
+    assert _reward(members[0]) == pytest.approx(0.53)
+
+
+@pytest.mark.parametrize(
+    "end_reason, outcome, record_complete",
+    [("failed", {"1": None}, True), (None, None, False)],
+)
+def test_a_failed_session_s_page_moves_on_with_what_was_saved(
+    pair, monkeypatch, end_reason, outcome, record_complete
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    # How Dallinger saves a session that failed in the game's code, or one
+    # whose record couldn't be written.
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "failed", "end_reason": end_reason, "outcome": outcome}
+    )
+    bonuses = []
+    game_type = game_registry._live_session_types["pick_numbers"]
+    # A game that computes bonuses with NumPy returns a NumPy number.
+    monkeypatch.setattr(
+        game_type,
+        "bonus",
+        lambda self, *args: bonuses.append(args) or numpy.float64(0.25),
+    )
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+
+    result = live_session_result(session_id)
+    assert result.record_complete is record_complete
+    assert _accepted_answers(members[0]) == [outcome]
+    if record_complete:
+        assert bonuses == [(outcome, "failed", str(members[0].id))]
+        assert _reward(members[0]) == pytest.approx(0.25)
+    else:
+        assert bonuses == []
+        assert _reward(members[0]) == 0
+
+
+def test_a_game_page_without_a_session_moves_on_with_no_answer(pair):
+    members, _ = pair
+
+    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+    assert _accepted_answers(members[0]) == [None]
+
+
+def test_live_session_result_needs_a_session(db_session):
+    with pytest.raises(KeyError):
+        live_session_result(12345)
+
+
+@pytest.mark.parametrize("amount", [-1, "1"])
+def test_a_bonus_is_a_number_0_or_more(pair, monkeypatch, amount):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "ended", "end_reason": "finished", "outcome": {}}
+    )
+    game_type = game_registry._live_session_types["pick_numbers"]
+    monkeypatch.setattr(game_type, "bonus", lambda self, *args: amount)
+    # So the response route raises the error rather than showing an error page.
+    monkeypatch.setenv("PASSTHROUGH_ERRORS", "1")
+
+    with pytest.raises(
+        ValueError, match=f"PickNumbers.bonus gave the bonus {amount!r}"
+    ):
+        _submit_on_the_game_page(members[0])
+    with pytest.raises(ValueError, match="PickNumbers.queue_bonus gave the bonus"):
+        game_type().queue_bonus("1", amount)
+
+
+def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_bonuses(
+    pair, registry
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    handled = []
+
+    class Scored(LiveSession):
+        def initial_state(self, players):
+            return {}
+
+        def view(self, state, player_id):
+            return {}
+
+        def handle_effect(self, name, payload, session_row):
+            handled.append(name)
+
+    effects = []
+    token = queued_effects.set(effects)
+    try:
+        # The player id as a string, as the game receives it, or as the
+        # participant's integer id.
+        Scored().queue_bonus(str(members[0].id), 0.5)
+        Scored().queue_bonus(members[0].id, numpy.int64(1))
+        Scored().queue_bonus(members[0].id, 0)
+        Scored().queue_effect("scored", {})
+    finally:
+        queued_effects.reset(token)
+    assert [name for name, _ in effects] == ["psynet_bonus", "psynet_bonus", "scored"]
+    row = db.session.get(RealtimeSession, session_id)
+    for name, payload in effects:
+        Scored().handle_effect(name, payload, row)
+
+    assert handled == ["scored"]
+    assert _reward(members[0]) == pytest.approx(1.5)
+    with pytest.raises(ValueError, match="'99', who isn't a player in session"):
+        Scored().handle_effect("psynet_bonus", {"player_id": "99", "amount": 1}, row)
+    with pytest.raises(ValueError, match="'psynet_bonus' is reserved for PsyNet's"):
+        Scored().queue_effect("psynet_bonus", {})
+
+
+class ValidatingPage(ModularPage):
+    def validate(self, response, **kwargs):
+        return None
+
+
+@pytest.mark.parametrize(
+    "page_type, kwargs",
+    [(ModularPage, {"validate": lambda response: None}), (ValidatingPage, {})],
+)
+def test_a_live_session_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
+    with pytest.raises(TypeError, match="LiveSessionControl and a validate function"):
+        page_type("game", "Play", LiveSessionControl("pick_numbers"), **kwargs)

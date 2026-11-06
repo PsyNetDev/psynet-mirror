@@ -14,15 +14,18 @@ from .initializer import LiveSessionInitializer, live_session_id
 from .messages import LiveMessage, SavedMessage
 from .ready_step import NOT_STARTED, Ready
 from .registry import live_session_game_types
+from .result import LiveSessionResult, live_session_result
 
 __all__ = [
     "LiveMessage",
     "LiveSession",
     "LiveSessionControl",
     "LiveSessionInitializer",
+    "LiveSessionResult",
     "NOT_STARTED",
     "Ready",
     "SavedMessage",
     "live_session_game_types",
     "live_session_id",
+    "live_session_result",
 ]

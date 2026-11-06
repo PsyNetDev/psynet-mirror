@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Unio
 
 from bs4 import BeautifulSoup
 from dallinger import db
+from dallinger.realtime.utils import is_number
 from dominate import tags
 from jsonpickle.util import importable_name
 from markupsafe import Markup
@@ -2035,6 +2036,18 @@ class Page(Elt):
         """
         return raw_answer
 
+    def check_ready_for_response(self, experiment, participant):
+        """
+        Check whether the page can accept the participant's response yet.
+        PsyNet calls it before reading the response. Return ``None`` to accept
+        it, as the default does, or a :class:`psynet.timeline.FailedValidation`
+        with a ``retry_after`` to refuse it for now, for example on a page
+        that waits for something else to finish. The page then resends the
+        same response after ``retry_after`` seconds. A refused response
+        leaves nothing in the database.
+        """
+        return None
+
     def validate(self, response, **kwargs):
         """
         Takes the :class:`psynet.timeline.Response` object
@@ -3084,8 +3097,29 @@ def estimate_duration(logic):
 
 
 class FailedValidation:
-    def __init__(self, message="Invalid response, please try again."):
+    """Returned by a page's ``validate``, or its
+    :meth:`~psynet.timeline.Page.check_ready_for_response`, to refuse a
+    response.
+
+    Parameters
+    ----------
+
+    message
+        The message shown to the participant.
+
+    retry_after
+        For a response the page can accept only later, the number of seconds
+        after which the page resends it by itself, showing ``message``
+        meanwhile. Use it with ``check_ready_for_response``, which refuses the
+        response before PsyNet saves anything. With the default, ``None``,
+        the participant can change their response and submit it again.
+    """
+
+    def __init__(self, message="Invalid response, please try again.", retry_after=None):
+        if retry_after is not None and not (is_number(retry_after) and retry_after > 0):
+            raise ValueError("retry_after must be None or a positive number.")
         self.message = message
+        self.retry_after = retry_after
 
 
 @register_table

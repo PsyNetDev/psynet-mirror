@@ -3477,14 +3477,29 @@
     };
 
     psynet.showWakingNotice = function (visible) {
-      let notice = document.getElementById("psynet-waking-notice");
-      if (!visible) {
+      psynet.showStatusNotice(
+        "psynet-waking-notice",
+        visible
+          ? psynetTemplateData.strings?.wakingUp ||
+              "Getting ready, please wait..."
+          : null,
+      );
+    };
+
+    // Shows ``text`` in a notice at the top of the page, or removes the
+    // notice if ``text`` is null.
+    psynet.showStatusNotice = function (id, text) {
+      let notice = document.getElementById(id);
+      if (text === null) {
         notice?.remove();
         return;
       }
-      if (notice) return;
+      if (notice) {
+        if (notice.textContent !== text) notice.textContent = text;
+        return;
+      }
       notice = document.createElement("div");
-      notice.id = "psynet-waking-notice";
+      notice.id = id;
       notice.className = "alert alert-info";
       notice.setAttribute("role", "status");
       notice.style.cssText =
@@ -3493,10 +3508,42 @@
       // Screen readers announce a status region's text only if it changes
       // after the region is in the page.
       setTimeout(() => {
-        notice.textContent =
-          psynetTemplateData.strings?.wakingUp ||
-          "Getting ready, please wait...";
+        notice.textContent = text;
       }, 0);
+    };
+
+    // If the server refused the response and asked for it to be resent
+    // later, returns {delayMs, message}. Otherwise returns null.
+    psynet.retryLaterRejection = function (request) {
+      if (request.status !== 200) return null;
+      let body;
+      try {
+        body = JSON.parse(request.response);
+      } catch (error) {
+        return null;
+      }
+      let seconds = body?.retry_after;
+      if (
+        body?.submission !== "rejected" ||
+        !Number.isFinite(seconds) ||
+        seconds <= 0
+      ) {
+        return null;
+      }
+      return { delayMs: seconds * 1000, message: body.message };
+    };
+
+    psynet.waitIfRetryLater = async function (request) {
+      // Return true, after waiting, when a rejected response should be resent.
+      let rejection = psynet.retryLaterRejection(request);
+      if (rejection === null) {
+        psynet.showStatusNotice("psynet-retry-notice", null);
+        return false;
+      }
+      psynet.log.info("The response can't be accepted yet; sending it again later.");
+      psynet.showStatusNotice("psynet-retry-notice", rejection.message);
+      await new Promise((resolve) => setTimeout(resolve, rejection.delayMs));
+      return true;
     };
 
     psynet.waitIfAppIsWaking = async function (request, retry, options = {}) {
@@ -3695,6 +3742,10 @@
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
             if (await psynet.waitIfAppIsWaking(request, wakeRetry, options)) {
+              send();
+              return;
+            }
+            if (await psynet.waitIfRetryLater(request)) {
               send();
               return;
             }

@@ -5,6 +5,7 @@ from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
+from .bonus import _BONUS_EFFECT, _check_bonus, _handles_bonus
 from .messages import LiveMessage, _parse_message, _saved_messages, _session_channel
 from .method_wrappers import (
     _STATE_METHODS,
@@ -54,8 +55,14 @@ class LiveSession(RealtimeGame):
 
     #: Seconds on the session clock after which the session starts, even if
     #: some players aren't ready. They can still join and play. ``None``
-    #: waits for every player, until ``max_duration``, if the game sets one.
+    #: waits for every player, until ``max_duration`` at the latest.
     ready_timeout = 60
+
+    #: Seconds on the session clock after which the session ends with the
+    #: reason ``"max_duration"``, if the game hasn't ended it already. Players
+    #: can't leave the game page until the session ends, so set it to
+    #: ``None``, for no limit, only if the game always ends by itself.
+    max_duration = 600
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -69,6 +76,7 @@ class LiveSession(RealtimeGame):
             ("next_deadline", _waits_for_start),
             ("view", _shows_ready_step),
             ("bot", _sends_message),
+            ("handle_effect", _handles_bonus),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -143,12 +151,77 @@ class LiveSession(RealtimeGame):
         """
         self.read_message(message).apply(self, state, player_id, now)
 
+    def bonus(self, outcome, reason, player_id):
+        """Return the bonus a player earns from the session's outcome, such as
+        their winnings. PsyNet adds it to the player's performance reward when
+        they leave the game page, once per session, provided the session's
+        record is complete. By default, there's no bonus.
+
+        Parameters
+        ----------
+
+        outcome
+            What the game's ``outcome`` returned.
+
+        reason
+            Why the session ended, the ``reason`` the game's ``outcome``
+            received.
+
+        player_id
+            The player's id.
+
+        Returns
+        -------
+
+        A number of 0 or more.
+        """
+        return 0
+
+    def queue_bonus(self, player_id, amount):
+        """Add a bonus earned during the game to a player's performance
+        reward. Call it in a method that changes the state, such as a
+        message's :meth:`~LiveMessage.apply`. PsyNet adds the bonus a few
+        seconds later, and the player keeps it even if they leave before the
+        game ends. For a bonus based on the outcome, define :meth:`bonus`
+        instead.
+
+        Parameters
+        ----------
+
+        player_id
+            The player's id.
+
+        amount
+            The bonus, a number of 0 or more.
+        """
+        amount = _check_bonus(amount, f"{type(self).__name__}.queue_bonus")
+        if not amount:
+            return
+        super().queue_effect(
+            _BONUS_EFFECT, {"player_id": str(player_id), "amount": amount}
+        )
+
+    # Wrapped here, so a game that queues no effects of its own doesn't need
+    # to define it.
+    @_handles_bonus
+    def handle_effect(self, name, payload, session_row):
+        """Do the work of an effect the game queued with :meth:`queue_effect`,
+        as in Dallinger's ``handle_effect``. PsyNet handles the bonuses from
+        :meth:`queue_bonus` itself, so they never reach this method.
+        """
+        return super().handle_effect(name, payload, session_row)
+
     def queue_effect(self, name, payload):
         """Queue an effect, as
         :meth:`~dallinger.realtime.RealtimeGame.queue_effect` does, with the
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
+        if name == _BONUS_EFFECT:
+            raise ValueError(
+                f"The effect name {name!r} is reserved for PsyNet's "
+                "queue_bonus. Give the effect another name."
+            )
         try:
             payload = to_jsonable_python(payload)
         except (ValueError, TypeError) as error:

@@ -482,6 +482,13 @@ def _is_replacement_gunicorn_worker(worker):
     return worker.age > worker.cfg.workers
 
 
+def _rejected_payload(validation):
+    payload = {"submission": "rejected", "message": validation.message}
+    if validation.retry_after is not None:
+        payload["retry_after"] = validation.retry_after
+    return payload
+
+
 class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     """
     The main experiment class from which to inherit when building experiments.
@@ -3926,6 +3933,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
+                refusal = event.check_ready_for_response(
+                    experiment=self, participant=participant
+                )
+                if isinstance(refusal, str):
+                    refusal = FailedValidation(message=refusal)
+                if refusal is not None:
+                    return ResponseResult(payload=_rejected_payload(refusal))
                 response = event.process_response(
                     raw_answer=raw_answer,
                     blobs=blobs,
@@ -3950,12 +3964,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     validation, FailedValidation
                 )
                 if not response.successful_validation:
-                    return ResponseResult(
-                        payload={
-                            "submission": "rejected",
-                            "message": validation.message,
-                        }
-                    )
+                    return ResponseResult(payload=_rejected_payload(validation))
 
                 event._accept_response(response, self, participant)
             participant.inc_time_credit(event.time_estimate)
@@ -4132,11 +4141,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
-    def response_rejected(self, message):
-        logger.warning(
-            "The response was rejected with the following message: '%s'.", message
+    def response_rejected(self, message, retry_after=None):
+        if retry_after is None:
+            logger.warning(
+                "The response was rejected with the following message: '%s'.", message
+            )
+            return success_response(submission="rejected", message=message)
+        logger.info("The response was refused for now: '%s'.", message)
+        return success_response(
+            submission="rejected", message=message, retry_after=retry_after
         )
-        return success_response(submission="rejected", message=message)
 
     @classmethod
     def busy_response(cls):
@@ -7373,7 +7387,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            return finish(exp.response_rejected(payload["message"]))
+            return finish(
+                exp.response_rejected(
+                    payload["message"], retry_after=payload.get("retry_after")
+                )
+            )
         return finish(success_response(**payload))
 
     @classmethod

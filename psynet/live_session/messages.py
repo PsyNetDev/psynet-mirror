@@ -92,19 +92,12 @@ class LiveMessage(BaseModel):
             :attr:`~LiveSession.messages`, or the game isn't defined because
             the module that defines it hasn't been imported.
         """
-        channel = _session_channel(session_id)
-        game_type = _live_session_type(channel)
-        if game_type is None:
-            raise ValueError(
-                f"Session {session_id} is a session of {channel!r}, and no "
-                "LiveSession with that channel is defined. Import the module "
-                "that defines the game first."
-            )
+        game_type = _session_game_type(session_id)
         listed = game_type._message_types.get(cls.type)
         if not listed or not _same_definition(listed, cls):
             raise ValueError(
-                f"Session {session_id} is a session of {channel!r}, which "
-                f"doesn't list {cls.__name__} in its messages."
+                f"Session {session_id} is a session of {game_type.channel!r}, "
+                f"which doesn't list {cls.__name__} in its messages."
             )
         return _saved_messages(session_id, {cls.type: cls}, only_type=cls.type)
 
@@ -195,6 +188,18 @@ def _session_channel(session_id):
     if channel is None:
         raise KeyError(session_id)
     return channel
+
+
+def _session_game_type(session_id):
+    channel = _session_channel(session_id)
+    game_type = _live_session_type(channel)
+    if game_type is None:
+        raise ValueError(
+            f"Session {session_id} is a session of {channel!r}, and no "
+            "LiveSession with that channel is defined. Import the module "
+            "that defines the game first."
+        )
+    return game_type
 
 
 # Labelled as SavedMessage's fields.

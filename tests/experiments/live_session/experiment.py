@@ -1,6 +1,7 @@
 """The test experiment for live sessions. Its first page opens the page's
 websocket, and then pairs play a session of a toy game."""
 
+import pytest
 from dallinger import db
 from dallinger.models import RealtimeSession
 from dominate import tags
@@ -16,8 +17,7 @@ from psynet.live_session import (
 from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Timeline
-from psynet.utils import wait_until
+from psynet.timeline import Response, Timeline
 
 
 class Pick(LiveMessage):
@@ -26,6 +26,7 @@ class Pick(LiveMessage):
 
     def apply(self, game, state, player_id, now):
         state["picks"][player_id] = self.number
+        game.queue_bonus(player_id, 0.5)
 
 
 class PickNumbers(LiveSession):
@@ -33,6 +34,8 @@ class PickNumbers(LiveSession):
 
     channel = "pick_numbers"
     messages = [Pick]
+    # So that a session that stalls fails psynet test within a minute.
+    max_duration = 60
 
     def initial_state(self, players):
         return {"picks": {player: None for player in players}}
@@ -45,6 +48,10 @@ class PickNumbers(LiveSession):
 
     def outcome(self, state, reason):
         return state["picks"]
+
+    def bonus(self, outcome, reason, player_id):
+        pick = outcome[player_id]
+        return 0 if pick is None else pick / 100
 
     def bot(self, view, player_id, now):
         # Its own id, so the outcome shows which bot picked what.
@@ -92,25 +99,32 @@ class Exp(psynet.experiment.Experiment):
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         session_id = live_session_id(bot, "pick_numbers")
-        # Columns, so each read goes to the database, not to an object
-        # SQLAlchemy already loaded.
-        query = db.session.query(
-            RealtimeSession.status,
-            RealtimeSession.error,
-            RealtimeSession.members,
-            RealtimeSession.bots,
-            RealtimeSession.end_reason,
-            RealtimeSession.outcome,
-        ).filter_by(id=session_id)
-        # A bot leaves the game page before the session's ending is saved.
-        wait_until(
-            lambda: query.one().status != "running",
-            max_wait=30,
-            poll_interval=0.2,
-            error_message=f"Session {session_id} didn't end.",
+        session = (
+            db.session.query(
+                RealtimeSession.status,
+                RealtimeSession.error,
+                RealtimeSession.members,
+                RealtimeSession.bots,
+                RealtimeSession.end_reason,
+                RealtimeSession.outcome,
+            )
+            .filter_by(id=session_id)
+            .one()
         )
-        session = query.one()
         assert session.status == "ended", session.error
         assert sorted(session.bots) == sorted(session.members)
         assert session.end_reason == "finished"
         assert session.outcome == {str(member): member for member in session.members}
+        (answer,) = (
+            db.session.query(Response.answer)
+            .filter_by(
+                participant_id=bot.id,
+                question="pick_numbers",
+                successful_validation=True,
+            )
+            .one()
+        )
+        assert answer == session.outcome
+        # 0.5 from Pick's queue_bonus, plus the bot's pick (its id) / 100
+        # from bonus.
+        assert bot.performance_reward == pytest.approx(0.5 + bot.id / 100)

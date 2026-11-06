@@ -1,6 +1,14 @@
-from ..modular_page import NullControl
+from ..modular_page import ModularPage, NullControl
+from ..timeline import FailedValidation
+from ..utils import get_translator
+from .bonus import _add_bonus, _check_bonus
 from .initializer import live_session_id
-from .messages import _game_channel
+from .messages import _game_channel, _session_game_type
+from .result import live_session_result
+
+# Seconds a page waits before resending a response refused because the
+# session's result isn't saved yet.
+_RETRY_AFTER = 1
 
 
 class LiveSessionControl(NullControl):
@@ -24,6 +32,15 @@ class LiveSessionControl(NullControl):
     :doc:`/code/multiplayer/live_sessions` describes, with the cases a game
     page should allow for.
 
+    The page's answer is the session's outcome, the value the game's
+    ``outcome`` returned, whatever the page sends. Without a session, the
+    answer is ``None``. The participant can't leave the page until the
+    session's result is saved: a response sent earlier is refused, and the
+    page resends it a second later. When the participant leaves the page,
+    they get the game's :meth:`~LiveSession.bonus`, once per session. The
+    page can't have a ``validate`` of its own, whether passed as an argument
+    or defined in a subclass.
+
     Parameters
     ----------
 
@@ -39,6 +56,45 @@ class LiveSessionControl(NullControl):
     def __init__(self, initializer_id, **kwargs):
         super().__init__(**kwargs)
         self.initializer_id = initializer_id
+
+    def check_ready_for_response(self, experiment, participant):
+        session_id = live_session_id(participant, self.initializer_id)
+        if session_id is None or live_session_result(session_id) is not None:
+            return None
+        _p = get_translator(context=True)
+        return FailedValidation(
+            _p("live_session", "Please wait while the game finishes..."),
+            retry_after=_RETRY_AFTER,
+        )
+
+    def validate(self, response, participant, **kwargs):
+        # check_ready_for_response has already seen the session end, and an
+        # ended session's row doesn't change, so this result is final.
+        session_id = live_session_id(participant, self.initializer_id)
+        if session_id is None:
+            response.answer = None
+            return None
+        result = live_session_result(session_id)
+        response.answer = result.outcome
+        paid = participant.live_session_bonuses_paid or []
+        if result.record_complete and session_id not in paid:
+            game = _session_game_type(session_id)()
+            what = f"{type(game).__name__}.bonus"
+            amount = game.bonus(result.outcome, result.end_reason, str(participant.id))
+            _add_bonus(participant, _check_bonus(amount, what))
+            participant.live_session_bonuses_paid = [*paid, session_id]
+        return None
+
+    def _check_page(self, page):
+        if (
+            page._validate_function is not None
+            or type(page).validate is not ModularPage.validate
+        ):
+            raise TypeError(
+                f"The page {page.label!r} has a LiveSessionControl and a "
+                "validate function of its own, which would replace the "
+                "control's. Remove the page's validate."
+            )
 
     def get_render_js_vars(self, experiment, participant):
         session_id = live_session_id(participant, self.initializer_id)

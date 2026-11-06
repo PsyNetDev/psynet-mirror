@@ -77,6 +77,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
 
     event = MagicMock()
     event.is_timeline_hold = False
+    event.check_ready_for_response.return_value = None
     event.process_response.side_effect = ValueError("boom")
     experiment = get_experiment()
 

@@ -22,6 +22,8 @@ export function activate({root, psynet}) {
   psynet.liveSession.onRejected((number, reason) => {
     root.querySelector("#game-error").textContent = reason;
   });
+  psynet.liveSession.onResultSaved(() => psynet.nextPage());
+  psynet.liveSession.onRefused(() => psynet.nextPage());
   pick.addEventListener("click", () => {
     psynet.liveSession.send("pick", {
       number: Number(root.querySelector("#pick-number").value),

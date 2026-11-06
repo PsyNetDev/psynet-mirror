@@ -26,7 +26,7 @@ async function reachTheGame(participant) {
   });
 }
 
-test("a live session page joins its session beside the page socket and shows a rejected message", { tag: "@both" }, async ({
+test("a live session page joins its session beside the page socket, shows a rejected message and moves on once the result is saved", { tag: "@both" }, async ({
   browser
 }) => {
   const experiment = startExperiment(path.resolve("tests/experiments/live_session"));
@@ -45,7 +45,7 @@ test("a live session page joins its session beside the page socket and shows a r
       );
     }
     await Promise.all(participants.map(reachTheGame));
-    const [first] = participants;
+    const [first, second] = participants;
 
     await expect(first.locator("#page-socket-status")).toHaveText("Connected", {
       timeout: STEP_TIMEOUT_MS
@@ -79,8 +79,22 @@ test("a live session page joins its session beside the page socket and shows a r
     await first.evaluate(() => {
       window.gameSockets = [psynet.liveSession.socket, psynet.websocket.connect()];
     });
-    await clickNextAndWait(first);
-    await expect(first.locator("#main-body")).toContainText("The page after the game.");
+    // The session goes on until the second player picks, so the first page
+    // can't move on yet, and sends its response again by itself.
+    await first.locator("#next-button").click();
+    await expect(first.locator("#psynet-retry-notice")).toHaveText(
+      "Please wait while the game finishes...",
+      { timeout: STEP_TIMEOUT_MS }
+    );
+    await second.locator("#pick").click();
+    await expect(first.locator("#main-body")).toContainText("The page after the game.", {
+      timeout: STEP_TIMEOUT_MS
+    });
+    await expect(first.locator("#psynet-retry-notice")).toHaveCount(0);
+    // The second page moves on by itself once the result is saved.
+    await expect(second.locator("#main-body")).toContainText("The page after the game.", {
+      timeout: STEP_TIMEOUT_MS
+    });
     if (isInplaceTimelineModeEnabled()) {
       await expect
         .poll(

@@ -862,6 +862,18 @@ class Control(JavaScriptContributor):
     def update_events(self, events):
         pass
 
+    def _check_page(self, page):
+        # Called once the page is built. Raises if the control can't be used
+        # on ``page``.
+        pass
+
+    def check_ready_for_response(self, experiment, participant):
+        """
+        Check whether the page can accept the participant's response yet, as
+        :meth:`psynet.timeline.Page.check_ready_for_response` describes.
+        """
+        return None
+
     def call__get_bot_response(self, experiment, bot, page, prompt):
         if self._bot_response == NoArgumentProvided:
             res = self.get_bot_response(experiment, bot, page, prompt)
@@ -2076,6 +2088,7 @@ class ModularPage(Page):
             **assets,
             **kwargs,
         )
+        self.control._check_page(self)
 
     def _js_vars_for(self, experiment, participant):
         return _merge_js_var_sources(
@@ -2299,6 +2312,9 @@ class ModularPage(Page):
                 (tags.h3("Response"),)
                 tags.div(raw(response), id="response-visualization", style=div_style)
         return div.render()
+
+    def check_ready_for_response(self, experiment, participant):
+        return self.control.check_ready_for_response(experiment, participant)
 
     def format_answer(self, raw_answer, **kwargs):
         """
