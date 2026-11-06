@@ -97,10 +97,8 @@ methods are live-only.
 
 import inspect
 import random
-import sys
 import time
 import uuid
-import warnings
 from contextlib import contextmanager
 from datetime import timedelta
 from math import ceil, floor
@@ -180,7 +178,7 @@ from psynet.utils import (
     get_config,
     get_logger,
     get_translator,
-    psynet_source_prefixes,
+    warn_from_caller,
 )
 
 logger = get_logger()
@@ -783,13 +781,20 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
-def _warn_from_caller(message, category):
-    """Warn with the location of the first caller outside PsyNet."""
-    prefixes = psynet_source_prefixes()
-    frame, stacklevel = sys._getframe(0), 1
-    while frame is not None and frame.f_code.co_filename.startswith(prefixes):
-        frame, stacklevel = frame.f_back, stacklevel + 1
-    warnings.warn(message, category, stacklevel=stacklevel)
+def _expected_repetitions(waiting_logic, expected_wait, default):
+    """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
+
+    Called before the timeline multiplies the logic's own repetition
+    estimates, so a ``waiting_logic`` shared between barriers is measured once.
+    """
+    from psynet.timeline import estimate_duration
+
+    if expected_wait is None:
+        return default
+    duration = estimate_duration(waiting_logic)
+    if duration <= 0:
+        return 1
+    return max(1, ceil(expected_wait / duration - 1e-9))
 
 
 def hold_message(title, progress=None):
@@ -836,8 +841,9 @@ class Barrier(EltCollection):
     from :func:`~psynet.barrier_spec.barrier_from_spec_json`. That reconstructed
     object has ``id``, custom release state, scalar presentation (``content``,
     timeouts), and notification settings. It does not include wait-page
-    construction (``waiting_logic``, ``_uses_timeline_hold``,
-    ``waiting_logic_expected_repetitions``).
+    construction (``waiting_logic``, ``waiting_screen``,
+    ``_uses_timeline_hold`` and the expected repetitions of
+    ``waiting_logic``).
 
     Call :meth:`check_waiting_participants`, :meth:`choose_who_to_release`,
     and :meth:`release` on reconstructed objects. Keep
@@ -942,7 +948,7 @@ class Barrier(EltCollection):
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
         if waiting_logic_expected_repetitions is not None:
-            _warn_from_caller(
+            warn_from_caller(
                 "waiting_logic_expected_repetitions is deprecated; pass expected_wait "
                 "(in seconds) instead.",
                 FutureWarning,
@@ -966,12 +972,20 @@ class Barrier(EltCollection):
             if expected_wait is None
             else expected_wait
         )
-        self._expected_wait_given = expected_wait is not None
         if self.expected_wait < 0:
             raise ValueError("expected_wait must be non-negative.")
         if release_grace is not None and release_grace < 0:
             raise ValueError("release_grace must be non-negative or None.")
         self.release_grace = None if waiting_logic is None else release_grace
+        self._waiting_logic_repetitions = (
+            None
+            if waiting_logic is None
+            else _expected_repetitions(
+                waiting_logic,
+                expected_wait,
+                waiting_logic_expected_repetitions or 3,
+            )
+        )
         if waiting_logic is None:
             waiting_logic = _BarrierHoldPage(self)
 
@@ -1016,17 +1030,6 @@ class Barrier(EltCollection):
         """
         return bool(waiting_participants)
 
-    def _waiting_logic_repetitions(self):
-        """Return how often ``waiting_logic`` is expected to run while the participant waits."""
-        from psynet.timeline import estimate_duration
-
-        if not self._expected_wait_given:
-            return self.waiting_logic_expected_repetitions or 3
-        duration = estimate_duration(self.waiting_logic)
-        if duration <= 0:
-            return 1
-        return max(1, ceil(self.expected_wait / duration))
-
     def resolve(self):
         from psynet.timeline import join, while_loop
 
@@ -1039,7 +1042,7 @@ class Barrier(EltCollection):
                     not self.can_participant_exit(participant)
                 ),
                 logic=self.waiting_logic,
-                expected_repetitions=self._waiting_logic_repetitions(),
+                expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
                 fail_on_timeout=(self.max_wait_action == "fail"),

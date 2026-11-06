@@ -1,7 +1,5 @@
 import datetime
 import random
-import sys
-import warnings
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
@@ -75,7 +73,7 @@ from ..utils import (
     get_logger,
     is_method_overridden,
     log_time_taken,
-    psynet_source_prefixes,
+    warn_from_caller,
 )
 
 logger = get_logger()
@@ -89,14 +87,7 @@ def _warn_ignored_fail_trials_on_premature_exit(trial_maker_id):
         "Premature exit no longer fails completed trials; incomplete "
         "trials are always failed when the participant exits or fails."
     )
-    if sys.version_info >= (3, 12):
-        warnings.warn(
-            message,
-            DeprecationWarning,
-            skip_file_prefixes=psynet_source_prefixes(),
-        )
-        return
-    warnings.warn(message, DeprecationWarning, stacklevel=2)
+    warn_from_caller(message, DeprecationWarning)
 
 
 def with_trial_maker_namespace(trial_maker_id: str, x: Optional[str] = None):
@@ -3055,14 +3046,7 @@ class NetworkTrialMaker(TrialMaker):
                     f"{method_name} is deprecated: {self.__class__.__name__} still "
                     f"overrides it. {instruction}"
                 )
-                if sys.version_info >= (3, 12):
-                    warnings.warn(
-                        message,
-                        DeprecationWarning,
-                        skip_file_prefixes=psynet_source_prefixes(),
-                    )
-                else:
-                    warnings.warn(message, DeprecationWarning, stacklevel=2)
+                warn_from_caller(message, DeprecationWarning)
 
     def _selection_hook_overrides(self):
         """Return obsolete or wrong-paradigm hooks and their replacements."""

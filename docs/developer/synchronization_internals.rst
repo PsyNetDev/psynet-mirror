@@ -95,8 +95,9 @@ supported callables, classes, or persisted PsyNet ORM records.
 
 The reconstructed barrier has ``id``, custom release state, scalar
 presentation fields (``content`` and the timeouts) and notification
-settings. Wait-page construction (``waiting_logic``, ``_uses_timeline_hold``,
-``waiting_logic_expected_repetitions``) stays on the live timeline object, as
+settings. Wait-page construction (``waiting_logic``, ``waiting_screen``,
+``_uses_timeline_hold`` and the expected repetitions of ``waiting_logic``)
+stays on the live timeline object, as
 do :meth:`~psynet.sync.Barrier.receive_participant` and arrival
 notification. :class:`~psynet.sync.Barrier` documents which methods are
 live-only.
