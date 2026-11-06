@@ -2951,15 +2951,13 @@ class Regrouper(Grouper):
             return None
         if self.clock_period is None and self.deadline is None:
             return None
+        waiting = self.get_waiting_participants(participant)
+        # Reading who is waiting reloads this participant's barrier links, so
+        # a release by another request since the check above shows up here.
+        if participant not in waiting:
+            return None
         pool = next(
-            (
-                members
-                for _, members in self._pools(
-                    self.get_waiting_participants(participant)
-                )
-                if participant in members
-            ),
-            [participant],
+            members for _, members in self._pools(waiting) if participant in members
         )
         if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None

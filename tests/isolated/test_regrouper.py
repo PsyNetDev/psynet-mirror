@@ -8,7 +8,7 @@ from dallinger import db
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from psynet import timeline_hold
+from psynet import sync, timeline_hold
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.pytest_psynet import path_to_test_experiment
@@ -127,6 +127,31 @@ def test_clock_regrouper_splits_everyone_waiting_into_balanced_rooms(
     assert participants[5] not in released
     sizes = sorted(len(g.participants) for g in {p.sync_group for p in released})
     assert sizes == [2, 3]
+
+
+@in_consents_experiment
+def test_regrouper_countdown_after_a_concurrent_release(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Another request can put a waiter into a group while their countdown is drawn."""
+    exp = get_experiment()
+    rooms = Regrouper("room", group_size=3, deadline=30, release_left_over=True)
+    participants = _working_participants(exp, 2)
+    _arrive(exp, rooms, participants)
+    populate = sync._populate_active_barriers
+
+    def release_first_then_populate(waiters):
+        db.session.execute(
+            text(
+                "UPDATE participant_link_barrier SET released = true"
+                " WHERE participant_id = :id"
+            ),
+            {"id": participants[0].id},
+        )
+        populate(waiters)
+
+    monkeypatch.setattr(sync, "_populate_active_barriers", release_first_then_populate)
+    assert rooms.expected_release_time(participants[0]) is None
 
 
 def _put_first_member_in_two_groups(members, **_):
