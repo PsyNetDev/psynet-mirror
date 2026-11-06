@@ -77,9 +77,10 @@ class GroupPrompt(Prompt):
     group
         The :class:`~psynet.sync.SyncGroup` to show. By default, the
         participant's group of type ``group_type``, or their only active group.
-        If they are no longer in it, for example because a barrier removed them
-        for being late, the page shows just ``text``, as it does for
+        If the lookup finds no group, for example because a barrier removed
+        them for being late, the page shows just ``text``, as it does for
         ``group=None`` (what ``trial.sync_group`` is after such a removal).
+        A group passed explicitly is drawn even if the viewer has left it.
     group_type
         The type of group to show when ``group`` is omitted, for example
         ``"pair"``.
@@ -97,7 +98,7 @@ class GroupPrompt(Prompt):
         join or leave.
     note
         Optional short text shown below the group, for example
-        "1 was picked twice".
+        "1 was picked twice". It is hidden when there is no group to show.
     show_progress
         If ``True`` (default) and ``answers`` is not given, members who have
         answered get a tick, which appears live as they reach the next

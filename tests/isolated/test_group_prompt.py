@@ -130,6 +130,11 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     assert GroupPrompt(participant=early, group_type="room").group == group
     prompt = GroupPrompt("Choose", participant=third)
     assert prompt.group is None and prompt.group_html == ""
+    # group=None, as trial.sync_group is after a removal, shows no group
+    # even if the participant is in one.
+    assert GroupPrompt("Hi", group=None, participant=early).group_html == ""
+    with pytest.raises(ValueError, match="not both"):
+        GroupPrompt("Hi", group=None, group_type="room", participant=early)
 
     # A removed member stays in their seat, faded and labelled by why they went.
     group.accepts_top_ups = False
@@ -215,10 +220,3 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     # A removed viewer keeps their drawing rather than one without "You".
     group.remove_participant(first)
     assert redrawn_group_html(first.unique_id, named) == {"html": None}
-
-    # group=None, as trial.sync_group is after a removal, shows no group
-    # even though the participant is still in another one.
-    assert GroupPrompt("Hi", participant=late).group_html
-    assert GroupPrompt("Hi", group=None, participant=late).group_html == ""
-    with pytest.raises(ValueError, match="not both"):
-        GroupPrompt("Hi", group=None, group_type="room", participant=late)
