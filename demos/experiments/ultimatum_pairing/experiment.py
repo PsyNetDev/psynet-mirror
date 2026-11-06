@@ -8,8 +8,9 @@ Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players.
 It starts the round as soon as the whole team is ready, or
 ``ROUND_DEADLINE_SECONDS`` after the previous round started, without the
 players who aren't ready yet. An odd player out sits that round out; a
-player left waiting alone waits for the others to finish their round
-instead. Players leave the team when they finish, so nobody waits for them.
+player left waiting alone waits up to another ``ROUND_DEADLINE_SECONDS``
+for the others to finish their round instead. Players leave the team when
+they finish, so nobody waits for them.
 In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
 offer they would accept.
