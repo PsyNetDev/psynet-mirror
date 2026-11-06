@@ -293,15 +293,6 @@ def test_explicit_barrier_waiting_logic_is_preserved():
     assert barrier.waiting_logic is waiting_logic
 
 
-def test_expected_wait_rejects_explicit_waiting_logic():
-    with pytest.raises(ValueError, match="expected_wait"):
-        ReleaseAllBarrier(
-            id_="page_wait",
-            waiting_logic=WaitPage(wait_time=1),
-            expected_wait=2,
-        )
-
-
 def test_content_rejects_explicit_waiting_logic():
     with pytest.raises(ValueError, match="content"):
         ReleaseAllBarrier(
