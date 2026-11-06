@@ -1498,6 +1498,13 @@ class TrialMakerState(ModuleState):
         self.trial_maker_initialized = False
 
 
+class _DefaultMaxWaitTime(float):
+    """Marks ``sync_group_max_wait_time`` as not passed, so it can follow the between-barrier timeout."""
+
+
+_DEFAULT_SYNC_GROUP_MAX_WAIT_TIME = _DefaultMaxWaitTime(45.0)
+
+
 class TrialMaker(Module):
     """
     Generic trial generation module, to be inserted
@@ -1682,7 +1689,7 @@ class TrialMaker(Module):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds; ``None`` waits indefinitely. Must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
@@ -1722,7 +1729,7 @@ class TrialMaker(Module):
         assets: List,
         fail_trials_on_premature_exit: bool = False,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
@@ -1787,6 +1794,10 @@ class TrialMaker(Module):
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
+        if sync_group_max_wait_time is _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME:
+            sync_group_max_wait_time = max(
+                45.0, (sync_group_timeout_between_barriers_time or 0) + 20
+            )
         if (
             sync_group_max_wait_time is not None
             and sync_group_timeout_between_barriers_time is not None
@@ -1796,7 +1807,7 @@ class TrialMaker(Module):
                 f"sync_group_max_wait_time ({sync_group_max_wait_time} s) must be "
                 "longer than sync_group_timeout_between_barriers_time "
                 f"({sync_group_timeout_between_barriers_time} s) in trial maker "
-                f"'{id_}'. Raise sync_group_max_wait_time (default 45 s)."
+                f"'{id_}'. Raise sync_group_max_wait_time, or leave it unset."
             )
         self.sync_group_type = sync_group_type
         self.sync_group_max_wait_time = sync_group_max_wait_time
@@ -2843,7 +2854,7 @@ class NetworkTrialMaker(TrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds; ``None`` waits indefinitely. Must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
@@ -2931,7 +2942,7 @@ class NetworkTrialMaker(TrialMaker):
         fail_trials_on_premature_exit: bool = False,
         assets=None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",

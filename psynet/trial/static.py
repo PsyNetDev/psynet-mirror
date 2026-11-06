@@ -16,6 +16,7 @@ from psynet.trial.chain import (
     ChainTrialMaker,
     _reject_removed_balance_argument,
 )
+from psynet.trial.main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
 
 from ..utils import get_logger, is_method_overridden
 
@@ -312,7 +313,7 @@ class StaticTrialMaker(ChainTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
