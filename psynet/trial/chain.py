@@ -59,6 +59,7 @@ from ..utils import (
     negate,
 )
 from .main import (
+    _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
     NetworkTrialMaker,
     NetworkTrialMakerState,
     Selection,
@@ -1524,7 +1525,7 @@ class ChainTrialMaker(NetworkTrialMaker):
     sync_group_max_wait_time
         The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
         If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45.0 seconds; ``None`` waits indefinitely. Must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Defaults to 45 seconds, or to 20 seconds more than ``sync_group_timeout_between_barriers_time`` if that is longer; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
 
     sync_group_max_wait_action
         When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant; ``"kick"`` removes them
@@ -1626,7 +1627,7 @@ class ChainTrialMaker(NetworkTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: float = 45.0,
+        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
         sync_group_timeout_between_barriers_time: Optional[float] = None,
         sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
