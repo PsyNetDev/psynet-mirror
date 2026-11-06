@@ -874,6 +874,15 @@ class Control(JavaScriptContributor):
         """
         return None
 
+    def _check_raw_answer(self, raw_answer):
+        """Reject a browser answer the control could not have produced.
+
+        Runs before :meth:`validate` and before any custom page ``validate``
+        function. Returns ``None`` or a
+        :class:`~psynet.timeline.FailedValidation`.
+        """
+        return None
+
     def visualize_response(self, answer, response, trial):
         return ""
 
@@ -980,6 +989,20 @@ class OptionControl(Control):
                 if str(choice) == text:
                     return choice
         return text
+
+    def _names_choice(self, text):
+        return self._choice_for_text(text) in self.choices
+
+    def _raw_answer_is_allowed(self, raw_answer):
+        """Return whether the browser could have sent ``raw_answer``."""
+        return self._names_choice(raw_answer)
+
+    def _check_raw_answer(self, raw_answer):
+        # Bots that submit a formatted ``answer`` send no raw answer.
+        if raw_answer is NoArgumentProvided or self._raw_answer_is_allowed(raw_answer):
+            return None
+        _p = get_translator(context=True)
+        return FailedValidation(_p("validation", "Please choose one of the options."))
 
     def format_answer(self, raw_answer, **kwargs):
         """Return the choice named by the browser's string answer.
@@ -1140,6 +1163,11 @@ class CheckboxControl(OptionControl):
             return raw_answer
         return [self._choice_for_text(text) for text in raw_answer]
 
+    def _raw_answer_is_allowed(self, raw_answer):
+        return isinstance(raw_answer, list) and all(
+            self._names_choice(text) for text in raw_answer
+        )
+
     def get_bot_response(self, experiment, bot, page, prompt):
         """Tick one random checkbox, submitting the list of ids the browser sends."""
         return BotResponse(
@@ -1227,6 +1255,9 @@ class DropdownControl(OptionControl):
         if self.force_selection and response.answer == "":
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
+
+    def _raw_answer_is_allowed(self, raw_answer):
+        return raw_answer == "" or self._names_choice(raw_answer)
 
 
 class DropdownOption:
@@ -1414,6 +1445,10 @@ class TimedPushButtonControl(PushButtonControl):
 
     def format_answer(self, raw_answer, **kwargs):
         return {**kwargs}["metadata"]["event_log"]
+
+    def _raw_answer_is_allowed(self, raw_answer):
+        # The answer is the event log, not a choice.
+        return True
 
     def visualize_response(self, answer, response, trial):
         """Highlight every button that the response's event log records as pressed."""
@@ -1603,6 +1638,13 @@ class RadioButtonControl(OptionControl):
         if self.force_selection and response.answer is None:
             return FailedValidation(_p("validation", "You need to select an answer!"))
         return None
+
+    def _raw_answer_is_allowed(self, raw_answer):
+        if raw_answer is None:
+            return True
+        if self.show_free_text_option:
+            return isinstance(raw_answer, str)
+        return self._names_choice(raw_answer)
 
 
 class RadioButton:
@@ -2209,6 +2251,11 @@ class ModularPage(Page):
         return "\n".join([renderers[key] for key in self.layout])
 
     def validate(self, response, **kwargs):
+        failed = self.control._check_raw_answer(
+            kwargs.get("raw_answer", NoArgumentProvided)
+        )
+        if failed is not None:
+            return failed
         if self._validate_function is None:
             return self.control.validate(response, **kwargs)
         else:

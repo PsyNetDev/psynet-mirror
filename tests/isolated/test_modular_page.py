@@ -19,6 +19,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RatingScale,
     TimedPushButtonControl,
 )
+from psynet.timeline import FailedValidation
 
 # from importlib import resources
 
@@ -502,6 +503,28 @@ def test_option_controls_save_numpy_choices_as_python_values(
 def test_option_controls_reject_choices_with_the_same_text():
     with pytest.raises(ValueError, match="same text"):
         RadioButtonControl([1, "1"])
+
+
+@pytest.mark.parametrize(
+    "control, valid, invalid",
+    [
+        (PushButtonControl([1, 2]), "2", "7"),
+        (DropdownControl([1, 2], force_selection=False), "", "7"),
+        (RadioButtonControl([1, 2], force_selection=False), None, "7"),
+        (RadioButtonControl([1, 2], show_free_text_option=True), "abc", ["1"]),
+        (CheckboxControl([1, 2]), ["1", "2"], ["1", "7"]),
+    ],
+)
+def test_option_controls_reject_answers_that_name_no_choice(control, valid, invalid):
+    """A tampered answer fails validation, even when the page has its own validate function."""
+    page = ModularPage("test", "Hi!", control, validate=lambda answer: None)
+
+    def validate(raw_answer):
+        response = SimpleNamespace(answer=control.format_answer(raw_answer))
+        return page.validate(response, raw_answer=raw_answer, answer=response.answer)
+
+    assert validate(valid) is None
+    assert isinstance(validate(invalid), FailedValidation)
 
 
 @pytest.mark.parametrize(
