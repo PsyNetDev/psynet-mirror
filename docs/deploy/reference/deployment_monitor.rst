@@ -8,8 +8,9 @@ The experiment dashboard
 
 Every deployed or debugged experiment has its own dashboard. This is
 your main tool for tracking and managing a single study while it is
-running. The URL, user name and password are printed in the terminal
-after the deploy or debug command (see :doc:`/deploy/running_a_study`).
+running. The deploy or debug command prints its URL and user name (see
+:doc:`/deploy/running_a_study`). For SSH deployments, the password is saved in
+``launch-info.json`` rather than printed (see :ref:`ssh_server_launch_info`).
 
 Key features:
 
