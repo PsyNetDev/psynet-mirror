@@ -317,21 +317,32 @@ def test_sync_trial_maker_requires_active_group_for_synced_participant():
     assert participant.branch_log == []
 
 
-def test_follower_copies_leader_group_after_leader_moved_on():
+def test_follower_copies_leader_state_after_leader_moved_on():
     trial_maker = make_trial_maker(sync_group_type="main")
+    leader_state = SimpleNamespace(
+        participant_group="B", block_order=["X", "Y"], block_position=1
+    )
     leader = SimpleNamespace(
-        module_state=None,
-        module_states={trial_maker.id: [SimpleNamespace(participant_group="B")]},
+        module_state=None, module_states={trial_maker.id: [leader_state]}
+    )
+    state = SimpleNamespace(participant_group=None)
+    state.set_block_position = lambda position: setattr(
+        state, "block_position", position
     )
     follower = SimpleNamespace(
         id=2,
-        module_state=SimpleNamespace(participant_group=None),
+        module_state=state,
+        select_module=lambda module_id: None,
         active_sync_groups={"main": SimpleNamespace(id=1, leader=leader)},
     )
 
-    trial_maker.init_participant_group(experiment=None, participant=follower)
+    trial_maker.init_participant(experiment=None, participant=follower)
 
-    assert follower.module_state.participant_group == "B"
+    assert (state.participant_group, state.block_order, state.block_position) == (
+        "B",
+        ["X", "Y"],
+        1,
+    )
 
 
 WITHIN_CHAINS = dict(
@@ -359,6 +370,20 @@ def test_participant_removed_from_their_group_initializes_alone(chain_kwargs):
 
     assert kicked.module_state.trial_maker_initialized
     assert kicked.module_state.participant_group == "default"
+    assert trial_maker._prepare_trial_uncommitted(None, kicked, None) == (None, "exit")
+
+
+def test_participant_whose_group_was_closed_still_needs_a_new_group():
+    trial_maker = make_trial_maker(sync_group_type="main")
+    closed = SimpleNamespace(
+        id=3,
+        active_sync_groups={},
+        sync_group_links=[
+            SimpleNamespace(active=True, sync_group=SimpleNamespace(group_type="main"))
+        ],
+    )
+    with pytest.raises(RuntimeError, match="expected participant 3"):
+        trial_maker._requires_sync_group_initialization_barrier(closed)
 
 
 def test_trial_sync_group_returns_none_after_kick():
