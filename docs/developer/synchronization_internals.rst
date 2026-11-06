@@ -110,8 +110,8 @@ Arrival notices
 ---------------
 
 The browser opens the live-update WebSocket for arrival notices only while
-the participant is in an active sync group. Hold pages reuse the hold-channel
-socket instead.
+the participant is in an active sync group, or has a removal notice for the
+current page. Hold pages reuse the hold-channel socket instead.
 
 Arrivals in concurrent requests don't see each other's uncommitted links, so
 a count read in the arriving request can be too low. Arrival and departure

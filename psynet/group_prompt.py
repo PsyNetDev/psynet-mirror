@@ -323,7 +323,7 @@ class GroupPrompt(Prompt):
         return me + [m for m in members if m.id != self.participant.id]
 
     def _left_members(self):
-        """Return former members who dropped out rather than moved on to another group.
+        """Return former members who dropped out, and those who moved on whose answer the page shows.
 
         Groups that take top-ups are open-ended, like a lobby, so their
         leavers are not shown.
