@@ -132,12 +132,16 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     assert prompt.group is None and prompt.group_html == ""
 
     # A removed member stays in their seat, faded, until they join another room.
-    group.accepts_top_ups = True
+    group.accepts_top_ups = False
+    group.min_group_size = 1
     group.remove_participant(late)
     db_session.flush()
     html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
     assert 'psynet-group-member--left" data-seat="0"' in html
     assert ">Your partner (left)<" in html
+    # An open-ended group, like a lobby, doesn't show who left.
+    group.accepts_top_ups = True
+    assert "(left)" not in GroupPrompt(group=group, participant=early).group_html
     SimpleSyncGroup(group_type="room", initial_group_size=1).add_participant(late)
     db_session.flush()
     html = GroupPrompt(group=group, participant=early).group_html

@@ -332,9 +332,9 @@ answered once they wait at a barrier of the group, typically the barrier
 after the decision page, and the ticks appear live as members arrive (this
 uses the barrier's arrival updates, so it needs ``notify_arrivals``). Pass
 ``show_progress=False`` to hide the ticks, or ``answered`` to decide who has
-answered when the page is drawn. Members who join or leave the group appear
-or disappear live too, on any page without ``answers`` or ``answered``,
-unless ``subgroups`` is a function:
+answered when the page is drawn. Members who join the group appear live
+too, and members who leave are faded (see below), on any page without
+``answers`` or ``answered``, unless ``subgroups`` is a function:
 
 .. code-block:: python
 
@@ -371,10 +371,13 @@ The ``lowest_unique_number`` demo uses both.
 Without ``group``, the prompt shows the participant's group of type
 ``group_type``, or their only group. A participant who is no longer in it,
 for example because a barrier removed them for being late, sees just the
-text, so pages that a late player may still reach need no special case.
-The members who stay see the removed player faded in their seat, labelled
-"(left)". Players who simply moved on to another group of the same type,
-such as next round's pair, are no longer shown.
+text, so the prompt itself needs no special case on pages that a late
+player may still reach; the page's other content, such as a round's
+outcome, may still need one. The members who stay see the removed player
+faded in their seat, labelled "(left)". Players who simply moved on to
+another group of the same type, such as next round's pair, are no longer
+shown, and neither are leavers of groups that accept top-ups, such as a
+lobby.
 
 Trial makers
 ~~~~~~~~~~~~

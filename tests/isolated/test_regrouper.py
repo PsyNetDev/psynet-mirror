@@ -246,7 +246,10 @@ def test_group_barrier_can_let_ungrouped_participants_through(
     exp = get_experiment()
     original = exp.timeline
     exp.timeline = Timeline(
-        GroupBarrier("round_end", group_type="pair", skip_if_not_in_group=True),
+        # A barrier that kicks late members lets ungrouped participants through.
+        GroupBarrier(
+            "round_end", group_type="pair", timeout_between_barriers_action="kick"
+        ),
         ModularPage("after", "Round over", time_estimate=1),
     )
     try:
