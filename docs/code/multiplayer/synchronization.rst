@@ -566,16 +566,23 @@ the group. Pass ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
 run to its end. Pages inside a trial, as in ``sync_quorum``, always run to
 their end, so that the trial is not left without an answer.
 
+During the grace period, the top of the page shows a countdown such as
+"Your group is ready. Moving on in 3 s.", so the participant isn't
+surprised when the page ends.
+
 A waiting page's JavaScript can react to the release: ``window`` receives a
 ``psynetWaitingRelease`` event, with the grace period in ``detail.graceMs``,
 and a ``psynetWaitingStatus`` event about every 2 seconds, with the time to
-the expected release (or ``null``) in ``detail.releaseInMs``:
+the expected release (or ``null``) in ``detail.releaseInMs``. Call
+``preventDefault()`` on the release event to show your own notice instead
+of the built-in one:
 
 .. code-block:: javascript
 
    window.addEventListener("psynetWaitingRelease", (event) => {
+     event.preventDefault();
      document.getElementById("note").textContent =
-       "Your group is ready. Moving on in a moment…";
+       "Your partner is here. Finish your sentence!";
    });
 
 Time credit
