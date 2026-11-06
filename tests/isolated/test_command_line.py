@@ -956,19 +956,23 @@ def test_reloader_keeps_a_checkout_next_to_the_development_folder(
     import psynet
     from psynet import command_line
 
-    (tmp_path / "dallinger_develop").mkdir()
-    checkout = tmp_path / "wt-group"
+    # Served through a symlinked parent, like /tmp on macOS.
+    real = tmp_path / "real"
+    link = tmp_path / "link"
+    (real / "dallinger_develop").mkdir(parents=True)
+    link.symlink_to(real)
+    checkout = real / "wt-group"
     (checkout / "psynet").mkdir(parents=True)
     monkeypatch.setattr(psynet, "__file__", str(checkout / "psynet" / "__init__.py"))
     monkeypatch.setattr(command_line, "get_config", lambda: SimpleNamespace(ready=True))
     monkeypatch.setattr(
-        command_line, "_develop_path", lambda config: tmp_path / "dallinger_develop"
+        command_line, "_develop_path", lambda config: link / "dallinger_develop"
     )
 
     patterns = command_line._reloader_exclude_patterns()
-    root = tmp_path.resolve()
-    assert not any(fnmatch(f"{root}/wt-group/psynet/sync.py", p) for p in patterns)
-    assert any(fnmatch(f"{root}/wt-other/x.py", p) for p in patterns)
+    for root in (link, real.resolve()):
+        assert not any(fnmatch(f"{root}/wt-group/psynet/sync.py", p) for p in patterns)
+        assert any(fnmatch(f"{root}/wt-other/x.py", p) for p in patterns)
 
 
 @pytest.mark.parametrize("browsers", [False, True])

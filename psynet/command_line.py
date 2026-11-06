@@ -1658,9 +1658,10 @@ def _is_multiprocessing_helper(process):
 
 
 def _reloader_exclude_patterns():
-    """Return reloader exclusions for checkout demos, tests and docs and other folders next to the development folder.
+    """Return reloader exclusions that stop debug servers restarting for unrelated files.
 
-    Flask's reloader watches every ``.py`` file under each non-system
+    These cover checkout demos, tests and docs, and other folders next to the
+    development folder. Flask's reloader watches every ``.py`` file under each non-system
     ``sys.path`` entry, and an editable install puts the whole PsyNet (or
     Dallinger) checkout there. Without these patterns, editing a test or
     scaffolding a demo restarts every debug server. The served experiment is
@@ -1682,10 +1683,11 @@ def _reloader_exclude_patterns():
     # The reloader may watch the resolved path, e.g. /private/tmp on macOS.
     for path in dict.fromkeys([develop_path, develop_path.resolve()]):
         parent = path.parent
+        resolved_parent = parent.resolve()
         keep = {path.name}
         for root in roots:
-            if root.is_relative_to(parent.resolve()) and root != parent.resolve():
-                keep.add(root.relative_to(parent.resolve()).parts[0])
+            if root.is_relative_to(resolved_parent) and root != resolved_parent:
+                keep.add(root.relative_to(resolved_parent).parts[0])
         patterns += _other_sibling_patterns(parent, keep)
     for root in roots:
         if not (root / "pyproject.toml").exists():
