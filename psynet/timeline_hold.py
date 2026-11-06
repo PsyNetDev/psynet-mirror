@@ -275,7 +275,7 @@ class HoldMessage:
         self.progress = progress
 
     def __str__(self):
-        return " ".join(part for part in (self.title, self.progress) if part)
+        return " ".join(str(part) for part in (self.title, self.progress) if part)
 
 
 def compose_hold_overlay_html(title, progress_text=None):
