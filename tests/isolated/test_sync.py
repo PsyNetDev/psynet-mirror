@@ -6605,10 +6605,11 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("passed_a_barrier", [False, True])
 def test_timeout_between_barriers_counts_from_joining_the_group(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, passed_a_barrier
 ):
-    """The first GroupBarrier kicks members late since grouping, but not a newcomer."""
+    """A GroupBarrier kicks members late since grouping or the last barrier, but not a newcomer."""
     exp = get_experiment()
     grouper = SimpleGrouper("main", initial_group_size=3, min_group_size=2)
     participants = _working_participants(exp, 3)
@@ -6619,6 +6620,8 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
     assert group.last_barrier_pass_time is None
     for link in group.participant_links:
         link.arrival_time -= timedelta(seconds=10)
+    if passed_a_barrier:
+        group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
     (newcomer,) = _working_participants(exp, 1)
     group.add_participant(newcomer)
     barrier = GroupBarrier(

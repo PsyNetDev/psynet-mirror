@@ -475,8 +475,9 @@ When failed or departed members take a group below ``min_group_size``, what
 happens depends on whether the group accepts top-ups:
 
 - With ``join_existing_groups=True``, the group's next barrier waits for new
-  members to join. If every member leaves, the group closes, and later
-  arrivals form a new one.
+  members to join. If every member leaves, the group closes at the next
+  periodic sync-group check (every few seconds), and later arrivals form a
+  new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_min_size=False``
   on the grouper to remove them from the group without failing them, so that
