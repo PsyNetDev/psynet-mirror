@@ -10,7 +10,7 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, TextControl
 from psynet.page import InfoPage
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import TIME_LIMIT_GRACE_SECONDS, Timeline
+from psynet.timeline import TIME_LIMIT_GRACE_SECONDS, Response, Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline_hold_helpers import (  # noqa: E402
@@ -106,11 +106,27 @@ def test_timeout_answers_skip_validation(in_experiment_directory, db_session):
                     participant.page_uuid,
                     "127.0.0.1",
                 )
-            return result.payload["submission"]
+            return result.payload
+
+        # The browser's countdown ended early: nothing is recorded, and the
+        # browser learns how long to wait.
+        participant.page_deadline = timenow() + timedelta(seconds=3)
+        payload = submit(None, time_limit_reached=True)
+        assert payload["submission"] == "rejected"
+        assert 2 < payload["time_limit_seconds_left"] <= 3
+        assert Response.query.filter_by(participant_id=participant.id).count() == 0
 
         # Late but within the grace period: validated as usual.
         participant.page_deadline = timenow() - timedelta(seconds=1)
-        assert submit("bad") == "rejected"
-        assert submit(None, time_limit_reached=True) == "approved"
+        assert submit("bad")["submission"] == "rejected"
+
+        # Within the tolerance before the deadline, the browser's timeout counts.
+        participant.page_deadline = timenow() + timedelta(seconds=1)
+        assert submit(None, time_limit_reached=True)["submission"] == "approved"
+        (response,) = Response.query.filter_by(
+            participant_id=participant.id, successful_validation=True
+        )
+        assert response.answer == "timeout"
+        assert response.metadata["time_limit_reached"] is True
     finally:
         exp.timeline = original

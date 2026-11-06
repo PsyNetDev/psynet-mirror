@@ -4357,6 +4357,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return ResponseResult(
                     payload=self._approved_payload(participant, page), page=page
                 )
+            seconds_to_wait = event._time_limit_seconds_to_wait(metadata, participant)
+            if seconds_to_wait is not None:
+                # The browser's countdown ended before the server's; it
+                # resubmits once the server's deadline arrives.
+                return ResponseResult(
+                    payload={
+                        "submission": "rejected",
+                        "message": "",
+                        "time_limit_seconds_left": seconds_to_wait,
+                    }
+                )
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
