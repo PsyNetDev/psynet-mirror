@@ -65,7 +65,8 @@ current page, under a waiting indicator, until their group is formed.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
     still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
     down to that short start once ``min_group_size`` are waiting, and shows
-    "…" until then.
+    "…" until then; :ref:`a content function <sync-countdown-messages>` can
+    show other text instead.
 
 ``content``
     The message on the waiting indicator. If omitted, participants see
@@ -182,9 +183,24 @@ on their own.
 ``content``
     The waiting message. A ``{SECONDS}`` placeholder shows a live countdown to
     the deadline, for example ``"The next round starts in {SECONDS} s."``.
+    See :ref:`countdown messages <sync-countdown-messages>`.
 
 ``max_wait_time`` (default: 300 seconds)
     The longest a participant waits at the regrouper before being failed.
+
+.. _sync-countdown-messages:
+
+**Countdown messages.** Sometimes the barrier doesn't know yet when the
+wait will end, for example while a participant waits alone for a partner,
+and ``{SECONDS}`` shows "…". To show different text then, pass a
+module-level function as ``content``. It receives ``seconds_left``, which
+is ``None`` while the time is unknown and otherwise the whole seconds left
+(0 once the time has passed), and can also take ``participant`` and
+``barrier``. The message switches within a few seconds of the time
+becoming known:
+
+.. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
+   :pyobject: round_message
 
 In the ``lowest_unique_number`` demo, rooms of up to eight players form every
 20 seconds. A player who doesn't choose in time is removed from their room by
@@ -334,12 +350,22 @@ Timeouts
     ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
     Members who arrive promptly may wait this long for the others, so the
     barrier's ``max_wait_time`` must be longer; it defaults to 20 seconds plus
-    this timeout.
+    this timeout. This guarantee assumes fixed membership: in a group that
+    accepts top-ups, a newcomer is timed from when they joined, so members
+    already waiting can reach ``max_wait_time`` first.
+
+    At a group's first barrier the timeout counts from when the group formed.
+    Size it to cover everything between the grouper and that barrier, such as
+    instructions or a practice trial, or members who read slowly are timed
+    out before they arrive.
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``.
+and ``sync_group_timeout_between_barriers_action``. As with a barrier,
+``sync_group_max_wait_time`` must be longer than
+``sync_group_timeout_between_barriers_time``, so raise it when you set a
+between-barrier timeout of 45 seconds or more.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while

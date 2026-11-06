@@ -1161,6 +1161,7 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     assert not kicked_participant.failed
     assert group.active_participants == []
     assert group.n_active_participants == 0
+    assert group.leader is None
     db_session.commit()
     check_sync_groups()
     db_session.refresh(group)

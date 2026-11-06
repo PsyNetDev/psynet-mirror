@@ -138,6 +138,7 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
     )
     first, later = _working_participants(exp, 2)
     _arrive(exp, pairs, [first])
+    assert pairs.expected_release_time(first) is None
     _backdate_arrivals(pairs, [first], 20)
     _arrive(exp, pairs, [later])
 
@@ -147,6 +148,12 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
     _backdate_arrivals(pairs, [first], 20)
     with pytest.raises(ValueError, match="two groups"):
         pairs.choose_who_to_release([first, later])
+
+
+def _lobby_message(seconds_left):
+    if seconds_left is None:
+        return "Waiting for another player."
+    return "Starting in {SECONDS} s"
 
 
 @in_consents_experiment
@@ -161,11 +168,14 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
         initial_group_size=4,
         min_group_size=2,
         start_short_after=10,
-        content="Starting in {SECONDS} s",
+        content=_lobby_message,
     )
     participants = _working_participants(exp, 2)
     _arrive(exp, grouper, participants[:1])
     assert grouper.expected_release_time(participants[0]) is None
+    assert "Waiting for another player." in grouper.waiting_logic.overlay_html(
+        participants[0]
+    )
     _arrive(exp, grouper, participants[1:])
     assert not grouper.ready_to_group(participants)
     assert grouper.expected_release_time(participants[0]) == pytest.approx(
@@ -174,8 +184,10 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     assert "data-release-in-ms" in grouper.waiting_logic.overlay_html(participants[0])
     countdowns = [w for w in published if w["reason"] == "countdown"]
     assert {w["participant_id"] for w in countdowns} == {p.id for p in participants}
+    assert all("Starting in" in w["hold_message"] for w in countdowns)
 
     _backdate_arrivals(grouper, participants, 11)
+    assert 'countdown">0<' in grouper.waiting_logic.overlay_html(participants[0])
     released = grouper.choose_who_to_release(participants)
 
     assert set(released) == set(participants)
