@@ -629,11 +629,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.pseudonym_animal = animal
 
     def to_dict(self):
-        """Return the participant's fields without the raw pseudonym keys.
+        """Return the participant's fields without the raw pseudonym override keys.
 
-        The Database tab adds the pseudonym itself (see
-        :meth:`psynet.experiment.Experiment.table_data`), so participant JSON
-        responses don't depend on translations.
+        The Database tab shows the translated name instead (see
+        :meth:`psynet.experiment.Experiment.table_data`).
         """
         x = super().to_dict()
         x.pop("pseudonym_color", None)

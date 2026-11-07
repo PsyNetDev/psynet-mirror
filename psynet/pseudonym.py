@@ -300,8 +300,8 @@ class PseudonymScheme:
 
         The icon is hidden from screen readers, because pages show the name
         next to it. Pages insert this HTML as it is, so an override must
-        return :class:`~markupsafe.Markup` and escape its arguments, as
-        :meth:`Markup.format <markupsafe.Markup.format>` does.
+        return ``markupsafe.Markup`` and escape its arguments, as
+        ``Markup.format`` does.
         """
         return Markup(
             '<span class="psynet-pseudonym-icon" aria-hidden="true" title="{}"'
