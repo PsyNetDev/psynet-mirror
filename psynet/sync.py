@@ -2768,6 +2768,11 @@ class Regrouper(Grouper):
                 "A Regrouper without `within` needs a deadline or every, because "
                 "it cannot tell when everyone is present."
             )
+        if "fail_participants_below_min_size" in kwargs:
+            raise TypeError(
+                "Regrouper groups are never dissolved when a member leaves, so "
+                "fail_participants_below_min_size doesn't apply."
+            )
         kwargs.setdefault("id_", f"{group_type}_regrouper")
         super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
         self.within = within
@@ -3491,7 +3496,9 @@ class SyncGroup(SQLBase, SQLMixin):
         self.n_active_participants = len(self.active_participants)
 
     def remove_participant(
-        self, participant: Participant, reason: Optional[str] = None
+        self,
+        participant: Participant,
+        reason: Optional[Literal["moved_on", "out_of_time"]] = None,
     ):
         """Remove a participant from the group.
 
@@ -3500,11 +3507,21 @@ class SyncGroup(SQLBase, SQLMixin):
         participant
             The member to remove.
         reason
-            Optional reason stored on their link, such as ``"moved_on"`` for a
-            member who went on to their next group or ``"out_of_time"`` for one
-            kicked by a timeout. :class:`~psynet.group_prompt.GroupPrompt`
-            uses it to label former members.
+            Why they left, stored on their link. It sets how
+            :class:`~psynet.group_prompt.GroupPrompt` shows them to the
+            remaining members:
+
+            - ``None`` (default): "(dropped out)", or "(left)" once they have
+              failed or finished the experiment.
+            - ``"out_of_time"``: "(out of time)", for a member kicked by a
+              timeout.
+            - ``"moved_on"``: not shown, unless the page shows their answer,
+              for a member who went on to their next group.
         """
+        if reason not in (None, "moved_on", "out_of_time"):
+            raise ValueError(
+                f"reason must be None, 'moved_on' or 'out_of_time', got {reason!r}."
+            )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
             is_member = (
@@ -3565,7 +3582,9 @@ class SimpleSyncGroup(SyncGroup):
     fail_participants_below_min_size = Column(Boolean, default=True)
 
     def remove_participant(
-        self, participant: Participant, reason: Optional[str] = None
+        self,
+        participant: Participant,
+        reason: Optional[Literal["moved_on", "out_of_time"]] = None,
     ):
         super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_min_size()

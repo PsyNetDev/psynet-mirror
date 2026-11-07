@@ -230,6 +230,8 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
         db_session.flush()
         if label:
             assert f">Your partner {label}<" in html()
+    with pytest.raises(ValueError, match="reason must be"):
+        group.remove_participant(late, reason="kicked")
     # Members who moved on to their next group are not shown, except with
     # their answer on a results page, which reads the same after a reload.
     assert "psynet-group-member--left" not in html()

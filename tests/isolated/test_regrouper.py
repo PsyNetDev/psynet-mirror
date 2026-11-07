@@ -356,6 +356,20 @@ def test_every_regrouper_left_over_waits_one_more_tick(
     assert pairs.choose_who_to_release(cohort[2:]) == cohort[2:]
 
 
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({}, "needs max_group_size"),
+        ({"roles": ["a", "b"], "max_group_size": 3}, "len\\(roles\\)"),
+        ({"max_group_size": 2, "deadline": 30, "every": 30}, "not both"),
+        ({"max_group_size": 2, "fail_participants_below_min_size": False}, "never"),
+    ],
+)
+def test_regrouper_checks_its_settings(kwargs, message):
+    with pytest.raises((TypeError, ValueError), match=message):
+        Regrouper("pair", within="cohort", **kwargs)
+
+
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
     with pytest.raises(ValueError, match="twice the deadline"):
         Regrouper(
