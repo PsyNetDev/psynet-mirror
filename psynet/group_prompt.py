@@ -12,16 +12,16 @@ Design constraints:
   refers to members by seat (:func:`psynet.sync.group_seats`), which is also
   how :class:`~psynet.sync.GroupBarrier` reports live ticks.
 - By default a member has answered once they are waiting at a barrier of
-  the group (:func:`psynet.sync.is_waiting_in`), typically the barrier after
+  the group (:func:`psynet.sync.is_waiting_at_barrier`), typically the barrier after
   the decision page. Live ticks come from that barrier's arrival updates, so
   they need ``notify_arrivals`` (the default). A member who reached the
   barrier because their page's time limit ran out gets a dash instead of a
-  tick (:func:`psynet.sync.waiting_after_time_out`).
+  tick (:func:`psynet.sync.reached_barrier_after_time_limit`).
 - Live redraws re-create the prompt on the server from a signed token, so
   only options that can be serialized take part in them; functions and
   ``answers`` fix the display when the page loads.
 - Members who drop out of the group stay in their seat, faded and marked
-  "(left)" if they failed or left the experiment, "(out of time)" if a
+  "(left)" if they failed or left the experiment, "(removed)" if a
   barrier removed them for being late, and "(dropped out)" otherwise.
   Members who moved on to their next group, as in a new round, are no
   longer shown, except on pages with ``answers`` that include their answer,
@@ -74,8 +74,8 @@ class GroupPrompt(Prompt):
     :doc:`/code/multiplayer/pseudonyms`): in a row for up to four people,
     and in a zigzag across the width of the page for more. Hovering over or
     tapping a member brings their speech bubble to the front. A member who
-    dropped out of the group is drawn faded and marked "(left)", "(out of
-    time)" or "(dropped out)"; one who moved on to their next group, as in a
+    dropped out of the group is drawn faded and marked "(left)",
+    "(removed)" or "(dropped out)"; one who moved on to their next group, as in a
     new round, is no longer shown, unless the page shows their answer.
 
     A page shows either progress (ticks for who has answered) or
@@ -133,9 +133,9 @@ class GroupPrompt(Prompt):
     has_answered
         Optional ``has_answered(participant) -> bool`` deciding who gets a
         tick when the page is drawn, in place of
-        :func:`~psynet.sync.is_waiting_in`, which a custom check can call.
+        :func:`~psynet.sync.is_waiting_at_barrier`, which a custom check can call.
         Members waiting after a time-out
-        (:func:`~psynet.sync.waiting_after_time_out`) get a dash whatever it
+        (:func:`~psynet.sync.reached_barrier_after_time_limit`) get a dash whatever it
         returns. Only used with ``show_progress``, so it can't be combined
         with ``answers`` or ``show_progress=False``.
     subgroups
@@ -414,8 +414,8 @@ class GroupPrompt(Prompt):
         _p = get_translator(context=True)
         if member.failed or member.status != "working":
             return _p("group prompt", "{NAME} (left)").format(NAME=label)
-        if self._removal_reasons().get(member.id) == "out_of_time":
-            return _p("group prompt", "{NAME} (out of time)").format(NAME=label)
+        if self._removal_reasons().get(member.id) == "late":
+            return _p("group prompt", "{NAME} (removed)").format(NAME=label)
         return _p("group prompt", "{NAME} (dropped out)").format(NAME=label)
 
     def _clusters(self):
@@ -457,11 +457,13 @@ class GroupPrompt(Prompt):
 
     def _progress(self, member):
         """Return ``(answered, timed_out)`` for a member still in the group."""
-        from .sync import is_waiting_in, waiting_after_time_out
+        from .sync import is_waiting_at_barrier, reached_barrier_after_time_limit
 
-        if waiting_after_time_out(member, self.group):
+        if reached_barrier_after_time_limit(member, self.group):
             return False, True
-        has_answered = self.has_answered or (lambda m: is_waiting_in(m, self.group))
+        has_answered = self.has_answered or (
+            lambda m: is_waiting_at_barrier(m, self.group)
+        )
         return bool(has_answered(member)), False
 
     def _member_html(self, member, seat, index, partner_label):

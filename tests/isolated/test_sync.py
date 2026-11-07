@@ -6648,7 +6648,7 @@ def test_group_barrier_late_after_kick_missing_participants(
     ]
     for missing_participant in missing_participants:
         assert missing_participant not in group.active_participants
-        assert missing_participant.sync_group_links[0].removal_reason == "out_of_time"
+        assert missing_participant.sync_group_links[0].removal_reason == "late"
         assert arrival_notice_payload(missing_participant.unique_id)["removed"]
     missing_participants[0].page_uuid = "next-page"
     assert pending_arrival_notice_for(missing_participants[0]) is None
@@ -6748,7 +6748,7 @@ def test_late_after_follows_a_timed_page(
         at_other_barrier,
     }
     for participant in (left_timed_page, no_time_limit, before_joining):
-        assert participant.sync_group_links[0].removal_reason == "out_of_time"
+        assert participant.sync_group_links[0].removal_reason == "late"
 
 
 def _start_timed_page(exp, participant, time_limit):

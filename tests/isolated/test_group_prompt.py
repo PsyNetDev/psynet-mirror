@@ -183,7 +183,7 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     # A member removed for being late is shown as having left, without a dash.
     time_out(second)
     _arrive(exp, GroupBarrier("after", group_type="room"), [second])
-    group.remove_participant(second, reason="out_of_time")
+    group.remove_participant(second, reason="late")
     html = GroupPrompt(group=group, participant=third).group_html
     assert "psynet-group-member--left" in html
     assert "psynet-group-member--ran-out-of-time" not in html
@@ -228,20 +228,20 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     # A removed member stays in their seat, faded and labelled by why they went.
     group.accepts_top_ups = False
     group.min_group_size = 1
-    group.remove_participant(late, reason="out_of_time")
+    group.remove_participant(late, reason="late")
     db_session.flush()
 
     def html():
         return GroupPrompt(group=group, participant=early, names="anonymous").group_html
 
     assert 'psynet-group-member--left" data-seat="0"' in html()
-    assert ">Your partner (out of time)<" in html()
+    assert ">Your partner (removed)<" in html()
     # Joining another room doesn't hide the seat they ran out of time in.
     other = SimpleSyncGroup(group_type="room", initial_group_size=2, min_group_size=1)
     db_session.add(other)
     other.add_participant(late)
     db_session.flush()
-    assert ">Your partner (out of time)<" in html()
+    assert ">Your partner (removed)<" in html()
     other.remove_participant(late)
     late.status = "returned"
     assert ">Your partner (left)<" in html()
@@ -288,8 +288,8 @@ def test_a_removed_partner_stays_in_the_viewers_subgroup(
     pair.add_participant(viewer)
     pair.add_participant(partner)
     other_pair.add_participant(other)
-    room.remove_participant(partner, reason="out_of_time")
-    pair.remove_participant(partner, reason="out_of_time")
+    room.remove_participant(partner, reason="late")
+    pair.remove_participant(partner, reason="late")
     next_pair = SimpleSyncGroup(
         group_type="pair", initial_group_size=2, min_group_size=1
     )
@@ -302,7 +302,7 @@ def test_a_removed_partner_stays_in_the_viewers_subgroup(
     ).group_html
     clusters = html.split('class="psynet-group-cluster"')[1:]
     assert len(clusters) == 2
-    assert ">Your partner (out of time)<" in clusters[0]
+    assert ">Your partner (removed)<" in clusters[0]
     # Their only active group would change type as pairs end, so they must say which.
     with pytest.raises(ValueError, match="several types"):
         GroupPrompt(participant=viewer)

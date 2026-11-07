@@ -348,14 +348,14 @@ the viewer's cluster comes first:
 
 A page shows either progress or answers. On a decision page, members who
 have answered get a tick. A member has answered once they wait at a barrier
-of the group (:func:`~psynet.sync.is_waiting_in`), typically the barrier
+of the group (:func:`~psynet.sync.is_waiting_at_barrier`), typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
-(:func:`~psynet.sync.waiting_after_time_out`), and screen readers announce
+(:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
 that they ran out of time (see the :ref:`picture <rounds-variations>` in
 :doc:`writing_a_round_based_experiment`). Pass ``show_progress=False`` to
 hide the ticks, or ``has_answered`` to decide who gets a tick instead; it
-can call :func:`~psynet.sync.is_waiting_in` to build on the default, and
+can call :func:`~psynet.sync.is_waiting_at_barrier` to build on the default, and
 members who ran out of time keep their dash whatever it returns.
 
 What the page draws from the group's state updates live: ticks and dashes
@@ -414,20 +414,26 @@ Without ``group``, the prompt shows the participant's group of type
 ``group_type``. ``group_type`` can be left out only while a participant has
 only ever been in groups of one type; otherwise, as in a cohort that pairs
 its players each round, GroupPrompt raises an error rather than switch to
-whichever group is left when a pair ends. A participant who is no longer in it,
-for example because a barrier removed them for being late, sees just the
-text, as they do with ``group=self.sync_group`` in trial code (it is ``None``
-after such a removal), so the prompt itself needs no special case on pages that a late
-player may still reach; the page's other content, such as a round's
-outcome, may still need one. The members who stay see the removed player
-faded in their seat, labelled "(out of time)" if a barrier removed them for
-being late, "(left)" if they failed or left the experiment, and "(dropped
-out)" otherwise. Players who moved on to their next group, such as next
-round's pair at a :class:`~psynet.sync.Regrouper`, are no longer shown,
-except with their answer on a results page (one with ``answers``), and
-neither are leavers of groups that accept top-ups, such as a lobby.
-Removing a member with :meth:`~psynet.sync.SyncGroup.remove_participant`
-accepts a ``reason`` (``"moved_on"`` or ``"out_of_time"``) for these labels.
+whichever group is left when a pair ends.
+
+GroupPrompt shows the group as it is now:
+
+- A member who left stays in their seat, faded, with the reason:
+  "(removed)" if a barrier removed them from the group for being late,
+  "(left)" if they failed or left the experiment, and "(dropped out)"
+  otherwise. Groups that accept top-ups don't keep these seats.
+- A member who moved on to another group, such as next round's pair at a
+  :class:`~psynet.sync.Regrouper`, is no longer shown, except on a results
+  page (one with ``answers``) that shows their answer.
+- A participant who is no longer in the group, for example because a
+  barrier removed them for being late, sees only the text, as they do with
+  ``group=self.sync_group`` in trial code (it is ``None`` after such a
+  removal). The prompt needs no special case on pages that such a player
+  may still reach, though the page's other content, such as a round's
+  outcome, may.
+
+:meth:`~psynet.sync.SyncGroup.remove_participant` takes a ``reason``
+(``"moved_on"`` or ``"late"``) that sets these labels.
 
 Trial makers
 ~~~~~~~~~~~~

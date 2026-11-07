@@ -1902,7 +1902,7 @@ class GroupBarrier(Barrier):
                     participant.id,
                     group.id,
                 )
-                group.remove_participant(participant, reason="out_of_time")
+                group.remove_participant(participant, reason="late")
             if group.n_active_participants > 0 and not group.dissolving:
                 for participant in late:
                     self._tell_removed_participant(participant, group, group_size)
@@ -3536,7 +3536,7 @@ class SyncGroup(SQLBase, SQLMixin):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[Literal["moved_on", "out_of_time"]] = None,
+        reason: Optional[Literal["moved_on", "late"]] = None,
     ):
         """Remove a participant from the group.
 
@@ -3551,14 +3551,14 @@ class SyncGroup(SQLBase, SQLMixin):
 
             - ``None`` (default): "(dropped out)", or "(left)" once they have
               failed or finished the experiment.
-            - ``"out_of_time"``: "(out of time)", for a member kicked by a
-              timeout.
+            - ``"late"``: "(removed)", for a member a barrier removed for
+              being late (``late_action="kick"``).
             - ``"moved_on"``: not shown, unless the page shows their answer,
               for a member who went on to their next group.
         """
-        if reason not in (None, "moved_on", "out_of_time"):
+        if reason not in (None, "moved_on", "late"):
             raise ValueError(
-                f"reason must be None, 'moved_on' or 'out_of_time', got {reason!r}."
+                f"reason must be None, 'moved_on' or 'late', got {reason!r}."
             )
         _forget_active_sync_group(participant)
         for link in self.participant_links:
@@ -3622,7 +3622,7 @@ class SimpleSyncGroup(SyncGroup):
     def remove_participant(
         self,
         participant: Participant,
-        reason: Optional[Literal["moved_on", "out_of_time"]] = None,
+        reason: Optional[Literal["moved_on", "late"]] = None,
     ):
         super().remove_participant(participant, reason=reason)
         self.dissolve_if_below_min_size()
@@ -4219,7 +4219,7 @@ def waiting_barrier_ids(participant, group):
     return [barrier_id for barrier_id, _ in _waiting_links(participant, group)]
 
 
-def is_waiting_in(participant, group) -> bool:
+def is_waiting_at_barrier(participant, group) -> bool:
     """Return whether ``participant`` is waiting at a barrier of ``group``.
 
     This is how :class:`~psynet.group_prompt.GroupPrompt` decides by default
@@ -4228,11 +4228,11 @@ def is_waiting_in(participant, group) -> bool:
     return bool(_waiting_links(participant, group))
 
 
-def waiting_after_time_out(participant, group) -> bool:
-    """Return whether ``participant`` is waiting in ``group`` now after a time-out.
+def reached_barrier_after_time_limit(participant, group) -> bool:
+    """Return whether ``participant`` reached the barrier of ``group`` they wait at because a time limit ran out.
 
     That is, they are waiting at a barrier of ``group`` that they reached
-    after their latest timed page ran out of time; untimed pages in between,
+    after the time limit of their latest timed page ran out; untimed pages in between,
     such as feedback, don't count.
     """
     return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
