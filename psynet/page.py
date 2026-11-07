@@ -259,7 +259,7 @@ def wait_while(
     log_message: Optional[str] = None,
     fail_on_timeout=True,
     fix_time_credit: Optional[bool] = None,
-    content: Union[str, Markup, dom_tag, Callable, None] = None,
+    waiting_message: Union[str, Markup, dom_tag, Callable, None] = None,
     on_timeout: Optional[Callable] = None,
     waiting_screen=None,
 ):
@@ -312,7 +312,7 @@ def wait_while(
         waiting time. Defaults to ``False`` for timeline holds and ``True`` for
         explicit page-based waiting.
 
-    content
+    waiting_message
         Message displayed by the timeline hold. Only used when ``wait_page`` is
         omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
         or a dominate tag for HTML. A module-level function of
@@ -329,7 +329,7 @@ def wait_while(
         waits, as for :class:`~psynet.sync.Barrier`: text, a prompt, a
         :class:`~psynet.modular_page.ModularPage` that nothing submits, or a
         module-level function of the participant returning one of these (or
-        ``None`` to keep the current page). ``content`` still sets the
+        ``None`` to keep the current page). ``waiting_message`` still sets the
         waiting indicator shown on top. Only used when ``wait_page`` is
         omitted.
 
@@ -343,8 +343,8 @@ def wait_while(
     assert check_interval > 0
     label = "wait_while"
     uses_timeline_hold = wait_page is None
-    if wait_page is not None and content is not None:
-        raise ValueError("content only applies when wait_page is omitted.")
+    if wait_page is not None and waiting_message is not None:
+        raise ValueError("waiting_message only applies when wait_page is omitted.")
     if wait_page is not None and waiting_screen is not None:
         raise ValueError("waiting_screen only applies when wait_page is omitted.")
     if fix_time_credit is None:
@@ -376,8 +376,8 @@ def wait_while(
             max_wait_time=max_wait_time,
             fix_time_credit=fix_time_credit,
             check_interval=check_interval,
-            content=content,
-            message_kind="generic" if content is None else None,
+            waiting_message=waiting_message,
+            message_kind="generic" if waiting_message is None else None,
             fail_on_timeout=fail_on_timeout,
             on_timeout=on_timeout,
             waiting_screen=waiting_screen,

@@ -3,7 +3,7 @@
 Barrier instances must survive across web workers, but persisting an entire
 ``Barrier`` object also captures waiting pages and incidental ORM state.
 This module stores the importable barrier class, release-hook state, scalar
-presentation (``content``, timeouts), and arrival-notice settings. Waiting
+presentation (``waiting_message``, timeouts), and arrival-notice settings. Waiting
 pages and hold-page construction (``waiting_logic``, ``waiting_screen``,
 ``_uses_timeline_hold`` and the expected
 repetitions of ``waiting_logic``) stay on the live timeline object.
@@ -40,7 +40,7 @@ _PAGE_FIELDS = {
 }
 
 _PRESENTATION_FIELDS = {
-    "content",
+    "waiting_message",
     "expected_wait",
     "fix_time_credit",
     "max_wait_action",

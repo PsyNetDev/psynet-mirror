@@ -21,7 +21,7 @@ the cohorts first and regroup within them::
         start_short_after=60, max_wait_time=300,
     ),
     ...
-    Regrouper("room", within="cohort", group_size=4, deadline=30),
+    Regrouper("room", within="cohort", max_group_size=4, deadline=30),
 
 See the ``ultimatum_pairing`` demo for a full example.
 """
@@ -35,7 +35,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.participant import Participant
-from psynet.sync import Clock, GroupBarrier, Regrouper
+from psynet.sync import GroupBarrier, Regrouper
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     PageMaker,
@@ -158,23 +158,23 @@ def play_round():
     return join(
         Regrouper(
             "room",
-            group_size=ROOM_SIZE,
+            max_group_size=ROOM_SIZE,
             min_group_size=2,
-            deadline=Clock(ROUND_SECONDS),
-            content=round_message,
+            every=ROUND_SECONDS,
+            waiting_message=round_message,
             waiting_screen="Getting the next round ready.",
         ),
         PageMaker(choose_number, time_estimate=5),
         GroupBarrier(
             id_="round_finished",
             group_type="room",
-            content="Waiting for the rest of the room…",
+            waiting_message="Waiting for the rest of the room…",
             waiting_screen=your_pick,
             # A player is taken out 30 s after the round starts (long enough
             # for a background tab to notice), but not while their answer to
             # the timed choice page may still be on its way.
-            timeout_between_barriers_time=30,
-            timeout_between_barriers_action="kick",
+            late_after=30,
+            late_action="kick",
             on_release=score_round,
         ),
         PageMaker(show_result, time_estimate=5),

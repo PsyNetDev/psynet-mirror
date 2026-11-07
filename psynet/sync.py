@@ -665,8 +665,8 @@ class _BarrierHoldPage(_TimelineHoldPage):
             max_wait_time=barrier.max_wait_time,
             fix_time_credit=barrier.fix_time_credit,
             check_interval=2.0,
-            content=barrier.content,
-            message_kind="barrier" if barrier.content is None else None,
+            waiting_message=barrier.waiting_message,
+            message_kind="barrier" if barrier.waiting_message is None else None,
             on_timeout=barrier.handle_max_wait_timeout,
             waiting_screen=barrier.waiting_screen,
         )
@@ -722,14 +722,14 @@ class _BarrierHoldPage(_TimelineHoldPage):
         return self.barrier._hold_progress_text(participant)
 
     def overlay_html(self, participant=None, release_time=NoArgumentProvided):
-        """Return hold copy, calling a ``content`` function and filling in ``{SECONDS}``.
+        """Return hold copy, calling a ``waiting_message`` function and filling in ``{SECONDS}``.
 
         ``release_time`` (epoch seconds, or ``None`` if unknown) defaults to the
         barrier's :meth:`~Barrier.expected_release_time`.
         """
-        content = self.content
-        content_is_function = isinstance(content, SerializedCallable)
-        if not content_is_function and "{SECONDS}" not in str(content or ""):
+        message = self.waiting_message
+        message_is_function = isinstance(message, SerializedCallable)
+        if not message_is_function and "{SECONDS}" not in str(message or ""):
             return super().overlay_html(participant)
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
@@ -743,15 +743,15 @@ class _BarrierHoldPage(_TimelineHoldPage):
             None if release_time is None else round((release_time - time.time()) * 1000)
         )
         seconds = None if remaining_ms is None else max(0, ceil(remaining_ms / 1000))
-        if content_is_function:
+        if message_is_function:
             context = {} if participant is None else {"participant": participant}
-            content = content(
+            message = message(
                 barrier=self.barrier,
                 seconds_left=seconds,
                 **context,
                 **self.barrier._hold_message_counts(participant),
             )
-        html = compose_hold_overlay_html(content, self.hold_progress_text(participant))
+        html = compose_hold_overlay_html(message, self.hold_progress_text(participant))
         if "{SECONDS}" not in html:
             return html
         if remaining_ms is None or remaining_ms <= 0:
@@ -811,16 +811,16 @@ def hold_message(title, progress=None):
     """Return a waiting message with its own progress line.
 
     By default, a :class:`GroupBarrier`'s waiting indicator shows its
-    ``content`` with a smaller progress line underneath in groups of three or
+    ``waiting_message`` with a smaller progress line underneath in groups of three or
     more ("1 of 3 not ready yet"). Return ``hold_message(title, progress)``
-    from a ``content`` function to write that line yourself, or leave out
+    from a ``waiting_message`` function to write that line yourself, or leave out
     ``progress`` to show no progress line. The message is redrawn as members
     arrive unless the barrier has ``notify_arrivals=False``.
 
     Parameters
     ----------
     title
-        The waiting message, as for ``content``.
+        The waiting message, as for ``waiting_message``.
     progress
         Optional second line, for example ``f"{waiting_count} of {group_size}
         are ready"``.
@@ -835,7 +835,7 @@ def hold_message(title, progress=None):
                 f"{waiting_count} of {group_size} have chosen",
             )
 
-        GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+        GroupBarrier(id_="chosen", group_type="room", waiting_message=waiting_text)
     """
     return HoldMessage(title, progress)
 
@@ -849,7 +849,7 @@ class Barrier(EltCollection):
     Timeline construction and wait UI run on this live object. Barrier checks,
     ``on_release``, and arrival-notice lookups reconstruct a separate object
     from :func:`~psynet.barrier_spec.barrier_from_spec_json`. That reconstructed
-    object has ``id``, custom release state, scalar presentation (``content``,
+    object has ``id``, custom release state, scalar presentation (``waiting_message``,
     timeouts), and notification settings. It does not include wait-page
     construction (``waiting_logic``, ``waiting_screen``,
     ``_uses_timeline_hold`` and the expected repetitions of
@@ -899,13 +899,13 @@ class Barrier(EltCollection):
         rounded up to whole passes (at least one). If omitted, a default hold expects 1.5 seconds and
         ``waiting_logic`` three repetitions.
 
-    content
+    waiting_message
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
         pass ``markupsafe.Markup`` or a dominate tag for HTML. A ``{SECONDS}``
         placeholder counts down to :meth:`expected_release_time`, showing "…"
-        while it is unknown. ``content`` can also be a module-level function
+        while it is unknown. ``waiting_message`` can also be a module-level function
         that returns the message, for example one that depends on the
         participant's role; it may take ``participant``, ``seconds_left``
         (whole seconds, or ``None`` while the release time is unknown) and
@@ -925,7 +925,7 @@ class Barrier(EltCollection):
         the participant's state
         rather than on chance. Returning ``None`` keeps the current page, as
         omitting ``waiting_screen`` does; if that page is another barrier's
-        waiting screen, a plain waiting page replaces it. The ``content`` message still shows
+        waiting screen, a plain waiting page replaces it. The ``waiting_message`` still shows
         on top. A page with a Next button, push buttons or ``auto_advance``,
         or one that needs a full page reload (for
         example deprecated ``js_links``) while
@@ -951,7 +951,7 @@ class Barrier(EltCollection):
         max_wait_time=20,
         fix_time_credit=False,
         expected_wait=None,
-        content=None,
+        waiting_message=None,
         release_grace: Optional[float] = 3,
         waiting_screen=None,
     ):
@@ -969,11 +969,13 @@ class Barrier(EltCollection):
                     "Pass expected_wait or waiting_logic_expected_repetitions, not both."
                 )
         self.waiting_logic_expected_repetitions = waiting_logic_expected_repetitions
-        self.content = content
+        self.waiting_message = waiting_message
         self.waiting_screen = waiting_screen
         self._uses_timeline_hold = waiting_logic is None
-        if waiting_logic is not None and content is not None:
-            raise ValueError("content only applies when waiting_logic is omitted.")
+        if waiting_logic is not None and waiting_message is not None:
+            raise ValueError(
+                "waiting_message only applies when waiting_logic is omitted."
+            )
         if waiting_logic is not None and waiting_screen is not None:
             raise ValueError(
                 "waiting_screen only applies when waiting_logic is omitted."
@@ -1005,7 +1007,9 @@ class Barrier(EltCollection):
         self.max_wait_action = "fail"
 
     def __setattr__(self, name, value):
-        if name.startswith("on_") or (name == "content" and inspect.isroutine(value)):
+        if name.startswith("on_") or (
+            name == "waiting_message" and inspect.isroutine(value)
+        ):
             value = serialize_callable(value, f"{self.__class__.__name__}.{name}")
         super().__setattr__(name, value)
 
@@ -1140,13 +1144,13 @@ class Barrier(EltCollection):
         return None
 
     def _hold_message_counts(self, participant):
-        """Return extra arguments for a ``content`` function; groups add their counts."""
+        """Return extra arguments for a ``waiting_message`` function; groups add their counts."""
         return {}
 
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when this participant will be released at the latest, in epoch seconds.
 
-        Used for the ``{SECONDS}`` countdown in ``content``. ``None`` (default)
+        Used for the ``{SECONDS}`` countdown in ``waiting_message``. ``None`` (default)
         means the release time is unknown.
         """
         return None
@@ -1413,11 +1417,24 @@ def _group_barrier_outcome(group, members, waiting_ids):
     return "wait"
 
 
-class _DefaultMaxWaitTime(float):
-    """Marks a ``max_wait_time`` that was not passed, so it can follow the between-barrier timeout."""
+def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
+    """Return the ``max_wait_time`` to use: ``default`` if not passed, or no limit with ``late_after``.
 
-
-_DEFAULT_MAX_WAIT_TIME = _DefaultMaxWaitTime(20.0)
+    ``late_after`` moves slow members on. A limit on the members waiting for
+    them, fixed when each arrives, could not know how long a slower member's
+    timed page still runs, so it is rejected rather than risk timing out
+    members who were on time.
+    """
+    if late_after is None:
+        return default if max_wait_time is NoArgumentProvided else max_wait_time
+    if max_wait_time is not NoArgumentProvided and max_wait_time is not None:
+        raise ValueError(
+            f"Leave {prefix}max_wait_time unset with {prefix}late_after: "
+            f"{prefix}late_action moves late members on, and a limit on the "
+            "members waiting for them could time them out while a slower "
+            "member's timed page is still running."
+        )
+    return None
 
 
 class GroupBarrier(Barrier):
@@ -1452,7 +1469,7 @@ class GroupBarrier(Barrier):
         to the participant while they are waiting at the barrier, for
         example filler trials. If left at ``None``, the participant sees
         ``waiting_screen``, or their current page beneath a lightweight
-        waiting indicator. Pass ``content`` to customize that indicator's
+        waiting indicator. Pass ``waiting_message`` to customize that indicator's
         message.
 
     waiting_logic_expected_repetitions
@@ -1460,31 +1477,30 @@ class GroupBarrier(Barrier):
         ``waiting_logic``.
 
     max_wait_time
-        The maximum amount of time in seconds that the participant will be allowed to wait at the barrier;
-        if this time is exceeded, the participant is either failed or kicked (see ``max_wait_action``).
-        Defaults to 20 seconds, or to no limit with ``timeout_between_barriers_time``, which then moves
-        slow members on instead, however long their pages' time limits are. Must be longer than
-        ``timeout_between_barriers_time``; this is not checked when ``max_wait_time`` is a function.
-        ``None`` means no limit.
+        Acts on members waiting at this barrier: the longest each may wait, in seconds, counted from
+        their arrival, before ``max_wait_action`` is applied to them. Defaults to 20 seconds, or to no limit
+        with ``late_after``, which then moves slow members on; passing a number or a function together with
+        ``late_after`` raises an error. ``None`` means no limit. May also be a function of ``participant``,
+        evaluated once when they arrive.
         This is a hard limit counted from arrival: with explicit ``waiting_logic``, the server applies it
         even while the participant is partway through a filler page, so make it long enough to cover long
         filler pages (for example trials used as filler).
 
     max_wait_action
-        When ``max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end of the
-        experiment; ``"kick"`` removes them from the group and lets them continue. Default is ``"fail"``.
+        What happens to a member who waits longer than ``max_wait_time``: ``"fail"`` (default) fails them and
+        sends them to the end of the experiment; ``"kick"`` removes them from the group and lets them continue.
 
-    timeout_between_barriers_time
-        The maximum amount of time in seconds that a participant is allowed to reach the barrier, measured from when
-        the group last passed a ``GroupBarrier`` or the participant joined the group, whichever is later. If
-        ``None`` (default), no between-barrier timeout is applied. A participant on a page with a ``time_limit``
-        is never timed out before that limit has run out plus ``2 * TIME_LIMIT_GRACE_SECONDS`` (10 s), so that an
-        answer sent at the deadline can arrive. So this timeout need not be longer than the pages' time limits.
+    late_after
+        Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
+        counted from the group's previous barrier pass or from when they joined the group, whichever is later,
+        before ``late_action`` is applied to them. ``None`` (default) never treats anyone as late. A member on a
+        page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
+        answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
 
-    timeout_between_barriers_action
-        When a participant exceeds ``timeout_between_barriers_time``: ``"kick"`` removes them from the group (so the
-        rest can proceed without them), or ``"fail"`` fails the participant and sends them to the end of the experiment.
-        Default is ``"fail"``. A kicked participant is no longer in the group when they reach the barrier, so
+    late_action
+        What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
+        them to the end of the experiment; ``"kick"`` removes them from the group, so the rest can go on
+        without them. A kicked participant is no longer in the group when they reach the barrier, so
         ``"kick"`` also makes ``skip_if_not_in_group`` default to ``True``.
 
     on_release
@@ -1501,33 +1517,33 @@ class GroupBarrier(Barrier):
     expected_wait
         See :class:`Barrier`.
 
-    content
+    waiting_message
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
         pass ``markupsafe.Markup`` or a dominate tag for HTML, or a
-        module-level function ``content(participant)`` returning either (see
+        module-level function ``waiting_message(participant)`` returning either (see
         :class:`Barrier`). Independent of
-        a preceding :class:`~psynet.sync.Grouper`'s ``content`` and of
-        trial-maker ``sync_group_wait_content``.
+        a preceding :class:`~psynet.sync.Grouper`'s ``waiting_message`` and of
+        trial-maker ``sync_group_waiting_message``.
 
     notify_arrivals
         If ``True`` (default), group members who have not reached this barrier
         yet see a pill on the progress bar, and waiting participants in groups
         of three or more see remaining-not-ready copy on the hold overlay.
         Pairs show only the message. Set ``False`` to disable both. A
-        member removed by ``timeout_between_barriers_action="kick"`` is told
+        member removed by ``late_action="kick"`` is told
         either way; return ``None`` from ``on_arrival_message`` for
         ``kind="removed"`` to hide it. To change the waiting indicator's
-        progress line, return :func:`hold_message` from a ``content``
-        function.
+        progress line, return :func:`hold_message` from a
+        ``waiting_message`` function.
 
     skip_if_not_in_group
         If ``True``, a participant who is not in a group of this ``group_type``
         passes straight through, for example after being kicked by a timeout in
         a round-based design. If ``False``, they get an error, which usually
         means a grouper is missing from the timeline. Defaults to ``True`` when
-        ``timeout_between_barriers_action="kick"``, and ``False`` otherwise.
+        ``late_action="kick"``, and ``False`` otherwise.
 
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
@@ -1551,7 +1567,7 @@ class GroupBarrier(Barrier):
         line (overflow ellipsizes), so keep them to a short sentence.
 
         ``"removed"`` is the progress-bar notice for someone kicked by
-        ``timeout_between_barriers_action="kick"``, shown until they leave
+        ``late_action="kick"``, shown until they leave
         their page. It defaults to "Your partner went on without you. Please
         continue." or "Your group went on without you. Please continue.", and
         ``group_size`` counts the group before anyone was removed.
@@ -1566,40 +1582,6 @@ class GroupBarrier(Barrier):
         if group_type in participant.active_sync_groups:
             participant.active_sync_groups[group_type].remove_participant(participant)
 
-    @staticmethod
-    def _check_max_wait_time(max_wait_time, timeout_between_barriers_time):
-        """Return ``max_wait_time``, with no default limit when the between-barrier timeout is set.
-
-        That timeout removes or fails every member who is late, including
-        those whose page's time limit ran out, so prompt members never need
-        a limit of their own; one fixed on arrival could not know how long a
-        slower member's page still has. Requiring ``max_wait_time >
-        timeout_between_barriers_time`` guarantees that prompt members
-        outlast slow ones only while membership is fixed. In a group that
-        accepts top-ups, a newcomer who joins while others wait has their
-        between-barrier timeout counted from when they joined, so the waiters
-        can still reach ``max_wait_time`` first.
-        """
-        if isinstance(max_wait_time, _DefaultMaxWaitTime):
-            return (
-                None
-                if timeout_between_barriers_time is not None
-                else float(max_wait_time)
-            )
-        if (
-            max_wait_time is not None
-            and timeout_between_barriers_time is not None
-            and not callable(max_wait_time)
-            and max_wait_time <= timeout_between_barriers_time
-        ):
-            raise ValueError(
-                f"max_wait_time ({max_wait_time} s) must be longer than "
-                f"timeout_between_barriers_time ({timeout_between_barriers_time} s), "
-                "otherwise members who arrive promptly time out while waiting "
-                "for slower ones."
-            )
-        return max_wait_time
-
     def _validate_max_wait_action(self, max_wait_action):
         if max_wait_action not in ("fail", "kick"):
             raise ValueError(
@@ -1612,14 +1594,14 @@ class GroupBarrier(Barrier):
         group_type: str,
         waiting_logic=None,
         waiting_logic_expected_repetitions=None,
-        max_wait_time: Optional[float] = _DEFAULT_MAX_WAIT_TIME,
+        max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         max_wait_action: Literal["fail", "kick"] = "fail",
         on_release: Optional[Callable] = None,
         fix_time_credit=False,
-        timeout_between_barriers_time: Optional[float] = None,
-        timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
+        late_after: Optional[float] = None,
+        late_action: Literal["fail", "kick"] = "fail",
         expected_wait=None,
-        content=None,
+        waiting_message=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
         skip_if_not_in_group: Optional[bool] = None,
@@ -1627,9 +1609,7 @@ class GroupBarrier(Barrier):
         waiting_screen=None,
     ):
         self._validate_max_wait_action(max_wait_action)
-        max_wait_time = self._check_max_wait_time(
-            max_wait_time, timeout_between_barriers_time
-        )
+        max_wait_time = _group_max_wait_time(max_wait_time, late_after, default=20)
         super().__init__(
             id_=id_,
             waiting_logic=waiting_logic,
@@ -1637,7 +1617,7 @@ class GroupBarrier(Barrier):
             max_wait_time=max_wait_time,
             fix_time_credit=fix_time_credit,
             expected_wait=expected_wait,
-            content=content,
+            waiting_message=waiting_message,
             release_grace=release_grace,
             waiting_screen=waiting_screen,
         )
@@ -1646,15 +1626,14 @@ class GroupBarrier(Barrier):
         self.on_release = on_release
         self.on_arrival_message = on_arrival_message
         self.notify_arrivals = bool(notify_arrivals)
-        self.timeout_between_barriers_time = timeout_between_barriers_time
-        if timeout_between_barriers_action not in ("kick", "fail"):
+        self.late_after = late_after
+        if late_action not in ("fail", "kick"):
             raise ValueError(
-                "timeout_between_barriers_action must be 'kick' or 'fail', "
-                f"got {timeout_between_barriers_action!r}"
+                f"late_action must be 'fail' or 'kick', got {late_action!r}."
             )
-        self.timeout_between_barriers_action = timeout_between_barriers_action
+        self.late_action = late_action
         if skip_if_not_in_group is None:
-            skip_if_not_in_group = timeout_between_barriers_action == "kick"
+            skip_if_not_in_group = late_action == "kick"
         self.skip_if_not_in_group = skip_if_not_in_group
 
     def resolve(self):
@@ -1889,10 +1868,10 @@ class GroupBarrier(Barrier):
         """
         waiting_participant_ids = {p.id for p in waiting_participants}
         late = self._late_between_barriers(group, waiting_participant_ids)
-        if self.timeout_between_barriers_action == "fail":
+        if self.late_action == "fail":
             late = _lock_free_participants(late)
         group_size = len(group.active_participants)
-        if self.timeout_between_barriers_action == "kick":
+        if self.late_action == "kick":
             for participant in late:
                 logger.info(
                     "GroupBarrier '%s': kicking participant %s from group %s (timeout between barriers)",
@@ -1955,7 +1934,7 @@ class GroupBarrier(Barrier):
         time limit, outside waiting logic, is not late until that limit has
         run out and an answer sent at the deadline has had time to arrive.
         """
-        if self.timeout_between_barriers_time is None:
+        if self.late_after is None:
             return []
         now = timenow()
         answer_arrival = timedelta(seconds=2 * TIME_LIMIT_GRACE_SECONDS)
@@ -1972,9 +1951,7 @@ class GroupBarrier(Barrier):
             starts = [t for t in (group.last_barrier_pass_time, link.arrival_time) if t]
             if not starts:
                 continue
-            late_at = max(starts) + timedelta(
-                seconds=self.timeout_between_barriers_time
-            )
+            late_at = max(starts) + timedelta(seconds=self.late_after)
             if link.page_deadline is not None:
                 late_at = max(late_at, link.page_deadline + answer_arrival)
             if now > late_at:
@@ -2020,12 +1997,12 @@ class Grouper(Barrier):
     expected_wait
         See :class:`Barrier`.
 
-    content
+    waiting_message
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. Plain strings are shown as text; pass
         ``markupsafe.Markup`` or a dominate tag for HTML. This Grouper's
-        overlay is independent of trial-maker ``sync_group_wait_content``;
-        pass ``content`` here and on later :class:`~psynet.sync.GroupBarrier`
+        overlay is independent of trial-maker ``sync_group_waiting_message``;
+        pass ``waiting_message`` here and on later :class:`~psynet.sync.GroupBarrier`
         waits if they should match. Can be a function of ``seconds_left``, as
         for :class:`Barrier`.
 
@@ -2059,7 +2036,7 @@ class Grouper(Barrier):
         fail_participants_below_min_size: bool = True,
         expected_wait=None,
         fix_time_credit=False,
-        content=None,
+        waiting_message=None,
         release_grace: Optional[float] = 3,
         waiting_screen=None,
     ):
@@ -2072,7 +2049,7 @@ class Grouper(Barrier):
             max_wait_time=max_wait_time,
             expected_wait=expected_wait,
             fix_time_credit=fix_time_credit,
-            content=content,
+            waiting_message=waiting_message,
             release_grace=release_grace,
             waiting_screen=waiting_screen,
         )
@@ -2484,10 +2461,10 @@ class SimpleGrouper(Grouper):
         Runs inside the serialized barrier check, so simultaneous arrivals and
         departures are all seen.
         """
-        content = getattr(self, "content", None)
+        message = getattr(self, "waiting_message", None)
         if self.start_short_after is None or (
-            not isinstance(content, SerializedCallable)
-            and "{SECONDS}" not in str(content or "")
+            not isinstance(message, SerializedCallable)
+            and "{SECONDS}" not in str(message or "")
         ):
             return
         released_ids = {p.id for p in released}
@@ -2547,23 +2524,6 @@ class SimpleGrouper(Grouper):
         return [lst[i::n_groups] for i in range(n_groups)]
 
 
-class Clock:
-    """A :class:`Regrouper` deadline that falls every ``period`` seconds of wall-clock time.
-
-    For example, ``deadline=Clock(45)`` starts rounds at fixed 45-second ticks.
-
-    Parameters
-    ----------
-    period
-        Seconds between ticks.
-    """
-
-    def __init__(self, period: float):
-        if period <= 0:
-            raise ValueError("Clock period must be positive.")
-        self.period = float(period)
-
-
 def _latest_tick(now: float, period: float) -> float:
     """Return the most recent tick at or before ``now`` (seconds since the epoch)."""
     return floor(now / period) * period
@@ -2595,8 +2555,8 @@ class Regrouper(Grouper):
     participants are pooled: by default everyone waiting is one pool, and with
     ``within`` each existing group (such as a cohort) is its own pool. A pool is
     split into groups when every active member of its ``within`` group is
-    waiting, or when its ``deadline`` passes, whichever comes first. With a
-    :class:`Clock` deadline, splits happen only on clock ticks. Absent
+    waiting, or when its ``deadline`` passes, whichever comes first. With
+    ``every``, splits happen only on fixed wall-clock ticks instead. Absent
     members are not waited for beyond the deadline once a group can be
     formed without them, and are never failed for missing a split; they join
     the pool again when they come back.
@@ -2626,31 +2586,37 @@ class Regrouper(Grouper):
         same ``within`` group, and a pool counts as complete once all that
         group's active members are waiting. A participant without such a group
         is released ungrouped. If ``None`` (default), everyone waiting is one pool,
-        which is only split at the deadline.
+        which is only split at the ``deadline`` or ``every`` tick.
 
-    group_size
+    max_group_size
         Largest group to form. The pool is split into balanced groups of at
         most this size, for example rooms of 8, 8, 7 and 7 for 30 people.
+        Required unless ``roles`` is given, which sets the group size.
 
     min_group_size
-        Smallest group to form: 2 by default, or ``group_size`` with
-        ``roles``. A pool is only split once this many of its members are
-        waiting.
+        Smallest group to form: 2 by default (or ``max_group_size`` if that
+        is smaller). A pool is only split once this many of its members are
+        waiting. With ``roles`` every group has one member per role.
 
     deadline
-        When to stop waiting for absent members. A number is seconds since the
-        first of the pool's waiting members arrived, or since the pool's
-        previous split if that is later. Make it longer than a round takes:
-        otherwise members who finish a round early are split again before
-        the rest are back. ``Clock(period)`` splits at fixed wall-clock ticks
-        instead, even when everyone is already waiting, if at least
-        ``min_group_size`` members were waiting at the tick. ``None`` (default)
-        waits until the pool is complete, which needs ``within``.
+        Seconds to wait for absent members, counted from when the first of
+        the pool's waiting members arrived, or from the pool's previous split
+        if that is later. The pool is split when it is complete or when the
+        deadline passes. Make it longer than a round takes: otherwise members
+        who finish a round early are split again before the rest are back.
+        ``None`` (default) waits until the pool is complete, which needs
+        ``within``.
+
+    every
+        Seconds between fixed wall-clock ticks. The pool is split only at a
+        tick, even when everyone is already waiting, if at least
+        ``min_group_size`` members were waiting at the tick. Pass either
+        ``deadline`` or ``every``, not both.
 
     roles
         Optional role names, for example ``["proposer", "responder"]``. Each
-        group then has one member per role, so ``group_size`` must equal the
-        number of roles, and groups are never smaller. Read a member's role
+        group then has one member per role, so groups have ``len(roles)``
+        members; ``max_group_size``, if given, must equal it. Read a member's role
         with :meth:`role`. By default each member gets the role they have had
         least often, so roles alternate from round to round.
 
@@ -2678,7 +2644,7 @@ class Regrouper(Grouper):
         ``False`` (default), they keep waiting for the next split. With
         ``within``, when too few are waiting to form any group, for example
         one player whose cohort is still playing a round, they wait for
-        the rest of the cohort for up to one more ``deadline`` (or ``Clock`` tick)
+        the rest of the cohort for up to one more ``deadline`` (or ``every`` tick)
         before they are released ungrouped, or until ``max_wait_time`` if
         there is no deadline. Taking members who stop playing out of the
         ``within`` group, for example with ``remove_participant``, means
@@ -2695,12 +2661,12 @@ class Regrouper(Grouper):
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
         Default: 300 seconds. With ``release_left_over`` and ``within``, it
-        must be longer than twice the ``deadline`` (or ``Clock`` period), so
+        must be longer than twice the ``deadline`` (or ``every`` period), so
         that a player waiting alone sits out instead of being failed.
 
-    content
+    waiting_message
         Message shown while waiting. A ``{SECONDS}`` placeholder becomes a live
-        countdown to the pool's deadline, for example
+        countdown to the pool's deadline or next tick, for example
         ``"Next round in {SECONDS} s"``. To show other text while the deadline
         is unknown, for example while a participant waits alone, pass a function
         of ``seconds_left``, which is ``None`` then (see :class:`Barrier`).
@@ -2713,10 +2679,11 @@ class Regrouper(Grouper):
         self,
         group_type: str,
         *,
-        group_size: int,
         within: Optional[str] = None,
+        max_group_size: Optional[int] = None,
         min_group_size: Optional[int] = None,
-        deadline: Optional[Union[float, Clock]] = None,
+        deadline: Optional[float] = None,
+        every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
         keep_roles: bool = False,
         form_groups: Optional[Callable] = None,
@@ -2726,37 +2693,51 @@ class Regrouper(Grouper):
         **kwargs,
     ):
         if roles is not None:
-            if len(roles) != group_size or len(set(roles)) != len(roles):
+            if len(set(roles)) != len(roles):
+                raise ValueError("Pass distinct role names.")
+            if max_group_size not in (None, len(roles)):
                 raise ValueError(
-                    "Pass one distinct role per member: len(roles) must equal group_size."
+                    "With roles, each group has one member per role, so "
+                    "max_group_size must equal len(roles) or be left out."
                 )
-            if min_group_size not in (None, group_size):
-                raise ValueError("With roles, every group has group_size members.")
-            min_group_size = group_size
+            if min_group_size not in (None, len(roles)):
+                raise ValueError(
+                    "With roles, each group has one member per role, so "
+                    "min_group_size must equal len(roles) or be left out."
+                )
+            max_group_size = min_group_size = len(roles)
         elif keep_roles:
             raise ValueError("keep_roles needs roles.")
+        elif max_group_size is None:
+            raise ValueError("Regrouper needs max_group_size, or roles.")
         if min_group_size is None:
-            min_group_size = 2
-        if min_group_size < 1 or group_size < min_group_size:
-            raise ValueError("Need 1 <= min_group_size <= group_size.")
-        if deadline is None and within is None:
+            min_group_size = min(2, max_group_size)
+        if min_group_size < 1 or max_group_size < min_group_size:
+            raise ValueError("Need 1 <= min_group_size <= max_group_size.")
+        if deadline is not None and every is not None:
             raise ValueError(
-                "A Regrouper without `within` needs a deadline, because it cannot "
-                "tell when everyone is present."
+                "Pass deadline (a timeout) or every (fixed ticks), not both."
+            )
+        if every is not None and every <= 0:
+            raise ValueError("every must be positive.")
+        if deadline is None and every is None and within is None:
+            raise ValueError(
+                "A Regrouper without `within` needs a deadline or every, because "
+                "it cannot tell when everyone is present."
             )
         kwargs.setdefault("id_", f"{group_type}_regrouper")
         super().__init__(group_type=group_type, max_wait_time=max_wait_time, **kwargs)
         self.within = within
-        self.group_size = group_size
+        self.max_group_size = max_group_size
         self.min_group_size = min_group_size
-        self.clock_period = deadline.period if isinstance(deadline, Clock) else None
-        self.deadline = None if isinstance(deadline, Clock) else deadline
+        self.deadline = deadline
+        self.every = every
         self.roles = None if roles is None else list(roles)
         self.keep_roles = keep_roles
         self.form_groups_function = form_groups
         self.release_left_over = release_left_over
         self.on_release = on_release
-        longest_lone_wait = self.clock_period or self.deadline
+        longest_lone_wait = self.every or self.deadline
         if (
             release_left_over
             and within is not None
@@ -2781,7 +2762,7 @@ class Regrouper(Grouper):
         """Return the groups to form from one pool's waiting members.
 
         By default members are put into balanced groups of at most
-        ``group_size`` and at least ``min_group_size``, or into one group per
+        ``max_group_size`` and at least ``min_group_size``, or into one group per
         set of ``roles``. Those who have played the most rounds sit out, and
         members are kept apart from last time's group where possible.
         """
@@ -2808,11 +2789,13 @@ class Regrouper(Grouper):
             )
         n_placed = sum(
             len(group)
-            for group in _balanced_groups(members, self.group_size, self.min_group_size)
+            for group in _balanced_groups(
+                members, self.max_group_size, self.min_group_size
+            )
         )
         players = members[:n_placed]
         return self._best_groups(
-            lambda: _balanced_groups(players, self.group_size, self.min_group_size),
+            lambda: _balanced_groups(players, self.max_group_size, self.min_group_size),
             history,
         )
 
@@ -3053,7 +3036,7 @@ class Regrouper(Grouper):
         within_group = self._within_group(participant)
         if self.within is not None and within_group is None:
             return None
-        if self.clock_period is None and self.deadline is None:
+        if self.every is None and self.deadline is None:
             return None
         waiting = self.get_waiting_participants(participant)
         # Reading who is waiting reloads this participant's barrier links, so
@@ -3065,15 +3048,15 @@ class Regrouper(Grouper):
         )
         if len(pool) < self._smallest_pool_to_split(within_group, pool):
             return None
-        if self.clock_period is None:
+        if self.every is None:
             return self._deadline_reference(within_group, pool) + self.deadline
         now = time.time()
-        tick = _latest_tick(now, self.clock_period)
+        tick = _latest_tick(now, self.every)
         waited_for_tick = _arrival_time(self, participant).timestamp() <= tick
         if waited_for_tick and self._enough_waiting_at_tick(within_group, pool, now):
             # Due now: the poller has not split the pool yet.
             return tick
-        return tick + self.clock_period
+        return tick + self.every
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
         """Return the participant's ``within`` group, so each cohort waits in its own pool."""
@@ -3087,7 +3070,7 @@ class Regrouper(Grouper):
                 continue
             if not self._pool_is_ready(within_group, members):
                 continue
-            if self.clock_period is not None:
+            if self.every is not None:
                 members = self._waiting_at_tick(members, time.time())
             released += self._split(within_group, members)
         return released
@@ -3116,7 +3099,7 @@ class Regrouper(Grouper):
     def _pool_is_ready(self, within_group, members) -> bool:
         if len(members) < self._smallest_pool_to_split(within_group, members):
             return False
-        if self.clock_period is None and self._pool_is_complete(within_group, members):
+        if self.every is None and self._pool_is_complete(within_group, members):
             return True
         return self._deadline_passed(within_group, members)
 
@@ -3143,10 +3126,10 @@ class Regrouper(Grouper):
         )
 
     def _waited_an_extra_deadline(self, within_group, members) -> bool:
-        """Return whether the pool has waited a deadline (or ``Clock`` tick) past the usual one."""
+        """Return whether the pool has waited a deadline (or ``every`` tick) past the usual one."""
         now = time.time()
-        if self.clock_period is not None:
-            previous_tick = _latest_tick(now, self.clock_period) - self.clock_period
+        if self.every is not None:
+            previous_tick = _latest_tick(now, self.every) - self.every
             return any(
                 _arrival_time(self, p).timestamp() <= previous_tick for p in members
             )
@@ -3162,7 +3145,7 @@ class Regrouper(Grouper):
 
     def _deadline_passed(self, within_group, members) -> bool:
         now = time.time()
-        if self.clock_period is not None:
+        if self.every is not None:
             return self._enough_waiting_at_tick(within_group, members, now)
         if self.deadline is None:
             return False
@@ -3175,15 +3158,13 @@ class Regrouper(Grouper):
 
     def _waiting_at_tick(self, members, now):
         """Return the members who were already waiting at the latest tick."""
-        tick = _latest_tick(now, self.clock_period)
+        tick = _latest_tick(now, self.every)
         return [p for p in members if _arrival_time(self, p).timestamp() <= tick]
 
     def _enough_waiting_at_tick(self, within_group, members, now) -> bool:
         """Return whether enough members were already waiting at the latest unused tick."""
         last_split = self._last_split(within_group)
-        if last_split is not None and last_split >= _latest_tick(
-            now, self.clock_period
-        ):
+        if last_split is not None and last_split >= _latest_tick(now, self.every):
             return False
         at_tick = self._waiting_at_tick(members, now)
         return len(at_tick) >= self._smallest_pool_to_split(within_group, at_tick)
@@ -3214,7 +3195,7 @@ class Regrouper(Grouper):
         ]
         self._check_plan(plan, members)
         roles = self._planned_roles(plan, members)
-        # The split's time, not the inserts', decides which clock tick it used.
+        # The split's time, not the inserts', decides which tick it used.
         split_time = timenow()
         groups = [
             self._make_group(group_members, within_group, split_time)
@@ -3819,7 +3800,7 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     role = Column(String)
     # The deadline of the latest timed page the member started outside
     # waiting logic since the group's last barrier pass; see
-    # ``GroupBarrier.timeout_between_barriers_time``.
+    # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)

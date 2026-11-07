@@ -52,12 +52,12 @@ def test_custom_barrier_round_trip_uses_plain_json():
     assert spec["class"] == "test_barrier_spec.ThresholdBarrier"
     assert spec["state"] == {"id": "threshold", "threshold": 2}
     assert spec["version"] == 1
-    assert spec["presentation"]["content"] is None
+    assert spec["presentation"]["waiting_message"] is None
     _assert_page_fields_omitted(spec, restored)
     assert isinstance(restored, ThresholdBarrier)
     assert restored.id == "threshold"
     assert restored.threshold == 2
-    assert restored.content is None
+    assert restored.waiting_message is None
 
 
 def test_callback_round_trip():
@@ -184,7 +184,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
     original = GroupBarrier(
         "pair_hold",
         group_type="pair",
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
         max_wait_time=30,
         max_wait_action="kick",
         notify_arrivals=False,
@@ -193,7 +193,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
     restored = barrier_from_spec_json(barrier_spec_json(original))
     spec = json.loads(barrier_spec_json(original))
 
-    assert restored.content == "Waiting for your partner"
+    assert restored.waiting_message == "Waiting for your partner"
     assert restored.max_wait_time == 30
     assert restored.max_wait_action == "kick"
     assert restored.notify_arrivals is False
@@ -202,7 +202,7 @@ def test_group_barrier_restores_scalar_presentation_not_waiting_pages():
         GroupBarrier(
             "pair_hold",
             group_type="pair",
-            content="Waiting for someone else",
+            waiting_message="Waiting for someone else",
             max_wait_time=90,
             notify_arrivals=True,
         )
@@ -236,17 +236,17 @@ def test_local_class_value_is_rejected_at_encode_time():
         barrier_spec_json(barrier)
 
 
-def test_markup_content_round_trips():
+def test_markup_waiting_message_round_trips():
     original = ThresholdBarrier("threshold", threshold=2)
-    original.content = Markup("<em>Wait</em>")
+    original.waiting_message = Markup("<em>Wait</em>")
     restored = barrier_from_spec_json(barrier_spec_json(original))
-    assert isinstance(restored.content, Markup)
-    assert str(restored.content) == "<em>Wait</em>"
+    assert isinstance(restored.waiting_message, Markup)
+    assert str(restored.waiting_message) == "<em>Wait</em>"
 
 
-def test_dominate_content_round_trips_as_markup():
+def test_dominate_waiting_message_round_trips_as_markup():
     original = ThresholdBarrier("threshold", threshold=2)
-    original.content = tags.em("Wait")
+    original.waiting_message = tags.em("Wait")
     restored = barrier_from_spec_json(barrier_spec_json(original))
-    assert isinstance(restored.content, Markup)
-    assert str(restored.content) == "<em>Wait</em>"
+    assert isinstance(restored.waiting_message, Markup)
+    assert str(restored.waiting_message) == "<em>Wait</em>"

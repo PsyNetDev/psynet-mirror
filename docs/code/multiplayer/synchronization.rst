@@ -64,12 +64,12 @@ the grouper has a ``waiting_screen`` (see below).
     ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
     a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
     Combine it with ``join_existing_groups=True`` so that later arrivals can
-    still fill the group up. A ``{SECONDS}`` placeholder in ``content`` counts
+    still fill the group up. A ``{SECONDS}`` placeholder in ``waiting_message`` counts
     down to that short start once ``min_group_size`` are waiting, and shows
-    "…" until then; :ref:`a content function <sync-countdown-messages>` can
+    "…" until then; :ref:`a message function <sync-countdown-messages>` can
     show other text instead.
 
-``content``
+``waiting_message``
     The message on the waiting indicator. If omitted, participants see
     "Waiting for other participants…". For translated experiments, mark it as
     described in :doc:`/code/participants/internationalization`.
@@ -148,7 +148,6 @@ the round on their own.
     pairing = Regrouper(
         "pair",
         within="cohort",
-        group_size=2,
         roles=["proposer", "responder"],
         deadline=50,
         release_left_over=True,  # an odd player out sits the round out
@@ -164,18 +163,18 @@ rounds: :meth:`~psynet.sync.Regrouper.rounds_played`,
 
 :doc:`writing_a_round_based_experiment` builds a complete game this way, including moving
 slow players on and sitting out. :class:`~psynet.sync.Regrouper` lists all
-its settings, for example ``Clock`` deadlines, fixed roles and custom
-grouping.
+its settings, for example rounds on fixed ticks (``every``), fixed roles and
+custom grouping.
 
-``content`` is the waiting message. A ``{SECONDS}`` placeholder shows a live
-countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
+``waiting_message`` sets the message on the waiting indicator. A ``{SECONDS}``
+placeholder shows a live countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
 
 .. _sync-countdown-messages:
 
 **Countdown messages.** Sometimes the barrier doesn't know yet when the
 wait will end, for example while a participant waits alone for a partner,
 and ``{SECONDS}`` shows "…". To show different text then, pass a
-module-level function as ``content``. It receives ``seconds_left``, which
+module-level function as ``waiting_message``. It receives ``seconds_left``, which
 is ``None`` while the time is unknown and otherwise the whole seconds left
 (0 once the time has passed), and can also take ``participant`` and
 ``barrier``. The message switches within a few seconds of the time
@@ -205,7 +204,7 @@ barrier after each choice scores the round:
 ``participant`` (the leader) and ``barrier``. It must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
-from saved settings, so read only scalar settings such as ``content`` and
+from saved settings, so read only scalar settings such as ``waiting_message`` and
 ``max_wait_time`` from it, and store custom barrier attributes as
 JSON-compatible values.
 
@@ -241,14 +240,14 @@ have no side effects. Notices must fit on one line:
     GroupBarrier(
         id_="finished_trial",
         group_type="rock_paper_scissors",
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
         on_arrival_message=arrival_message,
     )
 
 Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
 live don't show the notice, since the ticks say the same.
 
-``content`` can also be a module-level function of the participant, so that
+``waiting_message`` can also be a module-level function of the participant, so that
 members waiting at the same barrier see different messages, for example by
 role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-countdown-messages>`):
 
@@ -259,9 +258,9 @@ role (it can also take ``seconds_left``; see :ref:`countdown messages <sync-coun
             return "Waiting for your partner to accept or reject your offer…"
         return "Your partner is deciding how much to offer you…"
 
-    GroupBarrier(id_="decided", group_type="pair", content=waiting_text)
+    GroupBarrier(id_="decided", group_type="pair", waiting_message=waiting_text)
 
-A ``content`` function on a group barrier can also take ``waiting_count`` and
+A ``waiting_message`` function on a group barrier can also take ``waiting_count`` and
 ``group_size`` (both ``None`` if the participant has no group); return
 :func:`~psynet.sync.hold_message` from it to write the second line yourself,
 or to leave it out:
@@ -276,7 +275,7 @@ or to leave it out:
             f"{waiting_count} of {group_size} have chosen",
         )
 
-    GroupBarrier(id_="chosen", group_type="room", content=waiting_text)
+    GroupBarrier(id_="chosen", group_type="room", waiting_message=waiting_text)
 
 By default the participant's last page stays on screen, greyed out, while
 they wait. To show something else instead, pass ``waiting_screen``; to give
@@ -309,7 +308,7 @@ in a pair, where the partner's arrival releases the barrier at once:
     GroupBarrier(
         id_="decided",
         group_type="pair",
-        content="Waiting for your partner…",
+        waiting_message="Waiting for your partner…",
         waiting_screen=your_choice,
     )
 
@@ -417,9 +416,9 @@ trials on the same node. The start of every trial is synchronized; add
 :class:`~psynet.sync.GroupBarrier` elements inside the trial, as in
 ``show_trial`` above, to synchronize other points.
 
-``sync_group_wait_content`` sets the waiting message for the trial maker's own
-waits. Grouper and barrier waits use their own ``content``, so pass the same
-text to each if the messages should match.
+``sync_group_waiting_message`` sets the waiting message for the trial maker's own
+waits. Grouper and barrier waits use their own ``waiting_message``, so pass the
+same text to each if the messages should match.
 
 Custom barriers
 ~~~~~~~~~~~~~~~
@@ -438,17 +437,20 @@ Waiting and dropouts
 Timeouts
 ~~~~~~~~
 
+A grouper or barrier has two timeouts, which act on different members:
+
 ``max_wait_time``
-    The longest a participant waits at one grouper or barrier: 20 seconds by
-    default, or no limit at a :class:`~psynet.sync.GroupBarrier` that sets
-    ``timeout_between_barriers_time``, which then moves slow members on
-    instead. At a grouper, a participant who waits longer is failed. At a
-    :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
-    ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
-    from the group so that they continue alone. This also applies to a
-    participant who closed the page while waiting, including on
-    ``waiting_logic`` pages: the server applies the timeout shortly after
-    the deadline.
+    Acts on members **waiting** at this grouper or barrier: the longest each
+    may wait, counted from their arrival. 20 seconds by default, or no limit
+    at a :class:`~psynet.sync.GroupBarrier` that sets ``late_after``, which
+    then moves slow members on instead; passing ``max_wait_time`` together
+    with ``late_after`` raises an error. At a grouper, a participant who
+    waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
+    ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
+    and ``"kick"`` removes them from the group so that they continue alone.
+    This also applies to a participant who closed the page while waiting,
+    including on ``waiting_logic`` pages: the server applies the timeout
+    shortly after the deadline.
 
     ``max_wait_time`` is a hard limit counted from arrival. With
     ``waiting_logic``, the server applies it even while the participant is
@@ -456,19 +458,14 @@ Timeouts
     long enough to cover long filler pages, for example trials used as
     filler.
 
-``timeout_between_barriers_time`` (default: ``None``)
-    A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
-    passed its previous barrier, or since the member joined the group if that
-    is later. A member who has not reached this barrier in time is handled by
-    ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
-    Members who arrive promptly may wait this long for the others, or longer
-    while the others are on a page with a ``time_limit`` (see below). An
-    explicit ``max_wait_time`` must therefore be longer than the timeout and
-    than the longest such page plus 10 seconds; PsyNet only checks that it is
-    longer than the timeout. By default there is none, which is usually simplest. This
-    guarantee assumes fixed membership: in a group that
-    accepts top-ups, a newcomer is timed from when they joined, so members
-    already waiting can reach ``max_wait_time`` first.
+``late_after`` (default: ``None``)
+    Acts on members who **haven't reached** this
+    :class:`~psynet.sync.GroupBarrier` yet: the longest each may take to
+    reach it, counted from the group's previous barrier pass, or from when
+    the member joined the group if that is later. A member who is later than
+    that is handled by ``late_action``: ``"fail"`` (default) or ``"kick"``.
+    Members who arrive on time wait for the others until they arrive or are
+    late, so they need no ``max_wait_time`` of their own.
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since joining)
@@ -488,11 +485,10 @@ Timeouts
 
 Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_`` prefix: ``sync_group_max_wait_time``,
-``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``. ``sync_group_max_wait_time``
-defaults to 45 seconds, or, as at a barrier, to no limit when there is a
-between-barrier timeout. As with a barrier, a value you pass must be
-longer than ``sync_group_timeout_between_barriers_time``.
+``sync_group_max_wait_action``, ``sync_group_late_after`` and
+``sync_group_late_action``. ``sync_group_max_wait_time`` defaults to 45
+seconds, or, as at a barrier, to no limit with ``sync_group_late_after``,
+and passing both raises an error.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while
@@ -541,7 +537,7 @@ Waiting pages
 ~~~~~~~~~~~~~
 
 By default, a waiting participant stays on their current page, with input
-disabled and a small waiting indicator showing ``content``. To show dedicated
+disabled and a small waiting indicator showing ``waiting_message``. To show dedicated
 pages instead, pass them as ``waiting_logic``; they repeat until the
 participant is released. In ``sync_quorum``, waiting participants answer
 trials from another trial maker:

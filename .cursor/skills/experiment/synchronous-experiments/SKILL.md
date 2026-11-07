@@ -52,8 +52,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Prefer `TrialMaker`s for organizing rounds. For choosing `StaticTrialMaker`
   vs chain-based makers, read `develop-experiment-back-end/SKILL.md`.
 - Use `SimpleGrouper(group_type=..., initial_group_size=...)` to create cohorts
-  and `GroupBarrier(id_=..., group_type=..., content=...)` to release group
-  members together. Pass `content` to customize the hold overlay; omit
+  and `GroupBarrier(id_=..., group_type=..., waiting_message=...)` to release
+  group members together. Pass `waiting_message` to customize the hold overlay; omit
   `waiting_logic` unless you need a full wait page or filler task. Arrival
   notices are on by default. The partner-ready pill sits on the progress
   bar. Pair holds keep the title only; groups of three or more show
@@ -64,7 +64,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use `GroupBarrier(on_release=...)` for atomic shared updates such as role
   assignment, scoring, aggregation, or recording round outcomes. The
   callback's `barrier` argument is the reconstructed registry object; read
-  `content` and timeouts from it. Wait pages stay on the live timeline
+  `waiting_message` and timeouts from it. Wait pages stay on the live timeline
   barrier (see "Release callbacks" in `code/multiplayer/synchronization`).
 - Sort `sync_group.participants` by participant ID before deterministic role
   assignment; PsyNet does not guarantee the stored order.
@@ -78,11 +78,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - Use `GroupCloser(group_type=...)` before regrouping participants with the same
   `group_type`.
 - For games played in rounds with changing partners or rooms, put a
-  `Regrouper(group_type, group_size=..., deadline=..., within=...)` at the
+  `Regrouper(group_type, max_group_size=..., deadline=..., within=...)` at the
   start of each round instead of a grouper and closer. Slow participants miss a
   round and join the next one rather than being failed. Pair it with
-  `GroupBarrier(timeout_between_barriers_time=...,
-  timeout_between_barriers_action="kick")` so late members are removed and
+  `GroupBarrier(late_after=..., late_action="kick")` so late members are
+  removed and
   pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
   demos; give the round's other barriers `skip_if_not_in_group=True`. On a
   page with a `time_limit`, nobody is timed out before the limit has run out

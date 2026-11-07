@@ -153,7 +153,7 @@ trial_maker = GibbsTrialMaker(
     # but if we want to make maximum use of participant trials, we can set propagate_failure=False.
     propagate_failure=False,
     wait_for_networks=True,
-    sync_group_wait_content="Waiting for the rest of your group",
+    sync_group_waiting_message="Waiting for the rest of your group",
 )
 
 
@@ -186,7 +186,7 @@ class Exp(psynet.experiment.Experiment):
             initial_group_size=3,
             join_existing_groups=True,
             join_criterion=is_group_joinable,
-            content="Waiting for more people to join your group",
+            waiting_message="Waiting for more people to join your group",
         ),
         trial_maker,
     )

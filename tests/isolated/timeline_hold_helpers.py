@@ -45,17 +45,17 @@ def _stacked_partner_timeline(
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
-            content=hold_content,
+            waiting_message=hold_content,
         ),
         GroupBarrier(
             id_=f"{group_type}_init",
             group_type=group_type,
-            content=hold_content,
+            waiting_message=hold_content,
         ),
         GroupBarrier(
             id_=f"{group_type}_prepare",
             group_type=group_type,
-            content=hold_content,
+            waiting_message=hold_content,
         ),
         ModularPage("choose_action", "Choose your action", time_estimate=1),
     )

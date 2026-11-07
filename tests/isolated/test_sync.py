@@ -223,7 +223,7 @@ def test_group_barrier_preserves_positional_timeout_arguments():
         "main",
         None,
         3,
-        20,
+        None,
         "fail",
         None,
         False,
@@ -231,8 +231,8 @@ def test_group_barrier_preserves_positional_timeout_arguments():
         "kick",
     )
 
-    assert barrier.timeout_between_barriers_time == 5
-    assert barrier.timeout_between_barriers_action == "kick"
+    assert barrier.late_after == 5
+    assert barrier.late_action == "kick"
     assert barrier.expected_wait == 1.5
 
 
@@ -242,47 +242,48 @@ def test_default_barrier_uses_timeline_hold():
     assert barrier.waiting_logic.is_timeline_hold
     assert barrier.waiting_logic.barrier_id == barrier.id
     assert barrier.waiting_logic.time_estimate == 1.5
-    assert barrier.waiting_logic.content is None
+    assert barrier.waiting_logic.waiting_message is None
     assert barrier.waiting_logic.message_kind == "barrier"
     assert not isinstance(barrier.waiting_logic, WaitPage)
 
 
-def test_barrier_accepts_custom_hold_content():
+def test_barrier_accepts_custom_waiting_message():
     barrier = GroupBarrier(
         id_="wait_for_partner",
         group_type="pair",
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
     )
     hold = barrier.waiting_logic
 
-    assert hold.content == "Waiting for your partner"
+    assert hold.waiting_message == "Waiting for your partner"
     assert hold.message_kind is None
-    assert hold.translated_content(None) == "Waiting for your partner"
-    html = GroupBarrier(id_="tag", group_type="pair", content=tags.b("Wait"))
-    assert str(html.waiting_logic.translated_content(None)) == "<b>Wait</b>"
+    assert hold.translated_waiting_message(None) == "Waiting for your partner"
+    html = GroupBarrier(id_="tag", group_type="pair", waiting_message=tags.b("Wait"))
+    assert str(html.waiting_logic.translated_waiting_message(None)) == "<b>Wait</b>"
 
 
-def _content_by_role(participant):
+def _message_by_role(participant):
     return f"Waiting for the {participant.var.role}'s partner"
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_barrier_content_can_depend_on_the_participant(
+def test_barrier_waiting_message_can_depend_on_the_participant(
     in_experiment_directory, db_session
 ):
     barrier = GroupBarrier(
-        id_="wait_by_role", group_type="pair", content=_content_by_role
+        id_="wait_by_role", group_type="pair", waiting_message=_message_by_role
     )
     restored = barrier_from_spec_json(barrier_spec_json(barrier))
     proposer = new_participant(get_experiment())
     proposer.var.role = "proposer"
 
     expected = "Waiting for the proposer's partner"
-    assert barrier.waiting_logic.translated_content(proposer) == expected
+    assert barrier.waiting_logic.translated_waiting_message(proposer) == expected
     assert (
-        call_function_with_context(restored.content, participant=proposer) == expected
+        call_function_with_context(restored.waiting_message, participant=proposer)
+        == expected
     )
 
 
@@ -293,12 +294,12 @@ def test_explicit_barrier_waiting_logic_is_preserved():
     assert barrier.waiting_logic is waiting_logic
 
 
-def test_content_rejects_explicit_waiting_logic():
-    with pytest.raises(ValueError, match="content"):
+def test_waiting_message_rejects_explicit_waiting_logic():
+    with pytest.raises(ValueError, match="waiting_message"):
         ReleaseAllBarrier(
             id_="page_wait",
             waiting_logic=WaitPage(wait_time=1),
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
         )
 
 
@@ -706,7 +707,7 @@ def test_simple_grouper_groups_on_last_arrival(in_experiment_directory, db_sessi
     grouper = SimpleGrouper(
         group_type="pair_on_arrival",
         initial_group_size=2,
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
     )
 
     _arrive_at_group_barrier(exp, grouper, first)
@@ -4051,7 +4052,7 @@ def test_last_arrival_post_does_not_skip_partner_cursors(
         GroupBarrier(
             id_=barrier_id,
             group_type="main",
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
         ),
         ModularPage("choose_action", "Choose your action", time_estimate=1),
     )
@@ -4460,7 +4461,7 @@ def test_stale_hold_uuid_catches_up_onto_a_later_hold(
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=2,
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
         ),
         wait_while(lambda: True, expected_wait=1, max_wait_time=60),
         ModularPage("choose_action", "Choose your action", time_estimate=1),
@@ -5803,7 +5804,7 @@ def test_group_arrival_notifies_partner_still_on_earlier_page(
     barrier = GroupBarrier(
         id_="notify_arrivals",
         group_type="main",
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
     )
     publications = _hold_wake_publications(monkeypatch)
 
@@ -5856,7 +5857,7 @@ def test_pending_arrival_notice_for_spec_error_returns_none(
     barrier = GroupBarrier(
         id_="notify_spec_error",
         group_type="main",
-        content="Waiting for your partner",
+        waiting_message="Waiting for your partner",
     )
     _arrive_at_group_barrier(exp, barrier, first)
     db_session.commit()
@@ -5879,7 +5880,7 @@ def test_group_hold_reports_how_many_are_not_ready_yet(
     barrier = GroupBarrier(
         id_="group_hold_remaining",
         group_type="main",
-        content="Waiting for the rest of your group",
+        waiting_message="Waiting for the rest of your group",
     )
 
     _arrive_at_group_barrier(exp, barrier, first)
@@ -5913,7 +5914,7 @@ def test_group_hold_content_function_writes_its_own_progress_line(
     barrier = GroupBarrier(
         id_="group_hold_custom_progress",
         group_type="main",
-        content=_chosen_waiting_text,
+        waiting_message=_chosen_waiting_text,
     )
 
     _arrive_at_group_barrier(exp, barrier, first)
@@ -6562,29 +6563,27 @@ def test_async_job_events_wake_timeline_holds(
     ]
 
 
-def test_group_barrier_timeout_between_barriers_rejects_bad_action():
-    with pytest.raises(ValueError, match="timeout_between_barriers_action"):
+def test_group_barrier_late_after_rejects_bad_action():
+    with pytest.raises(ValueError, match="late_action"):
         GroupBarrier(
-            id_="timeout_between_barriers_bad_action",
+            id_="late_after_bad_action",
             group_type="group",
-            timeout_between_barriers_time=5,
-            timeout_between_barriers_action="remove",
+            late_after=5,
+            late_action="remove",
         )
 
 
-def test_group_barrier_max_wait_time_with_timeout_between_barriers():
+def test_group_barrier_max_wait_time_with_late_after():
     def barrier(**kwargs):
         return GroupBarrier(id_="round", group_type="group", **kwargs)
 
     assert barrier().max_wait_time == 20
-    assert barrier(timeout_between_barriers_time=30).max_wait_time is None
-    with pytest.raises(ValueError, match="must be longer"):
-        barrier(timeout_between_barriers_time=30, max_wait_time=30)
-    barrier(timeout_between_barriers_time=30, max_wait_time=_shrinking_max_wait_time)
-    assert (
-        barrier(timeout_between_barriers_time=30, max_wait_time=None).max_wait_time
-        is None
-    )
+    assert barrier(max_wait_time=None).max_wait_time is None
+    assert barrier(late_after=30).max_wait_time is None
+    assert barrier(late_after=30, max_wait_time=None).max_wait_time is None
+    for max_wait_time in (300, _shrinking_max_wait_time):
+        with pytest.raises(ValueError, match="Leave max_wait_time unset"):
+            barrier(late_after=30, max_wait_time=max_wait_time)
 
 
 @pytest.mark.parametrize(
@@ -6592,15 +6591,15 @@ def test_group_barrier_max_wait_time_with_timeout_between_barriers():
 )
 @pytest.mark.parametrize("notify_arrivals", [True, False])
 @pytest.mark.parametrize("min_group_size", [2, 3])
-def test_group_barrier_timeout_between_barriers_kick_missing_participants(
+def test_group_barrier_late_after_kick_missing_participants(
     in_experiment_directory, db_session, notify_arrivals, monkeypatch, min_group_size
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="timeout_between_barriers_kick",
+        id_="late_after_kick",
         group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action="kick",
+        late_after=5,
+        late_action="kick",
         notify_arrivals=notify_arrivals,
     )
 
@@ -6659,7 +6658,7 @@ def test_group_barrier_timeout_between_barriers_kick_missing_participants(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("passed_a_barrier", [False, True])
-def test_timeout_between_barriers_counts_from_joining_the_group(
+def test_late_after_counts_from_joining_the_group(
     in_experiment_directory, db_session, passed_a_barrier
 ):
     """A GroupBarrier kicks members late since grouping or the last barrier, but not a newcomer."""
@@ -6680,8 +6679,8 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
     barrier = GroupBarrier(
         id_="first_after_grouper",
         group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action="kick",
+        late_after=5,
+        late_action="kick",
     )
     waiting, late = participants[:2], participants[2]
 
@@ -6696,7 +6695,7 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_timeout_between_barriers_follows_a_timed_page(
+def test_late_after_follows_a_timed_page(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A between-barrier timeout waits for a timed page's answer, but no longer."""
@@ -6736,8 +6735,8 @@ def test_timeout_between_barriers_follows_a_timed_page(
     barrier = GroupBarrier(
         id_="after_timed_page",
         group_type="main",
-        timeout_between_barriers_time=20,
-        timeout_between_barriers_action="kick",
+        late_after=20,
+        late_action="kick",
     )
 
     barrier.check_waiting_participants([waiting])
@@ -6786,8 +6785,8 @@ def test_a_group_barrier_pass_forgets_earlier_timed_pages(
     barrier = GroupBarrier(
         id_="next",
         group_type="main",
-        timeout_between_barriers_time=10,
-        timeout_between_barriers_action="kick",
+        late_after=10,
+        late_action="kick",
     )
     barrier.check_waiting_participants([second])
     assert first not in group.active_participants
@@ -6832,9 +6831,7 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
     exp = get_experiment()
     (kicked,) = _working_participants(exp, 1)
     kicked.timed_out_since_barrier = True
-    skipped = GroupBarrier(
-        "decided", group_type="pair", timeout_between_barriers_action="kick"
-    )
+    skipped = GroupBarrier("decided", group_type="pair", late_action="kick")
     elts = skipped.resolve()
     (switch,) = [
         elt
@@ -6852,15 +6849,15 @@ def test_skipping_a_group_barrier_forgets_a_time_out(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_dissolution(
+def test_group_barrier_late_after_kick_releases_waiters_after_dissolution(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="timeout_between_barriers_kick_below_min",
+        id_="late_after_kick_below_min",
         group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action="kick",
+        late_after=5,
+        late_action="kick",
     )
 
     participants = [new_participant(exp) for _ in range(3)]
@@ -6898,7 +6895,7 @@ def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_diss
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_would_release_predicts_timeout_between_barriers(
+def test_group_barrier_would_release_predicts_late_after(
     in_experiment_directory, db_session, action, min_group_size, accepts_top_ups
 ):
     """The release peek must see the late member the check will remove."""
@@ -6906,8 +6903,8 @@ def test_group_barrier_would_release_predicts_timeout_between_barriers(
     barrier = GroupBarrier(
         id_=f"would_release_between_{action}_{min_group_size}_{accepts_top_ups}",
         group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action=action,
+        late_after=5,
+        late_action=action,
     )
     participants = [new_participant(exp) for _ in range(3)]
     for p in participants:
@@ -6943,15 +6940,15 @@ def test_group_barrier_would_release_predicts_timeout_between_barriers(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_barrier_timeout_between_barriers_fail_missing_participants(
+def test_group_barrier_late_after_fail_missing_participants(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     barrier = GroupBarrier(
-        id_="timeout_between_barriers_fail",
+        id_="late_after_fail",
         group_type="main",
-        timeout_between_barriers_time=5,
-        timeout_between_barriers_action="fail",
+        late_after=5,
+        late_action="fail",
     )
 
     participants = [new_participant(exp) for _ in range(3)]

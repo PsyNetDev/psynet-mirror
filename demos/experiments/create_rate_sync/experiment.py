@@ -39,13 +39,13 @@ class CreateRateTrial(StaticTrial):
             GroupBarrier(
                 id_="finished_creating",
                 group_type="create_rate",
-                content="Waiting for the rest of your group",
+                waiting_message="Waiting for the rest of your group",
             ),
             PageMaker(self.rate, time_estimate=5),
             GroupBarrier(
                 id_="finished_rating",
                 group_type="create_rate",
-                content="Waiting for the rest of your group",
+                waiting_message="Waiting for the rest of your group",
                 # The fastest voter may wait out the rest of the vote.
                 max_wait_time=VOTE_SECONDS + 30,
                 on_release=self.save_ratings,
@@ -159,7 +159,7 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="create_rate",
             initial_group_size=3,
-            content="Waiting for the rest of your group",
+            waiting_message="Waiting for the rest of your group",
         ),
         CreateRateTrialMaker(
             id_="create_rate",
@@ -171,7 +171,7 @@ class Exp(psynet.experiment.Experiment):
             expected_trials_per_participant=3,
             max_trials_per_participant=3,
             sync_group_type="create_rate",
-            sync_group_wait_content="Waiting for the rest of your group",
+            sync_group_waiting_message="Waiting for the rest of your group",
         ),
     )
 

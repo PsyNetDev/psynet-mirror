@@ -529,7 +529,7 @@ class AsyncCodeBlock(EltCollection):
         then. The function keeps running in the background. ``on_timeout``
         must not commit the database session.
 
-    content:
+    waiting_message:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
 
@@ -545,7 +545,7 @@ class AsyncCodeBlock(EltCollection):
         wait: bool = True,
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
-        content: Optional[str] = None,
+        waiting_message: Optional[str] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
         priority: Optional[str] = None,
@@ -576,7 +576,7 @@ class AsyncCodeBlock(EltCollection):
         self.wait = wait
         self.expected_wait = expected_wait
         self.check_interval = check_interval
-        self.content = content
+        self.waiting_message = waiting_message
         self.max_wait_time = max_wait_time
         self.on_timeout = on_timeout
         self.priority = priority
@@ -661,7 +661,7 @@ class AsyncCodeBlock(EltCollection):
                 check_interval=self.check_interval,
                 max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
-                content=self.content,
+                waiting_message=self.waiting_message,
                 on_timeout=None
                 if self.on_timeout is None
                 else self._call_on_timeout_unless_finished,

@@ -179,29 +179,29 @@ def test_wait_while_can_fix_timeline_hold_credit():
     assert any(isinstance(elt, StartFixTimeCredit) for elt in logic)
 
 
-def test_wait_while_accepts_custom_hold_content():
+def test_wait_while_accepts_custom_waiting_message():
     logic = wait_while(
         lambda: True,
         expected_wait=1,
-        content="Custom hold message",
+        waiting_message="Custom hold message",
     )
     hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
 
-    assert hold.content == "Custom hold message"
+    assert hold.waiting_message == "Custom hold message"
 
 
 def _waiting_for_role(participant):
     return f"Waiting for the {participant.var.role}"
 
 
-def test_wait_while_content_can_depend_on_the_participant():
-    logic = wait_while(lambda: True, expected_wait=1, content=_waiting_for_role)
+def test_wait_while_waiting_message_can_depend_on_the_participant():
+    logic = wait_while(lambda: True, expected_wait=1, waiting_message=_waiting_for_role)
     hold = next(elt for elt in logic if getattr(elt, "is_timeline_hold", False))
     participant = SimpleNamespace(
         var=SimpleNamespace(role="proposer"), module_state=None
     )
 
-    assert hold.translated_content(participant) == "Waiting for the proposer"
+    assert hold.translated_waiting_message(participant) == "Waiting for the proposer"
 
 
 def test_wait_while_can_show_a_waiting_screen():
@@ -217,15 +217,15 @@ def test_wait_while_can_show_a_waiting_screen():
         )
 
 
-def test_wait_while_rejects_content_with_wait_page():
+def test_wait_while_rejects_waiting_message_with_wait_page():
     with pytest.raises(
-        ValueError, match="content only applies when wait_page is omitted"
+        ValueError, match="waiting_message only applies when wait_page is omitted"
     ):
         wait_while(
             lambda: True,
             expected_wait=1,
             wait_page=WaitPage,
-            content="Waiting…",
+            waiting_message="Waiting…",
         )
 
 
@@ -233,17 +233,17 @@ def _async_placeholder(participant):
     return None
 
 
-def test_async_code_block_passes_content_to_hold():
+def test_async_code_block_passes_waiting_message_to_hold():
     block = AsyncCodeBlock(
         _async_placeholder,
         wait=True,
         expected_wait=1,
-        content="Working…",
+        waiting_message="Working…",
     )
     hold = next(
         elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
     )
-    assert hold.content == "Working…"
+    assert hold.waiting_message == "Working…"
 
 
 @pytest.mark.parametrize(
@@ -277,7 +277,7 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
     plain = next(
         elt
         for elt in wait_while(
-            lambda: True, expected_wait=1, content="<strong>Waiting</strong>"
+            lambda: True, expected_wait=1, waiting_message="<strong>Waiting</strong>"
         )
         if getattr(elt, "is_timeline_hold", False)
     )
@@ -286,7 +286,7 @@ def test_hold_overlay_html_matches_markup_and_plain_text():
         for elt in wait_while(
             lambda: True,
             expected_wait=1,
-            content=Markup("<strong>Waiting</strong>"),
+            waiting_message=Markup("<strong>Waiting</strong>"),
         )
         if getattr(elt, "is_timeline_hold", False)
     )

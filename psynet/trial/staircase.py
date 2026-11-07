@@ -1,12 +1,11 @@
 from statistics import mean
-from typing import Literal, Optional, Type, Union
+from typing import Callable, Literal, Optional, Type, Union
 
 from sqlalchemy import Boolean, Column, Float, Integer, String
 
 from ..field import PythonObject
-from ..utils import get_args
+from ..utils import NoArgumentProvided, get_args
 from .chain import ChainNetwork, ChainNode, ChainTrial, ChainTrialMaker
-from .main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
 
 # Overview #############################################################################################################
 
@@ -219,11 +218,11 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         assets=None,
         choose_participant_group: Optional[callable] = None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_waiting_message=None,
     ):
         self.max_reversals_per_chain = max_reversals_per_chain
         self.min_passing_score = min_passing_score
@@ -247,9 +246,9 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
-            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
-            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
-            sync_group_wait_content=sync_group_wait_content,
+            sync_group_late_after=sync_group_late_after,
+            sync_group_late_action=sync_group_late_action,
+            sync_group_waiting_message=sync_group_waiting_message,
             max_nodes_per_chain=max_nodes_per_chain,
             check_performance_at_end=True,
             check_performance_every_trial=False,

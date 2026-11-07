@@ -3,7 +3,7 @@ import random
 from dataclasses import dataclass
 from functools import partial
 from math import isnan
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Union
 
 import dallinger.experiment
 import dallinger.models
@@ -49,7 +49,7 @@ from ..error import (  # noqa  # Importing the error module is important to ensu
 from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
-from ..sync import GroupBarrier, SyncGroup, _DefaultMaxWaitTime
+from ..sync import GroupBarrier, SyncGroup, _group_max_wait_time
 from ..timeline import (
     CodeBlock,
     DatabaseCheck,
@@ -1489,9 +1489,6 @@ class TrialMakerState(ModuleState):
         self.trial_maker_initialized = False
 
 
-_DEFAULT_SYNC_GROUP_MAX_WAIT_TIME = _DefaultMaxWaitTime(45.0)
-
-
 class TrialMaker(Module):
     """
     Generic trial generation module, to be inserted
@@ -1674,28 +1671,35 @@ class TrialMaker(Module):
         so that in every given trial the SyncGroup works on the same node together.
 
     sync_group_max_wait_time
-        The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
-        If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45 seconds, or to no limit when ``sync_group_timeout_between_barriers_time`` is set, because that timeout already moves late members on; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Acts on members waiting for their group at the trial maker's own barriers: the longest
+        each may wait, in seconds, counted from their arrival, before
+        ``sync_group_max_wait_action`` is applied to them. Defaults to 45 seconds, or to no limit
+        with ``sync_group_late_after``, which then moves slow members on; passing a number or a
+        function together with ``sync_group_late_after`` raises an error. ``None`` means no limit.
 
     sync_group_max_wait_action
-        When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
-        of the experiment; ``"kick"`` removes them from the group and lets them continue. Defaults to ``"fail"``.
+        What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
+        (default) fails them and sends them to the end of the experiment; ``"kick"`` removes them
+        from the group and lets them continue.
 
-    sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
-        is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
+    sync_group_late_after
+        Acts on members who haven't reached the trial maker's barrier yet: the longest each may
+        take to reach it, in seconds, counted from the group's previous barrier pass or from when
+        they joined the group, whichever is later, before ``sync_group_late_action`` is applied
+        to them. ``None`` (default) never treats anyone as late. See ``late_after`` in
+        :class:`~psynet.sync.GroupBarrier`.
 
-    sync_group_timeout_between_barriers_action
-        When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
-        the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
+    sync_group_late_action
+        What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
+        (default) fails them; ``"kick"`` removes them from the group, so the rest can go on
+        without them.
 
-    sync_group_wait_content
-        Message shown by the trial maker's own sync-group waits (initialization and
-        trial preparation). If omitted, participants see "Waiting for other
-        participants…". Author-defined :class:`~psynet.sync.Grouper` and
-        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
-        pass the same string on those constructs if they should match.
+    sync_group_waiting_message
+        Message on the waiting indicator at the trial maker's own sync-group waits
+        (initialization and trial preparation). If omitted, participants see "Waiting for other
+        participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
+        elements use their own ``waiting_message``; pass the same text to them if the messages
+        should match.
     """
 
     state_class = TrialMakerState
@@ -1716,11 +1720,11 @@ class TrialMaker(Module):
         assets: List,
         fail_trials_on_premature_exit: bool = False,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         if recruit_mode not in self.recruit_criteria:
@@ -1781,33 +1785,17 @@ class TrialMaker(Module):
             )
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
-        if isinstance(sync_group_max_wait_time, _DefaultMaxWaitTime):
-            sync_group_max_wait_time = (
-                None
-                if sync_group_timeout_between_barriers_time is not None
-                else float(sync_group_max_wait_time)
-            )
-        if (
-            sync_group_max_wait_time is not None
-            and sync_group_timeout_between_barriers_time is not None
-            and sync_group_max_wait_time <= sync_group_timeout_between_barriers_time
-        ):
-            raise ValueError(
-                f"sync_group_max_wait_time ({sync_group_max_wait_time} s) must be "
-                "longer than sync_group_timeout_between_barriers_time "
-                f"({sync_group_timeout_between_barriers_time} s) in trial maker "
-                f"'{id_}'. Raise sync_group_max_wait_time, or leave it unset."
-            )
         self.sync_group_type = sync_group_type
-        self.sync_group_max_wait_time = sync_group_max_wait_time
+        self.sync_group_max_wait_time = _group_max_wait_time(
+            sync_group_max_wait_time,
+            sync_group_late_after,
+            default=45,
+            prefix="sync_group_",
+        )
         self.sync_group_max_wait_action = sync_group_max_wait_action
-        self.sync_group_timeout_between_barriers_time = (
-            sync_group_timeout_between_barriers_time
-        )
-        self.sync_group_timeout_between_barriers_action = (
-            sync_group_timeout_between_barriers_action
-        )
-        self.sync_group_wait_content = sync_group_wait_content
+        self.sync_group_late_after = sync_group_late_after
+        self.sync_group_late_action = sync_group_late_action
+        self.sync_group_waiting_message = sync_group_waiting_message
 
         elts = self.compile_elts()
 
@@ -1829,9 +1817,9 @@ class TrialMaker(Module):
             group_type=self.sync_group_type,
             max_wait_time=self.sync_group_max_wait_time,
             max_wait_action=self.sync_group_max_wait_action,
-            timeout_between_barriers_time=self.sync_group_timeout_between_barriers_time,
-            timeout_between_barriers_action=self.sync_group_timeout_between_barriers_action,
-            content=self.sync_group_wait_content,
+            late_after=self.sync_group_late_after,
+            late_action=self.sync_group_late_action,
+            waiting_message=self.sync_group_waiting_message,
         )
 
     def compile_elts(self):
@@ -2841,28 +2829,35 @@ class NetworkTrialMaker(TrialMaker):
         so that in every given trial the SyncGroup works on the same node together.
 
     sync_group_max_wait_time
-        The maximum time that the participant will be allowed to wait for the SyncGroup to be ready.
-        If this time is exceeded, the participant is either failed or kicked (see ``sync_group_max_wait_action``).
-        Defaults to 45 seconds, or to no limit when ``sync_group_timeout_between_barriers_time`` is set, because that timeout already moves late members on; ``None`` waits indefinitely. A value you pass must be longer than ``sync_group_timeout_between_barriers_time`` when both are set.
+        Acts on members waiting for their group at the trial maker's own barriers: the longest
+        each may wait, in seconds, counted from their arrival, before
+        ``sync_group_max_wait_action`` is applied to them. Defaults to 45 seconds, or to no limit
+        with ``sync_group_late_after``, which then moves slow members on; passing a number or a
+        function together with ``sync_group_late_after`` raises an error. ``None`` means no limit.
 
     sync_group_max_wait_action
-        When ``sync_group_max_wait_time`` is exceeded: ``"fail"`` fails the participant and sends them to the end
-        of the experiment; ``"kick"`` removes them from the group and lets them continue. Defaults to ``"fail"``.
+        What happens to a member who waits longer than ``sync_group_max_wait_time``: ``"fail"``
+        (default) fails them and sends them to the end of the experiment; ``"kick"`` removes them
+        from the group and lets them continue.
 
-    sync_group_timeout_between_barriers_time
-        Optional timeout in seconds (since the group's last barrier pass, or since the participant joined the group if that is later) after which a participant
-        is considered too slow. When ``None`` (default), no between-barrier timeout is applied.
+    sync_group_late_after
+        Acts on members who haven't reached the trial maker's barrier yet: the longest each may
+        take to reach it, in seconds, counted from the group's previous barrier pass or from when
+        they joined the group, whichever is later, before ``sync_group_late_action`` is applied
+        to them. ``None`` (default) never treats anyone as late. See ``late_after`` in
+        :class:`~psynet.sync.GroupBarrier`.
 
-    sync_group_timeout_between_barriers_action
-        When ``sync_group_timeout_between_barriers_time`` is set: ``"kick"`` removes the participant from the group so
-        the rest can proceed, or ``"fail"`` fails the participant. Defaults to ``"fail"``.
+    sync_group_late_action
+        What happens to a member who is later than ``sync_group_late_after``: ``"fail"``
+        (default) fails them; ``"kick"`` removes them from the group, so the rest can go on
+        without them.
 
-    sync_group_wait_content
-        Message shown by the trial maker's own sync-group waits (initialization and
-        trial preparation). If omitted, participants see "Waiting for other
-        participants…". Author-defined :class:`~psynet.sync.Grouper` and
-        :class:`~psynet.sync.GroupBarrier` waits still use their own ``content``;
-        pass the same string on those constructs if they should match.
+    sync_group_waiting_message
+        Message on the waiting indicator at the trial maker's own sync-group waits
+        (initialization and trial preparation). If omitted, participants see "Waiting for other
+        participants…". :class:`~psynet.sync.Grouper` and :class:`~psynet.sync.GroupBarrier`
+        elements use their own ``waiting_message``; pass the same text to them if the messages
+        should match.
 
     Attributes
     ----------
@@ -2931,11 +2926,11 @@ class NetworkTrialMaker(TrialMaker):
         fail_trials_on_premature_exit: bool = False,
         assets=None,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_waiting_message=None,
         n_participants_completion: Literal["experiment", "trial_maker"] = "experiment",
     ):
         performance_check_is_enabled = (
@@ -2976,9 +2971,9 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
-            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
-            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
-            sync_group_wait_content=sync_group_wait_content,
+            sync_group_late_after=sync_group_late_after,
+            sync_group_late_action=sync_group_late_action,
+            sync_group_waiting_message=sync_group_waiting_message,
             n_participants_completion=n_participants_completion,
         )
         self.network_class = network_class

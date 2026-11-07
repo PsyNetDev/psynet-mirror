@@ -206,7 +206,7 @@ def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
     """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit.
 
     ``hold_message`` is the hold copy re-rendered for the new target, for
-    ``content`` functions whose text depends on it.
+    ``waiting_message`` functions whose text depends on it.
     """
     release_in_ms = (
         None if release_time is None else round((release_time - time.time()) * 1000)
@@ -250,9 +250,9 @@ def default_group_barrier_arrival_message(
     )
 
 
-def _is_content_function(content):
-    """Return whether hold ``content`` is a function of the participant (dominate tags are callable too)."""
-    return callable(content) and not isinstance(content, dom_tag)
+def _is_message_function(message):
+    """Return whether a hold ``waiting_message`` is a function of the participant (dominate tags are callable too)."""
+    return callable(message) and not isinstance(message, dom_tag)
 
 
 def default_hold_progress(waiting_count, group_size):
@@ -520,7 +520,7 @@ class _TimelineHoldPage(Page):
         max_wait_time,
         fix_time_credit,
         check_interval,
-        content=None,
+        waiting_message=None,
         message_kind=None,
         fail_on_timeout=True,
         on_timeout=None,
@@ -531,7 +531,7 @@ class _TimelineHoldPage(Page):
         self.max_wait_time = max_wait_time
         self.fix_time_credit = fix_time_credit
         self.check_interval = check_interval
-        self.content = content
+        self.waiting_message = waiting_message
         self.message_kind = message_kind
         self.waiting_screen = waiting_screen
         self._fail_on_timeout = fail_on_timeout
@@ -700,7 +700,7 @@ class _TimelineHoldPage(Page):
         record = self.get_hold_record(participant)
         return bool(record is not None and record.silent)
 
-    def translated_content(self, participant):
+    def translated_waiting_message(self, participant):
         """Return the hold message for this participant, translating framework-provided ones."""
         _p = get_translator(context=True)
         if self.message_kind == "barrier":
@@ -710,9 +710,11 @@ class _TimelineHoldPage(Page):
                 "timeline_hold",
                 "Please wait, the experiment should continue shortly...",
             )
-        if _is_content_function(self.content):
-            return call_function_with_context(self.content, participant=participant)
-        return self.content
+        if _is_message_function(self.waiting_message):
+            return call_function_with_context(
+                self.waiting_message, participant=participant
+            )
+        return self.waiting_message
 
     def overlay_html(self, participant):
         """Return hold copy as HTML for both Jinja and the dynamic overlay.
@@ -723,7 +725,8 @@ class _TimelineHoldPage(Page):
         if self._is_silent_for(participant):
             return compose_hold_overlay_html("", None)
         return compose_hold_overlay_html(
-            self.translated_content(participant), self.hold_progress_text(participant)
+            self.translated_waiting_message(participant),
+            self.hold_progress_text(participant),
         )
 
     def hold_progress_text(self, participant):

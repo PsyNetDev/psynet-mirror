@@ -3,10 +3,9 @@ from __future__ import (  # Makes type hints lazy, so that classes can be define
 )
 
 import random
-from typing import List, Literal, Optional
+from typing import Callable, List, Literal, Optional, Union
 
-from ..utils import sample_from_surface_of_unit_sphere
-from .main import _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME
+from ..utils import NoArgumentProvided, sample_from_surface_of_unit_sphere
 from .static import StaticNode, StaticTrial, StaticTrialMaker
 
 
@@ -225,11 +224,11 @@ class DenseTrialMaker(StaticTrialMaker):
         fail_trials_on_participant_performance_check: bool = True,
         n_repeat_trials: int = 0,
         sync_group_type: Optional[str] = None,
-        sync_group_max_wait_time: Optional[float] = _DEFAULT_SYNC_GROUP_MAX_WAIT_TIME,
+        sync_group_max_wait_time: Optional[Union[float, Callable]] = NoArgumentProvided,
         sync_group_max_wait_action: Literal["fail", "kick"] = "fail",
-        sync_group_timeout_between_barriers_time: Optional[float] = None,
-        sync_group_timeout_between_barriers_action: Literal["kick", "fail"] = "fail",
-        sync_group_wait_content=None,
+        sync_group_late_after: Optional[float] = None,
+        sync_group_late_action: Literal["fail", "kick"] = "fail",
+        sync_group_waiting_message=None,
     ):
         super().__init__(
             id_=id_,
@@ -254,9 +253,9 @@ class DenseTrialMaker(StaticTrialMaker):
             sync_group_type=sync_group_type,
             sync_group_max_wait_time=sync_group_max_wait_time,
             sync_group_max_wait_action=sync_group_max_wait_action,
-            sync_group_timeout_between_barriers_time=sync_group_timeout_between_barriers_time,
-            sync_group_timeout_between_barriers_action=sync_group_timeout_between_barriers_action,
-            sync_group_wait_content=sync_group_wait_content,
+            sync_group_late_after=sync_group_late_after,
+            sync_group_late_action=sync_group_late_action,
+            sync_group_waiting_message=sync_group_waiting_message,
         )
 
 

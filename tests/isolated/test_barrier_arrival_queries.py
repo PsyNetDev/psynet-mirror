@@ -276,7 +276,7 @@ def _stacked_partner_timeline(group_type, group_size):
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
         ),
         GroupBarrier(id_=f"{group_type}_init", group_type=group_type),
         GroupBarrier(id_=f"{group_type}_prepare", group_type=group_type),

@@ -233,11 +233,10 @@ def not_playing(participant):
 pairing = Regrouper(
     "pair",
     within="cohort",
-    group_size=2,
     roles=["proposer", "responder"],
     deadline=ROUND_DEADLINE_SECONDS,
     release_left_over=True,
-    content=round_message,
+    waiting_message=round_message,
     waiting_screen=pairing_up,
 )
 
@@ -253,13 +252,13 @@ def play_round():
                 GroupBarrier(
                     id_="round_finished",
                     group_type="pair",
-                    content="Waiting for your partner…",
+                    waiting_message="Waiting for your partner…",
                     waiting_screen=waiting_for_partner,
                     # A player is taken out 30 s after the round starts (long
                     # enough for a background tab to notice), but not while their
                     # answer to the timed decision page may still be on its way.
-                    timeout_between_barriers_time=30,
-                    timeout_between_barriers_action="kick",
+                    late_after=30,
+                    late_action="kick",
                     on_release=score_round,
                 ),
                 PageMaker(show_outcome, time_estimate=5),
@@ -290,7 +289,7 @@ class Exp(psynet.experiment.Experiment):
             join_existing_groups=True,
             join_criterion=cohort_accepts_newcomers,
             fail_participants_below_min_size=False,
-            content=lobby_message,
+            waiting_message=lobby_message,
             waiting_screen=forming_cohort,
             max_wait_time=300,
         ),

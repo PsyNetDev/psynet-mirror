@@ -10,8 +10,8 @@ bubbles; partners appear as the same grey figure, so nobody recognises a
 partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
-`SimpleGrouper` with `start_short_after` and top-ups, with a custom
-`form_groups` that avoids repeat partners and a `join_criterion` that closes
+`SimpleGrouper` with `start_short_after` and top-ups, with the default
+re-pairing that avoids repeat partners and a `join_criterion` that closes
 the cohort to latecomers once someone has finished a round.
 
 ## Usage

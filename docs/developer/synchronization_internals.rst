@@ -94,7 +94,7 @@ read by the release hooks must therefore hold JSON-compatible values,
 supported callables, classes, or persisted PsyNet ORM records.
 
 The reconstructed barrier has ``id``, custom release state, scalar
-presentation fields (``content`` and the timeouts) and notification
+presentation fields (``waiting_message`` and the timeouts) and notification
 settings. Wait-page construction (``waiting_logic``, ``waiting_screen``,
 ``_uses_timeline_hold`` and the expected repetitions of ``waiting_logic``)
 stays on the live timeline object, as

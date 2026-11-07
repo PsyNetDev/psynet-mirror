@@ -45,7 +45,7 @@ isn't back yet, if enough players are waiting to
 form a pair; latecomers join the next round.
 With ``roles``, each pair has a proposer and a responder, and each player
 alternates between them. Partners from last round are kept apart where
-possible. ``content`` counts down to the deadline:
+possible. ``waiting_message`` counts down to the deadline:
 
 .. figure:: ../../_static/images/rounds/next_round.png
    :width: 700
@@ -94,13 +94,13 @@ Moving slow players on
 ----------------------
 
 The :class:`~psynet.sync.GroupBarrier` after the decision page waits for
-both partners. With ``timeout_between_barriers_action="kick"``, a player who
+both partners. With ``late_action="kick"``, a player who
 doesn't arrive in time is taken out of the pair, and their partner carries
 on alone. A player on a page with a time limit is not taken out before that
 limit has run out and an answer sent at the deadline has had 10 seconds to
 arrive, so the timeout need not be longer than the page's time limit.
 For example, with a 30-second decision page and
-``timeout_between_barriers_time=30``:
+``late_after=30``:
 
 - A player who answers after 12 seconds waits at the barrier for their
   partner.
@@ -190,7 +190,7 @@ Variations
 
 **Larger groups.** The ``lowest_unique_number`` demo regroups all waiting
 players into rooms of up to eight every 10 seconds, with
-``deadline=Clock(10)`` and no ``within``. Each player picks a number, and
+``every=10`` and no ``within``. Each player picks a number, and
 the room sees who has picked, who ran out of time and who is still deciding:
 
 .. figure:: ../../_static/images/rounds/dash.png

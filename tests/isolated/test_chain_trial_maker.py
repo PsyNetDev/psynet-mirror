@@ -201,36 +201,24 @@ def test_fail_trials_on_premature_exit_true_emits_deprecation_warning():
     assert Path(record[0].filename).resolve() == Path(__file__).resolve()
 
 
-def test_sync_group_max_wait_time_with_timeout_between_barriers():
+def test_sync_group_max_wait_time_with_late_after():
     assert (
         make_trial_maker(
-            sync_group_type="group", sync_group_timeout_between_barriers_time=60
+            sync_group_type="group", sync_group_late_after=60
         ).sync_group_max_wait_time
         is None
     )
     assert make_trial_maker(sync_group_type="group").sync_group_max_wait_time == 45
-    with pytest.raises(ValueError, match="sync_group_timeout_between_barriers_time"):
-        StaticTrialMaker(
-            id_="slow_barriers",
-            trial_class=CustomStaticTrial,
-            nodes=[StaticNode(definition={"x": 1})],
-            expected_trials_per_participant=1,
-            max_trials_per_participant=1,
-            recruit_mode="n_trials",
-            target_trials_per_node=1,
+    with pytest.raises(ValueError, match="Leave sync_group_max_wait_time unset"):
+        make_trial_maker(
             sync_group_type="group",
-            sync_group_timeout_between_barriers_time=60,
-            sync_group_max_wait_time=45,
+            sync_group_late_after=60,
+            sync_group_max_wait_time=80,
         )
     make_trial_maker(
         sync_group_type="group",
-        sync_group_timeout_between_barriers_time=60,
+        sync_group_late_after=60,
         sync_group_max_wait_time=None,
-    )
-    make_trial_maker(
-        sync_group_type="group",
-        sync_group_timeout_between_barriers_time=60,
-        sync_group_max_wait_time=80,
     )
 
 
@@ -1101,10 +1089,10 @@ def test_create_trial_rejects_none_trial_class():
         )
 
 
-def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
+def test_sync_trial_maker_waiting_message_is_used_by_internal_barriers():
     trial_maker = make_trial_maker(
         sync_group_type="main",
-        sync_group_wait_content="Waiting for your partner",
+        sync_group_waiting_message="Waiting for your partner",
     )
     holds = [
         elt
@@ -1119,9 +1107,10 @@ def test_sync_trial_maker_wait_content_is_used_by_internal_barriers():
         trial_maker.with_namespace("init_participant"),
         trial_maker.with_namespace("prepare_trial"),
     }
-    assert all(hold.content == "Waiting for your partner" for hold in holds)
+    assert all(hold.waiting_message == "Waiting for your partner" for hold in holds)
     assert all(
-        hold.translated_content(None) == "Waiting for your partner" for hold in holds
+        hold.translated_waiting_message(None) == "Waiting for your partner"
+        for hold in holds
     )
 
 

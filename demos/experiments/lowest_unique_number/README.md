@@ -7,7 +7,7 @@ lowest number that nobody else in the room picked wins.
 Players who don't choose in time sit out that round and join the next one,
 instead of holding up their room or being failed. Someone left waiting with
 nobody to play with is still failed after the usual five-minute wait. Good
-reference for `Regrouper` with a `Clock` deadline, the `{SECONDS}` countdown,
+reference for `Regrouper(every=...)` rounds on fixed ticks, the `{SECONDS}` countdown,
 a page `time_limit`, and `GroupBarrier` timeouts that kick rather than fail.
 
 ## Usage

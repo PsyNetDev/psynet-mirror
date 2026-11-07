@@ -51,7 +51,7 @@ class RockPaperScissorsTrial(StaticTrial):
             GroupBarrier(
                 id_="finished_trial",
                 group_type="rock_paper_scissors",
-                content="Waiting for your partner",
+                waiting_message="Waiting for your partner",
                 on_release=self.score_trial,
                 max_wait_time=PARTNER_WAIT_SECONDS,
             ),
@@ -168,7 +168,7 @@ class Exp(psynet.experiment.Experiment):
         SimpleGrouper(
             group_type="rock_paper_scissors",
             initial_group_size=2,
-            content="Waiting for your partner",
+            waiting_message="Waiting for your partner",
             max_wait_time=PARTNER_WAIT_SECONDS,
         ),
         RockPaperScissorsTrialMaker(
@@ -181,7 +181,7 @@ class Exp(psynet.experiment.Experiment):
             expected_trials_per_participant=3,
             max_trials_per_participant=3,
             sync_group_type="rock_paper_scissors",
-            sync_group_wait_content="Waiting for your partner",
+            sync_group_waiting_message="Waiting for your partner",
             sync_group_max_wait_time=PARTNER_WAIT_SECONDS,
         ),
     )
