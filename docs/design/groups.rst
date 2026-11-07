@@ -134,8 +134,9 @@ New groups for each round
 
 Some designs give players new partners in each round, for example so that
 each player meets several others. ``demos/experiments/simple_sync_group``
-does this once by hand: a barrier closes the first groups, and a second
-grouper forms new pairs.
+does this once by hand: a **group closer**, a barrier that ends the group
+once all its members reach it, closes the first groups, and a second grouper
+forms new pairs.
 
 .. figure:: ../_static/images/design/groups/simple_sync_group.svg
    :alt: A grouper forms groups of three and members see their group. A barrier closes the group, then a second grouper forms new pairs and members see their pair.

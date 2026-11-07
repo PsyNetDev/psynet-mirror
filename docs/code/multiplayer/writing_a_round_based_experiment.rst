@@ -14,7 +14,7 @@ player who is slow, closes their tab or sits a round out never holds up the
 others, and nobody is failed for it.
 
 Forming cohorts
--------------
+---------------
 
 A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
