@@ -45,12 +45,34 @@ At a grouper they are failed; at a barrier, depending on its settings, they
 are either failed or removed from the group so that they can continue alone.
 A barrier can also set a time limit between barriers, which catches members
 who fall behind: a member who hasn't reached the next barrier in time is
-failed or removed. By default, participants are credited for the actual time
+failed or removed. A page with its own time limit counts towards that time,
+so a member is only caught once the page's time has run out. By default,
+participants are credited for the actual time
 they wait, up to the maximum.
 
 Plan for dropouts: decide whether a round can continue with fewer members,
 whether the remaining members should go on alone or finish early, and how
 their data will be analyzed.
+
+Games in rounds
+---------------
+
+Many group games are played in **rounds**. In each round, players are put
+into new pairs or groups, make a decision, and see the outcome before the next
+round starts. A **regrouper** at the start of each round splits a larger team
+into that round's groups, at random or with roles such as proposer and
+responder, keeping last round's partners apart where possible. If the team
+doesn't divide evenly, someone **sits out** the round. They see a page saying
+so and play again in a later round.
+
+Rounds need a plan for slow players, because a player who stops responding
+holds up their partners. Give decision pages a time limit. A player who runs
+out of time moves on, and their partners see that they ran out of time instead
+of waiting. A player who falls further behind, for example because they closed
+the tab, is taken out of the round and can rejoin in the next one.
+
+Decide when the game ends: after a fixed number of rounds, when a player has
+sat out too often, or when too few players remain to form a group.
 
 Talking to each other
 ---------------------
@@ -76,16 +98,22 @@ What to check when reviewing group experiments
 - What happens to each remaining member when someone drops out mid-round?
 - Are maximum waiting times long enough for the slowest pages, and short
   enough that participants don't give up?
+- In a game played in rounds, what do a player's partners see when the
+  player runs out of time?
+- Is sitting out fair, and do rounds a player sits out count towards their
+  total?
 - In a real-time interaction, can a member see information meant only for
   others, and can the interaction resume after a reload?
 
 .. seealso::
 
    :doc:`/code/multiplayer/synchronization` (forming groups, keeping a group
-   in step, waiting and dropouts), :doc:`/code/multiplayer/chatroom`
+   in step, waiting and dropouts), :doc:`/code/multiplayer/games_in_rounds`
+   (games in rounds), :doc:`/code/multiplayer/chatroom`
    (talking to each other) and :doc:`/code/multiplayer/realtime_interaction`
    show these ideas in ``experiment.py``, using the ``rock_paper_scissors``,
-   ``chatroom_simple`` and ``websocket_chatroom`` demos.
+   ``ultimatum_pairing``, ``chatroom_simple`` and ``websocket_chatroom``
+   demos.
 
    The :doc:`/skills/synchronous-experiments` and :doc:`/skills/realtime-synchronous-experiments` skills describe how to design and test group
    experiments, and :doc:`/skills/basic-data-dyadic-experiment` how to turn
