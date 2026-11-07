@@ -521,9 +521,9 @@ Trial makers with ``sync_group_type`` take the same settings with a
 ``sync_group_max_wait_action``, ``sync_group_late_after`` and
 ``sync_group_late_action``. ``sync_group_max_wait_time`` defaults to 45
 seconds, or, as at a barrier, to no limit with ``sync_group_late_after``,
-and passing both raises an error. Passing any of these options, or
+and passing both raises an error. Passing any of the others, or
 ``sync_group_waiting_message``, without ``sync_group_type`` also raises an
-error.
+error; ``sync_group_max_wait_time`` only gives a warning then.
 
 The default ``max_wait_time`` depends on where it is set:
 

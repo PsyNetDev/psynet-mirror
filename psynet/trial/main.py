@@ -1807,12 +1807,15 @@ class TrialMaker(Module):
         self.n_participants_completion = n_participants_completion
         self.n_repeat_trials = n_repeat_trials
         if sync_group_type is None:
+            # Released in 13.3, where it was silently ignored, so only warn.
+            if sync_group_max_wait_time is not NoArgumentProvided:
+                warn_from_caller(
+                    f"Trial maker '{id_}': sync_group_max_wait_time has no effect "
+                    "without sync_group_type, so it is ignored.",
+                    UserWarning,
+                )
             _check_no_sync_group_options(
                 id_,
-                sync_group_max_wait_time=(
-                    sync_group_max_wait_time,
-                    NoArgumentProvided,
-                ),
                 sync_group_max_wait_action=(sync_group_max_wait_action, "fail"),
                 sync_group_late_after=(sync_group_late_after, None),
                 sync_group_late_action=(sync_group_late_action, "fail"),

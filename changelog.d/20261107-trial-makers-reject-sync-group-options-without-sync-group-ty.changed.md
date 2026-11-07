@@ -1,1 +1,1 @@
-Trial makers now raise an error when `sync_group_max_wait_time`, `sync_group_max_wait_action`, `sync_group_late_after`, `sync_group_late_action` or `sync_group_waiting_message` is passed without `sync_group_type`, since they only apply to synchronized trial makers and were silently ignored.
+Trial makers now warn when `sync_group_max_wait_time` is passed without `sync_group_type`, since it only applies to synchronized trial makers and was silently ignored. The other `sync_group_*` options, which are new, raise an error in that case.
