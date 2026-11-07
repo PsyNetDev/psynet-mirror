@@ -220,8 +220,8 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
     grouper = SimpleGrouper(
         "lobby",
         initial_group_size=4,
-        min_group_size=2,
         start_short_after=10,
+        start_short_with=2,
         waiting_message=_lobby_message,
     )
     participants = _working_participants(exp, 2)
@@ -246,19 +246,22 @@ def test_simple_grouper_starts_a_short_group_after_waiting(
 
     assert set(released) == set(participants)
     db_session.commit()
-    assert participants[0].sync_group.initial_group_size == 2
+    group = participants[0].sync_group
+    assert (group.initial_group_size, group.min_group_size) == (2, 2)
 
 
 @pytest.mark.parametrize(
-    "kwargs",
-    [{}, {"min_group_size": 2, "start_short_after": 60}],
-    ids=["no smaller group", "failed before a short start"],
+    "kwargs, message",
+    [
+        ({"start_short_after": 10}, "together"),
+        ({"start_short_with": 2}, "together"),
+        ({"start_short_after": 10, "start_short_with": 5}, "start_short_with <="),
+        ({"start_short_after": 60, "start_short_with": 2}, "less than max_wait_time"),
+    ],
 )
-def test_simple_grouper_checks_start_short_after(kwargs):
-    with pytest.raises(ValueError, match="start_short_after"):
-        SimpleGrouper(
-            "lobby", initial_group_size=4, **{"start_short_after": 10, **kwargs}
-        )
+def test_simple_grouper_checks_start_short_after(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        SimpleGrouper("lobby", initial_group_size=4, **kwargs)
 
 
 def _five_minutes(participant):
@@ -269,8 +272,8 @@ def test_simple_grouper_accepts_callable_max_wait_time_with_start_short_after():
     SimpleGrouper(
         "lobby",
         initial_group_size=4,
-        min_group_size=2,
         start_short_after=10,
+        start_short_with=2,
         max_wait_time=_five_minutes,
     )
 

@@ -2212,11 +2212,18 @@ class SimpleGrouper(Grouper):
     start_short_after
         If set, a group may start with fewer than ``batch_size`` participants once the
         longest-waiting participant has waited this many seconds and at least
-        ``min_group_size`` participants are waiting. If fewer than ``initial_group_size``
-        are waiting, they form one smaller group. Requires
-        ``min_group_size < initial_group_size`` and a ``max_wait_time`` longer than
-        ``start_short_after`` (not checked when ``max_wait_time`` is a function).
+        ``start_short_with`` participants are waiting. If fewer than ``initial_group_size``
+        are waiting, they form one smaller group. Requires ``start_short_with`` and a
+        ``max_wait_time`` longer than ``start_short_after`` (not checked when
+        ``max_wait_time`` is a function).
         Default: ``None`` (always wait for ``batch_size``).
+
+    start_short_with
+        The smallest group that ``start_short_after`` may start, between 1 and
+        ``initial_group_size``. Required with ``start_short_after``, and only used with it.
+        A smaller group started this way uses the lower of ``min_group_size`` and
+        ``start_short_with`` as its minimum size, so that it isn't dissolved, or held for
+        top-ups, at its first barrier.
 
     kwargs
         Further arguments to pass to Grouper.
@@ -2234,6 +2241,7 @@ class SimpleGrouper(Grouper):
         join_criterion: Optional[Callable] = None,
         fail_participants_below_min_size: bool = True,
         start_short_after: Optional[float] = None,
+        start_short_with: Optional[int] = None,
         **kwargs,
     ):
         if "group_size" in kwargs:
@@ -2270,10 +2278,17 @@ class SimpleGrouper(Grouper):
         self.join_existing_groups = join_existing_groups
         self.join_criterion = join_criterion
         self.fail_participants_below_min_size = fail_participants_below_min_size
-        if start_short_after is not None and min_group_size >= initial_group_size:
+        if (start_short_after is None) != (start_short_with is None):
             raise ValueError(
-                "start_short_after needs min_group_size < initial_group_size, "
-                "otherwise there is no smaller group to start with."
+                "Pass start_short_after and start_short_with together: how long to "
+                "wait before a short start, and the smallest group it may start."
+            )
+        if start_short_with is not None and not (
+            1 <= start_short_with <= initial_group_size
+        ):
+            raise ValueError(
+                "Need 1 <= start_short_with <= initial_group_size, "
+                f"got {start_short_with}."
             )
         if (
             start_short_after is not None
@@ -2287,6 +2302,7 @@ class SimpleGrouper(Grouper):
                 "are failed before a smaller group can start."
             )
         self.start_short_after = start_short_after
+        self.start_short_with = start_short_with
 
     def resolve(self):
         from .timeline import conditional, join
@@ -2437,7 +2453,7 @@ class SimpleGrouper(Grouper):
 
     def _short_start_time(self, participants) -> Optional[float]:
         """Return when these waiters can start short, in epoch seconds, if they ever can."""
-        if self.start_short_after is None or len(participants) < self.min_group_size:
+        if self.start_short_after is None or len(participants) < self.start_short_with:
             return None
         first_arrival = min(_arrival_time(self, p) for p in participants)
         return first_arrival.timestamp() + self.start_short_after
@@ -2445,7 +2461,7 @@ class SimpleGrouper(Grouper):
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when the waiting participants will start short, in epoch seconds.
 
-        ``None`` until ``min_group_size`` participants are waiting, or without
+        ``None`` until ``start_short_with`` participants are waiting, or without
         ``start_short_after``.
         """
         if self.start_short_after is None or not self._participant_is_waiting(
@@ -2484,8 +2500,15 @@ class SimpleGrouper(Grouper):
 
     def group(self, participants: List[Participant]) -> List["SyncGroup"]:
         if len(participants) < self.initial_group_size:
+            min_group_size = self.min_group_size
+            if self.start_short_with is not None:
+                min_group_size = min(min_group_size, self.start_short_with)
             return [
-                self._make_group(participants, initial_group_size=len(participants))
+                self._make_group(
+                    participants,
+                    initial_group_size=len(participants),
+                    min_group_size=min_group_size,
+                )
             ]
         n_groups = floor(len(participants) / self.initial_group_size)
         n_participants_to_group = n_groups * self.initial_group_size
@@ -2495,17 +2518,21 @@ class SimpleGrouper(Grouper):
             participants_to_group, group_size=self.initial_group_size
         )
         return [
-            self._make_group(_participants, initial_group_size=self.initial_group_size)
+            self._make_group(
+                _participants,
+                initial_group_size=self.initial_group_size,
+                min_group_size=self.min_group_size,
+            )
             for _participants in grouped_participants
         ]
 
-    def _make_group(self, participants, *, initial_group_size):
+    def _make_group(self, participants, *, initial_group_size, min_group_size):
         """Create one group of these participants with this grouper's settings."""
         return self._create_group(
             participants,
             initial_group_size=initial_group_size,
             max_group_size=self.max_group_size,
-            min_group_size=self.min_group_size,
+            min_group_size=min_group_size,
             accepts_top_ups=self.join_existing_groups,
             fail_participants_below_min_size=self.fail_participants_below_min_size,
         )

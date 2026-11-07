@@ -57,15 +57,18 @@ the grouper has a ``waiting_screen`` (see below).
     participant may join that group. Only used with
     ``join_existing_groups=True``.
 
-``start_short_after`` (default: ``None``)
-    Seconds after which a smaller group may start. Once the longest-waiting
-    participant has waited this long and at least ``min_group_size`` are
-    waiting, those waiting form a group even if there are fewer than
-    ``batch_size``. Needs ``min_group_size`` below ``initial_group_size``, and
-    a ``max_wait_time`` (default 20 seconds) longer than ``start_short_after``.
-    Combine it with ``join_existing_groups=True`` so that later arrivals can
-    still fill the group up. A ``{SECONDS}`` placeholder in ``waiting_message`` counts
-    down to that short start once ``min_group_size`` are waiting, and shows
+``start_short_after`` and ``start_short_with`` (default: ``None``)
+    Seconds after which a smaller group may start, and the smallest group
+    such a start may form; pass both or neither. Once the longest-waiting
+    participant has waited ``start_short_after`` seconds and at least
+    ``start_short_with`` are waiting, those waiting form a group even if
+    there are fewer than ``batch_size``. Needs a ``max_wait_time`` (default
+    20 seconds) longer than ``start_short_after``. A group started short uses
+    the lower of ``min_group_size`` and ``start_short_with`` as its minimum
+    size, so that it isn't dissolved at its first barrier. Combine it with
+    ``join_existing_groups=True`` so that later arrivals can still fill the
+    group up. A ``{SECONDS}`` placeholder in ``waiting_message`` counts down
+    to that short start once ``start_short_with`` are waiting, and shows
     "…" until then; :ref:`a message function <sync-countdown-messages>` can
     show other text instead.
 

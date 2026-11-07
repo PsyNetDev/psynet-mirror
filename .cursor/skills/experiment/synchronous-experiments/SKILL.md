@@ -95,7 +95,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `within`, a player waiting alone first waits one more deadline for
   cohort members, so `max_wait_time` must exceed twice the deadline.
 - For a lobby that should not wait forever for a full group, use
-  `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
+  `SimpleGrouper(start_short_after=..., start_short_with=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.
 - Use `join_existing_groups=True` only with a task-specific `join_criterion`
   that rejects stale, completed, or unsuitable groups.
