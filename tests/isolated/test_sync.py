@@ -6543,6 +6543,44 @@ def test_timeout_between_barriers_counts_from_joining_the_group(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+@pytest.mark.parametrize("passed_a_barrier", [False, True])
+def test_timeout_between_barriers_counts_from_joining_the_group(
+    in_experiment_directory, db_session, passed_a_barrier
+):
+    """A GroupBarrier kicks members late since grouping or the last barrier, but not a newcomer."""
+    exp = get_experiment()
+    grouper = SimpleGrouper("main", initial_group_size=3, min_group_size=2)
+    participants = _working_participants(exp, 3)
+    for participant in participants:
+        _arrive_at_group_barrier(exp, grouper, participant)
+    _commit_barrier_arrivals()
+    group = participants[0].sync_group
+    assert group.last_barrier_pass_time is None
+    for link in group.participant_links:
+        link.arrival_time -= timedelta(seconds=10)
+    if passed_a_barrier:
+        group.last_barrier_pass_time = timenow() - timedelta(seconds=10)
+    (newcomer,) = _working_participants(exp, 1)
+    group.add_participant(newcomer)
+    barrier = GroupBarrier(
+        id_="first_after_grouper",
+        group_type="main",
+        timeout_between_barriers_time=5,
+        timeout_between_barriers_action="kick",
+    )
+    waiting, late = participants[:2], participants[2]
+
+    barrier.check_waiting_participants(waiting)
+    released = barrier.choose_who_to_release(waiting)
+
+    assert late not in group.active_participants
+    assert newcomer in group.active_participants
+    assert released == []
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_group_barrier_timeout_between_barriers_kick_releases_waiters_after_dissolution(
     in_experiment_directory, db_session
 ):
