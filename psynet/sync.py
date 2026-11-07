@@ -1437,6 +1437,14 @@ def _group_max_wait_time(max_wait_time, late_after, default, prefix=""):
     return None
 
 
+def _removed_from_group(participant, group_type) -> bool:
+    """Return whether the participant left their group of ``group_type`` and is in no other."""
+    return group_type not in participant.active_sync_groups and any(
+        not link.active and link.sync_group.group_type == group_type
+        for link in participant.sync_group_links
+    )
+
+
 class GroupBarrier(Barrier):
     """
     A GroupBarrier is a Barrier that waits until all participants in a given :class:`~psynet.sync.SyncGroup`
@@ -1453,6 +1461,10 @@ class GroupBarrier(Barrier):
     when it won the release.
     ``on_release`` receives the reconstructed registry barrier; see
     :class:`Barrier` for the live-versus-reconstructed method split.
+
+    A participant who was removed from their group of ``group_type``, for example kicked by a timeout,
+    and is in no other group of that type passes straight through. A participant who was never in
+    such a group gets an error, which usually means a grouper is missing from the timeline.
 
     Parameters
     ----------
@@ -1500,8 +1512,7 @@ class GroupBarrier(Barrier):
     late_action
         What happens to a member who is later than ``late_after``: ``"fail"`` (default) fails them and sends
         them to the end of the experiment; ``"kick"`` removes them from the group, so the rest can go on
-        without them. A kicked participant is no longer in the group when they reach the barrier, so
-        ``"kick"`` also makes ``skip_if_not_in_group`` default to ``True``.
+        without them, and they pass this and later barriers of ``group_type`` alone.
 
     on_release
         Optional callback invoked when the barrier releases participants.
@@ -1537,13 +1548,6 @@ class GroupBarrier(Barrier):
         ``kind="removed"`` to hide it. To change the waiting indicator's
         progress line, return :func:`hold_message` from a
         ``waiting_message`` function.
-
-    skip_if_not_in_group
-        If ``True``, a participant who is not in a group of this ``group_type``
-        passes straight through, for example after being kicked by a timeout in
-        a round-based design. If ``False``, they get an error, which usually
-        means a grouper is missing from the timeline. Defaults to ``True`` when
-        ``late_action="kick"``, and ``False`` otherwise.
 
     release_grace
         See :class:`Barrier`. Default: 3 seconds.
@@ -1604,7 +1608,6 @@ class GroupBarrier(Barrier):
         waiting_message=None,
         notify_arrivals: bool = True,
         on_arrival_message: Optional[Callable] = None,
-        skip_if_not_in_group: Optional[bool] = None,
         release_grace: Optional[float] = 3,
         waiting_screen=None,
     ):
@@ -1632,20 +1635,15 @@ class GroupBarrier(Barrier):
                 f"late_action must be 'fail' or 'kick', got {late_action!r}."
             )
         self.late_action = late_action
-        if skip_if_not_in_group is None:
-            skip_if_not_in_group = late_action == "kick"
-        self.skip_if_not_in_group = skip_if_not_in_group
 
     def resolve(self):
-        elts = super().resolve()
-        if not self.skip_if_not_in_group:
-            return elts
+        group_type = self.group_type
         return conditional(
             f"barrier:{self.id}:in_group",
             condition=lambda participant: (
-                self.group_type in participant.active_sync_groups
+                not _removed_from_group(participant, group_type)
             ),
-            logic_if_true=elts,
+            logic_if_true=super().resolve(),
             logic_if_false=CodeBlock(_forget_time_out),
             log_chosen_branch=False,
         )
@@ -1655,8 +1653,9 @@ class GroupBarrier(Barrier):
         group = participant.active_sync_groups.get(self.group_type)
         if group is None:
             raise RuntimeError(
-                f"Participant {participant.id} has no active sync group "
-                f"of type '{self.group_type}' for barrier '{self.id}'."
+                f"Participant {participant.id} is not in a sync group of type "
+                f"'{self.group_type}' at barrier '{self.id}'. Check that a grouper "
+                "of that type comes before the barrier."
             )
         return group
 

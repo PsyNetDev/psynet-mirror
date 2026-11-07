@@ -3016,7 +3016,7 @@ def test_group_barrier_arrival_requires_active_sync_group(
     db_session.commit()
     barrier = GroupBarrier(id_="needs_group", group_type="main")
 
-    with pytest.raises(RuntimeError, match="has no active sync group"):
+    with pytest.raises(RuntimeError, match="is not in a sync group"):
         BarrierInstance.for_arrival(barrier, participant)
 
 

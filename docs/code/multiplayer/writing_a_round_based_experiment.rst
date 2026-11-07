@@ -118,11 +118,9 @@ without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it) and joins the next round
 when they come back.
 
-A barrier that kicks lets players who are no longer in a group pass
-straight through (``skip_if_not_in_group`` defaults to ``True``). Pass
-``skip_if_not_in_group=True`` to the round's other group barriers too;
-without it, a player who reaches a group barrier outside a group gets an
-error.
+A player who was taken out of their pair passes the round's later group
+barriers straight through. Only a player who was never in a pair gets an
+error there, which usually means a grouper is missing.
 
 Scoring the round
 -----------------

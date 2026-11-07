@@ -365,20 +365,22 @@ def test_regrouper_max_wait_time_outlasts_a_lone_wait():
 
 
 @in_consents_experiment
-def test_group_barrier_can_let_ungrouped_participants_through(
+def test_group_barrier_lets_removed_members_through(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
     original = exp.timeline
     exp.timeline = Timeline(
-        # A barrier that kicks late members lets ungrouped participants through.
-        GroupBarrier("round_end", group_type="pair", late_action="kick"),
+        GroupBarrier("round_end", group_type="pair"),
         ModularPage("after", "Round over", time_estimate=1),
     )
     try:
-        (participant,) = _working_participants(exp, 1)
-        _json_timeline(exp, participant)
-        assert exp.timeline.get_current_elt(exp, participant).label == "after"
+        removed, partner = _working_participants(exp, 2)
+        _arrive(exp, SimpleGrouper("pair", initial_group_size=2), [removed, partner])
+        removed.active_sync_groups["pair"].remove_participant(removed)
+        db_session.commit()
+        _json_timeline(exp, removed)
+        assert exp.timeline.get_current_elt(exp, removed).label == "after"
     finally:
         exp.timeline = original
 

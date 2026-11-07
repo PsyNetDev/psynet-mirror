@@ -84,7 +84,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `GroupBarrier(late_after=..., late_action="kick")` so late members are
   removed and
   pass the barrier, as in the `lowest_unique_number` and `ultimatum_pairing`
-  demos; give the round's other barriers `skip_if_not_in_group=True`. On a
+  demos; removed members pass the round's later group barriers alone. On a
   page with a `time_limit`, nobody is timed out before the limit has run out
   plus 10 s, so the timeout need not cover the page; the demos use 30 s so that a background tab
   can notice the round has started. The regrouper avoids repeat partners, sits out whoever has

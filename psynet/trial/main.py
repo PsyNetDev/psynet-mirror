@@ -49,7 +49,12 @@ from ..error import (  # noqa  # Importing the error module is important to ensu
 from ..field import PythonDict, PythonObject, VarStore
 from ..page import InfoPage, UnsuccessfulEndPage, WaitPage, wait_while
 from ..participant import Participant
-from ..sync import GroupBarrier, SyncGroup, _group_max_wait_time
+from ..sync import (
+    GroupBarrier,
+    SyncGroup,
+    _group_max_wait_time,
+    _removed_from_group,
+)
 from ..timeline import (
     CodeBlock,
     DatabaseCheck,
@@ -1884,14 +1889,10 @@ class TrialMaker(Module):
         """Return whether the participant should wait for sync-group initialization."""
         if self.sync_group_type is None:
             return False
+        if _removed_from_group(participant, self.sync_group_type):
+            # They initialize alone and leave before their first trial.
+            return False
         if self.sync_group_type not in participant.active_sync_groups:
-            if any(
-                not link.active and link.sync_group.group_type == self.sync_group_type
-                for link in participant.sync_group_links
-            ):
-                # Removed from their group, for example kicked for being late.
-                # They initialize alone and leave before their first trial.
-                return False
             participant_id = getattr(participant, "id", "<unknown>")
             raise RuntimeError(
                 f"Trial maker '{self.id}' expected participant {participant_id} "
@@ -2625,7 +2626,7 @@ class TrialMaker(Module):
             return conditional(
                 "prepare_trial",
                 lambda participant: (
-                    self.sync_group_type in participant.active_sync_groups
+                    not _removed_from_group(participant, self.sync_group_type)
                 ),
                 join(
                     GroupBarrier(

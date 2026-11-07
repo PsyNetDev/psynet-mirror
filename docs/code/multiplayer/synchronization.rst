@@ -447,7 +447,8 @@ A grouper or barrier has two timeouts, which act on different members:
     with ``late_after`` raises an error. At a grouper, a participant who
     waits longer is failed. At a :class:`~psynet.sync.GroupBarrier`,
     ``max_wait_action`` decides: ``"fail"`` (default) fails the participant,
-    and ``"kick"`` removes them from the group so that they continue alone.
+    and ``"kick"`` removes them from the group so that they continue alone,
+    passing later group barriers of that type straight through.
     This also applies to a participant who closed the page while waiting,
     including on ``waiting_logic`` pages: the server applies the timeout
     shortly after the deadline.
