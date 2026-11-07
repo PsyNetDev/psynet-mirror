@@ -190,6 +190,21 @@ def test_wait_while_accepts_custom_waiting_message():
     assert hold.waiting_message == "Custom hold message"
 
 
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda message: wait_while(
+            lambda: True, expected_wait=1, waiting_message=message
+        ),
+        lambda message: GroupBarrier("pair", "pair", waiting_message=message).resolve(),
+    ],
+    ids=["wait_while", "GroupBarrier"],
+)
+def test_countdown_without_a_release_time_raises(make):
+    with pytest.raises(ValueError, match="no release time"):
+        make("Moving on in {SECONDS} s")
+
+
 def _waiting_for_role(participant):
     return f"Waiting for the {participant.var.role}"
 

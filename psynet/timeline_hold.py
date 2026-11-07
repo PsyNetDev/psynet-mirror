@@ -255,6 +255,17 @@ def _is_message_function(message):
     return callable(message) and not isinstance(message, dom_tag)
 
 
+def _reject_countdown(waiting_message, owner):
+    """Raise if a plain ``waiting_message`` has a ``{SECONDS}`` countdown that ``owner`` can't fill in."""
+    if not _is_message_function(waiting_message) and "{SECONDS}" in str(
+        waiting_message or ""
+    ):
+        raise ValueError(
+            f"{owner} has no release time to count down to, so its waiting_message "
+            "would only ever show '…' for {SECONDS}. Remove the placeholder."
+        )
+
+
 def default_hold_progress(waiting_count, group_size):
     """Return the waiting indicator's progress line, or ``None`` for pairs and full groups."""
     remaining = max(group_size - waiting_count, 0)

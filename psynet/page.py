@@ -317,7 +317,8 @@ def wait_while(
         omitted. Plain strings are shown as text; pass ``markupsafe.Markup``
         or a dominate tag for HTML. A module-level function of
         ``participant`` returning one of these shows each participant their
-        own message, for example by role.
+        own message, for example by role. There is no ``{SECONDS}``
+        countdown here, so a string containing it raises an error.
 
     on_timeout
         Optional function called with ``participant=...`` when
@@ -347,6 +348,9 @@ def wait_while(
         raise ValueError("waiting_message only applies when wait_page is omitted.")
     if wait_page is not None and waiting_screen is not None:
         raise ValueError("waiting_screen only applies when wait_page is omitted.")
+    from psynet.timeline_hold import _reject_countdown
+
+    _reject_countdown(waiting_message, "wait_while")
     if fix_time_credit is None:
         fix_time_credit = not uses_timeline_hold
 

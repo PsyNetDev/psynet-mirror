@@ -176,6 +176,7 @@ from psynet.timeline_hold import (
     _queue_arrival_update,
     _queue_countdown_update,
     _queue_timeline_hold_wake,
+    _reject_countdown,
     _TimelineHoldPage,
     compose_hold_overlay_html,
     default_group_barrier_arrival_message,
@@ -903,16 +904,21 @@ class Barrier(EltCollection):
         Message displayed by the default timeline hold overlay. Only used when
         ``waiting_logic`` is omitted. If omitted, participants see
         "Waiting for other participants…". Plain strings are shown as text;
-        pass ``markupsafe.Markup`` or a dominate tag for HTML. A ``{SECONDS}``
-        placeholder counts down to :meth:`expected_release_time`, showing "…"
-        while it is unknown. ``waiting_message`` can also be a module-level function
+        pass ``markupsafe.Markup`` or a dominate tag for HTML. On barriers
+        with a release time (:class:`SimpleGrouper` with ``start_short_after``,
+        :class:`Regrouper` with ``deadline`` or ``every``, or a subclass that
+        overrides :meth:`expected_release_time`), a ``{SECONDS}`` placeholder
+        counts down to that time, showing "…" while it is unknown; elsewhere
+        it raises an error. ``waiting_message`` can also be a module-level function
         that returns the message, for example one that depends on the
         participant's role; it may take ``participant``, ``seconds_left``
         (whole seconds, or ``None`` while the release time is unknown) and
         ``barrier``, and on a :class:`GroupBarrier` also ``waiting_count``
         and ``group_size`` (both ``None`` if the participant has no group).
-        Return :func:`hold_message` to set the progress
-        line under the message yourself.
+        It is called again whenever the release time changes, so for a live
+        countdown return a literal ``"{SECONDS}"`` rather than formatting
+        ``seconds_left`` into the text. Return :func:`hold_message` to set the
+        progress line under the message yourself.
 
     waiting_screen
         What to show in place of the current page while the participant
@@ -1049,6 +1055,10 @@ class Barrier(EltCollection):
     def resolve(self):
         from psynet.timeline import join, while_loop
 
+        if not self._shows_countdown():
+            _reject_countdown(
+                self.waiting_message, f"{type(self).__name__} '{self.id}'"
+            )
         if self._uses_timeline_hold:
             waiting_elts = self.waiting_logic
         else:
@@ -1154,6 +1164,10 @@ class Barrier(EltCollection):
         means the release time is unknown.
         """
         return None
+
+    def _shows_countdown(self) -> bool:
+        """Return whether this barrier can have a release time for ``{SECONDS}``."""
+        return type(self).expected_release_time is not Barrier.expected_release_time
 
     def _participant_is_waiting(self, participant):
         """Return whether this participant is still waiting at this barrier."""
@@ -2458,6 +2472,9 @@ class SimpleGrouper(Grouper):
         first_arrival = min(_arrival_time(self, p) for p in participants)
         return first_arrival.timestamp() + self.start_short_after
 
+    def _shows_countdown(self) -> bool:
+        return self.start_short_after is not None
+
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when the waiting participants will start short, in epoch seconds.
 
@@ -3054,6 +3071,9 @@ class Regrouper(Grouper):
             unassigned.remove(member)
             roles[member] = role
         return roles
+
+    def _shows_countdown(self) -> bool:
+        return self.every is not None or self.deadline is not None
 
     def expected_release_time(self, participant) -> Optional[float]:
         """Return when this participant's pool will be split at the latest, in epoch seconds."""

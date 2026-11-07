@@ -171,6 +171,10 @@ custom grouping.
 
 ``waiting_message`` sets the message on the waiting indicator. A ``{SECONDS}``
 placeholder shows a live countdown to the deadline, for example ``"The next round starts in {SECONDS} s."``.
+Only waits with a release time can count down: a regrouper with ``deadline``
+or ``every``, and a :class:`~psynet.sync.SimpleGrouper` with
+``start_short_after``. A ``{SECONDS}`` placeholder anywhere else raises an
+error.
 
 .. _sync-countdown-messages:
 
@@ -180,8 +184,10 @@ and ``{SECONDS}`` shows "…". To show different text then, pass a
 module-level function as ``waiting_message``. It receives ``seconds_left``, which
 is ``None`` while the time is unknown and otherwise the whole seconds left
 (0 once the time has passed), and can also take ``participant`` and
-``barrier``. The message switches within a few seconds of the time
-becoming known:
+``barrier``. For a live countdown, return the literal ``{SECONDS}``
+placeholder rather than writing ``seconds_left`` into the text, which would
+stay fixed until the function is next called. The message switches within a
+few seconds of the time becoming known:
 
 .. literalinclude:: ../../../demos/experiments/lowest_unique_number/experiment.py
    :pyobject: round_message
