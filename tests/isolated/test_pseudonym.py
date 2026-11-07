@@ -58,10 +58,12 @@ def test_schemes_and_stored_pseudonyms_can_be_customized():
         def animals(self):
             return {"lion": ("lion", "🦁"), "bear": ("bear", "🐻")}
 
-        def name(self, color_label, animal_label):
-            return f"{animal_label.title()} ({color_label})"
+    class NamedTeams(Teams):
+        def name(self, color, animal):
+            return f"{self.animals()[animal][0].title()} ({self.colors()[color][0]})"
 
-    scheme = Teams("deployment-a")
+    assert Teams("deployment-a").make("red", "bear").name == "Red bear"
+    scheme = NamedTeams("deployment-a")
     stored = scheme.pseudonym(_participant(1, ("red", "bear")))
 
     assert stored.name == "Bear (red)"

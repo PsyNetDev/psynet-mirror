@@ -59,6 +59,105 @@ _ANIMALS = {
 }
 
 
+def _builtin_names() -> Dict[Tuple[str, str], str]:
+    """Return the translated names of the built-in colour and animal pairs.
+
+    Each name is its own message, so that translators can make the colour
+    agree with the animal.
+    """
+    _p = get_translator(context=True)
+    return {
+        ("orange", "fox"): _p("pseudonym", "Orange fox"),
+        ("orange", "owl"): _p("pseudonym", "Orange owl"),
+        ("orange", "otter"): _p("pseudonym", "Orange otter"),
+        ("orange", "panda"): _p("pseudonym", "Orange panda"),
+        ("orange", "tiger"): _p("pseudonym", "Orange tiger"),
+        ("orange", "frog"): _p("pseudonym", "Orange frog"),
+        ("orange", "koala"): _p("pseudonym", "Orange koala"),
+        ("orange", "penguin"): _p("pseudonym", "Orange penguin"),
+        ("orange", "rabbit"): _p("pseudonym", "Orange rabbit"),
+        ("orange", "whale"): _p("pseudonym", "Orange whale"),
+        ("orange", "cat"): _p("pseudonym", "Orange cat"),
+        ("light_blue", "fox"): _p("pseudonym", "Light blue fox"),
+        ("light_blue", "owl"): _p("pseudonym", "Light blue owl"),
+        ("light_blue", "otter"): _p("pseudonym", "Light blue otter"),
+        ("light_blue", "panda"): _p("pseudonym", "Light blue panda"),
+        ("light_blue", "tiger"): _p("pseudonym", "Light blue tiger"),
+        ("light_blue", "frog"): _p("pseudonym", "Light blue frog"),
+        ("light_blue", "koala"): _p("pseudonym", "Light blue koala"),
+        ("light_blue", "penguin"): _p("pseudonym", "Light blue penguin"),
+        ("light_blue", "rabbit"): _p("pseudonym", "Light blue rabbit"),
+        ("light_blue", "whale"): _p("pseudonym", "Light blue whale"),
+        ("light_blue", "cat"): _p("pseudonym", "Light blue cat"),
+        ("green", "fox"): _p("pseudonym", "Green fox"),
+        ("green", "owl"): _p("pseudonym", "Green owl"),
+        ("green", "otter"): _p("pseudonym", "Green otter"),
+        ("green", "panda"): _p("pseudonym", "Green panda"),
+        ("green", "tiger"): _p("pseudonym", "Green tiger"),
+        ("green", "frog"): _p("pseudonym", "Green frog"),
+        ("green", "koala"): _p("pseudonym", "Green koala"),
+        ("green", "penguin"): _p("pseudonym", "Green penguin"),
+        ("green", "rabbit"): _p("pseudonym", "Green rabbit"),
+        ("green", "whale"): _p("pseudonym", "Green whale"),
+        ("green", "cat"): _p("pseudonym", "Green cat"),
+        ("yellow", "fox"): _p("pseudonym", "Yellow fox"),
+        ("yellow", "owl"): _p("pseudonym", "Yellow owl"),
+        ("yellow", "otter"): _p("pseudonym", "Yellow otter"),
+        ("yellow", "panda"): _p("pseudonym", "Yellow panda"),
+        ("yellow", "tiger"): _p("pseudonym", "Yellow tiger"),
+        ("yellow", "frog"): _p("pseudonym", "Yellow frog"),
+        ("yellow", "koala"): _p("pseudonym", "Yellow koala"),
+        ("yellow", "penguin"): _p("pseudonym", "Yellow penguin"),
+        ("yellow", "rabbit"): _p("pseudonym", "Yellow rabbit"),
+        ("yellow", "whale"): _p("pseudonym", "Yellow whale"),
+        ("yellow", "cat"): _p("pseudonym", "Yellow cat"),
+        ("blue", "fox"): _p("pseudonym", "Blue fox"),
+        ("blue", "owl"): _p("pseudonym", "Blue owl"),
+        ("blue", "otter"): _p("pseudonym", "Blue otter"),
+        ("blue", "panda"): _p("pseudonym", "Blue panda"),
+        ("blue", "tiger"): _p("pseudonym", "Blue tiger"),
+        ("blue", "frog"): _p("pseudonym", "Blue frog"),
+        ("blue", "koala"): _p("pseudonym", "Blue koala"),
+        ("blue", "penguin"): _p("pseudonym", "Blue penguin"),
+        ("blue", "rabbit"): _p("pseudonym", "Blue rabbit"),
+        ("blue", "whale"): _p("pseudonym", "Blue whale"),
+        ("blue", "cat"): _p("pseudonym", "Blue cat"),
+        ("red", "fox"): _p("pseudonym", "Red fox"),
+        ("red", "owl"): _p("pseudonym", "Red owl"),
+        ("red", "otter"): _p("pseudonym", "Red otter"),
+        ("red", "panda"): _p("pseudonym", "Red panda"),
+        ("red", "tiger"): _p("pseudonym", "Red tiger"),
+        ("red", "frog"): _p("pseudonym", "Red frog"),
+        ("red", "koala"): _p("pseudonym", "Red koala"),
+        ("red", "penguin"): _p("pseudonym", "Red penguin"),
+        ("red", "rabbit"): _p("pseudonym", "Red rabbit"),
+        ("red", "whale"): _p("pseudonym", "Red whale"),
+        ("red", "cat"): _p("pseudonym", "Red cat"),
+        ("pink", "fox"): _p("pseudonym", "Pink fox"),
+        ("pink", "owl"): _p("pseudonym", "Pink owl"),
+        ("pink", "otter"): _p("pseudonym", "Pink otter"),
+        ("pink", "panda"): _p("pseudonym", "Pink panda"),
+        ("pink", "tiger"): _p("pseudonym", "Pink tiger"),
+        ("pink", "frog"): _p("pseudonym", "Pink frog"),
+        ("pink", "koala"): _p("pseudonym", "Pink koala"),
+        ("pink", "penguin"): _p("pseudonym", "Pink penguin"),
+        ("pink", "rabbit"): _p("pseudonym", "Pink rabbit"),
+        ("pink", "whale"): _p("pseudonym", "Pink whale"),
+        ("pink", "cat"): _p("pseudonym", "Pink cat"),
+        ("black", "fox"): _p("pseudonym", "Black fox"),
+        ("black", "owl"): _p("pseudonym", "Black owl"),
+        ("black", "otter"): _p("pseudonym", "Black otter"),
+        ("black", "panda"): _p("pseudonym", "Black panda"),
+        ("black", "tiger"): _p("pseudonym", "Black tiger"),
+        ("black", "frog"): _p("pseudonym", "Black frog"),
+        ("black", "koala"): _p("pseudonym", "Black koala"),
+        ("black", "penguin"): _p("pseudonym", "Black penguin"),
+        ("black", "rabbit"): _p("pseudonym", "Black rabbit"),
+        ("black", "whale"): _p("pseudonym", "Black whale"),
+        ("black", "cat"): _p("pseudonym", "Black cat"),
+    }
+
+
 @dataclass(frozen=True)
 class Pseudonym:
     """A participant's pseudonym, ready to show.
@@ -116,10 +215,9 @@ class PseudonymScheme:
             pseudonym_scheme = TeamScheme()
 
     Override :meth:`colors` and :meth:`animals` to change the vocabulary,
-    :meth:`assign` to change who gets which pseudonym, :meth:`name` for the
-    word order (for example in languages where the colour must agree with
-    the animal), and :meth:`icon_html`, :meth:`sticker_html` or :meth:`artwork`
-    for the pictures. Call
+    :meth:`assign` to change who gets which pseudonym, :meth:`name` to name
+    the pairs of a custom vocabulary in full, and :meth:`icon_html`,
+    :meth:`sticker_html` or :meth:`artwork` for the pictures. Call
     :meth:`~psynet.participant.Participant.set_pseudonym` to give one
     participant a particular pseudonym.
     """
@@ -190,11 +288,24 @@ class PseudonymScheme:
             self._deployment_seed = str(deployment_id)
         return self._deployment_seed
 
-    def name(self, color_label: str, animal_label: str) -> str:
-        """Combine translated colour and animal labels into a name, capitalizing its first letter."""
+    def name(self, color: str, animal: str) -> str:
+        """Return the translated name for a pair of colour and animal keys.
+
+        The built-in colours and animals have one translated message per
+        name, such as ``"Blue fox"``, so that languages can make the colour
+        agree with the animal. A scheme that overrides :meth:`colors` or
+        :meth:`animals` gets the two labels joined by a translatable
+        ``"{COLOR} {ANIMAL}"``, which can't agree; override this method to
+        name such pairs in full.
+        """
+        if (
+            type(self).colors is PseudonymScheme.colors
+            and type(self).animals is PseudonymScheme.animals
+        ):
+            return _builtin_names()[(color, animal)]
         _p = get_translator(context=True)
         name = _p("pseudonym", "{COLOR} {ANIMAL}").format(
-            COLOR=color_label, ANIMAL=animal_label
+            COLOR=self.colors()[color][0], ANIMAL=self.animals()[animal][0]
         )
         return name[:1].upper() + name[1:]
 
@@ -292,9 +403,8 @@ class PseudonymScheme:
             raise ValueError(f"Unknown pseudonym color {color!r}.")
         if animal not in animals:
             raise ValueError(f"Unknown pseudonym animal {animal!r}.")
-        color_label, css_color = colors[color]
-        animal_label, emoji = animals[animal]
-        name = self.name(color_label, animal_label)
+        css_color, emoji = colors[color][1], animals[animal][1]
+        name = self.name(color, animal)
         return Pseudonym(
             color=color,
             animal=animal,
