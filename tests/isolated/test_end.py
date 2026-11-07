@@ -103,7 +103,7 @@ def test_end_pages_can_continue_by_themselves():
     experiment = MagicMock()
     experiment.with_lucid_recruitment.return_value = True
     with patch.object(SuccessfulEndLogic, "should_show_reward", False):
-        page = SuccessfulEndLogic(auto_continue_seconds=3).debrief_participant(
+        page = SuccessfulEndLogic(time_limit=3).debrief_participant(
             experiment, MagicMock()
         )
     assert (page.time_limit, page.time_limit_answer) == (3, "Finish")
@@ -111,6 +111,12 @@ def test_end_pages_can_continue_by_themselves():
         "Click Finish to return to your panel. This page continues by itself in 3 s."
         in page.plain_text
     )
+    with pytest.raises(TypeError, match="no Finish button"):
+        RejectedConsentLogic(time_limit=3)
+    with pytest.raises(ValueError, match="no Finish button"):
+        SuccessfulEndLogic(time_limit=3).debrief_page(
+            "Bye", experiment, MagicMock(), show_finish_button=False
+        )
 
 
 def test_unsuccessful_end_explains_why_the_participant_stopped():

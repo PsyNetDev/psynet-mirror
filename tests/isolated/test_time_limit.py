@@ -10,7 +10,12 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, TextControl
 from psynet.page import InfoPage
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import TIME_LIMIT_GRACE_SECONDS, Response, Timeline
+from psynet.timeline import (
+    CURRENT_ANSWER,
+    TIME_LIMIT_GRACE_SECONDS,
+    Response,
+    Timeline,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timeline_hold_helpers import (  # noqa: E402
@@ -43,19 +48,19 @@ def test_time_limit_counts_from_reaching_the_page(in_experiment_directory, db_se
         "guess", "Guess", TextControl(), time_limit=10, time_limit_answer="timeout"
     )
     page.consume(exp, participant)
-    assert 9 < page.time_limit_seconds_left(participant) <= 10
+    assert 9 < page._time_limit_seconds_left(participant) <= 10
 
     # A later untimed page has no time limit but keeps the deadline for barriers.
     deadline = participant.page_deadline
     untimed = ModularPage("note", "Note", TextControl())
     untimed.consume(exp, participant)
-    assert untimed.time_limit_seconds_left(participant) is None
+    assert untimed._time_limit_seconds_left(participant) is None
     assert participant.page_deadline == deadline
 
     # A rebuilt page, as after a reload, keeps the deadline set on arrival.
     rebuilt = ModularPage("guess", "Guess", TextControl(), time_limit=10)
     participant.page_deadline -= timedelta(seconds=4)
-    assert rebuilt.time_limit_seconds_left(participant) <= 6
+    assert rebuilt._time_limit_seconds_left(participant) <= 6
 
     assert _answer(page, participant, "7") == "7"
     # The browser's timeout counts only once the deadline is (nearly) reached.
@@ -65,15 +70,41 @@ def test_time_limit_counts_from_reaching_the_page(in_experiment_directory, db_se
     participant.page_deadline = timenow() - timedelta(
         seconds=TIME_LIMIT_GRACE_SECONDS + 1
     )
-    assert _answer(page, participant, "late") == "timeout"
+    late = _respond(page, participant, "late")
+    assert (late.answer, late.time_limit_reached) == ("timeout", True)
 
     untimed = ModularPage("guess", "Guess", TextControl())
     untimed.consume(exp, participant)
-    assert untimed.time_limit_seconds_left(participant) is None
+    assert untimed._time_limit_seconds_left(participant) is None
     # The flag skips validation, so a page without a time limit drops it.
     response = _respond(untimed, participant, "7", time_limit_reached=True)
     assert response.answer == "7"
     assert "time_limit_reached" not in response.metadata
+    assert response.time_limit_reached is False
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_time_limit_can_keep_the_current_answer(in_experiment_directory, db_session):
+    exp = get_experiment()
+    (participant,) = _working_participants(exp, 1)
+    page = ModularPage(
+        "guess",
+        "Guess",
+        TextControl(),
+        time_limit=10,
+        time_limit_answer=CURRENT_ANSWER,
+        validate=lambda answer: "Too short" if len(answer) < 5 else None,
+    )
+    page.consume(exp, participant)
+    participant.page_deadline = timenow()
+
+    partial = _respond(page, participant, "ab", time_limit_reached=True)
+    assert (partial.answer, partial.time_limit_reached) == ("ab", True)
+    assert _answer(page, participant, None, time_limit_reached=True) is None
+    participant.page_deadline -= timedelta(seconds=TIME_LIMIT_GRACE_SECONDS + 1)
+    assert _answer(page, participant, "late") == "late"
 
 
 def test_time_limit_cannot_share_a_session():
