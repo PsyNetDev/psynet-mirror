@@ -3218,11 +3218,16 @@ class Regrouper(Grouper):
         ]
         self._check_plan(plan, members)
         roles = self._planned_roles(plan, members)
+        # The split's time, not the inserts', decides which clock tick it used.
+        split_time = timenow()
         groups = [
-            self._make_group(group_members, within_group) for group_members in plan
+            self._make_group(group_members, within_group, split_time)
+            for group_members in plan
         ]
-        for link in (link for group in groups for link in group.participant_links):
-            link.role = roles.get(link.participant.id)
+        if roles:
+            for group in groups:
+                for link in group.participant_links:
+                    link.role = roles[link.participant.id]
         placed = {p.id for group in groups for p in group.participants}
         left_over = [p for p in members if p.id not in placed]
         if not groups:
@@ -3280,13 +3285,12 @@ class Regrouper(Grouper):
                     f"return groups of {len(self.roles)}, one member per role."
                 )
 
-    def _make_group(self, participants, within_group=None):
+    def _make_group(self, participants, within_group, creation_time):
         """Create a fixed group that never dissolves or fails its members."""
         return self._create_group(
             participants,
             within_group_id=None if within_group is None else within_group.id,
-            # The split's time, not the insert's, decides which clock tick it used.
-            creation_time=timenow(),
+            creation_time=creation_time,
             initial_group_size=len(participants),
             max_group_size=len(participants),
             min_group_size=1,
