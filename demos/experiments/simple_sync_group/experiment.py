@@ -70,7 +70,7 @@ def show_current_group():
                 answers={
                     p.id: p.var.role for p in participant.sync_group.active_participants
                 },
-                show_names=True,
+                names="shown",
             ),
         ),
         time_estimate=5,

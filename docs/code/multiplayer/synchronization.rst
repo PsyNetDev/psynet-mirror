@@ -317,19 +317,17 @@ Showing the group
 ~~~~~~~~~~~~~~~~~
 
 :class:`~psynet.group_prompt.GroupPrompt` shows the members of a small group
-by their pseudonyms (see :doc:`chatroom`), with the participant viewing the
+by their pseudonyms (see :doc:`pseudonyms`), with the participant viewing the
 page labelled "You". Each member appears as their pseudonym animal, drawn
-in their colour; the other members' names are read out by screen
-readers and shown on hover, or below the animals with ``show_names=True``.
-Members sit in a row for up to four people and in a zigzag across the
-width of the page for more, so the display adapts to any screen. Joining
-their first group gives a newcomer a different pseudonym if another active
-member already has theirs; after that, pseudonyms never change, so someone
-regrouped every round keeps the name their earlier partners saw.
-
-When partners must not recognise each other across rounds, pass
-``anonymous=True``: every member is then drawn as the same grey figure,
+in their colour. ``names`` decides how the other members are named: by
+pseudonym, read out by screen readers and shown on hover (``"on_hover"``,
+the default), also written below the animals (``"shown"``), or not at all
+(``"anonymous"``), every member then being drawn as the same grey figure,
 labelled "Your partner" in a pair and "Another player" in a larger group.
+Use ``"anonymous"`` when partners must not recognise each other across
+rounds, with ``ChatRoom(anonymous=True)`` if the page has a chat room.
+Members sit in a row for up to four people and in a zigzag across the
+width of the page for more, so the display adapts to any screen.
 
 ``subgroups`` clusters the members, for example pairs formed within a
 room. Pass a sync group type, or a function returning a key per participant;
@@ -339,18 +337,25 @@ the viewer's cluster comes first:
 
     GroupPrompt("Pick a number.", participant=participant, group_type="room", subgroups="pair")
 
-On a decision page, members who have answered get a tick. A member has
-answered once they wait at a barrier of the group, typically the barrier
-after the decision page, and the ticks appear live as members arrive (this
-uses the barrier's arrival updates, so it needs ``notify_arrivals``). A
-member who reached the barrier because their page's time limit ran out gets
-a grey dash instead, and screen readers announce that they ran out of time
-(see the :ref:`picture <rounds-variations>` in :doc:`writing_a_round_based_experiment`). Pass
-``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
-answered when the page is drawn (members who ran out of time then get a tick too). Members who join the group appear live
-too, and members who leave are faded (see below), on any page without
-``answers``, ``has_answered`` or ``highlight``, unless ``subgroups`` is a function.
-Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
+A page shows either progress or answers. On a decision page, members who
+have answered get a tick. A member has answered once they wait at a barrier
+of the group (:func:`~psynet.sync.is_waiting_in`), typically the barrier
+after the decision page. A member who reached the barrier because their
+page's time limit ran out gets a grey dash instead
+(:func:`~psynet.sync.waiting_after_time_out`), and screen readers announce
+that they ran out of time (see the :ref:`picture <rounds-variations>` in
+:doc:`writing_a_round_based_experiment`). Pass ``show_progress=False`` to
+hide the ticks, or ``has_answered`` to decide who gets a tick instead; it
+can call :func:`~psynet.sync.is_waiting_in` to build on the default, and
+members who ran out of time keep their dash whatever it returns.
+
+What the page draws from the group's state updates live: ticks and dashes
+appear as members arrive at the group's barriers (this uses the barriers'
+arrival updates, so it needs ``notify_arrivals``), and members appear as
+they join and fade as they leave (see below). Only what the server can't
+work out again later is fixed when the page loads: who has answered by a
+custom ``has_answered``, clusters from a ``subgroups`` function, and the
+members shown with ``answers``. Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without
 one, PsyNet logs a warning and the group stays as first drawn:
 
 .. code-block:: python
@@ -366,13 +371,18 @@ one, PsyNet logs a warning and the group stays as first drawn:
         )
 
 After the barrier, pass ``answers`` to show each member's answer in a speech
-bubble, as a dictionary from participant ID to answer. Participant variables
+bubble, as a dictionary from participant ID to answer; ``show_progress``
+then defaults to ``False``, and passing ``show_progress=True`` or
+``has_answered`` with ``answers`` raises an error. A member whose answer is
+``None``, for example because they ran out of time, keeps their seat
+without a bubble. Participant variables
 store dictionary keys as strings, so a dictionary read back from one can be
 passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
 overlap a neighbour; hovering over or tapping a member brings their bubble to
 the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
 HTML such as an image. ``highlight`` marks members, with built-in styles for
-``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text:
+``"winner"`` and ``"duplicate"``, and ``note`` adds a line of text below
+the group (hidden, like the group, when there is no group to show):
 
 .. code-block:: python
 
@@ -392,7 +402,10 @@ current members: a member who has already moved on to the next round is no
 longer in the group, and would disappear if the page is reloaded.
 
 Without ``group``, the prompt shows the participant's group of type
-``group_type``, or their only group. A participant who is no longer in it,
+``group_type``. ``group_type`` can be left out only while a participant has
+only ever been in groups of one type; otherwise, as in a cohort that pairs
+its players each round, GroupPrompt raises an error rather than switch to
+whichever group is left when a pair ends. A participant who is no longer in it,
 for example because a barrier removed them for being late, sees just the
 text, as they do with ``group=self.sync_group`` in trial code (it is ``None``
 after such a removal), so the prompt itself needs no special case on pages that a late

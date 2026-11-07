@@ -164,7 +164,9 @@ def decision_page(participant):
         role,
         # A tick appears once the partner has decided. Partners are anonymous,
         # so that nobody recognises a partner from an earlier round.
-        GroupPrompt(prompt, participant=participant, group_type="pair", anonymous=True),
+        GroupPrompt(
+            prompt, participant=participant, group_type="pair", names="anonymous"
+        ),
         PushButtonControl(choices=list(range(ENDOWMENT + 1))),
         save_answer="decision",
         time_limit=DECISION_SECONDS,
@@ -195,7 +197,7 @@ def waiting_for_partner(participant):
         text,
         participant=participant,
         group_type="pair",
-        anonymous=True,
+        names="anonymous",
         show_progress=False,
     )
 
@@ -215,7 +217,7 @@ def show_outcome(participant):
             participant=participant,
             group_type="pair",
             answers=participant.var.decisions,
-            anonymous=True,
+            names="anonymous",
         ),
         time_estimate=5,
     )

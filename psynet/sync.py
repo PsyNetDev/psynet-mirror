@@ -4141,8 +4141,17 @@ def waiting_barrier_ids(participant, group):
     return [barrier_id for barrier_id, _ in _waiting_links(participant, group)]
 
 
-def ran_out_of_time_in(participant, group):
-    """Return whether ``participant`` waits in ``group`` after running out of time.
+def is_waiting_in(participant, group) -> bool:
+    """Return whether ``participant`` is waiting at a barrier of ``group``.
+
+    This is how :class:`~psynet.group_prompt.GroupPrompt` decides by default
+    who has answered.
+    """
+    return bool(_waiting_links(participant, group))
+
+
+def waiting_after_time_out(participant, group) -> bool:
+    """Return whether ``participant`` is waiting in ``group`` now after a time-out.
 
     That is, they are waiting at a barrier of ``group`` that they reached
     after their latest timed page ran out of time; untimed pages in between,

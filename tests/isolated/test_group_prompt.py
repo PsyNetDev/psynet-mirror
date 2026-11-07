@@ -11,6 +11,7 @@ from psynet.experiment import get_experiment
 from psynet.group_prompt import GroupPrompt, redrawn_group_html
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
+from psynet.pseudonym import PseudonymScheme
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
     GroupBarrier,
@@ -25,6 +26,11 @@ from test_regrouper import _arrive, _commit_barrier_arrivals  # noqa: E402
 from timeline_hold_helpers import _working_participants  # noqa: E402
 
 
+class _AllBlueFoxes(PseudonymScheme):
+    def assign(self, participant):
+        return ("blue", "fox")
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
@@ -34,9 +40,8 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     exp = get_experiment()
     published = []
     monkeypatch.setattr(timeline_hold, "_publish_wakes", published.extend)
+    monkeypatch.setattr(exp, "pseudonym_scheme", _AllBlueFoxes())
     first, second, third = _working_participants(exp, 3)
-    for participant in (first, second):
-        participant.set_pseudonym("blue", "fox")
     _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
     group = third.active_sync_groups["room"]
     assert len({p.pseudonym.name for p in (first, second, third)}) == 3
@@ -83,11 +88,26 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     assert "You" in clusters[0] and third.pseudonym.name in clusters[0]
     assert second.pseudonym.name in clusters[1]
 
-    html = GroupPrompt(group=group, participant=first, anonymous=True).group_html
+    html = GroupPrompt(group=group, participant=first, names="anonymous").group_html
     assert html.count(">Another player<") == 2 and ">You<" in html
     assert not any(p.pseudonym.name in html for p in (first, second, third))
+    with pytest.raises(ValueError, match="names must be one of"):
+        GroupPrompt(group=group, participant=first, names="hidden")
+    for contradictory in [
+        dict(answers={}, show_progress=True),
+        dict(answers={}, has_answered=bool),
+        dict(show_progress=False, has_answered=bool),
+    ]:
+        with pytest.raises(ValueError):
+            GroupPrompt(group=group, participant=first, **contradictory)
 
-    # Pseudonyms are only made distinct in a participant's first group.
+    # Derived pseudonyms are only made distinct in a participant's first
+    # group, and pseudonyms that were set are kept there too.
+    alike = _working_participants(exp, 2)
+    for participant in alike:
+        participant.set_pseudonym("blue", "fox")
+    _arrive(exp, SimpleGrouper("pair", initial_group_size=2), alike)
+    assert {p.pseudonym.name for p in alike} == {"Blue fox"}
     third.set_pseudonym(first.pseudonym.color, first.pseudonym.animal)
     _arrive(exp, SimpleGrouper("again", initial_group_size=3), [first, second, third])
     assert third.pseudonym.name == first.pseudonym.name
@@ -138,6 +158,12 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     assert html.count("psynet-group-member--ran-out-of-time") == 1
     assert ">ran out of time<" in html
     assert html.count("psynet-group-member--answered") == 1
+    # A custom check only decides between a tick and nothing.
+    html = GroupPrompt(
+        group=group, participant=third, has_answered=lambda p: p.id == second.id
+    ).group_html
+    assert html.count("psynet-group-member--ran-out-of-time") == 1
+    assert html.count("psynet-group-member--answered") == 1
     (ready,) = arrival_notice_payload(third.unique_id)["group_ready"]
     assert ready["ran_out_of_time"] == [group_seats(group)[first.id]]
 
@@ -183,9 +209,9 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
 
     # Members are shown in seat order, and an anonymous partner is labelled as such.
     third = _working_participants(exp, 1)[0]
-    html = GroupPrompt(group=group, participant=third, anonymous=True).group_html
+    html = GroupPrompt(group=group, participant=third, names="anonymous").group_html
     assert html.index('data-seat="0"') < html.index('data-seat="1"')
-    html = GroupPrompt(group=group, participant=early, anonymous=True).group_html
+    html = GroupPrompt(group=group, participant=early, names="anonymous").group_html
     assert ">Your partner<" in html
 
     # Without ``group``, the prompt shows the participant's group, or just its
@@ -206,7 +232,7 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     db_session.flush()
 
     def html():
-        return GroupPrompt(group=group, participant=early, anonymous=True).group_html
+        return GroupPrompt(group=group, participant=early, names="anonymous").group_html
 
     assert 'psynet-group-member--left" data-seat="0"' in html()
     assert ">Your partner (out of time)<" in html()
@@ -233,10 +259,13 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     # Members who moved on to their next group are not shown, except with
     # their answer on a results page, which reads the same after a reload.
     assert "psynet-group-member--left" not in html()
-    results = GroupPrompt(
-        group=group, participant=early, anonymous=True, answers={late.id: "3"}
-    ).group_html
-    assert ">3</span>" in results and "psynet-group-member--left" not in results
+    for answer in ["3", None]:
+        results = GroupPrompt(
+            group=group, participant=early, names="anonymous", answers={late.id: answer}
+        ).group_html
+        assert "psynet-group-member--left" not in results
+        assert 'data-seat="0"' in results
+    assert "psynet-group-bubble--none" in results
 
 
 @pytest.mark.parametrize(
@@ -267,11 +296,14 @@ def test_a_removed_partner_stays_in_the_viewers_subgroup(
     db_session.flush()
 
     html = GroupPrompt(
-        group=room, participant=viewer, subgroups="pair", anonymous=True
+        group=room, participant=viewer, subgroups="pair", names="anonymous"
     ).group_html
     clusters = html.split('class="psynet-group-cluster"')[1:]
     assert len(clusters) == 2
     assert ">Your partner (out of time)<" in clusters[0]
+    # Their only active group would change type as pairs end, so they must say which.
+    with pytest.raises(ValueError, match="several types"):
+        GroupPrompt(participant=viewer)
 
 
 @pytest.mark.parametrize(
@@ -294,9 +326,8 @@ def test_live_pages_redraw_the_group_when_someone_joins(
         prompt = GroupPrompt(group=group, participant=first, **options)
         return prompt.get_js_vars()["group_prompt"]["redraw_token"]
 
-    named, anonymous = token(show_names=True), token(anonymous=True)
-    # A redraw would drop highlights, so highlighted pages don't redraw.
-    assert token(highlight={first.id: "winner"}) is None
+    named, anonymous = token(names="shown"), token(names="anonymous")
+    highlighted = token(highlight={first.id: "winner"}, note="Round 2")
 
     # Members already in the group are told to fetch it again.
     published.clear()
@@ -312,6 +343,8 @@ def test_live_pages_redraw_the_group_when_someone_joins(
     assert late.pseudonym.name in html
     html = redrawn_group_html(first.unique_id, anonymous)["html"]
     assert ">Your partner<" in html and late.pseudonym.name not in html
+    html = redrawn_group_html(first.unique_id, highlighted)["html"]
+    assert "psynet-group-member--winner" in html and "Round 2" in html
     # Tokens only work for the participant they were made for, unchanged.
     assert redrawn_group_html(other.unique_id, named) == {"html": None}
     assert redrawn_group_html(first.unique_id, named[:-2]) == {"html": None}

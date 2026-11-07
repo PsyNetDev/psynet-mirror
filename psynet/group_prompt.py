@@ -8,15 +8,18 @@ display above a page's controls.
 Design constraints:
 
 - Members are shown by pseudonym (:mod:`psynet.pseudonym`), or all as the
-  same figure when ``anonymous``, never by participant ID. The page refers to members by seat
-  (:func:`psynet.sync.group_seats`), which is also how
-  :class:`~psynet.sync.GroupBarrier` reports live ticks.
+  same figure with ``names="anonymous"``, never by participant ID. The page
+  refers to members by seat (:func:`psynet.sync.group_seats`), which is also
+  how :class:`~psynet.sync.GroupBarrier` reports live ticks.
 - By default a member has answered once they are waiting at a barrier of
-  the group, typically the barrier after the decision page. Live ticks come
-  from that barrier's arrival updates, so they need ``notify_arrivals``
-  (the default). A member who reached the barrier because their page's
-  time limit ran out gets a dash instead of a tick
-  (:func:`psynet.sync.ran_out_of_time_in`).
+  the group (:func:`psynet.sync.is_waiting_in`), typically the barrier after
+  the decision page. Live ticks come from that barrier's arrival updates, so
+  they need ``notify_arrivals`` (the default). A member who reached the
+  barrier because their page's time limit ran out gets a dash instead of a
+  tick (:func:`psynet.sync.waiting_after_time_out`).
+- Live redraws re-create the prompt on the server from a signed token, so
+  only options that can be serialized take part in them; functions and
+  ``answers`` fix the display when the page loads.
 - Members who drop out of the group stay in their seat, faded and marked
   "(left)" if they failed or left the experiment, "(out of time)" if a
   barrier removed them for being late, and "(dropped out)" otherwise.
@@ -44,6 +47,7 @@ logger = get_logger()
 
 _MAX_ROW_MEMBERS = 4
 _MAX_ZIGZAG_COLUMNS = 7
+_NAMES = ("on_hover", "shown", "anonymous")
 _warned_no_secret = False
 
 
@@ -66,14 +70,21 @@ class GroupPrompt(Prompt):
     """Shows the members of a group, who has answered, and their answers.
 
     Members appear as their pseudonym animals drawn in their colours
-    (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`): in a row for up to
-    four people, and in a zigzag across the width of the page for more. Only the participant viewing the page is labelled
-    ("You"); the others' names are read out by screen readers and shown on
-    hover. Hovering over or tapping a member brings their speech bubble to
-    the front. A member who dropped out of the group is drawn faded and
-    marked "(left)", "(out of time)" or "(dropped out)"; one who moved on to
-    their next group, as in a new round, is no longer shown, unless the page
-    shows their answer.
+    (:attr:`~psynet.pseudonym.Pseudonym.sticker_html`; see
+    :doc:`/code/multiplayer/pseudonyms`): in a row for up to four people,
+    and in a zigzag across the width of the page for more. Hovering over or
+    tapping a member brings their speech bubble to the front. A member who
+    dropped out of the group is drawn faded and marked "(left)", "(out of
+    time)" or "(dropped out)"; one who moved on to their next group, as in a
+    new round, is no longer shown, unless the page shows their answer.
+
+    A page shows either progress (ticks for who has answered) or
+    ``answers``, and what it draws from the group's state updates live:
+    ticks and dashes as members reach a barrier of the group, and members as
+    they join or leave. Only what the server can't work out again later is
+    fixed when the page loads: who has answered by a custom
+    ``has_answered``, clusters from a ``subgroups`` function, and the members
+    shown with ``answers``.
 
     Parameters
     ----------
@@ -83,7 +94,10 @@ class GroupPrompt(Prompt):
         The participant viewing the page.
     group
         The :class:`~psynet.sync.SyncGroup` to show. By default, the
-        participant's group of type ``group_type``, or their only active group.
+        participant's group of type ``group_type``, or, if they have only
+        ever been in groups of one type, their group of that type; a
+        participant who is or has been in groups of several types needs
+        ``group_type`` or ``group``.
         If the lookup finds no group, for example because a barrier removed
         them for being late, the page shows just ``text``, as it does for
         ``group=None`` (what ``trial.sync_group`` is after such a removal).
@@ -95,30 +109,35 @@ class GroupPrompt(Prompt):
         Optional ``{participant_id: answer}`` to show in speech bubbles, for
         example after the group's barrier has released. Answers are shown
         as text; pass :class:`~markupsafe.Markup` for HTML such as an image.
-        Members without an entry get no bubble.
+        Members with an entry keep their seat even after moving on to their
+        next group; an entry of ``None``, as for a member who ran out of
+        time, shows the member without a bubble. Members without an entry
+        get no bubble.
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
         CSS class ``psynet-group-member--<style>``. In both dictionaries the
         IDs may be strings, as in a dictionary read back from a participant
-        variable. A display with highlights is not redrawn when members
-        join or leave.
+        variable.
     note
         Optional short text shown below the group, for example
-        "1 was picked twice". It is hidden when there is no group to show.
+        "1 was picked twice". Like the group, it is hidden when there is no
+        group to show.
     show_progress
-        If ``True`` (default) and ``answers`` is not given, members who have
-        answered get a tick, which appears live as they reach the next
-        barrier. Members who reached it because their page's time limit ran
-        out get a dash instead. While ticks appear live, the page hides the group arrival
-        notice ("2/3 of your group are ready."), which would repeat them.
+        Whether members who have answered get a tick. A member who reached a
+        barrier of the group because their page's time limit ran out gets a
+        dash instead. While ticks appear live, the page hides the group
+        arrival notice ("2/3 of your group are ready."), which would repeat
+        them. Defaults to ``True``, or ``False`` with ``answers``, which
+        can't be combined with ``True``.
     has_answered
-        Optional ``has_answered(participant) -> bool`` deciding who has answered
-        when the page is drawn. By default, a member has answered while they
-        wait at a barrier of this group, and ticks then also appear live as
-        members arrive at the group's barriers. With a custom ``has_answered``,
-        ticks are only drawn when the page loads, and members who ran out of
-        time get a tick like the others.
+        Optional ``has_answered(participant) -> bool`` deciding who gets a
+        tick when the page is drawn, in place of
+        :func:`~psynet.sync.is_waiting_in`, which a custom check can call.
+        Members waiting after a time-out
+        (:func:`~psynet.sync.waiting_after_time_out`) get a dash whatever it
+        returns. Only used with ``show_progress``, so it can't be combined
+        with ``answers`` or ``show_progress=False``.
     subgroups
         Optional way to cluster the members: a sync group type, such as
         ``"pair"`` for pairs formed within the group, or a function
@@ -127,13 +146,17 @@ class GroupPrompt(Prompt):
         subgroup (``None``) are shown together in one cluster. With a sync
         group type, a former member who is still shown stays in the latest
         such group that a current member is still in.
-    show_names
-        If ``True``, show each member's pseudonym below their animal.
-    anonymous
-        If ``True``, show every member as the same neutral figure, labelled
-        "Your partner" in the viewer's pair (or two-member subgroup) and
-        "Another player" otherwise, so that
-        nobody can recognise a member they met in an earlier group.
+    names
+        How members other than the viewer, who is labelled "You", are named:
+
+        - ``"on_hover"`` (default): by pseudonym, read out by screen readers
+          and shown on hover;
+        - ``"shown"``: by pseudonym, also written below each animal;
+        - ``"anonymous"``: all drawn as the same neutral figure, labelled
+          "Your partner" in the viewer's pair (or two-member subgroup) and
+          "Another player" otherwise, so that nobody can recognise a member
+          they met in an earlier group. Pair it with
+          ``ChatRoom(anonymous=True)`` on pages with a chat room.
     text_align
         CSS alignment of the text.
     """
@@ -147,56 +170,54 @@ class GroupPrompt(Prompt):
         participant,
         group=_PARTICIPANTS_GROUP,
         group_type: Optional[str] = None,
-        answers: Optional[Dict[Union[int, str], Union[str, Markup]]] = None,
+        answers: Optional[Dict[Union[int, str], Union[str, Markup, None]]] = None,
         highlight: Optional[Dict[Union[int, str], str]] = None,
         note: Optional[str] = None,
-        show_progress: bool = True,
+        show_progress: Optional[bool] = None,
         has_answered: Optional[Callable] = None,
         subgroups: Union[str, Callable, None] = None,
-        show_names: bool = False,
-        anonymous: bool = False,
+        names: str = "on_hover",
         text_align: str = "left",
     ):
         super().__init__(text=text, text_align=text_align)
+        if names not in _NAMES:
+            raise ValueError(
+                f"GroupPrompt's names must be one of {', '.join(map(repr, _NAMES))}, "
+                f"not {names!r}."
+            )
+        if show_progress is None:
+            show_progress = answers is None
+        elif show_progress and answers is not None:
+            raise ValueError(
+                "GroupPrompt shows either progress or answers: "
+                "don't pass show_progress=True with answers."
+            )
+        if has_answered is not None and not show_progress:
+            raise ValueError(
+                "GroupPrompt only uses has_answered to show progress, so it can't "
+                "be combined with answers or show_progress=False."
+            )
         if group is not _PARTICIPANTS_GROUP and group_type is not None:
             raise ValueError(
                 "Pass either group or group_type to GroupPrompt, not both."
             )
         if group is _PARTICIPANTS_GROUP:
-            group = (
-                participant.sync_group
-                if group_type is None
-                else participant.active_sync_groups.get(group_type)
-            )
+            group = _participants_group(participant, group_type)
         self.group = group
         self.participant = participant
         self.answers = (
-            None
-            if answers is None
-            else {int(k): v for k, v in answers.items() if v is not None}
+            None if answers is None else {int(k): v for k, v in answers.items()}
         )
         self.highlight = {int(k): v for k, v in (highlight or {}).items()}
         self.note = note
-        self.show_progress = show_progress and answers is None
-        self.has_answered = has_answered or _waiting_in_group(group)
-        self.ran_out_of_time = (
-            _ran_out_of_time_in_group(group)
-            if has_answered is None
-            else lambda participant: False
-        )
-        self.live_ticks = self.show_progress and has_answered is None
-        # Pages can redraw the group when members join or leave, unless a
-        # function decides the subgroups or who has answered, which the
-        # server can't call later, or answers or highlights fix who is shown.
+        self.show_progress = show_progress
+        self.has_answered = has_answered
+        self.live_ticks = show_progress and has_answered is None
         self.live_members = (
-            answers is None
-            and has_answered is None
-            and not callable(subgroups)
-            and not self.highlight
+            answers is None and has_answered is None and not callable(subgroups)
         )
         self.subgroups = subgroups
-        self.show_names = show_names
-        self.anonymous = anonymous
+        self.names = names
 
     @property
     def metadata(self):
@@ -204,7 +225,9 @@ class GroupPrompt(Prompt):
             "group_id": None if self.group is None else self.group.id,
             "answers": None
             if self.answers is None
-            else {str(k): str(v) for k, v in self.answers.items()},
+            else {
+                str(k): None if v is None else str(v) for k, v in self.answers.items()
+            },
         }
 
     def get_css(self):
@@ -250,10 +273,11 @@ class GroupPrompt(Prompt):
             {
                 "group": self.group.id,
                 "participant": self.participant.id,
-                "anonymous": self.anonymous,
-                "show_names": self.show_names,
+                "names": self.names,
                 "subgroups": self.subgroups,
                 "show_progress": self.show_progress,
+                "highlight": self.highlight,
+                "note": None if self.note is None else str(Markup.escape(self.note)),
             }
         )
 
@@ -301,7 +325,7 @@ class GroupPrompt(Prompt):
         classes = "psynet-group-prompt"
         if self.answers is not None:
             classes += " psynet-group-prompt--answers"
-        if self.show_names:
+        if self.names == "shown":
             classes += " psynet-group-prompt--names"
         if viewer_present:
             classes += " psynet-group-prompt--with-viewer"
@@ -431,21 +455,29 @@ class GroupPrompt(Prompt):
         shared = [link for link in links if link.sync_group_id in current]
         return shared[-1].sync_group_id if shared else None
 
+    def _progress(self, member):
+        """Return ``(answered, timed_out)`` for a member still in the group."""
+        from .sync import is_waiting_in, waiting_after_time_out
+
+        if waiting_after_time_out(member, self.group):
+            return False, True
+        has_answered = self.has_answered or (lambda m: is_waiting_in(m, self.group))
+        return bool(has_answered(member)), False
+
     def _member_html(self, member, seat, index, partner_label):
         _p = get_translator(context=True)
         is_me = member.id == self.participant.id
+        anonymous = self.names == "anonymous"
         if is_me:
             label = _p("group prompt", "You")
-        elif not self.anonymous:
+        elif not anonymous:
             label = member.pseudonym.name
         elif partner_label:
             label = _p("group prompt", "Your partner")
         else:
             label = _p("group prompt", "Another player")
         sticker = (
-            anonymous_sticker_html()
-            if self.anonymous
-            else member.pseudonym.sticker_html
+            anonymous_sticker_html() if anonymous else member.pseudonym.sticker_html
         )
         has_left = (
             member not in self.group.active_participants
@@ -460,8 +492,9 @@ class GroupPrompt(Prompt):
         style = self.highlight.get(member.id)
         if style:
             classes.append(f"psynet-group-member--{_css_identifier(style)}")
-        answered = self.show_progress and not has_left and self.has_answered(member)
-        timed_out = answered and self.ran_out_of_time(member)
+        answered = timed_out = False
+        if self.show_progress and not has_left:
+            answered, timed_out = self._progress(member)
         if timed_out:
             classes.append("psynet-group-member--ran-out-of-time")
         elif answered:
@@ -474,9 +507,9 @@ class GroupPrompt(Prompt):
             answer = self.answers.get(member.id)
             if answer is not None and not isinstance(answer, Markup):
                 focusable += Markup(' aria-label="{}: {}"').format(label, answer)
-            if member.id in self.answers:
+            if answer is not None:
                 bubble = Markup('<span class="psynet-group-bubble">{}</span>').format(
-                    self.answers[member.id]
+                    answer
                 )
             else:
                 # Keeps the animals of members without an answer in line.
@@ -559,10 +592,11 @@ def redrawn_group_html(unique_id, token):
     prompt = GroupPrompt(
         group=group,
         participant=participant,
-        anonymous=options["anonymous"],
-        show_names=options["show_names"],
+        names=options["names"],
         subgroups=options["subgroups"],
         show_progress=options["show_progress"],
+        highlight=options["highlight"],
+        note=None if options["note"] is None else Markup(options["note"]),
     )
     return {"html": str(prompt.group_html)}
 
@@ -582,26 +616,27 @@ def _token_serializer():
     return URLSafeSerializer(secret, salt="psynet.group_prompt")
 
 
-def _waiting_in_group(group):
-    """Return a check of whether a member is waiting at a barrier of ``group``."""
+def _participants_group(participant, group_type):
+    """Return the participant's active group of ``group_type``, or of their only group type.
 
-    from .sync import waiting_barrier_ids
-
-    def waiting(participant):
-        return bool(waiting_barrier_ids(participant, group))
-
-    return waiting
-
-
-def _ran_out_of_time_in_group(group):
-    """Return a check of whether a member waits in ``group`` after running out of time."""
-
-    from .sync import ran_out_of_time_in
-
-    def ran_out_of_time(participant):
-        return ran_out_of_time_in(participant, group)
-
-    return ran_out_of_time
+    A participant who is or has been in groups of several types must name
+    one: their only active group would change type as they leave one, such
+    as a pair, and fall back to another, such as their cohort.
+    """
+    if group_type is None:
+        group_types = {
+            link.sync_group.group_type for link in participant.sync_group_links
+        }
+        if len(group_types) > 1:
+            raise ValueError(
+                f"Participant {participant.id} is or has been in groups of several "
+                f"types ({', '.join(sorted(group_types))}), so pass GroupPrompt "
+                "the group_type or group to show."
+            )
+        if not group_types:
+            return None
+        (group_type,) = group_types
+    return participant.active_sync_groups.get(group_type)
 
 
 def _css_identifier(style: str) -> str:
