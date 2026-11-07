@@ -17,6 +17,7 @@ from psynet.sync import (
     GroupBarrier,
     Regrouper,
     SimpleGrouper,
+    SyncGroup,
     _latest_tick,
 )
 from psynet.timeline import Timeline
@@ -52,6 +53,11 @@ def _backdate_arrivals(barrier, participants, seconds):
         )
 
 
+def _backdate_splits(regrouper, seconds):
+    for group in SyncGroup.query.filter_by(grouper_id=regrouper.id):
+        group.created_at -= timedelta(seconds=seconds)
+
+
 @in_consents_experiment
 def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
     in_experiment_directory, db_session
@@ -85,9 +91,7 @@ def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
     _arrive(exp, pairs, present)
     assert all("pair" not in p.active_sync_groups for p in present)
     assert _waiting(pairs, present) == present
-    team_group = team[0].active_sync_groups["team"]
-    key = pairs._state_key
-    team_group.var.set(key, team_group.var.get(key) - 31)
+    _backdate_splits(pairs, 31)
     _backdate_arrivals(pairs, present, 31)
 
     released = pairs.choose_who_to_release(present)
@@ -282,8 +286,7 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
 
     # The pair's round runs past the deadline; the odd one out, back first,
     # keeps waiting for them instead of sitting out again.
-    team_group = team[0].active_sync_groups["team"]
-    team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 40)
+    _backdate_splits(pairs, 40)
     _arrive(exp, pairs, [odd_one_out])
     _backdate_arrivals(pairs, [odd_one_out], 16)
     assert pairs.choose_who_to_release([odd_one_out]) == []
@@ -319,8 +322,7 @@ def test_clock_regrouper_left_over_waits_one_more_tick(
     _backdate_arrivals(pairs, team[:2], 16)
     _arrive(exp, pairs, team[2:])
     assert _waiting(pairs, team) == team[2:]
-    team_group = team[0].active_sync_groups["team"]
-    team_group.var.set(pairs._state_key, team_group.var.get(pairs._state_key) - 32)
+    _backdate_splits(pairs, 32)
 
     # The pair is still playing: held through one tick, released at the next.
     since_tick = time.time() - _latest_tick(time.time(), 15)
@@ -454,12 +456,14 @@ def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_ses
     (sitter,) = [p for p in team if "pair" not in p.active_sync_groups]
     playing = [p for p in team if p is not sitter]
     assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
-    roles = {p.id: pairs.role(p) for p in team}
+    # A newcomer who sat out has not played a role yet.
+    assert pairs.role(sitter) is None
+    roles = {p.id: pairs.role(p) for p in playing}
 
     (newcomer,) = _working_participants(exp, 1)
     team[0].active_sync_groups["team"].add_participant(newcomer)
     _arrive(exp, pairs, team + [newcomer])
-    assert {p.id: pairs.role(p) for p in team} == roles
+    assert {p.id: pairs.role(p) for p in playing} == roles
     assert pairs.role(newcomer) != pairs.role(sitter)
     assert all("pair" in p.active_sync_groups for p in team + [newcomer])
     assert pairs.rounds_played(sitter) == 1
