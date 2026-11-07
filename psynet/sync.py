@@ -2818,7 +2818,11 @@ class Regrouper(Grouper):
         )
 
     def rounds_played(self, participant) -> int:
-        """Return how many groups this regrouper has put ``participant`` in."""
+        """Return how many groups this regrouper has put ``participant`` in.
+
+        A group counts from when it is formed, even if the participant is
+        later removed from it, for example for being away too long.
+        """
         return len(self._links([participant.id]))
 
     def rounds_sat_out(self, participant) -> int:
@@ -3191,10 +3195,13 @@ class Regrouper(Grouper):
         self._check_plan(plan, members)
         if self.roles:
             for group_members in plan:
-                if len(group_members) != len(self.roles):
+                if len(group_members) != len(self.roles) or (
+                    self.keep_roles
+                    and {self.role(m) for m in group_members} != set(self.roles)
+                ):
                     raise ValueError(
                         f"Regrouper '{self.id}': with roles, form_groups must "
-                        f"return groups of {len(self.roles)}."
+                        f"return groups of {len(self.roles)}, one member per role."
                     )
         groups = [
             self._make_group(group_members, within_group) for group_members in plan

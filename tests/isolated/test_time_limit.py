@@ -45,6 +45,13 @@ def test_time_limit_counts_from_reaching_the_page(in_experiment_directory, db_se
     page.consume(exp, participant)
     assert 9 < page.time_limit_seconds_left(participant) <= 10
 
+    # A later untimed page has no time limit but keeps the deadline for barriers.
+    deadline = participant.page_deadline
+    untimed = ModularPage("note", "Note", TextControl())
+    untimed.consume(exp, participant)
+    assert untimed.time_limit_seconds_left(participant) is None
+    assert participant.page_deadline == deadline
+
     # A rebuilt page, as after a reload, keeps the deadline set on arrival.
     rebuilt = ModularPage("guess", "Guess", TextControl(), time_limit=10)
     participant.page_deadline -= timedelta(seconds=4)

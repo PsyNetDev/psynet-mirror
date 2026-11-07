@@ -258,7 +258,8 @@ def play_round():
                     waiting_screen=waiting_for_partner,
                     # For a player who never opens the decision page. One who
                     # leaves it is taken out once its time limit has run out.
-                    timeout_between_barriers_time=10,
+                    # Long enough for a background tab to notice the round has started.
+                    timeout_between_barriers_time=30,
                     timeout_between_barriers_action="kick",
                     on_release=score_round,
                 ),

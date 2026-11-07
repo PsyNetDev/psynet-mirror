@@ -76,7 +76,8 @@ to read chat messages that mention them.
 
 Use ``participant.pseudonym`` to show the same names elsewhere, for example
 on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and a
-``sticker_html``, a picture of the animal in the participant's colour:
+``sticker_html``, a picture of the animal in the participant's colour, three
+times the font size high:
 
 .. code-block:: python
 
@@ -84,7 +85,7 @@ on a results page. It has a ``name``, a ``css_color``, an ``emoji`` and a
         pair = participant.active_sync_groups["pair"]
         (partner,) = [p for p in pair.participants if p != participant]
         return InfoPage(
-            Markup("Your partner is {} {}.").format(
+            Markup("{}<p>Your partner is {}.</p>").format(
                 partner.pseudonym.sticker_html, partner.pseudonym.name
             ),
         )
