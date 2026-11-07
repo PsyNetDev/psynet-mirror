@@ -208,7 +208,8 @@ Timeouts
 
 ``max_wait_time``
     The longest a participant waits at one grouper or barrier: 20 seconds by
-    default. At a grouper, a participant who waits longer is failed. At a
+    default, or ``timeout_between_barriers_time`` plus 20 seconds at a
+    :class:`~psynet.sync.GroupBarrier` that sets it. At a grouper, a participant who waits longer is failed. At a
     :class:`~psynet.sync.GroupBarrier`, ``max_wait_action`` decides:
     ``"fail"`` (default) fails the participant, and ``"kick"`` removes them
     from the group so that they continue alone. With the default wait
@@ -218,14 +219,31 @@ Timeouts
 
 ``timeout_between_barriers_time`` (default: ``None``)
     A :class:`~psynet.sync.GroupBarrier` limit on the time since the group
-    passed its previous barrier. A member who has not reached this barrier in
-    time is handled by ``timeout_between_barriers_action``, ``"fail"``
-    (default) or ``"kick"``. It has no effect at a group's first barrier.
+    passed its previous barrier, or since the member joined the group if that
+    is later. A member who has not reached this barrier in time is handled by
+    ``timeout_between_barriers_action``, ``"fail"`` (default) or ``"kick"``.
+    Members who arrive promptly may wait this long for the others, so the
+    barrier's ``max_wait_time`` must be longer; it defaults to 20 seconds plus
+    this timeout. This guarantee assumes fixed membership: in a group that
+    accepts top-ups, a newcomer is timed from when they joined, so members
+    already waiting can reach ``max_wait_time`` first.
+
+    At a group's first barrier the timeout counts from when each member joined
+    the group, which for its original members is when it formed.
+    Size it to cover everything between the grouper and that barrier, such as
+    instructions or a practice trial, or members who read slowly are timed
+    out before they arrive. Kicking a slow member can also take a group below
+    ``min_group_size``; a group that doesn't accept top-ups is then dissolved,
+    which by default fails the members who arrived on time (see
+    :ref:`groups below minimum size <groups_below_min_size>`).
 
 Trial makers with ``sync_group_type`` take the same settings with a
-``sync_group_`` prefix: ``sync_group_max_wait_time`` (default 45 seconds),
+``sync_group_`` prefix: ``sync_group_max_wait_time``,
 ``sync_group_max_wait_action``, ``sync_group_timeout_between_barriers_time``
-and ``sync_group_timeout_between_barriers_action``.
+and ``sync_group_timeout_between_barriers_action``. ``sync_group_max_wait_time``
+defaults to 45 seconds, or to 20 seconds more than the between-barrier
+timeout if that is longer. As with a barrier, a value you pass must be
+longer than ``sync_group_timeout_between_barriers_time``.
 
 Choose ``max_wait_time`` at the grouper together with how quickly you
 recruit, because a participant is failed if too few others arrive while
@@ -242,6 +260,8 @@ members take over the previous page than others. A member who times out
 there can take the group below ``min_group_size``, with the consequences
 described under *Groups below minimum size* below.
 
+.. _groups_below_min_size:
+
 Groups below minimum size
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -249,7 +269,9 @@ When failed or departed members take a group below ``min_group_size``, what
 happens depends on whether the group accepts top-ups:
 
 - With ``join_existing_groups=True``, the group's next barrier waits for new
-  members to join.
+  members to join. If every member leaves, the group closes at the next
+  periodic sync-group check (every few seconds), and later arrivals form a
+  new one.
 - Otherwise the group is dissolved as soon as the member leaves, and its
   remaining members are failed. Set ``fail_participants_below_min_size=False``
   on the grouper to remove them from the group without failing them, so that
