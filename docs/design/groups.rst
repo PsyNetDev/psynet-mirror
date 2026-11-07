@@ -103,7 +103,7 @@ everyone appears as the same grey figure.
 
 The dashboard shows each participant's pseudonym, and the names that
 participants saw can be recovered from an export, for example to read chat
-messages that mention them.
+messages that mention them (see :doc:`/code/multiplayer/pseudonyms`).
 
 From one group to many rounds
 -----------------------------
