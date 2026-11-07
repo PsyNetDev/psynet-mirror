@@ -1,11 +1,11 @@
-"""Lowest unique number: a round-based game where latecomers sit out a round.
+"""Lowest unique number: a round-based game where latecomers miss a round.
 
 Every ``ROUND_SECONDS`` the :class:`~psynet.sync.Regrouper` puts everyone who
 is waiting into rooms of at most ``ROOM_SIZE`` players. Each player picks a
 number, and the lowest number that nobody else in the room picked wins.
 
 The choice page has a ``time_limit`` of ``CHOICE_SECONDS``. A player who
-doesn't choose in time sits out the round and joins the next one, so the rest
+doesn't choose in time misses the round and joins the next one, so the rest
 of the room isn't held up. A player who leaves the page, for example by
 closing the tab, is removed from their room 30 s after the time limit, or
 30 s after the room forms if the page never loaded.
@@ -62,7 +62,7 @@ def lowest_unique(choices: dict):
 def score_round(participants: List[Participant]):
     """Record the room's choices and winning number for every player in the room.
 
-    Players who ran out of time have no choice and sit out the round.
+    Players who ran out of time have no choice and miss the round.
     Nobody wins when only one player chose.
     """
     choices = {p.id: p.var.choice for p in participants if p.var.choice is not None}
@@ -101,7 +101,7 @@ def choose_number(participant):
 def your_pick(participant):
     """Replace the number buttons with the player's pick while the rest of the room chooses."""
     if participant.var.choice is None:
-        text = "You ran out of time, so you'll sit out this round."
+        text = "You ran out of time, so you'll miss this round."
     else:
         text = f"You picked {participant.var.choice}."
     # Ticks appear as the others choose.
@@ -115,11 +115,11 @@ def your_pick(participant):
 def show_result(participant):
     if "room" not in participant.active_sync_groups:
         return InfoPage(
-            "You were away for too long, so you sat out this round.", time_estimate=5
+            "You were away for too long, so you missed this round.", time_estimate=5
         )
     if participant.var.choice is None:
         return InfoPage(
-            "You ran out of time, so you sat out this round.", time_estimate=5
+            "You ran out of time, so you missed this round.", time_estimate=5
         )
     result = participant.var.last_round
     winner = result["winning_number"]
@@ -208,7 +208,7 @@ class Exp(psynet.experiment.Experiment):
         assert [bot.current_page_label for bot in bots] == ["choose"] * 3
 
         # The third player doesn't choose in time, so their late answer
-        # counts as no choice and they sit out the round.
+        # counts as no choice and they miss the round.
         bots[0].take_page(response=1)
         bots[1].take_page(response=2)
         time.sleep(CHOICE_SECONDS + TIME_LIMIT_GRACE_SECONDS + 1)
@@ -216,7 +216,7 @@ class Exp(psynet.experiment.Experiment):
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
         assert "You won with 1!" in bots[0].current_page_text
         assert "The room picked 1, 2." in bots[1].current_page_text
-        assert "sat out this round" in bots[2].current_page_text
+        assert "missed this round" in bots[2].current_page_text
 
         # Next round, the third player is back in the room.
         for bot in bots:

@@ -101,7 +101,7 @@ the demo that implements each one.
 .. figure:: ../_static/images/design/group_experiments.svg
    :width: 100%
    :alt: Four group experiments drawn as sequences of blocks. Rating stimuli
-      together: a grouper, then each trial a page and a barrier. Discussing a
+      together: a grouper, then each trial a barrier and a page. Discussing a
       topic: a grouper forms pairs, then a barrier, a chat and a barrier. A
       game played in rounds: a grouper forms a team, then each round a
       regrouper forms pairs, players decide with a time limit, wait for their

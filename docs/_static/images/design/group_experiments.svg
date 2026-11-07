@@ -24,15 +24,15 @@
 <rect x="140" y="84" width="258" height="84" rx="12" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
 <path d="M 364 168 q 0 8 -10 8 h -198 q -10 0 -10 -8" fill="none" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#arrow-loop)"/>
 <text x="269.0" y="190" font-size="12" font-style="italic" fill="#6b7280" text-anchor="middle">repeat for each trial</text>
-<rect x="150" y="96" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
-<text x="204.0" y="111" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
-<text x="204.0" y="128.5" font-size="13.5" fill="#111827" text-anchor="middle">Rate a shared</text>
-<text x="204.0" y="143.5" font-size="13.5" fill="#111827" text-anchor="middle">stimulus</text>
+<rect x="150" y="96" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+<text x="204.0" y="111" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
+<text x="204.0" y="128.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait for</text>
+<text x="204.0" y="143.5" font-size="13.5" fill="#111827" text-anchor="middle">everyone</text>
 <line x1="261" y1="126.0" x2="275" y2="126.0" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-<rect x="280" y="96" width="108" height="60" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
-<text x="334.0" y="111" font-size="10" font-weight="600" letter-spacing="0.6" fill="#b45309" text-anchor="middle">BARRIER</text>
-<text x="334.0" y="128.5" font-size="13.5" fill="#111827" text-anchor="middle">Wait for</text>
-<text x="334.0" y="143.5" font-size="13.5" fill="#111827" text-anchor="middle">everyone</text>
+<rect x="280" y="96" width="108" height="60" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+<text x="334.0" y="111" font-size="10" font-weight="600" letter-spacing="0.6" fill="#4b5563" text-anchor="middle">PAGE</text>
+<text x="334.0" y="128.5" font-size="13.5" fill="#111827" text-anchor="middle">Rate a shared</text>
+<text x="334.0" y="143.5" font-size="13.5" fill="#111827" text-anchor="middle">stimulus</text>
 <text x="20" y="222" font-size="15" font-weight="600" fill="#111827">Discussing a topic</text>
 <text x="660" y="222" font-size="12" fill="#6b7280" text-anchor="end" font-family="ui-monospace, Menlo, monospace">chatroom_simple</text>
 <rect x="20" y="246" width="108" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
