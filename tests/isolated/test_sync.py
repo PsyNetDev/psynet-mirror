@@ -5787,7 +5787,7 @@ def test_on_arrival_message_customizes_notices_without_turning_them_on():
     assert quiet.notify_arrivals is False
     assert (
         barrier._call_arrival_message(
-            kind="notice", waiting_count=1, group_size=2, recipient=None, group=None
+            kind="notice", waiting_count=1, group_size=2, group=None
         )
         == "custom"
     )

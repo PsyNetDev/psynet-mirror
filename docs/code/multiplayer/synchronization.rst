@@ -210,7 +210,8 @@ barrier after each choice scores the round:
    :pyobject: RockPaperScissorsTrial.score_trial
 
 ``on_release`` can take any of the arguments ``group``, ``participants``,
-``participant`` (the leader) and ``barrier``. It must be a module-level
+``leader`` and ``barrier`` (``participant`` is the leader too, kept for
+compatibility). It must be a module-level
 function, a static or class method, or a method bound to a trial maker or a
 saved database object such as a trial. The ``barrier`` it receives is rebuilt
 from saved settings, so read only scalar settings such as ``waiting_message`` and

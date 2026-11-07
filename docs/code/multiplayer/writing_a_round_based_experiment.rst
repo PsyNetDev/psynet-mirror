@@ -200,5 +200,6 @@ play for the whole game, and newcomers get the role that lets the most
 waiting players play.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
-example to pair players by their earlier answers. See
+example to pair players by their earlier answers. With roles, return each
+group as a ``{role: participant}`` dict. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.

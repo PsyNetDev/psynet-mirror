@@ -1529,11 +1529,13 @@ class GroupBarrier(Barrier):
         without them, and they pass this and later barriers of ``group_type`` alone.
 
     on_release
-        Optional callback invoked when the barrier releases participants.
+        Optional callback invoked when the barrier releases the group. It may take
+        ``group``, ``participants`` (the group's active members), ``leader`` (the
+        group's leader), ``participant`` (the same object as ``leader``, kept for
+        compatibility) and ``barrier``, the reconstructed registry object for this
+        visit (scalar presentation and notification settings, not wait pages).
         Must be a module-level function, ``@staticmethod``/``@classmethod``,
         or a bound method on a TrialMaker or ORM instance with a primary key.
-        The ``barrier`` argument is the reconstructed registry object for this
-        visit (scalar presentation and notification settings, not wait pages).
 
     fix_time_credit
         If set to ``True``, award fixed expected time credit. Otherwise default
@@ -1570,16 +1572,16 @@ class GroupBarrier(Barrier):
         See :class:`Barrier`.
 
     on_arrival_message
-        Optional callable that returns copy for one recipient. It receives
+        Optional callable that returns copy for one participant. It receives
         ``kind`` (``"notice"`` or ``"removed"``), ``waiting_count``,
-        ``group_size``, and the usual context arguments (``recipient``,
-        ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
+        ``group_size``, and the usual context arguments (``participant``, the
+        one who sees the copy, ``group``, ``barrier``, ``experiment``). Return ``None`` to hide that
         surface. Same serialization rules as ``on_release``.
 
         ``"notice"`` is the progress-bar notice for members who have not
         reached the barrier yet. It defaults to "Your partner is ready." in
         pairs and ``"{ARRIVED}/{TOTAL} of your group are ready."`` in larger
-        groups. It is called whenever the recipient's browser fetches its
+        groups. It is called whenever the participant's browser fetches its
         notice, which can be several times per arrival, so it should depend
         only on its arguments and have no side effects. Notices stay on one
         line (overflow ellipsizes), so keep them to a short sentence.
@@ -1717,7 +1719,7 @@ class GroupBarrier(Barrier):
         }
 
     def _call_arrival_message(self, **kwargs):
-        """Return author or default arrival copy for one recipient.
+        """Return author or default arrival copy for one participant.
 
         Safe on reconstructed registry barriers.
         """
@@ -1807,6 +1809,7 @@ class GroupBarrier(Barrier):
                         self.on_release(
                             group=group,
                             participants=group.active_participants,
+                            leader=group.leader,
                             participant=group.leader,
                             barrier=self,
                         )
@@ -1917,7 +1920,7 @@ class GroupBarrier(Barrier):
                 kind="removed",
                 waiting_count=0,
                 group_size=group_size,
-                recipient=participant,
+                participant=participant,
                 group=group,
             )
         except Exception as err:
@@ -2672,14 +2675,15 @@ class Regrouper(Grouper):
         a newcomer who sits out gets a role again at the next split.
 
     form_groups
-        Optional callable ``form_groups(members, within_group, regrouper)``
+        Optional callable ``form_groups(members, within_group, barrier)``
         that returns a list of groups, each a list of participants, replacing
-        the default grouping described above. Members who are not placed are
-        left over. With ``roles``, list each group's members in the order of
-        ``roles`` if ``keep_roles`` is ``False``; with ``keep_roles``, members
-        already have their roles when it is called. Subclasses can override
-        :meth:`form_groups` instead. The callable must be a module-level
-        function so it can be stored with the barrier.
+        the default grouping described above; ``barrier`` is this regrouper.
+        Members who are not placed are left over. With ``roles``, return each
+        group as a ``{role: participant}`` dict, which is clearest, or as a list
+        in the order of ``roles``. With ``keep_roles``, members already have
+        their roles when it is called, and each group needs one member per role.
+        Subclasses can override :meth:`form_groups` instead. The callable must be
+        a module-level function so it can be stored with the barrier.
 
     release_left_over
         If ``True``, participants left over after a split continue ungrouped,
@@ -2694,12 +2698,11 @@ class Regrouper(Grouper):
         nobody waits for them.
 
     on_release
-        Optional callback ``on_release(within_group, groups, left_over, regrouper)``
+        Optional callback ``on_release(within_group, groups, left_over, barrier)``
         run after each split that forms at least one group, after roles are
-        given out. A late member can make a split of their own in the same
-        round, so count rounds per participant (see :meth:`rounds_played`)
-        rather than here. ``barrier`` is passed too, as for
-        :class:`GroupBarrier`.
+        given out; ``barrier`` is this regrouper. A late member can make a split
+        of their own in the same round, so count rounds per participant (see
+        :meth:`rounds_played`) rather than here.
 
     max_wait_time
         Longest a participant waits at the regrouper before being failed.
@@ -2816,7 +2819,7 @@ class Regrouper(Grouper):
         """
         if self.form_groups_function is not None:
             return self.form_groups_function(
-                members=members, within_group=within_group, regrouper=self
+                members=members, within_group=within_group, barrier=self
             )
         history = self._history(members)
         # Shuffled first, so that ties are broken at random.
@@ -2882,12 +2885,13 @@ class Regrouper(Grouper):
     def role(self, participant) -> Optional[str]:
         """Return ``participant``'s role (see ``roles``).
 
-        Without ``keep_roles`` this is their role in the latest group this
-        regrouper put them in, even after they were removed from it, so a
-        reloaded page still shows it. It is ``None`` before their first
-        group, from when they come back to the regrouper until their next
-        group, so also after they sat a round out, and while they are in a
-        group of this type that another grouper formed.
+        This is their role in their latest round with this regrouper, even
+        after they were removed from that group, so a reloaded page still
+        shows it. It is ``None`` once they are back at the regrouper, while
+        waiting for the next split or after sitting a round out, and before
+        their first round. With ``keep_roles`` it is instead their permanent
+        role, which a newcomer gets at their first split. It is also ``None``
+        while they are in a group of this type that another grouper formed.
         """
         links = self._links([participant.id])
         if self.keep_roles:
@@ -3240,7 +3244,7 @@ class Regrouper(Grouper):
         if self.keep_roles:
             self._give_kept_roles(members)
         plan = [
-            list(group_members)
+            self._in_role_order(group_members)
             for group_members in self.form_groups(members, within_group=within_group)
             if group_members
         ]
@@ -3269,7 +3273,6 @@ class Regrouper(Grouper):
                     within_group=within_group,
                     groups=groups,
                     left_over=left_over,
-                    regrouper=self,
                     barrier=self,
                 )
             except Exception as err:
@@ -3288,6 +3291,24 @@ class Regrouper(Grouper):
         """Mark these members' current visits as sat out."""
         for visit in self._visits(left_over).values():
             visit.sat_out = True
+
+    def _in_role_order(self, group_members) -> list:
+        """Return a planned group as a list, putting a ``{role: participant}`` dict in role order."""
+        if not isinstance(group_members, dict):
+            return list(group_members)
+        if self.roles is None or set(group_members) != set(self.roles):
+            raise ValueError(
+                f"Regrouper '{self.id}': form_groups returned a group keyed by "
+                f"{sorted(group_members)}; key groups by the roles {self.roles}."
+            )
+        if self.keep_roles and any(
+            self.role(member) != role for role, member in group_members.items()
+        ):
+            raise ValueError(
+                f"Regrouper '{self.id}': form_groups gave a member a role other "
+                "than the one they keep."
+            )
+        return [group_members[role] for role in self.roles]
 
     def _check_plan(self, plan, members):
         """Raise if ``form_groups`` placed someone twice, placed a non-member, or broke the roles."""
@@ -4400,7 +4421,7 @@ def pending_arrival_notice_for(participant):
                     kind="notice",
                     waiting_count=waiting_count,
                     group_size=len(group.active_participants),
-                    recipient=participant,
+                    participant=participant,
                     group=group,
                 )
                 if text:

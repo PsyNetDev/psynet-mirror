@@ -456,9 +456,24 @@ def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
     assert pairs.rounds_sat_out(sitter) == 2
 
 
-def _pair_same_roles(members, regrouper, **_):
-    ordered = sorted(members, key=regrouper.role)
+def _pair_same_roles(members, barrier, **_):
+    ordered = sorted(members, key=barrier.role)
     return [ordered[:2], ordered[2:]]
+
+
+def _lowest_id_responds(members, **_):
+    responder, proposer = sorted(members, key=lambda p: p.id)
+    return [{"responder": responder, "proposer": proposer}]
+
+
+@in_consents_experiment
+def test_regrouper_form_groups_can_return_groups_keyed_by_role(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 2, form_groups=_lowest_id_responds)
+    _arrive(exp, pairs, cohort)
+    assert [pairs.role(p) for p in cohort] == ["responder", "proposer"]
 
 
 @in_consents_experiment

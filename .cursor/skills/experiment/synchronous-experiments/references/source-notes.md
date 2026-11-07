@@ -20,7 +20,7 @@ and platform docs when a study is near deployment.
   `notify_arrivals=False` to disable them, or customize copy with
   `on_arrival_message`.
   It checks `min_group_size`, can wait for top-ups, can fail under-quota groups,
-  and accepts `on_release(group, participants)` for atomic shared updates.
+  and accepts `on_release(group, participants, leader, barrier)` for atomic shared updates.
   The `barrier` argument is reconstructed; see
   `docs/code/multiplayer/synchronization.rst` (published at https://psynetdev.gitlab.io/PsyNet/code/multiplayer/synchronization.html) ("Release callbacks").
 - `psynet.sync.SimpleGrouper` creates `SyncGroup`s by waiting for `batch_size`
