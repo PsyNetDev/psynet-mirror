@@ -79,6 +79,32 @@ reloading the page.
    :alt: A page to choose a room, then a group page that sends messages live
       to the room.
 
+Seeing who you're playing with
+------------------------------
+
+Group members see each other by a **pseudonym**, such as "Pink koala", drawn
+as an animal in a colour, never by their real identity:
+
+.. figure:: ../_static/images/design/groups/pseudonyms_chat.png
+   :width: 520
+   :alt: A chatroom in which the participant is labelled "You" and their
+      partner "Pink koala", each with their animal next to their messages.
+
+A participant keeps the same pseudonym for the whole experiment, so when
+groups change from round to round, players can recognise someone they met
+before. If that could change how they behave, for example because a player
+could build a reputation in a game, show members **anonymously** instead:
+everyone appears as the same grey figure.
+
+.. figure:: ../_static/images/design/groups/anonymous_partner.png
+   :width: 520
+   :alt: A decision page that shows the participant and their partner as two
+      identical grey figures, one labelled "You".
+
+The dashboard shows each participant's pseudonym, and the names that
+participants saw can be recovered from an export, for example to read chat
+messages that mention them.
+
 From one group to many rounds
 -----------------------------
 
@@ -210,6 +236,7 @@ What to check when reviewing group experiments
   total?
 - In a real-time interaction, can a member see information meant only for
   others, and can the interaction resume after a reload?
+- Can players recognise each other across rounds, and should they?
 
 .. seealso::
 
