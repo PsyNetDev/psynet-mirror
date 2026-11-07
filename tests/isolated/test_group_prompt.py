@@ -110,18 +110,23 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     first, second, third = _working_participants(exp, 3)
     _arrive(exp, SimpleGrouper("room", initial_group_size=3), [first, second, third])
     group = third.active_sync_groups["room"]
-    db_session.add(
-        Response(
-            participant=first,
-            label="choose",
-            page_type="ModularPage",
-            metadata={"time_limit_reached": True},
+
+    def time_out(participant):
+        db_session.add(
+            Response(
+                participant=participant,
+                label="choose",
+                page_type="ModularPage",
+                metadata={"time_limit_reached": True},
+            )
         )
-    )
+
+    time_out(first)
     _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
 
     html = GroupPrompt(group=group, participant=third).group_html
     assert html.count("psynet-group-member--ran-out-of-time") == 1
+    assert ">ran out of time<" in html
     assert html.count("psynet-group-member--answered") == 1
     (ready,) = arrival_notice_payload(third.unique_id)["group_ready"]
     assert ready["ran_out_of_time"] == [group_seats(group)[first.id]]
@@ -130,6 +135,14 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     _arrive(exp, GroupBarrier("decided", group_type="room"), [third])
     _arrive(exp, GroupBarrier("next", group_type="room"), [first])
     html = GroupPrompt(group=group, participant=third).group_html
+    assert "psynet-group-member--ran-out-of-time" not in html
+
+    # A member removed for being late is shown as having left, without a dash.
+    time_out(second)
+    _arrive(exp, GroupBarrier("next", group_type="room"), [second])
+    group.remove_participant(second, reason="out_of_time")
+    html = GroupPrompt(group=group, participant=third).group_html
+    assert "psynet-group-member--left" in html
     assert "psynet-group-member--ran-out-of-time" not in html
 
 

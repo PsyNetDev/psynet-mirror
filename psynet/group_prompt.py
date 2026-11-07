@@ -25,7 +25,7 @@ Design constraints:
   where they keep their seat and bubble. The reason comes from
   :meth:`psynet.sync.SyncGroup.remove_participant`.
 - The HTML is built on the server; ``static/scripts/group-prompt.js`` only
-  updates ticks, so pages without JavaScript still show the group.
+  updates ticks and dashes, so pages without JavaScript still show the group.
 """
 
 import math
@@ -117,7 +117,8 @@ class GroupPrompt(Prompt):
         when the page is drawn. By default, a member has answered while they
         wait at a barrier of this group, and ticks then also appear live as
         members arrive at the group's barriers. With a custom ``has_answered``,
-        ticks are only drawn when the page loads.
+        ticks are only drawn when the page loads, and members who ran out of
+        time get a tick like the others.
     subgroups
         Optional way to cluster the members: a sync group type, such as
         ``"pair"`` for pairs formed within the group, or a function

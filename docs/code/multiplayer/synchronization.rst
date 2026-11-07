@@ -430,7 +430,7 @@ uses the barrier's arrival updates, so it needs ``notify_arrivals``). A
 member who reached the barrier because their page's time limit ran out gets
 a grey dash instead, and screen readers announce that they ran out of time. Pass
 ``show_progress=False`` to hide the ticks, or ``has_answered`` to decide who has
-answered when the page is drawn. Members who join the group appear live
+answered when the page is drawn (members who ran out of time then get a tick too). Members who join the group appear live
 too, and members who leave are faded (see below), on any page without
 ``answers``, ``has_answered`` or ``highlight``, unless ``subgroups`` is a function.
 Live redraws need the same ``FLASK_SECRET_KEY`` on every web process; without

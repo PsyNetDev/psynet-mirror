@@ -32,12 +32,12 @@ it("drops arrival snapshots that come back after a newer one", () => {
 
   const snapshot = (count) => ({
     notice: `${count}/6 ready`,
-    group_ready: [{ group_id: 1, seats: [...Array(count).keys()] }],
+    group_ready: [{ group_id: 1, seats: [...Array(count).keys()], ran_out_of_time: [2] }],
   });
   psynet.applyArrivalSnapshot(snapshot(4), 2);
   psynet.applyArrivalSnapshot(snapshot(3), 1);
   assert.deepEqual(psynet.notices, ["4/6 ready"]);
-  assert.deepEqual(psynet.readySeatsFor(1).seats, [0, 1, 2, 3]);
+  assert.deepEqual(psynet.readySeatsFor(1), { seats: [0, 1, 2, 3], ranOutOfTime: [2] });
   window.pageUuid = "page-2";
   assert.deepEqual(psynet.readySeatsFor(1).seats, []);
 });

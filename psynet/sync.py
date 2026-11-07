@@ -4080,8 +4080,13 @@ def _ready_seats_for(participant):
     for group in participant.active_sync_groups.values():
         seats = group_seats(group)
         members = group.active_participants
-        waiting = [seats[m.id] for m in members if waiting_barrier_ids(m, group)]
-        timed_out = [seats[m.id] for m in members if ran_out_of_time_in(m, group)]
+        waiting, timed_out = [], []
+        for member in members:
+            links = [link for _, link in _waiting_links(member, group)]
+            if links:
+                waiting.append(seats[member.id])
+            if any(link.ran_out_of_time for link in links):
+                timed_out.append(seats[member.id])
         ready.append(
             {
                 "group_id": group.id,
