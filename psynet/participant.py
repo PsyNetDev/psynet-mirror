@@ -396,6 +396,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The server-owned :class:`~psynet.exit.ExitPlan` snapshot for this
         participant's terminal outcome.
 
+    group_removal_notice : dict or None
+        The progress-bar notice for a participant whom a
+        :class:`~psynet.sync.GroupBarrier` removed from their group, with the
+        ``page_uuid`` of the page it belongs to.
+        Should not be modified directly.
+
     answer : object
         The most recent answer submitted by the participant.
         Can take any form that can be automatically serialized to JSON.
@@ -471,6 +477,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
     pending_redirect = Column(String)
+    group_removal_notice = Column(PythonDict)
     answer = Column(PythonObject)
     answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)

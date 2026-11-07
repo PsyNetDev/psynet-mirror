@@ -891,6 +891,56 @@
       }
     };
 
+    // Countdown spans carry a duration from the server, so they are timed
+    // against the browser's clock from when they first appear.
+    psynet.tickTimelineHoldCountdowns = function () {
+      let now = Date.now();
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          if (element.dataset.releaseInMs === undefined) {
+            return;
+          }
+          if (!element.dataset.releaseAt) {
+            element.dataset.releaseAt = String(
+              now + Number(element.dataset.releaseInMs || 0),
+            );
+          }
+          let seconds = Math.max(
+            0,
+            Math.ceil((Number(element.dataset.releaseAt) - now) / 1000),
+          );
+          if (element.textContent !== String(seconds)) {
+            element.textContent = String(seconds);
+          }
+          // Check straight away at the release time rather than at the next
+          // safety poll; the short margin lets the server's clock catch up.
+          let releaseAt = Number(element.dataset.releaseAt);
+          if (!element.dataset.checked && now >= releaseAt + 300) {
+            element.dataset.checked = "true";
+            psynet.resumeTimelineHold("countdown");
+          }
+        });
+    };
+    setInterval(psynet.tickTimelineHoldCountdowns, 250);
+
+    // A barrier sends a new release time, or null when it no longer knows one.
+    psynet.setTimelineHoldCountdowns = function (releaseInMs) {
+      document
+        .querySelectorAll(".psynet-timeline-hold-countdown")
+        .forEach((element) => {
+          delete element.dataset.releaseAt;
+          delete element.dataset.checked;
+          if (releaseInMs === null || releaseInMs <= 0) {
+            delete element.dataset.releaseInMs;
+            element.textContent = releaseInMs === null ? "…" : "0";
+          } else {
+            element.dataset.releaseInMs = String(releaseInMs);
+          }
+        });
+      psynet.tickTimelineHoldCountdowns();
+    };
+
     psynet.hideArrivalNotice = function () {
       document.getElementById("psynet-arrival-notice")?.remove();
     };
@@ -933,6 +983,9 @@
         }
         if (Object.prototype.hasOwnProperty.call(target, "notice")) {
           psynet.applyArrivalNotice(target.notice);
+        }
+        if (Object.prototype.hasOwnProperty.call(target, "release_in_ms")) {
+          psynet.setTimelineHoldCountdowns(target.release_in_ms);
         }
       });
     };

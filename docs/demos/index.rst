@@ -401,6 +401,16 @@ Groups
 `experiments/rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__
     A two-player game with scored rounds and a chat after each round.
 
+`experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
+    ``Regrouper`` with a ``Clock``: rooms of up to eight form every 20
+    seconds, and players who are too slow sit out a round instead of being
+    failed. :doc:`/code/multiplayer/synchronization`.
+
+`experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
+    An ultimatum game in teams from a lobby that starts short and takes
+    latecomers. Each round re-pairs the team with a ``Regrouper``, and an odd
+    player out sits out. :doc:`/code/multiplayer/synchronization`.
+
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
     ``psynet.chatroom``. Clients exchange messages on one shared channel and
