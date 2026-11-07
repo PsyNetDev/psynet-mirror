@@ -7,18 +7,18 @@ next round. This page builds one such game step by step, the
 ``ultimatum_pairing`` demo, and then shows how other games vary it. See
 :doc:`synchronization` for the concepts used here.
 
-In the demo, teams of up to four players form in a lobby. Each round, the
-team is split into pairs, and in each pair a proposer offers part of 10
+In the demo, cohorts of up to four players form in a lobby. Each round, the
+cohort is split into pairs, and in each pair a proposer offers part of 10
 coins while the responder says the smallest offer they would accept. A
 player who is slow, closes their tab or sits a round out never holds up the
 others, and nobody is failed for it.
 
-Forming teams
+Forming cohorts
 -------------
 
-A :class:`~psynet.sync.SimpleGrouper` forms the teams. It starts a team
+A :class:`~psynet.sync.SimpleGrouper` forms the cohorts. It starts a cohort
 of four as soon as four players are waiting, or a smaller one after a
-minute, and lets latecomers join until the team's second round starts:
+minute, and lets latecomers join until the cohort's second round starts:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: SimpleGrouper(
@@ -26,20 +26,20 @@ minute, and lets latecomers join until the team's second round starts:
    :dedent: 8
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: team_accepts_newcomers
+   :pyobject: cohort_accepts_newcomers
 
 Pairing players each round
 --------------------------
 
 A :class:`~psynet.sync.Regrouper` at the start of each round splits the
-team into new pairs. Each time a player reaches it, they leave last round's
+cohort into new pairs. Each time a player reaches it, they leave last round's
 pair and wait for the next split:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: pairing = Regrouper(
    :end-before: def play_round
 
-The round starts as soon as the whole team is waiting, or at the
+The round starts as soon as the whole cohort is waiting, or at the
 ``deadline`` (counted from when the first player is back) without whoever
 isn't back yet, if enough players are waiting to
 form a pair; latecomers join the next round.
@@ -155,7 +155,7 @@ The results page passes both answers to the prompt as speech bubbles:
 Sitting out
 -----------
 
-With three players in a team, one of them has no partner. The player who has
+With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``release_left_over=True``
 they move on to a page saying so instead of waiting. A player who was paired but taken
 out before reaching the decision page is told that they were away instead:
@@ -171,16 +171,16 @@ Ending the game
 ---------------
 
 The rounds loop runs until a player has played their rounds, has sat out
-too often, or their team is down to one player:
+too often, or their cohort is down to one player:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: keep_playing
 
-Players who finish leave the team, so that the regrouper doesn't wait for
+Players who finish leave the cohort, so that the regrouper doesn't wait for
 them in later rounds:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
-   :pyobject: leave_team
+   :pyobject: leave_cohort
 
 .. _rounds-variations:
 

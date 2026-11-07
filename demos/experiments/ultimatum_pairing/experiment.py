@@ -1,17 +1,17 @@
-"""Ultimatum game with teams that are randomly re-paired every round.
+"""Ultimatum game with cohorts that are randomly re-paired every round.
 
-Players first wait in a lobby until a team of ``TEAM_SIZE`` forms, or until
-at least ``MIN_TEAM_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
-still join a team until its round ``OPEN_UNTIL_ROUND`` starts.
+Players first wait in a lobby until a cohort of ``COHORT_SIZE`` forms, or until
+at least ``MIN_COHORT_SIZE`` have waited ``SHORT_START_SECONDS``. Latecomers can
+still join a cohort until its round ``OPEN_UNTIL_ROUND`` starts.
 
-Each round, the :class:`~psynet.sync.Regrouper` pairs up the team's players,
+Each round, the :class:`~psynet.sync.Regrouper` pairs up the cohort's players,
 avoiding last round's partner, and gives each pair a proposer and a
 responder, alternating each player's role. It starts the round as soon as
-the whole team is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
+the whole cohort is ready, or ``ROUND_DEADLINE_SECONDS`` after the first
 player is back, without the players who aren't ready yet. With an odd number
 of players, one who has played the most rounds sits that round out; a
 player left waiting alone waits up to another ``ROUND_DEADLINE_SECONDS``
-for the others to finish their round instead. Players leave the team when
+for the others to finish their round instead. Players leave the cohort when
 they finish, so nobody waits for them.
 In each pair, the proposer offers part of
 ``ENDOWMENT`` coins and, at the same time, the responder says the smallest
@@ -22,7 +22,7 @@ round, and nor does their partner. A player who closes their page is taken
 out of their pair so their partner isn't held up. A player who misses a
 round joins the next one, and nobody is failed for being slow. Players
 finish after ``N_ROUNDS`` rounds in a pair, or early, with an explanation,
-after sitting out ``MAX_SIT_OUTS`` rounds or if their team falls apart.
+after sitting out ``MAX_SIT_OUTS`` rounds or if their cohort falls apart.
 """
 
 from typing import List
@@ -43,22 +43,22 @@ from psynet.timeline import (
     while_loop,
 )
 
-TEAM_SIZE = 4
-MIN_TEAM_SIZE = 2
+COHORT_SIZE = 4
+MIN_COHORT_SIZE = 2
 SHORT_START_SECONDS = 60
 N_ROUNDS = 2
 MAX_SIT_OUTS = 2
 OPEN_UNTIL_ROUND = 2
 DECISION_SECONDS = 30
 # Longer than the decisions take, so a pair that finishes early is re-paired
-# with the rest of the team rather than without them.
+# with the rest of the cohort rather than without them.
 ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
 ENDOWMENT = 10
 WAIT_TIMEOUT = ROUND_DEADLINE_SECONDS + DECISION_SECONDS + 20
 
 
-def team_of(participant):
-    return participant.active_sync_groups.get("team")
+def cohort_of(participant):
+    return participant.active_sync_groups.get("cohort")
 
 
 def in_pair(participant):
@@ -67,8 +67,8 @@ def in_pair(participant):
 
 def lobby_message(seconds_left):
     if seconds_left is None:
-        return "Waiting for another player to join your team."
-    return "Waiting for your team to form. Starting in at most {SECONDS} s."
+        return "Waiting for another player to join your group."
+    return "Waiting for your group of players to form. Starting in at most {SECONDS} s."
 
 
 def round_message(seconds_left):
@@ -92,25 +92,25 @@ def ended_early_page(participant):
     return InfoPage(text, time_estimate=5)
 
 
-def leave_team(participant):
-    """Leave the team, so teammates who are still playing don't wait for you."""
-    team = team_of(participant)
-    if team is not None:
-        team.remove_participant(participant)
+def leave_cohort(participant):
+    """Leave the cohort, so cohort members who are still playing don't wait for you."""
+    cohort = cohort_of(participant)
+    if cohort is not None:
+        cohort.remove_participant(participant)
 
 
-def team_accepts_newcomers(group, participant):
-    """Let latecomers join until the team's round ``OPEN_UNTIL_ROUND`` starts."""
-    # Includes players who have left, so the team stays closed after they go.
-    team = [link.participant for link in group.participant_links]
-    return all(pairing.rounds_played(p) < OPEN_UNTIL_ROUND for p in team)
+def cohort_accepts_newcomers(group, participant):
+    """Let latecomers join until the cohort's round ``OPEN_UNTIL_ROUND`` starts."""
+    # Includes players who have left, so the cohort stays closed after they go.
+    cohort = [link.participant for link in group.participant_links]
+    return all(pairing.rounds_played(p) < OPEN_UNTIL_ROUND for p in cohort)
 
 
 def keep_playing(participant):
-    team = team_of(participant)
+    cohort = cohort_of(participant)
     return (
-        team is not None
-        and len(team.active_participants) >= 2
+        cohort is not None
+        and len(cohort.active_participants) >= 2
         and pairing.rounds_played(participant) < N_ROUNDS
         and pairing.rounds_sat_out(participant) < MAX_SIT_OUTS
     )
@@ -172,13 +172,13 @@ def decision_page(participant):
     )
 
 
-def forming_team(participant):
-    """Replace the welcome page while the player waits for a team."""
-    return "We're putting together a team for you. Each round, you play with one other player from it."
+def forming_cohort(participant):
+    """Replace the welcome page while the player waits for a cohort."""
+    return "We're putting together a group of players for you. Each round, you play with one other player from it."
 
 
 def pairing_up(participant):
-    """Replace the last results page while the team pairs up for the next round."""
+    """Replace the last results page while the cohort pairs up for the next round."""
     return "Getting the next round ready."
 
 
@@ -232,7 +232,7 @@ def not_playing(participant):
 
 pairing = Regrouper(
     "pair",
-    within="team",
+    within="cohort",
     group_size=2,
     roles=["proposer", "responder"],
     deadline=ROUND_DEADLINE_SECONDS,
@@ -264,10 +264,10 @@ def play_round():
                 ),
                 PageMaker(show_outcome, time_estimate=5),
             ),
-            # Without a team the game is over; the ended-early page explains why.
+            # Without a cohort the game is over; the ended-early page explains why.
             conditional(
-                "in_team",
-                lambda participant: team_of(participant) is not None,
+                "in_cohort",
+                lambda participant: cohort_of(participant) is not None,
                 PageMaker(not_playing, time_estimate=5),
             ),
         ),
@@ -279,19 +279,19 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         InfoPage(
-            "You will play several rounds of a game with other players in your team.",
+            "You will play several rounds of a game with other players in your group.",
             time_estimate=5,
         ),
         SimpleGrouper(
-            "team",
-            initial_group_size=TEAM_SIZE,
-            min_group_size=MIN_TEAM_SIZE,
+            "cohort",
+            initial_group_size=COHORT_SIZE,
+            min_group_size=MIN_COHORT_SIZE,
             start_short_after=SHORT_START_SECONDS,
             join_existing_groups=True,
-            join_criterion=team_accepts_newcomers,
+            join_criterion=cohort_accepts_newcomers,
             fail_participants_below_min_size=False,
             content=lobby_message,
-            waiting_screen=forming_team,
+            waiting_screen=forming_cohort,
             max_wait_time=300,
         ),
         while_loop(
@@ -300,7 +300,7 @@ class Exp(psynet.experiment.Experiment):
             play_round(),
             expected_repetitions=N_ROUNDS,
         ),
-        CodeBlock(leave_team),
+        CodeBlock(leave_cohort),
         conditional(
             "ended_early",
             ended_early,
@@ -316,9 +316,9 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
 
-        # Round 1: the whole team is ready, so it starts at once. Latecomers
+        # Round 1: the whole cohort is ready, so it starts at once. Latecomers
         # can still join while it is being played.
-        assert _team_accepts_newcomers(bots[0])
+        assert _cohort_accepts_newcomers(bots[0])
         _play(bots)
         assert all("The offer of" in bot.current_page_text for bot in bots)
 
@@ -328,19 +328,19 @@ class Exp(psynet.experiment.Experiment):
         for bot in others:
             bot.take_page()
         advance_past_wait_pages(others, timeout=WAIT_TIMEOUT)
-        assert not _team_accepts_newcomers(bots[0])
+        assert not _cohort_accepts_newcomers(bots[0])
         sitting_out = [b for b in others if "sit out" in b.current_page_text]
         assert len(sitting_out) == 1
         _play([b for b in others if b not in sitting_out])
 
         # The pair has played its two rounds. The lingerer wasn't failed, and
         # the sit-out didn't count, so those two play a final round together.
-        # The team stays closed to latecomers after the pair has left it.
+        # The cohort stays closed to latecomers after the pair has left it.
         for bot in bots:
             bot.take_page()
         last_pair = [sitting_out[0], bots[3]]
         advance_past_wait_pages(last_pair, timeout=WAIT_TIMEOUT)
-        assert not _team_accepts_newcomers(last_pair[0])
+        assert not _cohort_accepts_newcomers(last_pair[0])
         _play(last_pair)
         assert all("The offer of" in bot.current_page_text for bot in last_pair)
         for bot in last_pair:
@@ -357,5 +357,5 @@ def _play(bots):
     advance_past_wait_pages(bots, timeout=WAIT_TIMEOUT)
 
 
-def _team_accepts_newcomers(bot):
-    return team_accepts_newcomers(team_of(Participant.query.get(bot.id)), None)
+def _cohort_accepts_newcomers(bot):
+    return cohort_accepts_newcomers(cohort_of(Participant.query.get(bot.id)), None)

@@ -93,7 +93,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `regrouper.role(participant)` instead of assigning roles yourself. With
   `release_left_over=True`, odd players out sit out the round; with
   `within`, a player waiting alone first waits one more deadline for
-  teammates, so `max_wait_time` must exceed twice the deadline.
+  cohort members, so `max_wait_time` must exceed twice the deadline.
 - For a lobby that should not wait forever for a full group, use
   `SimpleGrouper(min_group_size=..., start_short_after=...)`, with
   `join_existing_groups=True` to let latecomers fill it up.

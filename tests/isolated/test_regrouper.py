@@ -59,35 +59,35 @@ def _backdate_splits(regrouper, seconds):
 
 
 @in_consents_experiment
-def test_regrouper_pairs_within_teams_and_does_not_wait_for_absent_members(
+def test_regrouper_pairs_within_cohorts_and_does_not_wait_for_absent_members(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=4)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=4)
     pairs = Regrouper(
         "pair",
-        within="team",
+        within="cohort",
         group_size=2,
         deadline=30,
         content="Next round (<1 min) in {SECONDS} s",
     )
-    team = _working_participants(exp, 4)
-    _arrive(exp, team_grouper, team)
+    cohort = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, cohort)
 
-    _arrive(exp, pairs, team[:3])
-    assert _waiting(pairs, team[:3]) == team[:3]
-    html = pairs.waiting_logic.overlay_html(team[0])
+    _arrive(exp, pairs, cohort[:3])
+    assert _waiting(pairs, cohort[:3]) == cohort[:3]
+    html = pairs.waiting_logic.overlay_html(cohort[0])
     assert "psynet-timeline-hold-countdown" in html and "(&lt;1 min)" in html
 
-    _arrive(exp, pairs, team[3:])
-    assert _waiting(pairs, team) == []
-    round_1 = {frozenset(p.active_sync_groups["pair"].participants) for p in team}
+    _arrive(exp, pairs, cohort[3:])
+    assert _waiting(pairs, cohort) == []
+    round_1 = {frozenset(p.active_sync_groups["pair"].participants) for p in cohort}
     assert len(round_1) == 2
     assert all(len(pair) == 2 for pair in round_1)
 
     # Next round: one member is absent, so the others go ahead at the deadline
     # and the odd one out keeps waiting for the round after.
-    present = team[:3]
+    present = cohort[:3]
     _arrive(exp, pairs, present)
     assert all("pair" not in p.active_sync_groups for p in present)
     assert _waiting(pairs, present) == present
@@ -188,19 +188,21 @@ def test_regrouper_countdown_and_form_groups_check_use_the_whole_pool(
 
 
 @in_consents_experiment
-def test_regrouper_teams_have_their_own_deadlines(in_experiment_directory, db_session):
+def test_regrouper_cohorts_have_their_own_deadlines(
+    in_experiment_directory, db_session
+):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=3)
-    pairs = Regrouper("pair", within="team", group_size=2, deadline=30)
-    teams = [_working_participants(exp, 3) for _ in range(2)]
-    for team in teams:
-        _arrive(exp, team_grouper, team)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
+    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
+    cohorts = [_working_participants(exp, 3) for _ in range(2)]
+    for cohort in cohorts:
+        _arrive(exp, cohort_grouper, cohort)
 
-    # A split in one team does not restart the other team's deadline.
-    for team in teams:
-        _arrive(exp, pairs, team[:2])
-        _backdate_arrivals(pairs, team[:2], 31)
-        assert len(pairs.choose_who_to_release(team[:2])) == 2
+    # A split in one cohort does not restart the other cohort's deadline.
+    for cohort in cohorts:
+        _arrive(exp, pairs, cohort[:2])
+        _backdate_arrivals(pairs, cohort[:2], 31)
+        assert len(pairs.choose_who_to_release(cohort[:2])) == 2
 
 
 def _lobby_message(seconds_left):
@@ -279,26 +281,26 @@ def _count_releases(**kwargs):
 
 
 @in_consents_experiment
-def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
+def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
     pairs = Regrouper(
         "pair",
-        within="team",
+        within="cohort",
         group_size=2,
         deadline=15,
         release_left_over=True,
         on_release=_count_releases,
     )
-    team = _working_participants(exp, 3)
-    _arrive(exp, team_grouper, team)
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, cohort_grouper, cohort)
     _count_releases.calls = 0
-    _arrive(exp, pairs, team)
+    _arrive(exp, pairs, cohort)
     assert _count_releases.calls == 1
-    (odd_one_out,) = [p for p in team if "pair" not in p.active_sync_groups]
-    paired = [p for p in team if p is not odd_one_out]
+    (odd_one_out,) = [p for p in cohort if "pair" not in p.active_sync_groups]
+    paired = [p for p in cohort if p is not odd_one_out]
 
     # The pair's round runs past the deadline; the odd one out, back first,
     # keeps waiting for them instead of sitting out again.
@@ -312,7 +314,7 @@ def test_regrouper_left_over_waits_for_teammates_still_in_the_round(
     _backdate_arrivals(pairs, [odd_one_out], -15)
 
     _arrive(exp, pairs, paired)
-    assert _waiting(pairs, team) == []
+    assert _waiting(pairs, cohort) == []
     assert _count_releases.calls == 2
     # Leaving their pair for the next round counts as moving on, not dropping out.
     assert "moved_on" in [
@@ -327,32 +329,36 @@ def test_clock_regrouper_left_over_waits_one_more_tick(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=3)
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=3)
     pairs = Regrouper(
-        "pair", within="team", group_size=2, deadline=Clock(15), release_left_over=True
+        "pair",
+        within="cohort",
+        group_size=2,
+        deadline=Clock(15),
+        release_left_over=True,
     )
-    team = _working_participants(exp, 3)
-    _arrive(exp, team_grouper, team)
+    cohort = _working_participants(exp, 3)
+    _arrive(exp, cohort_grouper, cohort)
     # Two were waiting at the last tick, so they pair up when the third arrives.
-    _arrive(exp, pairs, team[:2])
-    _backdate_arrivals(pairs, team[:2], 16)
-    _arrive(exp, pairs, team[2:])
-    assert _waiting(pairs, team) == team[2:]
+    _arrive(exp, pairs, cohort[:2])
+    _backdate_arrivals(pairs, cohort[:2], 16)
+    _arrive(exp, pairs, cohort[2:])
+    assert _waiting(pairs, cohort) == cohort[2:]
     _backdate_splits(pairs, 32)
 
     # The pair is still playing: held through one tick, released at the next.
     since_tick = time.time() - _latest_tick(time.time(), 15)
-    _backdate_arrivals(pairs, team[2:], since_tick + 1)
-    assert pairs.choose_who_to_release(team[2:]) == []
-    _backdate_arrivals(pairs, team[2:], 15)
-    assert pairs.choose_who_to_release(team[2:]) == team[2:]
+    _backdate_arrivals(pairs, cohort[2:], since_tick + 1)
+    assert pairs.choose_who_to_release(cohort[2:]) == []
+    _backdate_arrivals(pairs, cohort[2:], 15)
+    assert pairs.choose_who_to_release(cohort[2:]) == cohort[2:]
 
 
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
     with pytest.raises(ValueError, match="twice the deadline"):
         Regrouper(
             "pair",
-            within="team",
+            within="cohort",
             group_size=2,
             deadline=150,
             release_left_over=True,
@@ -381,41 +387,41 @@ def test_group_barrier_can_let_ungrouped_participants_through(
 
 
 @in_consents_experiment
-def test_a_busy_player_does_not_hold_up_other_teams(
+def test_a_busy_player_does_not_hold_up_other_cohorts(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team_grouper = SimpleGrouper("team", initial_group_size=2)
-    team_a, team_b = _working_participants(exp, 2), _working_participants(exp, 2)
-    _arrive(exp, team_grouper, team_a)
-    _arrive(exp, team_grouper, team_b)
-    pairs = Regrouper("pair", within="team", group_size=2, deadline=30)
-    _arrive(exp, pairs, team_a[:1])
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=2)
+    cohort_a, cohort_b = _working_participants(exp, 2), _working_participants(exp, 2)
+    _arrive(exp, cohort_grouper, cohort_a)
+    _arrive(exp, cohort_grouper, cohort_b)
+    pairs = Regrouper("pair", within="cohort", group_size=2, deadline=30)
+    _arrive(exp, pairs, cohort_a[:1])
 
     with Session(bind=db.engine) as busy_request:
         busy_request.execute(
             text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
-            {"id": team_a[0].id},
+            {"id": cohort_a[0].id},
         )
-        _arrive(exp, pairs, team_b)
+        _arrive(exp, pairs, cohort_b)
 
-    assert _waiting(pairs, team_b) == []
+    assert _waiting(pairs, cohort_b) == []
 
 
-def _team_and_pairs(exp, n, **kwargs):
-    team_grouper = SimpleGrouper("team", initial_group_size=n, min_group_size=2)
+def _cohort_and_pairs(exp, n, **kwargs):
+    cohort_grouper = SimpleGrouper("cohort", initial_group_size=n, min_group_size=2)
     pairs = Regrouper(
         "pair",
-        within="team",
+        within="cohort",
         group_size=2,
         roles=["proposer", "responder"],
         release_left_over=True,
         deadline=30,
         **kwargs,
     )
-    team = _working_participants(exp, n)
-    _arrive(exp, team_grouper, team)
-    return team, pairs
+    cohort = _working_participants(exp, n)
+    _arrive(exp, cohort_grouper, cohort)
+    return cohort, pairs
 
 
 @in_consents_experiment
@@ -423,9 +429,9 @@ def test_regrouper_keeps_a_sit_out_when_the_sitter_returns_in_the_same_request(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team, pairs = _team_and_pairs(exp, 3)
-    _arrive(exp, pairs, team)
-    (sitter,) = [p for p in team if "pair" not in p.active_sync_groups]
+    cohort, pairs = _cohort_and_pairs(exp, 3)
+    _arrive(exp, pairs, cohort)
+    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
     _arrive_at_group_barrier(exp, pairs, sitter)
     # Sitting out again, then coming straight back, all before the next commit.
     visit = sitter.active_barriers[pairs.id]
@@ -445,10 +451,12 @@ def test_regrouper_keep_roles_needs_one_member_per_role(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team, pairs = _team_and_pairs(exp, 4, keep_roles=True, form_groups=_pair_same_roles)
-    _arrive(exp, pairs, team[:3])
+    cohort, pairs = _cohort_and_pairs(
+        exp, 4, keep_roles=True, form_groups=_pair_same_roles
+    )
+    _arrive(exp, pairs, cohort[:3])
     with pytest.raises(ValueError, match="one member per role"):
-        _arrive(exp, pairs, team[3:])
+        _arrive(exp, pairs, cohort[3:])
 
 
 def _partner(participant):
@@ -465,34 +473,34 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
-    team, pairs = _team_and_pairs(exp, 4)
+    cohort, pairs = _cohort_and_pairs(exp, 4)
 
-    _arrive(exp, pairs, team)
-    first = {p.id: (pairs.role(p), _partner(p)) for p in team}
+    _arrive(exp, pairs, cohort)
+    first = {p.id: (pairs.role(p), _partner(p)) for p in cohort}
     assert (
         sorted(role for role, _ in first.values())
         == ["proposer"] * 2 + ["responder"] * 2
     )
-    assert all(pairs.role(_partner(p)) != pairs.role(p) for p in team)
+    assert all(pairs.role(_partner(p)) != pairs.role(p) for p in cohort)
 
-    _arrive(exp, pairs, team)
-    for p in team:
+    _arrive(exp, pairs, cohort)
+    for p in cohort:
         role, partner = first[p.id]
         assert pairs.role(p) != role
         assert _partner(p) is not partner
         assert pairs.rounds_played(p) == 2
     # A player removed from their pair, as by a kick, still sees their role.
-    role = pairs.role(team[0])
-    team[0].active_sync_groups["pair"].remove_participant(team[0])
-    assert pairs.role(team[0]) == role
+    role = pairs.role(cohort[0])
+    cohort[0].active_sync_groups["pair"].remove_participant(cohort[0])
+    assert pairs.role(cohort[0]) == role
 
     # Three players left: one sits out, and plays first next round.
-    team[0].active_sync_groups["team"].remove_participant(team[3])
-    _arrive(exp, pairs, team[:3])
-    (sitter,) = [p for p in team[:3] if "pair" not in p.active_sync_groups]
+    cohort[0].active_sync_groups["cohort"].remove_participant(cohort[3])
+    _arrive(exp, pairs, cohort[:3])
+    (sitter,) = [p for p in cohort[:3] if "pair" not in p.active_sync_groups]
     assert pairs.role(sitter) is None
     assert (pairs.rounds_sat_out(sitter), pairs.sat_out(sitter)) == (1, True)
-    _arrive(exp, pairs, team[:3])
+    _arrive(exp, pairs, cohort[:3])
     assert "pair" in sitter.active_sync_groups
     assert not pairs.sat_out(sitter)
 
@@ -500,20 +508,20 @@ def test_regrouper_alternates_roles_and_partners_and_counts_rounds(
 @in_consents_experiment
 def test_regrouper_keep_roles_balances_newcomers(in_experiment_directory, db_session):
     exp = get_experiment()
-    team, pairs = _team_and_pairs(exp, 3, keep_roles=True)
+    cohort, pairs = _cohort_and_pairs(exp, 3, keep_roles=True)
 
-    _arrive(exp, pairs, team)
-    (sitter,) = [p for p in team if "pair" not in p.active_sync_groups]
-    playing = [p for p in team if p is not sitter]
+    _arrive(exp, pairs, cohort)
+    (sitter,) = [p for p in cohort if "pair" not in p.active_sync_groups]
+    playing = [p for p in cohort if p is not sitter]
     assert {pairs.role(p) for p in playing} == {"proposer", "responder"}
     # A newcomer who sat out has not played a role yet.
     assert pairs.role(sitter) is None
     roles = {p.id: pairs.role(p) for p in playing}
 
     (newcomer,) = _working_participants(exp, 1)
-    team[0].active_sync_groups["team"].add_participant(newcomer)
-    _arrive(exp, pairs, team + [newcomer])
+    cohort[0].active_sync_groups["cohort"].add_participant(newcomer)
+    _arrive(exp, pairs, cohort + [newcomer])
     assert {p.id: pairs.role(p) for p in playing} == roles
     assert pairs.role(newcomer) != pairs.role(sitter)
-    assert all("pair" in p.active_sync_groups for p in team + [newcomer])
+    assert all("pair" in p.active_sync_groups for p in cohort + [newcomer])
     assert pairs.rounds_played(sitter) == 1

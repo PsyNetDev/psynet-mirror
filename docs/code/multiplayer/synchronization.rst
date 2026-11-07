@@ -1,6 +1,6 @@
-===============
-Synchronization
-===============
+=============================
+Groups and barriers in detail
+=============================
 
 A :class:`~psynet.sync.Grouper` forms groups of participants, and a
 :class:`~psynet.sync.GroupBarrier` makes the members of a group wait for each
@@ -137,7 +137,7 @@ should not hold up everyone else, and should not be failed either. A
 this. Each time a participant reaches it, they leave their previous group of
 that type and wait for the next round. The regrouper then splits everyone
 waiting into new groups, when every member of the participant's ``within``
-group (such as their team) is waiting, or when ``deadline`` passes, without
+group (such as their cohort) is waiting, or when ``deadline`` passes, without
 whoever isn't ready yet, provided enough participants are waiting to form a
 group. Latecomers join the next round. The groups it forms are
 never dissolved when a member leaves, so the members who are left continue
@@ -147,7 +147,7 @@ the round on their own.
 
     pairing = Regrouper(
         "pair",
-        within="team",
+        within="cohort",
         group_size=2,
         roles=["proposer", "responder"],
         deadline=50,
@@ -288,7 +288,7 @@ function of the participant that returns one of these, or ``None`` to keep
 the last page. The participant can't submit a waiting screen, so a page
 with a Next button, push buttons or ``auto_advance`` raises an error; use
 a control that doesn't submit, such as ``NullControl``. Groupers and :func:`~psynet.page.wait_while` take ``waiting_screen`` too,
-for example to replace the instructions while a team forms. A barrier
+for example to replace the instructions while a cohort forms. A barrier
 without a waiting screen (or one whose function returns ``None``) that
 follows another barrier's waiting screen shows a plain waiting page, since
 the last page is no longer on screen. In the following example, the

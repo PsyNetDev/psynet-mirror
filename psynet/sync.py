@@ -2598,7 +2598,7 @@ class Regrouper(Grouper):
     Each time a participant reaches the regrouper, they leave their previous
     group of this ``group_type`` and wait for the next split. Waiting
     participants are pooled: by default everyone waiting is one pool, and with
-    ``within`` each existing group (such as a team) is its own pool. A pool is
+    ``within`` each existing group (such as a cohort) is its own pool. A pool is
     split into groups when every active member of its ``within`` group is
     waiting, or when its ``deadline`` passes, whichever comes first. With a
     :class:`Clock` deadline, splits happen only on clock ticks. Absent
@@ -2627,7 +2627,7 @@ class Regrouper(Grouper):
 
     within
         Optional ``group_type`` of an existing group to regroup within, for
-        example ``"team"``. Participants are only grouped with members of the
+        example ``"cohort"``. Participants are only grouped with members of the
         same ``within`` group, and a pool counts as complete once all that
         group's active members are waiting. A participant without such a group
         is released ungrouped. If ``None`` (default), everyone waiting is one pool,
@@ -2682,8 +2682,8 @@ class Regrouper(Grouper):
         for example to a sit-out page, and come back for the next split. If
         ``False`` (default), they keep waiting for the next split. With
         ``within``, when too few are waiting to form any group, for example
-        one player whose teammates are still playing a round, they wait for
-        those teammates for up to one more ``deadline`` (or ``Clock`` tick)
+        one player whose cohort is still playing a round, they wait for
+        the rest of the cohort for up to one more ``deadline`` (or ``Clock`` tick)
         before they are released ungrouped, or until ``max_wait_time`` if
         there is no deadline. Taking members who stop playing out of the
         ``within`` group, for example with ``remove_participant``, means
@@ -2772,7 +2772,7 @@ class Regrouper(Grouper):
             raise ValueError(
                 f"max_wait_time ({max_wait_time} s) must be longer than twice the "
                 f"deadline ({longest_lone_wait} s): with release_left_over, a player "
-                "waiting alone for teammates who are still playing waits up to two "
+                "waiting alone for cohort members who are still playing waits up to two "
                 "deadlines before sitting out."
             )
 
@@ -3081,7 +3081,7 @@ class Regrouper(Grouper):
         return tick + self.clock_period
 
     def waiting_pool_group(self, participant) -> Optional["SyncGroup"]:
-        """Return the participant's ``within`` group, so each team waits in its own pool."""
+        """Return the participant's ``within`` group, so each cohort waits in its own pool."""
         return self._within_group(participant)
 
     def choose_who_to_release(self, waiting_participants: List[Participant]):
@@ -3136,10 +3136,10 @@ class Regrouper(Grouper):
     def _may_release_only_left_over(self, within_group, members) -> bool:
         """Return whether a split that forms no group may release its members ungrouped.
 
-        Not while teammates are still active elsewhere, for example still
+        Not while other cohort members are still active elsewhere, for example still
         playing a round, so that a lone waiter waits for them rather than
         sitting out round after round; but only for one more deadline, in case
-        those teammates have stopped playing.
+        those members have stopped playing.
         """
         return self.release_left_over and (
             within_group is None

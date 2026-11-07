@@ -13,15 +13,15 @@ Missing a round doesn't fail anyone. A player who comes back after the
 others' last round has started waits alone, though, and is failed once they
 reach the regrouper's ``max_wait_time`` (300 s by default), as at any barrier.
 
-To keep the same people together across rounds, for example in teams, form
-the teams first and regroup within them::
+To keep the same people together across rounds, for example in cohorts, form
+the cohorts first and regroup within them::
 
     SimpleGrouper(
-        "team", initial_group_size=8, min_group_size=2,
+        "cohort", initial_group_size=8, min_group_size=2,
         start_short_after=60, max_wait_time=300,
     ),
     ...
-    Regrouper("room", within="team", group_size=4, deadline=30),
+    Regrouper("room", within="cohort", group_size=4, deadline=30),
 
 See the ``ultimatum_pairing`` demo for a full example.
 """

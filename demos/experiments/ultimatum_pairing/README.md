@@ -1,18 +1,18 @@
 # README
 
-An ultimatum game played in teams. Players wait in a lobby until a team
-forms, or start in a smaller team if nobody else arrives in time. Every
-round, the team is randomly re-paired into proposers and responders, an odd
+An ultimatum game played in cohorts. Players wait in a lobby until a cohort
+forms, or start in a smaller cohort if nobody else arrives in time. Every
+round, the cohort is randomly re-paired into proposers and responders, an odd
 player out sits out, and slow players miss a round rather than holding up
 their partner or being failed. An anonymous `GroupPrompt` shows the pair,
 with a tick once the partner has decided, and then both decisions in speech
 bubbles; partners appear as the same grey figure, so nobody recognises a
 partner from an earlier round.
 
-Good reference for nesting a `Regrouper` inside persistent teams made by a
+Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with a custom
 `form_groups` that avoids repeat partners and a `join_criterion` that closes
-the team to latecomers once someone has finished a round.
+the cohort to latecomers once someone has finished a round.
 
 ## Usage
 

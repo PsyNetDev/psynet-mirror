@@ -403,14 +403,14 @@ Groups
 
 `experiments/lowest_unique_number <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/lowest_unique_number>`__
     ``Regrouper`` with a ``Clock``: rooms of up to eight form every 10
-    seconds, and players who are too slow sit out a round instead of being
+    seconds, and players who are too slow miss a round instead of being
     failed. A ``GroupPrompt`` shows who has chosen and then everyone's
     number. :doc:`/code/multiplayer/synchronization`.
 
 `experiments/ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__
-    An ultimatum game in teams from a lobby that starts short and takes
-    latecomers. Each round re-pairs the team with a ``Regrouper``, and an odd
-    player out sits out. :doc:`/code/multiplayer/synchronization`.
+    An ultimatum game in cohorts formed in a lobby that starts short and takes
+    latecomers. Each round re-pairs the cohort with a ``Regrouper``, and an odd
+    player out sits out. :doc:`/code/multiplayer/writing_a_round_based_experiment`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
